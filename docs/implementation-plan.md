@@ -2,7 +2,7 @@
 
 ## Context
 
-Wired-Part is a field service management app for an electrical contracting company. It manages parts inventory, warehouse operations, truck inventories, job tracking, labor hours, procurement, and pre-billing exports for the bookkeeper. The project is **greenfield** — no code exists yet. The full specification lives in `ThePlan.md` (1100+ lines). This plan turns that spec into an actionable, phased build.
+Wired-Part is a field service management app for an electrical contracting company. It manages parts inventory, warehouse operations, truck inventories, job tracking, labor hours, procurement, and pre-billing exports for the bookkeeper. The full specification lives in `ThePlan.md` (1100+ lines). This plan turns that spec into an actionable, phased build.
 
 **Why now**: The business needs a single source of truth for parts, jobs, labor, and costs — all 100% local, offline-first, human-guided, with no customer-facing billing (bookkeeper handles all billouts).
 
@@ -24,6 +24,8 @@ Wired-Part is a field service management app for an electrical contracting compa
 | **Trucks** | Full dashboard: inventory + tools + maintenance schedule + service history + mileage. |
 | **People** | Name, phone, email, hats, truck, PIN, emergency contact, certifications, hire date, pay rate. |
 | **Build Order** | Full foundation first (DB + Auth + Nav shell), THEN features one by one. |
+| **Parts Hierarchy** | Category → Style → Type → Color = one orderable variant. General parts vs Branded parts. |
+| **Suppliers** | 3-tier contacts: Business Contact → Sales Rep → Delivery Driver. Brand-supplier many-to-many. |
 
 ---
 
@@ -31,7 +33,7 @@ Wired-Part is a field service management app for an electrical contracting compa
 
 ```
 Backend:   Python 3.12 + FastAPI + SQLite (aiosqlite) + Pydantic v2
-Frontend:  React 19 + TypeScript + Vite + Tailwind CSS 3
+Frontend:  React 19 + TypeScript + Vite + Tailwind CSS v4
 State:     Zustand (UI state) + TanStack Query (server state)
 Icons:     Lucide React
 Desktop:   Electron or Tauri (Phase 11)
@@ -54,21 +56,12 @@ Weird-Part-Run-2/
 │   │   │   ├── __init__.py
 │   │   │   ├── auth.py
 │   │   │   ├── common.py
-│   │   │   ├── parts.py
-│   │   │   ├── warehouse.py
-│   │   │   ├── jobs.py
-│   │   │   └── orders.py
+│   │   │   └── parts.py
 │   │   ├── routers/                   # FastAPI route modules
 │   │   │   ├── __init__.py
 │   │   │   ├── auth.py
 │   │   │   ├── dashboard.py
 │   │   │   ├── parts.py
-│   │   │   ├── warehouse.py
-│   │   │   ├── trucks.py
-│   │   │   ├── jobs.py
-│   │   │   ├── orders.py
-│   │   │   ├── people.py
-│   │   │   ├── reports.py
 │   │   │   └── app_settings.py
 │   │   ├── repositories/             # Data access layer
 │   │   │   ├── __init__.py
@@ -76,25 +69,17 @@ Weird-Part-Run-2/
 │   │   │   ├── user_repo.py
 │   │   │   ├── device_repo.py
 │   │   │   ├── settings_repo.py
-│   │   │   ├── parts_repo.py
-│   │   │   ├── stock_repo.py
-│   │   │   ├── jobs_repo.py
-│   │   │   └── orders_repo.py
+│   │   │   ├── hierarchy_repo.py      # Part hierarchy + brand-supplier link repos
+│   │   │   └── parts_repo.py          # Parts, brands, suppliers repos
 │   │   ├── services/                 # Business logic
-│   │   │   ├── __init__.py
-│   │   │   ├── auth_service.py
-│   │   │   ├── movement_service.py   # THE core: atomic stock moves
-│   │   │   ├── forecast_service.py
-│   │   │   └── optimization_service.py
+│   │   │   └── __init__.py
 │   │   ├── middleware/
 │   │   │   ├── __init__.py
 │   │   │   └── auth.py               # JWT + permission dependencies
 │   │   └── migrations/               # Numbered SQL files
 │   │       ├── 001_foundation.sql
 │   │       ├── 002_parts_and_inventory.sql
-│   │       ├── 003_warehouse.sql
-│   │       ├── 004_jobs_and_labor.sql
-│   │       └── 005_orders.sql
+│   │       └── 003_hierarchy_images.sql
 │   ├── tests/
 │   │   ├── conftest.py
 │   │   └── ...
@@ -110,27 +95,22 @@ Weird-Part-Run-2/
 │   │   ├── api/                       # Axios client + endpoint modules
 │   │   │   ├── client.ts
 │   │   │   ├── auth.ts
-│   │   │   ├── parts.ts
-│   │   │   ├── warehouse.ts
-│   │   │   ├── jobs.ts
-│   │   │   ├── orders.ts
+│   │   │   ├── parts.ts              # Hierarchy, catalog, brands, suppliers, links
 │   │   │   └── settings.ts
 │   │   ├── components/
 │   │   │   ├── layout/
-│   │   │   │   ├── AppShell.tsx       # Sidebar + TopBar + Content
+│   │   │   │   ├── AppShell.tsx
 │   │   │   │   ├── Sidebar.tsx
 │   │   │   │   ├── SidebarItem.tsx
 │   │   │   │   ├── TopBar.tsx
 │   │   │   │   ├── TabBar.tsx
 │   │   │   │   └── MobileMenu.tsx
-│   │   │   ├── ui/                    # Shared design system
+│   │   │   ├── ui/
 │   │   │   │   ├── Button.tsx
 │   │   │   │   ├── Card.tsx
 │   │   │   │   ├── Input.tsx
 │   │   │   │   ├── Badge.tsx
 │   │   │   │   ├── Modal.tsx
-│   │   │   │   ├── Table.tsx
-│   │   │   │   ├── DropdownMenu.tsx
 │   │   │   │   ├── Spinner.tsx
 │   │   │   │   ├── Toast.tsx
 │   │   │   │   ├── PinDialog.tsx
@@ -141,13 +121,20 @@ Weird-Part-Run-2/
 │   │   │   │   └── UserPicker.tsx
 │   │   │   └── shared/
 │   │   │       ├── ProtectedRoute.tsx
-│   │   │       ├── PageHeader.tsx
-│   │   │       ├── SearchBar.tsx
 │   │   │       ├── NotificationBell.tsx
 │   │   │       └── ThemeToggle.tsx
 │   │   ├── features/                  # One folder per module
 │   │   │   ├── dashboard/
+│   │   │   │   └── pages/DashboardPage.tsx
 │   │   │   ├── parts/
+│   │   │   │   └── pages/
+│   │   │   │       ├── CategoriesPage.tsx     # Split-pane tree editor
+│   │   │   │       ├── CatalogPage.tsx        # Dual view: card grid + table
+│   │   │   │       ├── BrandsPage.tsx
+│   │   │   │       ├── SuppliersPage.tsx
+│   │   │   │       ├── PricingPage.tsx
+│   │   │   │       ├── ForecastingPage.tsx
+│   │   │   │       └── ImportExportPage.tsx
 │   │   │   ├── warehouse/
 │   │   │   ├── trucks/
 │   │   │   ├── jobs/
@@ -155,29 +142,23 @@ Weird-Part-Run-2/
 │   │   │   ├── people/
 │   │   │   ├── reports/
 │   │   │   └── settings/
-│   │   ├── hooks/
-│   │   │   ├── useAuth.ts
-│   │   │   ├── usePermission.ts
-│   │   │   ├── useTheme.ts
-│   │   │   └── useMediaQuery.ts
 │   │   ├── stores/
 │   │   │   ├── auth-store.ts
 │   │   │   ├── theme-store.ts
 │   │   │   └── sidebar-store.ts
 │   │   └── lib/
-│   │       ├── types.ts
-│   │       ├── navigation.ts          # All modules/tabs/permissions config
+│   │       ├── types.ts               # All TypeScript interfaces
+│   │       ├── navigation.ts
 │   │       ├── constants.ts
 │   │       └── utils.ts
-│   ├── tailwind.config.ts
 │   ├── vite.config.ts
 │   ├── tsconfig.json
 │   └── package.json
 ├── docs/
-│   └── implementation-plan.md         # THIS PLAN (saved to project)
-├── directives/                        # SOPs per 3-layer architecture
-├── execution/                         # Deterministic Python scripts
-├── .tmp/                              # Intermediate files
+│   └── implementation-plan.md         # THIS PLAN
+├── directives/
+├── execution/
+├── .tmp/
 ├── .env
 ├── .gitignore
 ├── CLAUDE.md
@@ -193,11 +174,13 @@ Weird-Part-Run-2/
 SIDEBAR                    TAB BAR                         PAGE CONTENT
 ─────────────────────────────────────────────────────────────────────────
 📊 Dashboard               (none)                          KPI cards + quick actions
-📦 Parts                   Catalog                         Searchable parts table + detail panel
-                           Brands                          Brand list + CRUD
-                           Pricing                         Price columns + bulk edit (perm-gated)
+📦 Parts                   Categories                      Split-pane tree editor (hierarchy CRUD + type-color links)
+                           Catalog                         Dual view: product card grid + table + CRUD
+                           Brands                          Brand list + supplier links management
+                           Suppliers                       Supplier cards + brands carried + contacts
+                           Pricing                         Inline price editing (perm-gated)
                            Forecasting                     ADU, days-to-low, suggested orders
-                           Import/Export                   CSV/Excel upload & download
+                           Import/Export                   CSV upload & download
 🏭 Warehouse               Dashboard                       KPI cards + action queue + AI insights
                            Inventory Grid                  Full stock table w/ filters
                            Pulled/Staging                  Staging area for job/truck prep
@@ -237,115 +220,282 @@ SIDEBAR                    TAB BAR                         PAGE CONTENT
 
 ---
 
-## Phase 1: Foundation (First Sprint)
+## Phase 1: Foundation ✅ COMPLETE
 
 **Goal**: Standing app with DB, auth, full navigation shell, theme system. Every page exists (stubs). Backend serves API. Frontend renders everything.
 
-### Step 0: Project Setup
-- Save this plan to `docs/implementation-plan.md`
-- Create `.gitignore` (node_modules, __pycache__, .env, .tmp/, *.db, dist/)
-- Create `.env` with defaults
-- Create `directives/`, `execution/`, `.tmp/` directories
-
-### Step 1: Backend Foundation
-
-**Files**: `backend/app/config.py`, `database.py`, `main.py`, `middleware/auth.py`
-
-**Database** (`migrations/001_foundation.sql`):
-- `users` — display_name, email, phone, pin_hash, default_truck_id, emergency_contact, certification, hire_date, pay_rate, is_active
-- `hats` — name, description, is_builtin (7 seed rows)
-- `hat_permissions` — hat_id, permission_key (~30 permission keys seeded)
-- `user_hats` — user_id, hat_id
-- `devices` — device_fingerprint, assigned_user_id, **is_public**, last_seen
-- `settings` — key, value (JSON), category
-- `activity_log` — user_id, action, entity_type, entity_id, details, timestamp
-- `notifications` — user_id, title, body, severity, source, is_read
-- Seed: default Admin user (PIN: 1234), all 7 hats with permissions
-
-**Auth Flow**:
-1. Frontend generates device fingerprint → `POST /api/auth/device-login`
-2. If device assigned to user AND not public → auto JWT token
-3. If public or unassigned → show UserPicker → PinLoginForm → JWT token
-4. PIN verification endpoint for sensitive actions (separate short-lived token)
-
-**API Routes (Phase 1)**:
-- `POST /api/auth/device-login` — auto-login by device
-- `POST /api/auth/pin-login` — login with user_id + PIN
-- `GET /api/auth/me` — current user + permissions
-- `POST /api/auth/verify-pin` — PIN check for sensitive ops
-- `GET/PUT /api/settings/*` — settings CRUD
-- `GET/PUT /api/settings/theme` — theme specifically
-- All other routers (`parts`, `warehouse`, etc.) return `{"status": "not_implemented"}`
-
-**Key Dependencies**: fastapi, uvicorn, aiosqlite, pydantic, python-jose, passlib
-
-### Step 2: Frontend Foundation
-
-**Files**: All files under `frontend/src/components/layout/`, `components/ui/`, `components/auth/`, `stores/`, `hooks/`, `lib/`
-
-**Core Components**:
-- `AppShell` — Main layout composing Sidebar + TopBar + TabBar + content area
-- `Sidebar` — 9 module items, permission-filtered, collapsible, mobile hamburger
-- `TabBar` — Sub-tabs for active module, permission-filtered, mobile dropdown
-- `AuthGate` — Orchestrates device check → user picker → PIN entry
-- `ThemeToggle` — Light/dark switch, persists to backend
-- `PinDialog` — Reusable PIN entry modal for sensitive actions
-
-**All Module Stubs**: Every page from the navigation map created as a stub component showing the page title and "Coming soon" placeholder. This means the ENTIRE navigation works end-to-end from day 1.
-
-**Design System** (`components/ui/`): Button, Card, Input, Badge, Modal, Table, DropdownMenu, Spinner, Toast, EmptyState — all themed for light/dark mode with Tailwind.
-
-**Key Dependencies**: react, react-router-dom, zustand, @tanstack/react-query, axios, lucide-react, clsx, tailwind-merge
-
-### Step 3: Test Phase 1
-- Backend: pytest — auth flow, migrations, settings, permissions
-- Frontend: vitest — sidebar rendering, auth flow, theme toggle, protected routes
-- Manual: Start both servers, login as admin, navigate every module, switch themes
-
-### Phase 1 Deliverable
-✅ Backend running at `localhost:8000` with API docs at `/docs`
-✅ Frontend running at `localhost:5173` with full navigation shell
-✅ Auto-login works on assigned devices
-✅ PIN login works on public devices
-✅ All 9 sidebar modules navigate correctly
-✅ All sub-tabs render within each module
-✅ Dark/light theme switching works
-✅ Permission-gated nav items hidden for non-admin users
+### Deliverables (all verified working)
+- ✅ Backend running at `localhost:8000` with API docs at `/docs`
+- ✅ Frontend running at `localhost:5173` with full navigation shell
+- ✅ Auto-login works on assigned devices
+- ✅ PIN login works on public devices
+- ✅ All 9 sidebar modules navigate correctly with sub-tabs
+- ✅ Dark/light theme switching works
+- ✅ Permission-gated nav items hidden for non-admin users
+- ✅ Migration `001_foundation.sql`: users, hats, permissions, devices, settings, activity_log, notifications
 
 ---
 
-## Phase 2: Parts & Inventory Core
+## Phase 2: Parts & Inventory Core ✅ COMPLETE
 
-**Goal**: Full Parts Catalog with CRUD, search, filter, brands, pricing, stock model.
+**Goal**: Full Parts Catalog with hierarchy-aware CRUD, search, filter, brands, suppliers, pricing, stock model, forecasting, and import/export.
+
+### Data Model — Parts Hierarchy
+
+The electrical parts domain follows a strict hierarchy: **Category → Style → Type → Color**. Each valid combination equals one orderable variant (SKU). Parts are either **general** (no brand, no manufacturer part number, code optional) or **specific** (branded, with manufacturer part number that may be pending).
+
+```
+Hierarchy Tables:
+  part_categories  — Top-level grouping (Outlet, Switch, Wire, Breaker…)
+  part_styles      — Per-category visual style (Decora, Traditional…)
+  part_types       — Per-style functional variety (GFI, Tamper Resistant…)
+  part_colors      — Global color lookup (White, Black, Light Almond…)
+
+Brand-Supplier Links:
+  brand_supplier_links — Which suppliers carry which brands (many-to-many)
+
+Parts Table:
+  category_id (required), style_id, type_id, color_id (hierarchy FKs)
+  code (nullable — general parts don't need codes)
+  part_type: 'general' | 'specific'
+  brand_id, manufacturer_part_number (for specific parts)
+  company_sell_price = GENERATED ALWAYS AS (cost × (1 + markup/100))
+  UNIQUE constraint on (category, style, type, color, brand) with COALESCE for NULLs
+  Partial index for "Pending Part Numbers" (specific parts with NULL MPN)
+```
 
 ### Database (`migrations/002_parts_and_inventory.sql`)
-- `parts` — Full schema from ThePlan.md (code, name, type, brand_id, cost/markup/sell_price, forecast fields, optimization fields, deprecation status, QR tagged)
-- `brands` — name, website, notes
-- `suppliers` — name, contact info, reliability scores (on_time_rate, quality_score, avg_lead_days)
-- `part_supplier_links` — part_id, supplier_id, supplier_pn, moq, discount_brackets JSON
-- `stock` — location_type (warehouse/pulled/truck/job), location_id, part_id, qty, supplier_id
-- `stock_movements` — from/to locations, part_id, qty, supplier_id, human_user_id, verified_by, photo_path, scan_confirmed, GPS
+- `part_categories` — 12 seeded: Outlet, Switch, Cover Plate, Wire, Breaker, Panel, Junction Box, Conduit, Fitting, Connector, Light Fixture, Misc
+- `part_styles` — seeded per category (Decora/Traditional for Outlet, Switch, Cover Plate)
+- `part_types` — seeded per style (Standard, GFI, Tamper Resistant, etc.)
+- `part_colors` — 10 seeded with hex codes (White, Black, Light Almond, Gray, Ivory, etc.)
+- `brands` — 10 seeded (Southwire, Leviton, Square D, Eaton, Ideal, etc.)
+- `suppliers` — schema with 3-tier contacts (business, sales rep, delivery driver), delivery logistics, reliability metrics
+- `parts` — hierarchy-aware with GENERATED sell price
+- `part_supplier_links` — part-supplier pricing links
+- `brand_supplier_links` — brand-supplier many-to-many
+- `stock` — location-based inventory (warehouse, pulled, truck, job)
+- `stock_movements` — movement history with supplier chain tracking
+- `part_forecast_history` — forecast snapshots
+
+### Backend Implementation
+
+**New File: `backend/app/repositories/hierarchy_repo.py`**
+Five repo classes extending BaseRepo:
+- `PartCategoryRepo` — `get_all_with_counts()`, standard CRUD
+- `PartStyleRepo` — `get_by_category()`, CRUD
+- `PartTypeRepo` — `get_by_style()`, CRUD
+- `PartColorRepo` — `get_all_with_counts()`, CRUD
+- `BrandSupplierLinkRepo` — `get_by_brand()`, `get_by_supplier()`, CRUD
+
+**Modified: `backend/app/repositories/parts_repo.py`**
+- `PartsRepo.search()` — JOINs hierarchy tables, supports 10+ filter params
+- `PartsRepo.get_by_id_full()` — JOINs hierarchy for names, includes supplier links
+- `PartsRepo.get_pending_part_numbers()` and `count_pending_part_numbers()`
+- `BrandRepo.get_all_with_counts()` — includes `supplier_count` from brand_supplier_links
+- `SupplierRepo.get_all_filtered()` — includes `brand_count`
+- Constants: `STOCK_SUBQUERY`, `HIERARCHY_JOINS` for DRY SQL reuse
+
+**Modified: `backend/app/models/parts.py`**
+- Hierarchy models: `PartCategory{Create,Update,Response}`, same for Style, Type, Color
+- `BrandSupplierLink{Create,Response}`, `PendingPartNumberItem`
+- Updated `PartCreate/Update/Response/ListItem/SearchParams` with hierarchy fields
+- `CatalogStats` includes `unique_categories`, `pending_part_numbers`
 
 ### API Endpoints
-- `GET/POST/PUT/DELETE /api/parts/catalog` — Parts CRUD with search & pagination
-- `GET/PUT /api/parts/catalog/{id}/pricing` — Pricing (perm-gated to `show_dollar_values`)
-- `GET/POST/PUT/DELETE /api/parts/brands` — Brands CRUD
-- `GET /api/parts/catalog/{id}/stock` — Stock by location for a part
-- `POST /api/parts/import` + `GET /api/parts/export` — CSV/Excel
 
-### Key Components
-- `PartTable` — Sortable, filterable data table (columns: Code, Name, Type, Brand, Total Stock, Cost, Sell, Daily Use, Days Low, Suggested Order, Actions)
-- `PartDetailPanel` — Split-panel on row click showing full detail
-- `PartEditDialog` — Modal with tabs: Basic Info, Pricing, Suppliers, History, Attachments
-- `PartFilters` — Filter bar: type, brand, low-stock, deprecated, QR tagged
-- `PriceCell` — Shows price or `•••` based on `show_dollar_values` permission
+```
+HIERARCHY:
+  GET     /api/parts/hierarchy                    — Nested JSON tree for cascading dropdowns
+  GET/POST /api/parts/categories                  — Category CRUD
+  PUT/DEL  /api/parts/categories/{id}
+  GET      /api/parts/categories/{cat_id}/styles  — Styles scoped to category
+  POST/PUT/DEL /api/parts/styles[/{id}]
+  GET      /api/parts/styles/{style_id}/types     — Types scoped to style
+  POST/PUT/DEL /api/parts/types[/{id}]
+  GET/POST /api/parts/colors                      — Color CRUD
+  PUT/DEL  /api/parts/colors/{id}
 
-### Phase 2 Deliverable
-✅ Add/edit/search/filter parts in the catalog
-✅ Brand management
-✅ Pricing visible only to authorized users
-✅ Stock model populated and queryable
-✅ CSV import/export working
+CATALOG:
+  GET      /api/parts/catalog                     — Search with hierarchy filters, pagination, sort
+  POST     /api/parts/catalog                     — Create part (validates hierarchy FKs, UNIQUE check)
+  GET/PUT/DEL /api/parts/catalog/{id}             — Single part CRUD
+  GET      /api/parts/catalog/stats               — Summary stats (total, deprecated, pending, etc.)
+  PUT      /api/parts/catalog/{id}/pricing        — Price update (perm-gated)
+  GET      /api/parts/catalog/{id}/stock          — Stock by location
+  GET      /api/parts/catalog/{id}/stock/summary  — Aggregated stock summary
+  POST/DEL /api/parts/catalog/{id}/suppliers[/{linkId}] — Part-supplier links
+
+PENDING PART NUMBERS:
+  GET      /api/parts/pending-part-numbers        — Paginated list of branded parts missing MPN
+  GET      /api/parts/pending-part-numbers/count   — Badge count
+
+BRANDS:
+  GET/POST /api/parts/brands                      — Brand CRUD (includes supplier_count)
+  GET/PUT/DEL /api/parts/brands/{id}
+  GET      /api/parts/brands/{id}/suppliers       — Suppliers carrying this brand
+
+SUPPLIERS:
+  GET/POST /api/parts/suppliers                   — Supplier CRUD (includes brand_count)
+  PUT/DEL  /api/parts/suppliers/{id}
+  GET      /api/parts/suppliers/{id}/brands       — Brands carried by supplier
+
+BRAND-SUPPLIER LINKS:
+  POST     /api/parts/brand-supplier-links        — Create link
+  DEL      /api/parts/brand-supplier-links/{id}   — Delete link
+
+FORECASTING:
+  GET      /api/parts/forecasting                 — Paginated forecast data
+
+IMPORT/EXPORT:
+  GET      /api/parts/export                      — CSV download (includes hierarchy columns)
+  POST     /api/parts/import                      — CSV upload
+```
+
+### Frontend Implementation
+
+**`frontend/src/lib/types.ts`** — All TypeScript interfaces:
+- Hierarchy: `PartCategory`, `PartStyle`, `PartType`, `PartColor` (each with Create/Update)
+- Tree: `HierarchyTree`, `HierarchyCategory`, `HierarchyStyle`, `HierarchyType`, `HierarchyColor`
+- Links: `BrandSupplierLink`, `BrandSupplierLinkCreate`, `PartSupplierLink`, `PartSupplierLinkCreate`
+- Parts: `Part`, `PartListItem`, `PartCreate`, `PartUpdate`, `PartSearchParams`, `PendingPartNumberItem`
+- Stock: `StockEntry`, `StockSummary`
+- Others: `CatalogStats`, `ForecastItem`, `ImportResult`
+
+**`frontend/src/api/parts.ts`** — API client functions:
+- Hierarchy CRUD: `getHierarchy()`, category/style/type/color CRUD, scoped list queries
+- Pending: `getPendingPartNumbers()`, `getPendingPartNumbersCount()`
+- Brand-supplier: `getBrandSuppliers()`, `getSupplierBrands()`, `createBrandSupplierLink()`, `deleteBrandSupplierLink()`
+- All existing functions preserved
+
+**`CatalogPage.tsx`** — Complete rebuild:
+- Cascading hierarchy filter dropdowns (Category → Style → Type → Color)
+- Brand filter, part_type filter, checkboxes for deprecated/QR/low-stock
+- Pending Part Numbers badge (amber, toggleable filter)
+- Table: Category | Style | Type | Color | Name | Code | Brand | Stock | Cost | Sell | Status | Actions
+- Warning icon for pending MPN parts, "—" for nullable codes
+- 3-section form: Part Classification, Part Identity, Pricing & Stock Levels
+- Conditional brand/MPN fields for specific parts
+
+**`BrandsPage.tsx`** — Enhanced:
+- Expandable rows showing supplier links per brand
+- "Link Supplier" inline form with dropdown of unlinked suppliers
+- Account number and notes per link
+- Unlink button per supplier
+- New "Suppliers" column showing count
+
+**`SuppliersPage.tsx`** — Enhanced:
+- "Brands Carried" section in expanded detail showing linked brands
+- Brand count in header quick-info line
+- Chip-style brand badges with account numbers
+
+**`PricingPage.tsx`** — Updated:
+- Added Category column
+- Nullable code handling (`code ?? '—'`)
+
+**`ForecastingPage.tsx`** — Updated:
+- Added Category and Brand columns
+- Nullable code handling
+- Enhanced search (searches category + brand names too)
+
+**`ImportExportPage.tsx`** — Updated:
+- CSV template includes `category_id` column
+- Updated description to reflect hierarchy-based matching
+- Export includes hierarchy columns
+
+### Phase 2 Deliverables
+- ✅ Parts hierarchy: Category → Style → Type → Color with cascading UI
+- ✅ General vs Specific parts (branded parts need MPN, general don't need code)
+- ✅ Pending Part Numbers queue with badge count
+- ✅ Brand-supplier many-to-many links (manageable from both BrandsPage and SuppliersPage)
+- ✅ Full catalog CRUD with hierarchy filters, search, sort, pagination
+- ✅ Duplicate variant prevention (UNIQUE index with COALESCE for NULLs)
+- ✅ 3-tier supplier contacts (business, sales rep, delivery driver)
+- ✅ Pricing with permission gating (show_dollar_values, edit_pricing)
+- ✅ Forecasting with urgency-sorted display
+- ✅ CSV import/export with hierarchy columns
+- ✅ All 21 backend API integration tests passing
+
+---
+
+## Phase 2.5: Parts Hierarchy UX Redesign ✅ COMPLETE
+
+**Goal**: Redesign the Parts module UI based on user feedback — add a dedicated Categories tree editor, type-color junction table management, grouped product card view on catalog, and image_url fields for future file uploads.
+
+### Design Decisions (User-Confirmed)
+
+| Decision | Choice |
+|----------|--------|
+| **Type-Color linking** | Junction table (`type_color_links`) — explicitly defines which colors are valid per part type |
+| **Images** | `image_url` text fields now on all hierarchy levels + type_color_links; file upload later |
+| **Categories editor** | Split-pane: read-only tree nav on left, edit form on right |
+| **Categories access** | Both a dedicated `/parts/categories` tab AND inline quick-add on catalog page |
+| **Catalog view mode** | Toggle between product card grid and flat table view |
+| **Product grouping** | Cards grouped by `(category_id, brand_id)` — General = 1 card, each brand = separate card |
+| **Image cascade** | `type_color_link.image_url → type.image_url → style.image_url → category.image_url` |
+
+### Database (`migrations/003_hierarchy_images.sql`)
+- Added `image_url TEXT` to: `part_categories`, `part_styles`, `part_types`, `part_colors`
+- Added `image_url TEXT` and `sort_order INTEGER DEFAULT 0` to `type_color_links`
+
+### Backend Changes
+
+**Modified: `backend/app/repositories/hierarchy_repo.py`**
+- Added `TypeColorLinkRepo` — `get_by_type()`, `get_by_color()`, `link_exists()`, `bulk_link()`, `unlink()`
+
+**Modified: `backend/app/models/parts.py`**
+- Added `TypeColorLink`, `TypeColorLinkCreate` models
+- Added `CatalogGroup`, `CatalogGroupVariant` models for grouped card view
+- Added `image_url` field to all hierarchy Create/Update/Response models
+
+**Modified: `backend/app/routers/parts.py`**
+- Added `GET /api/parts/types/{type_id}/colors` — colors linked to a type
+- Added `POST /api/parts/types/{type_id}/colors` — bulk link colors to type
+- Added `DELETE /api/parts/types/{type_id}/colors/{color_id}` — unlink color from type
+- Added `GET /api/parts/catalog/groups` — grouped product cards (category × brand)
+
+### Frontend Changes
+
+**Modified: `frontend/src/lib/types.ts`**
+- Added `TypeColorLink`, `CatalogGroup`, `CatalogGroupVariant` interfaces
+- Added `image_url` to all hierarchy interfaces
+
+**Modified: `frontend/src/api/parts.ts`**
+- Added `listTypeColors()`, `linkColorsToType()`, `unlinkColorFromType()`
+- Added `getCatalogGroups()` for grouped card view
+
+**Modified: `frontend/src/lib/navigation.ts`**
+- Added `categories` tab as first item in Parts module
+
+**Modified: `frontend/src/App.tsx`**
+- Added `CategoriesPage` import and `/parts/categories` route
+
+**New: `frontend/src/features/parts/pages/CategoriesPage.tsx`** (~830 lines)
+- Split-pane tree editor with:
+  - Left pane: collapsible Category → Style → Type tree with color chip counts
+  - Right pane: edit forms for any selected node (category/style/type/color)
+  - "Colors" toggle button to manage global color list
+  - Type edit form includes linked color chip management (add/remove)
+  - Lazy-loaded children with React Query (`enabled: isExpanded`)
+  - Create forms via `+ Category`, `+ Style`, `+ Type` buttons
+
+**Rebuilt: `frontend/src/features/parts/pages/CatalogPage.tsx`** (~670 lines)
+- Dual view mode toggle (card grid / table):
+  - **Card grid**: Uses `getCatalogGroups` API, responsive 1/2/3 column grid
+  - **Table**: Uses `listParts` API with full hierarchy column headers
+- Product cards show: category icon, brand badge, variant count, stock summary, price range
+- Expandable cards reveal variant table with individual part details
+- Pending PN filter auto-switches to table mode (groups API doesn't support it)
+- Filters adapt to view mode (fewer filters in card mode)
+
+### Phase 2.5 Deliverables
+- ✅ Categories tab with split-pane tree editor (Category → Style → Type → Color)
+- ✅ Type-color junction table management (linked colors as chips, add/remove inline)
+- ✅ Catalog dual view: product card grid + flat table with toggle
+- ✅ Product cards grouped by (category, brand) — General parts separate from branded
+- ✅ `image_url` fields on all hierarchy tables (ready for Phase 3+ file upload)
+- ✅ Migration 003 applied cleanly
+- ✅ All existing pages (Pricing, Forecasting, Import/Export, Brands, Suppliers) still work
 
 ---
 
@@ -414,7 +564,7 @@ Backend enforces: `human_user_id` REQUIRED (cannot be null), atomic transaction,
 
 ## Phase 5: Orders & Procurement
 
-**Goal**: Supplier management, full PO lifecycle, procurement planner with optimization.
+**Goal**: Full PO lifecycle, procurement planner with optimization.
 
 ### Database (`migrations/005_orders.sql`)
 - `purchase_orders` — po_number, supplier_id, status (draft→submitted→partial→received→closed), optimization metadata
@@ -428,7 +578,6 @@ Backend enforces: `human_user_id` REQUIRED (cannot be null), atomic transaction,
 - `SupplierReturnsWizard` — Specialized wizard with RMA step
 
 ### Phase 5 Deliverable
-✅ Supplier CRUD with reliability scores
 ✅ Full PO lifecycle
 ✅ Guided receive flow
 ✅ Procurement planner with optimization suggestions
@@ -455,11 +604,14 @@ Backend enforces: `human_user_id` REQUIRED (cannot be null), atomic transaction,
 | File | Why |
 |------|-----|
 | `backend/app/migrations/001_foundation.sql` | Foundation schema — users, hats, permissions, devices. Everything depends on this. |
-| `backend/app/services/movement_service.py` | Atomic stock moves with supplier chain. THE core business rule. |
+| `backend/app/migrations/002_parts_and_inventory.sql` | Hierarchy tables + parts with GENERATED sell price + unique constraints + seed data |
+| `backend/app/repositories/hierarchy_repo.py` | 5 repo classes for hierarchy CRUD + brand-supplier links |
+| `backend/app/repositories/parts_repo.py` | Parts search with hierarchy JOINs, pending queries, brand/supplier repos |
 | `backend/app/middleware/auth.py` | Device auto-login + PIN + JWT + permission checking. Gates everything. |
-| `frontend/src/lib/navigation.ts` | Single source of truth for all modules, tabs, and permission requirements. |
-| `frontend/src/components/layout/AppShell.tsx` | Main layout orchestrating sidebar + topbar + tabbar + content. |
-| `frontend/src/features/warehouse/components/GuidedMovementWizard.tsx` | THE movement UI — used for every stock move in the entire app. |
+| `frontend/src/lib/types.ts` | Single source of truth for all TypeScript interfaces (mirrors backend Pydantic models) |
+| `frontend/src/lib/navigation.ts` | All modules, tabs, and permission requirements. |
+| `frontend/src/features/parts/pages/CategoriesPage.tsx` | Split-pane tree editor — hierarchy CRUD + type-color link management |
+| `frontend/src/features/parts/pages/CatalogPage.tsx` | Main parts UI — dual view (card grid + table), hierarchy filters, CRUD form, pending badge |
 
 ---
 
@@ -491,27 +643,6 @@ Components:
 
 ---
 
-## Verification Plan
-
-### After Phase 1 (Foundation)
-1. `cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload` — API docs at `/docs`
-2. `cd frontend && npm install && npm run dev` — App at `localhost:5173`
-3. Open browser → should auto-login as Admin (device fingerprint created)
-4. Click every sidebar item → each module loads its stub page
-5. Click sub-tabs within each module → correct stubs load
-6. Toggle dark mode → entire app switches theme
-7. Create a Worker user via API → login as Worker → confirm restricted sidebar items
-8. Run `cd backend && pytest` → all auth + permission tests pass
-9. Run `cd frontend && npm run test` → all component tests pass
-
-### After Each Subsequent Phase
-- Backend: `pytest` with phase-specific test files
-- Frontend: `npm run test` with component tests
-- Manual: Walkthrough checklist in `directives/testing/phase_N_checklist.md`
-- Verify permissions: Test each new feature as Admin, Worker, and Grunt
-
----
-
 ## Areas of Improvement Flagged
 
 1. **Device fingerprinting**: Browser localStorage is not cryptographically secure. Consider WebAuthn for production.
@@ -519,3 +650,5 @@ Components:
 3. **SQLite concurrency**: WAL mode helps, but 5-20 users hitting one SQLite via FastAPI needs careful write handling.
 4. **Generated columns**: `company_sell_price GENERATED ALWAYS AS ... STORED` requires SQLite 3.31.0+ — verify Python's bundled SQLite version.
 5. **3-layer architecture fit**: `directives/` and `execution/` are for AI orchestration tasks. App code lives in `backend/` + `frontend/`. Create `directives/app_development/` for dev SOPs.
+6. **Part hierarchy completeness**: ✅ Addressed in Phase 2.5 — dedicated CategoriesPage tree editor + inline quick-add on CatalogPage form.
+7. **Pending MPN workflow**: Consider adding email/notification when branded parts are created without MPN, so the office knows to look up the part number.

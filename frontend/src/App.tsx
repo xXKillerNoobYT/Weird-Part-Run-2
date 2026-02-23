@@ -33,6 +33,7 @@ import { PricingPage } from './features/parts/pages/PricingPage';
 import { ForecastingPage } from './features/parts/pages/ForecastingPage';
 import { ImportExportPage } from './features/parts/pages/ImportExportPage';
 import { SuppliersPage } from './features/parts/pages/SuppliersPage';
+import { CategoriesPage } from './features/parts/pages/CategoriesPage';
 
 // Pages — Warehouse
 import { WarehouseDashboardPage } from './features/warehouse/pages/WarehouseDashboardPage';
@@ -104,6 +105,7 @@ export default function App() {
 
               {/* Parts */}
               <Route path="/parts" element={<Navigate to="/parts/catalog" replace />} />
+              <Route path="/parts/categories" element={<CategoriesPage />} />
               <Route path="/parts/catalog" element={<CatalogPage />} />
               <Route path="/parts/brands" element={<BrandsPage />} />
               <Route path="/parts/suppliers" element={<SuppliersPage />} />

@@ -25,6 +25,7 @@ export const MODULES: NavModule[] = [
     path: '/parts',
     permission: 'view_parts_catalog',
     tabs: [
+      { id: 'categories', label: 'Categories', path: '/parts/categories' },
       { id: 'catalog', label: 'Catalog', path: '/parts/catalog' },
       { id: 'brands', label: 'Brands', path: '/parts/brands' },
       { id: 'suppliers', label: 'Suppliers', path: '/parts/suppliers' },

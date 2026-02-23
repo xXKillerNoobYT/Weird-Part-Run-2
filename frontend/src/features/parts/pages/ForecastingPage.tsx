@@ -43,8 +43,10 @@ export function ForecastingPage() {
     const term = searchText.toLowerCase();
     return all.filter(
       (item) =>
-        item.code.toLowerCase().includes(term) ||
-        item.name.toLowerCase().includes(term),
+        (item.code ?? '').toLowerCase().includes(term) ||
+        item.name.toLowerCase().includes(term) ||
+        (item.category_name ?? '').toLowerCase().includes(term) ||
+        (item.brand_name ?? '').toLowerCase().includes(term),
     );
   }, [forecastData, searchText]);
 
@@ -141,8 +143,10 @@ export function ForecastingPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-700">
+                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Category</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Code</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Part Name</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Brand</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Current Stock</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Min Level</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">ADU (30d)</th>
@@ -163,11 +167,17 @@ export function ForecastingPage() {
                       : 'hover:bg-gray-50 dark:hover:bg-gray-800/30'
                   }`}
                 >
+                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                    {item.category_name ?? '—'}
+                  </td>
                   <td className="px-4 py-3 font-mono text-xs text-primary-600 dark:text-primary-400">
-                    {item.code}
+                    {item.code ?? '—'}
                   </td>
                   <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
                     {item.name}
+                  </td>
+                  <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                    {item.brand_name ?? '—'}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span className={

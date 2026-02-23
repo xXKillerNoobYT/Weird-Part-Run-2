@@ -110,6 +110,260 @@ export interface StatusMessage {
 // PARTS MODULE (Phase 2)
 // ═══════════════════════════════════════════════════════════════════
 
+// ── Part Hierarchy (Category → Style → Type → Color) ─────────────
+
+export interface PartCategory {
+  id: number;
+  name: string;
+  description: string | null;
+  sort_order: number;
+  is_active: boolean;
+  image_url: string | null;
+  style_count: number;
+  part_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface PartCategoryCreate {
+  name: string;
+  description?: string;
+  sort_order?: number;
+  image_url?: string;
+}
+
+export interface PartCategoryUpdate {
+  name?: string;
+  description?: string;
+  sort_order?: number;
+  is_active?: boolean;
+  image_url?: string;
+}
+
+export interface PartStyle {
+  id: number;
+  category_id: number;
+  category_name: string | null;
+  name: string;
+  description: string | null;
+  sort_order: number;
+  is_active: boolean;
+  image_url: string | null;
+  type_count: number;
+  part_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface PartStyleCreate {
+  category_id: number;
+  name: string;
+  description?: string;
+  sort_order?: number;
+  image_url?: string;
+}
+
+export interface PartStyleUpdate {
+  name?: string;
+  description?: string;
+  sort_order?: number;
+  is_active?: boolean;
+  image_url?: string;
+}
+
+export interface PartType {
+  id: number;
+  style_id: number;
+  style_name: string | null;
+  category_name: string | null;
+  name: string;
+  description: string | null;
+  sort_order: number;
+  is_active: boolean;
+  image_url: string | null;
+  color_count: number;
+  part_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface PartTypeCreate {
+  style_id: number;
+  name: string;
+  description?: string;
+  sort_order?: number;
+  image_url?: string;
+}
+
+export interface PartTypeUpdate {
+  name?: string;
+  description?: string;
+  sort_order?: number;
+  is_active?: boolean;
+  image_url?: string;
+}
+
+export interface PartColor {
+  id: number;
+  name: string;
+  hex_code: string | null;
+  sort_order: number;
+  is_active: boolean;
+  part_count: number;
+  created_at: string | null;
+}
+
+export interface PartColorCreate {
+  name: string;
+  hex_code?: string;
+  sort_order?: number;
+}
+
+export interface PartColorUpdate {
+  name?: string;
+  hex_code?: string;
+  sort_order?: number;
+  is_active?: boolean;
+}
+
+// ── Type ↔ Color Links ───────────────────────────────────────────
+
+export interface TypeColorLink {
+  id: number;
+  type_id: number;
+  color_id: number;
+  color_name: string | null;
+  hex_code: string | null;
+  image_url: string | null;
+  sort_order: number;
+  created_at: string | null;
+}
+
+export interface TypeColorLinkCreate {
+  type_id: number;
+  color_id: number;
+  image_url?: string;
+  sort_order?: number;
+}
+
+// ── Type ↔ Brand Links ──────────────────────────────────────────
+
+export interface TypeBrandLink {
+  id: number;
+  type_id: number;
+  brand_id: number | null;     // null = General (unbranded)
+  brand_name: string | null;   // "General" when brand_id is null
+  part_count: number;
+  created_at: string | null;
+}
+
+export interface TypeBrandLinkCreate {
+  type_id: number;
+  brand_id: number | null;     // null = General
+}
+
+// ── Categories Tree Selection ───────────────────────────────────
+
+export type CategoryNodeType = 'category' | 'style' | 'type' | 'brand' | 'part' | 'color';
+
+export interface SelectedCategoryNode {
+  type: CategoryNodeType;
+  id: number;
+  // Context for deep nodes — carry parent info down the tree
+  categoryId?: number;
+  styleId?: number;
+  typeId?: number;
+  brandId?: number | null;   // null = General
+  colorId?: number;
+  partId?: number;
+}
+
+// ── Quick-create Part (minimal request from tree) ───────────────
+
+export interface QuickCreatePartRequest {
+  color_id: number;
+}
+
+// ── Hierarchy Tree (nested for UI cascading dropdowns) ───────────
+
+export interface HierarchyTypeColor {
+  id: number;            // type_color_link.id
+  color_id: number;
+  name: string;
+  hex_code: string | null;
+  image_url: string | null;
+  sort_order: number;
+}
+
+export interface HierarchyType {
+  id: number;
+  name: string;
+  image_url: string | null;
+  sort_order: number;
+  colors: HierarchyTypeColor[];
+}
+
+export interface HierarchyStyle {
+  id: number;
+  name: string;
+  image_url: string | null;
+  sort_order: number;
+  types: HierarchyType[];
+}
+
+export interface HierarchyCategory {
+  id: number;
+  name: string;
+  image_url: string | null;
+  sort_order: number;
+  styles: HierarchyStyle[];
+}
+
+export interface HierarchyColor {
+  id: number;
+  name: string;
+  hex_code: string | null;
+  image_url: string | null;
+  sort_order: number;
+}
+
+export interface HierarchyTree {
+  categories: HierarchyCategory[];
+  colors: HierarchyColor[];
+}
+
+// ── Catalog Groups (grouped product card view) ───────────────────
+
+export interface CatalogGroupVariant {
+  id: number;
+  style_name: string | null;
+  type_name: string | null;
+  color_name: string | null;
+  code: string | null;
+  name: string;
+  manufacturer_part_number: string | null;
+  has_pending_part_number: boolean;
+  unit_of_measure: string;
+  company_cost_price: number | null;
+  company_sell_price: number | null;
+  total_stock: number;
+  image_url: string | null;
+  is_deprecated: boolean;
+}
+
+export interface CatalogGroup {
+  category_id: number;
+  category_name: string;
+  brand_id: number | null;
+  brand_name: string | null;
+  image_url: string | null;
+  variant_count: number;
+  total_stock: number;
+  price_range_low: number | null;
+  price_range_high: number | null;
+  variants: CatalogGroupVariant[];
+}
+
 // ── Brands ────────────────────────────────────────────────────────
 
 export interface Brand {
@@ -119,6 +373,7 @@ export interface Brand {
   notes: string | null;
   is_active: boolean;
   part_count: number;
+  supplier_count: number;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -134,6 +389,27 @@ export interface BrandUpdate {
   website?: string;
   notes?: string;
   is_active?: boolean;
+}
+
+// ── Brand ↔ Supplier Links ──────────────────────────────────────
+
+export interface BrandSupplierLink {
+  id: number;
+  brand_id: number;
+  brand_name: string | null;
+  supplier_id: number;
+  supplier_name: string | null;
+  account_number: string | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string | null;
+}
+
+export interface BrandSupplierLinkCreate {
+  brand_id: number;
+  supplier_id: number;
+  account_number?: string;
+  notes?: string;
 }
 
 // ── Suppliers ─────────────────────────────────────────────────────
@@ -169,6 +445,8 @@ export interface Supplier {
   avg_lead_days: number;
   reliability_score: number;
   is_active: boolean;
+  // Computed
+  brand_count: number;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -245,89 +523,137 @@ export interface PartSupplierLinkCreate {
   is_preferred?: boolean;
 }
 
-// ── Parts ─────────────────────────────────────────────────────────
+// ── Parts (Orderable Variants) ──────────────────────────────────
 
 export interface PartListItem {
   id: number;
-  code: string;
-  name: string;
+  // Hierarchy names
+  category_name: string | null;
+  style_name: string | null;
+  type_name: string | null;
+  color_name: string | null;
+  color_id: number | null;
+  color_hex: string | null;
+  // Identity
   part_type: 'general' | 'specific';
+  code: string | null;
+  name: string;
+  brand_id: number | null;
   brand_name: string | null;
+  manufacturer_part_number: string | null;
+  has_pending_part_number: boolean;
+  // Physical
   unit_of_measure: string;
+  // Pricing
   company_cost_price: number | null;
   company_markup_percent: number | null;
   company_sell_price: number | null;
+  // Stock
   total_stock: number;
+  // Forecast
   forecast_adu_30: number | null;
   forecast_days_until_low: number | null;
   forecast_suggested_order: number | null;
+  // Status
   is_deprecated: boolean;
   is_qr_tagged: boolean;
 }
 
 export interface Part extends PartListItem {
+  // Hierarchy IDs
+  category_id: number;
+  style_id: number | null;
+  type_id: number | null;
+  color_id: number | null;
+  // Identity extras
   description: string | null;
   brand_id: number | null;
-  manufacturer_part_number: string | null;
+  // Physical
   weight_lbs: number | null;
-  color: string | null;
-  variant: string | null;
+  // Inventory targets
   min_stock_level: number;
   max_stock_level: number;
   target_stock_level: number;
+  // Stock breakdown
   warehouse_stock: number;
   truck_stock: number;
   job_stock: number;
   pulled_stock: number;
+  // Forecast extras
   forecast_last_run: string | null;
+  // Status extras
   deprecation_reason: string | null;
   notes: string | null;
   image_url: string | null;
   pdf_url: string | null;
+  // Related
   suppliers: PartSupplierLink[];
+  // Timestamps
   created_at: string | null;
   updated_at: string | null;
 }
 
 export interface PartCreate {
-  code: string;
+  // Hierarchy (category required, rest optional)
+  category_id: number;
+  style_id?: number;
+  type_id?: number;
+  color_id?: number;
+  // Identity
+  part_type?: 'general' | 'specific';
+  code?: string;    // Optional for general parts
   name: string;
   description?: string;
-  part_type?: 'general' | 'specific';
+  // Brand (for specific parts)
   brand_id?: number;
   manufacturer_part_number?: string;
+  // Physical
   unit_of_measure?: string;
   weight_lbs?: number;
-  color?: string;
-  variant?: string;
+  // Pricing
   company_cost_price?: number;
   company_markup_percent?: number;
+  // Inventory targets
   min_stock_level?: number;
   max_stock_level?: number;
   target_stock_level?: number;
+  // Metadata
   notes?: string;
+  image_url?: string;
+  pdf_url?: string;
 }
 
 export interface PartUpdate {
+  // Hierarchy
+  category_id?: number;
+  style_id?: number;
+  type_id?: number;
+  color_id?: number;
+  // Identity
+  part_type?: 'general' | 'specific';
   code?: string;
   name?: string;
   description?: string;
-  part_type?: 'general' | 'specific';
+  // Brand
   brand_id?: number;
   manufacturer_part_number?: string;
+  // Physical
   unit_of_measure?: string;
   weight_lbs?: number;
-  color?: string;
-  variant?: string;
+  // Pricing
   company_cost_price?: number;
   company_markup_percent?: number;
+  // Inventory targets
   min_stock_level?: number;
   max_stock_level?: number;
   target_stock_level?: number;
+  // Status
   is_deprecated?: boolean;
   deprecation_reason?: string;
   is_qr_tagged?: boolean;
   notes?: string;
+  image_url?: string;
+  pdf_url?: string;
 }
 
 export interface PartPricingUpdate {
@@ -337,15 +663,38 @@ export interface PartPricingUpdate {
 
 export interface PartSearchParams {
   search?: string;
+  // Hierarchy filters
+  category_id?: number;
+  style_id?: number;
+  type_id?: number;
+  color_id?: number;
+  // Classification filters
   part_type?: string;
   brand_id?: number;
+  has_pending_pn?: boolean;
+  // Status filters
   is_deprecated?: boolean;
   is_qr_tagged?: boolean;
   low_stock?: boolean;
+  // Sorting & pagination
   sort_by?: string;
   sort_dir?: 'asc' | 'desc';
   page?: number;
   page_size?: number;
+}
+
+// ── Pending Part Numbers ─────────────────────────────────────────
+
+export interface PendingPartNumberItem {
+  id: number;
+  name: string;
+  category_name: string | null;
+  style_name: string | null;
+  type_name: string | null;
+  color_name: string | null;
+  brand_id: number | null;
+  brand_name: string | null;
+  created_at: string | null;
 }
 
 // ── Stock ─────────────────────────────────────────────────────────
@@ -377,8 +726,10 @@ export interface StockSummary {
 
 export interface ForecastItem {
   id: number;
-  code: string;
+  code: string | null;
   name: string;
+  category_name: string | null;
+  brand_name: string | null;
   total_stock: number;
   min_stock_level: number;
   forecast_adu_30: number;
@@ -398,6 +749,8 @@ export interface CatalogStats {
   general_parts: number;
   specific_parts: number;
   unique_brands: number;
+  unique_categories: number;
+  pending_part_numbers: number;
 }
 
 // ── Import/Export ──────────────────────────────────────────────────

@@ -334,6 +334,7 @@ class PartsRepo(BaseRepo):
                    sty.name AS style_name,
                    typ.name AS type_name,
                    col.name AS color_name,
+                   col.hex_code AS color_hex,
                    b.name AS brand_name,
                    COALESCE(st.total_stock, 0) AS total_stock,
                    COALESCE(st.warehouse_stock, 0) AS warehouse_stock,
@@ -462,6 +463,138 @@ class PartsRepo(BaseRepo):
         )
         row = await cursor.fetchone()
         return row["cnt"] if row else 0
+
+    async def get_catalog_groups(
+        self,
+        *,
+        search: str | None = None,
+        category_id: int | None = None,
+        is_deprecated: bool | None = None,
+    ) -> list[dict]:
+        """Get parts grouped by (category_id, brand_id) for the product card view.
+
+        Returns a list of groups, each containing aggregate data (variant count,
+        total stock, price range) and nested variant details.  The grouping key
+        is (category_id, brand_id) where brand_id=NULL → "General".
+
+        A single query fetches everything; Python does the grouping via
+        OrderedDict to preserve the ORDER BY sort.
+        """
+        where_clauses: list[str] = []
+        params: list[Any] = []
+
+        if search:
+            where_clauses.append(
+                "(p.code LIKE ? OR p.name LIKE ? OR p.description LIKE ?)"
+            )
+            params.extend([f"%{search}%"] * 3)
+        if category_id is not None:
+            where_clauses.append("p.category_id = ?")
+            params.append(category_id)
+        if is_deprecated is not None:
+            where_clauses.append("p.is_deprecated = ?")
+            params.append(int(is_deprecated))
+
+        where_sql = (
+            f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+        )
+
+        sql = f"""
+            SELECT p.id, p.name, p.code, p.part_type, p.image_url,
+                   p.category_id, p.brand_id,
+                   p.manufacturer_part_number,
+                   p.unit_of_measure,
+                   p.company_cost_price,
+                   p.company_sell_price,
+                   p.is_deprecated,
+                   cat.name AS category_name,
+                   cat.image_url AS category_image_url,
+                   cat.sort_order AS category_sort_order,
+                   sty.name AS style_name,
+                   typ.name AS type_name,
+                   col.name AS color_name,
+                   b.name AS brand_name,
+                   COALESCE(stock_totals.total_stock, 0) AS total_stock,
+                   CASE WHEN p.part_type = 'specific'
+                             AND p.manufacturer_part_number IS NULL
+                        THEN 1 ELSE 0
+                   END AS has_pending_part_number
+            FROM parts p
+            {HIERARCHY_JOINS}
+            LEFT JOIN ({STOCK_SUBQUERY}) stock_totals
+                ON stock_totals.part_id = p.id
+            {where_sql}
+            ORDER BY cat.sort_order ASC, cat.name ASC,
+                     CASE WHEN p.brand_id IS NULL THEN 0 ELSE 1 END,
+                     b.name ASC,
+                     sty.sort_order, typ.sort_order, col.sort_order, p.name
+        """
+
+        cursor = await self.db.execute(sql, params)
+        rows = await cursor.fetchall()
+
+        # Group in Python by (category_id, brand_id) — preserves SQL order
+        from collections import OrderedDict
+
+        groups: OrderedDict[tuple, dict] = OrderedDict()
+
+        for row in rows:
+            key = (row["category_id"], row["brand_id"])
+            if key not in groups:
+                groups[key] = {
+                    "category_id": row["category_id"],
+                    "category_name": row["category_name"],
+                    "brand_id": row["brand_id"],
+                    "brand_name": row["brand_name"],
+                    "image_url": row.get("category_image_url"),
+                    "variant_count": 0,
+                    "total_stock": 0,
+                    "price_range_low": None,
+                    "price_range_high": None,
+                    "variants": [],
+                }
+
+            group = groups[key]
+            group["variant_count"] += 1
+            group["total_stock"] += row.get("total_stock", 0)
+
+            sell_price = row.get("company_sell_price")
+            if sell_price is not None:
+                if (
+                    group["price_range_low"] is None
+                    or sell_price < group["price_range_low"]
+                ):
+                    group["price_range_low"] = sell_price
+                if (
+                    group["price_range_high"] is None
+                    or sell_price > group["price_range_high"]
+                ):
+                    group["price_range_high"] = sell_price
+
+            group["variants"].append(
+                {
+                    "id": row["id"],
+                    "style_name": row.get("style_name"),
+                    "type_name": row.get("type_name"),
+                    "color_name": row.get("color_name"),
+                    "code": row.get("code"),
+                    "name": row["name"],
+                    "manufacturer_part_number": row.get(
+                        "manufacturer_part_number"
+                    ),
+                    "has_pending_part_number": bool(
+                        row.get("has_pending_part_number", 0)
+                    ),
+                    "unit_of_measure": row.get("unit_of_measure", "each"),
+                    "company_cost_price": row.get("company_cost_price"),
+                    "company_sell_price": row.get("company_sell_price"),
+                    "total_stock": row.get("total_stock", 0),
+                    "image_url": row.get("image_url"),
+                    "is_deprecated": bool(row.get("is_deprecated", 0)),
+                }
+            )
+
+        return list(groups.values())
 
     async def get_catalog_stats(self) -> dict:
         """Get summary statistics for the parts catalog."""

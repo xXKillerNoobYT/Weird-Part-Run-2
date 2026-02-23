@@ -24,6 +24,7 @@ class PartCategoryCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: str | None = None
     sort_order: int = 0
+    image_url: str | None = None
 
 
 class PartCategoryUpdate(BaseModel):
@@ -32,6 +33,7 @@ class PartCategoryUpdate(BaseModel):
     description: str | None = None
     sort_order: int | None = None
     is_active: bool | None = None
+    image_url: str | None = None
 
 
 class PartCategoryResponse(BaseModel):
@@ -41,6 +43,7 @@ class PartCategoryResponse(BaseModel):
     description: str | None = None
     sort_order: int = 0
     is_active: bool = True
+    image_url: str | None = None
     style_count: int = 0    # Computed: number of child styles
     part_count: int = 0     # Computed: number of parts in this category
     created_at: datetime | None = None
@@ -55,6 +58,7 @@ class PartStyleCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: str | None = None
     sort_order: int = 0
+    image_url: str | None = None
 
 
 class PartStyleUpdate(BaseModel):
@@ -63,6 +67,7 @@ class PartStyleUpdate(BaseModel):
     description: str | None = None
     sort_order: int | None = None
     is_active: bool | None = None
+    image_url: str | None = None
 
 
 class PartStyleResponse(BaseModel):
@@ -74,6 +79,7 @@ class PartStyleResponse(BaseModel):
     description: str | None = None
     sort_order: int = 0
     is_active: bool = True
+    image_url: str | None = None
     type_count: int = 0     # Computed: number of child types
     part_count: int = 0     # Computed: number of parts with this style
     created_at: datetime | None = None
@@ -88,6 +94,7 @@ class PartTypeCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: str | None = None
     sort_order: int = 0
+    image_url: str | None = None
 
 
 class PartTypeUpdate(BaseModel):
@@ -96,6 +103,7 @@ class PartTypeUpdate(BaseModel):
     description: str | None = None
     sort_order: int | None = None
     is_active: bool | None = None
+    image_url: str | None = None
 
 
 class PartTypeResponse(BaseModel):
@@ -108,6 +116,8 @@ class PartTypeResponse(BaseModel):
     description: str | None = None
     sort_order: int = 0
     is_active: bool = True
+    image_url: str | None = None
+    color_count: int = 0    # Computed: number of linked colors
     part_count: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -141,19 +151,81 @@ class PartColorResponse(BaseModel):
     created_at: datetime | None = None
 
 
+# ── Type ↔ Color Links ─────────────────────────────────────────────
+
+class TypeColorLinkCreate(BaseModel):
+    """Request body for linking a color to a type."""
+    type_id: int
+    color_id: int
+    image_url: str | None = None
+    sort_order: int = 0
+
+
+class TypeColorLinkResponse(BaseModel):
+    """A type-color link as returned from the API."""
+    id: int
+    type_id: int
+    color_id: int
+    color_name: str | None = None
+    hex_code: str | None = None
+    image_url: str | None = None
+    sort_order: int = 0
+    created_at: datetime | None = None
+
+
+# ── Type ↔ Brand Links ─────────────────────────────────────────────
+
+class TypeBrandLinkCreate(BaseModel):
+    """Request body for linking a brand (or General) to a type."""
+    type_id: int
+    brand_id: int | None = None  # None = General (unbranded)
+
+
+class TypeBrandLinkResponse(BaseModel):
+    """A type-brand link as returned from the API."""
+    id: int
+    type_id: int
+    brand_id: int | None = None       # None = General
+    brand_name: str | None = None     # "General" when brand_id is None
+    part_count: int = 0               # How many Part records exist under this link
+    created_at: datetime | None = None
+
+
+class QuickCreatePartRequest(BaseModel):
+    """Minimal request body for creating a part from the Categories tree.
+
+    The hierarchy context (category, style, type, brand) is inferred from the
+    URL path. Only the color_id is needed from the user.
+    """
+    color_id: int
+
+
 # ── Hierarchy Tree (nested response for UI dropdowns) ───────────
 
+class HierarchyTypeColor(BaseModel):
+    """A color linked to a specific type (valid combo)."""
+    id: int             # type_color_link.id
+    color_id: int
+    name: str
+    hex_code: str | None = None
+    image_url: str | None = None
+    sort_order: int = 0
+
+
 class HierarchyType(BaseModel):
-    """A type within a style."""
+    """A type within a style, with its valid colors."""
     id: int
     name: str
+    image_url: str | None = None
     sort_order: int = 0
+    colors: list[HierarchyTypeColor] = Field(default_factory=list)
 
 
 class HierarchyStyle(BaseModel):
     """A style within a category, with its child types."""
     id: int
     name: str
+    image_url: str | None = None
     sort_order: int = 0
     types: list[HierarchyType] = Field(default_factory=list)
 
@@ -162,22 +234,66 @@ class HierarchyCategory(BaseModel):
     """A category with its child styles."""
     id: int
     name: str
+    image_url: str | None = None
     sort_order: int = 0
     styles: list[HierarchyStyle] = Field(default_factory=list)
 
 
 class HierarchyColor(BaseModel):
-    """A color in the hierarchy response."""
+    """A color in the hierarchy response (global master list)."""
     id: int
     name: str
     hex_code: str | None = None
+    image_url: str | None = None
     sort_order: int = 0
 
 
 class HierarchyTree(BaseModel):
-    """The full hierarchy tree for powering UI cascading dropdowns."""
+    """The full hierarchy tree for powering UI cascading dropdowns.
+
+    categories: nested tree (category → style → type → linked colors)
+    colors: flat master list (all colors for the global color editor)
+    """
     categories: list[HierarchyCategory] = Field(default_factory=list)
     colors: list[HierarchyColor] = Field(default_factory=list)
+
+
+# ── Catalog Groups (grouped product card view) ────────────────────
+
+class CatalogGroupVariant(BaseModel):
+    """A single part variant within a catalog group."""
+    id: int
+    style_name: str | None = None
+    type_name: str | None = None
+    color_name: str | None = None
+    code: str | None = None
+    name: str
+    manufacturer_part_number: str | None = None
+    has_pending_part_number: bool = False
+    unit_of_measure: str = "each"
+    company_cost_price: float | None = None
+    company_sell_price: float | None = None
+    total_stock: int = 0
+    image_url: str | None = None
+    is_deprecated: bool = False
+
+
+class CatalogGroup(BaseModel):
+    """A group of parts sharing the same category + brand.
+
+    The grouping key is (category_id, brand_id) where brand_id=NULL → "General".
+    Each group becomes one product card in the catalog UI.
+    """
+    category_id: int
+    category_name: str
+    brand_id: int | None = None
+    brand_name: str | None = None
+    image_url: str | None = None       # Resolved cascade image for this group
+    variant_count: int = 0
+    total_stock: int = 0
+    price_range_low: float | None = None
+    price_range_high: float | None = None
+    variants: list[CatalogGroupVariant] = Field(default_factory=list)
 
 
 # =================================================================
@@ -465,6 +581,7 @@ class PartResponse(BaseModel):
     type_name: str | None = None
     color_id: int | None = None
     color_name: str | None = None
+    color_hex: str | None = None
 
     # Identity
     part_type: str = "general"
@@ -529,11 +646,14 @@ class PartListItem(BaseModel):
     style_name: str | None = None
     type_name: str | None = None
     color_name: str | None = None
+    color_id: int | None = None
+    color_hex: str | None = None
 
     # Identity
     part_type: str = "general"
     code: str | None = None
     name: str
+    brand_id: int | None = None
     brand_name: str | None = None
     manufacturer_part_number: str | None = None
     has_pending_part_number: bool = False

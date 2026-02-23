@@ -24,9 +24,9 @@ import type { ImportResult } from '../../../lib/types';
 
 
 /** Template CSV content with the columns the import endpoint expects. */
-const CSV_TEMPLATE = `code,name,description,part_type,brand_name,unit_of_measure,company_cost_price,company_markup_percent,min_stock_level,max_stock_level,target_stock_level,notes
-WR-12-2-250,"12/2 Romex 250ft","Non-metallic sheathed cable",general,,ft,89.99,35.0,5,20,10,
-BR-SQD-20A,"Square D 20A Breaker","Single-pole circuit breaker",specific,Square D,each,12.50,40.0,10,50,25,`;
+const CSV_TEMPLATE = `category_id,name,description,part_type,code,brand_name,manufacturer_part_number,unit_of_measure,company_cost_price,company_markup_percent,min_stock_level,max_stock_level,target_stock_level,notes
+9,"12/2 Romex 250ft","Non-metallic sheathed cable",general,WR-12-2-250,,,ft,89.99,35.0,5,20,10,
+6,"Square D 20A Breaker","Single-pole circuit breaker",specific,BR-SQD-20A,Square D,QO120,each,12.50,40.0,10,50,25,`;
 
 
 export function ImportExportPage() {
@@ -106,7 +106,7 @@ export function ImportExportPage() {
               <div className="flex items-start gap-3">
                 <FileSpreadsheet className="h-8 w-8 text-primary-500 mt-0.5 shrink-0" />
                 <div className="text-sm text-gray-600 dark:text-gray-300 space-y-1">
-                  <p>Exports all parts including code, name, type, brand, unit of measure, stock levels, and notes.</p>
+                  <p>Exports all parts including hierarchy (category, style, type, color), code, name, brand, unit of measure, stock levels, and notes.</p>
                   {canSeePricing ? (
                     <p className="text-green-600 dark:text-green-400">
                       <CheckCircle2 className="inline h-3.5 w-3.5 mr-1" />
@@ -154,10 +154,11 @@ export function ImportExportPage() {
               <div className="flex items-start gap-3">
                 <Upload className="h-8 w-8 text-primary-500 mt-0.5 shrink-0" />
                 <div className="text-sm text-gray-600 dark:text-gray-300 space-y-1">
-                  <p>Upload a CSV with part data. Parts are matched by <strong>code</strong>:</p>
+                  <p>Upload a CSV with part data. Each row requires a <strong>category_id</strong> and <strong>name</strong>:</p>
                   <ul className="list-disc list-inside ml-1 text-gray-500 dark:text-gray-400">
-                    <li>Existing codes are <strong>updated</strong></li>
-                    <li>New codes are <strong>created</strong></li>
+                    <li>Matching parts by hierarchy + name are <strong>updated</strong></li>
+                    <li>Non-matching rows are <strong>created</strong></li>
+                    <li>Code is optional for general parts</li>
                   </ul>
                 </div>
               </div>

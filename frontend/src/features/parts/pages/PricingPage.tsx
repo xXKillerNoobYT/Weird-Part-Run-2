@@ -188,6 +188,9 @@ function PricingTable({ canEdit }: { canEdit: boolean }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-700">
+                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">
+                  Category
+                </th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400 cursor-pointer hover:text-gray-900 dark:hover:text-gray-200" onClick={() => handleSort('code')}>
                   Code <SortIcon column="code" />
                 </th>
@@ -235,8 +238,11 @@ function PricingTable({ canEdit }: { canEdit: boolean }) {
                         : 'hover:bg-gray-50 dark:hover:bg-gray-800/30'
                     }`}
                   >
+                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                      {part.category_name ?? '—'}
+                    </td>
                     <td className="px-4 py-3 font-mono text-xs text-primary-600 dark:text-primary-400">
-                      {part.code}
+                      {part.code ?? '—'}
                     </td>
                     <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
                       {part.name}
