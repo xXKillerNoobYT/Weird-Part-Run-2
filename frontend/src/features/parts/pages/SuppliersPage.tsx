@@ -25,7 +25,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building2, Plus, Search, Edit2, Trash2, Globe, Phone, Mail,
   AlertTriangle, ToggleLeft, ToggleRight, Truck, MapPin, Clock,
-  ChevronDown, ChevronRight, User, UserCheck, Calendar, Tag,
+  ChevronDown, ChevronRight, User, UserCheck, Calendar, Tag, Star,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
@@ -274,7 +274,8 @@ function SupplierCard({
   onDelete,
   onToggleActive,
 }: SupplierCardProps) {
-  const DeliveryIcon = DELIVERY_ICONS[supplier.delivery_method] ?? Truck;
+  const DeliveryIcon = DELIVERY_ICONS[supplier.primary_delivery_method] ?? Truck;
+  const hasScheduledDelivery = supplier.delivery_methods?.includes('scheduled_delivery') ?? false;
   const deliveryDays = parseDeliveryDays(supplier.delivery_days);
 
   return (
@@ -317,7 +318,7 @@ function SupplierCard({
                 Rep: {supplier.rep_name}
               </span>
             )}
-            {supplier.delivery_method === 'scheduled_delivery' && supplier.driver_name && (
+            {hasScheduledDelivery && supplier.driver_name && (
               <span className="flex items-center gap-1">
                 <Truck className="h-3 w-3" />
                 Driver: {supplier.driver_name}
@@ -332,11 +333,22 @@ function SupplierCard({
           </div>
         </div>
 
-        {/* Delivery badge */}
-        <Badge variant={DELIVERY_BADGE_VARIANT[supplier.delivery_method]}>
-          <DeliveryIcon className="h-3 w-3 mr-1 inline" />
-          {DELIVERY_LABELS[supplier.delivery_method]}
-        </Badge>
+        {/* Delivery badges */}
+        <div className="flex items-center gap-1">
+          {(supplier.delivery_methods ?? [supplier.primary_delivery_method]).map((method) => {
+            const Icon = DELIVERY_ICONS[method] ?? Truck;
+            const isPrimary = method === supplier.primary_delivery_method;
+            return (
+              <Badge key={method} variant={DELIVERY_BADGE_VARIANT[method]}>
+                <Icon className="h-3 w-3 mr-1 inline" />
+                {DELIVERY_LABELS[method]}
+                {isPrimary && (supplier.delivery_methods?.length ?? 0) > 1 && (
+                  <Star className="h-2.5 w-2.5 ml-0.5 inline fill-current" />
+                )}
+              </Badge>
+            );
+          })}
+        </div>
 
         {/* Actions */}
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
@@ -376,7 +388,7 @@ function SupplierCard({
       {isExpanded && (
         <div className="border-t border-gray-200 dark:border-gray-700 px-4 py-4">
           <div className={`grid grid-cols-1 gap-6 ${
-            supplier.delivery_method === 'scheduled_delivery'
+            hasScheduledDelivery
               ? 'md:grid-cols-4'
               : 'md:grid-cols-3'
           }`}>
@@ -472,7 +484,7 @@ function SupplierCard({
             </div>
 
             {/* Delivery Driver (only shown for scheduled delivery suppliers) */}
-            {supplier.delivery_method === 'scheduled_delivery' && (
+            {hasScheduledDelivery && (
               <div className="space-y-2">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
                   <Truck className="h-3.5 w-3.5" />
@@ -516,12 +528,22 @@ function SupplierCard({
                 Delivery Info
               </h4>
               <div className="space-y-1.5 text-sm">
-                <Badge variant={DELIVERY_BADGE_VARIANT[supplier.delivery_method]}>
-                  {DELIVERY_LABELS[supplier.delivery_method]}
-                </Badge>
+                <div className="flex flex-wrap gap-1">
+                  {(supplier.delivery_methods ?? [supplier.primary_delivery_method]).map((method) => {
+                    const isPrimary = method === supplier.primary_delivery_method;
+                    return (
+                      <Badge key={method} variant={DELIVERY_BADGE_VARIANT[method]}>
+                        {DELIVERY_LABELS[method]}
+                        {isPrimary && (supplier.delivery_methods?.length ?? 0) > 1 && (
+                          <span className="ml-1 text-[10px] opacity-75">(primary)</span>
+                        )}
+                      </Badge>
+                    );
+                  })}
+                </div>
 
                 {/* Delivery days (only for scheduled) */}
-                {supplier.delivery_method === 'scheduled_delivery' && deliveryDays.length > 0 && (
+                {hasScheduledDelivery && deliveryDays.length > 0 && (
                   <div className="flex items-center gap-1 flex-wrap mt-1">
                     <Calendar className="h-3.5 w-3.5 text-gray-500 shrink-0" />
                     {deliveryDays.map((day) => (
@@ -731,8 +753,9 @@ function SupplierFormModal({
     rep_name: initial?.rep_name ?? '',
     rep_email: initial?.rep_email ?? '',
     rep_phone: initial?.rep_phone ?? '',
-    // Delivery
-    delivery_method: (initial?.delivery_method ?? 'standard_shipping') as DeliveryMethod,
+    // Delivery — multi-select with primary
+    delivery_methods: (initial?.delivery_methods ?? ['standard_shipping']) as DeliveryMethod[],
+    primary_delivery_method: (initial?.primary_delivery_method ?? 'standard_shipping') as DeliveryMethod,
     delivery_days: parseDeliveryDays(initial?.delivery_days ?? null),
     special_order_lead_days: initial?.special_order_lead_days?.toString() ?? '',
     delivery_notes: initial?.delivery_notes ?? '',
@@ -756,8 +779,9 @@ function SupplierFormModal({
       rep_name: form.rep_name || undefined,
       rep_email: form.rep_email || undefined,
       rep_phone: form.rep_phone || undefined,
-      delivery_method: form.delivery_method,
-      delivery_days: form.delivery_method === 'scheduled_delivery' && form.delivery_days.length > 0
+      delivery_methods: form.delivery_methods,
+      primary_delivery_method: form.primary_delivery_method,
+      delivery_days: form.delivery_methods.includes('scheduled_delivery') && form.delivery_days.length > 0
         ? JSON.stringify(form.delivery_days)
         : undefined,
       special_order_lead_days: form.special_order_lead_days
@@ -774,6 +798,25 @@ function SupplierFormModal({
 
   const update = <K extends keyof typeof form>(field: K, value: (typeof form)[K]) =>
     setForm((prev) => ({ ...prev, [field]: value }));
+
+  const toggleDeliveryMethod = (method: DeliveryMethod) => {
+    setForm((prev) => {
+      const has = prev.delivery_methods.includes(method);
+      let next: DeliveryMethod[];
+      if (has) {
+        // Don't allow removing the last method
+        if (prev.delivery_methods.length <= 1) return prev;
+        next = prev.delivery_methods.filter((m) => m !== method);
+      } else {
+        next = [...prev.delivery_methods, method];
+      }
+      // If the primary was removed, auto-pick the first remaining
+      const primary = next.includes(prev.primary_delivery_method)
+        ? prev.primary_delivery_method
+        : next[0];
+      return { ...prev, delivery_methods: next, primary_delivery_method: primary };
+    });
+  };
 
   const toggleDeliveryDay = (day: string) => {
     setForm((prev) => ({
@@ -876,25 +919,29 @@ function SupplierFormModal({
             Delivery
           </legend>
 
-          {/* Delivery Method Radio */}
+          {/* Delivery Methods — multi-select */}
           <div className="space-y-1.5">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Delivery Method
+              Delivery Methods
             </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Select all that apply
+            </p>
             <div className="flex flex-wrap gap-2">
               {(['standard_shipping', 'scheduled_delivery', 'in_store_pickup'] as DeliveryMethod[]).map(
                 (method) => {
                   const Icon = DELIVERY_ICONS[method];
+                  const isSelected = form.delivery_methods.includes(method);
                   return (
                     <button
                       key={method}
                       type="button"
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
-                        form.delivery_method === method
+                        isSelected
                           ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
                           : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
                       }`}
-                      onClick={() => update('delivery_method', method)}
+                      onClick={() => toggleDeliveryMethod(method)}
                     >
                       <Icon className="h-3.5 w-3.5" />
                       {DELIVERY_LABELS[method]}
@@ -905,8 +952,32 @@ function SupplierFormModal({
             </div>
           </div>
 
-          {/* Delivery Driver (only for scheduled) */}
-          {form.delivery_method === 'scheduled_delivery' && (
+          {/* Primary Delivery Method — dropdown (only if 2+ selected) */}
+          {form.delivery_methods.length > 1 && (
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+                <Star className="h-3.5 w-3.5 text-amber-500" />
+                Primary Method
+              </label>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Which method do you use most often?
+              </p>
+              <select
+                className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm"
+                value={form.primary_delivery_method}
+                onChange={(e) => update('primary_delivery_method', e.target.value as DeliveryMethod)}
+              >
+                {form.delivery_methods.map((method) => (
+                  <option key={method} value={method}>
+                    {DELIVERY_LABELS[method]}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Delivery Driver (only if scheduled delivery is selected) */}
+          {form.delivery_methods.includes('scheduled_delivery') && (
             <div className="space-y-3 mt-2 p-2.5 rounded-lg bg-gray-50 dark:bg-gray-900/40">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
                 <Truck className="h-3.5 w-3.5" />
@@ -937,8 +1008,8 @@ function SupplierFormModal({
             </div>
           )}
 
-          {/* Delivery Days (only for scheduled) */}
-          {form.delivery_method === 'scheduled_delivery' && (
+          {/* Delivery Days (only if scheduled delivery is selected) */}
+          {form.delivery_methods.includes('scheduled_delivery') && (
             <div className="space-y-1.5">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
                 Delivery Days

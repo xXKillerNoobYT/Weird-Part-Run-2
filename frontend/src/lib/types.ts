@@ -430,8 +430,9 @@ export interface Supplier {
   rep_email: string | null;
   rep_phone: string | null;
   notes: string | null;
-  // Delivery logistics
-  delivery_method: DeliveryMethod;
+  // Delivery logistics — multi-select with a primary
+  delivery_methods: DeliveryMethod[];        // All methods this supplier offers
+  primary_delivery_method: DeliveryMethod;   // The default/preferred method
   delivery_days: string | null;              // JSON: '["monday","wednesday","friday"]'
   special_order_lead_days: number | null;    // Extra days for items not in local warehouse
   delivery_notes: string | null;
@@ -464,7 +465,8 @@ export interface SupplierCreate {
   rep_email?: string;
   rep_phone?: string;
   notes?: string;
-  delivery_method?: DeliveryMethod;
+  delivery_methods?: DeliveryMethod[];
+  primary_delivery_method?: DeliveryMethod;
   delivery_days?: string;
   special_order_lead_days?: number;
   delivery_notes?: string;
@@ -487,7 +489,8 @@ export interface SupplierUpdate {
   rep_email?: string;
   rep_phone?: string;
   notes?: string;
-  delivery_method?: DeliveryMethod;
+  delivery_methods?: DeliveryMethod[];
+  primary_delivery_method?: DeliveryMethod;
   delivery_days?: string;
   special_order_lead_days?: number;
   delivery_notes?: string;

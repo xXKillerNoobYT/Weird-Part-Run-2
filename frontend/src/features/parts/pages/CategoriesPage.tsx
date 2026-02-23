@@ -232,7 +232,6 @@ export function CategoriesPage() {
         return (
           <EditTypePanel
             typeId={selected.id}
-            allColors={allColors ?? []}
             canEdit={canEdit}
             onDelete={() => setDeleteConfirm(selected)}
           />

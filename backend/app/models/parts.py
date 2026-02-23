@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # =================================================================
@@ -357,6 +357,9 @@ class BrandSupplierLinkResponse(BaseModel):
 # SUPPLIERS
 # =================================================================
 
+VALID_DELIVERY_METHODS = {"standard_shipping", "scheduled_delivery", "in_store_pickup"}
+
+
 class SupplierCreate(BaseModel):
     """Request body for creating a new supplier."""
     name: str = Field(..., min_length=1, max_length=200)
@@ -371,10 +374,15 @@ class SupplierCreate(BaseModel):
     rep_email: str | None = None
     rep_phone: str | None = None
     notes: str | None = None
-    # Delivery logistics
-    delivery_method: str = Field(
+    # Delivery logistics — multi-select with a primary
+    delivery_methods: list[str] = Field(
+        default=["standard_shipping"],
+        description="All delivery methods this supplier offers",
+    )
+    primary_delivery_method: str = Field(
         default="standard_shipping",
         pattern=r"^(standard_shipping|scheduled_delivery|in_store_pickup)$",
+        description="The default/preferred delivery method",
     )
     delivery_days: str | None = None  # JSON array: '["monday","wednesday"]'
     special_order_lead_days: int | None = Field(None, ge=0)
@@ -383,6 +391,17 @@ class SupplierCreate(BaseModel):
     driver_name: str | None = None
     driver_phone: str | None = None
     driver_email: str | None = None
+
+    @model_validator(mode="after")
+    def validate_delivery(self) -> "SupplierCreate":
+        """Ensure all delivery methods are valid and primary is in the list."""
+        for m in self.delivery_methods:
+            if m not in VALID_DELIVERY_METHODS:
+                raise ValueError(f"Invalid delivery method: {m}")
+        if self.primary_delivery_method not in self.delivery_methods:
+            # Auto-add primary to list if not present
+            self.delivery_methods.append(self.primary_delivery_method)
+        return self
 
 
 class SupplierUpdate(BaseModel):
@@ -399,8 +418,9 @@ class SupplierUpdate(BaseModel):
     rep_email: str | None = None
     rep_phone: str | None = None
     notes: str | None = None
-    # Delivery logistics
-    delivery_method: str | None = Field(
+    # Delivery logistics — multi-select with a primary
+    delivery_methods: list[str] | None = None
+    primary_delivery_method: str | None = Field(
         None,
         pattern=r"^(standard_shipping|scheduled_delivery|in_store_pickup)$",
     )
@@ -416,6 +436,17 @@ class SupplierUpdate(BaseModel):
     quality_score: float | None = Field(None, ge=0, le=1)
     avg_lead_days: int | None = Field(None, ge=0)
     is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_delivery(self) -> "SupplierUpdate":
+        """Ensure delivery methods are valid when provided."""
+        if self.delivery_methods is not None:
+            for m in self.delivery_methods:
+                if m not in VALID_DELIVERY_METHODS:
+                    raise ValueError(f"Invalid delivery method: {m}")
+            if self.primary_delivery_method and self.primary_delivery_method not in self.delivery_methods:
+                self.delivery_methods.append(self.primary_delivery_method)
+        return self
 
 
 class SupplierResponse(BaseModel):
@@ -433,8 +464,9 @@ class SupplierResponse(BaseModel):
     rep_email: str | None = None
     rep_phone: str | None = None
     notes: str | None = None
-    # Delivery logistics
-    delivery_method: str = "standard_shipping"
+    # Delivery logistics — multi-select with a primary
+    delivery_methods: list[str] = Field(default=["standard_shipping"])
+    primary_delivery_method: str = "standard_shipping"
     delivery_days: str | None = None
     special_order_lead_days: int | None = None
     delivery_notes: str | None = None

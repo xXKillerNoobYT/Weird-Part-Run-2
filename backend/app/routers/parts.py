@@ -1734,7 +1734,7 @@ async def list_suppliers(
     suppliers = await repo.get_all_filtered(
         is_active=is_active, search=search
     )
-    return ApiResponse(data=suppliers)
+    return ApiResponse(data=[_supplier_db_to_api(s) for s in suppliers])
 
 
 @router.get("/suppliers/{supplier_id}", response_model=ApiResponse[SupplierResponse])
@@ -1748,7 +1748,40 @@ async def get_supplier(
     supplier = await repo.get_by_id(supplier_id)
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
-    return ApiResponse(data=supplier)
+    return ApiResponse(data=_supplier_db_to_api(supplier))
+
+
+def _supplier_api_to_db(data: dict) -> dict:
+    """Map API field names → DB column names for suppliers."""
+    import json as _json
+    result = dict(data)
+    # delivery_methods (list) → delivery_methods (JSON string)
+    if "delivery_methods" in result:
+        val = result.pop("delivery_methods")
+        result["delivery_methods"] = _json.dumps(val) if isinstance(val, list) else val
+    # primary_delivery_method → delivery_method (DB column)
+    if "primary_delivery_method" in result:
+        result["delivery_method"] = result.pop("primary_delivery_method")
+    return result
+
+
+def _supplier_db_to_api(row: dict) -> dict:
+    """Map DB column names → API field names for suppliers."""
+    import json as _json
+    result = dict(row)
+    # delivery_method (DB) → primary_delivery_method (API)
+    if "delivery_method" in result:
+        result["primary_delivery_method"] = result.pop("delivery_method")
+    # delivery_methods (JSON string) → delivery_methods (list)
+    if "delivery_methods" in result and isinstance(result["delivery_methods"], str):
+        try:
+            result["delivery_methods"] = _json.loads(result["delivery_methods"])
+        except (ValueError, TypeError):
+            result["delivery_methods"] = [result.get("primary_delivery_method", "standard_shipping")]
+    elif "delivery_methods" not in result or result["delivery_methods"] is None:
+        # Fallback for rows before migration 005
+        result["delivery_methods"] = [result.get("primary_delivery_method", "standard_shipping")]
+    return result
 
 
 @router.post("/suppliers", response_model=ApiResponse[SupplierResponse])
@@ -1759,9 +1792,10 @@ async def create_supplier(
 ):
     """Create a new supplier."""
     repo = SupplierRepo(db)
-    supplier_id = await repo.insert(body.model_dump())
+    db_data = _supplier_api_to_db(body.model_dump())
+    supplier_id = await repo.insert(db_data)
     supplier = await repo.get_by_id(supplier_id)
-    return ApiResponse(data=supplier, message=f"Supplier '{body.name}' created.")
+    return ApiResponse(data=_supplier_db_to_api(supplier), message=f"Supplier '{body.name}' created.")
 
 
 @router.put("/suppliers/{supplier_id}", response_model=ApiResponse[SupplierResponse])
@@ -1782,10 +1816,11 @@ async def update_supplier(
     if not data:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    await repo.update(supplier_id, data)
+    db_data = _supplier_api_to_db(data)
+    await repo.update(supplier_id, db_data)
 
     supplier = await repo.get_by_id(supplier_id)
-    return ApiResponse(data=supplier)
+    return ApiResponse(data=_supplier_db_to_api(supplier))
 
 
 @router.delete("/suppliers/{supplier_id}")

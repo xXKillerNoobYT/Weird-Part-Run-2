@@ -653,6 +653,9 @@ function BrandFormModal({ isOpen, onClose, onSubmit, isLoading, title, initial }
           />
         </div>
 
+        {/* Supplier selection — only in edit mode (brand already exists) */}
+        {initial && <BrandSupplierPicker brandId={initial.id} brandName={initial.name} />}
+
         <div className="flex justify-end gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
           <Button variant="secondary" type="button" onClick={onClose}>Cancel</Button>
           <Button type="submit" isLoading={isLoading}>
@@ -661,5 +664,117 @@ function BrandFormModal({ isOpen, onClose, onSubmit, isLoading, title, initial }
         </div>
       </form>
     </Modal>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// Supplier picker inside the brand edit modal
+// ═══════════════════════════════════════════════════════════════
+
+function BrandSupplierPicker({ brandId, brandName }: { brandId: number; brandName: string }) {
+  const queryClient = useQueryClient();
+
+  // Fetch current supplier links
+  const { data: links, isLoading: linksLoading } = useQuery({
+    queryKey: ['brand-suppliers', brandId],
+    queryFn: () => getBrandSuppliers(brandId),
+  });
+
+  // Fetch all suppliers for the dropdown
+  const { data: allSuppliers } = useQuery({
+    queryKey: ['suppliers'],
+    queryFn: () => listSuppliers(),
+  });
+
+  // Filter out already-linked and inactive suppliers
+  const linkedSupplierIds = new Set((links ?? []).map((l) => l.supplier_id));
+  const availableSuppliers = (allSuppliers ?? []).filter(
+    (s) => !linkedSupplierIds.has(s.id) && s.is_active,
+  );
+
+  // Link mutation
+  const linkMutation = useMutation({
+    mutationFn: (supplierId: number) =>
+      createBrandSupplierLink({ brand_id: brandId, supplier_id: supplierId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['brand-suppliers', brandId] });
+      queryClient.invalidateQueries({ queryKey: ['brands'] });
+    },
+  });
+
+  // Unlink mutation
+  const unlinkMutation = useMutation({
+    mutationFn: deleteBrandSupplierLink,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['brand-suppliers', brandId] });
+      queryClient.invalidateQueries({ queryKey: ['brands'] });
+    },
+  });
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+        <Building2 className="h-4 w-4 text-gray-400" />
+        Suppliers
+      </label>
+      <p className="text-xs text-gray-500 dark:text-gray-400">
+        Which suppliers carry {brandName} products?
+      </p>
+
+      {/* Linked suppliers as removable pills */}
+      <div className="flex flex-wrap gap-2">
+        {linksLoading ? (
+          <div className="flex items-center gap-1.5 text-xs text-gray-400">
+            <Spinner size="sm" /> Loading...
+          </div>
+        ) : (links ?? []).length === 0 ? (
+          <p className="text-sm text-gray-400 italic">No suppliers linked yet.</p>
+        ) : (
+          (links ?? []).map((link) => (
+            <span
+              key={link.id}
+              className="inline-flex items-center gap-1.5 text-sm px-2.5 py-1 rounded-full border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700"
+            >
+              <Building2 className="h-3 w-3 text-gray-400" />
+              {link.supplier_name}
+              {link.account_number && (
+                <span className="text-xs text-gray-400">({link.account_number})</span>
+              )}
+              <button
+                type="button"
+                className="ml-0.5 p-0.5 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                onClick={() => unlinkMutation.mutate(link.id)}
+                title={`Remove ${link.supplier_name}`}
+              >
+                <X className="h-3 w-3 text-red-400" />
+              </button>
+            </span>
+          ))
+        )}
+      </div>
+
+      {/* Add supplier dropdown */}
+      {availableSuppliers.length > 0 && (
+        <select
+          className="w-full rounded-lg border border-dashed border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm text-gray-500"
+          value=""
+          onChange={(e) => {
+            if (e.target.value) linkMutation.mutate(Number(e.target.value));
+          }}
+        >
+          <option value="">+ Add a supplier...</option>
+          {availableSuppliers.map((s) => (
+            <option key={s.id} value={s.id}>{s.name}</option>
+          ))}
+        </select>
+      )}
+
+      {(linkMutation.isError || unlinkMutation.isError) && (
+        <p className="text-red-500 text-xs">
+          Failed to update supplier link.
+        </p>
+      )}
+    </div>
   );
 }

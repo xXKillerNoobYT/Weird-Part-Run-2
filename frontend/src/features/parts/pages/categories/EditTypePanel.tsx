@@ -1,20 +1,19 @@
 /**
  * EditTypePanel — right-panel for editing a Type node.
  *
- * REWRITTEN for Phase 2.6: now includes brand/general checkboxes.
- * - Top section: type name, description, image fields
- * - Middle: "Available Colors" — type ↔ color link management
- * - Bottom: "Brands & General" — checkboxes to enable brands for this type
+ * Two sections:
+ *   1. Type details: name, description, image, active toggle, delete
+ *   2. Brands & General: checkboxes to enable brands for this type
  *
- * Checking a brand creates a type_brand_link; unchecking removes it.
- * The tree then shows enabled brands/General as expandable BrandNodes.
+ * Color selection has been moved to BrandColorPanel so that
+ * linking colors and creating parts happen in the same place.
  */
 
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box, Check, ToggleLeft, ToggleRight, Trash2,
-  Palette, Tag, Package, Plus, X,
+  Tag, Package,
 } from 'lucide-react';
 import { Button } from '../../../../components/ui/Button';
 import { Input } from '../../../../components/ui/Input';
@@ -22,23 +21,20 @@ import { Badge } from '../../../../components/ui/Badge';
 import { Spinner } from '../../../../components/ui/Spinner';
 import {
   listCategories, listStylesByCategory, listTypesByStyle,
-  updateType, listTypeColors, linkColorsToType, unlinkColorFromType,
+  updateType,
   listTypeBrands, linkBrandToType, unlinkBrandFromType,
   listBrands,
 } from '../../../../api/parts';
-import type {
-  PartType, PartTypeUpdate, PartColor, TypeColorLink, Brand,
-} from '../../../../lib/types';
+import type { PartType, PartTypeUpdate } from '../../../../lib/types';
 
 
 export interface EditTypePanelProps {
   typeId: number;
-  allColors: PartColor[];
   canEdit: boolean;
   onDelete: () => void;
 }
 
-export function EditTypePanel({ typeId, allColors, canEdit, onDelete }: EditTypePanelProps) {
+export function EditTypePanel({ typeId, canEdit, onDelete }: EditTypePanelProps) {
   const queryClient = useQueryClient();
 
   // ── Lookup this type (iterate through hierarchy) ──────────
@@ -76,30 +72,6 @@ export function EditTypePanel({ typeId, allColors, canEdit, onDelete }: EditType
     setInitialized(true);
     setPrevId(typeId);
   }
-
-  // ── Type ↔ Color links ────────────────────────────────────
-  const { data: colorLinks, isLoading: colorLinksLoading } = useQuery({
-    queryKey: ['type-colors', typeId],
-    queryFn: () => listTypeColors(typeId),
-  });
-
-  const linkColorMutation = useMutation({
-    mutationFn: (colorIds: number[]) => linkColorsToType(typeId, colorIds),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['type-colors', typeId] });
-      queryClient.invalidateQueries({ queryKey: ['types'] });
-      queryClient.invalidateQueries({ queryKey: ['type-lookup', typeId] });
-    },
-  });
-
-  const unlinkColorMutation = useMutation({
-    mutationFn: (colorId: number) => unlinkColorFromType(typeId, colorId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['type-colors', typeId] });
-      queryClient.invalidateQueries({ queryKey: ['types'] });
-      queryClient.invalidateQueries({ queryKey: ['type-lookup', typeId] });
-    },
-  });
 
   // ── Type ↔ Brand links ────────────────────────────────────
   const { data: brandLinks, isLoading: brandLinksLoading } = useQuery({
@@ -146,13 +118,6 @@ export function EditTypePanel({ typeId, allColors, canEdit, onDelete }: EditType
   });
 
   // ── Derived data ──────────────────────────────────────────
-  const linkedColorIds = useMemo(
-    () => new Set((colorLinks ?? []).map((l) => l.color_id)),
-    [colorLinks],
-  );
-  const unlinkedColors = allColors.filter((c) => !linkedColorIds.has(c.id) && c.is_active);
-
-  // Which brands are linked? (Set of brand_id, with null mapped to "general")
   const linkedBrandIds = useMemo(() => {
     const set = new Set<number | null>();
     (brandLinks ?? []).forEach((l) => set.add(l.brand_id));
@@ -227,9 +192,9 @@ export function EditTypePanel({ typeId, allColors, canEdit, onDelete }: EditType
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div className="flex-1 overflow-y-auto">
         {/* ── Details form ──────────────────────── */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <Input label="Name" value={name} onChange={(e) => setName(e.target.value)} disabled={!canEdit} required />
 
           <div className="space-y-1.5">
@@ -259,13 +224,14 @@ export function EditTypePanel({ typeId, allColors, canEdit, onDelete }: EditType
         </form>
 
         {/* ── Brands & General ─────────────────── */}
-        <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+        <div className="border-t border-gray-200 dark:border-gray-700 p-6">
           <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2 mb-3">
             <Tag className="h-4 w-4 text-amber-500" />
             Brands &amp; General
           </h4>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
             Enable brands that manufacture this type of part. "General" is for unbranded commodity items.
+            Click a brand in the tree to select colors and create parts.
           </p>
 
           {brandLinksLoading ? (
@@ -324,90 +290,12 @@ export function EditTypePanel({ typeId, allColors, canEdit, onDelete }: EditType
                 );
               })}
 
-              {/* Unlink error message */}
               {unlinkBrandMutation.isError && (
                 <p className="text-red-500 text-sm mt-2">
                   {(unlinkBrandMutation.error as any)?.response?.data?.detail ?? 'Cannot unlink — parts may exist under this brand.'}
                 </p>
               )}
             </div>
-          )}
-        </div>
-
-        {/* ── Type ↔ Color Links ───────────────── */}
-        <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2 mb-3">
-            <Palette className="h-4 w-4 text-primary-500" />
-            Available Colors ({colorLinks?.length ?? 0})
-          </h4>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-            Colors available for parts of this type. Link colors here, then create parts under each brand.
-          </p>
-
-          {colorLinksLoading ? (
-            <div className="flex items-center gap-2 py-2 text-sm text-gray-500">
-              <Spinner size="sm" /> Loading colors...
-            </div>
-          ) : (
-            <>
-              {/* Linked colors */}
-              <div className="flex flex-wrap gap-2 mb-3">
-                {(colorLinks ?? []).map((link) => (
-                  <span
-                    key={link.id}
-                    className="inline-flex items-center gap-1.5 text-sm px-2.5 py-1 rounded-full border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700"
-                  >
-                    {link.hex_code && (
-                      <span
-                        className="inline-block w-3 h-3 rounded-full border border-gray-300 dark:border-gray-500"
-                        style={{ backgroundColor: link.hex_code }}
-                      />
-                    )}
-                    {link.color_name}
-                    {canEdit && (
-                      <button
-                        className="ml-1 p-0.5 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
-                        onClick={() => unlinkColorMutation.mutate(link.color_id)}
-                        title={`Remove ${link.color_name}`}
-                      >
-                        <X className="h-3 w-3 text-red-400" />
-                      </button>
-                    )}
-                  </span>
-                ))}
-                {(colorLinks ?? []).length === 0 && (
-                  <p className="text-sm text-gray-400 italic">No colors linked yet</p>
-                )}
-              </div>
-
-              {/* Add color buttons */}
-              {canEdit && unlinkedColors.length > 0 && (
-                <div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                    Click to link a color:
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {unlinkedColors.map((color) => (
-                      <button
-                        key={color.id}
-                        className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full border border-dashed border-gray-300 dark:border-gray-600 hover:border-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
-                        onClick={() => linkColorMutation.mutate([color.id])}
-                        title={`Link ${color.name}`}
-                      >
-                        {color.hex_code && (
-                          <span
-                            className="inline-block w-2.5 h-2.5 rounded-full border border-gray-300 dark:border-gray-500"
-                            style={{ backgroundColor: color.hex_code }}
-                          />
-                        )}
-                        <Plus className="h-2.5 w-2.5" />
-                        {color.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
           )}
         </div>
       </div>
