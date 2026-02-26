@@ -191,13 +191,15 @@ SIDEBAR                    TAB BAR                         PAGE CONTENT
                            Tools                           Tool tracking per truck
                            Maintenance                     Service schedule + history + costs
                            Mileage                         Mileage log
-📋 Jobs                    Active Jobs                     Job list (filterable by status/type)
+📋 Jobs                    Active Jobs                     Job cards with filters + "Take Me There" nav
+                           My Clock                        Active clock view / clock into a job
                            (Job #{id})                     → Opens job detail with sub-tabs:
-                             → Notebook                      Section/page tree + rich editor
-                             → Chat                          Per-job messaging
-                             → Parts                         Consumed parts list
+                             → Overview                      Job info, address, GPS navigate
                              → Labor                         Clock entries + hours
-                             → Billing                       Pre-billing prep view
+                             → Parts                         Consumed parts list
+                             → Reports                       Daily reports for this job
+                             → One-Time Qs                   Boss-to-worker one-time questions
+                           Reports                         All daily reports across jobs (date-filtered)
                            Templates                       Notebook template manager (perm-gated)
 🛒 Orders                  Draft POs                       Draft purchase orders
                            Pending                         Submitted POs awaiting delivery
@@ -534,54 +536,254 @@ Backend enforces: `human_user_id` REQUIRED (cannot be null), atomic transaction,
 
 ---
 
-## Phase 4: Jobs & Labor
+## Phase 3.5: Companions, Alternatives & Warehouse Enhancements ✅ COMPLETE
 
-**Goal**: Job CRUD, job detail with notebook, clock in/out, labor tracking, stage enforcement.
+**Goal**: Fill gaps discovered during Phase 3 — companion part suggestions, part alternatives, QR scanning enhancements, warehouse exec view, and hierarchy UX improvements.
 
-### Database (`migrations/004_jobs_and_labor.sql`)
-- `jobs` — job_number, customer_name, address, status, priority, job_type, current_stage, bro_rate, lead_user_id
-- `job_parts` — consumption tracking with cost snapshots
-- `labor_entries` — clock_in/out, hours, drive_time, overtime, GPS, photos
-- `notebook_templates`, `template_sections`, `template_pages` — Template system
-- `job_notebooks`, `noteboox_section_grops`, `notebook_sections`, `notebook_pages`, `notebook_attachments` — Per-job notebooks
+### Database
+- **Migration 007** (`companions_and_alternatives.sql`):
+  - `companion_rules` — explicit companion relationships (part A → suggest part B)
+  - `companion_co_occurrence` — implicit suggestions learned from movement history
+  - `companion_feedback` — user accept/reject signals for ML-style ranking
+  - `part_alternatives` — substitute/upgrade/compatible links between parts
+- **Migration 008** (`bin_location.sql`):
+  - Added `bin_location TEXT` column to `parts` table
 
-### Key Components
-- `ActiveJobsPage` — Job list with status/type/priority filters
-- `JobDetailPage` — Opens to Notebook tab first, with sub-tabs: Notebook, Chat (stub), Parts, Labor, Billing (stub)
-- `NotebookEditor` — Section/page tree + rich text editor + attachment upload
-- `ClockInOutButton` — GPS check + photo + notes
-- `LaborTable` — Cross-job labor entries with date filters
-- `EnforcementModal` — Blocks stage change until required notebook items are complete, with Manager Override (PIN)
+### Backend Implementation
+- `companions_service.py` — Rule-based + co-occurrence companion suggestions, feedback tracking
+- `companions_repo.py` — Data access for companion rules, co-occurrence mining, feedback
+- `alternatives_repo.py` — Part alternatives CRUD (substitute, upgrade, compatible types)
+- `companions.py` router — Full CRUD + suggestion endpoints
 
-### Phase 4 Deliverable
-✅ Create/edit/manage jobs with full lifecycle
-✅ Notebook with sections, pages, photos, part references
-✅ Clock in/out with GPS and photos
-✅ Labor tracking with overtime and drive time
-✅ Stage enforcement with manager override
+### Frontend Implementation
+- **`CompanionsPage.tsx`** — Manage companion rules, view co-occurrence suggestions, review feedback
+- **`AlternativesSection.tsx`** — Part alternatives viewer (in part detail)
+- **`LinkAlternativeModal.tsx`** — Modal to search and link alternative parts
+- **`WarehouseExecPage.tsx`** — Office/Warehouse exec spreadsheet view with inline editing
+- **`QRScannerBubble.tsx`** — Floating QR scanner for the movement wizard Step 2
+- **`qr-utils.ts`** — QR code generation and parsing utilities
+- **`QRLabelModal.tsx`** — Print QR labels from inventory grid
+- **`PartDetailPanel.tsx`** — Expanded part detail panel in categories tree
+- **`BrandColorPanel.tsx`** — Brand color management panel
+
+### Phase 3.5 Deliverables
+- ✅ Companion rules with co-occurrence mining and feedback loop
+- ✅ Part alternatives (substitute/upgrade/compatible) with search + link UI
+- ✅ Warehouse Exec spreadsheet view for office managers
+- ✅ QR Scanner Bubble integrated into movement wizard
+- ✅ QR Label printing from inventory grid (`is_qr_tagged` tracking)
+- ✅ Bin location field on parts
+- ✅ Part detail panel in categories tree
+- ✅ Brand-color management panel
+
+---
+
+## Phase 4: Jobs & Labor ✅ COMPLETE
+
+**Goal**: Job CRUD, clock in/out with GPS, customizable clock-out questionnaires (global + one-time per-job), labor tracking with hours calculation, and auto-generated daily reports at midnight.
+
+### Database
+
+**Migration 009** (`009_jobs_and_labor.sql`):
+- `jobs` — job_number, job_name, customer_name, address (line1/2, city, state, zip), GPS coordinates, status (active/on_hold/completed/cancelled), priority, job_type (service/new_construction/remodel/maintenance/emergency), billing_rate, estimated_hours, lead_user_id
+- `job_parts` — consumption tracking with cost snapshots at time of consume
+- `labor_entries` — clock_in/out times, regular_hours, overtime_hours, drive_time_minutes, GPS lat/lng for both in/out, photo paths, status lifecycle (clocked_in→clocked_out→edited→approved)
+
+**Migration 010** (`010_clockout_and_reports.sql`):
+- `clock_out_questions` — Global boss-managed question templates (text/yes_no/photo types), sort_order, required flag, active flag. Seeded with 8 default electrician questions.
+- `one_time_questions` — Per-job questions that the boss can fire at specific workers (or all workers on a job). Asked once, then marked answered.
+- `clock_out_responses` — Answers to global questions per labor entry (text, boolean, photo)
+- `daily_reports` — Auto-generated at midnight, stores full report as JSON blob, status lifecycle (generated→reviewed→locked). UNIQUE on (job_id, report_date).
+
+### Backend Implementation
+
+**Services:**
+- `job_service.py` — Job CRUD, status lifecycle transitions, address/GPS management
+- `labor_service.py` — Clock in/out with GPS capture, automatic hours calculation (regular + overtime based on 8hr threshold), active clock lookup, labor queries by job or user
+- `questionnaire_service.py` — Global question CRUD + reorder, one-time question lifecycle (create→show→answer), clock-out bundle assembly (combines global + one-time questions in single response)
+- `report_service.py` — Daily report generation: assembles worker data + question responses + parts consumed + cost summary into structured JSON. Generates for all jobs with activity on a given date.
+
+**Scheduler:**
+- `scheduler.py` — APScheduler with `AsyncIOScheduler`, midnight cron job at 00:05 to generate daily reports. Includes startup catch-up logic to generate any missed reports (server was down at midnight).
+
+**API Endpoints (26 endpoints replacing stubs):**
+```
+JOBS:     GET /active, POST /, GET /{id}, PUT /{id}, PATCH /{id}/status
+LABOR:    POST /{id}/clock-in, POST /clock-out, GET /{id}/labor, GET /my-clock
+PARTS:    GET /{id}/parts, POST /{id}/parts/consume
+QUESTIONS: GET/POST /questions/global, PUT /questions/global/reorder, DELETE /questions/global/{id}
+           GET/POST /{id}/questions/one-time, POST /questions/one-time/{id}/answer
+           GET /{id}/clock-out-bundle
+REPORTS:  GET /{id}/reports, GET /{id}/reports/{date}, POST /reports/generate-now, GET /reports/all
+```
+
+### Frontend Implementation
+
+**Pages (6 new):**
+- `ActiveJobsPage.tsx` — Job cards with status/type/priority filters, "Take Me There" Google Maps navigation, clock-in button per job
+- `MyClockPage.tsx` — Active clock view with running timer, or "Not clocked in" state with job list to clock into. Clock-out button navigates to JobDetailPage with startClockOut intent.
+- `JobDetailPage.tsx` — Full job view with 5 internal sub-tabs (Overview, Labor, Parts, Reports, One-Time Qs). Integrates ClockOutFlow as overlay. Shows "clocked in" banner when worker is on this job.
+- `JobReportsListPage.tsx` — All daily reports across all jobs, grouped by date, with date range filtering
+- `DailyReportView.tsx` — Read-only "locked notebook page" renderer: worker cards with times/GPS/question responses, parts consumed table, cost summary
+- `ClockOutQuestionsPage.tsx` (in Settings) — Admin page for global question CRUD with up/down reorder, inline edit, soft-delete
+
+**Components:**
+- `JobCard.tsx` — Job card with address, status badge, navigate button, clock-in action
+- `ClockOutFlow.tsx` — Multi-step clock-out wizard: Step 1 (answer all questions) → Step 2 (review + GPS + confirm)
+
+**Stores:**
+- `clock-store.ts` — Zustand store tracking active clock state, elapsed-time timer (updates every second), clock-in/out actions with backend sync
+
+**Navigation:**
+- Jobs module tabs: Active Jobs, **My Clock**, **Reports**, Templates
+- Settings module: added **Clock-Out Questions** tab
+
+### Phase 4 Deliverables
+- ✅ Full job CRUD with address, GPS, status lifecycle, priority, job type
+- ✅ "Take Me There" Google Maps navigation from job cards and detail page
+- ✅ Clock in/out with GPS capture and location display
+- ✅ Labor tracking with automatic hours calculation (regular + overtime)
+- ✅ Customizable global clock-out questionnaire (8 seeded questions)
+- ✅ One-time per-job questions (boss → specific worker or all workers)
+- ✅ Clock-out bundle API (single request for all questions)
+- ✅ Multi-step clock-out flow with question cards, yes/no toggles, review step
+- ✅ Daily reports auto-generated at midnight via APScheduler
+- ✅ Startup catch-up for missed reports
+- ✅ Locked daily report viewer with worker details, responses, and parts consumed
+- ✅ Job detail page with 5 internal sub-tabs
+- ✅ Real-time elapsed clock timer in Zustand store
 
 ---
 
 ## Phase 5: Orders & Procurement
 
-**Goal**: Full PO lifecycle, procurement planner with optimization.
+**Goal**: Full PO lifecycle from draft to close, receiving flow integrated with the Guided Movement Wizard, procurement planner with optimization algorithms, and returns/RMA management.
 
-### Database (`migrations/005_orders.sql`)
-- `purchase_orders` — po_number, supplier_id, status (draft→submitted→partial→received→closed), optimization metadata
-- `po_line_items` — part_id, qty_ordered, qty_received, unit_price
+### Database (`migrations/011_orders.sql`)
+- `purchase_orders` — po_number (auto-generated), supplier_id, status lifecycle (draft→submitted→partial→received→closed→cancelled), expected_delivery_date, shipping_method, tracking_number, notes, total cost calculations
+- `po_line_items` — part_id, qty_ordered, qty_received, unit_price, line_total, received_at tracking
+- `returns` — return_type (supplier/customer), linked PO, RMA number, reason, status (requested→approved→shipped→received→credited), tracking info
+- `return_line_items` — part_id, qty, condition, disposition (restock/dispose/exchange)
+- `price_history` — part_id, supplier_id, cost snapshots over time for trend analysis
 
-### Key Components
-- Full PO lifecycle: Draft → Submitted → Partial Receive → Closed
-- Receive flow routes through Guided Movement Wizard
-- `ProcurementPlannerPage` — Optimization table + KPIs (savings, PO reduction, stockout risk)
-- 5 optimization algorithms: Dynamic supplier ranking, EOQ + forecast, volume discounts, multi-job consolidation, MILP (PuLP)
-- `SupplierReturnsWizard` — Specialized wizard with RMA step
+### Backend Implementation
 
-### Phase 5 Deliverable
-✅ Full PO lifecycle
-✅ Guided receive flow
-✅ Procurement planner with optimization suggestions
-✅ Returns with supplier chain tracking
+**Services:**
+- `order_service.py` — PO CRUD, status transitions with validation (can't skip stages), auto-PO-number generation, line item management, cost calculations
+- `receiving_service.py` — Partial receive handling (PO stays "partial" until all lines fulfilled), integration with stock movement system, supplier chain tracking carried forward
+- `procurement_service.py` — Optimization engine: dynamic supplier ranking (reliability + cost + lead time), EOQ calculations from forecast data, volume discount bracket detection, multi-job consolidation
+- `returns_service.py` — Return request lifecycle, RMA tracking, credit memo generation
+
+**API Endpoints:**
+```
+ORDERS:    GET /api/orders/drafts, GET /api/orders/pending, GET /api/orders/incoming
+           POST /api/orders, GET/PUT /api/orders/{id}, PATCH /api/orders/{id}/status
+           POST /api/orders/{id}/submit, POST /api/orders/{id}/receive
+LINE ITEMS: POST/PUT/DELETE /api/orders/{id}/items
+RETURNS:   GET /api/orders/returns, POST /api/orders/returns
+           PATCH /api/orders/returns/{id}/status
+PROCUREMENT: GET /api/orders/procurement/suggestions
+             POST /api/orders/procurement/optimize
+             GET /api/orders/procurement/stats
+```
+
+### Frontend Implementation
+
+**Pages:**
+- `DraftOrdersPage.tsx` — Draft PO list with inline editing, "Submit" action, cost preview
+- `PendingOrdersPage.tsx` — Submitted POs awaiting delivery, ETA tracking, "Mark Received" action
+- `IncomingOrdersPage.tsx` — Received/partial POs → routes into Guided Movement Wizard for receiving. Shows expected vs received quantities.
+- `ReturnsPage.tsx` — Return requests with RMA tracking, status timeline, credit memos
+- `ProcurementPage.tsx` — Optimization dashboard: suggested orders based on forecast + reorder points, supplier ranking table, cost savings KPIs
+
+**Key Components:**
+- `POForm.tsx` — Create/edit PO with supplier selection, part search, qty/price entry
+- `ReceiveWizard.tsx` — Extends Guided Movement Wizard for PO receiving: scan/select parts → enter received qty → movement to warehouse
+- `SupplierReturnsWizard.tsx` — Multi-step return flow: select parts → enter qty/reason → generate RMA → ship tracking
+
+**Advanced Features (built iteratively):**
+- Smart reorder alerts — When a part hits reorder point, auto-draft a PO with optimal supplier selection
+- Supplier scorecard dashboard — Reliability, cost trends, lead time graphs per supplier
+- Price history tracking — Track cost changes over time, alert on >10% price increases
+- Multi-job consolidation engine — Combine orders across jobs to hit volume discount brackets
+- Barcode scanning for receiving — Scan parts as they arrive off the truck, auto-match to PO line items
+- Split delivery handling — Partial receives with backorder tracking
+
+### Phase 5 Deliverables
+- Full PO lifecycle: draft → submitted → partial receive → closed
+- Guided receive flow integrated with existing movement wizard
+- Procurement planner with optimization suggestions
+- Returns with RMA tracking and supplier chain visibility
+- Price history and supplier scorecard
+
+---
+
+## Phase 6: Trucks (Full)
+
+**Goal**: Truck CRUD, per-truck inventory management, tool tracking with QR-based checkout/return, maintenance scheduling with service history, mileage logging, and fleet overview.
+
+### Database (`migrations/012_trucks.sql`)
+- `trucks` — truck_number, make, model, year, vin, license_plate, status (active/maintenance/retired), assigned_user_id, current_mileage, last_service_date, insurance_expiry
+- `truck_inventory` — truck_id, part_id, qty, min_qty (for restock alerts), last_verified_at
+- `truck_tools` — truck_id, tool_name, serial_number, category, condition, qr_code, checked_out_by (user_id), checked_out_at, expected_return_date
+- `tool_checkout_log` — tool_id, user_id, checked_out_at, returned_at, condition_on_return, notes
+- `maintenance_records` — truck_id, service_type (oil_change/tire_rotation/brake/inspection/other), mileage_at_service, cost, vendor, notes, next_due_mileage, next_due_date
+- `mileage_entries` — truck_id, user_id, date, start_mileage, end_mileage, job_id (optional), notes
+
+### Backend Implementation
+
+**Services:**
+- `truck_service.py` — Truck CRUD, status management, assignment to users, fleet statistics
+- `truck_inventory_service.py` — Per-truck stock management, integration with movement wizard (truck is already a valid location), restock alerts when below min_qty
+- `tool_service.py` — Tool CRUD, QR-based checkout/return flow, overdue alerts, "who has what" queries
+- `maintenance_service.py` — Service record management, next-due calculations based on mileage intervals and date intervals, maintenance prediction
+- `mileage_service.py` — Daily mileage logging, cost-per-mile calculations, weekly/monthly summaries
+
+**API Endpoints:**
+```
+TRUCKS:       GET /api/trucks, POST /api/trucks, GET/PUT /api/trucks/{id}
+              PATCH /api/trucks/{id}/status, GET /api/trucks/my-truck
+INVENTORY:    GET /api/trucks/{id}/inventory, POST /api/trucks/{id}/inventory/restock
+              GET /api/trucks/{id}/inventory/alerts
+TOOLS:        GET /api/trucks/{id}/tools, POST /api/trucks/{id}/tools
+              POST /api/trucks/tools/{id}/checkout, POST /api/trucks/tools/{id}/return
+              GET /api/trucks/tools/overdue
+MAINTENANCE:  GET /api/trucks/{id}/maintenance, POST /api/trucks/{id}/maintenance
+              GET /api/trucks/{id}/maintenance/upcoming
+MILEAGE:      GET /api/trucks/{id}/mileage, POST /api/trucks/{id}/mileage
+              GET /api/trucks/{id}/mileage/summary
+```
+
+### Frontend Implementation
+
+**Pages (replace stubs):**
+- `MyTruckPage.tsx` — Personal truck dashboard: assigned truck details, inventory summary, tools checked out, upcoming maintenance, today's mileage entry
+- `AllTrucksPage.tsx` — Fleet overview table: all trucks with status, assigned user, mileage, next service due, inventory health indicator
+- `ToolsPage.tsx` — Tool tracking: list of all tools across trucks, checkout/return actions with QR scanning, overdue tool alerts
+- `MaintenancePage.tsx` — Service schedule: upcoming maintenance items sorted by urgency, service history log, cost tracking per truck
+- `MileagePage.tsx` — Mileage log: daily entries with start/end odometer, job attribution, weekly/monthly summaries, cost-per-mile chart
+
+**Key Components:**
+- `TruckCard.tsx` — Truck summary card with status, inventory count, maintenance indicator
+- `TruckInventoryGrid.tsx` — Per-truck inventory table (reuses patterns from warehouse InventoryGrid)
+- `ToolCheckoutFlow.tsx` — QR scan → select tool → confirm checkout. Return flow with condition assessment.
+- `MaintenanceForm.tsx` — Log service: type, mileage, cost, vendor, next due
+- `MileageEntryForm.tsx` — Quick daily mileage entry with odometer validation (end > start)
+
+**Advanced Features (built iteratively):**
+- Truck GPS tracking — Real-time truck location via driver's phone GPS during clock-in
+- Tool checkout/return system — QR-based tool tracking (who has what, when returned)
+- Maintenance prediction — Based on mileage + service history, predict next service needs
+- Fuel cost tracking — Log fuel purchases, calculate cost-per-mile
+- Truck load optimization — Suggest optimal truck loading based on tomorrow's job parts needs
+- Inter-truck transfers — Move tools/parts between trucks via the movement wizard
+
+### Phase 6 Deliverables
+- Full truck CRUD with fleet overview
+- Per-truck inventory with restock alerts
+- QR-based tool checkout/return tracking
+- Maintenance scheduling with service history and predictions
+- Daily mileage logging with cost analysis
 
 ---
 
@@ -589,13 +791,12 @@ Backend enforces: `human_user_id` REQUIRED (cannot be null), atomic transaction,
 
 | Phase | Focus | Key Deliverables |
 |-------|-------|-----------------|
-| 6 | Trucks (Full) | Truck CRUD, tools tracking, maintenance schedule, service history, mileage |
-| 7 | People (Full) | Employee detail, certifications, hat management UI, permission matrix |
-| 8 | Reports & Export | Pre-billing bundles, timesheets, labor overview, CSV/PDF export, period locking |
-| 9 | Chat | Per-job group chat, DMs, mentions, timeline integration |
-| 10 | AI Integration | LM Studio connection, 30 read-only tools, audit/admin/reminder agents |
-| 11 | PWA & Desktop | Service worker, offline caching, Electron/Tauri wrapper |
-| 12 | Sync | File-based sync (Drive/OneDrive), conflict detection, mobile offline queue |
+| 7 | People (Full) | Employee detail, certifications, skills matrix, hat management, permission matrix, availability calendar, wage history |
+| 8 | Reports & Export | Pre-billing bundles, timesheets, labor overview, profitability analysis, CSV/PDF export, period locking, bookkeeper export format |
+| 9 | Chat | Per-job group chat, DMs, @mentions with notifications, photo/file sharing, voice messages, pinned messages, read receipts |
+| 10 | AI Integration | LM Studio connection, natural language queries, smart scheduling, anomaly detection, report summarization, predictive ordering |
+| 11 | PWA & Desktop | Service worker, offline-first architecture, push notifications, Electron/Tauri wrapper, keyboard shortcuts, system tray |
+| 12 | Sync | File-based sync (Drive/OneDrive), real-time collaboration, selective sync, conflict detection, automatic backup, audit trail |
 
 ---
 
@@ -608,10 +809,16 @@ Backend enforces: `human_user_id` REQUIRED (cannot be null), atomic transaction,
 | `backend/app/repositories/hierarchy_repo.py` | 5 repo classes for hierarchy CRUD + brand-supplier links |
 | `backend/app/repositories/parts_repo.py` | Parts search with hierarchy JOINs, pending queries, brand/supplier repos |
 | `backend/app/middleware/auth.py` | Device auto-login + PIN + JWT + permission checking. Gates everything. |
+| `backend/app/services/labor_service.py` | Clock in/out logic, hours calculation, GPS capture — core of the field workflow |
+| `backend/app/services/report_service.py` | Daily report JSON assembly — aggregates workers, questions, parts into locked reports |
+| `backend/app/scheduler.py` | APScheduler midnight cron + startup catch-up — generates daily reports automatically |
 | `frontend/src/lib/types.ts` | Single source of truth for all TypeScript interfaces (mirrors backend Pydantic models) |
 | `frontend/src/lib/navigation.ts` | All modules, tabs, and permission requirements. |
 | `frontend/src/features/parts/pages/CategoriesPage.tsx` | Split-pane tree editor — hierarchy CRUD + type-color link management |
 | `frontend/src/features/parts/pages/CatalogPage.tsx` | Main parts UI — dual view (card grid + table), hierarchy filters, CRUD form, pending badge |
+| `frontend/src/features/jobs/pages/JobDetailPage.tsx` | Full job view with 5 sub-tabs + ClockOutFlow integration — most complex page |
+| `frontend/src/features/jobs/components/ClockOutFlow.tsx` | Multi-step clock-out wizard — the core field-worker UX |
+| `frontend/src/stores/clock-store.ts` | Zustand store for active clock state + real-time timer |
 
 ---
 
