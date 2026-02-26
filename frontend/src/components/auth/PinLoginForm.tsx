@@ -150,7 +150,7 @@ export function PinLoginForm({
       {/* Tap to focus (for mobile) */}
       <button
         onClick={() => inputRef.current?.focus()}
-        className="text-sm text-gray-400 dark:text-gray-500 mb-4"
+        className="text-sm text-gray-500 dark:text-gray-400 mb-4"
       >
         Tap here if keyboard doesn't appear
       </button>

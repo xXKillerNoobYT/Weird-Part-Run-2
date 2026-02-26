@@ -311,7 +311,7 @@ export function EditCategoryPanel({ categoryId, canEdit, onDelete, onSelectChild
                       <Trash2 className="h-3 w-3 text-red-400" />
                     </button>
                   )}
-                  <ChevronRight className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600 flex-shrink-0" />
+                  <ChevronRight className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 flex-shrink-0" />
                 </div>
               ))}
             </div>

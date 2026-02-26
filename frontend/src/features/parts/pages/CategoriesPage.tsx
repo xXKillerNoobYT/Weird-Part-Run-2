@@ -100,6 +100,27 @@ export function CategoriesPage() {
     });
   };
 
+  // ── Tree select handler ──────────────────────────
+  // Auto-expands the clicked node (and its parent chain) so children are visible
+  const handleTreeSelect = (node: SelectedCategoryNode) => {
+    setSelected(node);
+    if (node.type === 'category') {
+      setExpandedCategories((prev) => new Set([...prev, node.id]));
+    } else if (node.type === 'style') {
+      setExpandedStyles((prev) => new Set([...prev, node.id]));
+      if (node.categoryId) {
+        setExpandedCategories((prev) => new Set([...prev, node.categoryId!]));
+      }
+    } else if (node.type === 'type') {
+      if (node.styleId) {
+        setExpandedStyles((prev) => new Set([...prev, node.styleId!]));
+      }
+      if (node.categoryId) {
+        setExpandedCategories((prev) => new Set([...prev, node.categoryId!]));
+      }
+    }
+  };
+
   // ── Delete mutations ───────────────────────────────
   const deleteCatMutation = useMutation({
     mutationFn: deleteCategory,
@@ -201,11 +222,7 @@ export function CategoriesPage() {
             canEdit={canEdit}
             onDelete={() => setDeleteConfirm(selected)}
             onSelectChild={(node) => {
-              setSelected(node);
-              // Expand the category in the tree so the child is visible
-              if (node.type === 'style' && selected.id) {
-                setExpandedCategories((prev) => new Set([...prev, selected.id]));
-              }
+              handleTreeSelect(node);
             }}
           />
         );
@@ -213,18 +230,11 @@ export function CategoriesPage() {
         return (
           <EditStylePanel
             styleId={selected.id}
+            categoryId={selected.categoryId}
             canEdit={canEdit}
             onDelete={() => setDeleteConfirm(selected)}
             onSelectChild={(node) => {
-              setSelected(node);
-              // Expand the style in the tree so the child type is visible
-              if (node.type === 'type') {
-                setExpandedStyles((prev) => new Set([...prev, selected.id]));
-                // Also ensure the parent category is expanded
-                if (node.categoryId) {
-                  setExpandedCategories((prev) => new Set([...prev, node.categoryId!]));
-                }
-              }
+              handleTreeSelect(node);
             }}
           />
         );
@@ -245,7 +255,7 @@ export function CategoriesPage() {
             categoryId={selected.categoryId!}
             styleId={selected.styleId!}
             canEdit={canEdit}
-            onSelectPart={setSelected}
+            onSelectPart={handleTreeSelect}
           />
         );
       case 'part':
@@ -332,7 +342,7 @@ export function CategoriesPage() {
                   isExpanded={expandedCategories.has(cat.id)}
                   onToggle={() => toggleCategory(cat.id)}
                   selected={selected}
-                  onSelect={setSelected}
+                  onSelect={handleTreeSelect}
                   canEdit={canEdit}
                   onCreateChild={(parentId) => {
                     setCreateTarget({ type: 'style', parentId });
@@ -375,7 +385,7 @@ export function CategoriesPage() {
               <ColorList
                 colors={allColors ?? []}
                 selected={selected}
-                onSelect={setSelected}
+                onSelect={handleTreeSelect}
                 canEdit={canEdit}
               />
             </div>

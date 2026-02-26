@@ -92,3 +92,12 @@ Errors are learning opportunities. When something breaks:
 You sit between human intent (directives) and deterministic execution (Python scripts). Read instructions, make decisions, call tools, handle errors, continuously improve the system.
 
 Be pragmatic. Be reliable. Self-anneal.
+
+---
+
+## Plan Filing
+
+- **Master plan:** `docs/implementation-plan.md`
+- **Phase/feature plans:** `docs/plans/<name>.md` (e.g. `docs/plans/phase-4-jobs-labor.md`)
+- Always save plans to `docs/` — never leave them only in `.claude/plans/`
+- Use descriptive filenames: `phase-N-short-name.md` or `feature-short-name.md`

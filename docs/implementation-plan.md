@@ -543,7 +543,7 @@ Backend enforces: `human_user_id` REQUIRED (cannot be null), atomic transaction,
 - `job_parts` — consumption tracking with cost snapshots
 - `labor_entries` — clock_in/out, hours, drive_time, overtime, GPS, photos
 - `notebook_templates`, `template_sections`, `template_pages` — Template system
-- `job_notebooks`, `notebook_sections`, `notebook_pages`, `notebook_attachments` — Per-job notebooks
+- `job_notebooks`, `noteboox_section_grops`, `notebook_sections`, `notebook_pages`, `notebook_attachments` — Per-job notebooks
 
 ### Key Components
 - `ActiveJobsPage` — Job list with status/type/priority filters

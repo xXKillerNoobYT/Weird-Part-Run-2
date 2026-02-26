@@ -31,7 +31,18 @@ export const MODULES: NavModule[] = [
       { id: 'suppliers', label: 'Suppliers', path: '/parts/suppliers' },
       { id: 'pricing', label: 'Pricing', path: '/parts/pricing', permission: 'show_dollar_values' },
       { id: 'forecasting', label: 'Forecasting', path: '/parts/forecasting' },
+      { id: 'companions', label: 'Companions', path: '/parts/companions' },
       { id: 'import-export', label: 'Import/Export', path: '/parts/import-export' },
+    ],
+  },
+  {
+    id: 'office',
+    label: 'Office',
+    icon: 'Building2',
+    path: '/office',
+    permission: 'view_warehouse',
+    tabs: [
+      { id: 'warehouse-exec', label: 'Warehouse Executive', path: '/office/warehouse-exec', permission: 'manage_warehouse' },
     ],
   },
   {
@@ -46,6 +57,7 @@ export const MODULES: NavModule[] = [
       { id: 'staging', label: 'Pulled/Staging', path: '/warehouse/staging' },
       { id: 'audit', label: 'Audit', path: '/warehouse/audit', permission: 'perform_audit' },
       { id: 'movements', label: 'Movements Log', path: '/warehouse/movements' },
+      { id: 'tools', label: 'Tools', path: '/warehouse/tools' },
     ],
   },
   {
@@ -70,6 +82,8 @@ export const MODULES: NavModule[] = [
     permission: 'view_jobs',
     tabs: [
       { id: 'active', label: 'Active Jobs', path: '/jobs/active' },
+      { id: 'my-clock', label: 'My Clock', path: '/jobs/my-clock' },
+      { id: 'reports', label: 'Reports', path: '/jobs/reports', permission: 'view_reports' },
       { id: 'templates', label: 'Templates', path: '/jobs/templates', permission: 'manage_templates' },
     ],
   },
@@ -120,6 +134,7 @@ export const MODULES: NavModule[] = [
     tabs: [
       { id: 'app-config', label: 'App Config', path: '/settings/app-config', permission: 'manage_settings' },
       { id: 'themes', label: 'Themes', path: '/settings/themes' },
+      { id: 'questions', label: 'Clock-Out Questions', path: '/settings/questions', permission: 'manage_settings' },
       { id: 'sync', label: 'Sync', path: '/settings/sync', permission: 'manage_settings' },
       { id: 'ai-config', label: 'AI Config', path: '/settings/ai-config', permission: 'manage_settings' },
       { id: 'devices', label: 'Device Management', path: '/settings/devices', permission: 'manage_devices' },

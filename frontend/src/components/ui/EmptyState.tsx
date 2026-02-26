@@ -30,7 +30,7 @@ export function EmptyState({
       )}
     >
       {icon && (
-        <div className="mb-4 text-gray-300 dark:text-gray-600">{icon}</div>
+        <div className="mb-4 text-gray-400 dark:text-gray-500">{icon}</div>
       )}
       <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">
         {title}

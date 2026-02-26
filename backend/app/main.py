@@ -75,6 +75,13 @@ async def startup():
     # 2. Seed the admin user's PIN hash (if still placeholder)
     await _seed_admin_pin()
 
+    # 3. Start the background scheduler (midnight report generation)
+    from app.scheduler import start_scheduler, catch_up_missed_reports
+    start_scheduler()
+
+    # 4. Catch up any missed daily reports (server may have been down at midnight)
+    await catch_up_missed_reports()
+
     logger.info("Startup complete. API docs at /docs")
 
 
@@ -104,6 +111,15 @@ async def _seed_admin_pin():
         await db.close()
 
 
+# ── Shutdown Event ─────────────────────────────────────────────────
+@app.on_event("shutdown")
+async def shutdown():
+    """Gracefully stop background services."""
+    from app.scheduler import stop_scheduler
+    stop_scheduler()
+    logger.info("Shutdown complete.")
+
+
 # ── Routers ─────────────────────────────────────────────────────────
 # Import and register all route modules.
 # Auth + Settings are functional in Phase 1.
@@ -114,6 +130,7 @@ from app.routers import (  # noqa: E402
     app_settings,
     dashboard,
     parts,
+    companions,
     warehouse,
     trucks,
     jobs,
@@ -126,6 +143,7 @@ app.include_router(auth.router)
 app.include_router(app_settings.router)
 app.include_router(dashboard.router)
 app.include_router(parts.router)
+app.include_router(companions.router)
 app.include_router(warehouse.router)
 app.include_router(trucks.router)
 app.include_router(jobs.router)

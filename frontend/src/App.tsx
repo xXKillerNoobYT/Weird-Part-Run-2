@@ -1,7 +1,7 @@
 /**
  * App — Root component with routing configuration.
  *
- * Route Structure:
+ * Route structure:
  * /                        → Redirect to /dashboard
  * /dashboard               → DashboardPage
  * /parts/catalog            → CatalogPage
@@ -34,6 +34,10 @@ import { ForecastingPage } from './features/parts/pages/ForecastingPage';
 import { ImportExportPage } from './features/parts/pages/ImportExportPage';
 import { SuppliersPage } from './features/parts/pages/SuppliersPage';
 import { CategoriesPage } from './features/parts/pages/CategoriesPage';
+import { CompanionsPage } from './features/parts/pages/CompanionsPage';
+
+// Pages — Office
+import { WarehouseExecPage } from './features/office/pages/WarehouseExecPage';
 
 // Pages — Warehouse
 import { WarehouseDashboardPage } from './features/warehouse/pages/WarehouseDashboardPage';
@@ -41,6 +45,7 @@ import { InventoryGridPage } from './features/warehouse/pages/InventoryGridPage'
 import { StagingPage } from './features/warehouse/pages/StagingPage';
 import { AuditPage } from './features/warehouse/pages/AuditPage';
 import { MovementsLogPage } from './features/warehouse/pages/MovementsLogPage';
+import { WarehouseToolsPage } from './features/warehouse/pages/ToolsPage';
 
 // Pages — Trucks
 import { MyTruckPage } from './features/trucks/pages/MyTruckPage';
@@ -51,6 +56,10 @@ import { MileagePage } from './features/trucks/pages/MileagePage';
 
 // Pages — Jobs
 import { ActiveJobsPage } from './features/jobs/pages/ActiveJobsPage';
+import { MyClockPage } from './features/jobs/pages/MyClockPage';
+import { JobDetailPage } from './features/jobs/pages/JobDetailPage';
+import { JobReportsListPage } from './features/jobs/pages/JobReportsListPage';
+import { DailyReportView } from './features/jobs/pages/DailyReportView';
 import { TemplatesPage } from './features/jobs/pages/TemplatesPage';
 
 // Pages — Orders
@@ -77,6 +86,7 @@ import { ThemesPage } from './features/settings/pages/ThemesPage';
 import { SyncPage } from './features/settings/pages/SyncPage';
 import { AiConfigPage } from './features/settings/pages/AiConfigPage';
 import { DeviceManagementPage } from './features/settings/pages/DeviceManagementPage';
+import { ClockOutQuestionsPage } from './features/settings/pages/ClockOutQuestionsPage';
 
 // ── React Query Client ─────────────────────────────────────────────
 const queryClient = new QueryClient({
@@ -111,7 +121,12 @@ export default function App() {
               <Route path="/parts/suppliers" element={<SuppliersPage />} />
               <Route path="/parts/pricing" element={<PricingPage />} />
               <Route path="/parts/forecasting" element={<ForecastingPage />} />
+              <Route path="/parts/companions" element={<CompanionsPage />} />
               <Route path="/parts/import-export" element={<ImportExportPage />} />
+
+              {/* Office */}
+              <Route path="/office" element={<Navigate to="/office/warehouse-exec" replace />} />
+              <Route path="/office/warehouse-exec" element={<WarehouseExecPage />} />
 
               {/* Warehouse */}
               <Route path="/warehouse" element={<Navigate to="/warehouse/dashboard" replace />} />
@@ -120,6 +135,7 @@ export default function App() {
               <Route path="/warehouse/staging" element={<StagingPage />} />
               <Route path="/warehouse/audit" element={<AuditPage />} />
               <Route path="/warehouse/movements" element={<MovementsLogPage />} />
+              <Route path="/warehouse/tools" element={<WarehouseToolsPage />} />
 
               {/* Trucks */}
               <Route path="/trucks" element={<Navigate to="/trucks/my-truck" replace />} />
@@ -132,7 +148,11 @@ export default function App() {
               {/* Jobs */}
               <Route path="/jobs" element={<Navigate to="/jobs/active" replace />} />
               <Route path="/jobs/active" element={<ActiveJobsPage />} />
+              <Route path="/jobs/my-clock" element={<MyClockPage />} />
+              <Route path="/jobs/reports" element={<JobReportsListPage />} />
               <Route path="/jobs/templates" element={<TemplatesPage />} />
+              <Route path="/jobs/:id" element={<JobDetailPage />} />
+              <Route path="/jobs/:id/report/:date" element={<DailyReportView />} />
 
               {/* Orders */}
               <Route path="/orders" element={<Navigate to="/orders/drafts" replace />} />
@@ -159,6 +179,7 @@ export default function App() {
               <Route path="/settings" element={<Navigate to="/settings/themes" replace />} />
               <Route path="/settings/app-config" element={<AppConfigPage />} />
               <Route path="/settings/themes" element={<ThemesPage />} />
+              <Route path="/settings/questions" element={<ClockOutQuestionsPage />} />
               <Route path="/settings/sync" element={<SyncPage />} />
               <Route path="/settings/ai-config" element={<AiConfigPage />} />
               <Route path="/settings/devices" element={<DeviceManagementPage />} />

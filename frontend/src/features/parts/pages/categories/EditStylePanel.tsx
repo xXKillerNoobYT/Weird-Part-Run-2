@@ -28,12 +28,14 @@ import type { PartStyle, PartStyleUpdate, SelectedCategoryNode } from '../../../
 
 export interface EditStylePanelProps {
   styleId: number;
+  /** If provided, skip the expensive all-categories lookup */
+  categoryId?: number;
   canEdit: boolean;
   onDelete: () => void;
   onSelectChild: (node: SelectedCategoryNode) => void;
 }
 
-export function EditStylePanel({ styleId, canEdit, onDelete, onSelectChild }: EditStylePanelProps) {
+export function EditStylePanel({ styleId, categoryId, canEdit, onDelete, onSelectChild }: EditStylePanelProps) {
   const queryClient = useQueryClient();
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: () => listCategories() });
 
@@ -49,9 +51,20 @@ export function EditStylePanel({ styleId, canEdit, onDelete, onSelectChild }: Ed
   const [showAddType, setShowAddType] = useState(false);
   const [newTypeName, setNewTypeName] = useState('');
 
-  // Lookup style across all categories
-  const styleQuery = useQuery({
-    queryKey: ['style-lookup', styleId],
+  // Resolve the category to query — prefer explicit prop from tree selection
+  const resolvedCategoryId = categoryId ?? undefined;
+
+  // Fast path: direct lookup when categoryId is known
+  const directStyleQuery = useQuery({
+    queryKey: ['styles', resolvedCategoryId],
+    queryFn: () => listStylesByCategory(resolvedCategoryId!),
+    enabled: !!resolvedCategoryId,
+    select: (styles) => styles.find((s) => s.id === styleId) ?? null,
+  });
+
+  // Slow fallback: scan all categories only if categoryId is unknown
+  const fallbackStyleQuery = useQuery({
+    queryKey: ['style-lookup-fallback', styleId],
     queryFn: async () => {
       if (!categories) return null;
       for (const cat of categories) {
@@ -61,14 +74,17 @@ export function EditStylePanel({ styleId, canEdit, onDelete, onSelectChild }: Ed
       }
       return null;
     },
-    enabled: !!categories && categories.length > 0,
+    enabled: !resolvedCategoryId && !!categories && categories.length > 0,
   });
 
-  if (styleQuery.data && (!initialized || styleId !== prevId)) {
-    setStyle(styleQuery.data);
-    setName(styleQuery.data.name);
-    setDescription(styleQuery.data.description ?? '');
-    setImageUrl(styleQuery.data.image_url ?? '');
+  // Use whichever query resolved
+  const resolvedStyle = directStyleQuery.data ?? fallbackStyleQuery.data ?? null;
+
+  if (resolvedStyle && (!initialized || styleId !== prevId)) {
+    setStyle(resolvedStyle);
+    setName(resolvedStyle.name);
+    setDescription(resolvedStyle.description ?? '');
+    setImageUrl(resolvedStyle.image_url ?? '');
     setInitialized(true);
     setPrevId(styleId);
   }
@@ -85,7 +101,7 @@ export function EditStylePanel({ styleId, canEdit, onDelete, onSelectChild }: Ed
     mutationFn: (data: PartStyleUpdate) => updateStyle(styleId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['styles'] });
-      queryClient.invalidateQueries({ queryKey: ['style-lookup', styleId] });
+      queryClient.invalidateQueries({ queryKey: ['style-lookup-fallback', styleId] });
       queryClient.invalidateQueries({ queryKey: ['categories'] });
     },
   });
@@ -94,7 +110,7 @@ export function EditStylePanel({ styleId, canEdit, onDelete, onSelectChild }: Ed
     mutationFn: (is_active: boolean) => updateStyle(styleId, { is_active }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['styles'] });
-      queryClient.invalidateQueries({ queryKey: ['style-lookup', styleId] });
+      queryClient.invalidateQueries({ queryKey: ['style-lookup-fallback', styleId] });
     },
   });
 
@@ -103,7 +119,7 @@ export function EditStylePanel({ styleId, canEdit, onDelete, onSelectChild }: Ed
     onSuccess: (created) => {
       queryClient.invalidateQueries({ queryKey: ['types', styleId] });
       queryClient.invalidateQueries({ queryKey: ['styles'] });
-      queryClient.invalidateQueries({ queryKey: ['style-lookup', styleId] });
+      queryClient.invalidateQueries({ queryKey: ['style-lookup-fallback', styleId] });
       queryClient.invalidateQueries({ queryKey: ['categories'] });
       setNewTypeName('');
       setShowAddType(false);
@@ -122,7 +138,7 @@ export function EditStylePanel({ styleId, canEdit, onDelete, onSelectChild }: Ed
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['types', styleId] });
       queryClient.invalidateQueries({ queryKey: ['styles'] });
-      queryClient.invalidateQueries({ queryKey: ['style-lookup', styleId] });
+      queryClient.invalidateQueries({ queryKey: ['style-lookup-fallback', styleId] });
       queryClient.invalidateQueries({ queryKey: ['categories'] });
     },
   });
@@ -325,7 +341,7 @@ export function EditStylePanel({ styleId, canEdit, onDelete, onSelectChild }: Ed
                       <Trash2 className="h-3 w-3 text-red-400" />
                     </button>
                   )}
-                  <ChevronRight className="h-3.5 w-3.5 text-gray-300 dark:text-gray-600 flex-shrink-0" />
+                  <ChevronRight className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 flex-shrink-0" />
                 </div>
               ))}
             </div>

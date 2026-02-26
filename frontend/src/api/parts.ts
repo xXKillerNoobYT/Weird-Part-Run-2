@@ -56,6 +56,19 @@ import type {
   CatalogStats,
   ForecastItem,
   ImportResult,
+  // Companions
+  CompanionRule,
+  CompanionRuleCreate,
+  CompanionRuleUpdate,
+  CompanionSuggestion,
+  SuggestionDecision,
+  ManualTriggerRequest,
+  CoOccurrencePair,
+  CompanionStats,
+  // Alternatives
+  PartAlternative,
+  PartAlternativeCreate,
+  PartAlternativeUpdate,
 } from '../lib/types';
 
 
@@ -470,4 +483,118 @@ export async function importPartsCsv(file: File): Promise<ImportResult> {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return data.data!;
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// COMPANION RULES
+// ═══════════════════════════════════════════════════════════════
+
+/** List all companion rules with sources and targets. */
+export async function listCompanionRules(): Promise<CompanionRule[]> {
+  const { data } = await apiClient.get<ApiResponse<CompanionRule[]>>('/parts/companions/rules');
+  return data.data ?? [];
+}
+
+/** Create a new companion rule with sources and targets. */
+export async function createCompanionRule(body: CompanionRuleCreate): Promise<CompanionRule> {
+  const { data } = await apiClient.post<ApiResponse<CompanionRule>>('/parts/companions/rules', body);
+  return data.data!;
+}
+
+/** Update an existing companion rule. */
+export async function updateCompanionRule(ruleId: number, body: CompanionRuleUpdate): Promise<CompanionRule> {
+  const { data } = await apiClient.put<ApiResponse<CompanionRule>>(`/parts/companions/rules/${ruleId}`, body);
+  return data.data!;
+}
+
+/** Delete a companion rule. */
+export async function deleteCompanionRule(ruleId: number): Promise<void> {
+  await apiClient.delete(`/parts/companions/rules/${ruleId}`);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// COMPANION SUGGESTIONS
+// ═══════════════════════════════════════════════════════════════
+
+/** Manually trigger suggestion generation from input items. */
+export async function generateCompanionSuggestions(body: ManualTriggerRequest): Promise<CompanionSuggestion[]> {
+  const { data } = await apiClient.post<ApiResponse<CompanionSuggestion[]>>('/parts/companions/generate', body);
+  return data.data ?? [];
+}
+
+/** List suggestions, optionally filtered by status. */
+export async function listCompanionSuggestions(params?: {
+  status?: string;
+  page?: number;
+  page_size?: number;
+}): Promise<CompanionSuggestion[]> {
+  const { data } = await apiClient.get<ApiResponse<CompanionSuggestion[]>>('/parts/companions/suggestions', { params });
+  return data.data ?? [];
+}
+
+/** Approve or discard a suggestion. */
+export async function decideCompanionSuggestion(
+  suggestionId: number,
+  body: SuggestionDecision,
+): Promise<CompanionSuggestion> {
+  const { data } = await apiClient.post<ApiResponse<CompanionSuggestion>>(
+    `/parts/companions/suggestions/${suggestionId}/decide`,
+    body,
+  );
+  return data.data!;
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// COMPANION STATS & CO-OCCURRENCE
+// ═══════════════════════════════════════════════════════════════
+
+/** Get companion dashboard stats. */
+export async function getCompanionStats(): Promise<CompanionStats> {
+  const { data } = await apiClient.get<ApiResponse<CompanionStats>>('/parts/companions/stats');
+  return data.data!;
+}
+
+/** Get top co-occurrence pairs. */
+export async function getCoOccurrences(limit = 50): Promise<CoOccurrencePair[]> {
+  const { data } = await apiClient.get<ApiResponse<CoOccurrencePair[]>>('/parts/companions/co-occurrence', {
+    params: { limit },
+  });
+  return data.data ?? [];
+}
+
+/** Refresh co-occurrence pairs from stock movements. */
+export async function refreshCoOccurrence(): Promise<string> {
+  const { data } = await apiClient.post<ApiResponse>('/parts/companions/co-occurrence/refresh');
+  return data.message ?? 'Refreshed';
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// PART ALTERNATIVES
+// ═══════════════════════════════════════════════════════════════
+
+/** List alternatives for a part (bidirectional). */
+export async function listPartAlternatives(partId: number): Promise<PartAlternative[]> {
+  const { data } = await apiClient.get<ApiResponse<PartAlternative[]>>(`/parts/catalog/${partId}/alternatives`);
+  return data.data ?? [];
+}
+
+/** Link an alternative part. */
+export async function linkPartAlternative(partId: number, body: PartAlternativeCreate): Promise<PartAlternative> {
+  const { data } = await apiClient.post<ApiResponse<PartAlternative>>(`/parts/catalog/${partId}/alternatives`, body);
+  return data.data!;
+}
+
+/** Update an alternative link. */
+export async function updatePartAlternative(linkId: number, body: PartAlternativeUpdate): Promise<PartAlternative> {
+  const { data } = await apiClient.put<ApiResponse<PartAlternative>>(`/parts/alternatives/${linkId}`, body);
+  return data.data!;
+}
+
+/** Remove an alternative link. */
+export async function unlinkPartAlternative(linkId: number): Promise<void> {
+  await apiClient.delete(`/parts/alternatives/${linkId}`);
 }

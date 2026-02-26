@@ -38,6 +38,7 @@ import {
   listBrands, getHierarchy, getPendingPartNumbersCount,
   getCatalogGroups,
 } from '../../../api/parts';
+import { AlternativesSection } from '../components/alternatives/AlternativesSection';
 import type {
   PartListItem, PartUpdate, PartSearchParams,
   Brand, CatalogGroup,
@@ -988,6 +989,11 @@ function PartEditModal({ part, onClose, onSave, isLoading, error, canEdit, canSe
               <AlertCircle className="h-3.5 w-3.5" /> MPN needed
             </span>
           )}
+        </div>
+
+        {/* Alternatives (read-only summary) */}
+        <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
+          <AlternativesSection partId={part.id} readOnly />
         </div>
 
         {error && (

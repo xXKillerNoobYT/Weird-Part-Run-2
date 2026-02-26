@@ -78,7 +78,13 @@ from app.models.parts import (
     StockEntry,
     StockSummary,
 )
+from app.models.companions import (
+    PartAlternativeCreate,
+    PartAlternativeUpdate,
+    PartAlternativeResponse,
+)
 from app.repositories.parts_repo import BrandRepo, PartsRepo, SupplierRepo
+from app.repositories.alternatives_repo import PartAlternativesRepo
 from app.repositories.hierarchy_repo import (
     PartCategoryRepo,
     PartStyleRepo,
@@ -136,6 +142,10 @@ def _part_to_list_item(row: dict, user: dict) -> dict:
         "company_sell_price": row.get("company_sell_price"),
         # Stock
         "total_stock": row.get("total_stock", 0),
+        # Inventory targets
+        "min_stock_level": row.get("min_stock_level", 0),
+        "max_stock_level": row.get("max_stock_level", 0),
+        "target_stock_level": row.get("target_stock_level", 0),
         # Forecast
         "forecast_adu_30": row.get("forecast_adu_30"),
         "forecast_days_until_low": row.get("forecast_days_until_low"),
@@ -1507,6 +1517,144 @@ async def remove_supplier_link(
     if not removed:
         raise HTTPException(status_code=404, detail="Supplier link not found")
     return ApiResponse(message="Supplier link removed.")
+
+
+# ═══════════════════════════════════════════════════════════════
+# PART ALTERNATIVES — bidirectional cross-linking
+# ═══════════════════════════════════════════════════════════════
+
+@router.get(
+    "/catalog/{part_id}/alternatives",
+    response_model=ApiResponse[list[PartAlternativeResponse]],
+)
+async def list_alternatives(
+    part_id: int,
+    user: dict = Depends(require_permission("view_parts_catalog")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List all alternative parts for a given part (bidirectional).
+
+    Returns parts linked in either direction — a single DB row serves
+    both parts' alternative lists.
+    """
+    parts_repo = PartsRepo(db)
+    if not await parts_repo.exists(part_id):
+        raise HTTPException(status_code=404, detail="Part not found")
+
+    alt_repo = PartAlternativesRepo(db)
+    alternatives = await alt_repo.get_for_part(part_id)
+    return ApiResponse(
+        data=[PartAlternativeResponse(**a) for a in alternatives],
+    )
+
+
+@router.post(
+    "/catalog/{part_id}/alternatives",
+    response_model=ApiResponse[PartAlternativeResponse],
+)
+async def link_alternative(
+    part_id: int,
+    body: PartAlternativeCreate,
+    user: dict = Depends(require_permission("edit_parts_catalog")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Link an alternative part (bidirectional)."""
+    if part_id == body.alternative_part_id:
+        raise HTTPException(
+            status_code=400, detail="A part cannot be its own alternative"
+        )
+
+    parts_repo = PartsRepo(db)
+    if not await parts_repo.exists(part_id):
+        raise HTTPException(status_code=404, detail="Part not found")
+    if not await parts_repo.exists(body.alternative_part_id):
+        raise HTTPException(status_code=404, detail="Alternative part not found")
+
+    alt_repo = PartAlternativesRepo(db)
+
+    # Check if already linked
+    if await alt_repo.link_exists(part_id, body.alternative_part_id):
+        raise HTTPException(
+            status_code=409, detail="These parts are already linked as alternatives"
+        )
+
+    link_id = await alt_repo.link(
+        part_id=part_id,
+        alternative_part_id=body.alternative_part_id,
+        relationship=body.relationship,
+        preference=body.preference,
+        notes=body.notes,
+        created_by=user["id"],
+    )
+
+    # Fetch the created link with resolved details
+    alternatives = await alt_repo.get_for_part(part_id)
+    created = next((a for a in alternatives if a["id"] == link_id), None)
+
+    if not created:
+        return ApiResponse(data={"id": link_id}, message="Alternative linked.")
+
+    return ApiResponse(
+        data=PartAlternativeResponse(**created),
+        message="Alternative linked.",
+    )
+
+
+@router.put(
+    "/alternatives/{link_id}",
+    response_model=ApiResponse[PartAlternativeResponse],
+)
+async def update_alternative(
+    link_id: int,
+    body: PartAlternativeUpdate,
+    user: dict = Depends(require_permission("edit_parts_catalog")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update relationship, preference, or notes on an alternative link."""
+    alt_repo = PartAlternativesRepo(db)
+
+    existing = await alt_repo.get_by_id(link_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Alternative link not found")
+
+    update_data = {}
+    if body.relationship is not None:
+        update_data["relationship"] = body.relationship
+    if body.preference is not None:
+        update_data["preference"] = body.preference
+    if body.notes is not None:
+        update_data["notes"] = body.notes
+
+    if update_data:
+        await alt_repo.update_link(link_id, update_data)
+
+    # Fetch updated link — use part_id from the existing link
+    alternatives = await alt_repo.get_for_part(existing["part_id"])
+    updated = next((a for a in alternatives if a["id"] == link_id), None)
+
+    if not updated:
+        return ApiResponse(message="Alternative updated.")
+
+    return ApiResponse(
+        data=PartAlternativeResponse(**updated),
+        message="Alternative updated.",
+    )
+
+
+@router.delete("/alternatives/{link_id}")
+async def unlink_alternative(
+    link_id: int,
+    user: dict = Depends(require_permission("edit_parts_catalog")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Remove an alternative link."""
+    alt_repo = PartAlternativesRepo(db)
+
+    if not await alt_repo.exists(link_id):
+        raise HTTPException(status_code=404, detail="Alternative link not found")
+
+    await alt_repo.unlink(link_id)
+    return ApiResponse(message="Alternative link removed.")
 
 
 # ═══════════════════════════════════════════════════════════════

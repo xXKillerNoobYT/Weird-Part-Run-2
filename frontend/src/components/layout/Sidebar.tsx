@@ -13,6 +13,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Package, Warehouse, Truck, Briefcase,
   ShoppingCart, Users, BarChart3, Settings, ChevronLeft, X, Zap,
+  Building2,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { MODULES, getDefaultTabPath } from '../../lib/navigation';
@@ -23,6 +24,7 @@ import { useSidebarStore } from '../../stores/sidebar-store';
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard,
   Package,
+  Building2,
   Warehouse,
   Truck,
   Briefcase,

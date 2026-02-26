@@ -80,6 +80,37 @@ async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
 
 # ── Migration Runner ──────────────────────────────────────────────
 
+
+def _split_sql_statements(sql: str) -> list[str]:
+    """Split a SQL script into individual statements.
+
+    Handles semicolons inside strings/comments correctly enough for our
+    migration files. Strips comments and empty lines.
+    """
+    statements: list[str] = []
+    current: list[str] = []
+
+    for line in sql.splitlines():
+        stripped = line.strip()
+        # Skip pure comment lines and blank lines
+        if not stripped or stripped.startswith("--"):
+            continue
+        current.append(line)
+        if stripped.endswith(";"):
+            stmt = "\n".join(current).strip().rstrip(";").strip()
+            if stmt:
+                statements.append(stmt)
+            current = []
+
+    # Catch any trailing statement without a semicolon
+    if current:
+        stmt = "\n".join(current).strip().rstrip(";").strip()
+        if stmt:
+            statements.append(stmt)
+
+    return statements
+
+
 async def init_db() -> None:
     """Initialize the database: create migration tracking table and run pending migrations.
 
@@ -123,7 +154,19 @@ async def init_db() -> None:
             sql = migration_file.read_text(encoding="utf-8")
 
             try:
-                await db.executescript(sql)
+                # Execute statements individually so we can handle
+                # idempotent failures (e.g. ALTER TABLE ADD COLUMN
+                # on a column that already exists from a partial run).
+                for statement in _split_sql_statements(sql):
+                    try:
+                        await db.execute(statement)
+                    except sqlite3.OperationalError as stmt_err:
+                        err_msg = str(stmt_err).lower()
+                        if "duplicate column" in err_msg:
+                            logger.debug("Column already exists, skipping: %s", stmt_err)
+                        else:
+                            raise
+
                 await db.execute(
                     "INSERT INTO _migrations (filename) VALUES (?)",
                     (migration_file.name,),

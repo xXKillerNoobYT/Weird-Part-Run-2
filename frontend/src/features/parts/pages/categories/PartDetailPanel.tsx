@@ -6,7 +6,8 @@
  *   - Auto-generated name (editable)
  *   - Code / SKU (optional for general, shown for specific)
  *   - MPN field (only for branded parts — the KEY difference)
- *   - Pricing: cost, markup %, computed sell
+ *   - Pricing: cost, markup %, computed sell (permission-gated)
+ *   - Stock levels: warehouse count, min/max/target
  *   - Notes, image URL
  *   - Deprecated toggle
  *   - Delete button (removes the Part record)
@@ -16,7 +17,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box, Check, Trash2, AlertTriangle, DollarSign,
-  ToggleLeft, ToggleRight, Tag, Package,
+  ToggleLeft, ToggleRight, Tag, Package, Warehouse, Target,
 } from 'lucide-react';
 import { Button } from '../../../../components/ui/Button';
 import { Input } from '../../../../components/ui/Input';
@@ -24,6 +25,8 @@ import { Badge } from '../../../../components/ui/Badge';
 import { Spinner } from '../../../../components/ui/Spinner';
 import { Modal } from '../../../../components/ui/Modal';
 import { getPart, updatePart, deletePart } from '../../../../api/parts';
+import { useAuthStore } from '../../../../stores/auth-store';
+import { AlternativesSection } from '../../components/alternatives/AlternativesSection';
 import type { PartUpdate } from '../../../../lib/types';
 
 
@@ -35,6 +38,8 @@ export interface PartDetailPanelProps {
 
 export function PartDetailPanel({ partId, canEdit, onDeleted }: PartDetailPanelProps) {
   const queryClient = useQueryClient();
+  const { user } = useAuthStore();
+  const showDollars = user?.permissions.includes('show_dollar_values') ?? false;
 
   // Fetch full part detail
   const { data: part, isLoading } = useQuery({
@@ -51,6 +56,9 @@ export function PartDetailPanel({ partId, canEdit, onDeleted }: PartDetailPanelP
   const [notes, setNotes] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [unitOfMeasure, setUnitOfMeasure] = useState('');
+  const [minStock, setMinStock] = useState('');
+  const [maxStock, setMaxStock] = useState('');
+  const [targetStock, setTargetStock] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Populate form when part loads
@@ -60,10 +68,13 @@ export function PartDetailPanel({ partId, canEdit, onDeleted }: PartDetailPanelP
       setCode(part.code ?? '');
       setMpn(part.manufacturer_part_number ?? '');
       setCostPrice(part.company_cost_price != null ? String(part.company_cost_price) : '');
-      setMarkupPercent(part.markup_percent != null ? String(part.markup_percent) : '');
+      setMarkupPercent(part.company_markup_percent != null ? String(part.company_markup_percent) : '');
       setNotes(part.notes ?? '');
       setImageUrl(part.image_url ?? '');
       setUnitOfMeasure(part.unit_of_measure ?? 'each');
+      setMinStock(String(part.min_stock_level ?? 0));
+      setMaxStock(String(part.max_stock_level ?? 0));
+      setTargetStock(String(part.target_stock_level ?? 0));
     }
   }, [part]);
 
@@ -112,16 +123,24 @@ export function PartDetailPanel({ partId, canEdit, onDeleted }: PartDetailPanelP
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    updateMutation.mutate({
+    const updates: PartUpdate = {
       name,
       code: code || undefined,
       manufacturer_part_number: mpn || undefined,
-      company_cost_price: costPrice ? parseFloat(costPrice) : undefined,
-      markup_percent: markupPercent ? parseFloat(markupPercent) : undefined,
       notes: notes || undefined,
       image_url: imageUrl || undefined,
       unit_of_measure: unitOfMeasure || undefined,
-    });
+      // Stock targets
+      min_stock_level: minStock ? parseInt(minStock, 10) : 0,
+      max_stock_level: maxStock ? parseInt(maxStock, 10) : 0,
+      target_stock_level: targetStock ? parseInt(targetStock, 10) : 0,
+    };
+    // Only include pricing if user has dollar permission
+    if (showDollars) {
+      updates.company_cost_price = costPrice ? parseFloat(costPrice) : undefined;
+      updates.company_markup_percent = markupPercent ? parseFloat(markupPercent) : undefined;
+    }
+    updateMutation.mutate(updates);
   };
 
   return (
@@ -217,40 +236,46 @@ export function PartDetailPanel({ partId, canEdit, onDeleted }: PartDetailPanelP
           )}
         </div>
 
-        {/* Pricing */}
-        <div className="space-y-3 border-t border-gray-200 dark:border-gray-700 pt-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-1">
-            <DollarSign className="h-3.5 w-3.5" />
-            Pricing
-          </h4>
-          <div className="grid grid-cols-3 gap-3">
-            <Input
-              label="Cost"
-              value={costPrice}
-              onChange={(e) => setCostPrice(e.target.value)}
-              disabled={!canEdit}
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="0.00"
-            />
-            <Input
-              label="Markup %"
-              value={markupPercent}
-              onChange={(e) => setMarkupPercent(e.target.value)}
-              disabled={!canEdit}
-              type="number"
-              step="0.1"
-              min="0"
-              placeholder="0"
-            />
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Sell</label>
-              <div className="px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-sm font-medium text-gray-700 dark:text-gray-300">
-                ${computedSellPrice}
+        {/* Pricing (permission-gated) */}
+        {showDollars && (
+          <div className="space-y-3 border-t border-gray-200 dark:border-gray-700 pt-4">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-1">
+              <DollarSign className="h-3.5 w-3.5" />
+              Pricing
+            </h4>
+            <div className="grid grid-cols-3 gap-3">
+              <Input
+                label="Cost"
+                value={costPrice}
+                onChange={(e) => setCostPrice(e.target.value)}
+                disabled={!canEdit}
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+              />
+              <Input
+                label="Markup %"
+                value={markupPercent}
+                onChange={(e) => setMarkupPercent(e.target.value)}
+                disabled={!canEdit}
+                type="number"
+                step="0.1"
+                min="0"
+                placeholder="0"
+              />
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Sell</label>
+                <div className="px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-sm font-medium text-gray-700 dark:text-gray-300">
+                  ${computedSellPrice}
+                </div>
               </div>
             </div>
           </div>
+        )}
+
+        {/* Unit of Measure (always visible) */}
+        <div className="space-y-3 border-t border-gray-200 dark:border-gray-700 pt-4">
           <Input
             label="Unit of Measure"
             value={unitOfMeasure}
@@ -258,6 +283,82 @@ export function PartDetailPanel({ partId, canEdit, onDeleted }: PartDetailPanelP
             disabled={!canEdit}
             placeholder="each"
           />
+        </div>
+
+        {/* Stock Levels */}
+        <div className="space-y-3 border-t border-gray-200 dark:border-gray-700 pt-4">
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-1">
+            <Warehouse className="h-3.5 w-3.5" />
+            Stock Levels
+          </h4>
+
+          {/* Current stock (read-only) */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Warehouse</label>
+              <div className="px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-sm font-medium text-gray-700 dark:text-gray-300">
+                {part.warehouse_stock ?? 0}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Total (all locations)</label>
+              <div className="px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-sm font-medium text-gray-700 dark:text-gray-300">
+                {part.total_stock ?? 0}
+              </div>
+            </div>
+          </div>
+
+          {/* Breakdown badges */}
+          {(part.pulled_stock > 0 || part.truck_stock > 0 || part.job_stock > 0) && (
+            <div className="flex flex-wrap gap-2">
+              {part.pulled_stock > 0 && (
+                <Badge variant="warning">{part.pulled_stock} pulled</Badge>
+              )}
+              {part.truck_stock > 0 && (
+                <Badge variant="info">{part.truck_stock} on trucks</Badge>
+              )}
+              {part.job_stock > 0 && (
+                <Badge variant="default">{part.job_stock} on jobs</Badge>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Inventory Targets */}
+        <div className="space-y-3 border-t border-gray-200 dark:border-gray-700 pt-4">
+          <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-1">
+            <Target className="h-3.5 w-3.5" />
+            Inventory Targets
+          </h4>
+          <div className="grid grid-cols-3 gap-3">
+            <Input
+              label="Min"
+              value={minStock}
+              onChange={(e) => setMinStock(e.target.value)}
+              disabled={!canEdit}
+              type="number"
+              min="0"
+              placeholder="0"
+            />
+            <Input
+              label="Target"
+              value={targetStock}
+              onChange={(e) => setTargetStock(e.target.value)}
+              disabled={!canEdit}
+              type="number"
+              min="0"
+              placeholder="0"
+            />
+            <Input
+              label="Max"
+              value={maxStock}
+              onChange={(e) => setMaxStock(e.target.value)}
+              disabled={!canEdit}
+              type="number"
+              min="0"
+              placeholder="0"
+            />
+          </div>
         </div>
 
         {/* Details */}
@@ -284,6 +385,9 @@ export function PartDetailPanel({ partId, canEdit, onDeleted }: PartDetailPanelP
             />
           </div>
         </div>
+
+        {/* Alternatives (bidirectional links to other parts) */}
+        <AlternativesSection partId={partId} readOnly={!canEdit} />
 
         {/* Save feedback */}
         {updateMutation.isSuccess && (
