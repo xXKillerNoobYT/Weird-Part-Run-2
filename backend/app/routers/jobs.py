@@ -42,6 +42,7 @@ from app.models.jobs import (
     OneTimeQuestionResponse,
     QuestionReorderRequest,
 )
+from app.models.notebooks import EntryResponse, NotebookFull
 from app.services.job_service import JobService
 from app.services.labor_service import LaborService
 from app.services.questionnaire_service import QuestionnaireService
@@ -176,18 +177,38 @@ async def create_job(
 
 
 @router.get(
-    "/templates",
-    response_model=ApiResponse[StatusMessage],
-    summary="Notebook templates (stub)",
+    "/{job_id}/notebook",
+    response_model=ApiResponse[NotebookFull],
+    summary="Get or create job notebook",
 )
-async def notebook_templates(
-    user: dict = Depends(require_permission("manage_templates")),
+async def get_job_notebook(
+    job_id: int,
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
 ):
-    """Notebook template management — coming in a later phase."""
-    return ApiResponse(
-        data=StatusMessage(status="stub", module="jobs/templates"),
-        message="Notebook Templates — coming soon.",
-    )
+    """Get the job's notebook (lazy-creates from template on first access)."""
+    from app.services.notebook_service import NotebookService
+    svc = NotebookService(db)
+    nb = await svc.get_or_create_job_notebook(job_id, user["id"])
+    return ApiResponse(data=nb)
+
+
+@router.get(
+    "/{job_id}/tasks",
+    response_model=ApiResponse[list[EntryResponse]],
+    summary="Job tasks across all sections",
+)
+async def get_job_tasks(
+    job_id: int,
+    status: str | None = Query(None, description="Filter by task status"),
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get all tasks from the job's notebook, across all sections."""
+    from app.services.notebook_service import NotebookService
+    svc = NotebookService(db)
+    tasks = await svc.get_job_tasks(job_id, status=status)
+    return ApiResponse(data=tasks, message=f"{len(tasks)} tasks")
 
 
 @router.get(

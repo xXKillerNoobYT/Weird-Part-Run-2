@@ -29,7 +29,8 @@ import { Modal } from '../../../components/ui/Modal';
 import { getActiveJobs, createJob, updateJobStatus } from '../../../api/jobs';
 import { EditJobModal } from '../../jobs/components/EditJobModal';
 import { ManageBillRateTypesModal } from '../components/ManageBillRateTypesModal';
-import type { JobCreate, JobListItem, JobResponse, JobStatus, JobPriority, JobType } from '../../../lib/types';
+import { JOB_STATUS_LABELS, ON_CALL_TYPE_LABELS } from '../../../lib/types';
+import type { JobCreate, JobListItem, JobResponse, JobStatus, JobPriority, JobType, OnCallType } from '../../../lib/types';
 
 const STATUS_OPTIONS: { label: string; value: JobStatus | 'all' }[] = [
   { label: 'All', value: 'all' },
@@ -39,7 +40,7 @@ const STATUS_OPTIONS: { label: string; value: JobStatus | 'all' }[] = [
   { label: 'Completed', value: 'completed' },
   { label: 'Cancelled', value: 'cancelled' },
   { label: 'Continuous Maint.', value: 'continuous_maintenance' },
-  { label: 'On Call', value: 'on_call' },
+  { label: 'On Call / Warranty', value: 'on_call' },
 ];
 
 const TYPE_OPTIONS: { label: string; value: JobType | 'all' }[] = [
@@ -67,6 +68,27 @@ const STATUS_COLORS: Record<JobStatus, 'success' | 'warning' | 'default' | 'dang
   cancelled: 'danger',
   continuous_maintenance: 'success',
   on_call: 'success',
+};
+
+/** Color classes for status filter pills — active (selected) and idle (unselected) variants */
+const STATUS_PILL_COLORS: Record<string, { active: string; idle: string }> = {
+  all:      { active: 'border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300',
+              idle:   'border-border bg-surface hover:bg-surface-secondary text-gray-600 dark:text-gray-400' },
+  pending:  { active: 'border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300',
+              idle:   'border-border bg-surface hover:bg-amber-50 dark:hover:bg-amber-900/10 text-amber-600 dark:text-amber-400' },
+  active:   { active: 'border-green-300 dark:border-green-600 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300',
+              idle:   'border-border bg-surface hover:bg-green-50 dark:hover:bg-green-900/10 text-green-600 dark:text-green-400' },
+  on_hold:  { active: 'border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300',
+              idle:   'border-border bg-surface hover:bg-amber-50 dark:hover:bg-amber-900/10 text-amber-600 dark:text-amber-400' },
+  continuous_maintenance:
+            { active: 'border-green-300 dark:border-green-600 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300',
+              idle:   'border-border bg-surface hover:bg-green-50 dark:hover:bg-green-900/10 text-green-600 dark:text-green-400' },
+  on_call:  { active: 'border-sky-300 dark:border-sky-600 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300',
+              idle:   'border-border bg-surface hover:bg-sky-50 dark:hover:bg-sky-900/10 text-sky-600 dark:text-sky-400' },
+  completed:{ active: 'border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300',
+              idle:   'border-border bg-surface hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400' },
+  cancelled:{ active: 'border-red-300 dark:border-red-600 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300',
+              idle:   'border-border bg-surface hover:bg-red-50 dark:hover:bg-red-900/10 text-red-600 dark:text-red-400' },
 };
 
 const PRIORITY_DOTS: Record<JobPriority, string> = {
@@ -185,22 +207,24 @@ export function ManageJobsPage() {
           { label: 'Active', count: counts.active, filter: 'active' },
           { label: 'On Hold', count: counts.on_hold, filter: 'on_hold' },
           { label: 'Cont. Maint.', count: counts.continuous_maintenance, filter: 'continuous_maintenance' },
-          { label: 'On Call', count: counts.on_call, filter: 'on_call' },
+          { label: 'On Call / Warr.', count: counts.on_call, filter: 'on_call' },
           { label: 'Completed', count: counts.completed, filter: 'completed' },
           { label: 'Cancelled', count: counts.cancelled, filter: 'cancelled' },
-        ].map((stat) => (
-          <button
-            key={stat.label}
-            onClick={() => setStatusFilter(stat.filter)}
-            className={`px-2.5 py-1.5 rounded-md border text-xs font-medium transition-colors ${
-              statusFilter === stat.filter
-                ? 'border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
-                : 'border-border bg-surface hover:bg-surface-secondary text-gray-600 dark:text-gray-400'
-            }`}
-          >
-            {stat.label} <span className="font-bold ml-0.5">{stat.count}</span>
-          </button>
-        ))}
+        ].map((stat) => {
+          const colors = STATUS_PILL_COLORS[stat.filter] ?? STATUS_PILL_COLORS.all;
+          const isSelected = statusFilter === stat.filter;
+          return (
+            <button
+              key={stat.label}
+              onClick={() => setStatusFilter(stat.filter)}
+              className={`px-2.5 py-1.5 rounded-md border text-xs font-medium transition-colors ${
+                isSelected ? colors.active : colors.idle
+              }`}
+            >
+              {stat.label} <span className="font-bold ml-0.5">{stat.count}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Search + Filters */}
@@ -269,6 +293,7 @@ export function ManageJobsPage() {
                 <th className="px-3 py-2 font-medium">Status</th>
                 <th className="px-3 py-2 font-medium text-center">Priority</th>
                 <th className="px-3 py-2 font-medium">Type</th>
+                <th className="px-3 py-2 font-medium text-center">Tasks</th>
                 <th className="px-3 py-2 font-medium text-right">Hours</th>
                 <th className="px-3 py-2 font-medium text-right">Parts $</th>
                 <th className="px-3 py-2 font-medium text-center">Actions</th>
@@ -293,9 +318,18 @@ export function ManageJobsPage() {
                     {job.customer_name}
                   </td>
                   <td className="px-3 py-2.5">
-                    <Badge variant={STATUS_COLORS[job.status]}>
-                      {job.status.replace('_', ' ')}
-                    </Badge>
+                    <div className="flex flex-col gap-0.5">
+                      <Badge variant={STATUS_COLORS[job.status]}>
+                        {job.status === 'on_call' && job.on_call_type
+                          ? ON_CALL_TYPE_LABELS[job.on_call_type as OnCallType]
+                          : JOB_STATUS_LABELS[job.status]}
+                      </Badge>
+                      {job.status === 'on_call' && job.on_call_type === 'warranty' && job.warranty_end_date && (
+                        <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                          Exp {new Date(job.warranty_end_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-3 py-2.5 text-center">
                     <div className="flex items-center justify-center gap-1.5">
@@ -307,6 +341,15 @@ export function ManageJobsPage() {
                   </td>
                   <td className="px-3 py-2.5 text-xs capitalize text-gray-500 dark:text-gray-400">
                     {job.job_type.replace('_', ' ')}
+                  </td>
+                  <td className="px-3 py-2.5 text-center">
+                    {job.open_task_count > 0 ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded-full">
+                        {job.open_task_count}
+                      </span>
+                    ) : (
+                      <span className="text-gray-300 dark:text-gray-600">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums text-gray-700 dark:text-gray-300">
                     {job.total_labor_hours.toFixed(1)}

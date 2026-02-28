@@ -1,9 +1,12 @@
 /**
  * JobDetailPage — full job view with internal sub-tabs.
  *
- * Sub-tabs: Overview, Labor, Parts, Reports, One-Time Qs
+ * Sub-tabs: Notebook (default), Overview, Labor, Parts, One-Time Qs
  * These are rendered as an internal tab bar WITHIN the page,
  * NOT as sidebar tabs.
+ *
+ * Notebook is the DEFAULT tab — field workers need quick access to
+ * job info, notes, and tasks when arriving on site.
  */
 
 import { useState, useEffect } from 'react';
@@ -11,8 +14,8 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Briefcase, Clock, Package, HelpCircle,
-  MapPin, Navigation, Users, Edit2, Square,
-  Pause, CheckCircle, XCircle, RotateCcw,
+  Navigation, Users, Square, BookOpen,
+  Pause, RotateCcw, Shield, CalendarClock,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { Button } from '../../../components/ui/Button';
@@ -27,15 +30,25 @@ import {
   getOneTimeQuestions, createOneTimeQuestion, updateJobStatus,
 } from '../../../api/jobs';
 import { ClockOutFlow } from '../components/ClockOutFlow';
-import { EditJobModal } from '../components/EditJobModal';
-import type {
-  JobResponse, LaborEntryResponse, JobPartResponse,
-  OneTimeQuestionResponse, JobStatus,
+import {
+  JOB_STATUS_LABELS,
+  ON_CALL_TYPE_LABELS,
+  type JobResponse, type LaborEntryResponse, type JobPartResponse,
+  type OneTimeQuestionResponse, type JobStatus, type OnCallType,
+  type EntryCreate, type SectionCreate, type TaskStatus, type SectionWithEntries,
 } from '../../../lib/types';
+import {
+  getJobNotebook, createEntry, updateEntry, updateTaskStatus,
+  updateFieldValue, deleteEntry, createSection,
+} from '../../../api/notebooks';
+import { SectionPanel } from '../../notebooks/components/SectionPanel';
+import { CreateEntryModal } from '../../notebooks/components/CreateEntryModal';
+import { AddSectionModal } from '../../notebooks/components/AddSectionModal';
 
-type SubTab = 'overview' | 'labor' | 'parts' | 'questions';
+type SubTab = 'notebook' | 'overview' | 'labor' | 'parts' | 'questions';
 
 const TABS: { id: SubTab; label: string; icon: React.ReactNode }[] = [
+  { id: 'notebook', label: 'Notebook', icon: <BookOpen className="h-4 w-4" /> },
   { id: 'overview', label: 'Overview', icon: <Briefcase className="h-4 w-4" /> },
   { id: 'labor', label: 'Labor', icon: <Clock className="h-4 w-4" /> },
   { id: 'parts', label: 'Parts', icon: <Package className="h-4 w-4" /> },
@@ -57,12 +70,10 @@ export function JobDetailPage() {
   const jobId = Number(id);
   const navigate = useNavigate();
   const location = useLocation();
-  const { hasPermission } = useAuthStore();
   const { isClockedIn, activeEntry, fetchClockState } = useClockStore();
 
-  const [activeTab, setActiveTab] = useState<SubTab>('overview');
+  const [activeTab, setActiveTab] = useState<SubTab>('notebook');
   const [showClockOutFlow, setShowClockOutFlow] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
   const queryClient = useQueryClient();
 
   // Check if we were navigated here with startClockOut intent (from MyClockPage)
@@ -105,38 +116,20 @@ export function JobDetailPage() {
   const fullAddress = [job.address_line1, job.city, job.state, job.zip].filter(Boolean).join(', ');
   const hasGps = !!(job.gps_lat && job.gps_lng);
   const isOnThisJob = isClockedIn && activeEntry?.job_id === jobId;
-  const canManage = hasPermission(PERMISSIONS.MANAGE_JOBS);
 
-  /** Status transitions available from each state */
-  const statusActions: Record<JobStatus, { label: string; target: JobStatus; icon: React.ReactNode; variant: 'primary' | 'secondary' | 'danger' | 'warning' }[]> = {
-    pending: [
-      { label: 'Activate', target: 'active', icon: <CheckCircle className="h-3.5 w-3.5" />, variant: 'primary' },
-      { label: 'Cancel', target: 'cancelled', icon: <XCircle className="h-3.5 w-3.5" />, variant: 'danger' },
-    ],
-    active: [
-      { label: 'Put On Hold', target: 'on_hold', icon: <Pause className="h-3.5 w-3.5" />, variant: 'warning' },
-      { label: 'Complete', target: 'completed', icon: <CheckCircle className="h-3.5 w-3.5" />, variant: 'primary' },
-      { label: 'Cancel', target: 'cancelled', icon: <XCircle className="h-3.5 w-3.5" />, variant: 'danger' },
-    ],
-    on_hold: [
-      { label: 'Resume', target: 'active', icon: <RotateCcw className="h-3.5 w-3.5" />, variant: 'primary' },
-      { label: 'Cancel', target: 'cancelled', icon: <XCircle className="h-3.5 w-3.5" />, variant: 'danger' },
-    ],
-    completed: [
-      { label: 'Reopen', target: 'active', icon: <RotateCcw className="h-3.5 w-3.5" />, variant: 'secondary' },
-    ],
-    cancelled: [
-      { label: 'Reopen', target: 'active', icon: <RotateCcw className="h-3.5 w-3.5" />, variant: 'secondary' },
-    ],
-    continuous_maintenance: [
-      { label: 'Put On Hold', target: 'on_hold', icon: <Pause className="h-3.5 w-3.5" />, variant: 'warning' },
-      { label: 'Complete', target: 'completed', icon: <CheckCircle className="h-3.5 w-3.5" />, variant: 'primary' },
-    ],
-    on_call: [
-      { label: 'Put On Hold', target: 'on_hold', icon: <Pause className="h-3.5 w-3.5" />, variant: 'warning' },
-      { label: 'Complete', target: 'completed', icon: <CheckCircle className="h-3.5 w-3.5" />, variant: 'primary' },
-    ],
-  };
+  /**
+   * Field-worker status actions — only Put On Hold / Resume.
+   * Complete, Cancel, Reopen, and Edit are office-only (Manage Jobs page).
+   */
+  const fieldActions: { label: string; target: JobStatus; icon: React.ReactNode; variant: 'primary' | 'secondary' | 'warning' }[] = (() => {
+    if (job.status === 'active' || job.status === 'continuous_maintenance' || job.status === 'on_call') {
+      return [{ label: 'Put On Hold', target: 'on_hold' as JobStatus, icon: <Pause className="h-3.5 w-3.5" />, variant: 'warning' as const }];
+    }
+    if (job.status === 'on_hold') {
+      return [{ label: 'Resume', target: 'active' as JobStatus, icon: <RotateCcw className="h-3.5 w-3.5" />, variant: 'primary' as const }];
+    }
+    return [];
+  })();
 
   return (
     <div className="space-y-4">
@@ -155,7 +148,9 @@ export function JobDetailPage() {
               #{job.job_number}
             </span>
             <Badge variant={STATUS_COLORS[job.status]}>
-              {job.status.replace('_', ' ')}
+              {job.status === 'on_call' && job.on_call_type
+                ? ON_CALL_TYPE_LABELS[job.on_call_type as OnCallType]
+                : JOB_STATUS_LABELS[job.status]}
             </Badge>
             <span className="text-xs capitalize text-gray-500 dark:text-gray-400">
               {job.job_type.replace('_', ' ')}
@@ -169,19 +164,8 @@ export function JobDetailPage() {
           </p>
         </div>
 
-        {/* Action buttons: Edit, Navigate, Status */}
+        {/* Action buttons — Edit is office-only (Manage Jobs page) */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          {canManage && (
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={<Edit2 className="h-4 w-4" />}
-              onClick={() => setShowEditModal(true)}
-            >
-              Edit
-            </Button>
-          )}
-
           {(hasGps || fullAddress) && (
             <Button
               variant="secondary"
@@ -200,21 +184,17 @@ export function JobDetailPage() {
         </div>
       </div>
 
-      {/* Status action bar — shows when manager has permission */}
-      {canManage && statusActions[job.status]?.length > 0 && (
+      {/* Field-worker actions: Put On Hold / Resume only */}
+      {fieldActions.length > 0 && (
         <div className="flex items-center gap-2 p-2 bg-surface-secondary rounded-lg border border-border">
           <span className="text-xs text-gray-500 dark:text-gray-400 mr-1">Actions:</span>
-          {statusActions[job.status].map((action) => (
+          {fieldActions.map((action) => (
             <Button
               key={action.target}
               variant={action.variant === 'warning' ? 'secondary' : action.variant}
               size="sm"
               icon={action.icon}
-              onClick={() => {
-                if (action.target === 'cancelled' && !confirm('Cancel this job? This can be undone later.')) return;
-                if (action.target === 'completed' && !confirm('Mark this job as completed?')) return;
-                statusMutation.mutate(action.target);
-              }}
+              onClick={() => statusMutation.mutate(action.target)}
               isLoading={statusMutation.isPending}
             >
               {action.label}
@@ -274,6 +254,7 @@ export function JobDetailPage() {
           )}
 
           {/* Tab content */}
+          {activeTab === 'notebook' && <NotebookTab jobId={jobId} />}
           {activeTab === 'overview' && <OverviewTab job={job} />}
           {activeTab === 'labor' && <LaborTab jobId={jobId} />}
           {activeTab === 'parts' && <PartsTab jobId={jobId} />}
@@ -281,12 +262,128 @@ export function JobDetailPage() {
         </>
       )}
 
-      {/* Edit Job Modal */}
-      {showEditModal && (
-        <EditJobModal
-          isOpen={showEditModal}
-          onClose={() => setShowEditModal(false)}
-          job={job}
+    </div>
+  );
+}
+
+
+// ── Notebook Tab (Default) ─────────────────────────────────────────
+
+function NotebookTab({ jobId }: { jobId: number }) {
+  const queryClient = useQueryClient();
+
+  const [showCreateEntry, setShowCreateEntry] = useState<{
+    sectionId: number;
+    type: 'note' | 'task';
+  } | null>(null);
+  const [showAddSection, setShowAddSection] = useState(false);
+  const [savingFieldId, setSavingFieldId] = useState<number | null>(null);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['job-notebook', jobId],
+    queryFn: () => getJobNotebook(jobId),
+    staleTime: 15_000,
+  });
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['job-notebook', jobId] });
+
+  const createEntryMut = useMutation({
+    mutationFn: ({ sectionId, entry }: { sectionId: number; entry: EntryCreate }) =>
+      createEntry(sectionId, entry),
+    onSuccess: () => { invalidate(); setShowCreateEntry(null); },
+  });
+
+  const updateEntryMut = useMutation({
+    mutationFn: ({ entryId, title, content }: { entryId: number; title: string; content: string }) =>
+      updateEntry(entryId, { title, content }),
+    onSuccess: invalidate,
+  });
+
+  const deleteEntryMut = useMutation({
+    mutationFn: (entryId: number) => deleteEntry(entryId),
+    onSuccess: invalidate,
+  });
+
+  const taskStatusMut = useMutation({
+    mutationFn: ({ entryId, status, partsNote }: { entryId: number; status: TaskStatus; partsNote?: string }) =>
+      updateTaskStatus(entryId, { task_status: status, task_parts_note: partsNote }),
+    onSuccess: invalidate,
+  });
+
+  const fieldValueMut = useMutation({
+    mutationFn: ({ entryId, value }: { entryId: number; value: string }) => {
+      setSavingFieldId(entryId);
+      return updateFieldValue(entryId, { value });
+    },
+    onSuccess: () => { invalidate(); setSavingFieldId(null); },
+    onError: () => setSavingFieldId(null),
+  });
+
+  const addSectionMut = useMutation({
+    mutationFn: ({ notebookId, section }: { notebookId: number; section: SectionCreate }) =>
+      createSection(notebookId, section),
+    onSuccess: () => { invalidate(); setShowAddSection(false); },
+  });
+
+  if (isLoading) return <PageSpinner label="Loading notebook..." />;
+  if (error || !data) {
+    return (
+      <EmptyState
+        icon={<BookOpen className="h-12 w-12" />}
+        title="Notebook Unavailable"
+        description="Could not load the notebook for this job."
+      />
+    );
+  }
+
+  const { notebook, sections } = data;
+
+  return (
+    <div className="space-y-3">
+      {/* Section panels */}
+      {sections.map((section: SectionWithEntries) => (
+        <SectionPanel
+          key={section.id}
+          section={section}
+          onFieldSave={(id, val) => fieldValueMut.mutate({ entryId: id, value: val })}
+          onEntryUpdate={(id, title, content) => updateEntryMut.mutate({ entryId: id, title, content })}
+          onEntryDelete={(id) => {
+            if (window.confirm('Delete this entry?')) deleteEntryMut.mutate(id);
+          }}
+          onTaskStatusChange={(id, status, partsNote) =>
+            taskStatusMut.mutate({ entryId: id, status, partsNote })
+          }
+          onAddEntry={(sectionId, type) => setShowCreateEntry({ sectionId, type })}
+          savingFieldId={savingFieldId}
+        />
+      ))}
+
+      {/* Add section button */}
+      <button
+        onClick={() => setShowAddSection(true)}
+        className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-500 hover:text-blue-500 border border-dashed border-border hover:border-blue-300 rounded-lg transition-colors w-full justify-center"
+      >
+        <BookOpen className="h-4 w-4" />
+        Add Section
+      </button>
+
+      {/* Modals */}
+      {showCreateEntry && (
+        <CreateEntryModal
+          defaultType={showCreateEntry.type}
+          sectionId={showCreateEntry.sectionId}
+          onSubmit={(sectionId, entry) => createEntryMut.mutate({ sectionId, entry })}
+          onClose={() => setShowCreateEntry(null)}
+          loading={createEntryMut.isPending}
+        />
+      )}
+
+      {showAddSection && (
+        <AddSectionModal
+          notebookId={notebook.id}
+          onSubmit={(nid, section) => addSectionMut.mutate({ notebookId: nid, section })}
+          onClose={() => setShowAddSection(false)}
+          loading={addSectionMut.isPending}
         />
       )}
     </div>
@@ -324,6 +421,103 @@ function OverviewTab({ job }: { job: JobResponse }) {
           {job.notes && <InfoRow label="Notes" value={job.notes} />}
         </div>
       </Card>
+
+      {/* Warranty Info Card — only when sub-type is warranty */}
+      {job.status === 'on_call' && job.on_call_type === 'warranty' && (
+        <Card className="md:col-span-2">
+          <CardHeader
+            title="Warranty Coverage"
+            icon={<Shield className="h-5 w-5 text-sky-500" />}
+          />
+          <div className="px-4 pb-4">
+            <div className="grid grid-cols-3 gap-4">
+              {/* Start Date */}
+              <div className="text-center p-3 bg-surface-secondary rounded-lg">
+                <div className="flex justify-center mb-1 text-gray-400">
+                  <CalendarClock className="h-4 w-4" />
+                </div>
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                  {job.warranty_start_date
+                    ? new Date(job.warranty_start_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    : '—'}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Start Date</p>
+              </div>
+
+              {/* End Date */}
+              <div className="text-center p-3 bg-surface-secondary rounded-lg">
+                <div className="flex justify-center mb-1 text-gray-400">
+                  <CalendarClock className="h-4 w-4" />
+                </div>
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                  {job.warranty_end_date
+                    ? new Date(job.warranty_end_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                    : '—'}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">End Date</p>
+              </div>
+
+              {/* Days Remaining — color-coded */}
+              <div className={`text-center p-3 rounded-lg ${
+                job.warranty_days_remaining == null
+                  ? 'bg-surface-secondary'
+                  : job.warranty_days_remaining <= 0
+                    ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                    : job.warranty_days_remaining <= 30
+                      ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800'
+                      : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+              }`}>
+                <div className={`flex justify-center mb-1 ${
+                  job.warranty_days_remaining == null
+                    ? 'text-gray-400'
+                    : job.warranty_days_remaining <= 0
+                      ? 'text-red-500'
+                      : job.warranty_days_remaining <= 30
+                        ? 'text-amber-500'
+                        : 'text-green-500'
+                }`}>
+                  <Shield className="h-4 w-4" />
+                </div>
+                <p className={`text-lg font-bold ${
+                  job.warranty_days_remaining == null
+                    ? 'text-gray-900 dark:text-gray-100'
+                    : job.warranty_days_remaining <= 0
+                      ? 'text-red-600 dark:text-red-400'
+                      : job.warranty_days_remaining <= 30
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-green-600 dark:text-green-400'
+                }`}>
+                  {job.warranty_days_remaining != null
+                    ? (job.warranty_days_remaining <= 0 ? 'Expired' : `${job.warranty_days_remaining}d`)
+                    : '—'}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {job.warranty_days_remaining != null && job.warranty_days_remaining <= 0
+                    ? 'Warranty Expired'
+                    : 'Days Remaining'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* On Call Info — simple indicator when sub-type is on_call */}
+      {job.status === 'on_call' && job.on_call_type === 'on_call' && (
+        <Card className="md:col-span-2">
+          <div className="px-4 py-3 flex items-center gap-3">
+            <Shield className="h-5 w-5 text-sky-500" />
+            <div>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                On Call — Indefinite Standby
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                This job has no expiration date. Coverage remains active until status is changed.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Stats Card */}
       <Card>

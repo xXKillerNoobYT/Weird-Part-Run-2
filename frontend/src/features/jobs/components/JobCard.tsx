@@ -6,10 +6,11 @@
  * Google Maps directions.
  */
 
-import { MapPin, Navigation, Users, Clock, ChevronRight } from 'lucide-react';
+import { MapPin, Navigation, Users, Clock, ChevronRight, ListTodo, CheckCircle2, Package } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '../../../components/ui/Badge';
-import type { JobListItem, JobStatus, JobPriority } from '../../../lib/types';
+import { JOB_STATUS_LABELS, ON_CALL_TYPE_LABELS } from '../../../lib/types';
+import type { JobListItem, JobStatus, JobPriority, OnCallType } from '../../../lib/types';
 
 interface JobCardProps {
   job: JobListItem;
@@ -74,7 +75,7 @@ export function JobCard({ job, onClockIn }: JobCardProps) {
             <span className="text-xs font-mono text-gray-500 dark:text-gray-400">
               #{job.job_number}
             </span>
-            <Badge variant={STATUS_COLORS[job.status]}>{job.status.replace('_', ' ')}</Badge>
+            <Badge variant={STATUS_COLORS[job.status]}>{JOB_STATUS_LABELS[job.status]}</Badge>
             {job.priority !== 'normal' && (
               <span className={`text-xs font-medium capitalize ${PRIORITY_COLORS[job.priority]}`}>
                 {job.priority}
@@ -132,9 +133,19 @@ export function JobCard({ job, onClockIn }: JobCardProps) {
         )}
       </div>
 
+      {/* Task badges — specifically for on_call/warranty jobs dual-listed in Active */}
+      {(job.status === 'on_call' || job.status === 'continuous_maintenance') && job.open_task_count > 0 && (
+        <div className="mt-2 pt-2 border-t border-border flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-full">
+            <ListTodo className="h-3 w-3" />
+            {job.on_call_type ? ON_CALL_TYPE_LABELS[job.on_call_type as OnCallType] : JOB_STATUS_LABELS[job.status]} · {job.open_task_count} tasks open
+          </span>
+        </div>
+      )}
+
       {/* Lead user badge */}
       {job.lead_user_name && (
-        <div className="mt-2 pt-2 border-t border-border">
+        <div className={`mt-2 pt-2 ${!(job.status === 'on_call' || job.status === 'continuous_maintenance') || job.open_task_count === 0 ? 'border-t border-border' : ''}`}>
           <span className="text-xs text-gray-500 dark:text-gray-400">
             Lead: <span className="font-medium text-gray-700 dark:text-gray-300">{job.lead_user_name}</span>
           </span>

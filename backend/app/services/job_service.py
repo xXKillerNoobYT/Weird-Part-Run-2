@@ -9,7 +9,7 @@ that are merged into job responses for the frontend.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
 
 import aiosqlite
 
@@ -45,8 +45,9 @@ class JobService:
                 gps_lat, gps_lng,
                 status, priority, job_type,
                 bill_rate_type_id, lead_user_id,
-                start_date, due_date, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                start_date, due_date, notes,
+                on_call_type, warranty_start_date, warranty_end_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data.job_number, data.job_name, data.customer_name,
                 data.address_line1, data.address_line2, data.city, data.state, data.zip,
@@ -54,6 +55,7 @@ class JobService:
                 data.status, data.priority, data.job_type,
                 data.bill_rate_type_id, data.lead_user_id,
                 data.start_date, data.due_date, data.notes,
+                data.on_call_type, data.warranty_start_date, data.warranty_end_date,
             ),
         )
         await self.db.commit()
@@ -63,7 +65,7 @@ class JobService:
     # ── Read ──────────────────────────────────────────────────────
 
     async def get_job(self, job_id: int) -> JobResponse | None:
-        """Get a single job with aggregated stats."""
+        """Get a single job with aggregated stats and notebook task counts."""
         cursor = await self.db.execute(
             """SELECT j.*,
                       u.display_name AS lead_user_name,
@@ -72,7 +74,9 @@ class JobService:
                       COALESCE(labor.total_hours, 0) AS total_labor_hours,
                       COALESCE(labor.active_count, 0) AS active_workers,
                       -- Parts cost aggregation
-                      COALESCE(parts.total_cost, 0) AS total_parts_cost
+                      COALESCE(parts.total_cost, 0) AS total_parts_cost,
+                      -- Notebook task aggregation
+                      COALESCE(tasks.open_count, 0) AS open_task_count
                FROM jobs j
                LEFT JOIN users u ON u.id = j.lead_user_id
                LEFT JOIN bill_rate_types brt ON brt.id = j.bill_rate_type_id
@@ -89,6 +93,15 @@ class JobService:
                    FROM job_parts
                    GROUP BY job_id
                ) parts ON parts.job_id = j.id
+               LEFT JOIN (
+                   SELECT n.job_id,
+                          COUNT(CASE WHEN e.task_status != 'done' THEN 1 END) AS open_count
+                   FROM notebooks n
+                   JOIN notebook_sections s ON s.notebook_id = n.id
+                   JOIN notebook_entries e ON e.section_id = s.id
+                   WHERE e.entry_type = 'task' AND e.is_deleted = 0
+                   GROUP BY n.job_id
+               ) tasks ON tasks.job_id = j.id
                WHERE j.id = ?""",
             (job_id,),
         )
@@ -152,7 +165,8 @@ class JobService:
                        brt.name AS bill_rate_type_name,
                        COALESCE(labor.total_hours, 0) AS total_labor_hours,
                        COALESCE(labor.active_count, 0) AS active_workers,
-                       COALESCE(parts.total_cost, 0) AS total_parts_cost
+                       COALESCE(parts.total_cost, 0) AS total_parts_cost,
+                       COALESCE(tasks.open_count, 0) AS open_task_count
                 FROM jobs j
                 LEFT JOIN users u ON u.id = j.lead_user_id
                 LEFT JOIN bill_rate_types brt ON brt.id = j.bill_rate_type_id
@@ -169,6 +183,15 @@ class JobService:
                     FROM job_parts
                     GROUP BY job_id
                 ) parts ON parts.job_id = j.id
+                LEFT JOIN (
+                    SELECT n.job_id,
+                           COUNT(CASE WHEN e.task_status != 'done' THEN 1 END) AS open_count
+                    FROM notebooks n
+                    JOIN notebook_sections s ON s.notebook_id = n.id
+                    JOIN notebook_entries e ON e.section_id = s.id
+                    WHERE e.entry_type = 'task' AND e.is_deleted = 0
+                    GROUP BY n.job_id
+                ) tasks ON tasks.job_id = j.id
                 WHERE {where}
                 ORDER BY j.{sort_by} {sort_dir}""",
             params,
@@ -190,6 +213,20 @@ class JobService:
         if not updates:
             return await self.get_job(job_id)
 
+        # Handle completed_date when status changes
+        if data.status:
+            if data.status in ("completed", "cancelled"):
+                updates.append("completed_date = datetime('now')")
+            else:
+                updates.append("completed_date = NULL")
+            # Clear warranty fields when leaving on_call status
+            if data.status != "on_call":
+                updates.extend([
+                    "on_call_type = NULL",
+                    "warranty_start_date = NULL",
+                    "warranty_end_date = NULL",
+                ])
+
         updates.append("updated_at = datetime('now')")
         params.append(job_id)
 
@@ -209,6 +246,10 @@ class JobService:
             extra = ", completed_date = datetime('now')"
         elif new_status in ("active", "pending", "on_hold", "continuous_maintenance", "on_call"):
             extra = ", completed_date = NULL"
+
+        # Clear warranty fields when leaving on_call status
+        if new_status != "on_call":
+            extra += ", on_call_type = NULL, warranty_start_date = NULL, warranty_end_date = NULL"
 
         params.append(job_id)
         await self.db.execute(
@@ -297,6 +338,15 @@ class JobService:
     # ── Helpers ───────────────────────────────────────────────────
 
     def _row_to_response(self, row: aiosqlite.Row) -> JobResponse:
+        # Compute warranty days remaining if end date is set
+        warranty_days = None
+        if row["warranty_end_date"]:
+            try:
+                end = date.fromisoformat(row["warranty_end_date"])
+                warranty_days = (end - date.today()).days
+            except (ValueError, TypeError):
+                warranty_days = None
+
         return JobResponse(
             id=row["id"],
             job_number=row["job_number"],
@@ -320,11 +370,16 @@ class JobService:
             due_date=row["due_date"],
             completed_date=row["completed_date"],
             notes=row["notes"],
+            on_call_type=row["on_call_type"],
+            warranty_start_date=row["warranty_start_date"],
+            warranty_end_date=row["warranty_end_date"],
+            warranty_days_remaining=warranty_days,
             created_at=row["created_at"],
             updated_at=row["updated_at"],
             total_labor_hours=row["total_labor_hours"],
             total_parts_cost=row["total_parts_cost"],
             active_workers=row["active_workers"],
+            open_task_count=row["open_task_count"] if "open_task_count" in row.keys() else 0,
         )
 
     def _row_to_list_item(self, row: aiosqlite.Row) -> JobListItem:
@@ -344,9 +399,12 @@ class JobService:
             job_type=row["job_type"],
             bill_rate_type_name=row["bill_rate_type_name"],
             lead_user_name=row["lead_user_name"],
+            on_call_type=row["on_call_type"],
+            warranty_end_date=row["warranty_end_date"],
             active_workers=row["active_workers"] or 0,
             total_labor_hours=row["total_labor_hours"] or 0,
             total_parts_cost=row["total_parts_cost"] or 0,
+            open_task_count=row["open_task_count"] if "open_task_count" in row.keys() else 0,
             created_at=row["created_at"],
         )
 

@@ -134,6 +134,7 @@ from app.routers import (  # noqa: E402
     warehouse,
     trucks,
     jobs,
+    notebooks,
     orders,
     people,
     reports,
@@ -147,6 +148,7 @@ app.include_router(companions.router)
 app.include_router(warehouse.router)
 app.include_router(trucks.router)
 app.include_router(jobs.router)
+app.include_router(notebooks.router)
 app.include_router(orders.router)
 app.include_router(people.router)
 app.include_router(reports.router)

@@ -44,6 +44,7 @@ export const MODULES: NavModule[] = [
     tabs: [
       { id: 'warehouse-exec', label: 'Warehouse Executive', path: '/office/warehouse-exec', permission: 'manage_warehouse' },
       { id: 'manage-jobs', label: 'Manage Jobs', path: '/office/manage-jobs', permission: 'manage_jobs' },
+      { id: 'notebook-templates', label: 'Notebook Templates', path: '/office/notebook-templates', permission: 'manage_notebooks' },
       { id: 'clock-out-questions', label: 'Clock-Out Questions', path: '/office/clock-out-questions', permission: 'manage_settings' },
     ],
   },
@@ -85,7 +86,17 @@ export const MODULES: NavModule[] = [
     tabs: [
       { id: 'active', label: 'Active Jobs', path: '/jobs/active' },
       { id: 'my-clock', label: 'My Clock', path: '/jobs/my-clock' },
-      { id: 'templates', label: 'Templates', path: '/jobs/templates', permission: 'manage_templates' },
+    ],
+  },
+  {
+    id: 'notebooks',
+    label: 'Notebooks',
+    icon: 'BookOpen',
+    path: '/notebooks',
+    tabs: [
+      { id: 'all', label: 'All', path: '/notebooks/all' },
+      { id: 'job-notebooks', label: 'Job Notebooks', path: '/notebooks/job-notebooks' },
+      { id: 'general', label: 'General', path: '/notebooks/general' },
     ],
   },
   {

@@ -31,3 +31,20 @@ export async function getAllSettings(): Promise<Record<string, unknown>> {
   );
   return data.data ?? {};
 }
+
+// ── Warranty Settings ───────────────────────────────────────────
+
+/** Get default warranty length in days from global settings. */
+export async function getWarrantyLengthDays(): Promise<number> {
+  const { data } = await apiClient.get<ApiResponse<{ key: string; value: string | null }>>(
+    '/settings/warranty_length_days',
+  );
+  return data.data?.value ? parseInt(data.data.value, 10) : 365;
+}
+
+/** Update default warranty length in days. */
+export async function updateWarrantyLengthDays(days: number): Promise<void> {
+  await apiClient.put('/settings/warranty_length_days', {
+    value: String(days),
+  });
+}

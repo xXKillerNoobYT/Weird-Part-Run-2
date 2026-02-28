@@ -61,7 +61,11 @@ import { MyClockPage } from './features/jobs/pages/MyClockPage';
 import { JobDetailPage } from './features/jobs/pages/JobDetailPage';
 import { JobReportsListPage } from './features/jobs/pages/JobReportsListPage';
 import { DailyReportView } from './features/jobs/pages/DailyReportView';
-import { TemplatesPage } from './features/jobs/pages/TemplatesPage';
+
+// Pages — Notebooks
+import { NotebooksPage } from './features/notebooks/pages/NotebooksPage';
+import { NotebookDetailPage } from './features/notebooks/pages/NotebookDetailPage';
+import { JobNotebookTemplatePage } from './features/office/pages/JobNotebookTemplatePage';
 
 // Pages — Orders
 import { DraftOrdersPage } from './features/orders/pages/DraftOrdersPage';
@@ -129,6 +133,7 @@ export default function App() {
               <Route path="/office" element={<Navigate to="/office/warehouse-exec" replace />} />
               <Route path="/office/warehouse-exec" element={<WarehouseExecPage />} />
               <Route path="/office/manage-jobs" element={<ManageJobsPage />} />
+              <Route path="/office/notebook-templates" element={<JobNotebookTemplatePage />} />
               <Route path="/office/clock-out-questions" element={<ClockOutQuestionsPage />} />
 
               {/* Warehouse */}
@@ -152,8 +157,14 @@ export default function App() {
               <Route path="/jobs" element={<Navigate to="/jobs/active" replace />} />
               <Route path="/jobs/active" element={<ActiveJobsPage />} />
               <Route path="/jobs/my-clock" element={<MyClockPage />} />
-              <Route path="/jobs/templates" element={<TemplatesPage />} />
               <Route path="/jobs/:id" element={<JobDetailPage />} />
+
+              {/* Notebooks */}
+              <Route path="/notebooks" element={<Navigate to="/notebooks/all" replace />} />
+              <Route path="/notebooks/all" element={<NotebooksPage />} />
+              <Route path="/notebooks/job-notebooks" element={<NotebooksPage />} />
+              <Route path="/notebooks/general" element={<NotebooksPage />} />
+              <Route path="/notebooks/:notebookId" element={<NotebookDetailPage />} />
 
               {/* Orders */}
               <Route path="/orders" element={<Navigate to="/orders/drafts" replace />} />

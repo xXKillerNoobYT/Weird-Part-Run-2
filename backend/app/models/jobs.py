@@ -59,12 +59,17 @@ class JobCreate(BaseModel):
     start_date: str | None = None
     due_date: str | None = None
     notes: str | None = None
+    # On Call / Warranty sub-type fields
+    on_call_type: str | None = None  # 'on_call' or 'warranty'
+    warranty_start_date: str | None = None
+    warranty_end_date: str | None = None
 
 
 class JobUpdate(BaseModel):
     """Update an existing job. All fields optional."""
     job_name: str | None = None
     customer_name: str | None = None
+    status: str | None = None
     address_line1: str | None = None
     address_line2: str | None = None
     city: str | None = None
@@ -79,6 +84,10 @@ class JobUpdate(BaseModel):
     start_date: str | None = None
     due_date: str | None = None
     notes: str | None = None
+    # On Call / Warranty sub-type fields
+    on_call_type: str | None = None
+    warranty_start_date: str | None = None
+    warranty_end_date: str | None = None
 
 
 class JobStatusUpdate(BaseModel):
@@ -112,12 +121,20 @@ class JobResponse(BaseModel):
     due_date: str | None = None
     completed_date: str | None = None
     notes: str | None = None
+    # On Call / Warranty sub-type fields
+    on_call_type: str | None = None
+    warranty_start_date: str | None = None
+    warranty_end_date: str | None = None
+    warranty_days_remaining: int | None = None  # computed by service layer
     created_at: str | None = None
     updated_at: str | None = None
     # Aggregated stats (populated by service layer)
     total_labor_hours: float | None = None
     total_parts_cost: float | None = None
     active_workers: int | None = None
+    # Notebook task aggregation
+    open_task_count: int = 0
+    task_summary: dict | None = None
 
     # Formatted address for display
     @property
@@ -149,9 +166,13 @@ class JobListItem(BaseModel):
     job_type: str
     bill_rate_type_name: str | None = None
     lead_user_name: str | None = None
+    # On Call / Warranty sub-type (for displaying sub-type in lists)
+    on_call_type: str | None = None
+    warranty_end_date: str | None = None
     active_workers: int = 0
     total_labor_hours: float = 0
     total_parts_cost: float = 0
+    open_task_count: int = 0
     created_at: str | None = None
 
 

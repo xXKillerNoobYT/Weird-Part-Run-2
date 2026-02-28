@@ -11,7 +11,7 @@
 
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard, Package, Warehouse, Truck, Briefcase,
+  LayoutDashboard, Package, Warehouse, Truck, Briefcase, BookOpen,
   ShoppingCart, Users, BarChart3, Settings, ChevronLeft, X, Zap,
   Building2,
 } from 'lucide-react';
@@ -28,6 +28,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Warehouse,
   Truck,
   Briefcase,
+  BookOpen,
   ShoppingCart,
   Users,
   BarChart3,
