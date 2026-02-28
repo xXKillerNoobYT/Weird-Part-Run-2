@@ -20,6 +20,9 @@ from app.middleware.auth import require_permission, require_user
 from app.models.common import ApiResponse, StatusMessage
 from app.models.jobs import (
     ActiveClockResponse,
+    BillRateTypeCreate,
+    BillRateTypeResponse,
+    BillRateTypeUpdate,
     ClockInRequest,
     ClockOutBundle,
     ClockOutQuestionCreate,
@@ -49,6 +52,81 @@ router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# BILL RATE TYPES (boss-customizable lookup)
+# ═══════════════════════════════════════════════════════════════════════
+
+@router.get(
+    "/bill-rate-types",
+    response_model=ApiResponse[list[BillRateTypeResponse]],
+    summary="List bill rate types",
+)
+async def list_bill_rate_types(
+    active_only: bool = Query(True, description="Only show active types"),
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List all bill rate types for dropdown population."""
+    svc = JobService(db)
+    types = await svc.get_bill_rate_types(active_only=active_only)
+    return ApiResponse(data=types, message=f"{len(types)} bill rate types")
+
+
+@router.post(
+    "/bill-rate-types",
+    response_model=ApiResponse[BillRateTypeResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Create bill rate type",
+)
+async def create_bill_rate_type(
+    data: BillRateTypeCreate,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Create a new bill rate type (boss only)."""
+    svc = JobService(db)
+    brt = await svc.create_bill_rate_type(data)
+    return ApiResponse(data=brt, message=f"Bill rate type '{data.name}' created")
+
+
+@router.put(
+    "/bill-rate-types/{type_id}",
+    response_model=ApiResponse[BillRateTypeResponse],
+    summary="Update bill rate type",
+)
+async def update_bill_rate_type(
+    type_id: int,
+    data: BillRateTypeUpdate,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update a bill rate type."""
+    svc = JobService(db)
+    brt = await svc.update_bill_rate_type(type_id, data)
+    if not brt:
+        raise HTTPException(status_code=404, detail="Bill rate type not found")
+    return ApiResponse(data=brt, message="Bill rate type updated")
+
+
+@router.delete(
+    "/bill-rate-types/{type_id}",
+    response_model=ApiResponse[StatusMessage],
+    summary="Deactivate bill rate type",
+)
+async def delete_bill_rate_type(
+    type_id: int,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Soft-delete a bill rate type (sets is_active = 0)."""
+    svc = JobService(db)
+    await svc.delete_bill_rate_type(type_id)
+    return ApiResponse(
+        data=StatusMessage(status="ok", module="bill_rate_types"),
+        message="Bill rate type deactivated",
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # JOB CRUD
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -74,8 +152,8 @@ async def active_jobs(
         status=status_filter,
         job_type=job_type,
         priority=priority,
-        sort=sort,
-        order=order,
+        sort_by=sort,
+        sort_dir=order,
     )
     return ApiResponse(data=jobs, message=f"{len(jobs)} jobs found")
 
@@ -93,7 +171,7 @@ async def create_job(
 ):
     """Create a new job with all details."""
     svc = JobService(db)
-    job = await svc.create_job(data)
+    job = await svc.create_job(data, created_by=user["id"])
     return ApiResponse(data=job, message=f"Job '{data.job_name}' created")
 
 
@@ -160,7 +238,7 @@ async def update_job_status(
     user: dict = Depends(require_permission("manage_jobs")),
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    """Change job status (active, on_hold, completed, cancelled)."""
+    """Change job status (pending, active, on_hold, completed, cancelled, continuous_maintenance, on_call)."""
     svc = JobService(db)
     job = await svc.update_status(job_id, data.status)
     if not job:
@@ -304,7 +382,7 @@ async def consume_part(
 ):
     """Record parts consumed on a job. Snapshots cost at time of consumption."""
     svc = JobService(db)
-    part = await svc.consume_part(job_id, data, consumed_by=user["id"])
+    part = await svc.consume_part(job_id, data, user_id=user["id"])
     return ApiResponse(data=part, message="Part consumption recorded")
 
 
@@ -346,23 +424,6 @@ async def create_global_question(
 
 
 @router.put(
-    "/questions/global/{question_id}",
-    response_model=ApiResponse[ClockOutQuestionResponse],
-    summary="Update a global question",
-)
-async def update_global_question(
-    question_id: int,
-    data: ClockOutQuestionCreate,
-    user: dict = Depends(require_permission("manage_settings")),
-    db: aiosqlite.Connection = Depends(get_db),
-):
-    """Update an existing global clock-out question."""
-    svc = QuestionnaireService(db)
-    question = await svc.update_global_question(question_id, data)
-    return ApiResponse(data=question, message="Question updated")
-
-
-@router.put(
     "/questions/global/reorder",
     response_model=ApiResponse[StatusMessage],
     summary="Reorder global questions",
@@ -379,6 +440,23 @@ async def reorder_global_questions(
         data=StatusMessage(status="ok", module="questions"),
         message="Questions reordered",
     )
+
+
+@router.put(
+    "/questions/global/{question_id}",
+    response_model=ApiResponse[ClockOutQuestionResponse],
+    summary="Update a global question",
+)
+async def update_global_question(
+    question_id: int,
+    data: ClockOutQuestionCreate,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update an existing global clock-out question."""
+    svc = QuestionnaireService(db)
+    question = await svc.update_global_question(question_id, data)
+    return ApiResponse(data=question, message="Question updated")
 
 
 @router.delete(

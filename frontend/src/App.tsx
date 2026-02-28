@@ -38,6 +38,7 @@ import { CompanionsPage } from './features/parts/pages/CompanionsPage';
 
 // Pages — Office
 import { WarehouseExecPage } from './features/office/pages/WarehouseExecPage';
+import { ManageJobsPage } from './features/office/pages/ManageJobsPage';
 
 // Pages — Warehouse
 import { WarehouseDashboardPage } from './features/warehouse/pages/WarehouseDashboardPage';
@@ -127,6 +128,8 @@ export default function App() {
               {/* Office */}
               <Route path="/office" element={<Navigate to="/office/warehouse-exec" replace />} />
               <Route path="/office/warehouse-exec" element={<WarehouseExecPage />} />
+              <Route path="/office/manage-jobs" element={<ManageJobsPage />} />
+              <Route path="/office/clock-out-questions" element={<ClockOutQuestionsPage />} />
 
               {/* Warehouse */}
               <Route path="/warehouse" element={<Navigate to="/warehouse/dashboard" replace />} />
@@ -149,10 +152,8 @@ export default function App() {
               <Route path="/jobs" element={<Navigate to="/jobs/active" replace />} />
               <Route path="/jobs/active" element={<ActiveJobsPage />} />
               <Route path="/jobs/my-clock" element={<MyClockPage />} />
-              <Route path="/jobs/reports" element={<JobReportsListPage />} />
               <Route path="/jobs/templates" element={<TemplatesPage />} />
               <Route path="/jobs/:id" element={<JobDetailPage />} />
-              <Route path="/jobs/:id/report/:date" element={<DailyReportView />} />
 
               {/* Orders */}
               <Route path="/orders" element={<Navigate to="/orders/drafts" replace />} />
@@ -169,7 +170,9 @@ export default function App() {
               <Route path="/people/permissions" element={<PermissionsPage />} />
 
               {/* Reports */}
-              <Route path="/reports" element={<Navigate to="/reports/pre-billing" replace />} />
+              <Route path="/reports" element={<Navigate to="/reports/daily-reports" replace />} />
+              <Route path="/reports/daily-reports" element={<JobReportsListPage />} />
+              <Route path="/reports/daily-reports/:jobId/:date" element={<DailyReportView />} />
               <Route path="/reports/pre-billing" element={<PreBillingPage />} />
               <Route path="/reports/timesheets" element={<TimesheetsPage />} />
               <Route path="/reports/labor-overview" element={<LaborOverviewPage />} />
@@ -179,7 +182,7 @@ export default function App() {
               <Route path="/settings" element={<Navigate to="/settings/themes" replace />} />
               <Route path="/settings/app-config" element={<AppConfigPage />} />
               <Route path="/settings/themes" element={<ThemesPage />} />
-              <Route path="/settings/questions" element={<ClockOutQuestionsPage />} />
+              <Route path="/settings/questions" element={<Navigate to="/office/clock-out-questions" replace />} />
               <Route path="/settings/sync" element={<SyncPage />} />
               <Route path="/settings/ai-config" element={<AiConfigPage />} />
               <Route path="/settings/devices" element={<DeviceManagementPage />} />

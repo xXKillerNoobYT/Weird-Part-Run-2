@@ -1344,9 +1344,34 @@ export interface PartAlternativeUpdate {
 
 // ── Job Types ────────────────────────────────────────────────────
 
-export type JobStatus = 'active' | 'on_hold' | 'completed' | 'cancelled';
+export type JobStatus =
+  | 'pending' | 'active' | 'on_hold'
+  | 'completed' | 'cancelled'
+  | 'continuous_maintenance' | 'on_call';
 export type JobPriority = 'low' | 'normal' | 'high' | 'urgent';
 export type JobType = 'service' | 'new_construction' | 'remodel' | 'maintenance' | 'emergency';
+
+// ── Bill Rate Types ──────────────────────────────────────────────
+
+export interface BillRateType {
+  id: number;
+  name: string;
+  description?: string | null;
+  sort_order: number;
+  is_active: boolean;
+  created_at?: string | null;
+}
+
+export interface BillRateTypeCreate {
+  name: string;
+  description?: string | null;
+}
+
+export interface BillRateTypeUpdate {
+  name?: string;
+  description?: string | null;
+  is_active?: boolean;
+}
 export type LaborStatus = 'clocked_in' | 'clocked_out' | 'edited' | 'approved';
 export type ReportStatus = 'generated' | 'reviewed' | 'locked';
 
@@ -1364,8 +1389,7 @@ export interface JobCreate {
   status?: JobStatus;
   priority?: JobPriority;
   job_type?: JobType;
-  billing_rate?: number;
-  estimated_hours?: number;
+  bill_rate_type_id?: number;
   lead_user_id?: number;
   start_date?: string;
   due_date?: string;
@@ -1384,8 +1408,7 @@ export interface JobUpdate {
   gps_lng?: number;
   priority?: JobPriority;
   job_type?: JobType;
-  billing_rate?: number;
-  estimated_hours?: number;
+  bill_rate_type_id?: number;
   lead_user_id?: number;
   start_date?: string;
   due_date?: string;
@@ -1407,8 +1430,8 @@ export interface JobResponse {
   status: JobStatus;
   priority: JobPriority;
   job_type: JobType;
-  billing_rate?: number | null;
-  estimated_hours?: number | null;
+  bill_rate_type_id?: number | null;
+  bill_rate_type_name?: string | null;
   lead_user_id?: number | null;
   lead_user_name?: string | null;
   start_date?: string | null;
@@ -1437,6 +1460,7 @@ export interface JobListItem {
   status: JobStatus;
   priority: JobPriority;
   job_type: JobType;
+  bill_rate_type_name?: string | null;
   lead_user_name?: string | null;
   active_workers: number;
   total_labor_hours: number;

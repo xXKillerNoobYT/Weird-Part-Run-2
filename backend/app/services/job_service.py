@@ -14,6 +14,9 @@ from datetime import datetime
 import aiosqlite
 
 from app.models.jobs import (
+    BillRateTypeCreate,
+    BillRateTypeResponse,
+    BillRateTypeUpdate,
     JobCreate,
     JobListItem,
     JobResponse,
@@ -41,15 +44,15 @@ class JobService:
                 address_line1, address_line2, city, state, zip,
                 gps_lat, gps_lng,
                 status, priority, job_type,
-                billing_rate, estimated_hours, lead_user_id,
+                bill_rate_type_id, lead_user_id,
                 start_date, due_date, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 data.job_number, data.job_name, data.customer_name,
                 data.address_line1, data.address_line2, data.city, data.state, data.zip,
                 data.gps_lat, data.gps_lng,
                 data.status, data.priority, data.job_type,
-                data.billing_rate, data.estimated_hours, data.lead_user_id,
+                data.bill_rate_type_id, data.lead_user_id,
                 data.start_date, data.due_date, data.notes,
             ),
         )
@@ -64,6 +67,7 @@ class JobService:
         cursor = await self.db.execute(
             """SELECT j.*,
                       u.display_name AS lead_user_name,
+                      brt.name AS bill_rate_type_name,
                       -- Labor aggregation
                       COALESCE(labor.total_hours, 0) AS total_labor_hours,
                       COALESCE(labor.active_count, 0) AS active_workers,
@@ -71,6 +75,7 @@ class JobService:
                       COALESCE(parts.total_cost, 0) AS total_parts_cost
                FROM jobs j
                LEFT JOIN users u ON u.id = j.lead_user_id
+               LEFT JOIN bill_rate_types brt ON brt.id = j.bill_rate_type_id
                LEFT JOIN (
                    SELECT job_id,
                           SUM(COALESCE(regular_hours, 0) + COALESCE(overtime_hours, 0)) AS total_hours,
@@ -109,8 +114,10 @@ class JobService:
             conditions.append("j.status = ?")
             params.append(status)
         else:
-            # Default: show active and on_hold
-            conditions.append("j.status IN ('active', 'on_hold')")
+            # Default: show all non-terminal statuses
+            conditions.append(
+                "j.status IN ('pending', 'active', 'on_hold', 'continuous_maintenance', 'on_call')"
+            )
 
         if job_type:
             conditions.append("j.job_type = ?")
@@ -142,11 +149,13 @@ class JobService:
         cursor = await self.db.execute(
             f"""SELECT j.*,
                        u.display_name AS lead_user_name,
+                       brt.name AS bill_rate_type_name,
                        COALESCE(labor.total_hours, 0) AS total_labor_hours,
                        COALESCE(labor.active_count, 0) AS active_workers,
                        COALESCE(parts.total_cost, 0) AS total_parts_cost
                 FROM jobs j
                 LEFT JOIN users u ON u.id = j.lead_user_id
+                LEFT JOIN bill_rate_types brt ON brt.id = j.bill_rate_type_id
                 LEFT JOIN (
                     SELECT job_id,
                            SUM(COALESCE(regular_hours, 0) + COALESCE(overtime_hours, 0)) AS total_hours,
@@ -196,9 +205,9 @@ class JobService:
         extra = ""
         params: list = [new_status]
 
-        if new_status == "completed":
+        if new_status in ("completed", "cancelled"):
             extra = ", completed_date = datetime('now')"
-        elif new_status == "active":
+        elif new_status in ("active", "pending", "on_hold", "continuous_maintenance", "on_call"):
             extra = ", completed_date = NULL"
 
         params.append(job_id)
@@ -238,7 +247,7 @@ class JobService:
         """Get all parts consumed on a job."""
         cursor = await self.db.execute(
             """SELECT jp.*,
-                      p.part_name, p.code AS part_code,
+                      p.name AS part_name, p.code AS part_code,
                       u.display_name AS consumed_by_name
                FROM job_parts jp
                LEFT JOIN parts p ON p.id = jp.part_id
@@ -265,7 +274,7 @@ class JobService:
     async def _get_job_part(self, part_entry_id: int) -> JobPartResponse:
         cursor = await self.db.execute(
             """SELECT jp.*,
-                      p.part_name, p.code AS part_code,
+                      p.name AS part_name, p.code AS part_code,
                       u.display_name AS consumed_by_name
                FROM job_parts jp
                LEFT JOIN parts p ON p.id = jp.part_id
@@ -303,8 +312,8 @@ class JobService:
             status=row["status"],
             priority=row["priority"],
             job_type=row["job_type"],
-            billing_rate=row["billing_rate"],
-            estimated_hours=row["estimated_hours"],
+            bill_rate_type_id=row["bill_rate_type_id"],
+            bill_rate_type_name=row["bill_rate_type_name"],
             lead_user_id=row["lead_user_id"],
             lead_user_name=row["lead_user_name"],
             start_date=row["start_date"],
@@ -333,9 +342,88 @@ class JobService:
             status=row["status"],
             priority=row["priority"],
             job_type=row["job_type"],
+            bill_rate_type_name=row["bill_rate_type_name"],
             lead_user_name=row["lead_user_name"],
             active_workers=row["active_workers"] or 0,
             total_labor_hours=row["total_labor_hours"] or 0,
             total_parts_cost=row["total_parts_cost"] or 0,
             created_at=row["created_at"],
         )
+
+    # ── Bill Rate Types CRUD ───────────────────────────────────────
+
+    async def get_bill_rate_types(self, active_only: bool = True) -> list[BillRateTypeResponse]:
+        """List bill rate types, optionally filtered to active only."""
+        where = "WHERE is_active = 1" if active_only else ""
+        cursor = await self.db.execute(
+            f"SELECT * FROM bill_rate_types {where} ORDER BY sort_order ASC, name ASC"
+        )
+        rows = await cursor.fetchall()
+        return [
+            BillRateTypeResponse(
+                id=r["id"], name=r["name"], description=r["description"],
+                sort_order=r["sort_order"], is_active=bool(r["is_active"]),
+                created_at=r["created_at"],
+            )
+            for r in rows
+        ]
+
+    async def create_bill_rate_type(self, data: BillRateTypeCreate) -> BillRateTypeResponse:
+        """Create a new bill rate type."""
+        # Auto-assign sort_order to end of list
+        cursor = await self.db.execute(
+            "SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_order FROM bill_rate_types"
+        )
+        row = await cursor.fetchone()
+        next_order = row["next_order"]
+
+        cursor = await self.db.execute(
+            "INSERT INTO bill_rate_types (name, description, sort_order) VALUES (?, ?, ?)",
+            (data.name, data.description, next_order),
+        )
+        await self.db.commit()
+        return (await self.get_bill_rate_types(active_only=False))[-1]
+
+    async def update_bill_rate_type(
+        self, type_id: int, data: BillRateTypeUpdate
+    ) -> BillRateTypeResponse | None:
+        """Update a bill rate type."""
+        updates = []
+        params: list = []
+        for field, value in data.model_dump(exclude_none=True).items():
+            if field == "is_active":
+                updates.append("is_active = ?")
+                params.append(1 if value else 0)
+            else:
+                updates.append(f"{field} = ?")
+                params.append(value)
+
+        if not updates:
+            return None
+
+        params.append(type_id)
+        await self.db.execute(
+            f"UPDATE bill_rate_types SET {', '.join(updates)} WHERE id = ?",
+            params,
+        )
+        await self.db.commit()
+
+        cursor = await self.db.execute(
+            "SELECT * FROM bill_rate_types WHERE id = ?", (type_id,)
+        )
+        r = await cursor.fetchone()
+        if not r:
+            return None
+        return BillRateTypeResponse(
+            id=r["id"], name=r["name"], description=r["description"],
+            sort_order=r["sort_order"], is_active=bool(r["is_active"]),
+            created_at=r["created_at"],
+        )
+
+    async def delete_bill_rate_type(self, type_id: int) -> bool:
+        """Soft-delete a bill rate type (set is_active = 0)."""
+        await self.db.execute(
+            "UPDATE bill_rate_types SET is_active = 0 WHERE id = ?", (type_id,)
+        )
+        await self.db.commit()
+        return True

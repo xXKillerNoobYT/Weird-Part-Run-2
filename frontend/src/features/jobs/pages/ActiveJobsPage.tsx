@@ -24,8 +24,6 @@ const STATUS_OPTIONS: { label: string; value: JobStatus | 'all' }[] = [
   { label: 'All', value: 'all' },
   { label: 'Active', value: 'active' },
   { label: 'On Hold', value: 'on_hold' },
-  { label: 'Completed', value: 'completed' },
-  { label: 'Cancelled', value: 'cancelled' },
 ];
 
 const TYPE_OPTIONS: { label: string; value: JobType | 'all' }[] = [

@@ -141,7 +141,7 @@ export function JobReportsListPage() {
                 {dayReports.map((report) => (
                   <div
                     key={report.id}
-                    onClick={() => navigate(`/jobs/${report.job_id}/report/${report.report_date}`)}
+                    onClick={() => navigate(`/reports/daily-reports/${report.job_id}/${report.report_date}`)}
                     className="flex items-center gap-3 p-3 bg-surface border border-border rounded-lg hover:border-blue-300 dark:hover:border-blue-600 transition-colors cursor-pointer group"
                   >
                     {/* Job info */}

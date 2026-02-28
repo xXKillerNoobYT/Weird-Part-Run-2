@@ -251,11 +251,11 @@ export function DailyReportView() {
       {/* Back button + Title */}
       <div>
         <button
-          onClick={() => navigate(`/jobs/${jobId}`)}
+          onClick={() => navigate('/reports/daily-reports')}
           className="flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors mb-3"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to Job
+          Back to Reports
         </button>
 
         {/* Report header */}

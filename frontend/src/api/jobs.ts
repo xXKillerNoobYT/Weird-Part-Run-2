@@ -13,6 +13,10 @@ import type {
   JobUpdate,
   JobResponse,
   JobListItem,
+  // Bill Rate Types
+  BillRateType,
+  BillRateTypeCreate,
+  BillRateTypeUpdate,
   // Labor
   ClockInRequest,
   ClockOutRequest,
@@ -32,6 +36,52 @@ import type {
   DailyReportFull,
   StatusMessage,
 } from '../lib/types';
+
+
+// =================================================================
+// BILL RATE TYPES
+// =================================================================
+
+/** List bill rate types for dropdowns */
+export async function getBillRateTypes(
+  activeOnly: boolean = true
+): Promise<BillRateType[]> {
+  const { data } = await apiClient.get<ApiResponse<BillRateType[]>>(
+    '/jobs/bill-rate-types',
+    { params: { active_only: activeOnly } }
+  );
+  return data.data ?? [];
+}
+
+/** Create a new bill rate type */
+export async function createBillRateType(
+  brt: BillRateTypeCreate
+): Promise<BillRateType> {
+  const { data } = await apiClient.post<ApiResponse<BillRateType>>(
+    '/jobs/bill-rate-types',
+    brt
+  );
+  return data.data!;
+}
+
+/** Update a bill rate type */
+export async function updateBillRateType(
+  id: number,
+  updates: BillRateTypeUpdate
+): Promise<BillRateType> {
+  const { data } = await apiClient.put<ApiResponse<BillRateType>>(
+    `/jobs/bill-rate-types/${id}`,
+    updates
+  );
+  return data.data!;
+}
+
+/** Deactivate (soft-delete) a bill rate type */
+export async function deleteBillRateType(id: number): Promise<void> {
+  await apiClient.delete<ApiResponse<StatusMessage>>(
+    `/jobs/bill-rate-types/${id}`
+  );
+}
 
 
 // =================================================================

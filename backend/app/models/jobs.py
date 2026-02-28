@@ -12,6 +12,31 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+# ── Bill Rate Types ───────────────────────────────────────────────────
+
+class BillRateTypeCreate(BaseModel):
+    """Create a new bill rate type."""
+    name: str = Field(..., min_length=1, max_length=100)
+    description: str | None = None
+
+
+class BillRateTypeUpdate(BaseModel):
+    """Update a bill rate type."""
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = None
+    is_active: bool | None = None
+
+
+class BillRateTypeResponse(BaseModel):
+    """Bill rate type lookup entry."""
+    id: int
+    name: str
+    description: str | None = None
+    sort_order: int = 0
+    is_active: bool = True
+    created_at: str | None = None
+
+
 # ── Jobs ──────────────────────────────────────────────────────────────
 
 class JobCreate(BaseModel):
@@ -29,8 +54,7 @@ class JobCreate(BaseModel):
     status: str = "active"
     priority: str = "normal"
     job_type: str = "service"
-    billing_rate: float | None = None
-    estimated_hours: float | None = None
+    bill_rate_type_id: int | None = None
     lead_user_id: int | None = None
     start_date: str | None = None
     due_date: str | None = None
@@ -50,8 +74,7 @@ class JobUpdate(BaseModel):
     gps_lng: float | None = None
     priority: str | None = None
     job_type: str | None = None
-    billing_rate: float | None = None
-    estimated_hours: float | None = None
+    bill_rate_type_id: int | None = None
     lead_user_id: int | None = None
     start_date: str | None = None
     due_date: str | None = None
@@ -60,7 +83,9 @@ class JobUpdate(BaseModel):
 
 class JobStatusUpdate(BaseModel):
     """Change job status (separate from general update for audit trail)."""
-    status: str  # active, on_hold, completed, cancelled
+    # pending, active, on_hold, completed, cancelled,
+    # continuous_maintenance, on_call
+    status: str
 
 
 class JobResponse(BaseModel):
@@ -79,8 +104,8 @@ class JobResponse(BaseModel):
     status: str
     priority: str
     job_type: str
-    billing_rate: float | None = None
-    estimated_hours: float | None = None
+    bill_rate_type_id: int | None = None
+    bill_rate_type_name: str | None = None
     lead_user_id: int | None = None
     lead_user_name: str | None = None
     start_date: str | None = None
@@ -122,6 +147,7 @@ class JobListItem(BaseModel):
     status: str
     priority: str
     job_type: str
+    bill_rate_type_name: str | None = None
     lead_user_name: str | None = None
     active_workers: int = 0
     total_labor_hours: float = 0

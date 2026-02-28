@@ -222,12 +222,17 @@ export function ClockOutQuestionsPage() {
           description="Add clock-out questions that workers must answer when ending their shift."
         />
       ) : (
-        <div className="space-y-1">
+        <div className="space-y-2">
           {activeQuestions.map((q, idx) => (
             <div
               key={q.id}
-              className="flex items-center gap-2 p-3 bg-surface border border-border rounded-lg group"
+              className="flex items-center gap-3 p-4 bg-surface border border-border rounded-lg"
             >
+              {/* Order number */}
+              <span className="text-sm font-bold text-gray-400 dark:text-gray-500 w-5 text-center shrink-0">
+                {idx + 1}
+              </span>
+
               {/* Reorder arrows */}
               <div className="flex flex-col gap-0.5">
                 <button
@@ -235,43 +240,40 @@ export function ClockOutQuestionsPage() {
                   disabled={idx === 0 || reorderMutation.isPending}
                   className="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30 transition-colors"
                 >
-                  <ArrowUp className="h-3 w-3" />
+                  <ArrowUp className="h-3.5 w-3.5" />
                 </button>
                 <button
                   onClick={() => moveQuestion(idx, 'down')}
                   disabled={idx === activeQuestions.length - 1 || reorderMutation.isPending}
                   className="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30 transition-colors"
                 >
-                  <ArrowDown className="h-3 w-3" />
+                  <ArrowDown className="h-3.5 w-3.5" />
                 </button>
               </div>
 
-              {/* Grip icon (decorative) */}
-              <GripVertical className="h-4 w-4 text-gray-300 dark:text-gray-600 shrink-0" />
-
               {/* Question content */}
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-gray-900 dark:text-gray-100">
+                <p className="text-sm font-medium text-gray-900 dark:text-white leading-snug">
                   {q.question_text}
                 </p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400">
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
                     {ANSWER_TYPE_LABELS[q.answer_type]}
                   </span>
-                  <span className={`text-xs ${q.is_required ? 'text-red-500' : 'text-gray-400 dark:text-gray-500'}`}>
+                  <span className={`text-xs font-medium ${q.is_required ? 'text-red-500 dark:text-red-400' : 'text-gray-400 dark:text-gray-500'}`}>
                     {q.is_required ? 'Required' : 'Optional'}
                   </span>
                 </div>
               </div>
 
               {/* Action buttons */}
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-1 shrink-0">
                 <button
                   onClick={() => startEdit(q)}
-                  className="p-1.5 text-gray-400 hover:text-blue-500 transition-colors"
+                  className="p-1.5 text-gray-400 hover:text-blue-500 dark:text-gray-500 dark:hover:text-blue-400 transition-colors rounded hover:bg-gray-100 dark:hover:bg-gray-700"
                   title="Edit question"
                 >
-                  <Edit2 className="h-3.5 w-3.5" />
+                  <Edit2 className="h-4 w-4" />
                 </button>
                 <button
                   onClick={() => {
@@ -279,10 +281,10 @@ export function ClockOutQuestionsPage() {
                       deactivateMutation.mutate(q.id);
                     }
                   }}
-                  className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                  className="p-1.5 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 transition-colors rounded hover:bg-gray-100 dark:hover:bg-gray-700"
                   title="Deactivate question"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="h-4 w-4" />
                 </button>
               </div>
             </div>

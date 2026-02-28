@@ -71,9 +71,13 @@ class ReportService:
         if not labor_rows:
             return None  # No activity = no report
 
-        # Get job info
+        # Get job info (including bill rate type)
         cursor = await self.db.execute(
-            "SELECT job_name, job_number FROM jobs WHERE id = ?", (job_id,)
+            """SELECT j.job_name, j.job_number, brt.name AS bill_rate_type_name
+               FROM jobs j
+               LEFT JOIN bill_rate_types brt ON brt.id = j.bill_rate_type_id
+               WHERE j.id = ?""",
+            (job_id,),
         )
         job_row = await cursor.fetchone()
 
@@ -142,7 +146,7 @@ class ReportService:
 
         # Get parts consumed on this job on this date
         cursor = await self.db.execute(
-            """SELECT jp.*, p.part_name, p.code AS part_code
+            """SELECT jp.*, p.name AS part_name, p.code AS part_code
                FROM job_parts jp
                JOIN parts p ON p.id = jp.part_id
                WHERE jp.job_id = ? AND DATE(jp.consumed_at) = ?
@@ -171,6 +175,7 @@ class ReportService:
             "job_id": job_id,
             "job_name": job_row["job_name"] if job_row else "Unknown",
             "job_number": job_row["job_number"] if job_row else "?",
+            "bill_rate_type": job_row["bill_rate_type_name"] if job_row else None,
             "report_date": date_str,
             "workers": workers,
             "parts_consumed": parts_consumed,

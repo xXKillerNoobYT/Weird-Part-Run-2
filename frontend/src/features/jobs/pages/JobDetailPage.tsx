@@ -10,8 +10,9 @@ import { useState, useEffect } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft, Briefcase, Clock, Package, FileText, HelpCircle,
-  MapPin, Navigation, Users, Edit2, Play, Square,
+  ArrowLeft, Briefcase, Clock, Package, HelpCircle,
+  MapPin, Navigation, Users, Edit2, Square,
+  Pause, CheckCircle, XCircle, RotateCcw,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { Button } from '../../../components/ui/Button';
@@ -22,30 +23,33 @@ import { useAuthStore } from '../../../stores/auth-store';
 import { useClockStore } from '../../../stores/clock-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import {
-  getJob, getJobLabor, getJobParts, getJobReports,
-  getOneTimeQuestions, createOneTimeQuestion,
+  getJob, getJobLabor, getJobParts,
+  getOneTimeQuestions, createOneTimeQuestion, updateJobStatus,
 } from '../../../api/jobs';
 import { ClockOutFlow } from '../components/ClockOutFlow';
+import { EditJobModal } from '../components/EditJobModal';
 import type {
   JobResponse, LaborEntryResponse, JobPartResponse,
-  DailyReportResponse, OneTimeQuestionResponse, JobStatus,
+  OneTimeQuestionResponse, JobStatus,
 } from '../../../lib/types';
 
-type SubTab = 'overview' | 'labor' | 'parts' | 'reports' | 'questions';
+type SubTab = 'overview' | 'labor' | 'parts' | 'questions';
 
 const TABS: { id: SubTab; label: string; icon: React.ReactNode }[] = [
   { id: 'overview', label: 'Overview', icon: <Briefcase className="h-4 w-4" /> },
   { id: 'labor', label: 'Labor', icon: <Clock className="h-4 w-4" /> },
   { id: 'parts', label: 'Parts', icon: <Package className="h-4 w-4" /> },
-  { id: 'reports', label: 'Reports', icon: <FileText className="h-4 w-4" /> },
   { id: 'questions', label: 'One-Time Qs', icon: <HelpCircle className="h-4 w-4" /> },
 ];
 
 const STATUS_COLORS: Record<JobStatus, 'success' | 'warning' | 'default' | 'danger'> = {
+  pending: 'warning',
   active: 'success',
   on_hold: 'warning',
   completed: 'default',
   cancelled: 'danger',
+  continuous_maintenance: 'success',
+  on_call: 'success',
 };
 
 export function JobDetailPage() {
@@ -58,6 +62,8 @@ export function JobDetailPage() {
 
   const [activeTab, setActiveTab] = useState<SubTab>('overview');
   const [showClockOutFlow, setShowClockOutFlow] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const queryClient = useQueryClient();
 
   // Check if we were navigated here with startClockOut intent (from MyClockPage)
   useEffect(() => {
@@ -72,6 +78,16 @@ export function JobDetailPage() {
     queryKey: ['job-detail', jobId],
     queryFn: () => getJob(jobId),
     staleTime: 15_000,
+  });
+
+  // Status mutation — must be called before any early returns (Rules of Hooks)
+  const statusMutation = useMutation({
+    mutationFn: (newStatus: string) => updateJobStatus(jobId, newStatus),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['job-detail', jobId] });
+      queryClient.invalidateQueries({ queryKey: ['jobs-active'] });
+      queryClient.invalidateQueries({ queryKey: ['jobs-all'] });
+    },
   });
 
   if (isLoading) return <PageSpinner label="Loading job..." />;
@@ -89,6 +105,38 @@ export function JobDetailPage() {
   const fullAddress = [job.address_line1, job.city, job.state, job.zip].filter(Boolean).join(', ');
   const hasGps = !!(job.gps_lat && job.gps_lng);
   const isOnThisJob = isClockedIn && activeEntry?.job_id === jobId;
+  const canManage = hasPermission(PERMISSIONS.MANAGE_JOBS);
+
+  /** Status transitions available from each state */
+  const statusActions: Record<JobStatus, { label: string; target: JobStatus; icon: React.ReactNode; variant: 'primary' | 'secondary' | 'danger' | 'warning' }[]> = {
+    pending: [
+      { label: 'Activate', target: 'active', icon: <CheckCircle className="h-3.5 w-3.5" />, variant: 'primary' },
+      { label: 'Cancel', target: 'cancelled', icon: <XCircle className="h-3.5 w-3.5" />, variant: 'danger' },
+    ],
+    active: [
+      { label: 'Put On Hold', target: 'on_hold', icon: <Pause className="h-3.5 w-3.5" />, variant: 'warning' },
+      { label: 'Complete', target: 'completed', icon: <CheckCircle className="h-3.5 w-3.5" />, variant: 'primary' },
+      { label: 'Cancel', target: 'cancelled', icon: <XCircle className="h-3.5 w-3.5" />, variant: 'danger' },
+    ],
+    on_hold: [
+      { label: 'Resume', target: 'active', icon: <RotateCcw className="h-3.5 w-3.5" />, variant: 'primary' },
+      { label: 'Cancel', target: 'cancelled', icon: <XCircle className="h-3.5 w-3.5" />, variant: 'danger' },
+    ],
+    completed: [
+      { label: 'Reopen', target: 'active', icon: <RotateCcw className="h-3.5 w-3.5" />, variant: 'secondary' },
+    ],
+    cancelled: [
+      { label: 'Reopen', target: 'active', icon: <RotateCcw className="h-3.5 w-3.5" />, variant: 'secondary' },
+    ],
+    continuous_maintenance: [
+      { label: 'Put On Hold', target: 'on_hold', icon: <Pause className="h-3.5 w-3.5" />, variant: 'warning' },
+      { label: 'Complete', target: 'completed', icon: <CheckCircle className="h-3.5 w-3.5" />, variant: 'primary' },
+    ],
+    on_call: [
+      { label: 'Put On Hold', target: 'on_hold', icon: <Pause className="h-3.5 w-3.5" />, variant: 'warning' },
+      { label: 'Complete', target: 'completed', icon: <CheckCircle className="h-3.5 w-3.5" />, variant: 'primary' },
+    ],
+  };
 
   return (
     <div className="space-y-4">
@@ -121,23 +169,59 @@ export function JobDetailPage() {
           </p>
         </div>
 
-        {/* Navigate button */}
-        {(hasGps || fullAddress) && (
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={<Navigation className="h-4 w-4" />}
-            onClick={() => {
-              const dest = hasGps
-                ? `${job.gps_lat},${job.gps_lng}`
-                : encodeURIComponent(fullAddress);
-              window.open(`https://www.google.com/maps/dir/?api=1&destination=${dest}`, '_blank');
-            }}
-          >
-            Navigate
-          </Button>
-        )}
+        {/* Action buttons: Edit, Navigate, Status */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {canManage && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Edit2 className="h-4 w-4" />}
+              onClick={() => setShowEditModal(true)}
+            >
+              Edit
+            </Button>
+          )}
+
+          {(hasGps || fullAddress) && (
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Navigation className="h-4 w-4" />}
+              onClick={() => {
+                const dest = hasGps
+                  ? `${job.gps_lat},${job.gps_lng}`
+                  : encodeURIComponent(fullAddress);
+                window.open(`https://www.google.com/maps/dir/?api=1&destination=${dest}`, '_blank');
+              }}
+            >
+              Navigate
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Status action bar — shows when manager has permission */}
+      {canManage && statusActions[job.status]?.length > 0 && (
+        <div className="flex items-center gap-2 p-2 bg-surface-secondary rounded-lg border border-border">
+          <span className="text-xs text-gray-500 dark:text-gray-400 mr-1">Actions:</span>
+          {statusActions[job.status].map((action) => (
+            <Button
+              key={action.target}
+              variant={action.variant === 'warning' ? 'secondary' : action.variant}
+              size="sm"
+              icon={action.icon}
+              onClick={() => {
+                if (action.target === 'cancelled' && !confirm('Cancel this job? This can be undone later.')) return;
+                if (action.target === 'completed' && !confirm('Mark this job as completed?')) return;
+                statusMutation.mutate(action.target);
+              }}
+              isLoading={statusMutation.isPending}
+            >
+              {action.label}
+            </Button>
+          ))}
+        </div>
+      )}
 
       {/* Internal tab bar */}
       <div className="flex gap-1 border-b border-border overflow-x-auto">
@@ -193,9 +277,17 @@ export function JobDetailPage() {
           {activeTab === 'overview' && <OverviewTab job={job} />}
           {activeTab === 'labor' && <LaborTab jobId={jobId} />}
           {activeTab === 'parts' && <PartsTab jobId={jobId} />}
-          {activeTab === 'reports' && <ReportsTab jobId={jobId} />}
           {activeTab === 'questions' && <QuestionsTab jobId={jobId} />}
         </>
+      )}
+
+      {/* Edit Job Modal */}
+      {showEditModal && (
+        <EditJobModal
+          isOpen={showEditModal}
+          onClose={() => setShowEditModal(false)}
+          job={job}
+        />
       )}
     </div>
   );
@@ -218,12 +310,17 @@ function OverviewTab({ job }: { job: JobResponse }) {
           <InfoRow label="Customer" value={job.customer_name} />
           <InfoRow label="Type" value={job.job_type.replace('_', ' ')} />
           <InfoRow label="Priority" value={job.priority} />
+          {job.bill_rate_type_name && <InfoRow label="Bill Rate Type" value={job.bill_rate_type_name} />}
           {fullAddress && <InfoRow label="Address" value={fullAddress} />}
           {job.lead_user_name && <InfoRow label="Lead" value={job.lead_user_name} />}
-          {job.billing_rate && <InfoRow label="Billing Rate" value={`$${job.billing_rate}/hr`} />}
-          {job.estimated_hours && <InfoRow label="Estimated Hours" value={`${job.estimated_hours}h`} />}
           {job.start_date && <InfoRow label="Start Date" value={job.start_date} />}
           {job.due_date && <InfoRow label="Due Date" value={job.due_date} />}
+          {job.created_at && (
+            <InfoRow
+              label="Date Added"
+              value={new Date(job.created_at + 'Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            />
+          )}
           {job.notes && <InfoRow label="Notes" value={job.notes} />}
         </div>
       </Card>
@@ -359,50 +456,6 @@ function PartsTab({ jobId }: { jobId: number }) {
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-
-// ── Reports Tab ───────────────────────────────────────────────────
-
-function ReportsTab({ jobId }: { jobId: number }) {
-  const navigate = useNavigate();
-  const { data: reports, isLoading } = useQuery({
-    queryKey: ['job-reports', jobId],
-    queryFn: () => getJobReports(jobId),
-    staleTime: 30_000,
-  });
-
-  if (isLoading) return <PageSpinner label="Loading reports..." />;
-  if (!reports || reports.length === 0) {
-    return <EmptyState icon={<FileText className="h-12 w-12" />} title="No Reports" description="Daily reports are generated automatically at midnight for days with labor activity." />;
-  }
-
-  return (
-    <div className="space-y-2">
-      {reports.map((report) => (
-        <div
-          key={report.id}
-          className="flex items-center gap-3 p-3 bg-surface border border-border rounded-lg hover:border-blue-300 dark:hover:border-blue-600 cursor-pointer transition-colors"
-          onClick={() => navigate(`/jobs/${jobId}/report/${report.report_date}`)}
-        >
-          <FileText className="h-5 w-5 text-gray-400 shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-              {new Date(report.report_date + 'T00:00:00').toLocaleDateString(undefined, {
-                weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
-              })}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              {report.worker_count} worker{report.worker_count !== 1 ? 's' : ''} · {report.total_labor_hours.toFixed(1)}h · ${report.total_parts_cost.toFixed(0)} parts
-            </p>
-          </div>
-          <Badge variant={report.status === 'reviewed' ? 'primary' : 'default'}>
-            {report.status}
-          </Badge>
-        </div>
-      ))}
     </div>
   );
 }

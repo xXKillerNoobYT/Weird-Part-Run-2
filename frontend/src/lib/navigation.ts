@@ -43,6 +43,8 @@ export const MODULES: NavModule[] = [
     permission: 'view_warehouse',
     tabs: [
       { id: 'warehouse-exec', label: 'Warehouse Executive', path: '/office/warehouse-exec', permission: 'manage_warehouse' },
+      { id: 'manage-jobs', label: 'Manage Jobs', path: '/office/manage-jobs', permission: 'manage_jobs' },
+      { id: 'clock-out-questions', label: 'Clock-Out Questions', path: '/office/clock-out-questions', permission: 'manage_settings' },
     ],
   },
   {
@@ -83,7 +85,6 @@ export const MODULES: NavModule[] = [
     tabs: [
       { id: 'active', label: 'Active Jobs', path: '/jobs/active' },
       { id: 'my-clock', label: 'My Clock', path: '/jobs/my-clock' },
-      { id: 'reports', label: 'Reports', path: '/jobs/reports', permission: 'view_reports' },
       { id: 'templates', label: 'Templates', path: '/jobs/templates', permission: 'manage_templates' },
     ],
   },
@@ -120,6 +121,7 @@ export const MODULES: NavModule[] = [
     path: '/reports',
     permission: 'view_reports',
     tabs: [
+      { id: 'daily-reports', label: 'Daily Reports', path: '/reports/daily-reports' },
       { id: 'pre-billing', label: 'Pre-Billing', path: '/reports/pre-billing' },
       { id: 'timesheets', label: 'Timesheets', path: '/reports/timesheets' },
       { id: 'labor-overview', label: 'Labor Overview', path: '/reports/labor-overview' },
@@ -134,7 +136,6 @@ export const MODULES: NavModule[] = [
     tabs: [
       { id: 'app-config', label: 'App Config', path: '/settings/app-config', permission: 'manage_settings' },
       { id: 'themes', label: 'Themes', path: '/settings/themes' },
-      { id: 'questions', label: 'Clock-Out Questions', path: '/settings/questions', permission: 'manage_settings' },
       { id: 'sync', label: 'Sync', path: '/settings/sync', permission: 'manage_settings' },
       { id: 'ai-config', label: 'AI Config', path: '/settings/ai-config', permission: 'manage_settings' },
       { id: 'devices', label: 'Device Management', path: '/settings/devices', permission: 'manage_devices' },

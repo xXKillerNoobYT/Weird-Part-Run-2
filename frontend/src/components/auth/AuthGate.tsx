@@ -97,10 +97,15 @@ export function AuthGate({ children }: AuthGateProps) {
     setStep('user-picker');
   }
 
-  // Watch for auth state changes
+  // Watch for auth state changes (login AND logout)
   useEffect(() => {
     if (isAuthenticated && step !== 'authenticated') {
       setStep('authenticated');
+    } else if (!isAuthenticated && step === 'authenticated') {
+      // User logged out — reset back to user picker
+      setSelectedUserId(null);
+      setSelectedUserName('');
+      setStep('user-picker');
     }
   }, [isAuthenticated, step]);
 

@@ -40,9 +40,15 @@ function resolveIsDark(mode: ThemeMode): boolean {
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
+// Resolve saved mode on module load (before store creation)
+const savedMode = (typeof window !== 'undefined'
+  ? (localStorage.getItem('wiredpart_theme') as ThemeMode | null) ?? 'system'
+  : 'system') as ThemeMode;
+const initialIsDark = resolveIsDark(savedMode);
+
 export const useThemeStore = create<ThemeState>((set, get) => ({
-  mode: 'system',
-  isDark: false,
+  mode: savedMode,
+  isDark: initialIsDark,
   primaryColor: '#3B82F6',
   fontFamily: 'Inter',
 
@@ -75,6 +81,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     }
   },
 }));
+
+// Apply theme immediately on module load (before React renders)
+if (typeof window !== 'undefined') {
+  useThemeStore.getState().applyTheme();
+}
 
 // Listen for OS theme changes when in "system" mode
 if (typeof window !== 'undefined') {

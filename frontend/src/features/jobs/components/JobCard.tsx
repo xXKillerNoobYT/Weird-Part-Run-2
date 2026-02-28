@@ -17,10 +17,13 @@ interface JobCardProps {
 }
 
 const STATUS_COLORS: Record<JobStatus, 'success' | 'warning' | 'default' | 'danger'> = {
+  pending: 'warning',
   active: 'success',
   on_hold: 'warning',
   completed: 'default',
   cancelled: 'danger',
+  continuous_maintenance: 'success',
+  on_call: 'success',
 };
 
 const PRIORITY_COLORS: Record<JobPriority, string> = {
