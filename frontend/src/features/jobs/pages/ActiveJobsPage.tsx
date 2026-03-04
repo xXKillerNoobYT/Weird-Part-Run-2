@@ -145,7 +145,7 @@ export function ActiveJobsPage() {
                 <button
                   key={opt.value}
                   onClick={() => setStatusFilter(opt.value)}
-                  className={`px-2 py-0.5 text-xs rounded-full transition-colors ${
+                  className={`px-3 py-1.5 text-xs rounded-full transition-colors min-h-[36px] ${
                     statusFilter === opt.value
                       ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
                       : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
@@ -162,7 +162,7 @@ export function ActiveJobsPage() {
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
-              className="text-xs rounded-md border border-border bg-surface px-2 py-1"
+              className="text-xs rounded-md border border-border bg-surface px-3 py-2 min-h-[36px]"
             >
               {TYPE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -175,7 +175,7 @@ export function ActiveJobsPage() {
             <select
               value={priorityFilter}
               onChange={(e) => setPriorityFilter(e.target.value)}
-              className="text-xs rounded-md border border-border bg-surface px-2 py-1"
+              className="text-xs rounded-md border border-border bg-surface px-3 py-2 min-h-[36px]"
             >
               {PRIORITY_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>

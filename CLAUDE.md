@@ -95,9 +95,56 @@ Be pragmatic. Be reliable. Self-anneal.
 
 ---
 
-## Plan Filing
+## Context Management
 
-- **Master plan:** `docs/implementation-plan.md`
+When working in long sessions, **re-read `CLAUDE.md` and `MEMORY.md` at approximately 80% context usage.** This prevents instruction drift and keeps decisions aligned with project conventions. Better to refresh early than to lose track of patterns and repeat avoidable mistakes.
+
+---
+
+## Target Platforms & Compatibility
+
+This application must be production-ready across **all** of the following:
+
+| Platform | Viewport | Notes |
+|----------|----------|-------|
+| Windows desktop | 1280×800+ | Primary dev/test environment |
+| Mac desktop | 1280×800+ | Safari + Chrome compatibility |
+| iOS tablet (iPad) | 768×1024 | Touch-friendly, landscape & portrait |
+| iOS phone (iPhone) | 375×812 | Full mobile-first responsive layout |
+
+**Development requirements:**
+
+1. **Responsive by default.** Every page must work at all four breakpoints. Use Tailwind's responsive prefixes (`sm:`, `md:`, `lg:`) consistently.
+2. **Touch-friendly.** Buttons must be at least 44×44px tap targets on mobile. No hover-only interactions — always provide a tap/click alternative.
+3. **No horizontal overflow.** The AppShell uses `overflow-hidden` on ancestor containers. Always use `flex-wrap gap-3` on header rows with action buttons. Use `overflow-x-auto` for wide tables and tab bars.
+4. **Responsive text.** Long button labels should use `hidden sm:inline` or `hidden md:inline` patterns to show icon-only on smaller screens.
+5. **Test at all breakpoints.** Before marking any UI work as complete, verify at desktop (1280×800), tablet (768×1024), and mobile (375×812).
+6. **Cross-browser.** Avoid CSS features without broad support. Tailwind v4 handles most of this, but be mindful of Safari quirks (e.g. `gap` in flexbox, `dvh` units).
+
+---
+
+## Plan Filing & History
+
+Plans are living documents that build our project's institutional memory. Treat them with care.
+
+**Where plans live:**
+
+- **Master plan:** `docs/implementation-plan.md` — the high-level roadmap
 - **Phase/feature plans:** `docs/plans/<name>.md` (e.g. `docs/plans/phase-4-jobs-labor.md`)
-- Always save plans to `docs/` — never leave them only in `.claude/plans/`
-- Use descriptive filenames: `phase-N-short-name.md` or `feature-short-name.md`
+- **The Full Plan:** `docs/The Full Plan.md` — the original comprehensive vision document
+
+**Rules for plan management:**
+
+1. **Always save to `docs/`.** Never leave plans only in `.claude/plans/` — those are ephemeral and won't persist.
+2. **Use descriptive filenames:** `phase-N-short-name.md` or `feature-short-name.md`.
+3. **Read existing plans before starting work.** At the start of a new phase, read the master plan AND the relevant phase plan. Understand what's been done and what's next. Don't duplicate work or contradict previous decisions.
+4. **Update plans as work completes.** Mark completed items, note any deviations from the original plan, and add learnings. Plans should reflect reality, not just intent.
+5. **Preserve plan history.** Don't delete old plans when creating new ones. The progression from Phase 1 → 2 → 3 → ... tells the story of the project's evolution. Future agents (and the user) benefit from this context.
+6. **When creating a new plan,** reference the master plan and summarize what phases came before. This makes each plan self-contained enough to understand in isolation.
+
+**Current plan history:**
+
+- Phase 1–3: Foundation, Parts & Inventory, Warehouse (complete)
+- Phase 3.5 + 4: Jobs & Labor (complete)
+- Phase 4.5: Unified Notebook System (complete)
+- Phase 5: Orders & Procurement (complete)

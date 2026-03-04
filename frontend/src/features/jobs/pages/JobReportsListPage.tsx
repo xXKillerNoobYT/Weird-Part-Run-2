@@ -176,7 +176,7 @@ export function JobReportsListPage() {
                     </div>
 
                     {/* Chevron */}
-                    <ChevronRight className="h-4 w-4 text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <ChevronRight className="h-4 w-4 text-gray-300 dark:text-gray-600" />
                   </div>
                 ))}
               </div>

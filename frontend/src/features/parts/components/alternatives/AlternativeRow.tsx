@@ -114,23 +114,23 @@ export function AlternativeRow({
 
       {/* Action buttons (only in edit mode) */}
       {!readOnly && (
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 shrink-0">
           {onEdit && (
             <button
-              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+              className="p-2 rounded text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
               onClick={() => onEdit(alt)}
               title="Edit link"
             >
-              <Pencil className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
+              <Pencil className="h-4 w-4" />
             </button>
           )}
           {onUnlink && (
             <button
-              className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              className="p-2 rounded text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
               onClick={() => onUnlink(alt)}
               title="Remove link"
             >
-              <X className="h-3.5 w-3.5 text-red-400" />
+              <X className="h-4 w-4" />
             </button>
           )}
         </div>

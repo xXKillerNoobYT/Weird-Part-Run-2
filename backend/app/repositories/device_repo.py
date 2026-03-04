@@ -31,16 +31,24 @@ class DeviceRepo(BaseRepo):
         assigned_user_id: int | None = None,
         is_public: bool = False,
     ) -> int:
-        """Register a new device. Returns the device ID.
+        """Register a device or return the existing one. Returns the device ID.
 
-        Called the first time we see a device fingerprint.
+        Uses INSERT OR IGNORE + SELECT to handle the race condition where
+        multiple requests with the same fingerprint arrive simultaneously.
+        The first insert wins; subsequent calls just return the existing ID.
         """
-        return await self.insert({
-            "device_fingerprint": fingerprint,
-            "device_name": device_name,
-            "assigned_user_id": assigned_user_id,
-            "is_public": 1 if is_public else 0,
-        })
+        # Try to insert — if fingerprint already exists, this is a no-op
+        await self.db.execute(
+            """INSERT OR IGNORE INTO devices
+               (device_fingerprint, device_name, assigned_user_id, is_public)
+               VALUES (?, ?, ?, ?)""",
+            (fingerprint, device_name, assigned_user_id, 1 if is_public else 0),
+        )
+        await self.db.commit()
+
+        # Always fetch the row to get the definitive ID
+        device = await self.get_by_fingerprint(fingerprint)
+        return device["id"]  # type: ignore[index]
 
     async def assign_user(self, device_id: int, user_id: int | None) -> bool:
         """Assign or unassign a user to/from a device.

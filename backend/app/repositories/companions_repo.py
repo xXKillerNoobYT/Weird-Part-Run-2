@@ -24,6 +24,7 @@ class CompanionRuleRepo(BaseRepo):
     """
 
     TABLE = "companion_rules"
+    HAS_UPDATED_AT = True
 
     async def get_rule_with_children(self, rule_id: int) -> dict | None:
         """Fetch a rule with its resolved sources and targets."""

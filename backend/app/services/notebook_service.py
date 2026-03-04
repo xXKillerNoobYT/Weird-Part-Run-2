@@ -1009,11 +1009,11 @@ class NotebookService:
         return await cursor.fetchone() is not None
 
     async def _user_has_permission(self, user_id: int, permission: str) -> bool:
-        """Check if user has a specific permission."""
+        """Check if user has a specific permission via their hat(s)."""
         cursor = await self.db.execute(
-            """SELECT 1 FROM user_permissions up
-               JOIN permissions p ON p.id = up.permission_id
-               WHERE up.user_id = ? AND p.name = ?""",
+            """SELECT 1 FROM hat_permissions hp
+               JOIN user_hats uh ON uh.hat_id = hp.hat_id
+               WHERE uh.user_id = ? AND hp.permission_key = ?""",
             (user_id, permission),
         )
         return await cursor.fetchone() is not None

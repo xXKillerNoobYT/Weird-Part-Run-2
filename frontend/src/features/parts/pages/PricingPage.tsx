@@ -316,27 +316,27 @@ function PricingTable({ canEdit }: { canEdit: boolean }) {
                         {isEditing ? (
                           <div className="flex justify-center gap-1">
                             <button
-                              className="p-1 rounded hover:bg-green-100 dark:hover:bg-green-900/30"
+                              className="p-2 rounded text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
                               onClick={saveEditing}
                               title="Save"
                             >
-                              <Check className="h-4 w-4 text-green-600" />
+                              <Check className="h-4 w-4" />
                             </button>
                             <button
-                              className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                              className="p-2 rounded text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                               onClick={cancelEditing}
                               title="Cancel"
                             >
-                              <X className="h-4 w-4 text-gray-500" />
+                              <X className="h-4 w-4" />
                             </button>
                           </div>
                         ) : (
                           <button
-                            className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                            className="p-2 rounded text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                             onClick={() => startEditing(part)}
                             title="Edit pricing"
                           >
-                            <DollarSign className="h-4 w-4 text-gray-500" />
+                            <DollarSign className="h-4 w-4" />
                           </button>
                         )}
                       </td>

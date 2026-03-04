@@ -106,7 +106,7 @@ export function Sidebar() {
       <div className="hidden lg:flex items-center justify-center py-3 border-t border-gray-200 dark:border-gray-700">
         <button
           onClick={toggleCollapse}
-          className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-800 transition-colors"
+          className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-800 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           <ChevronLeft className={cn(
@@ -144,7 +144,7 @@ export function Sidebar() {
             {/* Close button */}
             <button
               onClick={closeMobile}
-              className="absolute top-4 right-4 p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700 z-10"
+              className="absolute top-4 right-4 p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-300 dark:hover:bg-gray-700 z-10 min-h-[44px] min-w-[44px] flex items-center justify-center"
             >
               <X className="h-5 w-5" />
             </button>

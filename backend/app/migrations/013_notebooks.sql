@@ -159,10 +159,11 @@ CREATE INDEX IF NOT EXISTS idx_tol_po ON task_order_links(po_id);
 
 -- ═══════════════════════════════════════════════
 -- PERMISSION: manage_notebooks (for template management)
+-- Grant to Admin and Manager hats via hat_permissions
 -- ═══════════════════════════════════════════════
 
-INSERT OR IGNORE INTO permissions (name, description)
-VALUES ('manage_notebooks', 'Create and edit notebook templates, edit any notebook entry');
+INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+SELECT id, 'manage_notebooks' FROM hats WHERE name IN ('Admin', 'Manager');
 
 
 -- ═══════════════════════════════════════════════

@@ -14,6 +14,7 @@ class PartCategoryRepo(BaseRepo):
     """Repository for part categories (top-level grouping)."""
 
     TABLE = "part_categories"
+    HAS_UPDATED_AT = True
 
     async def get_all_with_counts(
         self,
@@ -70,6 +71,7 @@ class PartStyleRepo(BaseRepo):
     """Repository for part styles (per-category visual/form-factor)."""
 
     TABLE = "part_styles"
+    HAS_UPDATED_AT = True
 
     async def get_by_category(
         self,
@@ -123,6 +125,7 @@ class PartTypeRepo(BaseRepo):
     """Repository for part types (per-style functional variety)."""
 
     TABLE = "part_types"
+    HAS_UPDATED_AT = True
 
     async def get_by_style(
         self,

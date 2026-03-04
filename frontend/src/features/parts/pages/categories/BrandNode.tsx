@@ -56,16 +56,16 @@ export function BrandNode({
         }`}
       >
         <button
-          className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 flex-shrink-0"
+          className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 flex-shrink-0 transition-colors"
           onClick={(e) => {
             e.stopPropagation();
             setIsExpanded(!isExpanded);
           }}
         >
           {isExpanded ? (
-            <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
+            <ChevronDown className="h-4 w-4 text-gray-500" />
           ) : (
-            <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
+            <ChevronRight className="h-4 w-4 text-gray-500" />
           )}
         </button>
         {isGeneral ? (
@@ -75,14 +75,18 @@ export function BrandNode({
         )}
         <button
           className="flex-1 text-left text-sm truncate"
-          onClick={() => onSelect({
-            type: 'brand',
-            id: link.id,
-            typeId,
-            styleId,
-            categoryId,
-            brandId: link.brand_id,
-          })}
+          onClick={() => {
+            // Auto-expand to show colors underneath when clicking the brand name
+            setIsExpanded(true);
+            onSelect({
+              type: 'brand',
+              id: link.id,
+              typeId,
+              styleId,
+              categoryId,
+              brandId: link.brand_id,
+            });
+          }}
         >
           {displayName}
         </button>

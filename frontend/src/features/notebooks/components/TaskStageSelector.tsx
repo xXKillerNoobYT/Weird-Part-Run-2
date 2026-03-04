@@ -56,7 +56,7 @@ export function TaskStageSelector({ currentStatus, onStatusChange, disabled }: T
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-0.5">
+      <div className="flex items-center gap-1.5 flex-wrap">
         {TASK_STATUS_ORDER.map((status, index) => {
           const isActive = status === currentStatus;
           const isPast = index < currentIndex;
@@ -68,8 +68,8 @@ export function TaskStageSelector({ currentStatus, onStatusChange, disabled }: T
               onClick={() => handleStageClick(status)}
               disabled={disabled}
               className={`
-                flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md
-                border transition-all
+                flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md
+                border transition-all min-h-[36px]
                 ${isActive
                   ? `${colors.bg} ${colors.border} ${colors.text} ring-1 ring-offset-1 ring-offset-surface`
                   : isPast
@@ -81,7 +81,7 @@ export function TaskStageSelector({ currentStatus, onStatusChange, disabled }: T
               title={TASK_STATUS_LABELS[status]}
             >
               {isPast ? (
-                <Check className="h-3 w-3" />
+                <Check className="h-3.5 w-3.5" />
               ) : isActive ? (
                 <div className={`w-2 h-2 rounded-full ${colors.dot}`} />
               ) : null}
@@ -107,13 +107,13 @@ export function TaskStageSelector({ currentStatus, onStatusChange, disabled }: T
           <div className="flex justify-end gap-2">
             <button
               onClick={() => { setPendingStatus(null); setPartsNote(''); }}
-              className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700"
+              className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 min-h-[40px]"
             >
               Cancel
             </button>
             <button
               onClick={confirmPartsOrdered}
-              className="px-3 py-1 text-xs font-medium bg-amber-500 text-white rounded-md hover:bg-amber-600 transition-colors"
+              className="px-4 py-2 text-sm font-medium bg-amber-500 text-white rounded-md hover:bg-amber-600 transition-colors min-h-[40px]"
             >
               Confirm
             </button>

@@ -52,21 +52,21 @@ export function StyleNode({
         }`}
       >
         <button
-          className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 flex-shrink-0"
+          className="p-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 flex-shrink-0 transition-colors"
           onClick={(e) => {
             e.stopPropagation();
             onToggle();
           }}
         >
           {isExpanded ? (
-            <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
+            <ChevronDown className="h-4 w-4 text-gray-500" />
           ) : (
-            <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
+            <ChevronRight className="h-4 w-4 text-gray-500" />
           )}
         </button>
         <Box className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />
         <button
-          className="flex-1 text-left text-sm truncate"
+          className="flex-1 text-left text-sm truncate min-h-[28px] flex items-center"
           onClick={() => onSelect({ type: 'style', id: style.id, categoryId })}
         >
           {style.name}
@@ -79,14 +79,14 @@ export function StyleNode({
         </span>
         {canEdit && (
           <button
-            className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="p-1.5 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors shrink-0"
             onClick={(e) => {
               e.stopPropagation();
               onCreateType(style.id);
             }}
             title="Add Type"
           >
-            <Plus className="h-3 w-3 text-gray-500" />
+            <Plus className="h-4 w-4" />
           </button>
         )}
       </div>

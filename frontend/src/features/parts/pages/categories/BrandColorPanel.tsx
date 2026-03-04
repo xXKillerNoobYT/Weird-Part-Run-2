@@ -12,10 +12,10 @@
  * and part creation happen in the same place — one-stop per brand.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Tag, Package, Plus, Check, AlertTriangle, X, Palette,
+  Tag, Package, Plus, Check, AlertTriangle, X, Palette, PaintBucket,
 } from 'lucide-react';
 import { Badge } from '../../../../components/ui/Badge';
 import { Spinner } from '../../../../components/ui/Spinner';
@@ -24,6 +24,7 @@ import {
   listPartsForTypeBrand, quickCreatePart, listColors,
 } from '../../../../api/parts';
 import type { SelectedCategoryNode, PartListItem } from '../../../../lib/types';
+import { GlobalColorsModal } from './GlobalColorsModal';
 
 
 export interface BrandColorPanelProps {
@@ -41,6 +42,7 @@ export function BrandColorPanel({
 }: BrandColorPanelProps) {
   const queryClient = useQueryClient();
   const isGeneral = brandId === null;
+  const [showGlobalColors, setShowGlobalColors] = useState(false);
 
   // ── All global colors (for linking UI) ──────────
   const { data: allColors } = useQuery({
@@ -113,18 +115,28 @@ export function BrandColorPanel({
     <div className="flex flex-col h-full">
       {/* ── Header ──────────────────────────────── */}
       <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80">
-        <div className="flex items-center gap-2">
-          {isGeneral ? (
-            <Package className="h-5 w-5 text-gray-500" />
-          ) : (
-            <Tag className="h-5 w-5 text-amber-500" />
-          )}
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            {brandName}
-          </h3>
-          <Badge variant={isGeneral ? 'default' : 'warning'}>
-            {isGeneral ? 'General' : 'Branded'}
-          </Badge>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {isGeneral ? (
+              <Package className="h-5 w-5 text-gray-500" />
+            ) : (
+              <Tag className="h-5 w-5 text-amber-500" />
+            )}
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              {brandName}
+            </h3>
+            <Badge variant={isGeneral ? 'default' : 'warning'}>
+              {isGeneral ? 'General' : 'Branded'}
+            </Badge>
+          </div>
+          <button
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors min-h-[44px]"
+            onClick={() => setShowGlobalColors(true)}
+            title="Manage global color palette"
+          >
+            <PaintBucket className="h-4 w-4" />
+            Global Colors
+          </button>
         </div>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
           {isGeneral ? 'Unbranded commodity parts' : `Parts manufactured by ${brandName}`}
@@ -172,11 +184,11 @@ export function BrandColorPanel({
                     {link.color_name}
                     {canEdit && (
                       <button
-                        className="ml-1 p-0.5 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                        className="ml-1 p-1 rounded-full text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
                         onClick={() => unlinkColorMutation.mutate(link.color_id)}
                         title={`Remove ${link.color_name}`}
                       >
-                        <X className="h-3 w-3 text-red-400" />
+                        <X className="h-3.5 w-3.5" />
                       </button>
                     )}
                   </span>
@@ -326,6 +338,13 @@ export function BrandColorPanel({
           </>
         )}
       </div>
+
+      {/* ── Global Colors Modal ──────────────── */}
+      <GlobalColorsModal
+        isOpen={showGlobalColors}
+        onClose={() => setShowGlobalColors(false)}
+        canEdit={canEdit}
+      />
     </div>
   );
 }

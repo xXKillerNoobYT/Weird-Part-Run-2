@@ -1,8 +1,9 @@
 /**
- * NotebooksPage — list of all notebooks with filter tabs (All / Job / General).
+ * NotebooksPage — list of all notebooks with search and filter.
  *
- * Shows NotebookCards in a responsive grid. Supports search and filter.
- * "New Notebook" button creates general notebooks.
+ * Filter tabs (All / Job / General) are provided by the navigation
+ * TabBar — they drive the URL which we read to determine the filter.
+ * This page just renders the header + search + notebook grid.
  */
 
 import { useState } from 'react';
@@ -17,12 +18,6 @@ import { CreateNotebookModal } from '../components/CreateNotebookModal';
 import type { NotebookCreate, NotebookListItem } from '../../../lib/types';
 
 type FilterTab = 'all' | 'job' | 'general';
-
-const TABS: { id: FilterTab; label: string; path: string }[] = [
-  { id: 'all', label: 'All', path: '/notebooks/all' },
-  { id: 'job', label: 'Job Notebooks', path: '/notebooks/job-notebooks' },
-  { id: 'general', label: 'General', path: '/notebooks/general' },
-];
 
 /** Derive filter tab from the current URL path */
 function tabFromPath(pathname: string): FilterTab {
@@ -53,49 +48,14 @@ export function NotebooksPage() {
     },
   });
 
-  // Client-side search is already handled by the API, but we
-  // can also filter locally for instant feedback
-  const filtered = notebooks;
-
   if (isLoading) return <PageSpinner />;
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">
-          Notebooks
-        </h1>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-lg transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          New Notebook
-        </button>
-      </div>
-
-      {/* Filter tabs + search */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-        {/* Tabs */}
-        <div className="flex gap-1 p-1 bg-surface-secondary rounded-lg">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => navigate(tab.path, { replace: true })}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                activeTab === tab.id
-                  ? 'bg-surface text-gray-900 dark:text-gray-100 shadow-sm'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
+      {/* Header row: search + action button */}
+      <div className="flex items-center gap-3">
         {/* Search */}
-        <div className="relative flex-1 max-w-xs">
+        <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
             type="text"
@@ -105,10 +65,18 @@ export function NotebooksPage() {
             className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-border bg-surface text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
           />
         </div>
+
+        <button
+          onClick={() => setShowCreate(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 rounded-lg transition-colors flex-shrink-0"
+        >
+          <Plus className="h-4 w-4" />
+          New Notebook
+        </button>
       </div>
 
       {/* Notebook grid */}
-      {filtered.length === 0 ? (
+      {notebooks.length === 0 ? (
         <EmptyState
           icon={<BookOpen className="h-10 w-10 text-gray-300 dark:text-gray-600" />}
           title="No notebooks found"
@@ -117,12 +85,24 @@ export function NotebooksPage() {
               ? 'Try adjusting your search'
               : activeTab === 'general'
                 ? 'Create a general notebook to get started'
-                : 'Notebooks are created automatically when you open a job'
+                : activeTab === 'job'
+                  ? 'Job notebooks are created automatically when you open a job'
+                  : 'No notebooks yet — open a job or create a general notebook'
+          }
+          action={
+            activeTab !== 'job' ? (
+              <button
+                onClick={() => setShowCreate(true)}
+                className="text-sm text-primary hover:underline"
+              >
+                + Create a notebook
+              </button>
+            ) : undefined
           }
         />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map((nb: NotebookListItem) => (
+          {notebooks.map((nb: NotebookListItem) => (
             <NotebookCard
               key={nb.id}
               notebook={nb}

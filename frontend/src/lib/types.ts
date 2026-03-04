@@ -86,6 +86,8 @@ export interface NavTab {
   label: string;
   path: string;
   permission?: string;
+  /** Optional group label — tabs with the same group are visually clustered with a divider. */
+  group?: string;
 }
 
 // ── Pagination ────────────────────────────────────────────────────
@@ -1676,6 +1678,9 @@ export interface ReportData {
   report_date: string;
   workers: ReportWorker[];
   parts_consumed: ReportPartConsumed[];
+  deliveries?: ReportDelivery[];
+  trip_legs?: ReportTripLeg[];
+  vehicles_involved?: ReportVehicleInvolved[];
   summary: ReportSummary;
 }
 
@@ -1720,6 +1725,40 @@ export interface ReportSummary {
   total_labor_hours: number;
   total_parts_cost: number;
   worker_count: number;
+  total_delivery_items?: number;
+  total_miles_driven?: number;
+  total_billable_drive_minutes?: number;
+  vehicles_involved_count?: number;
+}
+
+export interface ReportDelivery {
+  vehicle_name: string;
+  vehicle_number: string;
+  part_name: string;
+  part_code?: string | null;
+  qty_delivered: number;
+  delivered_by_name?: string | null;
+  delivered_at?: string | null;
+}
+
+export interface ReportTripLeg {
+  leg_type: string;
+  from_label?: string | null;
+  to_label?: string | null;
+  miles?: number | null;
+  drive_minutes?: number | null;
+  is_billable: boolean;
+  vehicle_name: string;
+  vehicle_number: string;
+  driver_name: string;
+}
+
+export interface ReportVehicleInvolved {
+  vehicle_name: string;
+  vehicle_number: string;
+  drivers: string[];
+  total_miles: number;
+  delivered_items: number;
 }
 
 
@@ -1828,7 +1867,14 @@ export interface TemplateSectionWithEntries extends TemplateSectionResponse {
 }
 
 export interface TemplateFull {
-  template: TemplateResponse;
+  id: number;
+  name: string;
+  description?: string | null;
+  job_type?: string | null;
+  is_default: boolean;
+  created_by?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
   sections: TemplateSectionWithEntries[];
 }
 
@@ -1945,8 +1991,8 @@ export interface EntryResponse {
 }
 
 export interface TaskStatusUpdate {
-  task_status: TaskStatus;
-  task_parts_note?: string;
+  status: TaskStatus;
+  parts_note?: string;
 }
 
 export interface FieldValueUpdate {
@@ -1976,4 +2022,1206 @@ export interface TaskSummary {
   done: number;
   total: number;
   open: number;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// ORDERS & PROCUREMENT MODULE (Phase 5)
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Status Type Unions ───────────────────────────────────────────
+
+export type JPOStatus =
+  | 'draft' | 'pending_approval' | 'approved' | 'ordering'
+  | 'partially_ordered' | 'ordered' | 'partially_received'
+  | 'received' | 'closed';
+
+export type POStatus =
+  | 'draft' | 'submitted' | 'acknowledged'
+  | 'partially_received' | 'received' | 'closed' | 'cancelled';
+
+export type POLineStatus = 'pending' | 'partial' | 'received' | 'backordered' | 'cancelled';
+
+export type ReturnStatus =
+  | 'draft' | 'pending_approval' | 'approved' | 'shipped'
+  | 'received_by_supplier' | 'credited' | 'closed';
+
+export type ReturnType = 'job_to_warehouse' | 'warehouse_to_supplier';
+export type ReturnReason = 'defective' | 'wrong_item' | 'surplus' | 'damaged' | 'unused';
+export type ItemCondition = 'new' | 'used' | 'damaged' | 'defective';
+export type DispositionType = 'return_to_supplier' | 'restock' | 'write_off';
+export type JPOPriority = 'normal' | 'urgent';
+export type LinePriority = 'normal' | 'urgent' | 'critical';
+export type StagingZoneType = 'general' | 'job_assigned' | 'returns' | 'overflow';
+
+/** Human-readable labels for JPO statuses */
+export const JPO_STATUS_LABELS: Record<JPOStatus, string> = {
+  draft: 'Draft',
+  pending_approval: 'Pending Approval',
+  approved: 'Approved',
+  ordering: 'Ordering',
+  partially_ordered: 'Partially Ordered',
+  ordered: 'Ordered',
+  partially_received: 'Partially Received',
+  received: 'Received',
+  closed: 'Closed',
+};
+
+/** Human-readable labels for PO statuses */
+export const PO_STATUS_LABELS: Record<POStatus, string> = {
+  draft: 'Draft',
+  submitted: 'Submitted',
+  acknowledged: 'Acknowledged',
+  partially_received: 'Partially Received',
+  received: 'Received',
+  closed: 'Closed',
+  cancelled: 'Cancelled',
+};
+
+/** Human-readable labels for return statuses */
+export const RETURN_STATUS_LABELS: Record<ReturnStatus, string> = {
+  draft: 'Draft',
+  pending_approval: 'Pending Approval',
+  approved: 'Approved',
+  shipped: 'Shipped',
+  received_by_supplier: 'Received by Supplier',
+  credited: 'Credited',
+  closed: 'Closed',
+};
+
+
+// ── JPO (Job Parts Order) Types ──────────────────────────────────
+
+export interface JPOLineCreate {
+  part_id: number;
+  qty_requested: number;
+  priority?: LinePriority;
+  entry_id?: number | null;
+  suggested_supplier_id?: number | null;
+  notes?: string;
+}
+
+export interface JPOCreate {
+  job_id: number;
+  priority?: JPOPriority;
+  notes?: string;
+  lines: JPOLineCreate[];
+}
+
+export interface JPOUpdate {
+  priority?: JPOPriority;
+  notes?: string;
+}
+
+export interface JPOLineResponse {
+  id: number;
+  jpo_id: number;
+  part_id: number;
+  qty_requested: number;
+  qty_ordered: number;
+  qty_received: number;
+  priority: LinePriority;
+  entry_id: number | null;
+  suggested_supplier_id: number | null;
+  notes: string | null;
+  created_at: string | null;
+  // Joined fields
+  part_number: string | null;
+  part_description: string | null;
+  supplier_name: string | null;
+}
+
+export interface JPOResponse {
+  id: number;
+  job_id: number;
+  order_number: string;
+  status: JPOStatus;
+  priority: JPOPriority;
+  requested_by: number;
+  approved_by: number | null;
+  approved_at: string | null;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  // Joined fields
+  job_name: string | null;
+  job_number: string | null;
+  requester_name: string | null;
+  approver_name: string | null;
+  line_count: number;
+  lines: JPOLineResponse[] | null;
+}
+
+export interface JPOListItem {
+  id: number;
+  job_id: number;
+  order_number: string;
+  status: JPOStatus;
+  priority: JPOPriority;
+  requested_by: number;
+  requester_name: string | null;
+  job_name: string | null;
+  job_number: string | null;
+  line_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface JPOApproval {
+  action: 'approve' | 'reject';
+  notes?: string;
+}
+
+
+// ── PO (Purchase Order) Types ────────────────────────────────────
+
+export interface POLineCreate {
+  part_id: number;
+  jpo_line_id?: number | null;
+  qty_ordered: number;
+  unit_cost?: number | null;
+  notes?: string;
+}
+
+export interface POCreate {
+  supplier_id: number;
+  expected_delivery?: string;
+  shipping_method?: string;
+  notes?: string;
+  internal_notes?: string;
+  lines: POLineCreate[];
+}
+
+export interface POUpdate {
+  expected_delivery?: string;
+  shipping_method?: string;
+  tracking_number?: string;
+  notes?: string;
+  internal_notes?: string;
+  tax_amount?: number;
+  shipping_cost?: number;
+}
+
+export interface POLineResponse {
+  id: number;
+  po_id: number;
+  jpo_line_id: number | null;
+  part_id: number;
+  qty_ordered: number;
+  qty_received: number;
+  unit_cost: number | null;
+  received_unit_cost: number | null;
+  status: POLineStatus;
+  backorder_expected_date: string | null;
+  received_at: string | null;
+  received_by: number | null;
+  notes: string | null;
+  created_at: string | null;
+  // Joined fields
+  part_number: string | null;
+  part_description: string | null;
+  line_total: number | null;
+}
+
+export interface POResponse {
+  id: number;
+  po_number: string;
+  supplier_id: number;
+  status: POStatus;
+  order_date: string | null;
+  expected_delivery: string | null;
+  actual_delivery: string | null;
+  shipping_method: string | null;
+  tracking_number: string | null;
+  subtotal: number;
+  tax_amount: number;
+  shipping_cost: number;
+  total_cost: number;
+  notes: string | null;
+  internal_notes: string | null;
+  pdf_path: string | null;
+  submitted_by: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+  // Joined fields
+  supplier_name: string | null;
+  submitter_name: string | null;
+  line_count: number;
+  lines: POLineResponse[] | null;
+}
+
+export interface POListItem {
+  id: number;
+  po_number: string;
+  supplier_id: number;
+  supplier_name: string | null;
+  status: POStatus;
+  order_date: string | null;
+  expected_delivery: string | null;
+  total_cost: number;
+  line_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface POFromJPO {
+  jpo_id: number;
+  supplier_line_groups?: SupplierLineGroup[] | null;
+}
+
+export interface SupplierLineGroup {
+  supplier_id: number;
+  line_ids: number[];
+  expected_delivery?: string;
+  notes?: string;
+}
+
+
+// ── Receiving Types ──────────────────────────────────────────────
+
+export interface ReceiveItem {
+  po_line_id: number;
+  qty_received: number;
+  actual_cost?: number | null;
+  staging_zone_id?: number | null;
+  notes?: string;
+}
+
+export interface ReceiveByPO {
+  po_id: number;
+  items: ReceiveItem[];
+}
+
+
+// ── Return Types ─────────────────────────────────────────────────
+
+export interface ReturnLineCreate {
+  part_id: number;
+  po_line_id?: number | null;
+  qty: number;
+  condition?: ItemCondition;
+  disposition: DispositionType;
+  unit_cost?: number | null;
+  notes?: string;
+}
+
+export interface ReturnCreate {
+  return_type: ReturnType;
+  po_id?: number | null;
+  supplier_id?: number | null;
+  job_id?: number | null;
+  reason: ReturnReason;
+  notes?: string;
+  lines: ReturnLineCreate[];
+}
+
+export interface ReturnUpdate {
+  rma_number?: string;
+  shipping_carrier?: string;
+  tracking_number?: string;
+  credit_amount?: number;
+  notes?: string;
+}
+
+export interface ReturnLineResponse {
+  id: number;
+  return_id: number;
+  part_id: number;
+  po_line_id: number | null;
+  qty: number;
+  condition: ItemCondition;
+  disposition: DispositionType;
+  unit_cost: number | null;
+  notes: string | null;
+  created_at: string | null;
+  // Joined fields
+  part_number: string | null;
+  part_description: string | null;
+}
+
+export interface ReturnResponse {
+  id: number;
+  return_number: string;
+  return_type: ReturnType;
+  po_id: number | null;
+  supplier_id: number | null;
+  job_id: number | null;
+  status: ReturnStatus;
+  rma_number: string | null;
+  reason: ReturnReason;
+  shipping_carrier: string | null;
+  tracking_number: string | null;
+  credit_amount: number;
+  notes: string | null;
+  initiated_by: number;
+  approved_by: number | null;
+  approved_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  // Joined fields
+  supplier_name: string | null;
+  job_name: string | null;
+  initiator_name: string | null;
+  line_count: number;
+  lines: ReturnLineResponse[] | null;
+}
+
+export interface ReturnListItem {
+  id: number;
+  return_number: string;
+  return_type: ReturnType;
+  status: ReturnStatus;
+  reason: ReturnReason;
+  supplier_name: string | null;
+  job_name: string | null;
+  initiator_name: string | null;
+  line_count: number;
+  credit_amount: number;
+  created_at: string | null;
+}
+
+
+// ── Staging Zone Types ───────────────────────────────────────────
+
+export interface StagingZoneResponse {
+  id: number;
+  label: string;
+  qr_code: string | null;
+  zone_type: StagingZoneType;
+  current_job_id: number | null;
+  is_active: boolean;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  // Joined fields
+  job_name: string | null;
+  item_count: number;
+}
+
+export interface DistributionItem {
+  part_id: number;
+  qty: number;
+  dest_type: 'warehouse' | 'truck' | 'job';
+  dest_id: number;
+  notes?: string;
+}
+
+export interface DistributeFromStaging {
+  zone_id: number;
+  items: DistributionItem[];
+}
+
+
+// ── Status History (Audit Trail) ─────────────────────────────────
+
+export interface StatusHistoryEntry {
+  id: number;
+  entity_type: string;
+  entity_id: number;
+  old_status: string | null;
+  new_status: string;
+  changed_by: number;
+  changer_name: string | null;
+  notes: string | null;
+  created_at: string | null;
+}
+
+
+// ── Supplier Contact Ratings ─────────────────────────────────────
+
+export type ContactType = 'business' | 'rep' | 'driver';
+export type RatingCategory = 'responsiveness' | 'accuracy' | 'helpfulness' | 'professionalism';
+
+export interface SupplierContactRatingCreate {
+  supplier_id: number;
+  contact_type: ContactType;
+  score: number;  // 1-5
+  category?: RatingCategory;
+  notes?: string;
+  interaction_date?: string;
+}
+
+export interface SupplierContactRatingResponse {
+  id: number;
+  supplier_id: number;
+  contact_type: ContactType;
+  rated_by: number;
+  score: number;
+  category: RatingCategory | null;
+  notes: string | null;
+  interaction_date: string;
+  created_at: string | null;
+  rater_name: string | null;
+}
+
+
+// ── Supplier Ranking ─────────────────────────────────────────────
+
+export interface SupplierRanking {
+  supplier_id: number;
+  supplier_name: string;
+  composite_score: number;
+  price_score: number;
+  on_time_score: number;
+  communication_score: number;
+  quality_score: number;
+  lead_time_score: number;
+  avg_unit_cost: number | null;
+  avg_lead_days: number | null;
+  is_preferred: boolean;
+}
+
+
+// ── Procurement Dashboard ────────────────────────────────────────
+
+export interface ReorderSuggestion {
+  part_id: number;
+  part_number: string | null;
+  part_description: string | null;
+  current_stock: number;
+  reorder_point: number;
+  target_qty: number;
+  pending_po_qty: number;
+  expected_return_qty: number;
+  suggested_order_qty: number;
+  best_supplier_id: number | null;
+  best_supplier_name: string | null;
+  estimated_cost: number | null;
+  days_until_stockout: number | null;
+}
+
+export interface ProcurementDashboard {
+  parts_needing_reorder: number;
+  pending_po_count: number;
+  pending_po_value: number;
+  avg_lead_time_days: number;
+  overdue_deliveries: number;
+  parts_below_critical: number;
+}
+
+
+// ── Price History ────────────────────────────────────────────────
+
+export interface PriceHistoryEntry {
+  id: number;
+  part_id: number;
+  supplier_id: number;
+  price: number;
+  effective_date: string;
+  source: string;
+  reference_id: number | null;
+  notes: string | null;
+  created_at: string | null;
+  supplier_name: string | null;
+  part_number: string | null;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// NOTIFICATIONS (Phase 5 — cross-module)
+// ═══════════════════════════════════════════════════════════════════
+
+export interface NotificationResponse {
+  id: number;
+  user_id: number;
+  type: string;
+  title: string;
+  message: string | null;
+  link: string | null;
+  entity_type: string | null;
+  entity_id: number | null;
+  is_read: boolean;
+  created_at: string | null;
+}
+
+export interface NotificationListResponse {
+  items: NotificationResponse[];
+  total: number;
+  unread_count: number;
+}
+
+export interface NotificationMarkRead {
+  notification_ids?: number[];
+  mark_all?: boolean;
+}
+
+export interface NotificationBadge {
+  unread_count: number;
+  has_urgent: boolean;
+}
+
+export interface NotificationPreference {
+  notification_type: string;
+  is_enabled: boolean;
+}
+
+export interface NotificationPreferenceResponse {
+  user_id: number;
+  preferences: NotificationPreference[];
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// COMPANY PROFILES (Phase 5 — Settings)
+// ═══════════════════════════════════════════════════════════════════
+
+export interface CompanyProfile {
+  id: number;
+  name: string;
+  address_street: string | null;
+  address_city: string | null;
+  address_state: string | null;
+  address_zip: string | null;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  logo_path: string | null;
+  contractor_license: string | null;
+  insurance_info: string | null;
+  tax_id: string | null;
+  is_primary: boolean;
+  branch_name: string | null;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface CompanyProfileCreate {
+  name: string;
+  address_street?: string;
+  address_city?: string;
+  address_state?: string;
+  address_zip?: string;
+  phone?: string;
+  email?: string;
+  website?: string;
+  contractor_license?: string;
+  insurance_info?: string;
+  tax_id?: string;
+  is_primary?: boolean;
+  branch_name?: string;
+  notes?: string;
+}
+
+export interface CompanyProfileUpdate {
+  name?: string;
+  address_street?: string;
+  address_city?: string;
+  address_state?: string;
+  address_zip?: string;
+  phone?: string;
+  email?: string;
+  website?: string;
+  logo_path?: string;
+  contractor_license?: string;
+  insurance_info?: string;
+  tax_id?: string;
+  is_primary?: boolean;
+  branch_name?: string;
+  notes?: string;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// FLEET & VEHICLE MANAGEMENT (Phase 6)
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Vehicle Types ──────────────────────────────────────────────────
+
+export type VehicleType = 'company_truck' | 'company_van' | 'company_car' | 'private_vehicle';
+export type VehicleStatus = 'active' | 'inactive' | 'maintenance' | 'retired';
+
+export interface VehicleCreate {
+  vehicle_number: string;
+  vehicle_name?: string;
+  vehicle_type?: VehicleType;
+  make?: string;
+  model?: string;
+  year?: number;
+  color?: string;
+  vin?: string;
+  license_plate?: string;
+  insurance_policy?: string;
+  insurance_expiry?: string;
+  registration_expiry?: string;
+  current_odometer?: number;
+  owner_user_id?: number;
+  notes?: string;
+}
+
+export interface VehicleUpdate {
+  vehicle_name?: string;
+  vehicle_type?: VehicleType;
+  status?: VehicleStatus;
+  make?: string;
+  model?: string;
+  year?: number;
+  color?: string;
+  vin?: string;
+  license_plate?: string;
+  insurance_policy?: string;
+  insurance_expiry?: string;
+  registration_expiry?: string;
+  current_odometer?: number;
+  notes?: string;
+  photo_path?: string;
+}
+
+export interface Vehicle {
+  id: number;
+  vehicle_number: string;
+  vehicle_name: string;
+  vehicle_type: VehicleType;
+  status: VehicleStatus;
+  make: string | null;
+  model: string | null;
+  year: number | null;
+  color: string | null;
+  vin: string | null;
+  license_plate: string | null;
+  insurance_policy: string | null;
+  insurance_expiry: string | null;
+  registration_expiry: string | null;
+  current_odometer: number;
+  owner_user_id: number | null;
+  notes: string | null;
+  photo_path: string | null;
+  is_active: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+  // Joined fields
+  owner_name: string | null;
+  primary_driver_name: string | null;
+  primary_driver_id: number | null;
+  assignment_count: number;
+  next_maintenance_due: string | null;
+  next_maintenance_type: string | null;
+}
+
+export interface VehicleListItem {
+  id: number;
+  vehicle_number: string;
+  vehicle_name: string;
+  vehicle_type: VehicleType;
+  status: VehicleStatus;
+  make: string | null;
+  model: string | null;
+  year: number | null;
+  license_plate: string | null;
+  current_odometer: number;
+  is_active: boolean;
+  is_take_home: boolean;
+  created_at: string | null;
+  // Joined fields
+  primary_driver_name: string | null;
+  primary_driver_id: number | null;
+  next_maintenance_due: string | null;
+  overdue_maintenance_count: number;
+  upcoming_maintenance_count: number;
+}
+
+// ── Vehicle Assignments ────────────────────────────────────────────
+
+export type AssignmentType = 'primary' | 'authorized' | 'temporary';
+
+export interface VehicleAssignmentCreate {
+  user_id: number;
+  assignment_type?: AssignmentType;
+  is_take_home?: boolean;
+  home_to_shop_miles?: number;
+  home_address_street?: string;
+  home_address_city?: string;
+  home_address_state?: string;
+  home_address_zip?: string;
+  notes?: string;
+}
+
+export interface VehicleAssignment {
+  id: number;
+  vehicle_id: number;
+  user_id: number;
+  assignment_type: AssignmentType;
+  is_take_home: boolean;
+  home_to_shop_miles: number | null;
+  home_address_street: string | null;
+  home_address_city: string | null;
+  home_address_state: string | null;
+  home_address_zip: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  // Joined fields
+  user_name: string | null;
+  vehicle_name: string | null;
+  vehicle_number: string | null;
+}
+
+// ── Warehouse Locations ────────────────────────────────────────────
+
+export interface WarehouseLocationCreate {
+  name: string;
+  address_street?: string;
+  address_city?: string;
+  address_state?: string;
+  address_zip?: string;
+  gps_lat?: number;
+  gps_lng?: number;
+  is_primary?: boolean;
+  company_profile_id?: number;
+  phone?: string;
+  notes?: string;
+}
+
+export interface WarehouseLocationUpdate {
+  name?: string;
+  address_street?: string;
+  address_city?: string;
+  address_state?: string;
+  address_zip?: string;
+  gps_lat?: number;
+  gps_lng?: number;
+  is_primary?: boolean;
+  company_profile_id?: number;
+  phone?: string;
+  is_active?: boolean;
+  notes?: string;
+}
+
+export interface WarehouseLocation {
+  id: number;
+  name: string;
+  address_street: string | null;
+  address_city: string | null;
+  address_state: string | null;
+  address_zip: string | null;
+  gps_lat: number | null;
+  gps_lng: number | null;
+  is_primary: boolean;
+  is_active: boolean;
+  company_profile_id: number | null;
+  phone: string | null;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+// ── Vehicle Delivery Items ─────────────────────────────────────────
+
+export type DeliveryStatus = 'assigned' | 'loaded' | 'in_transit' | 'delivered' | 'returned';
+
+export interface DeliveryItemCreate {
+  job_id: number;
+  part_id: number;
+  qty_assigned?: number;
+  notes?: string;
+}
+
+export interface DeliveryItemBulkCreate {
+  job_id: number;
+  items: DeliveryItemCreate[];
+}
+
+export interface VehicleDeliveryItem {
+  id: number;
+  vehicle_id: number;
+  job_id: number;
+  part_id: number;
+  qty_assigned: number;
+  qty_delivered: number;
+  assigned_by: number | null;
+  delivered_by: number | null;
+  delivered_at: string | null;
+  status: DeliveryStatus;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  // Joined fields
+  job_name: string | null;
+  part_number: string | null;
+  part_description: string | null;
+  assigner_name: string | null;
+}
+
+// ── Maintenance Types ──────────────────────────────────────────────
+
+export interface MaintenanceTypeCreate {
+  name: string;
+  description?: string;
+  default_interval_miles?: number;
+  default_interval_months?: number;
+  sort_order?: number;
+}
+
+export interface MaintenanceTypeUpdate {
+  name?: string;
+  description?: string;
+  default_interval_miles?: number;
+  default_interval_months?: number;
+  sort_order?: number;
+  is_active?: boolean;
+}
+
+export interface MaintenanceType {
+  id: number;
+  name: string;
+  description: string | null;
+  default_interval_miles: number | null;
+  default_interval_months: number | null;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string | null;
+}
+
+// ── Maintenance Schedules ──────────────────────────────────────────
+
+export interface MaintenanceScheduleCreate {
+  maintenance_type_id: number;
+  interval_miles?: number;
+  interval_months?: number;
+  last_performed_at?: string;
+  last_performed_miles?: number;
+  is_enabled?: boolean;
+  notes?: string;
+}
+
+export interface MaintenanceScheduleUpdate {
+  interval_miles?: number;
+  interval_months?: number;
+  last_performed_at?: string;
+  last_performed_miles?: number;
+  next_due_date?: string;
+  next_due_miles?: number;
+  is_enabled?: boolean;
+  notes?: string;
+}
+
+export interface MaintenanceSchedule {
+  id: number;
+  vehicle_id: number;
+  maintenance_type_id: number;
+  interval_miles: number | null;
+  interval_months: number | null;
+  last_performed_at: string | null;
+  last_performed_miles: number | null;
+  next_due_date: string | null;
+  next_due_miles: number | null;
+  is_enabled: boolean;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  // Joined fields
+  maintenance_type_name: string | null;
+  vehicle_name: string | null;
+  vehicle_number: string | null;
+  current_odometer: number | null;
+  // Computed (enriched by service)
+  urgency?: 'normal' | 'soon' | 'overdue';
+}
+
+// ── Maintenance Records ────────────────────────────────────────────
+
+export interface MaintenanceRecordCreate {
+  maintenance_type_id: number;
+  service_date?: string;
+  odometer_reading?: number;
+  cost?: number;
+  vendor?: string;
+  invoice_number?: string;
+  description?: string;
+  photo_path?: string;
+  notes?: string;
+}
+
+export interface MaintenanceRecord {
+  id: number;
+  vehicle_id: number;
+  maintenance_type_id: number;
+  service_date: string;
+  odometer_reading: number | null;
+  cost: number;
+  vendor: string | null;
+  invoice_number: string | null;
+  description: string | null;
+  performed_by: number | null;
+  photo_path: string | null;
+  notes: string | null;
+  created_at: string | null;
+  // Joined fields
+  maintenance_type_name: string | null;
+  performer_name: string | null;
+  vehicle_name: string | null;
+}
+
+// ── Mileage Logs ───────────────────────────────────────────────────
+
+export type TripLegType =
+  | 'home_to_shop'
+  | 'shop_to_job'
+  | 'job_to_job'
+  | 'job_to_shop'
+  | 'shop_to_home'
+  | 'home_to_job'
+  | 'job_to_home'
+  | 'other';
+
+export interface MileageLogCreate {
+  log_date?: string;
+  odometer_start?: number;
+  odometer_end?: number;
+  is_take_home_day?: boolean;
+  notes?: string;
+}
+
+export interface MileageLogUpdate {
+  odometer_start?: number;
+  odometer_end?: number;
+  is_take_home_day?: boolean;
+  notes?: string;
+}
+
+export interface TripLeg {
+  id: number;
+  mileage_log_id: number;
+  leg_order: number;
+  leg_type: TripLegType;
+  from_label: string | null;
+  to_label: string | null;
+  estimated_miles: number | null;
+  actual_miles: number | null;
+  estimated_drive_minutes: number | null;
+  actual_drive_minutes: number | null;
+  is_billable: boolean;
+  from_job_id: number | null;
+  to_job_id: number | null;
+  notes: string | null;
+  created_at: string | null;
+  // Joined fields
+  from_job_name: string | null;
+  to_job_name: string | null;
+}
+
+export interface TripLegCreate {
+  leg_order?: number;
+  leg_type: TripLegType;
+  from_label?: string;
+  to_label?: string;
+  estimated_miles?: number;
+  actual_miles?: number;
+  estimated_drive_minutes?: number;
+  actual_drive_minutes?: number;
+  is_billable?: boolean;
+  from_job_id?: number;
+  to_job_id?: number;
+  notes?: string;
+}
+
+export interface MileageLog {
+  id: number;
+  vehicle_id: number;
+  driver_id: number;
+  log_date: string;
+  odometer_start: number | null;
+  odometer_end: number | null;
+  total_miles: number | null;
+  is_take_home_day: boolean;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  // Joined fields
+  driver_name: string | null;
+  vehicle_name: string | null;
+  vehicle_number: string | null;
+  trip_legs: TripLeg[] | null;
+}
+
+// ── Mileage Reimbursements ─────────────────────────────────────────
+
+export type ReimbursementStatus = 'pending' | 'approved' | 'paid' | 'rejected';
+
+export interface ReimbursementCreate {
+  vehicle_id: number;
+  period_start: string;
+  period_end: string;
+  total_miles: number;
+  rate_per_mile?: number;
+  notes?: string;
+}
+
+export interface MileageReimbursement {
+  id: number;
+  user_id: number;
+  vehicle_id: number;
+  period_start: string;
+  period_end: string;
+  total_miles: number;
+  rate_per_mile: number;
+  total_amount: number | null;
+  status: ReimbursementStatus;
+  approved_by: number | null;
+  approved_at: string | null;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  // Joined fields
+  user_name: string | null;
+  vehicle_name: string | null;
+  approver_name: string | null;
+}
+
+export interface ReimbursementApproval {
+  action: 'approve' | 'reject';
+  notes?: string;
+}
+
+// ── Fleet Dashboard & Aggregation ──────────────────────────────────
+
+export interface FleetDashboardStats {
+  total_vehicles: number;
+  active_vehicles: number;
+  in_maintenance: number;
+  retired_vehicles: number;
+  company_vehicles: number;
+  private_vehicles: number;
+  total_fleet_miles_month: number;
+  total_maintenance_cost_month: number;
+  overdue_maintenance_count: number;
+  upcoming_maintenance_count: number;
+  pending_reimbursements: number;
+  vehicles_needing_inspection: number;
+}
+
+export interface MyVehicleDashboard {
+  vehicle: Vehicle | null;
+  assignment: VehicleAssignment | null;
+  todays_mileage: MileageLog | null;
+  pending_deliveries: VehicleDeliveryItem[];
+  maintenance_alerts: MaintenanceAlert[];
+  recent_mileage: MileageLog[];
+}
+
+export interface MaintenanceAlert {
+  vehicle_id: number;
+  vehicle_name: string;
+  vehicle_number: string;
+  maintenance_type_id: number;
+  maintenance_type_name: string;
+  next_due_date: string | null;
+  next_due_miles: number | null;
+  current_odometer: number;
+  miles_until_due: number | null;
+  days_until_due: number | null;
+  is_overdue: boolean;
+  urgency: 'normal' | 'soon' | 'overdue';
+}
+
+export interface MileageEstimate {
+  home_to_shop_miles: number | null;
+  shop_to_job_miles: number | null;
+  total_round_trip_miles: number | null;
+  total_billable_miles: number | null;
+  estimated_drive_minutes_one_way: number | null;
+  estimated_billable_drive_minutes: number | null;
+  is_take_home: boolean;
+  legs: MileageEstimateLeg[];
+}
+
+export interface MileageEstimateLeg {
+  leg_type: TripLegType;
+  from_label: string;
+  to_label: string;
+  estimated_miles: number;
+  estimated_drive_minutes: number | null;
+  is_billable: boolean;
+}
+
+export interface MileageSummary {
+  vehicle_id: number | null;
+  driver_id: number | null;
+  period_start: string;
+  period_end: string;
+  total_miles: number;
+  total_days_logged: number;
+  total_billable_drive_minutes: number;
+  avg_miles_per_day: number;
+  total_take_home_days: number;
+}
+
+// ── Vehicle Inventory (Stock on Truck) ─────────────────────────────
+
+export interface VehicleInventoryItem {
+  id: number;
+  part_id: number;
+  qty: number;
+  supplier_id: number | null;
+  part_number: string | null;
+  part_description: string | null;
+  category: string | null;
+  brand: string | null;
+  supplier_name: string | null;
+}
+
+export interface VehicleInventoryTransfer {
+  part_id: number;
+  qty: number;
+  from_location_type?: string;
+  from_location_id?: number;
+  notes?: string;
+}
+
+// ── Maintenance Cost Summary ───────────────────────────────────────
+
+export interface MaintenanceCostSummary {
+  total_cost: number;
+  total_records: number;
+  per_type?: { maintenance_type_name: string; total_cost: number; record_count: number }[];
+  per_vehicle?: { vehicle_name: string; vehicle_number: string; total_cost: number; record_count: number }[];
+}
+
+// ── Dashboard ──────────────────────────────────────────────────────
+
+export interface DashboardData {
+  kpis: {
+    total_parts: number;
+    active_jobs: number;
+    pending_orders: number;
+    low_stock_alerts: number;
+  };
+  quick_actions: { label: string; icon: string; route: string }[];
+  user_name: string;
+}
+
+export interface FastDriveDestination {
+  type: 'home' | 'shop' | 'job';
+  label: string;
+  address?: string | null;
+  gps_lat?: number | null;
+  gps_lng?: number | null;
+  miles_estimate?: number | null;
+  job_id?: number | null;
+  trip_count_30d: number;
+}
+
+export interface FastDriveContext {
+  has_vehicle: boolean;
+  vehicle_id?: number;
+  vehicle_name?: string;
+  vehicle_number?: string;
+  suggested: FastDriveDestination[];
+  all_destinations: FastDriveDestination[];
+}
+
+export interface FastDriveStartRequest {
+  leg_type: string;
+  from_label: string;
+  to_label: string;
+  estimated_miles?: number | null;
+  to_job_id?: number | null;
+  from_job_id?: number | null;
+}
+
+export interface FastDriveResult {
+  mileage_log_id: number;
+  trip_leg_id: number;
 }

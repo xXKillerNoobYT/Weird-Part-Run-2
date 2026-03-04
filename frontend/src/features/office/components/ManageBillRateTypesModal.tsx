@@ -159,29 +159,29 @@ export function ManageBillRateTypesModal({ isOpen, onClose }: ManageBillRateType
                   {!t.is_active && (
                     <Badge variant="default">Inactive</Badge>
                   )}
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={() => startEdit(t)}
-                      className="p-1 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                      className="p-2 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
                       title="Edit"
                     >
-                      <Pencil className="h-3.5 w-3.5" />
+                      <Pencil className="h-4 w-4" />
                     </button>
                     {t.is_active ? (
                       <button
                         onClick={() => deleteMutation.mutate(t.id)}
-                        className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30"
+                        className="p-2 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
                         title="Deactivate"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-4 w-4" />
                       </button>
                     ) : (
                       <button
                         onClick={() => updateMutation.mutate({ id: t.id, data: { is_active: true } })}
-                        className="p-1 rounded text-gray-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/30"
+                        className="p-2 rounded text-gray-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors"
                         title="Reactivate"
                       >
-                        <Check className="h-3.5 w-3.5" />
+                        <Check className="h-4 w-4" />
                       </button>
                     )}
                   </div>

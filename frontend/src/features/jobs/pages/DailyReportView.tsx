@@ -16,13 +16,17 @@ import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft, Lock, Clock, Users, MapPin, Package,
   CheckCircle2, XCircle, MessageSquare, Camera,
+  Truck, Route, ArrowRight,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { Badge } from '../../../components/ui/Badge';
 import { Card, CardHeader } from '../../../components/ui/Card';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { getReport } from '../../../api/jobs';
-import type { ReportWorker, ReportPartConsumed, ReportStatus } from '../../../lib/types';
+import type {
+  ReportWorker, ReportPartConsumed, ReportStatus,
+  ReportDelivery, ReportTripLeg,
+} from '../../../lib/types';
 
 const STATUS_LABELS: Record<ReportStatus, { label: string; variant: 'default' | 'success' | 'warning' }> = {
   generated: { label: 'Generated', variant: 'default' },
@@ -219,6 +223,132 @@ function PartsTable({ parts }: { parts: ReportPartConsumed[] }) {
   );
 }
 
+// ── Deliveries Table ────────────────────────────────────────────
+
+function DeliveriesTable({ deliveries }: { deliveries: ReportDelivery[] }) {
+  if (deliveries.length === 0) return null;
+
+  const totalItems = deliveries.reduce((sum, d) => sum + d.qty_delivered, 0);
+
+  return (
+    <Card>
+      <CardHeader title="Deliveries" subtitle={`${deliveries.length} deliveries — ${totalItems} items total`} />
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-border">
+              <th className="text-left px-4 py-2 text-gray-500 dark:text-gray-400 font-medium">Part</th>
+              <th className="text-right px-4 py-2 text-gray-500 dark:text-gray-400 font-medium">Qty</th>
+              <th className="text-left px-4 py-2 text-gray-500 dark:text-gray-400 font-medium hidden sm:table-cell">Vehicle</th>
+              <th className="text-left px-4 py-2 text-gray-500 dark:text-gray-400 font-medium hidden sm:table-cell">Delivered By</th>
+              <th className="text-left px-4 py-2 text-gray-500 dark:text-gray-400 font-medium">Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {deliveries.map((d, idx) => (
+              <tr key={idx} className="border-b border-border last:border-0">
+                <td className="px-4 py-2 text-gray-900 dark:text-gray-100">
+                  <div>{d.part_name}</div>
+                  {d.part_code && (
+                    <span className="text-gray-400 dark:text-gray-500 font-mono text-[10px]">{d.part_code}</span>
+                  )}
+                </td>
+                <td className="text-right px-4 py-2 text-gray-700 dark:text-gray-300">{d.qty_delivered}</td>
+                <td className="px-4 py-2 text-gray-700 dark:text-gray-300 hidden sm:table-cell">
+                  <span className="font-mono">{d.vehicle_number}</span>
+                </td>
+                <td className="px-4 py-2 text-gray-700 dark:text-gray-300 hidden sm:table-cell">{d.delivered_by_name ?? '—'}</td>
+                <td className="px-4 py-2 text-gray-500 dark:text-gray-400">
+                  {d.delivered_at ? formatTime(d.delivered_at) : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+// ── Trip Legs Section ───────────────────────────────────────────
+
+const LEG_TYPE_LABELS: Record<string, string> = {
+  home_to_shop: 'Home → Shop',
+  shop_to_job: 'Shop → Job',
+  job_to_job: 'Job → Job',
+  job_to_shop: 'Job → Shop',
+  shop_to_home: 'Shop → Home',
+  job_to_home: 'Job → Home',
+  other: 'Other',
+};
+
+function TripLegsSection({ tripLegs }: { tripLegs: ReportTripLeg[] }) {
+  if (tripLegs.length === 0) return null;
+
+  const totalMiles = tripLegs.reduce((sum, t) => sum + (t.miles ?? 0), 0);
+  const totalBillableMin = tripLegs
+    .filter((t) => t.is_billable)
+    .reduce((sum, t) => sum + (t.drive_minutes ?? 0), 0);
+
+  return (
+    <Card>
+      <CardHeader
+        title="Trip Legs"
+        subtitle={`${tripLegs.length} legs — ${totalMiles.toFixed(1)} mi${
+          totalBillableMin > 0 ? ` — ${totalBillableMin} min billable drive` : ''
+        }`}
+      />
+      <div className="space-y-1 px-4 pb-4">
+        {tripLegs.map((leg, idx) => (
+          <div
+            key={idx}
+            className="flex items-center gap-3 py-2 border-b border-border last:border-0"
+          >
+            <Route className="h-4 w-4 text-blue-500 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1 text-sm text-gray-900 dark:text-gray-100">
+                <span className="truncate">{leg.from_label ?? '?'}</span>
+                <ArrowRight className="h-3 w-3 text-gray-400 shrink-0" />
+                <span className="truncate">{leg.to_label ?? '?'}</span>
+              </div>
+              <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
+                <span>{LEG_TYPE_LABELS[leg.leg_type] ?? leg.leg_type}</span>
+                <span className="font-mono">{leg.vehicle_number}</span>
+                <span>{leg.driver_name}</span>
+                {leg.is_billable && (
+                  <span className="text-green-600 dark:text-green-400 font-medium">Billable</span>
+                )}
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              {leg.miles != null && (
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                  {leg.miles.toFixed(1)} mi
+                </p>
+              )}
+              {leg.drive_minutes != null && (
+                <p className="text-xs text-gray-500 dark:text-gray-400">{leg.drive_minutes} min</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// ── Stat Card Helper ────────────────────────────────────────────
+
+function StatCard({ icon, value, label }: { icon: React.ReactNode; value: string | number; label: string }) {
+  return (
+    <div className="bg-surface border border-border rounded-lg p-4 text-center">
+      <div className="mx-auto mb-1 flex justify-center">{icon}</div>
+      <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{value}</p>
+      <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
+    </div>
+  );
+}
+
 // ── Main Page ───────────────────────────────────────────────────
 
 export function DailyReportView() {
@@ -280,28 +410,19 @@ export function DailyReportView() {
 
       {/* Summary stats */}
       {data?.summary && (
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-surface border border-border rounded-lg p-4 text-center">
-            <Users className="h-5 w-5 text-blue-500 mx-auto mb-1" />
-            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-              {data.summary.worker_count}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Workers</p>
-          </div>
-          <div className="bg-surface border border-border rounded-lg p-4 text-center">
-            <Clock className="h-5 w-5 text-green-500 mx-auto mb-1" />
-            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-              {data.summary.total_labor_hours.toFixed(1)}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Labor Hours</p>
-          </div>
-          <div className="bg-surface border border-border rounded-lg p-4 text-center">
-            <Package className="h-5 w-5 text-orange-500 mx-auto mb-1" />
-            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-              ${data.summary.total_parts_cost.toFixed(0)}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Parts Cost</p>
-          </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <StatCard icon={<Users className="h-5 w-5 text-blue-500" />} value={data.summary.worker_count} label="Workers" />
+          <StatCard icon={<Clock className="h-5 w-5 text-green-500" />} value={data.summary.total_labor_hours.toFixed(1)} label="Labor Hours" />
+          <StatCard icon={<Package className="h-5 w-5 text-orange-500" />} value={`$${data.summary.total_parts_cost.toFixed(0)}`} label="Parts Cost" />
+          {(data.summary.total_delivery_items ?? 0) > 0 && (
+            <StatCard icon={<Truck className="h-5 w-5 text-purple-500" />} value={data.summary.total_delivery_items!} label="Items Delivered" />
+          )}
+          {(data.summary.total_miles_driven ?? 0) > 0 && (
+            <StatCard icon={<Route className="h-5 w-5 text-indigo-500" />} value={`${data.summary.total_miles_driven!.toFixed(1)} mi`} label="Miles Driven" />
+          )}
+          {(data.summary.total_billable_drive_minutes ?? 0) > 0 && (
+            <StatCard icon={<Clock className="h-5 w-5 text-teal-500" />} value={`${data.summary.total_billable_drive_minutes!} min`} label="Billable Drive" />
+          )}
         </div>
       )}
 
@@ -321,6 +442,16 @@ export function DailyReportView() {
 
       {/* Parts Section */}
       {data?.parts_consumed && <PartsTable parts={data.parts_consumed} />}
+
+      {/* Deliveries Section */}
+      {data?.deliveries && data.deliveries.length > 0 && (
+        <DeliveriesTable deliveries={data.deliveries} />
+      )}
+
+      {/* Trip Legs Section */}
+      {data?.trip_legs && data.trip_legs.length > 0 && (
+        <TripLegsSection tripLegs={data.trip_legs} />
+      )}
 
       {/* Footer — generation info */}
       <div className="text-center text-xs text-gray-400 dark:text-gray-500 py-4 border-t border-border">

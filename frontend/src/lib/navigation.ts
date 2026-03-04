@@ -46,6 +46,7 @@ export const MODULES: NavModule[] = [
       { id: 'manage-jobs', label: 'Manage Jobs', path: '/office/manage-jobs', permission: 'manage_jobs' },
       { id: 'notebook-templates', label: 'Notebook Templates', path: '/office/notebook-templates', permission: 'manage_notebooks' },
       { id: 'clock-out-questions', label: 'Clock-Out Questions', path: '/office/clock-out-questions', permission: 'manage_settings' },
+      { id: 'warehouse-locations', label: 'Warehouse Locations', path: '/office/warehouse-locations', permission: 'manage_fleet' },
     ],
   },
   {
@@ -70,11 +71,12 @@ export const MODULES: NavModule[] = [
     path: '/trucks',
     permission: 'view_trucks',
     tabs: [
-      { id: 'my-truck', label: 'My Truck', path: '/trucks/my-truck' },
-      { id: 'all', label: 'All Trucks', path: '/trucks/all' },
+      { id: 'my-truck', label: 'My Vehicle', path: '/trucks/my-truck' },
+      { id: 'all', label: 'All Vehicles', path: '/trucks/all' },
       { id: 'tools', label: 'Tools', path: '/trucks/tools' },
       { id: 'maintenance', label: 'Maintenance', path: '/trucks/maintenance' },
       { id: 'mileage', label: 'Mileage', path: '/trucks/mileage' },
+      { id: 'fleet', label: 'Fleet', path: '/trucks/fleet', permission: 'manage_fleet' },
     ],
   },
   {
@@ -106,11 +108,13 @@ export const MODULES: NavModule[] = [
     path: '/orders',
     permission: 'view_orders',
     tabs: [
-      { id: 'drafts', label: 'Draft POs', path: '/orders/drafts' },
-      { id: 'pending', label: 'Pending', path: '/orders/pending' },
-      { id: 'incoming', label: 'Incoming', path: '/orders/incoming' },
-      { id: 'returns', label: 'Returns', path: '/orders/returns', permission: 'approve_returns' },
-      { id: 'procurement', label: 'Procurement Planner', path: '/orders/procurement', permission: 'manage_orders' },
+      // ── Job-related ordering ──
+      { id: 'parts-requests', label: 'Job Parts Requests', path: '/orders/parts-requests', group: 'Job Orders' },
+      // ── Supplier-facing purchasing (serves both jobs & warehouse restock) ──
+      { id: 'purchase-orders', label: 'Warehouse Purchase Orders', path: '/orders/purchase-orders', group: 'Purchasing' },
+      // ── Returns & warehouse procurement ──
+      { id: 'returns', label: 'Returns', path: '/orders/returns', group: 'Management' },
+      { id: 'procurement', label: 'Procurement', path: '/orders/procurement', permission: 'manage_orders', group: 'Management' },
     ],
   },
   {
@@ -146,7 +150,9 @@ export const MODULES: NavModule[] = [
     path: '/settings',
     tabs: [
       { id: 'app-config', label: 'App Config', path: '/settings/app-config', permission: 'manage_settings' },
+      { id: 'company-profile', label: 'Company', path: '/settings/company-profile', permission: 'manage_settings' },
       { id: 'themes', label: 'Themes', path: '/settings/themes' },
+      { id: 'notifications', label: 'Notifications', path: '/settings/notifications' },
       { id: 'sync', label: 'Sync', path: '/settings/sync', permission: 'manage_settings' },
       { id: 'ai-config', label: 'AI Config', path: '/settings/ai-config', permission: 'manage_settings' },
       { id: 'devices', label: 'Device Management', path: '/settings/devices', permission: 'manage_devices' },

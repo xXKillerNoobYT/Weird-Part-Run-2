@@ -15,6 +15,7 @@ from app.repositories.base import BaseRepo
 
 class SettingsRepo(BaseRepo):
     TABLE = "settings"
+    HAS_UPDATED_AT = True
 
     async def get_by_key(self, key: str) -> Any:
         """Get a single setting value, JSON-decoded.

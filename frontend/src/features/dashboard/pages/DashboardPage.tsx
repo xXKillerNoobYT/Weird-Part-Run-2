@@ -1,50 +1,86 @@
 /**
  * DashboardPage — main landing page after login.
  *
- * Shows a welcome card and four KPI placeholder cards.
- * KPIs will be wired to real data once the backend APIs are connected.
+ * Shows:
+ *   1. Welcome header
+ *   2. Fast Drive card (vehicle + destination quick-start)
+ *   3. Live KPI cards (parts, jobs, orders, low stock)
+ *   4. Quick Actions (navigable shortcuts)
  */
 
+import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Package,
   Briefcase,
-  Clock,
+  ShoppingCart,
   AlertTriangle,
+  Search,
+  ArrowRightLeft,
+  Loader2,
 } from 'lucide-react';
-import { Card, CardHeader } from '../../../components/ui/Card';
 
-const kpis = [
+import { Card, CardHeader } from '../../../components/ui/Card';
+import { FastDriveCard } from '../components/FastDriveCard';
+import { getDashboard } from '../../../api/dashboard';
+
+
+// ── Icon lookup for quick actions (backend sends icon name strings) ──
+
+const ICON_MAP: Record<string, React.ReactNode> = {
+  'briefcase':       <Briefcase className="h-5 w-5" />,
+  'shopping-cart':   <ShoppingCart className="h-5 w-5" />,
+  'search':          <Search className="h-5 w-5" />,
+  'arrow-right-left': <ArrowRightLeft className="h-5 w-5" />,
+  'package':         <Package className="h-5 w-5" />,
+};
+
+
+// ── KPI card config (maps backend keys to labels / icons / colors) ──
+
+const KPI_CONFIG = [
   {
+    key: 'total_parts' as const,
     label: 'Total Parts',
-    value: 0,
     icon: <Package className="h-5 w-5 text-blue-500" />,
-    color: 'bg-blue-50 dark:bg-blue-900/20',
+    bg: 'bg-blue-50 dark:bg-blue-900/20',
   },
   {
+    key: 'active_jobs' as const,
     label: 'Active Jobs',
-    value: 0,
     icon: <Briefcase className="h-5 w-5 text-green-500" />,
-    color: 'bg-green-50 dark:bg-green-900/20',
+    bg: 'bg-green-50 dark:bg-green-900/20',
   },
   {
+    key: 'pending_orders' as const,
     label: 'Pending Orders',
-    value: 0,
-    icon: <Clock className="h-5 w-5 text-amber-500" />,
-    color: 'bg-amber-50 dark:bg-amber-900/20',
+    icon: <ShoppingCart className="h-5 w-5 text-amber-500" />,
+    bg: 'bg-amber-50 dark:bg-amber-900/20',
   },
   {
+    key: 'low_stock_alerts' as const,
     label: 'Low Stock Alerts',
-    value: 0,
     icon: <AlertTriangle className="h-5 w-5 text-red-500" />,
-    color: 'bg-red-50 dark:bg-red-900/20',
+    bg: 'bg-red-50 dark:bg-red-900/20',
   },
 ] as const;
 
+
 export function DashboardPage() {
+  const navigate = useNavigate();
+
+  const { data: dashboard, isLoading } = useQuery({
+    queryKey: ['dashboard'],
+    queryFn: getDashboard,
+    staleTime: 30_000,  // refresh every 30s
+  });
+
+  const kpis = dashboard?.kpis;
+
   return (
     <div className="space-y-6">
-      {/* Welcome card */}
+      {/* ── Welcome card ─────────────────────────────────── */}
       <Card>
         <div className="flex items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary-50 dark:bg-primary-900/20">
@@ -52,56 +88,61 @@ export function DashboardPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-              Welcome to Wired Part
+              {dashboard
+                ? `Welcome, ${dashboard.user_name}`
+                : 'Welcome to Wired Part'}
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Your HVAC parts, trucks, and job management hub. Here's today's snapshot.
+              Your HVAC parts, trucks, and job management hub.
             </p>
           </div>
         </div>
       </Card>
 
-      {/* KPI grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {kpis.map((kpi) => (
-          <Card key={kpi.label}>
-            <div className="flex items-center gap-4">
+      {/* ── Fast Drive ───────────────────────────────────── */}
+      <FastDriveCard />
+
+      {/* ── KPI grid ─────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {KPI_CONFIG.map((cfg) => (
+          <Card key={cfg.key}>
+            <div className="flex items-center gap-3 sm:gap-4">
               <div
-                className={`flex h-10 w-10 items-center justify-center rounded-lg ${kpi.color}`}
+                className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${cfg.bg}`}
               >
-                {kpi.icon}
+                {cfg.icon}
               </div>
-              <div>
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                  {kpi.label}
+              <div className="min-w-0">
+                <p className="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
+                  {cfg.label}
                 </p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-                  {kpi.value}
-                </p>
+                {isLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin text-gray-300 mt-1" />
+                ) : (
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">
+                    {kpis?.[cfg.key] ?? 0}
+                  </p>
+                )}
               </div>
             </div>
           </Card>
         ))}
       </div>
 
-      {/* Quick actions placeholder */}
+      {/* ── Quick Actions ────────────────────────────────── */}
       <Card>
         <CardHeader
           title="Quick Actions"
           subtitle="Shortcuts to common tasks"
         />
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            { label: 'New Job', icon: <Briefcase className="h-5 w-5" /> },
-            { label: 'Create PO', icon: <Package className="h-5 w-5" /> },
-            { label: 'Stock Check', icon: <AlertTriangle className="h-5 w-5" /> },
-            { label: 'Pull Parts', icon: <Clock className="h-5 w-5" /> },
-          ].map((action) => (
+          {(dashboard?.quick_actions ?? []).map((action) => (
             <button
               key={action.label}
+              onClick={() => navigate(action.route)}
               className="flex flex-col items-center gap-2 rounded-lg border border-gray-200 p-4 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
             >
-              {action.icon}
+              {ICON_MAP[action.icon] ?? <Package className="h-5 w-5" />}
               {action.label}
             </button>
           ))}

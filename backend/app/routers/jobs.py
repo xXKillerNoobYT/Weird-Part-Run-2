@@ -189,7 +189,20 @@ async def get_job_notebook(
     """Get the job's notebook (lazy-creates from template on first access)."""
     from app.services.notebook_service import NotebookService
     svc = NotebookService(db)
-    nb = await svc.get_or_create_job_notebook(job_id, user["id"])
+    try:
+        nb = await svc.get_or_create_job_notebook(job_id, user["id"])
+    except Exception:
+        logger.exception("Failed to get/create notebook for job %s", job_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not load or create notebook for job {job_id}. "
+                   "Check that the database migration has been applied.",
+        )
+    if not nb:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Notebook for job {job_id} could not be found or created.",
+        )
     return ApiResponse(data=nb)
 
 
@@ -288,8 +301,7 @@ async def clock_in(
     entry = await svc.clock_in(
         user_id=user["id"],
         job_id=job_id,
-        gps_lat=data.gps_lat,
-        gps_lng=data.gps_lng,
+        data=data,
     )
     return ApiResponse(data=entry, message="Clocked in")
 
@@ -307,14 +319,8 @@ async def clock_out(
     """Clock out from the current job with GPS, responses, and optional notes."""
     svc = LaborService(db)
     entry = await svc.clock_out(
-        labor_entry_id=data.labor_entry_id,
         user_id=user["id"],
-        gps_lat=data.gps_lat,
-        gps_lng=data.gps_lng,
-        drive_time_minutes=data.drive_time_minutes,
-        notes=data.notes,
-        responses=data.responses,
-        one_time_answers=data.one_time_answers,
+        data=data,
     )
     return ApiResponse(data=entry, message="Clocked out")
 

@@ -8,9 +8,11 @@
  *   - Selection state (which tree node is selected)
  *   - Create-target state (which level is being created)
  *   - Expand/collapse state for categories, styles, types
- *   - Global color manager toggle
  *   - Delete confirmation modal
  *   - Right-panel routing based on selection type
+ *
+ * Global color management is now handled via the GlobalColorsModal,
+ * accessible from the BrandColorPanel header (right panel).
  *
  * All tree node components and edit panels are extracted into `./categories/`.
  */
@@ -18,10 +20,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  FolderTree, Plus, Edit2, Palette, PaintBucket,
+  FolderTree, Plus, Edit2,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
-import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
 import { Spinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -29,20 +30,18 @@ import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import {
   listCategories, listColors,
-  deleteCategory, deleteStyle, deleteType, deleteColor,
+  deleteCategory, deleteStyle, deleteType,
 } from '../../../api/parts';
-import type { SelectedCategoryNode, CategoryNodeType, PartColor } from '../../../lib/types';
+import type { SelectedCategoryNode } from '../../../lib/types';
 
 // Tree components
 import { CategoryNode } from './categories/CategoryNode';
-import { ColorList } from './categories/ColorList';
 
 // Right-panel components
 import { CreateForm, type CreateTarget } from './categories/CreateForm';
 import { EditCategoryPanel } from './categories/EditCategoryPanel';
 import { EditStylePanel } from './categories/EditStylePanel';
 import { EditTypePanel } from './categories/EditTypePanel';
-import { EditColorPanel } from './categories/EditColorPanel';
 import { BrandColorPanel } from './categories/BrandColorPanel';
 import { PartDetailPanel } from './categories/PartDetailPanel';
 
@@ -58,7 +57,6 @@ export function CategoriesPage() {
   const [expandedCategories, setExpandedCategories] = useState<Set<number>>(new Set());
   const [expandedStyles, setExpandedStyles] = useState<Set<number>>(new Set());
   const [expandedTypes, setExpandedTypes] = useState<Set<number>>(new Set());
-  const [showColorManager, setShowColorManager] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<SelectedCategoryNode | null>(null);
 
   // ── Queries ────────────────────────────────────────
@@ -112,6 +110,20 @@ export function CategoriesPage() {
         setExpandedCategories((prev) => new Set([...prev, node.categoryId!]));
       }
     } else if (node.type === 'type') {
+      // Expand the type itself so its brands/colors are immediately visible
+      setExpandedTypes((prev) => new Set([...prev, node.id]));
+      if (node.styleId) {
+        setExpandedStyles((prev) => new Set([...prev, node.styleId!]));
+      }
+      if (node.categoryId) {
+        setExpandedCategories((prev) => new Set([...prev, node.categoryId!]));
+      }
+    } else if (node.type === 'brand' || node.type === 'part') {
+      // Expand the entire parent chain so the brand/part stays visible
+      // (BrandNode handles its own local expand state via setIsExpanded)
+      if (node.typeId) {
+        setExpandedTypes((prev) => new Set([...prev, node.typeId!]));
+      }
       if (node.styleId) {
         setExpandedStyles((prev) => new Set([...prev, node.styleId!]));
       }
@@ -151,15 +163,6 @@ export function CategoriesPage() {
     },
   });
 
-  const deleteColorMutation = useMutation({
-    mutationFn: deleteColor,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['colors'] });
-      setSelected(null);
-      setDeleteConfirm(null);
-    },
-  });
-
   const handleDelete = () => {
     if (!deleteConfirm) return;
     switch (deleteConfirm.type) {
@@ -172,17 +175,13 @@ export function CategoriesPage() {
       case 'type':
         deleteTypeMutation.mutate(deleteConfirm.id);
         break;
-      case 'color':
-        deleteColorMutation.mutate(deleteConfirm.id);
-        break;
     }
   };
 
   const isDeleting =
     deleteCatMutation.isPending ||
     deleteStyleMutation.isPending ||
-    deleteTypeMutation.isPending ||
-    deleteColorMutation.isPending;
+    deleteTypeMutation.isPending;
 
   // ── Right panel routing ─────────────────────────────
   const renderRightPanel = () => {
@@ -266,14 +265,6 @@ export function CategoriesPage() {
             onDeleted={() => setSelected(null)}
           />
         );
-      case 'color':
-        return (
-          <EditColorPanel
-            colorId={selected.id}
-            canEdit={canEdit}
-            onDelete={() => setDeleteConfirm(selected)}
-          />
-        );
       default:
         return null;
     }
@@ -291,34 +282,20 @@ export function CategoriesPage() {
             <FolderTree className="h-4 w-4" />
             Part Hierarchy
           </h3>
-          <div className="flex items-center gap-1">
-            {canEdit && (
-              <Button
-                size="sm"
-                variant="ghost"
-                icon={<Plus className="h-3.5 w-3.5" />}
-                onClick={() => {
-                  setCreateTarget({ type: 'category' });
-                  setSelected(null);
-                }}
-                title="Add Category"
-              >
-                Category
-              </Button>
-            )}
+          {canEdit && (
             <Button
               size="sm"
-              variant={showColorManager ? 'primary' : 'ghost'}
-              icon={<Palette className="h-3.5 w-3.5" />}
+              variant="ghost"
+              icon={<Plus className="h-3.5 w-3.5" />}
               onClick={() => {
-                setShowColorManager(!showColorManager);
-                setSelected(showColorManager ? null : selected);
+                setCreateTarget({ type: 'category' });
+                setSelected(null);
               }}
-              title="Manage Colors"
+              title="Add Category"
             >
-              Colors
+              Category
             </Button>
-          </div>
+          )}
         </div>
 
         {/* Tree body */}
@@ -360,36 +337,6 @@ export function CategoriesPage() {
               ))}
             </div>
           )}
-
-          {/* Color list (when toggled) */}
-          {showColorManager && (
-            <div className="mt-4 border-t border-gray-200 dark:border-gray-700 pt-3">
-              <div className="flex items-center justify-between mb-2 px-1">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
-                  <PaintBucket className="h-3.5 w-3.5" />
-                  Global Colors
-                </h4>
-                {canEdit && (
-                  <button
-                    className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-primary-500"
-                    onClick={() => {
-                      setCreateTarget({ type: 'color' });
-                      setSelected(null);
-                    }}
-                    title="Add Color"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-              <ColorList
-                colors={allColors ?? []}
-                selected={selected}
-                onSelect={handleTreeSelect}
-                canEdit={canEdit}
-              />
-            </div>
-          )}
         </div>
       </div>
 
@@ -406,7 +353,7 @@ export function CategoriesPage() {
           <p className="text-gray-600 dark:text-gray-300 mb-4">
             Are you sure you want to delete this {deleteConfirm.type}? This cannot be undone.
           </p>
-          {(deleteCatMutation.isError || deleteStyleMutation.isError || deleteTypeMutation.isError || deleteColorMutation.isError) && (
+          {(deleteCatMutation.isError || deleteStyleMutation.isError || deleteTypeMutation.isError) && (
             <p className="text-red-500 text-sm mb-4">
               Failed to delete. This item may have child items or parts linked to it.
             </p>

@@ -843,18 +843,18 @@ function TableView({ items, canEdit, canSeePricing, handleSort, SortIcon, format
                 <td className="px-3 py-2.5 text-right">
                   <div className="flex justify-end gap-1">
                     <button
-                      className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                      className="p-2 rounded text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                       onClick={() => onEdit(part)}
                       title="Edit"
                     >
-                      <Edit2 className="h-4 w-4 text-gray-500" />
+                      <Edit2 className="h-4 w-4" />
                     </button>
                     <button
-                      className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30"
+                      className="p-2 rounded text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
                       onClick={() => onDelete(part)}
                       title="Delete"
                     >
-                      <Trash2 className="h-4 w-4 text-red-400" />
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
                 </td>

@@ -173,10 +173,10 @@ export function ManageJobsPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Manage Jobs</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-sm text-gray-500 dark:text-gray-400 hidden sm:block">
             Create, edit, and manage all jobs across all statuses.
           </p>
         </div>
@@ -187,7 +187,8 @@ export function ManageJobsPage() {
             icon={<Settings className="h-4 w-4" />}
             onClick={() => setShowBillRateTypes(true)}
           >
-            Bill Rate Types
+            <span className="hidden sm:inline">Bill Rate Types</span>
+            <span className="sm:hidden">Rates</span>
           </Button>
           <Button
             size="sm"
@@ -361,7 +362,7 @@ export function ManageJobsPage() {
                     <div className="flex items-center justify-center gap-1">
                       <button
                         onClick={() => setEditingJob(job)}
-                        className="p-1 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                        className="p-2 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
                         title="Edit job"
                       >
                         <Edit2 className="h-3.5 w-3.5" />
@@ -369,7 +370,7 @@ export function ManageJobsPage() {
                       {job.status === 'pending' && (
                         <button
                           onClick={() => statusMutation.mutate({ jobId: job.id, status: 'active' })}
-                          className="p-1 rounded text-gray-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors"
+                          className="p-2 rounded text-gray-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors"
                           title="Activate"
                         >
                           <CheckCircle className="h-3.5 w-3.5" />
@@ -379,14 +380,14 @@ export function ManageJobsPage() {
                         <>
                           <button
                             onClick={() => statusMutation.mutate({ jobId: job.id, status: 'on_hold' })}
-                            className="p-1 rounded text-gray-400 hover:text-yellow-500 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 transition-colors"
+                            className="p-2 rounded text-gray-400 hover:text-yellow-500 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 transition-colors"
                             title="Put on hold"
                           >
                             <Pause className="h-3.5 w-3.5" />
                           </button>
                           <button
                             onClick={() => statusMutation.mutate({ jobId: job.id, status: 'completed' })}
-                            className="p-1 rounded text-gray-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors"
+                            className="p-2 rounded text-gray-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors"
                             title="Complete"
                           >
                             <CheckCircle className="h-3.5 w-3.5" />
@@ -396,7 +397,7 @@ export function ManageJobsPage() {
                       {job.status === 'on_hold' && (
                         <button
                           onClick={() => statusMutation.mutate({ jobId: job.id, status: 'active' })}
-                          className="p-1 rounded text-gray-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors"
+                          className="p-2 rounded text-gray-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/30 transition-colors"
                           title="Resume"
                         >
                           <RotateCcw className="h-3.5 w-3.5" />
@@ -405,7 +406,7 @@ export function ManageJobsPage() {
                       {(job.status === 'completed' || job.status === 'cancelled') && (
                         <button
                           onClick={() => statusMutation.mutate({ jobId: job.id, status: 'active' })}
-                          className="p-1 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                          className="p-2 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
                           title="Reopen"
                         >
                           <RotateCcw className="h-3.5 w-3.5" />

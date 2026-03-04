@@ -44,26 +44,26 @@ export function TaskEntryCard({
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          className="w-full rounded-md border border-border bg-surface px-2 py-1 text-sm font-medium focus:ring-1 focus:ring-blue-500"
+          className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm font-medium focus:ring-1 focus:ring-blue-500 min-h-[44px]"
           placeholder="Task title"
           autoFocus
         />
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          className="w-full rounded-md border border-border bg-surface px-2 py-1.5 text-sm min-h-[60px] resize-none focus:ring-1 focus:ring-blue-500"
+          className="w-full rounded-md border border-border bg-surface px-3 py-2 text-sm min-h-[60px] resize-none focus:ring-1 focus:ring-blue-500"
           placeholder="Task notes..."
         />
         <div className="flex justify-end gap-2">
           <button
             onClick={() => { setEditing(false); setTitle(entry.title); setContent(entry.content ?? ''); }}
-            className="px-2 py-1 text-xs text-gray-500 hover:text-gray-700"
+            className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700 min-h-[40px]"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
-            className="px-3 py-1 text-xs font-medium bg-blue-500 text-white rounded-md hover:bg-blue-600"
+            className="px-4 py-2 text-sm font-medium bg-blue-500 text-white rounded-md hover:bg-blue-600 min-h-[40px]"
           >
             Save
           </button>
@@ -85,21 +85,21 @@ export function TaskEntryCard({
         </h4>
 
         {entry.can_edit && (
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex items-center gap-1 shrink-0">
             <button
               onClick={() => setEditing(true)}
-              className="p-1 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+              className="p-2 rounded text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
               title="Edit task"
             >
-              <Edit2 className="h-3.5 w-3.5" />
+              <Edit2 className="h-4 w-4" />
             </button>
             {onDelete && (
               <button
                 onClick={() => onDelete(entry.id)}
-                className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30"
+                className="p-2 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
                 title="Delete task"
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                <Trash2 className="h-4 w-4" />
               </button>
             )}
           </div>

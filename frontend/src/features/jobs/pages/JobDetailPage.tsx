@@ -14,7 +14,7 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Briefcase, Clock, Package, HelpCircle,
-  Navigation, Users, Square, BookOpen,
+  Navigation, Users, Square, BookOpen, AlertTriangle,
   Pause, RotateCcw, Shield, CalendarClock,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
@@ -137,7 +137,7 @@ export function JobDetailPage() {
       <div className="flex items-start gap-3">
         <button
           onClick={() => navigate('/jobs/active')}
-          className="mt-1 p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          className="mt-1 p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
         >
           <ArrowLeft className="h-5 w-5 text-gray-500" />
         </button>
@@ -279,10 +279,11 @@ function NotebookTab({ jobId }: { jobId: number }) {
   const [showAddSection, setShowAddSection] = useState(false);
   const [savingFieldId, setSavingFieldId] = useState<number | null>(null);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['job-notebook', jobId],
     queryFn: () => getJobNotebook(jobId),
     staleTime: 15_000,
+    retry: 1, // one automatic retry before showing error
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['job-notebook', jobId] });
@@ -306,7 +307,7 @@ function NotebookTab({ jobId }: { jobId: number }) {
 
   const taskStatusMut = useMutation({
     mutationFn: ({ entryId, status, partsNote }: { entryId: number; status: TaskStatus; partsNote?: string }) =>
-      updateTaskStatus(entryId, { task_status: status, task_parts_note: partsNote }),
+      updateTaskStatus(entryId, { status, parts_note: partsNote }),
     onSuccess: invalidate,
   });
 
@@ -326,13 +327,43 @@ function NotebookTab({ jobId }: { jobId: number }) {
   });
 
   if (isLoading) return <PageSpinner label="Loading notebook..." />;
+
+  // ── Error / empty state with actionable recovery ──
   if (error || !data) {
+    const errMsg = error instanceof Error ? error.message : '';
+    const isNetworkError = errMsg.includes('Network') || errMsg.includes('ECONNREFUSED') || errMsg.includes('fetch');
+
     return (
-      <EmptyState
-        icon={<BookOpen className="h-12 w-12" />}
-        title="Notebook Unavailable"
-        description="Could not load the notebook for this job."
-      />
+      <div className="rounded-lg border border-border bg-surface p-6 text-center space-y-4">
+        <div className="flex justify-center">
+          <div className="h-12 w-12 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+            <AlertTriangle className="h-6 w-6 text-amber-500" />
+          </div>
+        </div>
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+            Notebook Unavailable
+          </h3>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-sm mx-auto">
+            {isNetworkError
+              ? 'Could not reach the server. Check your connection and try again.'
+              : 'Could not load or create the notebook for this job. This usually resolves by retrying.'}
+          </p>
+          {errMsg && !isNetworkError && (
+            <p className="text-xs text-red-400 mt-2 font-mono max-w-sm mx-auto truncate">
+              {errMsg}
+            </p>
+          )}
+        </div>
+        <button
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary/90 transition-colors disabled:opacity-50"
+        >
+          <RotateCcw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+          {isFetching ? 'Retrying...' : 'Try Again'}
+        </button>
+      </div>
     );
   }
 
@@ -357,6 +388,15 @@ function NotebookTab({ jobId }: { jobId: number }) {
           savingFieldId={savingFieldId}
         />
       ))}
+
+      {/* Empty notebook state (notebook exists but no sections) */}
+      {sections.length === 0 && (
+        <EmptyState
+          icon={<BookOpen className="h-10 w-10 text-gray-300 dark:text-gray-600" />}
+          title="Empty Notebook"
+          description="This notebook has no sections yet. Add a section to start organizing your job info, notes, and tasks."
+        />
+      )}
 
       {/* Add section button */}
       <button

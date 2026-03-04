@@ -16,6 +16,7 @@ import type {
   TemplateSectionUpdate,
   TemplateSectionResponse,
   TemplateEntryCreate,
+  TemplateEntryResponse,
   // Notebooks
   NotebookCreate,
   NotebookUpdate,
@@ -121,8 +122,8 @@ export async function deleteTemplateSection(sectionId: number): Promise<void> {
 export async function addTemplateEntry(
   sectionId: number,
   entry: TemplateEntryCreate
-): Promise<StatusMessage> {
-  const { data } = await apiClient.post<ApiResponse<StatusMessage>>(
+): Promise<TemplateEntryResponse> {
+  const { data } = await apiClient.post<ApiResponse<TemplateEntryResponse>>(
     `/notebook-templates/sections/${sectionId}/entries`,
     entry
   );

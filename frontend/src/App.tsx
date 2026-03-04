@@ -51,9 +51,11 @@ import { WarehouseToolsPage } from './features/warehouse/pages/ToolsPage';
 // Pages — Trucks
 import { MyTruckPage } from './features/trucks/pages/MyTruckPage';
 import { AllTrucksPage } from './features/trucks/pages/AllTrucksPage';
+import { VehicleDetailPage } from './features/trucks/pages/VehicleDetailPage';
 import { ToolsPage } from './features/trucks/pages/ToolsPage';
 import { MaintenancePage } from './features/trucks/pages/MaintenancePage';
 import { MileagePage } from './features/trucks/pages/MileagePage';
+import { FleetDashboardPage } from './features/trucks/pages/FleetDashboardPage';
 
 // Pages — Jobs
 import { ActiveJobsPage } from './features/jobs/pages/ActiveJobsPage';
@@ -66,13 +68,21 @@ import { DailyReportView } from './features/jobs/pages/DailyReportView';
 import { NotebooksPage } from './features/notebooks/pages/NotebooksPage';
 import { NotebookDetailPage } from './features/notebooks/pages/NotebookDetailPage';
 import { JobNotebookTemplatePage } from './features/office/pages/JobNotebookTemplatePage';
+import { WarehouseLocationsPage } from './features/office/pages/WarehouseLocationsPage';
 
 // Pages — Orders
-import { DraftOrdersPage } from './features/orders/pages/DraftOrdersPage';
-import { PendingOrdersPage } from './features/orders/pages/PendingOrdersPage';
-import { IncomingOrdersPage } from './features/orders/pages/IncomingOrdersPage';
+import { PartsRequestsPage } from './features/orders/pages/PartsRequestsPage';
+import { NewPartsRequestPage } from './features/orders/pages/NewPartsRequestPage';
+import { PurchaseOrdersPage } from './features/orders/pages/PurchaseOrdersPage';
+import { NewPurchaseOrderPage } from './features/orders/pages/NewPurchaseOrderPage';
+import { ReceiveShipmentPage } from './features/orders/pages/ReceiveShipmentPage';
 import { ReturnsPage } from './features/orders/pages/ReturnsPage';
 import { ProcurementPage } from './features/orders/pages/ProcurementPage';
+import { JPODetailPage } from './features/orders/pages/JPODetailPage';
+import { PODetailPage } from './features/orders/pages/PODetailPage';
+import { NewReturnPage } from './features/orders/pages/NewReturnPage';
+import { ReturnDetailPage } from './features/orders/pages/ReturnDetailPage';
+import { GeneratePOsPage } from './features/orders/pages/GeneratePOsPage';
 
 // Pages — People
 import { EmployeeListPage } from './features/people/pages/EmployeeListPage';
@@ -87,7 +97,9 @@ import { ExportsPage } from './features/reports/pages/ExportsPage';
 
 // Pages — Settings
 import { AppConfigPage } from './features/settings/pages/AppConfigPage';
+import { CompanyProfilePage } from './features/settings/pages/CompanyProfilePage';
 import { ThemesPage } from './features/settings/pages/ThemesPage';
+import { NotificationPrefsPage } from './features/settings/pages/NotificationPrefsPage';
 import { SyncPage } from './features/settings/pages/SyncPage';
 import { AiConfigPage } from './features/settings/pages/AiConfigPage';
 import { DeviceManagementPage } from './features/settings/pages/DeviceManagementPage';
@@ -135,6 +147,7 @@ export default function App() {
               <Route path="/office/manage-jobs" element={<ManageJobsPage />} />
               <Route path="/office/notebook-templates" element={<JobNotebookTemplatePage />} />
               <Route path="/office/clock-out-questions" element={<ClockOutQuestionsPage />} />
+              <Route path="/office/warehouse-locations" element={<WarehouseLocationsPage />} />
 
               {/* Warehouse */}
               <Route path="/warehouse" element={<Navigate to="/warehouse/dashboard" replace />} />
@@ -152,6 +165,8 @@ export default function App() {
               <Route path="/trucks/tools" element={<ToolsPage />} />
               <Route path="/trucks/maintenance" element={<MaintenancePage />} />
               <Route path="/trucks/mileage" element={<MileagePage />} />
+              <Route path="/trucks/fleet" element={<FleetDashboardPage />} />
+              <Route path="/trucks/:id" element={<VehicleDetailPage />} />
 
               {/* Jobs */}
               <Route path="/jobs" element={<Navigate to="/jobs/active" replace />} />
@@ -167,12 +182,23 @@ export default function App() {
               <Route path="/notebooks/:notebookId" element={<NotebookDetailPage />} />
 
               {/* Orders */}
-              <Route path="/orders" element={<Navigate to="/orders/drafts" replace />} />
-              <Route path="/orders/drafts" element={<DraftOrdersPage />} />
-              <Route path="/orders/pending" element={<PendingOrdersPage />} />
-              <Route path="/orders/incoming" element={<IncomingOrdersPage />} />
+              <Route path="/orders" element={<Navigate to="/orders/parts-requests" replace />} />
+              <Route path="/orders/parts-requests" element={<PartsRequestsPage />} />
+              <Route path="/orders/parts-requests/new" element={<NewPartsRequestPage />} />
+              <Route path="/orders/parts-requests/:id" element={<JPODetailPage />} />
+              <Route path="/orders/purchase-orders" element={<PurchaseOrdersPage />} />
+              <Route path="/orders/purchase-orders/new" element={<NewPurchaseOrderPage />} />
+              <Route path="/orders/purchase-orders/receive" element={<ReceiveShipmentPage />} />
+              {/* Legacy redirects — old 3 separate tabs → unified Purchase Orders */}
+              <Route path="/orders/drafts" element={<Navigate to="/orders/purchase-orders" replace />} />
+              <Route path="/orders/active" element={<Navigate to="/orders/purchase-orders" replace />} />
+              <Route path="/orders/incoming" element={<Navigate to="/orders/purchase-orders" replace />} />
               <Route path="/orders/returns" element={<ReturnsPage />} />
+              <Route path="/orders/returns/new" element={<NewReturnPage />} />
+              <Route path="/orders/returns/:id" element={<ReturnDetailPage />} />
               <Route path="/orders/procurement" element={<ProcurementPage />} />
+              <Route path="/orders/pos/:id" element={<PODetailPage />} />
+              <Route path="/orders/parts-requests/:id/generate-pos" element={<GeneratePOsPage />} />
 
               {/* People */}
               <Route path="/people" element={<Navigate to="/people/employees" replace />} />
@@ -192,7 +218,9 @@ export default function App() {
               {/* Settings */}
               <Route path="/settings" element={<Navigate to="/settings/themes" replace />} />
               <Route path="/settings/app-config" element={<AppConfigPage />} />
+              <Route path="/settings/company-profile" element={<CompanyProfilePage />} />
               <Route path="/settings/themes" element={<ThemesPage />} />
+              <Route path="/settings/notifications" element={<NotificationPrefsPage />} />
               <Route path="/settings/questions" element={<Navigate to="/office/clock-out-questions" replace />} />
               <Route path="/settings/sync" element={<SyncPage />} />
               <Route path="/settings/ai-config" element={<AiConfigPage />} />

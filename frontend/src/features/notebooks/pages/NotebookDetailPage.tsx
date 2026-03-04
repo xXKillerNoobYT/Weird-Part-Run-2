@@ -74,7 +74,7 @@ export function NotebookDetailPage() {
 
   const taskStatusMut = useMutation({
     mutationFn: ({ entryId, status, partsNote }: { entryId: number; status: TaskStatus; partsNote?: string }) =>
-      updateTaskStatus(entryId, { task_status: status, task_parts_note: partsNote }),
+      updateTaskStatus(entryId, { status, parts_note: partsNote }),
     onSuccess: invalidate,
   });
 

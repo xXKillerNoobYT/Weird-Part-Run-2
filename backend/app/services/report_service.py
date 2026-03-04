@@ -7,6 +7,9 @@ job that had labor activity that day. Reports contain:
 - Question responses (global + one-time)
 - Parts consumed
 - Cost summary
+- Vehicle deliveries (parts delivered from trucks)
+- Trip legs (drive time/mileage to/from the job)
+- Vehicle usage summary
 
 Reports are stored as JSON blobs and rendered as locked "notebook pages"
 in the frontend. Once generated, they're read-only.
@@ -165,11 +168,126 @@ class ReportService:
             for r in parts_rows
         ]
 
+        # Get vehicle deliveries to this job on this date
+        cursor = await self.db.execute(
+            """SELECT vdi.qty_delivered, vdi.delivered_at,
+                      v.vehicle_name, v.vehicle_number,
+                      p.name AS part_name, p.code AS part_code,
+                      u.display_name AS delivered_by_name
+               FROM vehicle_delivery_items vdi
+               JOIN vehicles v ON v.id = vdi.vehicle_id
+               JOIN parts p ON p.id = vdi.part_id
+               LEFT JOIN users u ON u.id = vdi.delivered_by
+               WHERE vdi.job_id = ? AND DATE(vdi.delivered_at) = ?
+                 AND vdi.status = 'delivered'
+               ORDER BY vdi.delivered_at ASC""",
+            (job_id, date_str),
+        )
+        delivery_rows = await cursor.fetchall()
+        deliveries = [
+            {
+                "vehicle_name": r["vehicle_name"],
+                "vehicle_number": r["vehicle_number"],
+                "part_name": r["part_name"],
+                "part_code": r["part_code"],
+                "qty_delivered": r["qty_delivered"],
+                "delivered_by_name": r["delivered_by_name"],
+                "delivered_at": r["delivered_at"],
+            }
+            for r in delivery_rows
+        ]
+
+        # Get trip legs related to this job on this date
+        cursor = await self.db.execute(
+            """SELECT vtl.leg_type, vtl.from_label, vtl.to_label,
+                      vtl.estimated_miles, vtl.actual_miles,
+                      vtl.estimated_drive_minutes, vtl.actual_drive_minutes,
+                      vtl.is_billable,
+                      v.vehicle_name, v.vehicle_number,
+                      u.display_name AS driver_name
+               FROM vehicle_trip_legs vtl
+               JOIN vehicle_mileage_logs vml ON vml.id = vtl.mileage_log_id
+               JOIN vehicles v ON v.id = vml.vehicle_id
+               JOIN users u ON u.id = vml.driver_id
+               WHERE (vtl.to_job_id = ? OR vtl.from_job_id = ?)
+                 AND vml.log_date = ?
+               ORDER BY vtl.leg_order ASC""",
+            (job_id, job_id, date_str),
+        )
+        trip_rows = await cursor.fetchall()
+        trip_legs = [
+            {
+                "leg_type": r["leg_type"],
+                "from_label": r["from_label"],
+                "to_label": r["to_label"],
+                "miles": (
+                    r["actual_miles"]
+                    if r["actual_miles"] is not None
+                    else r["estimated_miles"]
+                ),
+                "drive_minutes": (
+                    r["actual_drive_minutes"]
+                    if r["actual_drive_minutes"] is not None
+                    else r["estimated_drive_minutes"]
+                ),
+                "is_billable": bool(r["is_billable"]),
+                "vehicle_name": r["vehicle_name"],
+                "vehicle_number": r["vehicle_number"],
+                "driver_name": r["driver_name"],
+            }
+            for r in trip_rows
+        ]
+
+        # Derive vehicle usage summary from deliveries + trip legs
+        vehicle_set: dict[str, dict] = {}
+        for d in deliveries:
+            key = d["vehicle_number"]
+            if key not in vehicle_set:
+                vehicle_set[key] = {
+                    "vehicle_name": d["vehicle_name"],
+                    "vehicle_number": key,
+                    "drivers": set(),
+                    "total_miles": 0,
+                    "delivered_items": 0,
+                }
+            if d["delivered_by_name"]:
+                vehicle_set[key]["drivers"].add(d["delivered_by_name"])
+            vehicle_set[key]["delivered_items"] += d["qty_delivered"]
+
+        for t in trip_legs:
+            key = t["vehicle_number"]
+            if key not in vehicle_set:
+                vehicle_set[key] = {
+                    "vehicle_name": t["vehicle_name"],
+                    "vehicle_number": key,
+                    "drivers": set(),
+                    "total_miles": 0,
+                    "delivered_items": 0,
+                }
+            vehicle_set[key]["drivers"].add(t["driver_name"])
+            vehicle_set[key]["total_miles"] += t["miles"] or 0
+
+        vehicles_involved = [
+            {
+                "vehicle_name": v["vehicle_name"],
+                "vehicle_number": v["vehicle_number"],
+                "drivers": sorted(v["drivers"]),
+                "total_miles": round(v["total_miles"], 1),
+                "delivered_items": v["delivered_items"],
+            }
+            for v in vehicle_set.values()
+        ]
+
         # Build summary
         total_labor = sum(
             (w["regular_hours"] or 0) + (w["overtime_hours"] or 0) for w in workers
         )
         total_parts_cost = sum(p["total"] for p in parts_consumed)
+        total_delivery_items = sum(d["qty_delivered"] for d in deliveries)
+        total_miles_driven = sum(t["miles"] or 0 for t in trip_legs)
+        total_billable_drive_minutes = sum(
+            t["drive_minutes"] or 0 for t in trip_legs if t["is_billable"]
+        )
 
         report_data = {
             "job_id": job_id,
@@ -179,10 +297,17 @@ class ReportService:
             "report_date": date_str,
             "workers": workers,
             "parts_consumed": parts_consumed,
+            "deliveries": deliveries,
+            "trip_legs": trip_legs,
+            "vehicles_involved": vehicles_involved,
             "summary": {
                 "total_labor_hours": round(total_labor, 2),
                 "total_parts_cost": round(total_parts_cost, 2),
                 "worker_count": len(workers),
+                "total_delivery_items": total_delivery_items,
+                "total_miles_driven": round(total_miles_driven, 1),
+                "total_billable_drive_minutes": total_billable_drive_minutes,
+                "vehicles_involved_count": len(vehicles_involved),
             },
         }
 

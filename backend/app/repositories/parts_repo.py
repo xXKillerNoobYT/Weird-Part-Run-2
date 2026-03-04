@@ -39,6 +39,7 @@ class BrandRepo(BaseRepo):
     """Data access for brands."""
 
     TABLE = "brands"
+    HAS_UPDATED_AT = True
 
     async def get_all_with_counts(
         self,
@@ -124,6 +125,7 @@ class SupplierRepo(BaseRepo):
     """Data access for suppliers."""
 
     TABLE = "suppliers"
+    HAS_UPDATED_AT = True
 
     async def get_all_filtered(
         self,
@@ -182,6 +184,7 @@ class PartsRepo(BaseRepo):
     """
 
     TABLE = "parts"
+    HAS_UPDATED_AT = True
 
     # Allowed sort columns to prevent SQL injection
     SORT_COLUMNS = {

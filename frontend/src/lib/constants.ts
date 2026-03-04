@@ -19,10 +19,13 @@ export const PERMISSIONS = {
   MANAGE_WAREHOUSE: 'manage_warehouse',
   MOVE_STOCK_WAREHOUSE: 'move_stock_warehouse',
 
-  // Trucks
+  // Trucks / Fleet
   VIEW_TRUCKS: 'view_trucks',
   MANAGE_TRUCKS: 'manage_trucks',
   MOVE_STOCK_TRUCK: 'move_stock_truck',
+  MANAGE_FLEET: 'manage_fleet',
+  LOG_MILEAGE: 'log_mileage',
+  APPROVE_REIMBURSEMENT: 'approve_reimbursement',
 
   // Jobs
   VIEW_JOBS: 'view_jobs',

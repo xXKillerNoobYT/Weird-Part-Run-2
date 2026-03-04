@@ -238,14 +238,14 @@ export function ClockOutQuestionsPage() {
                 <button
                   onClick={() => moveQuestion(idx, 'up')}
                   disabled={idx === 0 || reorderMutation.isPending}
-                  className="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30 transition-colors"
+                  className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30 transition-colors"
                 >
                   <ArrowUp className="h-3.5 w-3.5" />
                 </button>
                 <button
                   onClick={() => moveQuestion(idx, 'down')}
                   disabled={idx === activeQuestions.length - 1 || reorderMutation.isPending}
-                  className="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30 transition-colors"
+                  className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-30 transition-colors"
                 >
                   <ArrowDown className="h-3.5 w-3.5" />
                 </button>

@@ -329,7 +329,7 @@ export function EditStylePanel({ styleId, categoryId, canEdit, onDelete, onSelec
                   </span>
                   {canEdit && (
                     <button
-                      className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
+                      className="p-2 rounded text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shrink-0"
                       onClick={(e) => {
                         e.stopPropagation();
                         if (confirm(`Delete type "${t.name}"?`)) {
@@ -338,7 +338,7 @@ export function EditStylePanel({ styleId, categoryId, canEdit, onDelete, onSelec
                       }}
                       title="Delete type"
                     >
-                      <Trash2 className="h-3 w-3 text-red-400" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   )}
                   <ChevronRight className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 flex-shrink-0" />

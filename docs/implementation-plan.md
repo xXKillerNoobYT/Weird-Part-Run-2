@@ -718,72 +718,52 @@ PROCUREMENT: GET /api/orders/procurement/suggestions
 
 ---
 
-## Phase 6: Trucks (Full)
+## Phase 6: Fleet & Vehicle Management ✅ Complete
 
-**Goal**: Truck CRUD, per-truck inventory management, tool tracking with QR-based checkout/return, maintenance scheduling with service history, mileage logging, and fleet overview.
+**Goal**: Full vehicle management — CRUD, driver assignments, per-vehicle inventory, delivery tracking, maintenance scheduling with service history, mileage logging with trip legs, private vehicle reimbursement, warehouse locations, and fleet dashboard.
 
-### Database (`migrations/012_trucks.sql`)
-- `trucks` — truck_number, make, model, year, vin, license_plate, status (active/maintenance/retired), assigned_user_id, current_mileage, last_service_date, insurance_expiry
-- `truck_inventory` — truck_id, part_id, qty, min_qty (for restock alerts), last_verified_at
-- `truck_tools` — truck_id, tool_name, serial_number, category, condition, qr_code, checked_out_by (user_id), checked_out_at, expected_return_date
-- `tool_checkout_log` — tool_id, user_id, checked_out_at, returned_at, condition_on_return, notes
-- `maintenance_records` — truck_id, service_type (oil_change/tire_rotation/brake/inspection/other), mileage_at_service, cost, vendor, notes, next_due_mileage, next_due_date
-- `mileage_entries` — truck_id, user_id, date, start_mileage, end_mileage, job_id (optional), notes
+**Detailed plan**: `docs/plans/phase-6-fleet-vehicles.md`
 
-### Backend Implementation
+### Database (`migrations/017_fleet_vehicles.sql`) — 10 new tables
+- `vehicles` — vehicle_number, vehicle_name, vehicle_type (company_truck/van/car/private_vehicle), status, make, model, year, vin, license_plate, insurance, odometer, owner_user_id
+- `vehicle_assignments` — vehicle_id, user_id, assignment_type, is_take_home, home_to_shop_miles, home_address, start/end dates
+- `warehouse_locations` — name, address, gps coordinates, is_primary, company_profile_id
+- `vehicle_delivery_items` — vehicle_id, job_id, part_id, qty_assigned/delivered, status (assigned/loaded/in_transit/delivered/returned)
+- `maintenance_types` — configurable lookup (13 seeded types: oil change, tire rotation, brake inspection, etc.)
+- `vehicle_maintenance_schedules` — per-vehicle intervals (miles/months), next due tracking
+- `vehicle_maintenance_records` — service history with cost, vendor, invoice
+- `vehicle_mileage_logs` — daily odometer readings per vehicle/driver
+- `vehicle_trip_legs` — trip segments with estimated/actual miles + drive time, billable flag
+- `mileage_reimbursements` — private vehicle payback (IRS rate)
 
-**Services:**
-- `truck_service.py` — Truck CRUD, status management, assignment to users, fleet statistics
-- `truck_inventory_service.py` — Per-truck stock management, integration with movement wizard (truck is already a valid location), restock alerts when below min_qty
-- `tool_service.py` — Tool CRUD, QR-based checkout/return flow, overdue alerts, "who has what" queries
-- `maintenance_service.py` — Service record management, next-due calculations based on mileage intervals and date intervals, maintenance prediction
-- `mileage_service.py` — Daily mileage logging, cost-per-mile calculations, weekly/monthly summaries
+### Backend — ~35 endpoints at `/api/trucks`
+- **4 services**: vehicle_service, delivery_service, maintenance_service, mileage_service
+- **10 repo classes**: VehicleRepo, VehicleAssignmentRepo, WarehouseLocationRepo, VehicleDeliveryRepo, MaintenanceTypeRepo, MaintenanceScheduleRepo, MaintenanceRecordRepo, MileageLogRepo, TripLegRepo, ReimbursementRepo
+- **Key design**: Manual distance input (not GPS) — `home_to_shop_miles` on assignments, `distance_from_shop_miles` on jobs
+- **Route ordering**: `/{vehicle_id}` catch-all registered LAST to avoid collisions with named routes
 
-**API Endpoints:**
-```
-TRUCKS:       GET /api/trucks, POST /api/trucks, GET/PUT /api/trucks/{id}
-              PATCH /api/trucks/{id}/status, GET /api/trucks/my-truck
-INVENTORY:    GET /api/trucks/{id}/inventory, POST /api/trucks/{id}/inventory/restock
-              GET /api/trucks/{id}/inventory/alerts
-TOOLS:        GET /api/trucks/{id}/tools, POST /api/trucks/{id}/tools
-              POST /api/trucks/tools/{id}/checkout, POST /api/trucks/tools/{id}/return
-              GET /api/trucks/tools/overdue
-MAINTENANCE:  GET /api/trucks/{id}/maintenance, POST /api/trucks/{id}/maintenance
-              GET /api/trucks/{id}/maintenance/upcoming
-MILEAGE:      GET /api/trucks/{id}/mileage, POST /api/trucks/{id}/mileage
-              GET /api/trucks/{id}/mileage/summary
-```
+### Frontend — 7 pages + ~20 components
+- `MyTruckPage` — driver dashboard with assigned vehicle, inventory, deliveries, maintenance alerts
+- `AllTrucksPage` — fleet list with type/status/driver filters, search, create
+- `VehicleDetailPage` — deep dive with tabbed sections
+- `ToolsPage` — placeholder (coming soon)
+- `MaintenancePage` — fleet-wide upcoming/overdue, log service, maintenance types admin
+- `MileagePage` — daily logs, trip legs, reimbursements
+- `FleetDashboardPage` — manager KPIs (total/active/maintenance vehicles, fleet miles, costs)
+- `WarehouseLocationsPage` — shop address CRUD (in Office module)
 
-### Frontend Implementation
-
-**Pages (replace stubs):**
-- `MyTruckPage.tsx` — Personal truck dashboard: assigned truck details, inventory summary, tools checked out, upcoming maintenance, today's mileage entry
-- `AllTrucksPage.tsx` — Fleet overview table: all trucks with status, assigned user, mileage, next service due, inventory health indicator
-- `ToolsPage.tsx` — Tool tracking: list of all tools across trucks, checkout/return actions with QR scanning, overdue tool alerts
-- `MaintenancePage.tsx` — Service schedule: upcoming maintenance items sorted by urgency, service history log, cost tracking per truck
-- `MileagePage.tsx` — Mileage log: daily entries with start/end odometer, job attribution, weekly/monthly summaries, cost-per-mile chart
-
-**Key Components:**
-- `TruckCard.tsx` — Truck summary card with status, inventory count, maintenance indicator
-- `TruckInventoryGrid.tsx` — Per-truck inventory table (reuses patterns from warehouse InventoryGrid)
-- `ToolCheckoutFlow.tsx` — QR scan → select tool → confirm checkout. Return flow with condition assessment.
-- `MaintenanceForm.tsx` — Log service: type, mileage, cost, vendor, next due
-- `MileageEntryForm.tsx` — Quick daily mileage entry with odometer validation (end > start)
-
-**Advanced Features (built iteratively):**
-- Truck GPS tracking — Real-time truck location via driver's phone GPS during clock-in
-- Tool checkout/return system — QR-based tool tracking (who has what, when returned)
-- Maintenance prediction — Based on mileage + service history, predict next service needs
-- Fuel cost tracking — Log fuel purchases, calculate cost-per-mile
-- Truck load optimization — Suggest optimal truck loading based on tomorrow's job parts needs
-- Inter-truck transfers — Move tools/parts between trucks via the movement wizard
-
-### Phase 6 Deliverables
-- Full truck CRUD with fleet overview
-- Per-truck inventory with restock alerts
-- QR-based tool checkout/return tracking
-- Maintenance scheduling with service history and predictions
-- Daily mileage logging with cost analysis
+### Phase 6 Deliverables ✅
+- Full vehicle CRUD with 4 vehicle types (company truck/van/car, private) ✅
+- Driver assignments with take-home tracking ✅
+- Per-vehicle inventory via existing stock system (location_type='truck') ✅
+- Job-bound delivery item tracking ✅
+- Configurable maintenance types with per-vehicle scheduling ✅
+- Daily mileage logging with trip leg breakdown ✅
+- Manual distance-based mileage estimation (zero API cost) ✅
+- Private vehicle mileage reimbursement ✅
+- Warehouse/shop location management ✅
+- Fleet manager dashboard with KPIs ✅
+- Responsive at desktop (1280x800), tablet (768x1024), mobile (375x812) ✅
 
 ---
 

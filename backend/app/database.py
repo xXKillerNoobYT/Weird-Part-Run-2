@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # ── Connection Pool ───────────────────────────────────────────────
 # We use a module-level connection for simplicity in local SQLite.
 # For multi-worker deployments, each worker gets its own connection.
-_db_path: str = settings.DATABASE_PATH
+_db_path: str = str(settings.db_path)
 
 
 def _dict_row_factory(cursor: sqlite3.Cursor, row: tuple) -> dict:
@@ -84,11 +84,15 @@ async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
 def _split_sql_statements(sql: str) -> list[str]:
     """Split a SQL script into individual statements.
 
-    Handles semicolons inside strings/comments correctly enough for our
-    migration files. Strips comments and empty lines.
+    Handles:
+    - Comments (-- ...) and blank lines are stripped
+    - Semicolons inside BEGIN...END blocks (triggers) are NOT treated
+      as statement terminators — the trigger is emitted as one statement
+    - A trigger ends when we see a line starting with 'END;'
     """
     statements: list[str] = []
     current: list[str] = []
+    in_begin_block = False
 
     for line in sql.splitlines():
         stripped = line.strip()
@@ -96,6 +100,29 @@ def _split_sql_statements(sql: str) -> list[str]:
         if not stripped or stripped.startswith("--"):
             continue
         current.append(line)
+
+        upper = stripped.upper()
+
+        # Detect entry into a BEGIN...END block (triggers)
+        if upper == "BEGIN":
+            in_begin_block = True
+            continue
+
+        # Detect end of BEGIN...END block
+        if in_begin_block and (upper == "END;" or upper == "END"):
+            in_begin_block = False
+            # Emit the entire trigger as one statement
+            stmt = "\n".join(current).strip().rstrip(";").strip()
+            if stmt:
+                statements.append(stmt)
+            current = []
+            continue
+
+        # Inside a BEGIN block, don't split on semicolons
+        if in_begin_block:
+            continue
+
+        # Normal statement terminator
         if stripped.endswith(";"):
             stmt = "\n".join(current).strip().rstrip(";").strip()
             if stmt:

@@ -1,30 +1,40 @@
 """
-Settings routes — app configuration, theme, and device management.
+Settings routes — app configuration, theme, company profiles, staging zones.
 
 Settings are stored as JSON key-value pairs categorized into groups:
 general, theme, sync, ai, procurement, device.
 
 Theme settings are separated because they're accessed frequently
 and by all users (no permission needed to read your own theme).
+
+Company profiles and staging zones are managed here because they're
+"app configuration" rather than transactional data.
+
+IMPORTANT: Route ordering matters! Specific paths like /company-profiles
+and /staging-zones MUST be registered before the /{key} catch-all,
+otherwise FastAPI will match "company-profiles" as a key parameter.
 """
 
 from __future__ import annotations
 
 import aiosqlite
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.database import get_db
 from app.middleware.auth import require_permission, require_user
 from app.models.common import ApiResponse
+from app.models.company import CompanyProfileCreate, CompanyProfileUpdate
 from app.models.settings import (
     SettingItem,
     SettingsBulkUpdate,
     SettingUpdate,
     ThemeSettings,
 )
+from app.models.orders import StagingZoneCreate, StagingZoneUpdate
 from app.repositories.settings_repo import SettingsRepo
+from app.repositories.staging_repo import StagingZoneRepo
 
-router = APIRouter(prefix="/api/settings", tags=["Settings"])
+router = APIRouter(prefix="/api/settings", tags=["Settings"], redirect_slashes=False)
 
 
 # ── Theme (accessible by any authenticated user) ────────────────────
@@ -73,7 +83,177 @@ async def update_theme(
     )
 
 
-# ── General Settings (requires manage_settings permission) ──────────
+# ═══════════════════════════════════════════════════════════════
+# Company Profiles (for PO PDFs / branding)
+# ═══════════════════════════════════════════════════════════════
+# IMPORTANT: These routes must be registered BEFORE the /{key}
+# catch-all below, otherwise FastAPI would match "company-profiles"
+# as a key parameter and route to get_setting() instead.
+
+
+@router.get("/company-profiles", response_model=ApiResponse)
+async def list_company_profiles(
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List all company profiles / branches."""
+    cursor = await db.execute(
+        "SELECT * FROM company_profiles ORDER BY is_primary DESC, name"
+    )
+    profiles = [dict(row) for row in await cursor.fetchall()]
+
+    return ApiResponse(data=profiles)
+
+
+@router.get("/company-profiles/{profile_id}", response_model=ApiResponse)
+async def get_company_profile(
+    profile_id: int,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get a single company profile."""
+    cursor = await db.execute(
+        "SELECT * FROM company_profiles WHERE id = ?", (profile_id,)
+    )
+    profile = await cursor.fetchone()
+    if not profile:
+        raise HTTPException(404, "Company profile not found")
+
+    return ApiResponse(data=dict(profile))
+
+
+@router.post("/company-profiles", response_model=ApiResponse)
+async def create_company_profile(
+    body: CompanyProfileCreate,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Create a new company profile / branch."""
+    data = body.model_dump(exclude_none=True)
+
+    # If setting as primary, unset existing primary
+    if data.get("is_primary"):
+        await db.execute("UPDATE company_profiles SET is_primary = 0")
+
+    columns = ", ".join(data.keys())
+    placeholders = ", ".join(["?"] * len(data))
+    cursor = await db.execute(
+        f"INSERT INTO company_profiles ({columns}) VALUES ({placeholders})",
+        tuple(data.values()),
+    )
+    await db.commit()
+
+    return ApiResponse(
+        data={"id": cursor.lastrowid},
+        message="Company profile created.",
+    )
+
+
+@router.put("/company-profiles/{profile_id}", response_model=ApiResponse)
+async def update_company_profile(
+    profile_id: int,
+    body: CompanyProfileUpdate,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update a company profile."""
+    data = body.model_dump(exclude_none=True)
+    if not data:
+        raise HTTPException(400, "No fields to update")
+
+    # If setting as primary, unset existing primary
+    if data.get("is_primary"):
+        await db.execute("UPDATE company_profiles SET is_primary = 0")
+
+    set_clause = ", ".join(f"{k} = ?" for k in data.keys())
+    cursor = await db.execute(
+        f"UPDATE company_profiles SET {set_clause} WHERE id = ?",
+        (*data.values(), profile_id),
+    )
+    await db.commit()
+
+    if cursor.rowcount == 0:
+        raise HTTPException(404, "Company profile not found")
+
+    return ApiResponse(data={"id": profile_id}, message="Company profile updated.")
+
+
+@router.delete("/company-profiles/{profile_id}", response_model=ApiResponse)
+async def delete_company_profile(
+    profile_id: int,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Delete a company profile."""
+    cursor = await db.execute(
+        "DELETE FROM company_profiles WHERE id = ?", (profile_id,)
+    )
+    await db.commit()
+
+    if cursor.rowcount == 0:
+        raise HTTPException(404, "Company profile not found")
+
+    return ApiResponse(data={"id": profile_id}, message="Company profile deleted.")
+
+
+# ═══════════════════════════════════════════════════════════════
+# Staging Zones (physical warehouse zones)
+# ═══════════════════════════════════════════════════════════════
+# Also before /{key} — same reason as company profiles.
+
+
+@router.get("/staging-zones", response_model=ApiResponse)
+async def list_staging_zones(
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List all staging zones for warehouse management."""
+    repo = StagingZoneRepo(db)
+    zones = await repo.get_all()
+
+    return ApiResponse(data=zones)
+
+
+@router.post("/staging-zones", response_model=ApiResponse)
+async def create_staging_zone(
+    body: StagingZoneCreate,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Create a new staging zone."""
+    repo = StagingZoneRepo(db)
+    zone_id = await repo.insert(body.model_dump(exclude_none=True))
+
+    return ApiResponse(
+        data={"id": zone_id},
+        message=f"Staging zone '{body.label}' created.",
+    )
+
+
+@router.put("/staging-zones/{zone_id}", response_model=ApiResponse)
+async def update_staging_zone(
+    zone_id: int,
+    body: StagingZoneUpdate,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update a staging zone."""
+    repo = StagingZoneRepo(db)
+    data = body.model_dump(exclude_none=True)
+    if not data:
+        raise HTTPException(400, "No fields to update")
+
+    ok = await repo.update(zone_id, data)
+    if not ok:
+        raise HTTPException(404, "Staging zone not found")
+
+    return ApiResponse(data={"id": zone_id}, message="Staging zone updated.")
+
+
+# ═══════════════════════════════════════════════════════════════
+# General Settings (requires manage_settings permission)
+# ═══════════════════════════════════════════════════════════════
+
 
 @router.get("/", response_model=ApiResponse[dict])
 async def get_all_settings(
@@ -88,6 +268,27 @@ async def get_all_settings(
     grouped = await repo.get_all_settings()
 
     return ApiResponse(data=grouped)
+
+
+@router.put("/bulk", response_model=ApiResponse[dict])
+async def bulk_update_settings(
+    updates: SettingsBulkUpdate,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update multiple settings at once."""
+    repo = SettingsRepo(db)
+    count = await repo.bulk_update(updates.settings)
+
+    return ApiResponse(
+        data={"updated_count": count},
+        message=f"{count} settings updated.",
+    )
+
+
+# ── Single key CRUD (catch-all — MUST be last!) ─────────────────────
+# These /{key} routes match ANY path segment, so they MUST be
+# registered after all specific paths to avoid route collisions.
 
 
 @router.get("/{key}", response_model=ApiResponse[SettingItem])
@@ -141,20 +342,4 @@ async def update_setting(
     return ApiResponse(
         data=SettingItem(key=key, value=update.value, category=category),
         message=f"Setting '{key}' updated.",
-    )
-
-
-@router.put("/bulk", response_model=ApiResponse[dict])
-async def bulk_update_settings(
-    updates: SettingsBulkUpdate,
-    user: dict = Depends(require_permission("manage_settings")),
-    db: aiosqlite.Connection = Depends(get_db),
-):
-    """Update multiple settings at once."""
-    repo = SettingsRepo(db)
-    count = await repo.bulk_update(updates.settings)
-
-    return ApiResponse(
-        data={"updated_count": count},
-        message=f"{count} settings updated.",
     )

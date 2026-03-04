@@ -78,7 +78,7 @@ export function KpiCards({ kpis }: KpiCardsProps) {
             <card.icon className={cn('h-5 w-5', card.color)} />
           </div>
           <div className="min-w-0">
-            <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 leading-tight">
               {card.label}
             </p>
             <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">

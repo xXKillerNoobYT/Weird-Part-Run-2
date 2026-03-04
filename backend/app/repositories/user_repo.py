@@ -18,6 +18,7 @@ from app.repositories.base import BaseRepo
 
 class UserRepo(BaseRepo):
     TABLE = "users"
+    HAS_UPDATED_AT = True
 
     async def get_by_id_with_hats(self, user_id: int) -> dict | None:
         """Fetch a user with their assigned hats and aggregated permissions.

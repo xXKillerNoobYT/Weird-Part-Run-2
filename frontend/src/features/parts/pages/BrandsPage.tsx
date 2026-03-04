@@ -143,7 +143,7 @@ export function BrandsPage() {
                 <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Parts</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Suppliers</th>
                 <th className="text-center px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Notes</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600 dark:text-gray-400 hidden lg:table-cell">Notes</th>
                 {canEdit && (
                   <th className="text-right px-4 py-3 font-medium text-gray-600 dark:text-gray-400">Actions</th>
                 )}
@@ -315,25 +315,25 @@ function BrandRow({
             </Badge>
           )}
         </td>
-        <td className="px-4 py-3 text-gray-500 dark:text-gray-400 truncate max-w-[250px]">
+        <td className="px-4 py-3 text-gray-500 dark:text-gray-400 truncate max-w-[250px] hidden lg:table-cell">
           {brand.notes ?? '—'}
         </td>
         {canEdit && (
           <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-end gap-1">
               <button
-                className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                className="p-2 rounded text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
                 onClick={onEdit}
                 title="Edit"
               >
-                <Edit2 className="h-4 w-4 text-gray-500" />
+                <Edit2 className="h-4 w-4" />
               </button>
               <button
-                className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30"
+                className="p-2 rounded text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
                 onClick={onDelete}
                 title="Delete"
               >
-                <Trash2 className="h-4 w-4 text-red-400" />
+                <Trash2 className="h-4 w-4" />
               </button>
             </div>
           </td>
@@ -486,11 +486,11 @@ function BrandSupplierSection({
               </div>
               {canEdit && (
                 <button
-                  className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                  className="p-2 rounded text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
                   onClick={() => deleteLinkMutation.mutate(link.id)}
                   title="Remove supplier link"
                 >
-                  <Unlink className="h-3.5 w-3.5 text-red-400" />
+                  <Unlink className="h-4 w-4" />
                 </button>
               )}
             </div>
@@ -507,10 +507,10 @@ function BrandSupplierSection({
               Link a supplier to {brandName}
             </span>
             <button
-              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+              className="p-2 rounded text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
               onClick={() => setShowLinkForm(false)}
             >
-              <X className="h-4 w-4 text-gray-400" />
+              <X className="h-4 w-4" />
             </button>
           </div>
 
@@ -743,11 +743,11 @@ function BrandSupplierPicker({ brandId, brandName }: { brandId: number; brandNam
               )}
               <button
                 type="button"
-                className="ml-0.5 p-0.5 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                className="ml-0.5 p-1 rounded-full text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
                 onClick={() => unlinkMutation.mutate(link.id)}
                 title={`Remove ${link.supplier_name}`}
               >
-                <X className="h-3 w-3 text-red-400" />
+                <X className="h-3.5 w-3.5" />
               </button>
             </span>
           ))

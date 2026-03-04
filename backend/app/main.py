@@ -2,7 +2,7 @@
 Wired-Part Backend — FastAPI Application Entry Point
 
 This is the main application module. It:
-1. Creates the FastAPI app with metadata
+1. Creates the FastAPI app with metadata and lifespan handler
 2. Configures CORS for frontend access
 3. Runs database migrations on startup
 4. Seeds the default admin user's PIN hash
@@ -16,7 +16,9 @@ Start with:
 
 from __future__ import annotations
 
+import importlib
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,43 +36,22 @@ logging.basicConfig(
 logger = logging.getLogger("wiredpart")
 
 
-# ── App Creation ────────────────────────────────────────────────────
-app = FastAPI(
-    title=settings.APP_NAME,
-    version=settings.APP_VERSION,
-    description=(
-        "Wired-Part: Field service management for electrical contractors. "
-        "Parts inventory, warehouse ops, truck management, job tracking, "
-        "labor hours, procurement, and pre-billing exports."
-    ),
-    docs_url="/docs",
-    redoc_url="/redoc",
-)
+# ── Lifespan (replaces deprecated on_event) ────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown logic for the application.
 
-
-# ── CORS ────────────────────────────────────────────────────────────
-# Allow the React frontend (localhost:5173) to call the API.
-# In production, restrict this to the actual domain.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-# ── Startup Event ───────────────────────────────────────────────────
-@app.on_event("startup")
-async def startup():
-    """Run database migrations and seed data on application startup."""
+    Startup: run migrations, seed admin PIN, start scheduler.
+    Shutdown: stop scheduler gracefully.
+    """
+    # ── STARTUP ─────────────────────────────────────────────────
     logger.info("=" * 60)
     logger.info("  %s v%s — Starting up", settings.APP_NAME, settings.APP_VERSION)
     logger.info("=" * 60)
 
     # 1. Run all pending database migrations
     await init_db()
-    logger.info("Database initialized at: %s", settings.DATABASE_PATH)
+    logger.info("Database initialized at: %s", settings.db_path)
 
     # 2. Seed the admin user's PIN hash (if still placeholder)
     await _seed_admin_pin()
@@ -83,6 +64,13 @@ async def startup():
     await catch_up_missed_reports()
 
     logger.info("Startup complete. API docs at /docs")
+
+    yield  # ← Application runs here
+
+    # ── SHUTDOWN ────────────────────────────────────────────────
+    from app.scheduler import stop_scheduler
+    stop_scheduler()
+    logger.info("Shutdown complete.")
 
 
 async def _seed_admin_pin():
@@ -111,47 +99,60 @@ async def _seed_admin_pin():
         await db.close()
 
 
-# ── Shutdown Event ─────────────────────────────────────────────────
-@app.on_event("shutdown")
-async def shutdown():
-    """Gracefully stop background services."""
-    from app.scheduler import stop_scheduler
-    stop_scheduler()
-    logger.info("Shutdown complete.")
-
-
-# ── Routers ─────────────────────────────────────────────────────────
-# Import and register all route modules.
-# Auth + Settings are functional in Phase 1.
-# All others return stub responses until their phase.
-
-from app.routers import (  # noqa: E402
-    auth,
-    app_settings,
-    dashboard,
-    parts,
-    companions,
-    warehouse,
-    trucks,
-    jobs,
-    notebooks,
-    orders,
-    people,
-    reports,
+# ── App Creation ────────────────────────────────────────────────────
+app = FastAPI(
+    title=settings.APP_NAME,
+    version=settings.APP_VERSION,
+    description=(
+        "Wired-Part: Field service management for electrical contractors. "
+        "Parts inventory, warehouse ops, truck management, job tracking, "
+        "labor hours, procurement, and pre-billing exports."
+    ),
+    docs_url="/docs",
+    redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
-app.include_router(auth.router)
-app.include_router(app_settings.router)
-app.include_router(dashboard.router)
-app.include_router(parts.router)
-app.include_router(companions.router)
-app.include_router(warehouse.router)
-app.include_router(trucks.router)
-app.include_router(jobs.router)
-app.include_router(notebooks.router)
-app.include_router(orders.router)
-app.include_router(people.router)
-app.include_router(reports.router)
+
+# ── CORS ────────────────────────────────────────────────────────────
+# Allow the React frontend (localhost:5173) to call the API.
+# In production, restrict this to the actual domain.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ── Safe Router Registration ───────────────────────────────────────
+# Each router is imported individually with error handling so a missing
+# or broken module doesn't prevent the entire app from starting.
+
+ROUTER_MODULES = [
+    "app.routers.auth",
+    "app.routers.app_settings",
+    "app.routers.dashboard",
+    "app.routers.parts",
+    "app.routers.companions",
+    "app.routers.warehouse",
+    "app.routers.trucks",
+    "app.routers.jobs",
+    "app.routers.notebooks",
+    "app.routers.orders",
+    "app.routers.notifications",
+    "app.routers.people",
+    "app.routers.reports",
+]
+
+for _module_path in ROUTER_MODULES:
+    try:
+        _mod = importlib.import_module(_module_path)
+        app.include_router(_mod.router)
+        logger.debug("Router loaded: %s", _module_path)
+    except (ImportError, AttributeError) as exc:
+        logger.warning("Router skipped (%s): %s", _module_path, exc)
 
 
 # ── Health Check ────────────────────────────────────────────────────

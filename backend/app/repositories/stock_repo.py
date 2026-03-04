@@ -19,6 +19,7 @@ class StockRepo(BaseRepo):
     """Data access for stock levels across all locations."""
 
     TABLE = "stock"
+    HAS_UPDATED_AT = True
 
     async def get_stock_for_part(self, part_id: int) -> list[dict]:
         """Get all stock entries for a part across every location.

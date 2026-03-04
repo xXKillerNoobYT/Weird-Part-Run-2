@@ -11,12 +11,13 @@
  */
 
 import { useLocation } from 'react-router-dom';
-import { Menu, Moon, Sun, Monitor, Bell, LogOut } from 'lucide-react';
+import { Menu, Moon, Sun, Monitor, LogOut } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { findModuleByPath } from '../../lib/navigation';
 import { useAuthStore } from '../../stores/auth-store';
 import { useSidebarStore } from '../../stores/sidebar-store';
 import { useThemeStore } from '../../stores/theme-store';
+import { NotificationBell } from '../ui/NotificationBell';
 
 export function TopBar() {
   const location = useLocation();
@@ -40,7 +41,7 @@ export function TopBar() {
       <div className="flex items-center gap-3">
         <button
           onClick={toggleMobile}
-          className="lg:hidden p-2 rounded-lg text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
+          className="lg:hidden p-2 rounded-lg text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 min-h-[44px] min-w-[44px] flex items-center justify-center"
         >
           <Menu className="h-5 w-5" />
         </button>
@@ -55,18 +56,13 @@ export function TopBar() {
         <button
           onClick={cycleTheme}
           title={`Theme: ${mode}`}
-          className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors"
+          className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
         >
           <ThemeIcon className="h-5 w-5" />
         </button>
 
-        {/* Notification bell (stub) */}
-        <button
-          className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700 transition-colors relative"
-          title="Notifications"
-        >
-          <Bell className="h-5 w-5" />
-        </button>
+        {/* Notification bell */}
+        <NotificationBell />
 
         {/* User info */}
         {user && (
@@ -83,7 +79,7 @@ export function TopBar() {
             <button
               onClick={logout}
               title="Sign out"
-              className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+              className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
             >
               <LogOut className="h-4 w-4" />
             </button>

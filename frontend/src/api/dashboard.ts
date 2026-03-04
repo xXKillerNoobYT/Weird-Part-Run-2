@@ -1,0 +1,40 @@
+/**
+ * Dashboard API functions — KPIs, quick actions, and Fast Drive.
+ */
+
+import apiClient from './client';
+import type {
+  ApiResponse,
+  DashboardData,
+  FastDriveContext,
+  FastDriveStartRequest,
+  FastDriveResult,
+} from '../lib/types';
+
+
+/** Fetch live KPI counts and quick actions. */
+export async function getDashboard(): Promise<DashboardData> {
+  const { data } = await apiClient.get<ApiResponse<DashboardData>>(
+    '/dashboard',
+  );
+  return data.data!;
+}
+
+/** Fetch the current user's Fast Drive context (vehicle + destinations). */
+export async function getFastDriveContext(): Promise<FastDriveContext> {
+  const { data } = await apiClient.get<ApiResponse<FastDriveContext>>(
+    '/dashboard/fast-drive',
+  );
+  return data.data!;
+}
+
+/** Log a trip leg via the Fast Drive flow. */
+export async function startDrive(
+  req: FastDriveStartRequest,
+): Promise<FastDriveResult> {
+  const { data } = await apiClient.post<ApiResponse<FastDriveResult>>(
+    '/dashboard/fast-drive/start',
+    req,
+  );
+  return data.data!;
+}

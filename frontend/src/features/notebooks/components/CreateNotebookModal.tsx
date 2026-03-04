@@ -38,7 +38,7 @@ export function CreateNotebookModal({ onSubmit, onClose, loading }: CreateNotebo
           </h2>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg hover:bg-surface-secondary transition-colors"
+            className="p-2 rounded-lg hover:bg-surface-secondary transition-colors"
           >
             <X className="h-4 w-4 text-gray-400" />
           </button>

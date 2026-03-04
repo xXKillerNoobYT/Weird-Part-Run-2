@@ -3,6 +3,11 @@ Application configuration loaded from environment variables.
 
 All settings have sensible defaults for local development.
 Production deployments should override SECRET_KEY at minimum.
+
+Path resolution:
+    .env file  → resolved from config.py's location (…/backend/app/config.py)
+                 up to project root, so it works regardless of CWD.
+    DATABASE_PATH → relative paths resolve from backend/ directory via db_path.
 """
 
 from __future__ import annotations
@@ -10,6 +15,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from pydantic_settings import BaseSettings
+
+# Resolve once at import time: config.py → app/ → backend/ → project root
+_THIS_FILE = Path(__file__).resolve()
+_BACKEND_DIR = _THIS_FILE.parent.parent          # backend/
+_PROJECT_ROOT = _BACKEND_DIR.parent               # project root (contains .env)
 
 
 class Settings(BaseSettings):
@@ -48,16 +58,29 @@ class Settings(BaseSettings):
     BACKEND_HOST: str = "0.0.0.0"
     BACKEND_PORT: int = 8000
 
-    # ── Paths ─────────────────────────────────────────────────────
+    # ── Derived Paths ─────────────────────────────────────────────
+    @property
+    def db_path(self) -> Path:
+        """Absolute path to the SQLite database file.
+
+        If DATABASE_PATH is already absolute, return it as-is.
+        If relative, resolve from the backend/ directory so it works
+        no matter what the process CWD happens to be.
+        """
+        p = Path(self.DATABASE_PATH)
+        if p.is_absolute():
+            return p
+        return (_BACKEND_DIR / p).resolve()
+
     @property
     def migrations_dir(self) -> Path:
         """Directory containing SQL migration files."""
         return Path(__file__).parent / "migrations"
 
     class Config:
-        env_file = ".env"
+        # Absolute path to .env at project root — CWD-independent
+        env_file = str(_PROJECT_ROOT / ".env")
         env_file_encoding = "utf-8"
-        # Look for .env in backend/ directory and project root
         extra = "ignore"
 
 

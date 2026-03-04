@@ -1,0 +1,8 @@
+[tool.pytest.ini_options]
+# Run from backend/ directory:
+#   cd backend && python -m pytest
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
