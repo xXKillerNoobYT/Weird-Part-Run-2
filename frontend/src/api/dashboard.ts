@@ -9,6 +9,7 @@ import type {
   FastDriveContext,
   FastDriveStartRequest,
   FastDriveResult,
+  CertAlertItem,
 } from '../lib/types';
 
 
@@ -35,6 +36,14 @@ export async function startDrive(
   const { data } = await apiClient.post<ApiResponse<FastDriveResult>>(
     '/dashboard/fast-drive/start',
     req,
+  );
+  return data.data!;
+}
+
+/** Fetch certification expiry alerts (< 60 days). */
+export async function getCertAlerts(): Promise<CertAlertItem[]> {
+  const { data } = await apiClient.get<ApiResponse<CertAlertItem[]>>(
+    '/dashboard/cert-alerts',
   );
   return data.data!;
 }

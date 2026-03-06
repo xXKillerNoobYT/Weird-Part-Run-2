@@ -95,6 +95,18 @@ import { EmployeeListPage } from './features/people/pages/EmployeeListPage';
 import { EmployeeDetailPage } from './features/people/pages/EmployeeDetailPage';
 import { HatsPage } from './features/people/pages/HatsPage';
 import { PermissionsPage } from './features/people/pages/PermissionsPage';
+import { CustomersPage } from './features/people/pages/CustomersPage';
+import { CustomerDetailPage } from './features/people/pages/CustomerDetailPage';
+import { ContractorsPage } from './features/people/pages/ContractorsPage';
+import { ContractorDetailPage } from './features/people/pages/ContractorDetailPage';
+import { ContactDirectoryPage } from './features/people/pages/ContactDirectoryPage';
+
+// Pages — Scheduling
+import { ScheduleCalendarPage } from './features/scheduling/pages/ScheduleCalendarPage';
+import { DailyDispatchPage } from './features/scheduling/pages/DailyDispatchPage';
+import { TimeOffPage } from './features/scheduling/pages/TimeOffPage';
+import { ScheduleConfigPage } from './features/scheduling/pages/ScheduleConfigPage';
+import { SubSchedulePage } from './features/scheduling/pages/SubSchedulePage';
 
 // Pages — Reports
 import { PreBillingPage } from './features/reports/pages/PreBillingPage';
@@ -222,10 +234,23 @@ export default function App() {
               <Route path="/orders/active" element={<Navigate to="/orders/purchase-orders" replace />} />
               <Route path="/orders/incoming" element={<Navigate to="/orders/purchase-orders" replace />} />
 
+              {/* Scheduling */}
+              <Route path="/scheduling" element={<Navigate to="/scheduling/calendar" replace />} />
+              <Route path="/scheduling/calendar" element={<ScheduleCalendarPage />} />
+              <Route path="/scheduling/dispatch" element={<DailyDispatchPage />} />
+              <Route path="/scheduling/time-off" element={<TimeOffPage />} />
+              <Route path="/scheduling/schedules" element={<ScheduleConfigPage />} />
+              <Route path="/scheduling/subcontractors" element={<SubSchedulePage />} />
+
               {/* People */}
               <Route path="/people" element={<Navigate to="/people/employees" replace />} />
               <Route path="/people/employees" element={<EmployeeListPage />} />
               <Route path="/people/employees/:id" element={<EmployeeDetailPage />} />
+              <Route path="/people/customers" element={<CustomersPage />} />
+              <Route path="/people/customers/:id" element={<CustomerDetailPage />} />
+              <Route path="/people/contractors" element={<ContractorsPage />} />
+              <Route path="/people/contractors/:id" element={<ContractorDetailPage />} />
+              <Route path="/people/directory" element={<ContactDirectoryPage />} />
               <Route path="/people/hats" element={<HatsPage />} />
               <Route path="/people/permissions" element={<PermissionsPage />} />
 

@@ -46,6 +46,19 @@ export const PERMISSIONS = {
   VIEW_PEOPLE: 'view_people',
   MANAGE_PEOPLE: 'manage_people',
 
+  // Contacts (Customers & Contractors)
+  VIEW_CUSTOMERS: 'view_customers',
+  MANAGE_CUSTOMERS: 'manage_customers',
+  VIEW_CONTRACTORS: 'view_contractors',
+  MANAGE_CONTRACTORS: 'manage_contractors',
+
+  // Scheduling
+  VIEW_SCHEDULE: 'view_schedule',
+  MANAGE_SCHEDULE: 'manage_schedule',
+  REQUEST_TIME_OFF: 'request_time_off',
+  APPROVE_TIME_OFF: 'approve_time_off',
+  DISPATCH_EMPLOYEES: 'dispatch_employees',
+
   // Reports
   VIEW_REPORTS: 'view_reports',
   EXPORT_REPORTS: 'export_reports',

@@ -21,12 +21,14 @@ import {
   ArrowRightLeft,
   Loader2,
   Activity,
+  ShieldAlert,
 } from 'lucide-react';
 
 import { Card, CardHeader } from '../../../components/ui/Card';
+import { Badge } from '../../../components/ui/Badge';
 import { FastDriveCard } from '../components/FastDriveCard';
 import { DailyReportTab } from '../components/DailyReportTab';
-import { getDashboard } from '../../../api/dashboard';
+import { getDashboard, getCertAlerts } from '../../../api/dashboard';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 
@@ -75,6 +77,28 @@ const KPI_CONFIG = [
 type DashTab = 'overview' | 'report';
 
 
+/** Reusable tab button for the dashboard tab bar */
+function TabButton({
+  label, icon, active, onClick,
+}: {
+  label: string; icon: React.ReactNode; active: boolean; onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+        active
+          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+          : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+
 export function DashboardPage() {
   const navigate = useNavigate();
   const { hasPermission } = useAuthStore();
@@ -82,10 +106,19 @@ export function DashboardPage() {
 
   const [activeTab, setActiveTab] = useState<DashTab>('overview');
 
+  const canViewPeople = hasPermission(PERMISSIONS.VIEW_PEOPLE);
+
   const { data: dashboard, isLoading } = useQuery({
     queryKey: ['dashboard'],
     queryFn: getDashboard,
     staleTime: 30_000,  // refresh every 30s
+  });
+
+  const { data: certAlerts = [] } = useQuery({
+    queryKey: ['cert-alerts'],
+    queryFn: getCertAlerts,
+    enabled: canViewPeople,
+    staleTime: 60_000,
   });
 
   const kpis = dashboard?.kpis;
@@ -162,6 +195,48 @@ export function DashboardPage() {
             ))}
           </div>
 
+          {/* ── Cert Expiry Alerts ────────────────────── */}
+          {canViewPeople && certAlerts.length > 0 && (
+            <Card>
+              <CardHeader
+                title="Certification Alerts"
+                subtitle={`${certAlerts.length} certification${certAlerts.length === 1 ? '' : 's'} expiring soon`}
+                icon={<ShieldAlert className="h-5 w-5 text-amber-500" />}
+              />
+              <div className="space-y-2">
+                {certAlerts.slice(0, 5).map((alert, i) => (
+                  <button
+                    key={`${alert.user_id}-${alert.cert_name}-${i}`}
+                    onClick={() => navigate(`/people/employees/${alert.user_id}`)}
+                    className="w-full flex items-center justify-between p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                        {alert.user_name}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                        {alert.cert_name} · Expires {alert.expiry_date}
+                      </p>
+                    </div>
+                    <Badge
+                      variant={alert.days_until_expiry <= 30 ? 'danger' : 'warning'}
+                      className="text-xs ml-2 flex-shrink-0"
+                    >
+                      {alert.days_until_expiry <= 0
+                        ? 'Expired'
+                        : `${alert.days_until_expiry}d`}
+                    </Badge>
+                  </button>
+                ))}
+                {certAlerts.length > 5 && (
+                  <p className="text-xs text-center text-gray-400 dark:text-gray-500 pt-1">
+                    +{certAlerts.length - 5} more
+                  </p>
+                )}
+              </div>
+            </Card>
+          )}
+
           {/* ── Quick Actions ───────────────────────────── */}
           <Card>
             <CardHeader
@@ -188,27 +263,5 @@ export function DashboardPage() {
         <DailyReportTab />
       )}
     </div>
-  );
-}
-
-
-/** Reusable tab button for the dashboard tab bar */
-function TabButton({
-  label, icon, active, onClick,
-}: {
-  label: string; icon: React.ReactNode; active: boolean; onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-        active
-          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-          : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }

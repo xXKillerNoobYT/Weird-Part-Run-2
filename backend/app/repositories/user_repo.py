@@ -307,6 +307,76 @@ class UserRepo(BaseRepo):
 
         return permissions
 
+    # ── Job Lead Elevations (Phase 10) ────────────────────────────
+
+    async def get_job_lead_elevations(self, user_id: int) -> list[dict]:
+        """Get all active elevations for a user, with job and granter names."""
+        cursor = await self.db.execute(
+            """SELECT jle.*, j.job_name AS job_name,
+                      u.display_name AS granted_by_name
+               FROM job_lead_elevations jle
+               JOIN jobs j ON j.id = jle.job_id
+               LEFT JOIN users u ON u.id = jle.granted_by
+               WHERE jle.user_id = ?
+                 AND (jle.expires_at IS NULL OR jle.expires_at > datetime('now'))
+               ORDER BY j.job_name ASC""",
+            (user_id,),
+        )
+        return await cursor.fetchall()
+
+    async def get_elevations_for_job(self, job_id: int) -> list[dict]:
+        """Get all active elevations for a specific job, with user names."""
+        cursor = await self.db.execute(
+            """SELECT jle.*, u.display_name AS user_name,
+                      g.display_name AS granted_by_name
+               FROM job_lead_elevations jle
+               JOIN users u ON u.id = jle.user_id
+               LEFT JOIN users g ON g.id = jle.granted_by
+               WHERE jle.job_id = ?
+                 AND (jle.expires_at IS NULL OR jle.expires_at > datetime('now'))
+               ORDER BY u.display_name ASC""",
+            (job_id,),
+        )
+        return await cursor.fetchall()
+
+    async def grant_elevation(
+        self,
+        user_id: int,
+        job_id: int,
+        permission_key: str,
+        granted_by: int,
+    ) -> int:
+        """Grant a job-level permission elevation. Returns the new row ID."""
+        cursor = await self.db.execute(
+            """INSERT OR IGNORE INTO job_lead_elevations
+               (user_id, job_id, permission_key, granted_by)
+               VALUES (?, ?, ?, ?)""",
+            (user_id, job_id, permission_key, granted_by),
+        )
+        await self.db.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    async def revoke_elevation(self, elevation_id: int) -> bool:
+        """Revoke a single elevation by ID."""
+        cursor = await self.db.execute(
+            "DELETE FROM job_lead_elevations WHERE id = ?",
+            (elevation_id,),
+        )
+        await self.db.commit()
+        return cursor.rowcount > 0
+
+    async def revoke_all_for_job(self, user_id: int, job_id: int) -> int:
+        """Revoke all elevations for a user on a specific job.
+
+        Returns the number of revoked elevations.
+        """
+        cursor = await self.db.execute(
+            "DELETE FROM job_lead_elevations WHERE user_id = ? AND job_id = ?",
+            (user_id, job_id),
+        )
+        await self.db.commit()
+        return cursor.rowcount
+
 
 class HatRepo(BaseRepo):
     """Repository for hat (role) management."""

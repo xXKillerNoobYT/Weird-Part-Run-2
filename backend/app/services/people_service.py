@@ -50,8 +50,17 @@ PERMISSION_DOMAINS: dict[str, list[str]] = {
     "people": [
         "view_people", "manage_people",
     ],
+    "contacts": [
+        "view_customers", "manage_customers",
+        "view_contractors", "manage_contractors",
+    ],
     "jobs": [
         "view_jobs", "manage_jobs",
+    ],
+    "scheduling": [
+        "view_schedule", "manage_schedule",
+        "request_time_off", "approve_time_off",
+        "dispatch_employees",
     ],
     "fleet": [
         "view_trucks", "manage_fleet",
@@ -67,6 +76,9 @@ PERMISSION_DOMAINS: dict[str, list[str]] = {
     ],
     "settings": [
         "manage_settings", "manage_devices",
+    ],
+    "tools": [
+        "view_tools", "manage_tools", "checkout_tools",
     ],
 }
 
@@ -472,3 +484,68 @@ class PeopleService:
         known.update(db_keys)
 
         return sorted(known)
+
+    # ── Job Lead Elevations ────────────────────────────────────────
+
+    async def get_user_elevations(self, user_id: int) -> list[dict]:
+        """Get all active elevations for a user."""
+        return await self.user_repo.get_job_lead_elevations(user_id)
+
+    async def get_job_elevations(self, job_id: int) -> list[dict]:
+        """Get all active elevations for a job."""
+        return await self.user_repo.get_elevations_for_job(job_id)
+
+    async def grant_elevation(
+        self,
+        user_id: int,
+        job_id: int,
+        permission_key: str,
+        *,
+        granted_by: int,
+    ) -> int:
+        """Grant a job-level permission elevation. Returns the new row ID."""
+        return await self.user_repo.grant_elevation(
+            user_id, job_id, permission_key, granted_by,
+        )
+
+    async def revoke_elevation(self, elevation_id: int) -> bool:
+        """Revoke a single elevation."""
+        return await self.user_repo.revoke_elevation(elevation_id)
+
+    async def revoke_all_elevations_for_job(
+        self, user_id: int, job_id: int,
+    ) -> int:
+        """Revoke all elevations for a user on a job. Returns count revoked."""
+        return await self.user_repo.revoke_all_for_job(user_id, job_id)
+
+    # ── Cert Expiry Alerts ─────────────────────────────────────────
+
+    async def get_cert_alerts(self, days: int = 60) -> list[dict]:
+        """Get certifications expiring within N days for dashboard alerts.
+
+        Returns items with severity 'red' (<30 days) or 'amber' (<60 days).
+        Computes days_until_expiry from the expiry_date string.
+        """
+        from datetime import date as dt_date
+
+        today = dt_date.today()
+        rows = await self.cert_repo.get_expiring_soon(days)
+        alerts = []
+        for r in rows:
+            try:
+                exp_date = dt_date.fromisoformat(r["expiry_date"])
+                d_until = (exp_date - today).days
+            except (ValueError, TypeError, KeyError):
+                d_until = 0
+            severity = "red" if d_until < 30 else "amber"
+            alerts.append({
+                "cert_id": r["id"],
+                "user_id": r["user_id"],
+                "user_name": r.get("user_name", ""),
+                "cert_name": r["cert_name"],
+                "cert_type": r["cert_type"],
+                "expiry_date": r["expiry_date"],
+                "days_until_expiry": d_until,
+                "severity": severity,
+            })
+        return alerts

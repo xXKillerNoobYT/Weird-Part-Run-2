@@ -143,6 +143,8 @@ ROUTER_MODULES = [
     "app.routers.orders",
     "app.routers.notifications",
     "app.routers.people",
+    "app.routers.contacts",
+    "app.routers.scheduling",
     "app.routers.reports",
     "app.routers.costs",
     "app.routers.tools",

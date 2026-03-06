@@ -31,6 +31,7 @@ from app.models.people import (
     HatCreate,
     HatDetailResponse,
     HatUpdate,
+    JobLeadElevationCreate,
     PermissionAssignment,
     UserSkillCreate,
     UserSkillResponse,
@@ -463,3 +464,89 @@ async def get_permission_keys(
     svc = PeopleService(db)
     keys = await svc.get_all_permission_keys()
     return ApiResponse(data=keys, message=f"{len(keys)} permission keys")
+
+
+# ═════════════════════════════════════════════════════════════════
+# JOB LEAD ELEVATIONS
+# ═════════════════════════════════════════════════════════════════
+
+
+@router.get("/employees/{user_id}/elevations")
+async def get_user_elevations(
+    user_id: int,
+    user: dict = Depends(require_permission("view_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get all job-lead elevations for an employee."""
+    svc = PeopleService(db)
+    elevations = await svc.get_user_elevations(user_id)
+    return ApiResponse(data=elevations, message=f"{len(elevations)} elevations")
+
+
+@router.post("/employees/{user_id}/elevations", status_code=status.HTTP_201_CREATED)
+async def grant_elevation(
+    user_id: int,
+    data: JobLeadElevationCreate,
+    user: dict = Depends(require_permission("manage_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Grant a job-specific permission elevation to an employee."""
+    svc = PeopleService(db)
+    elevation_id = await svc.grant_elevation(
+        user_id, data.job_id, data.permission_key, granted_by=user["id"],
+    )
+    return ApiResponse(
+        data={"id": elevation_id},
+        message="Elevation granted",
+    )
+
+
+@router.delete("/elevations/{elevation_id}")
+async def revoke_elevation(
+    elevation_id: int,
+    user: dict = Depends(require_permission("manage_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Revoke a single job-lead elevation."""
+    svc = PeopleService(db)
+    revoked = await svc.revoke_elevation(elevation_id)
+    if not revoked:
+        raise HTTPException(status_code=404, detail="Elevation not found")
+    return ApiResponse(data={"id": elevation_id}, message="Elevation revoked")
+
+
+@router.delete("/employees/{user_id}/elevations/job/{job_id}")
+async def revoke_all_elevations_for_job(
+    user_id: int,
+    job_id: int,
+    user: dict = Depends(require_permission("manage_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Revoke all elevations for an employee on a specific job."""
+    svc = PeopleService(db)
+    count = await svc.revoke_all_elevations_for_job(user_id, job_id)
+    return ApiResponse(
+        data={"user_id": user_id, "job_id": job_id, "revoked_count": count},
+        message=f"{count} elevations revoked",
+    )
+
+
+# ═════════════════════════════════════════════════════════════════
+# CERT ALERTS
+# ═════════════════════════════════════════════════════════════════
+
+
+@router.get("/cert-alerts")
+async def get_cert_alerts(
+    days: int = Query(60, ge=1, le=365, description="Look-ahead window in days"),
+    user: dict = Depends(require_permission("view_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get certifications expiring within the look-ahead window.
+
+    Returns list of { user_id, user_name, cert_name, expiry_date, days_until_expiry }.
+    Red alert < 30 days, amber alert < 60 days.
+    """
+    svc = PeopleService(db)
+    alerts = await svc.get_cert_alerts(days=days)
+    return ApiResponse(data=alerts, message=f"{len(alerts)} cert alerts")

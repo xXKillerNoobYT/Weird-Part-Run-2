@@ -16,9 +16,10 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.database import get_db
-from app.middleware.auth import require_user
+from app.middleware.auth import require_permission, require_user
 from app.models.common import ApiResponse
 from app.services.mileage_service import MileageService
+from app.services.people_service import PeopleService
 
 logger = logging.getLogger(__name__)
 
@@ -316,3 +317,24 @@ async def start_drive(
         },
         message=f"Trip to {body.to_label} logged.",
     )
+
+
+# ═════════════════════════════════════════════════════════════════
+# CERT ALERTS
+# ═════════════════════════════════════════════════════════════════
+
+
+@router.get("/cert-alerts")
+async def get_cert_alerts(
+    days: int = 60,
+    user: dict = Depends(require_permission("view_people")),
+    db=Depends(get_db),
+):
+    """Get certifications expiring within the look-ahead window.
+
+    Returns list of { user_id, user_name, cert_name, expiry_date, days_until_expiry }.
+    Used by the dashboard cert alert card.
+    """
+    svc = PeopleService(db)
+    alerts = await svc.get_cert_alerts(days=days)
+    return ApiResponse(data=alerts, message=f"{len(alerts)} cert alerts")

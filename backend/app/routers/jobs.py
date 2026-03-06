@@ -43,7 +43,9 @@ from app.models.jobs import (
     QuestionReorderRequest,
 )
 from app.models.notebooks import EntryResponse, NotebookFull
+from app.models.contacts import JobCustomerCreate, JobGCCreate
 from app.models.orders import JobPreferenceToggle
+from app.services.contacts_service import ContactsService
 from app.services.job_preferences_service import JobPreferencesService
 from app.services.job_service import JobService
 from app.services.labor_service import LaborService
@@ -750,3 +752,98 @@ async def toggle_job_preference(
         raise HTTPException(404, "Preference not found")
 
     return ApiResponse(data={"id": pref_id, "is_active": body.is_active})
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# JOB ↔ CUSTOMER LINKING
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@router.get("/{job_id}/customers")
+async def get_job_customers(
+    job_id: int,
+    user: dict = Depends(require_permission("view_jobs")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get all customers linked to a job."""
+    svc = ContactsService(db)
+    customers = await svc.get_job_customers(job_id)
+    return ApiResponse(data=customers, message=f"{len(customers)} customers linked")
+
+
+@router.post("/{job_id}/customers", status_code=status.HTTP_201_CREATED)
+async def link_customer_to_job(
+    job_id: int,
+    data: JobCustomerCreate,
+    user: dict = Depends(require_permission("manage_jobs")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Link a customer to a job with a contact role."""
+    svc = ContactsService(db)
+    link_id = await svc.link_customer_to_job(job_id, data)
+    return ApiResponse(data={"id": link_id}, message="Customer linked to job")
+
+
+@router.delete("/{job_id}/customers/{link_id}")
+async def unlink_customer_from_job(
+    job_id: int,
+    link_id: int,
+    user: dict = Depends(require_permission("manage_jobs")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Remove a customer link from a job."""
+    svc = ContactsService(db)
+    removed = await svc.unlink_customer_from_job(link_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Customer link not found")
+    return ApiResponse(data={"id": link_id}, message="Customer unlinked from job")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# JOB ↔ GENERAL CONTRACTOR LINKING
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@router.get("/{job_id}/general-contractors")
+async def get_job_gcs(
+    job_id: int,
+    user: dict = Depends(require_permission("view_jobs")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get all general contractors linked to a job."""
+    svc = ContactsService(db)
+    gcs = await svc.get_job_gcs(job_id)
+    return ApiResponse(data=gcs, message=f"{len(gcs)} contractors linked")
+
+
+@router.post("/{job_id}/general-contractors", status_code=status.HTTP_201_CREATED)
+async def link_gc_to_job(
+    job_id: int,
+    data: JobGCCreate,
+    user: dict = Depends(require_permission("manage_jobs")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Link a general contractor to a job with a relationship type.
+
+    Relationship types:
+    - 'they_are_gc' — they hired us (PO naming convention applies)
+    - 'we_hired_them' — we hired them as a sub (scheduling applies)
+    """
+    svc = ContactsService(db)
+    link_id = await svc.link_gc_to_job(job_id, data)
+    return ApiResponse(data={"id": link_id}, message="Contractor linked to job")
+
+
+@router.delete("/{job_id}/general-contractors/{link_id}")
+async def unlink_gc_from_job(
+    job_id: int,
+    link_id: int,
+    user: dict = Depends(require_permission("manage_jobs")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Remove a general contractor link from a job."""
+    svc = ContactsService(db)
+    removed = await svc.unlink_gc_from_job(link_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Contractor link not found")
+    return ApiResponse(data={"id": link_id}, message="Contractor unlinked from job")

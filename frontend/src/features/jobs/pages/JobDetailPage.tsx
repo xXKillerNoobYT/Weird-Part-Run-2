@@ -16,7 +16,8 @@ import {
   ArrowLeft, Briefcase, Clock, Package, HelpCircle,
   Navigation, Users, Square, BookOpen, AlertTriangle,
   Pause, RotateCcw, Shield, CalendarClock, DollarSign,
-  TrendingUp, Layers, Wrench, Star,
+  TrendingUp, Layers, Wrench, Star, UserPlus, Building2,
+  Link2, Unlink, Phone, Mail, X,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { Button } from '../../../components/ui/Button';
@@ -32,6 +33,14 @@ import {
 } from '../../../api/jobs';
 import { getJobCostRollup, getJobBudgetStatus } from '../../../api/costs';
 import { getToolsAtLocation } from '../../../api/tools';
+import {
+  getJobCustomers, getJobGCs, linkCustomerToJob, unlinkCustomerFromJob,
+  linkGCToJob, unlinkGCFromJob, searchCustomers, searchGCs,
+} from '../../../api/contacts';
+import type {
+  JobCustomerResponse, JobGCResponse, CustomerContactRole,
+  GCRelationship, CustomerListItem, GCListItem,
+} from '../../../lib/types';
 import { ClockOutFlow } from '../components/ClockOutFlow';
 import {
   JOB_STATUS_LABELS,
@@ -48,11 +57,12 @@ import { SectionPanel } from '../../notebooks/components/SectionPanel';
 import { CreateEntryModal } from '../../notebooks/components/CreateEntryModal';
 import { AddSectionModal } from '../../notebooks/components/AddSectionModal';
 
-type SubTab = 'notebook' | 'overview' | 'labor' | 'parts' | 'tools' | 'questions' | 'costs';
+type SubTab = 'notebook' | 'overview' | 'people' | 'labor' | 'parts' | 'tools' | 'questions' | 'costs';
 
 const BASE_TABS: { id: SubTab; label: string; icon: React.ReactNode }[] = [
   { id: 'notebook', label: 'Notebook', icon: <BookOpen className="h-4 w-4" /> },
   { id: 'overview', label: 'Overview', icon: <Briefcase className="h-4 w-4" /> },
+  { id: 'people', label: 'People', icon: <Users className="h-4 w-4" /> },
   { id: 'labor', label: 'Labor', icon: <Clock className="h-4 w-4" /> },
   { id: 'parts', label: 'Parts', icon: <Package className="h-4 w-4" /> },
   { id: 'tools', label: 'Tools', icon: <Wrench className="h-4 w-4" /> },
@@ -269,6 +279,7 @@ export function JobDetailPage() {
           {/* Tab content */}
           {activeTab === 'notebook' && <NotebookTab jobId={jobId} />}
           {activeTab === 'overview' && <OverviewTab job={job} />}
+          {activeTab === 'people' && <PeopleTab jobId={jobId} />}
           {activeTab === 'labor' && <LaborTab jobId={jobId} />}
           {activeTab === 'parts' && <PartsTab jobId={jobId} />}
           {activeTab === 'tools' && <ToolsTab jobId={jobId} />}
@@ -1112,6 +1123,340 @@ function CostBreakdownRow({
           style={{ width: `${Math.max(pct, 1)}%` }}
         />
       </div>
+    </div>
+  );
+}
+
+
+// ── People Tab ────────────────────────────────────────────────────
+
+const CONTACT_ROLE_LABELS: Record<CustomerContactRole, string> = {
+  owner: 'Owner',
+  property_manager: 'Property Manager',
+  tenant: 'Tenant',
+  site_contact: 'Site Contact',
+  billing: 'Billing',
+  other: 'Other',
+};
+
+const GC_RELATIONSHIP_LABELS: Record<GCRelationship, string> = {
+  they_are_gc: 'They hired us',
+  we_hired_them: 'We hired them',
+};
+
+function PeopleTab({ jobId }: { jobId: number }) {
+  const queryClient = useQueryClient();
+  const { hasPermission } = useAuthStore();
+  const canManage = hasPermission(PERMISSIONS.MANAGE_JOBS);
+
+  // ── Linked customers & GCs ──
+  const { data: customers = [] } = useQuery({
+    queryKey: ['job-customers', jobId],
+    queryFn: () => getJobCustomers(jobId),
+    staleTime: 30_000,
+  });
+
+  const { data: gcs = [] } = useQuery({
+    queryKey: ['job-gcs', jobId],
+    queryFn: () => getJobGCs(jobId),
+    staleTime: 30_000,
+  });
+
+  // ── Customer linking ──
+  const [custSearch, setCustSearch] = useState('');
+  const [custResults, setCustResults] = useState<CustomerListItem[]>([]);
+  const [showCustSearch, setShowCustSearch] = useState(false);
+
+  const searchCustMut = useMutation({
+    mutationFn: (q: string) => searchCustomers(q),
+    onSuccess: (data) => setCustResults(data),
+  });
+
+  const linkCustMut = useMutation({
+    mutationFn: (custId: number) =>
+      linkCustomerToJob(jobId, { customer_id: custId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['job-customers', jobId] });
+      setShowCustSearch(false);
+      setCustSearch('');
+      setCustResults([]);
+    },
+  });
+
+  const unlinkCustMut = useMutation({
+    mutationFn: (linkId: number) => unlinkCustomerFromJob(jobId, linkId),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['job-customers', jobId] }),
+  });
+
+  // ── GC linking ──
+  const [gcSearch, setGcSearch] = useState('');
+  const [gcResults, setGcResults] = useState<GCListItem[]>([]);
+  const [showGcSearch, setShowGcSearch] = useState(false);
+  const [gcRelationship, setGcRelationship] = useState<GCRelationship>('they_are_gc');
+
+  const searchGcMut = useMutation({
+    mutationFn: (q: string) => searchGCs(q),
+    onSuccess: (data) => setGcResults(data),
+  });
+
+  const linkGcMut = useMutation({
+    mutationFn: (gcId: number) =>
+      linkGCToJob(jobId, { gc_id: gcId, relationship: gcRelationship }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['job-gcs', jobId] });
+      setShowGcSearch(false);
+      setGcSearch('');
+      setGcResults([]);
+    },
+  });
+
+  const unlinkGcMut = useMutation({
+    mutationFn: (linkId: number) => unlinkGCFromJob(jobId, linkId),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['job-gcs', jobId] }),
+  });
+
+  return (
+    <div className="space-y-6">
+      {/* ── Customers Section ─────────────────────────────── */}
+      <Card className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <UserPlus size={16} />
+            Customers
+            <Badge variant="neutral" className="text-xs">{customers.length}</Badge>
+          </h3>
+          {canManage && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setShowCustSearch(!showCustSearch)}
+            >
+              <Link2 size={14} />
+              <span className="hidden sm:inline ml-1">Link Customer</span>
+            </Button>
+          )}
+        </div>
+
+        {/* Search to link */}
+        {showCustSearch && (
+          <div className="mb-3 p-3 bg-surface-secondary rounded-lg border border-border">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={custSearch}
+                onChange={e => {
+                  setCustSearch(e.target.value);
+                  if (e.target.value.length >= 2) searchCustMut.mutate(e.target.value);
+                }}
+                placeholder="Search customers..."
+                className="flex-1 text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                autoFocus
+              />
+              <button onClick={() => { setShowCustSearch(false); setCustSearch(''); setCustResults([]); }}>
+                <X size={16} className="text-gray-400" />
+              </button>
+            </div>
+            {custResults.length > 0 && (
+              <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                {custResults
+                  .filter(c => !customers.some(lc => lc.customer_id === c.id))
+                  .map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => linkCustMut.mutate(c.id)}
+                      className="w-full text-left p-2 rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
+                    >
+                      <span className="font-medium">{c.display_name}</span>
+                      {c.company_name && (
+                        <span className="text-gray-500 dark:text-gray-400 ml-1">({c.company_name})</span>
+                      )}
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Linked customers list */}
+        {customers.length === 0 ? (
+          <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-3">
+            No customers linked to this job yet.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {customers.map(c => (
+              <div
+                key={c.id}
+                className="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-gray-700"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm text-gray-900 dark:text-white">
+                      {c.customer_name}
+                    </span>
+                    {c.company_name && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        {c.company_name}
+                      </span>
+                    )}
+                    <Badge variant="neutral" className="text-[10px]">
+                      {CONTACT_ROLE_LABELS[c.contact_role]}
+                    </Badge>
+                    {c.is_primary && <Badge variant="success" className="text-[10px]">Primary</Badge>}
+                  </div>
+                  <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {c.phone && (
+                      <span className="flex items-center gap-1">
+                        <Phone size={10} /> {c.phone}
+                      </span>
+                    )}
+                    {c.email && (
+                      <span className="flex items-center gap-1">
+                        <Mail size={10} /> {c.email}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {canManage && (
+                  <button
+                    onClick={() => unlinkCustMut.mutate(c.id)}
+                    className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500"
+                    title="Unlink customer"
+                  >
+                    <Unlink size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* ── General Contractors Section ────────────────────── */}
+      <Card className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <Building2 size={16} />
+            General Contractors
+            <Badge variant="neutral" className="text-xs">{gcs.length}</Badge>
+          </h3>
+          {canManage && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setShowGcSearch(!showGcSearch)}
+            >
+              <Link2 size={14} />
+              <span className="hidden sm:inline ml-1">Link GC</span>
+            </Button>
+          )}
+        </div>
+
+        {/* Search to link */}
+        {showGcSearch && (
+          <div className="mb-3 p-3 bg-surface-secondary rounded-lg border border-border">
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                type="text"
+                value={gcSearch}
+                onChange={e => {
+                  setGcSearch(e.target.value);
+                  if (e.target.value.length >= 2) searchGcMut.mutate(e.target.value);
+                }}
+                placeholder="Search general contractors..."
+                className="flex-1 text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                autoFocus
+              />
+              <button onClick={() => { setShowGcSearch(false); setGcSearch(''); setGcResults([]); }}>
+                <X size={16} className="text-gray-400" />
+              </button>
+            </div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs text-gray-500 dark:text-gray-400">Relationship:</span>
+              <select
+                value={gcRelationship}
+                onChange={e => setGcRelationship(e.target.value as GCRelationship)}
+                className="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
+              >
+                <option value="they_are_gc">They hired us</option>
+                <option value="we_hired_them">We hired them</option>
+              </select>
+            </div>
+            {gcResults.length > 0 && (
+              <div className="space-y-1 max-h-40 overflow-y-auto">
+                {gcResults
+                  .filter(g => !gcs.some(lg => lg.gc_id === g.id))
+                  .map(g => (
+                    <button
+                      key={g.id}
+                      onClick={() => linkGcMut.mutate(g.id)}
+                      className="w-full text-left p-2 rounded text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
+                    >
+                      <span className="font-medium">{g.company_name}</span>
+                      <Badge variant="neutral" className="text-[10px] ml-2">{g.gc_code}</Badge>
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Linked GCs list */}
+        {gcs.length === 0 ? (
+          <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-3">
+            No general contractors linked to this job yet.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {gcs.map(g => (
+              <div
+                key={g.id}
+                className="flex items-center justify-between p-3 rounded-lg border border-gray-200 dark:border-gray-700"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm text-gray-900 dark:text-white">
+                      {g.company_name}
+                    </span>
+                    <Badge variant="neutral" className="text-[10px] font-mono">
+                      {g.gc_code}
+                    </Badge>
+                    <Badge
+                      variant={g.relationship === 'they_are_gc' ? 'success' : 'warning'}
+                      className="text-[10px]"
+                    >
+                      {GC_RELATIONSHIP_LABELS[g.relationship]}
+                    </Badge>
+                    {g.is_primary && <Badge variant="success" className="text-[10px]">Primary</Badge>}
+                  </div>
+                  <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    <span className="capitalize">{g.trade_type.replace('_', ' ')}</span>
+                    {g.phone && (
+                      <span className="flex items-center gap-1">
+                        <Phone size={10} /> {g.phone}
+                      </span>
+                    )}
+                    {g.contract_number && (
+                      <span>Contract: {g.contract_number}</span>
+                    )}
+                  </div>
+                </div>
+                {canManage && (
+                  <button
+                    onClick={() => unlinkGcMut.mutate(g.id)}
+                    className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500"
+                    title="Unlink GC"
+                  >
+                    <Unlink size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

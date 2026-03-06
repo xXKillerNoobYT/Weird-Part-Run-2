@@ -94,6 +94,20 @@ export const MODULES: NavModule[] = [
     ],
   },
   {
+    id: 'scheduling',
+    label: 'Scheduling',
+    icon: 'CalendarDays',
+    path: '/scheduling',
+    permission: 'view_schedule',
+    tabs: [
+      { id: 'calendar', label: 'Calendar', path: '/scheduling/calendar' },
+      { id: 'dispatch', label: 'Daily Dispatch', path: '/scheduling/dispatch', permission: 'dispatch_employees' },
+      { id: 'time-off', label: 'Time Off', path: '/scheduling/time-off' },
+      { id: 'schedules', label: 'Default Schedules', path: '/scheduling/schedules', permission: 'manage_schedule' },
+      { id: 'subcontractors', label: 'Subcontractors', path: '/scheduling/subcontractors', permission: 'dispatch_employees' },
+    ],
+  },
+  {
     id: 'notebooks',
     label: 'Notebooks',
     icon: 'BookOpen',
@@ -131,6 +145,9 @@ export const MODULES: NavModule[] = [
     permission: 'view_people',
     tabs: [
       { id: 'employees', label: 'Employee List', path: '/people/employees' },
+      { id: 'customers', label: 'Customers', path: '/people/customers', permission: 'view_customers' },
+      { id: 'contractors', label: 'Contractors', path: '/people/contractors', permission: 'view_contractors' },
+      { id: 'directory', label: 'All Contacts', path: '/people/directory' },
       { id: 'hats', label: 'Roles/Hats', path: '/people/hats', permission: 'manage_people' },
       { id: 'permissions', label: 'Permissions', path: '/people/permissions', permission: 'manage_people' },
     ],

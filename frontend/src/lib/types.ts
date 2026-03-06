@@ -4389,3 +4389,542 @@ export interface ToolsDashboardStats {
   overdue_maintenance: number;
   kits_with_missing_items: number;
 }
+
+
+// ══════════════════════════════════════════════════════════════════
+// CUSTOMERS
+// ══════════════════════════════════════════════════════════════════
+
+export type CustomerType = 'residential' | 'commercial' | 'government' | 'other';
+
+export interface CustomerListItem {
+  id: number;
+  company_name: string | null;
+  first_name: string;
+  last_name: string;
+  display_name: string;
+  phone: string | null;
+  email: string | null;
+  customer_type: CustomerType;
+  is_active: boolean;
+  job_count: number;
+  contact_count: number;
+}
+
+export interface CustomerDetail {
+  id: number;
+  company_name: string | null;
+  first_name: string;
+  last_name: string;
+  display_name: string;
+  phone: string | null;
+  email: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  customer_type: CustomerType;
+  notes: string | null;
+  is_active: boolean;
+  contacts: EntityContactResponse[];
+  job_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface CustomerCreate {
+  company_name?: string | null;
+  first_name: string;
+  last_name: string;
+  phone?: string | null;
+  email?: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  customer_type?: CustomerType;
+  notes?: string | null;
+}
+
+export interface CustomerUpdate {
+  company_name?: string | null;
+  first_name?: string;
+  last_name?: string;
+  phone?: string | null;
+  email?: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  customer_type?: CustomerType;
+  notes?: string | null;
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// GENERAL CONTRACTORS
+// ══════════════════════════════════════════════════════════════════
+
+export type GCTradeType =
+  | 'general'
+  | 'electrical'
+  | 'plumbing'
+  | 'hvac'
+  | 'mechanical'
+  | 'fire_protection'
+  | 'low_voltage'
+  | 'other';
+
+export interface GCListItem {
+  id: number;
+  company_name: string;
+  gc_code: string;
+  trade_type: GCTradeType;
+  phone: string | null;
+  email: string | null;
+  is_active: boolean;
+  job_count: number;
+  contact_count: number;
+}
+
+export interface GCDetail {
+  id: number;
+  company_name: string;
+  gc_code: string;
+  license_number: string | null;
+  trade_type: GCTradeType;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  insurance_info: string | null;
+  notes: string | null;
+  is_active: boolean;
+  contacts: EntityContactResponse[];
+  job_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface GCCreate {
+  company_name: string;
+  gc_code: string;
+  license_number?: string | null;
+  trade_type?: GCTradeType;
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  insurance_info?: string | null;
+  notes?: string | null;
+}
+
+export interface GCUpdate {
+  company_name?: string;
+  gc_code?: string;
+  license_number?: string | null;
+  trade_type?: GCTradeType;
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  insurance_info?: string | null;
+  notes?: string | null;
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// ENTITY CONTACTS (polymorphic — customers, GCs, suppliers)
+// ══════════════════════════════════════════════════════════════════
+
+export type EntityType = 'customer' | 'general_contractor' | 'supplier';
+
+export interface EntityContactResponse {
+  id: number;
+  entity_type: EntityType;
+  entity_id: number;
+  first_name: string;
+  last_name: string;
+  role: string;
+  phone: string;
+  email: string | null;
+  is_primary: boolean;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface EntityContactCreate {
+  first_name: string;
+  last_name: string;
+  role: string;
+  phone: string;
+  email?: string | null;
+  is_primary?: boolean;
+  notes?: string | null;
+}
+
+export interface EntityContactUpdate {
+  first_name?: string;
+  last_name?: string;
+  role?: string;
+  phone?: string;
+  email?: string | null;
+  is_primary?: boolean;
+  notes?: string | null;
+}
+
+export interface DirectoryContactResult {
+  id: number;
+  first_name: string;
+  last_name: string;
+  role: string;
+  phone: string;
+  email: string | null;
+  entity_type: EntityType;
+  entity_id: number;
+  entity_name: string;
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// JOB ↔ CUSTOMER / GC LINKING
+// ══════════════════════════════════════════════════════════════════
+
+export type CustomerContactRole =
+  | 'owner'
+  | 'property_manager'
+  | 'tenant'
+  | 'site_contact'
+  | 'billing'
+  | 'other';
+
+export type GCRelationship = 'they_are_gc' | 'we_hired_them';
+
+export interface JobCustomerResponse {
+  id: number;
+  job_id: number;
+  customer_id: number;
+  customer_name: string;
+  company_name: string | null;
+  phone: string | null;
+  email: string | null;
+  contact_role: CustomerContactRole;
+  is_primary: boolean;
+  notes: string | null;
+  created_at: string | null;
+}
+
+export interface JobCustomerCreate {
+  customer_id: number;
+  contact_role?: CustomerContactRole;
+  is_primary?: boolean;
+  notes?: string | null;
+}
+
+export interface JobGCResponse {
+  id: number;
+  job_id: number;
+  gc_id: number;
+  company_name: string;
+  gc_code: string;
+  trade_type: GCTradeType;
+  phone: string | null;
+  email: string | null;
+  relationship: GCRelationship;
+  contract_amount: number | null;
+  contract_number: string | null;
+  is_primary: boolean;
+  notes: string | null;
+  created_at: string | null;
+}
+
+export interface JobGCCreate {
+  gc_id: number;
+  relationship: GCRelationship;
+  contract_amount?: number | null;
+  contract_number?: string | null;
+  is_primary?: boolean;
+  notes?: string | null;
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// SCHEDULING — DEFAULT SCHEDULES
+// ══════════════════════════════════════════════════════════════════
+
+export interface DefaultScheduleDay {
+  day_of_week: number; // 0=Sunday, 1=Monday, ...
+  start_time: string;  // "07:00"
+  end_time: string;    // "15:30"
+  is_working_day: boolean;
+  notes: string | null;
+}
+
+export interface DefaultScheduleResponse {
+  id: number;
+  user_id: number;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  is_working_day: boolean;
+  notes: string | null;
+}
+
+export interface DefaultScheduleCreate {
+  days: DefaultScheduleDay[];
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// SCHEDULING — SCHEDULE EXCEPTIONS (TIME OFF)
+// ══════════════════════════════════════════════════════════════════
+
+export type ExceptionType =
+  | 'time_off'
+  | 'sick'
+  | 'vacation'
+  | 'holiday'
+  | 'modified_hours'
+  | 'unpaid_leave'
+  | 'jury_duty'
+  | 'bereavement';
+
+export interface ScheduleExceptionResponse {
+  id: number;
+  user_id: number;
+  user_name?: string;
+  exception_date: string;
+  exception_type: ExceptionType;
+  start_time: string | null;
+  end_time: string | null;
+  is_approved: boolean;
+  approved_by: number | null;
+  approved_by_name?: string;
+  reason: string | null;
+  notes: string | null;
+  created_at: string | null;
+}
+
+export interface ScheduleExceptionCreate {
+  exception_date: string;
+  exception_type: ExceptionType;
+  start_time?: string | null;
+  end_time?: string | null;
+  reason?: string | null;
+  notes?: string | null;
+}
+
+export interface ScheduleExceptionUpdate {
+  exception_date?: string;
+  exception_type?: ExceptionType;
+  start_time?: string | null;
+  end_time?: string | null;
+  reason?: string | null;
+  notes?: string | null;
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// SCHEDULING — DISPATCH
+// ══════════════════════════════════════════════════════════════════
+
+export type DispatchRoleOnJob = 'lead' | 'worker' | 'apprentice' | 'helper';
+export type DispatchStatus =
+  | 'scheduled'
+  | 'confirmed'
+  | 'on_site'
+  | 'completed'
+  | 'no_show'
+  | 'cancelled';
+
+export interface DispatchResponse {
+  id: number;
+  job_id: number;
+  job_name?: string;
+  user_id: number;
+  user_name?: string;
+  dispatch_date: string;
+  shift_start: string | null;
+  shift_end: string | null;
+  role_on_job: DispatchRoleOnJob;
+  status: DispatchStatus;
+  dispatched_by: number | null;
+  dispatched_by_name?: string;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface DispatchCreate {
+  job_id: number;
+  user_id: number;
+  dispatch_date: string;
+  shift_start?: string | null;
+  shift_end?: string | null;
+  role_on_job?: DispatchRoleOnJob;
+  notes?: string | null;
+}
+
+export interface DispatchUpdate {
+  shift_start?: string | null;
+  shift_end?: string | null;
+  role_on_job?: DispatchRoleOnJob;
+  notes?: string | null;
+}
+
+export interface BulkDispatchCreate {
+  job_id: number;
+  user_ids: number[];
+  dispatch_date: string;
+  shift_start?: string | null;
+  shift_end?: string | null;
+  role_on_job?: DispatchRoleOnJob;
+  notes?: string | null;
+}
+
+export interface BulkDispatchResult {
+  created: Array<{ id: number; user_id: number; conflicts: ScheduleConflict[] }>;
+  failed: Array<{ user_id: number; error: string }>;
+}
+
+export interface ScheduleConflict {
+  conflict_type: string;
+  description: string;
+  date: string;
+}
+
+export interface DailyDispatchView {
+  date: string;
+  dispatches: DispatchResponse[];
+  available_employees: Array<{
+    id: number;
+    display_name: string;
+    hats: string[];
+  }>;
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// SCHEDULING — SUBCONTRACTOR SCHEDULES
+// ══════════════════════════════════════════════════════════════════
+
+export type SubScheduleStatus =
+  | 'scheduled'
+  | 'confirmed'
+  | 'on_site'
+  | 'completed'
+  | 'cancelled'
+  | 'no_show';
+
+export interface SubScheduleResponse {
+  id: number;
+  job_id: number;
+  job_name?: string;
+  gc_id: number;
+  gc_name?: string;
+  scheduled_date: string;
+  arrival_time: string | null;
+  departure_time: string | null;
+  work_description: string | null;
+  status: SubScheduleStatus;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface SubScheduleCreate {
+  job_id: number;
+  gc_id: number;
+  scheduled_date: string;
+  arrival_time?: string | null;
+  departure_time?: string | null;
+  work_description?: string | null;
+  notes?: string | null;
+}
+
+export interface SubScheduleUpdate {
+  scheduled_date?: string;
+  arrival_time?: string | null;
+  departure_time?: string | null;
+  work_description?: string | null;
+  status?: SubScheduleStatus;
+  notes?: string | null;
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// SCHEDULING — CALENDAR (UNIFIED VIEW)
+// ══════════════════════════════════════════════════════════════════
+
+export type CalendarEntryType = 'dispatch' | 'time_off' | 'sub_schedule';
+
+export interface CalendarEntry {
+  date: string;
+  entry_type: CalendarEntryType;
+  user_id: number | null;
+  user_name: string | null;
+  job_id: number | null;
+  job_name: string | null;
+  gc_id: number | null;
+  gc_name: string | null;
+  status: string;
+  label: string;
+}
+
+export interface CalendarData {
+  date_from: string;
+  date_to: string;
+  entries: CalendarEntry[];
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// JOB LEAD ELEVATIONS
+// ══════════════════════════════════════════════════════════════════
+
+export interface JobLeadElevationResponse {
+  id: number;
+  user_id: number;
+  user_name?: string;
+  job_id: number;
+  job_name?: string;
+  permission_key: string;
+  granted_by: number;
+  granted_by_name?: string;
+  created_at: string | null;
+}
+
+export interface JobLeadElevationCreate {
+  job_id: number;
+  permission_key: string;
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// CERT ALERTS
+// ══════════════════════════════════════════════════════════════════
+
+export interface CertAlertItem {
+  user_id: number;
+  user_name: string;
+  cert_name: string;
+  expiry_date: string;
+  days_until_expiry: number;
+}

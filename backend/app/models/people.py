@@ -278,3 +278,38 @@ class PermissionMatrixRow(BaseModel):
     permission_key: str
     domain: str  # grouping: 'warehouse', 'orders', 'people', etc.
     hat_values: dict[int, bool] = Field(default_factory=dict)  # hat_id → has_permission
+
+
+# ── Job Lead Elevations ───────────────────────────────────────────
+
+class JobLeadElevationCreate(BaseModel):
+    """Grant a temporary permission elevation to a user for a specific job."""
+    job_id: int
+    permission_key: str = Field(..., min_length=1)
+
+
+class JobLeadElevationResponse(BaseModel):
+    """Job lead elevation returned from the API."""
+    id: int
+    user_id: int
+    user_name: str | None = None
+    job_id: int
+    job_name: str | None = None
+    permission_key: str
+    granted_by: int | None = None
+    granted_by_name: str | None = None
+    created_at: datetime | None = None
+
+
+# ── Cert Expiry Alerts ────────────────────────────────────────────
+
+class CertAlertItem(BaseModel):
+    """A certification nearing or past expiry, for dashboard alerts."""
+    cert_id: int
+    user_id: int
+    user_name: str
+    cert_name: str
+    cert_type: str
+    expiry_date: str
+    days_until_expiry: int  # negative = already expired
+    severity: str  # 'red' (<30 days), 'amber' (<60 days)
