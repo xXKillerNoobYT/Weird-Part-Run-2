@@ -24,21 +24,34 @@ class JPORepo(BaseRepo):
     TABLE = "job_parts_orders"
     HAS_UPDATED_AT = True
 
-    async def get_next_order_number(self, job_id: int) -> str:
-        """Generate the next JPO number for a job: '{JOB_NAME}-JPO-001'."""
-        cursor = await self.db.execute(
-            "SELECT job_name FROM jobs WHERE id = ?", (job_id,)
-        )
-        job = await cursor.fetchone()
-        prefix = (job["job_name"] if job else "JOB").upper().replace(" ", "-")[:20]
+    async def get_next_order_number(self, job_id: int | None = None) -> str:
+        """Generate the next JPO order number.
 
-        cursor = await self.db.execute(
-            "SELECT COUNT(*) as cnt FROM job_parts_orders WHERE job_id = ?",
-            (job_id,),
-        )
-        row = await cursor.fetchone()
-        seq = (row["cnt"] if row else 0) + 1
-        return f"{prefix}-JPO-{seq:03d}"
+        Job orders:       '{JOB_NAME}-JPO-001' (scoped to the job)
+        Warehouse restocks: 'WH-JPO-001' (global sequence)
+        """
+        if job_id:
+            cursor = await self.db.execute(
+                "SELECT job_name FROM jobs WHERE id = ?", (job_id,)
+            )
+            job = await cursor.fetchone()
+            prefix = (job["job_name"] if job else "JOB").upper().replace(" ", "-")[:20]
+
+            cursor = await self.db.execute(
+                "SELECT COUNT(*) as cnt FROM job_parts_orders WHERE job_id = ?",
+                (job_id,),
+            )
+            row = await cursor.fetchone()
+            seq = (row["cnt"] if row else 0) + 1
+            return f"{prefix}-JPO-{seq:03d}"
+        else:
+            # Warehouse restock — global sequence
+            cursor = await self.db.execute(
+                "SELECT COUNT(*) as cnt FROM job_parts_orders WHERE job_id IS NULL"
+            )
+            row = await cursor.fetchone()
+            seq = (row["cnt"] if row else 0) + 1
+            return f"WH-JPO-{seq:03d}"
 
     async def list_with_details(
         self,
@@ -46,17 +59,22 @@ class JPORepo(BaseRepo):
         status: str | None = None,
         job_id: int | None = None,
         requested_by: int | None = None,
+        order_type: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict]:
-        """List JPOs with joined job and user info."""
+        """List JPOs with joined job and user info.
+
+        Uses LEFT JOIN on jobs so warehouse restocks (job_id IS NULL)
+        are still included in results.
+        """
         sql = """
             SELECT jpo.*,
                    j.job_name, j.job_number,
                    u.display_name AS requester_name,
                    (SELECT COUNT(*) FROM jpo_line_items WHERE jpo_id = jpo.id) AS line_count
             FROM job_parts_orders jpo
-            JOIN jobs j ON j.id = jpo.job_id
+            LEFT JOIN jobs j ON j.id = jpo.job_id
             JOIN users u ON u.id = jpo.requested_by
         """
         conditions: list[str] = []
@@ -71,6 +89,9 @@ class JPORepo(BaseRepo):
         if requested_by:
             conditions.append("jpo.requested_by = ?")
             params.append(requested_by)
+        if order_type:
+            conditions.append("jpo.order_type = ?")
+            params.append(order_type)
 
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
@@ -87,6 +108,7 @@ class JPORepo(BaseRepo):
         status: str | None = None,
         job_id: int | None = None,
         requested_by: int | None = None,
+        order_type: str | None = None,
     ) -> int:
         """Count JPOs matching filters."""
         sql = "SELECT COUNT(*) as cnt FROM job_parts_orders"
@@ -102,6 +124,9 @@ class JPORepo(BaseRepo):
         if requested_by:
             conditions.append("requested_by = ?")
             params.append(requested_by)
+        if order_type:
+            conditions.append("order_type = ?")
+            params.append(order_type)
 
         if conditions:
             sql += " WHERE " + " AND ".join(conditions)
@@ -111,16 +136,21 @@ class JPORepo(BaseRepo):
         return row["cnt"] if row else 0
 
     async def get_with_details(self, jpo_id: int) -> dict | None:
-        """Get a single JPO with all joined info."""
+        """Get a single JPO with all joined info.
+
+        Uses LEFT JOIN on jobs so warehouse restocks (job_id IS NULL)
+        are still returned correctly.
+        """
         cursor = await self.db.execute(
             """
             SELECT jpo.*,
                    j.job_name, j.job_number,
                    u.display_name AS requester_name,
                    a.display_name AS approver_name,
-                   (SELECT COUNT(*) FROM jpo_line_items WHERE jpo_id = jpo.id) AS line_count
+                   (SELECT COUNT(*) FROM jpo_line_items WHERE jpo_id = jpo.id) AS line_count,
+                   (SELECT COUNT(*) FROM special_items WHERE jpo_id = jpo.id) AS special_item_count
             FROM job_parts_orders jpo
-            JOIN jobs j ON j.id = jpo.job_id
+            LEFT JOIN jobs j ON j.id = jpo.job_id
             JOIN users u ON u.id = jpo.requested_by
             LEFT JOIN users a ON a.id = jpo.approved_by
             WHERE jpo.id = ?

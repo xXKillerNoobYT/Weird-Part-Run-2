@@ -152,3 +152,51 @@ class NotificationService:
         if count > 0:
             logger.info("Cleaned up %d old notifications (>%d days)", count, days)
         return count
+
+    # ── Sound Settings (Phase 7E) ───────────────────────────────
+
+    async def get_sound_settings(self, user_id: int) -> list[dict]:
+        """Get per-type sound settings for a user.
+
+        Returns all known types with sound_enabled / sound_file.
+        Missing entries default to sound off.
+        """
+        rows = await self.db.execute_fetchall(
+            "SELECT notification_type, sound_enabled, sound_file "
+            "FROM notification_sounds WHERE user_id = ?",
+            (user_id,),
+        )
+        existing_map = {
+            r["notification_type"]: {
+                "sound_enabled": bool(r["sound_enabled"]),
+                "sound_file": r["sound_file"],
+            }
+            for r in rows
+        }
+
+        return [
+            {
+                "notification_type": nt,
+                "sound_enabled": existing_map.get(nt, {}).get("sound_enabled", False),
+                "sound_file": existing_map.get(nt, {}).get("sound_file", "chime.mp3"),
+            }
+            for nt in NOTIFICATION_TYPES
+        ]
+
+    async def update_sound_settings(
+        self, user_id: int, settings: list[dict]
+    ) -> int:
+        """Batch upsert sound settings for a user."""
+        for s in settings:
+            await self.db.execute(
+                """INSERT INTO notification_sounds
+                        (user_id, notification_type, sound_enabled, sound_file)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(user_id, notification_type)
+                   DO UPDATE SET sound_enabled = excluded.sound_enabled,
+                                 sound_file   = excluded.sound_file""",
+                (user_id, s["notification_type"], int(s.get("sound_enabled", False)),
+                 s.get("sound_file", "chime.mp3")),
+            )
+        await self.db.commit()
+        return len(settings)

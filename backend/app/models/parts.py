@@ -553,6 +553,10 @@ class PartCreate(BaseModel):
     image_url: str | None = None
     pdf_url: str | None = None
 
+    # QR image requirements (Phase 7E)
+    device_image_url: str | None = None
+    box_image_url: str | None = None
+
 
 class PartUpdate(BaseModel):
     """Request body for updating a part. All fields optional."""
@@ -592,6 +596,10 @@ class PartUpdate(BaseModel):
     notes: str | None = None
     image_url: str | None = None
     pdf_url: str | None = None
+
+    # QR image requirements (Phase 7E)
+    device_image_url: str | None = None
+    box_image_url: str | None = None
 
 
 class PartPricingUpdate(BaseModel):
@@ -662,6 +670,11 @@ class PartResponse(BaseModel):
     image_url: str | None = None
     pdf_url: str | None = None
 
+    # QR image fields (Phase 7E)
+    device_image_url: str | None = None
+    box_image_url: str | None = None
+    qr_images_complete: bool = False
+
     # Supplier links (included in detail view)
     suppliers: list[PartSupplierLinkResponse] = Field(default_factory=list)
 
@@ -672,6 +685,10 @@ class PartResponse(BaseModel):
 class PartListItem(BaseModel):
     """Abbreviated part info for catalog table rows (faster than full detail)."""
     id: int
+
+    # Hierarchy IDs (needed for companion suggestion lookups)
+    category_id: int | None = None
+    style_id: int | None = None
 
     # Hierarchy names
     category_name: str | None = None
@@ -709,6 +726,7 @@ class PartListItem(BaseModel):
     # Status flags
     is_deprecated: bool = False
     is_qr_tagged: bool = False
+    qr_images_complete: bool = False
 
 
 class PendingPartNumberItem(BaseModel):

@@ -80,4 +80,20 @@
            dark:bg-gray-800 dark:border-gray-600 dark:focus:border-primary-400;
     transition: border-color 0.15s ease;
   }
+
+  /* BulkActionBar slide-up animation (Phase 7E) */
+  .animate-slide-up {
+    animation: slide-up 0.2s ease-out;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }

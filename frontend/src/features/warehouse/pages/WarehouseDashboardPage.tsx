@@ -23,11 +23,13 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { Plus, Wrench } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Plus, Wrench, AlertTriangle, Truck, CheckCircle, ChevronRight } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { Card, CardHeader } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { getDashboard } from '../../../api/warehouse';
+import { getToolsDashboard } from '../../../api/tools';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import { useMovementWizardStore } from '../stores/movement-wizard-store';
@@ -81,16 +83,8 @@ export function WarehouseDashboardPage() {
           <div className="space-y-6">
             <PendingTasksList tasks={dashboard.pending_tasks} />
 
-            {/* Tools stub — Phase 6 */}
-            <Card>
-              <CardHeader title="Tools Registry" />
-              <div className="flex flex-col items-center py-8 gap-3">
-                <Wrench className="h-8 w-8 text-gray-400 dark:text-gray-500" />
-                <p className="text-sm text-gray-500 dark:text-gray-400 text-center max-w-xs">
-                  Tool tracking and registration coming in a future update.
-                </p>
-              </div>
-            </Card>
+            {/* Tools summary card */}
+            <ToolsSummaryCard />
           </div>
         </div>
       </div>
@@ -109,5 +103,57 @@ export function WarehouseDashboardPage() {
       {/* Movement Wizard (renders when open) */}
       <MovementWizard />
     </>
+  );
+}
+
+
+// ── Tools Summary Card ───────────────────────────────────────────
+
+function ToolsSummaryCard() {
+  const { data: stats } = useQuery({
+    queryKey: ['tools-dashboard'],
+    queryFn: getToolsDashboard,
+    staleTime: 30_000,
+  });
+
+  const items = stats
+    ? [
+        { label: 'At Warehouse', value: stats.available ?? 0, icon: <CheckCircle size={14} />, color: 'text-green-500' },
+        { label: 'Checked Out', value: stats.checked_out ?? 0, icon: <Truck size={14} />, color: 'text-blue-500' },
+        { label: 'Maintenance', value: stats.in_maintenance ?? 0, icon: <Wrench size={14} />, color: 'text-amber-500' },
+        { label: 'Lost/Damaged', value: stats.lost_or_damaged ?? 0, icon: <AlertTriangle size={14} />, color: (stats.lost_or_damaged ?? 0) > 0 ? 'text-red-500' : 'text-gray-400 dark:text-gray-500' },
+      ]
+    : [];
+
+  return (
+    <Card>
+      <CardHeader
+        title="Tools Registry"
+        action={
+          <Link
+            to="/warehouse/tools"
+            className="text-xs text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1"
+          >
+            View All <ChevronRight size={12} />
+          </Link>
+        }
+      />
+      {stats ? (
+        <div className="grid grid-cols-2 gap-3 p-4 pt-0">
+          {items.map((item) => (
+            <div key={item.label} className="flex items-center gap-2">
+              <span className={`flex-shrink-0 ${item.color}`}>{item.icon}</span>
+              <span className="text-sm text-gray-900 dark:text-gray-100 font-medium">{item.value}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">{item.label}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center py-6 gap-2">
+          <Wrench className="h-6 w-6 text-gray-300 dark:text-gray-600" />
+          <p className="text-xs text-gray-400 dark:text-gray-500">Loading tools data...</p>
+        </div>
+      )}
+    </Card>
   );
 }

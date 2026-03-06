@@ -22,6 +22,9 @@ from app.models.notifications import (
     NotificationMarkRead,
     NotificationPreferenceResponse,
     NotificationPreferenceUpdate,
+    NotificationSoundSetting,
+    NotificationSoundSettingsResponse,
+    NotificationSoundSettingsUpdate,
 )
 from app.services.notification_service import NotificationService
 
@@ -133,4 +136,50 @@ async def update_notification_preferences(
     return ApiResponse(
         data={"updated_count": len(prefs)},
         message="Notification preferences updated.",
+    )
+
+
+# ── Sound Settings (Phase 7E) ──────────────────────────────────
+
+
+@router.get("/sound-settings", response_model=ApiResponse[NotificationSoundSettingsResponse])
+async def get_sound_settings(
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get per-type sound settings for the current user.
+
+    Returns which notification types trigger an audio alert.
+    Missing entries default to sound_enabled=False.
+    """
+    svc = NotificationService(db)
+    settings = await svc.get_sound_settings(user["id"])
+
+    return ApiResponse(
+        data=NotificationSoundSettingsResponse(
+            user_id=user["id"],
+            settings=settings,
+        ),
+    )
+
+
+@router.put("/sound-settings", response_model=ApiResponse)
+async def update_sound_settings(
+    body: NotificationSoundSettingsUpdate,
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update per-type sound settings (batch upsert).
+
+    Only the types included in the list are upserted.
+    """
+    svc = NotificationService(db)
+    count = await svc.update_sound_settings(
+        user["id"],
+        [s.model_dump() for s in body.settings],
+    )
+
+    return ApiResponse(
+        data={"updated_count": count},
+        message="Sound settings updated.",
     )

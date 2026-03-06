@@ -39,6 +39,7 @@ import { CompanionsPage } from './features/parts/pages/CompanionsPage';
 // Pages — Office
 import { WarehouseExecPage } from './features/office/pages/WarehouseExecPage';
 import { ManageJobsPage } from './features/office/pages/ManageJobsPage';
+import { SpendingDashboardPage } from './features/office/pages/SpendingDashboardPage';
 
 // Pages — Warehouse
 import { WarehouseDashboardPage } from './features/warehouse/pages/WarehouseDashboardPage';
@@ -47,6 +48,8 @@ import { StagingPage } from './features/warehouse/pages/StagingPage';
 import { AuditPage } from './features/warehouse/pages/AuditPage';
 import { MovementsLogPage } from './features/warehouse/pages/MovementsLogPage';
 import { WarehouseToolsPage } from './features/warehouse/pages/ToolsPage';
+import { ReceivingPage } from './features/warehouse/pages/ReceivingPage';
+import { ReturnSortingPage } from './features/warehouse/pages/ReturnSortingPage';
 
 // Pages — Trucks
 import { MyTruckPage } from './features/trucks/pages/MyTruckPage';
@@ -72,7 +75,7 @@ import { WarehouseLocationsPage } from './features/office/pages/WarehouseLocatio
 
 // Pages — Orders
 import { PartsRequestsPage } from './features/orders/pages/PartsRequestsPage';
-import { NewPartsRequestPage } from './features/orders/pages/NewPartsRequestPage';
+import { UnifiedOrderPage } from './features/orders/pages/UnifiedOrderPage';
 import { PurchaseOrdersPage } from './features/orders/pages/PurchaseOrdersPage';
 import { NewPurchaseOrderPage } from './features/orders/pages/NewPurchaseOrderPage';
 import { ReceiveShipmentPage } from './features/orders/pages/ReceiveShipmentPage';
@@ -83,9 +86,13 @@ import { PODetailPage } from './features/orders/pages/PODetailPage';
 import { NewReturnPage } from './features/orders/pages/NewReturnPage';
 import { ReturnDetailPage } from './features/orders/pages/ReturnDetailPage';
 import { GeneratePOsPage } from './features/orders/pages/GeneratePOsPage';
+import { ApprovalsTab } from './features/office/pages/ApprovalsTab';
+import { POManagementTab } from './features/office/pages/POManagementTab';
+import { ReviewAndSendPage } from './features/office/pages/ReviewAndSendPage';
 
 // Pages — People
 import { EmployeeListPage } from './features/people/pages/EmployeeListPage';
+import { EmployeeDetailPage } from './features/people/pages/EmployeeDetailPage';
 import { HatsPage } from './features/people/pages/HatsPage';
 import { PermissionsPage } from './features/people/pages/PermissionsPage';
 
@@ -94,6 +101,9 @@ import { PreBillingPage } from './features/reports/pages/PreBillingPage';
 import { TimesheetsPage } from './features/reports/pages/TimesheetsPage';
 import { LaborOverviewPage } from './features/reports/pages/LaborOverviewPage';
 import { ExportsPage } from './features/reports/pages/ExportsPage';
+
+// Pages — Tools (cross-module)
+import { ToolScanRedirect } from './features/tools/components/ToolScanRedirect';
 
 // Pages — Settings
 import { AppConfigPage } from './features/settings/pages/AppConfigPage';
@@ -148,11 +158,14 @@ export default function App() {
               <Route path="/office/notebook-templates" element={<JobNotebookTemplatePage />} />
               <Route path="/office/clock-out-questions" element={<ClockOutQuestionsPage />} />
               <Route path="/office/warehouse-locations" element={<WarehouseLocationsPage />} />
+              <Route path="/office/spending" element={<SpendingDashboardPage />} />
 
               {/* Warehouse */}
               <Route path="/warehouse" element={<Navigate to="/warehouse/dashboard" replace />} />
               <Route path="/warehouse/dashboard" element={<WarehouseDashboardPage />} />
               <Route path="/warehouse/inventory" element={<InventoryGridPage />} />
+              <Route path="/warehouse/receiving" element={<ReceivingPage />} />
+              <Route path="/warehouse/return-sorting" element={<ReturnSortingPage />} />
               <Route path="/warehouse/staging" element={<StagingPage />} />
               <Route path="/warehouse/audit" element={<AuditPage />} />
               <Route path="/warehouse/movements" element={<MovementsLogPage />} />
@@ -181,28 +194,38 @@ export default function App() {
               <Route path="/notebooks/general" element={<NotebooksPage />} />
               <Route path="/notebooks/:notebookId" element={<NotebookDetailPage />} />
 
-              {/* Orders */}
-              <Route path="/orders" element={<Navigate to="/orders/parts-requests" replace />} />
-              <Route path="/orders/parts-requests" element={<PartsRequestsPage />} />
-              <Route path="/orders/parts-requests/new" element={<NewPartsRequestPage />} />
-              <Route path="/orders/parts-requests/:id" element={<JPODetailPage />} />
-              <Route path="/orders/purchase-orders" element={<PurchaseOrdersPage />} />
-              <Route path="/orders/purchase-orders/new" element={<NewPurchaseOrderPage />} />
-              <Route path="/orders/purchase-orders/receive" element={<ReceiveShipmentPage />} />
-              {/* Legacy redirects — old 3 separate tabs → unified Purchase Orders */}
-              <Route path="/orders/drafts" element={<Navigate to="/orders/purchase-orders" replace />} />
-              <Route path="/orders/active" element={<Navigate to="/orders/purchase-orders" replace />} />
-              <Route path="/orders/incoming" element={<Navigate to="/orders/purchase-orders" replace />} />
+              {/* Orders — Phase 7A: Field-worker tabs + Office tabs */}
+              <Route path="/orders" element={<Navigate to="/orders/my-orders" replace />} />
+              {/* Field worker tabs */}
+              <Route path="/orders/my-orders" element={<PartsRequestsPage />} />
+              <Route path="/orders/new-order" element={<UnifiedOrderPage />} />
               <Route path="/orders/returns" element={<ReturnsPage />} />
               <Route path="/orders/returns/new" element={<NewReturnPage />} />
               <Route path="/orders/returns/:id" element={<ReturnDetailPage />} />
+              {/* Office tabs */}
+              <Route path="/orders/approvals" element={<ApprovalsTab />} />
+              <Route path="/orders/all-requests" element={<PartsRequestsPage />} />
+              <Route path="/orders/purchase-orders" element={<POManagementTab />} />
+              <Route path="/orders/purchase-orders-legacy" element={<PurchaseOrdersPage />} />
+              <Route path="/orders/purchase-orders/new" element={<NewPurchaseOrderPage />} />
+              <Route path="/orders/purchase-orders/receive" element={<ReceiveShipmentPage />} />
+              <Route path="/orders/review-and-send" element={<ReviewAndSendPage />} />
               <Route path="/orders/procurement" element={<ProcurementPage />} />
+              {/* Detail pages (shared between field + office) */}
+              <Route path="/orders/parts-requests/:id" element={<JPODetailPage />} />
               <Route path="/orders/pos/:id" element={<PODetailPage />} />
               <Route path="/orders/parts-requests/:id/generate-pos" element={<GeneratePOsPage />} />
+              {/* Legacy redirects */}
+              <Route path="/orders/parts-requests" element={<Navigate to="/orders/my-orders" replace />} />
+              <Route path="/orders/parts-requests/new" element={<Navigate to="/orders/new-order" replace />} />
+              <Route path="/orders/drafts" element={<Navigate to="/orders/purchase-orders" replace />} />
+              <Route path="/orders/active" element={<Navigate to="/orders/purchase-orders" replace />} />
+              <Route path="/orders/incoming" element={<Navigate to="/orders/purchase-orders" replace />} />
 
               {/* People */}
               <Route path="/people" element={<Navigate to="/people/employees" replace />} />
               <Route path="/people/employees" element={<EmployeeListPage />} />
+              <Route path="/people/employees/:id" element={<EmployeeDetailPage />} />
               <Route path="/people/hats" element={<HatsPage />} />
               <Route path="/people/permissions" element={<PermissionsPage />} />
 
@@ -225,6 +248,9 @@ export default function App() {
               <Route path="/settings/sync" element={<SyncPage />} />
               <Route path="/settings/ai-config" element={<AiConfigPage />} />
               <Route path="/settings/devices" element={<DeviceManagementPage />} />
+
+              {/* Tools — QR scan redirect (cross-module) */}
+              <Route path="/tools/scan/:toolNumber" element={<ToolScanRedirect />} />
 
               {/* Catch-all → Dashboard */}
               <Route path="*" element={<Navigate to="/dashboard" replace />} />

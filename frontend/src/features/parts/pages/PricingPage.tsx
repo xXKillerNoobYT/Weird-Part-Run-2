@@ -9,11 +9,11 @@
  *  - Bulk visibility: see all pricing at a glance
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, Fragment } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   DollarSign, Search, ChevronUp, ChevronDown, Check, X,
-  AlertTriangle, ChevronLeft, ChevronRight, Lock,
+  AlertTriangle, ChevronLeft, ChevronRight, Lock, BarChart3,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
@@ -23,6 +23,7 @@ import { EmptyState } from '../../../components/ui/EmptyState';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import { listParts, updatePartPricing } from '../../../api/parts';
+import { PartCostSection } from '../components/PartCostSection';
 import type { PartListItem, PartSearchParams } from '../../../lib/types';
 
 
@@ -61,6 +62,13 @@ function PricingTable({ canEdit }: { canEdit: boolean }) {
     sort_by: 'name',
     sort_dir: 'asc',
   });
+
+  // ── Expand state (cost detail panel) ────────────
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  const toggleExpand = (partId: number) => {
+    setExpandedId(prev => prev === partId ? null : partId);
+  };
 
   // ── Inline edit state ────────────────────────────
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -225,123 +233,149 @@ function PricingTable({ canEdit }: { canEdit: boolean }) {
             <tbody>
               {items.map((part) => {
                 const isEditing = editingId === part.id;
+                const isExpanded = expandedId === part.id;
                 const cost = part.company_cost_price ?? 0;
                 const sell = part.company_sell_price ?? 0;
                 const margin = sell > 0 ? ((sell - cost) / sell * 100) : 0;
+                const colCount = canEdit ? 10 : 9;
 
                 return (
-                  <tr
-                    key={part.id}
-                    className={`border-b border-gray-100 dark:border-gray-700/50 transition-colors ${
-                      isEditing
-                        ? 'bg-primary-50/50 dark:bg-primary-900/10'
-                        : 'hover:bg-gray-50 dark:hover:bg-gray-800/30'
-                    }`}
-                  >
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                      {part.category_name ?? '—'}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-primary-600 dark:text-primary-400">
-                      {part.code ?? '—'}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
-                      {part.name}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                      {part.brand_name ?? '—'}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
-                      {part.unit_of_measure}
-                    </td>
+                  <Fragment key={part.id}>
+                    <tr
+                      className={`border-b border-gray-100 dark:border-gray-700/50 transition-colors ${
+                        isEditing
+                          ? 'bg-primary-50/50 dark:bg-primary-900/10'
+                          : isExpanded
+                            ? 'bg-gray-50/80 dark:bg-gray-800/40'
+                            : 'hover:bg-gray-50 dark:hover:bg-gray-800/30'
+                      } cursor-pointer`}
+                      onClick={() => {
+                        if (!isEditing) toggleExpand(part.id);
+                      }}
+                    >
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                        {part.category_name ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs text-primary-600 dark:text-primary-400">
+                        {part.code ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
+                        <div className="flex items-center gap-1.5">
+                          {part.name}
+                          {isExpanded && (
+                            <BarChart3 className="h-3.5 w-3.5 text-primary-500 shrink-0" />
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                        {part.brand_name ?? '—'}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
+                        {part.unit_of_measure}
+                      </td>
 
-                    {/* Cost */}
-                    <td className="px-4 py-3 text-right">
-                      {isEditing ? (
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          className="w-24 text-right rounded border border-primary-300 dark:border-primary-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
-                          value={editCost}
-                          onChange={(e) => setEditCost(e.target.value)}
-                          autoFocus
-                        />
-                      ) : (
-                        <span className="text-gray-700 dark:text-gray-300">{fmt(part.company_cost_price)}</span>
-                      )}
-                    </td>
-
-                    {/* Markup */}
-                    <td className="px-4 py-3 text-right">
-                      {isEditing ? (
-                        <div className="inline-flex items-center gap-0.5">
+                      {/* Cost */}
+                      <td className="px-4 py-3 text-right" onClick={(e) => isEditing && e.stopPropagation()}>
+                        {isEditing ? (
                           <input
                             type="number"
                             min="0"
-                            step="0.1"
-                            className="w-20 text-right rounded border border-primary-300 dark:border-primary-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
-                            value={editMarkup}
-                            onChange={(e) => setEditMarkup(e.target.value)}
+                            step="0.01"
+                            className="w-24 text-right rounded border border-primary-300 dark:border-primary-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
+                            value={editCost}
+                            onChange={(e) => setEditCost(e.target.value)}
+                            autoFocus
                           />
-                          <span className="text-gray-400 text-xs">%</span>
-                        </div>
-                      ) : (
-                        <span className="text-gray-600 dark:text-gray-400">{fmtPct(part.company_markup_percent)}</span>
-                      )}
-                    </td>
-
-                    {/* Sell */}
-                    <td className="px-4 py-3 text-right font-medium">
-                      {isEditing ? (
-                        <span className="text-primary-600 dark:text-primary-400">
-                          ${editSellPreview.toFixed(2)}
-                        </span>
-                      ) : (
-                        <span className="text-gray-900 dark:text-gray-100">{fmt(part.company_sell_price)}</span>
-                      )}
-                    </td>
-
-                    {/* Margin */}
-                    <td className="px-4 py-3 text-right">
-                      <Badge
-                        variant={margin >= 30 ? 'success' : margin >= 15 ? 'warning' : 'danger'}
-                      >
-                        {margin.toFixed(1)}%
-                      </Badge>
-                    </td>
-
-                    {/* Actions */}
-                    {canEdit && (
-                      <td className="px-4 py-3 text-center">
-                        {isEditing ? (
-                          <div className="flex justify-center gap-1">
-                            <button
-                              className="p-2 rounded text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
-                              onClick={saveEditing}
-                              title="Save"
-                            >
-                              <Check className="h-4 w-4" />
-                            </button>
-                            <button
-                              className="p-2 rounded text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                              onClick={cancelEditing}
-                              title="Cancel"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
                         ) : (
-                          <button
-                            className="p-2 rounded text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-                            onClick={() => startEditing(part)}
-                            title="Edit pricing"
-                          >
-                            <DollarSign className="h-4 w-4" />
-                          </button>
+                          <span className="text-gray-700 dark:text-gray-300">{fmt(part.company_cost_price)}</span>
                         )}
                       </td>
+
+                      {/* Markup */}
+                      <td className="px-4 py-3 text-right" onClick={(e) => isEditing && e.stopPropagation()}>
+                        {isEditing ? (
+                          <div className="inline-flex items-center gap-0.5">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.1"
+                              className="w-20 text-right rounded border border-primary-300 dark:border-primary-600 bg-white dark:bg-gray-800 px-2 py-1 text-sm"
+                              value={editMarkup}
+                              onChange={(e) => setEditMarkup(e.target.value)}
+                            />
+                            <span className="text-gray-400 text-xs">%</span>
+                          </div>
+                        ) : (
+                          <span className="text-gray-600 dark:text-gray-400">{fmtPct(part.company_markup_percent)}</span>
+                        )}
+                      </td>
+
+                      {/* Sell */}
+                      <td className="px-4 py-3 text-right font-medium">
+                        {isEditing ? (
+                          <span className="text-primary-600 dark:text-primary-400">
+                            ${editSellPreview.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-gray-900 dark:text-gray-100">{fmt(part.company_sell_price)}</span>
+                        )}
+                      </td>
+
+                      {/* Margin */}
+                      <td className="px-4 py-3 text-right">
+                        <Badge
+                          variant={margin >= 30 ? 'success' : margin >= 15 ? 'warning' : 'danger'}
+                        >
+                          {margin.toFixed(1)}%
+                        </Badge>
+                      </td>
+
+                      {/* Actions */}
+                      {canEdit && (
+                        <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          {isEditing ? (
+                            <div className="flex justify-center gap-1">
+                              <button
+                                className="p-2 rounded text-green-600 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors"
+                                onClick={saveEditing}
+                                title="Save"
+                              >
+                                <Check className="h-4 w-4" />
+                              </button>
+                              <button
+                                className="p-2 rounded text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                                onClick={cancelEditing}
+                                title="Cancel"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              className="p-2 rounded text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                              onClick={() => startEditing(part)}
+                              title="Edit pricing"
+                            >
+                              <DollarSign className="h-4 w-4" />
+                            </button>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+
+                    {/* ── Expanded cost detail panel ─── */}
+                    {isExpanded && (
+                      <tr className="border-b border-gray-200 dark:border-gray-700">
+                        <td colSpan={colCount} className="px-4 py-3">
+                          <PartCostSection
+                            partId={part.id}
+                            partName={part.name}
+                            canEdit={canEdit}
+                          />
+                        </td>
+                      </tr>
                     )}
-                  </tr>
+                  </Fragment>
                 );
               })}
             </tbody>

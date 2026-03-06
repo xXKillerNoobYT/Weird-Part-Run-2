@@ -144,6 +144,8 @@ ROUTER_MODULES = [
     "app.routers.notifications",
     "app.routers.people",
     "app.routers.reports",
+    "app.routers.costs",
+    "app.routers.tools",
 ]
 
 for _module_path in ROUTER_MODULES:

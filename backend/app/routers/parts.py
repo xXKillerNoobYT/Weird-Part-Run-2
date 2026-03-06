@@ -153,6 +153,7 @@ def _part_to_list_item(row: dict, user: dict) -> dict:
         # Status
         "is_deprecated": bool(row.get("is_deprecated", 0)),
         "is_qr_tagged": bool(row.get("is_qr_tagged", 0)),
+        "qr_images_complete": bool(row.get("qr_images_complete", 0)),
     }
 
 
@@ -210,6 +211,10 @@ def _part_to_response(row: dict, user: dict, suppliers: list[dict] | None = None
         "notes": row.get("notes"),
         "image_url": row.get("image_url"),
         "pdf_url": row.get("pdf_url"),
+        # QR images (Phase 7E)
+        "device_image_url": row.get("device_image_url"),
+        "box_image_url": row.get("box_image_url"),
+        "qr_images_complete": bool(row.get("qr_images_complete", 0)),
         # Suppliers
         "suppliers": suppliers or [],
         # Timestamps
@@ -1209,6 +1214,10 @@ async def create_part(
     # Remove generated column (SQLite computes it)
     data.pop("company_sell_price", None)
 
+    # Auto-compute qr_images_complete on creation (Phase 7E)
+    if data.get("device_image_url") and data.get("box_image_url"):
+        data["qr_images_complete"] = 1
+
     try:
         part_id = await repo.insert(data)
     except Exception as e:
@@ -1247,6 +1256,12 @@ async def update_part(
 
     # Remove generated column
     data.pop("company_sell_price", None)
+
+    # Auto-compute qr_images_complete when image URLs change (Phase 7E)
+    if "device_image_url" in data or "box_image_url" in data:
+        device_url = data.get("device_image_url", existing.get("device_image_url"))
+        box_url = data.get("box_image_url", existing.get("box_image_url"))
+        data["qr_images_complete"] = 1 if (device_url and box_url) else 0
 
     # If code is being changed, check for duplicates
     if "code" in data and data["code"] != existing["code"]:

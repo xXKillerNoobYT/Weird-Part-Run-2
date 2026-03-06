@@ -24,6 +24,7 @@ from app.models.jobs import (
     JobPartConsumeRequest,
     JobPartResponse,
 )
+from app.services.cost_tracking_service import CostTrackingService
 
 logger = logging.getLogger(__name__)
 
@@ -264,15 +265,37 @@ class JobService:
     async def consume_part(
         self, job_id: int, data: JobPartConsumeRequest, user_id: int
     ) -> JobPartResponse:
-        """Record parts consumed on a job. Snapshots current cost."""
-        # Get current cost/sell price for the part
-        cursor = await self.db.execute(
-            "SELECT company_cost_price, company_sell_price FROM parts WHERE id = ?",
-            (data.part_id,),
-        )
-        part_row = await cursor.fetchone()
-        unit_cost = part_row["company_cost_price"] if part_row else None
-        unit_sell = part_row["company_sell_price"] if part_row else None
+        """Record parts consumed on a job. Uses FIFO cost from cost layers."""
+        # ── Phase 7D: Consume FIFO cost layers to get accurate unit cost ──
+        cost_svc = CostTrackingService(self.db)
+        try:
+            total_fifo_cost = await cost_svc.consume_fifo(data.part_id, data.qty_consumed)
+            unit_cost = total_fifo_cost / data.qty_consumed if data.qty_consumed > 0 else 0.0
+        except Exception as e:
+            logger.warning("FIFO consumption failed for part %d: %s — falling back to static price", data.part_id, e)
+            cursor = await self.db.execute(
+                "SELECT weighted_avg_cost, company_cost_price FROM parts WHERE id = ?",
+                (data.part_id,),
+            )
+            part_row = await cursor.fetchone()
+            unit_cost = (
+                part_row["weighted_avg_cost"]
+                or part_row["company_cost_price"]
+                or 0.0
+            ) if part_row else 0.0
+
+        # Get sell price (margin-based from cost tracking, or static fallback)
+        try:
+            margin_info = await cost_svc.get_margin(data.part_id)
+            margin_pct = margin_info["effective_margin_percent"]
+            unit_sell = unit_cost / (1 - margin_pct / 100) if margin_pct < 100 else unit_cost
+        except Exception:
+            cursor = await self.db.execute(
+                "SELECT company_sell_price FROM parts WHERE id = ?",
+                (data.part_id,),
+            )
+            part_row = await cursor.fetchone()
+            unit_sell = part_row["company_sell_price"] if part_row else None
 
         cursor = await self.db.execute(
             """INSERT INTO job_parts (

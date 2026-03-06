@@ -2,12 +2,13 @@
  * DashboardPage — main landing page after login.
  *
  * Shows:
- *   1. Welcome header
- *   2. Fast Drive card (vehicle + destination quick-start)
- *   3. Live KPI cards (parts, jobs, orders, low stock)
- *   4. Quick Actions (navigable shortcuts)
+ *   1. Welcome header (always visible)
+ *   2. Tab bar: Overview | Daily Report (report tab permission-gated)
+ *   3. Overview: Fast Drive, KPI cards, Quick Actions
+ *   4. Daily Report: live pending actions, deliveries, budget alerts
  */
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -19,11 +20,15 @@ import {
   Search,
   ArrowRightLeft,
   Loader2,
+  Activity,
 } from 'lucide-react';
 
 import { Card, CardHeader } from '../../../components/ui/Card';
 import { FastDriveCard } from '../components/FastDriveCard';
+import { DailyReportTab } from '../components/DailyReportTab';
 import { getDashboard } from '../../../api/dashboard';
+import { useAuthStore } from '../../../stores/auth-store';
+import { PERMISSIONS } from '../../../lib/constants';
 
 
 // ── Icon lookup for quick actions (backend sends icon name strings) ──
@@ -67,8 +72,15 @@ const KPI_CONFIG = [
 ] as const;
 
 
+type DashTab = 'overview' | 'report';
+
+
 export function DashboardPage() {
   const navigate = useNavigate();
+  const { hasPermission } = useAuthStore();
+  const canSeeReport = hasPermission(PERMISSIONS.SHOW_DOLLAR_VALUES);
+
+  const [activeTab, setActiveTab] = useState<DashTab>('overview');
 
   const { data: dashboard, isLoading } = useQuery({
     queryKey: ['dashboard'],
@@ -99,55 +111,104 @@ export function DashboardPage() {
         </div>
       </Card>
 
-      {/* ── Fast Drive ───────────────────────────────────── */}
-      <FastDriveCard />
+      {/* ── Tab bar (only visible if user has report permission) ── */}
+      {canSeeReport && (
+        <div className="flex gap-1 border-b border-border overflow-x-auto">
+          <TabButton
+            label="Overview"
+            icon={<LayoutDashboard className="h-4 w-4" />}
+            active={activeTab === 'overview'}
+            onClick={() => setActiveTab('overview')}
+          />
+          <TabButton
+            label="Daily Report"
+            icon={<Activity className="h-4 w-4" />}
+            active={activeTab === 'report'}
+            onClick={() => setActiveTab('report')}
+          />
+        </div>
+      )}
 
-      {/* ── KPI grid ─────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        {KPI_CONFIG.map((cfg) => (
-          <Card key={cfg.key}>
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div
-                className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${cfg.bg}`}
-              >
-                {cfg.icon}
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
-                  {cfg.label}
-                </p>
-                {isLoading ? (
-                  <Loader2 className="h-5 w-5 animate-spin text-gray-300 mt-1" />
-                ) : (
-                  <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">
-                    {kpis?.[cfg.key] ?? 0}
-                  </p>
-                )}
-              </div>
+      {/* ── Tab content ───────────────────────────────────── */}
+      {activeTab === 'overview' && (
+        <>
+          {/* ── Fast Drive ──────────────────────────────── */}
+          <FastDriveCard />
+
+          {/* ── KPI grid ────────────────────────────────── */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {KPI_CONFIG.map((cfg) => (
+              <Card key={cfg.key}>
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div
+                    className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg ${cfg.bg}`}
+                  >
+                    {cfg.icon}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs sm:text-sm font-medium text-gray-500 dark:text-gray-400 truncate">
+                      {cfg.label}
+                    </p>
+                    {isLoading ? (
+                      <Loader2 className="h-5 w-5 animate-spin text-gray-300 mt-1" />
+                    ) : (
+                      <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">
+                        {kpis?.[cfg.key] ?? 0}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          {/* ── Quick Actions ───────────────────────────── */}
+          <Card>
+            <CardHeader
+              title="Quick Actions"
+              subtitle="Shortcuts to common tasks"
+            />
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {(dashboard?.quick_actions ?? []).map((action) => (
+                <button
+                  key={action.label}
+                  onClick={() => navigate(action.route)}
+                  className="flex flex-col items-center gap-2 rounded-lg border border-gray-200 p-4 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                >
+                  {ICON_MAP[action.icon] ?? <Package className="h-5 w-5" />}
+                  {action.label}
+                </button>
+              ))}
             </div>
           </Card>
-        ))}
-      </div>
+        </>
+      )}
 
-      {/* ── Quick Actions ────────────────────────────────── */}
-      <Card>
-        <CardHeader
-          title="Quick Actions"
-          subtitle="Shortcuts to common tasks"
-        />
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {(dashboard?.quick_actions ?? []).map((action) => (
-            <button
-              key={action.label}
-              onClick={() => navigate(action.route)}
-              className="flex flex-col items-center gap-2 rounded-lg border border-gray-200 p-4 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-            >
-              {ICON_MAP[action.icon] ?? <Package className="h-5 w-5" />}
-              {action.label}
-            </button>
-          ))}
-        </div>
-      </Card>
+      {activeTab === 'report' && canSeeReport && (
+        <DailyReportTab />
+      )}
     </div>
+  );
+}
+
+
+/** Reusable tab button for the dashboard tab bar */
+function TabButton({
+  label, icon, active, onClick,
+}: {
+  label: string; icon: React.ReactNode; active: boolean; onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+        active
+          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+          : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }

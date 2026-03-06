@@ -767,16 +767,44 @@ PROCUREMENT: GET /api/orders/procurement/suggestions
 
 ---
 
+## Phase 9: Tools & Kits ✅ Complete
+
+> **Plan:** `docs/plans/phase-9-tools-and-kits.md`
+
+Tool registry with individual asset tracking, kit verification checklists, checkout/return workflow, maintenance scheduling, and QR code scanning. Tools move between warehouse ↔ truck ↔ job with full movement audit trail.
+
+**Backend:** 8 DB tables (`tools`, `kit_templates`, `tool_movements`, `kit_verification_sessions/items`, `tool_maintenance_types/schedules/records`), 8 repository classes, ~25 service methods, ~25 API endpoints under `/api/tools`.
+
+**Frontend:** Warehouse Tools page (global registry with stats, filters, search, QR print), Truck Tools page (per-vehicle view with checkout/return), Job Detail tools sub-tab (read-only), Warehouse Dashboard live tools summary card, QR scan redirect component.
+
+**Key patterns:** Polymorphic `(location_type, location_id)` for tool locations (same as `stock`), vehicle maintenance cascade pattern for tool maintenance, immutable movement log (same as `stock_movements`).
+
+### Phase 9 Deliverables ✅
+- 8 DB tables with triggers, seed data, and permission seeds ✅
+- Tool CRUD with category/status/location filtering ✅
+- Checkout/return workflow with location + status updates ✅
+- Kit templates (charger, batteries, bits, case, etc.) per tool ✅
+- Kit verification sessions triggered on checkout/return ✅
+- Maintenance types, per-tool schedules, service logging ✅
+- QR code generation (client-side SVG) + printable labels ✅
+- QR scan URL redirect (`/tools/scan/:toolNumber`) ✅
+- 3 permissions: `view_tools`, `manage_tools`, `checkout_tools` ✅
+- Responsive at desktop (1280×800), tablet (768×1024), mobile (375×812) ✅
+- Dark mode + light mode audit passed ✅
+
+---
+
 ## Future Phases (Outline)
 
 | Phase | Focus | Key Deliverables |
 |-------|-------|-----------------|
-| 7 | People (Full) | Employee detail, certifications, skills matrix, hat management, permission matrix, availability calendar, wage history |
+| 7 | People (Full) | Employee detail, certifications, skills matrix, hat management, permission matrix, availability calendar, wage history, General contractors with attached Jobs Part of the Job PO Naming PO=[GEN SORT]+[Job ID]+[Job order NUMBER] similer for time reports for a job just no order number |
 | 8 | Reports & Export | Pre-billing bundles, timesheets, labor overview, profitability analysis, CSV/PDF export, period locking, bookkeeper export format |
-| 9 | Chat | Per-job group chat, DMs, @mentions with notifications, photo/file sharing, voice messages, pinned messages, read receipts |
-| 10 | AI Integration | LM Studio connection, natural language queries, smart scheduling, anomaly detection, report summarization, predictive ordering |
-| 11 | PWA & Desktop | Service worker, offline-first architecture, push notifications, Electron/Tauri wrapper, keyboard shortcuts, system tray |
-| 12 | Sync | File-based sync (Drive/OneDrive), real-time collaboration, selective sync, conflict detection, automatic backup, audit trail |
+| 9 | Chat | Per-job group chat, DMs, @mentions with notifications, photo/file sharing, voice messages, pinned messages, read receipts, The Job Q&A Worker to boss to general discussion or onwner If the general decides to pass it on, but he'll be passing the info back|
+| 10 | PWA & Desktop | Service worker, offline-first architecture, push notifications, Electron/Tauri wrapper, keyboard shortcuts, system tray |
+| 11 | Bluetooth Integration | Bluetooth scanning for parts, tools, and vehicle check-in/out. Real-time sync with mobile devices for inventory and tool tracking, Full offline support, device-to-device mesh networking, All ways up to date, Devices must use encryption. PGP With public keys for syncing. They must already have the other devices public key in their database. For a device to get initiated it must do a confirmed. Hand sink with. 2 way number verification. With a shop computer To get Its public key into the database for communication. No fild adding devices.  docs/plans/Device Sync management.md |
+| 12 | AI Integration | LM Studio connection, natural language queries, smart scheduling, anomaly detection, report summarization, predictive ordering, Customer ready viewing detailed report clean. Creation |
+| 13 |  Sync | File-based sync (Drive/OneDrive), real-time collaboration, IP finder for P2P To initiate Over the Internet Full device syicing and Nonlocal data lookup, Full database access Capabilities, Note communication. Public keys must be communicated Via Bluetooth With direct device To device communications Before Devices will communicate|
 
 ---
 

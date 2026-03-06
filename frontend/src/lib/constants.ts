@@ -50,6 +50,11 @@ export const PERMISSIONS = {
   VIEW_REPORTS: 'view_reports',
   EXPORT_REPORTS: 'export_reports',
 
+  // Tools
+  VIEW_TOOLS: 'view_tools',
+  MANAGE_TOOLS: 'manage_tools',
+  CHECKOUT_TOOLS: 'checkout_tools',
+
   // System
   MANAGE_SETTINGS: 'manage_settings',
   MANAGE_DEVICES: 'manage_devices',

@@ -159,6 +159,112 @@ class UserRepo(BaseRepo):
         )
         await self.db.commit()
 
+    # ── People module helpers (Phase 8) ──────────────────────────
+
+    async def list_employees(
+        self,
+        *,
+        search: str | None = None,
+        is_active: bool | None = None,
+        hat_id: int | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict]:
+        """Paginated employee list with hat names and active cert count.
+
+        Supports text search (display_name, email, phone) and filtering
+        by active status and hat assignment.
+        """
+        conditions: list[str] = []
+        params: list[Any] = []
+
+        if is_active is not None:
+            conditions.append("u.is_active = ?")
+            params.append(1 if is_active else 0)
+
+        if hat_id is not None:
+            conditions.append(
+                "u.id IN (SELECT user_id FROM user_hats WHERE hat_id = ?)"
+            )
+            params.append(hat_id)
+
+        if search:
+            conditions.append(
+                "(u.display_name LIKE ? OR u.email LIKE ? OR u.phone LIKE ?)"
+            )
+            term = f"%{search}%"
+            params.extend([term, term, term])
+
+        where = " AND ".join(conditions) if conditions else "1=1"
+
+        cursor = await self.db.execute(
+            f"""
+            SELECT u.id, u.display_name, u.email, u.phone,
+                   u.certification, u.hire_date, u.pay_rate,
+                   u.is_active, u.avatar_url,
+                   GROUP_CONCAT(DISTINCT h.name) AS hat_names,
+                   (SELECT COUNT(*) FROM certifications c
+                    WHERE c.user_id = u.id AND c.is_active = 1) AS active_cert_count
+            FROM users u
+            LEFT JOIN user_hats uh ON uh.user_id = u.id
+            LEFT JOIN hats h ON h.id = uh.hat_id
+            WHERE {where}
+            GROUP BY u.id
+            ORDER BY u.display_name ASC
+            LIMIT ? OFFSET ?
+            """,
+            (*params, limit, offset),
+        )
+        rows = await cursor.fetchall()
+
+        # Split hat_names CSV into a list
+        for row in rows:
+            hat_str = row.get("hat_names") or ""
+            row["hat_names"] = [h.strip() for h in hat_str.split(",") if h.strip()]
+
+        return rows
+
+    async def count_employees(
+        self,
+        *,
+        search: str | None = None,
+        is_active: bool | None = None,
+        hat_id: int | None = None,
+    ) -> int:
+        """Count employees matching the given filters (for pagination)."""
+        conditions: list[str] = []
+        params: list[Any] = []
+
+        if is_active is not None:
+            conditions.append("u.is_active = ?")
+            params.append(1 if is_active else 0)
+
+        if hat_id is not None:
+            conditions.append(
+                "u.id IN (SELECT user_id FROM user_hats WHERE hat_id = ?)"
+            )
+            params.append(hat_id)
+
+        if search:
+            conditions.append(
+                "(u.display_name LIKE ? OR u.email LIKE ? OR u.phone LIKE ?)"
+            )
+            term = f"%{search}%"
+            params.extend([term, term, term])
+
+        where = " AND ".join(conditions) if conditions else "1=1"
+
+        cursor = await self.db.execute(
+            f"SELECT COUNT(*) AS cnt FROM users u WHERE {where}",
+            tuple(params),
+        )
+        row = await cursor.fetchone()
+        return row["cnt"] if row else 0
+
+    async def toggle_active(self, user_id: int, is_active: bool) -> bool:
+        """Activate or deactivate an employee."""
+        return await self.update(user_id, {"is_active": 1 if is_active else 0})
+
     async def get_user_permissions(
         self,
         user_id: int,
@@ -232,3 +338,49 @@ class HatRepo(BaseRepo):
             (name,),
         )
         return await cursor.fetchone()
+
+    async def get_all_with_user_counts(self) -> list[dict]:
+        """Get all hats with permission lists AND user counts."""
+        cursor = await self.db.execute(
+            """
+            SELECT h.*,
+                   (SELECT COUNT(*) FROM user_hats uh WHERE uh.hat_id = h.id) AS user_count
+            FROM hats h
+            ORDER BY h.level ASC
+            """
+        )
+        hats = await cursor.fetchall()
+
+        for hat in hats:
+            perm_cursor = await self.db.execute(
+                "SELECT permission_key FROM hat_permissions WHERE hat_id = ? ORDER BY permission_key",
+                (hat["id"],),
+            )
+            hat["permissions"] = [
+                row["permission_key"] for row in await perm_cursor.fetchall()
+            ]
+
+        return hats
+
+    async def replace_permissions(self, hat_id: int, permission_keys: list[str]) -> None:
+        """Replace ALL permissions for a hat with the given list.
+
+        This is an atomic delete-then-insert operation.
+        """
+        await self.db.execute(
+            "DELETE FROM hat_permissions WHERE hat_id = ?",
+            (hat_id,),
+        )
+        for key in permission_keys:
+            await self.db.execute(
+                "INSERT INTO hat_permissions (hat_id, permission_key) VALUES (?, ?)",
+                (hat_id, key),
+            )
+        await self.db.commit()
+
+    async def get_all_permission_keys(self) -> list[str]:
+        """Get all unique permission keys across all hats, sorted."""
+        cursor = await self.db.execute(
+            "SELECT DISTINCT permission_key FROM hat_permissions ORDER BY permission_key"
+        )
+        return [row["permission_key"] for row in await cursor.fetchall()]

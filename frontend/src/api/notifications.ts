@@ -13,6 +13,8 @@ import type {
   NotificationMarkRead,
   NotificationPreference,
   NotificationPreferenceResponse,
+  NotificationSoundSetting,
+  NotificationSoundSettingsResponse,
 } from '../lib/types';
 
 
@@ -77,6 +79,30 @@ export async function updateNotificationPreferences(
   const { data } = await apiClient.put<ApiResponse<StatusMessage>>(
     '/notifications/preferences',
     { preferences }
+  );
+  return data.data!;
+}
+
+
+// =================================================================
+// SOUND SETTINGS (Phase 7E)
+// =================================================================
+
+/** Get per-type sound settings for the current user */
+export async function getNotificationSoundSettings(): Promise<NotificationSoundSettingsResponse> {
+  const { data } = await apiClient.get<ApiResponse<NotificationSoundSettingsResponse>>(
+    '/notifications/sound-settings'
+  );
+  return data.data!;
+}
+
+/** Update sound settings (batch upsert) */
+export async function updateNotificationSoundSettings(
+  settings: NotificationSoundSetting[]
+): Promise<StatusMessage> {
+  const { data } = await apiClient.put<ApiResponse<StatusMessage>>(
+    '/notifications/sound-settings',
+    { settings }
   );
   return data.data!;
 }

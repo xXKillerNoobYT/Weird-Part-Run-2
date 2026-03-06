@@ -3,10 +3,12 @@ Orders service — JPO + PO lifecycle, status transitions, audit trail.
 
 Handles:
   - JPO creation (with auto-numbering), approval/rejection
+  - Unified order creation (job orders + warehouse restocks)  ← Phase 7A
   - PO creation from JPOs and standalone
   - Status transitions with full audit trail
   - Supplier suggestion tagging
   - PO total recalculation
+  - Special item creation + preference learning after order  ← Phase 7A
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from app.repositories.orders_repo import (
     POLineRepo,
     PurchaseOrderRepo,
 )
+from app.services.job_preferences_service import JobPreferencesService
 
 logger = logging.getLogger(__name__)
 
@@ -37,44 +40,104 @@ class OrdersService:
         self.po_repo = PurchaseOrderRepo(db)
         self.po_line_repo = POLineRepo(db)
         self.history_repo = OrderStatusHistoryRepo(db)
+        self.prefs_service = JobPreferencesService(db)
 
     # ── JPO Lifecycle ─────────────────────────────────────────
 
     async def create_jpo(
         self,
-        job_id: int,
         requested_by: int,
         lines: list[dict],
         *,
+        job_id: int | None = None,
+        order_type: str = "job",
         priority: str = "normal",
+        smart_suggestions_enabled: bool = True,
         notes: str | None = None,
+        special_items: list[dict] | None = None,
     ) -> dict:
-        """Create a new Job Parts Order with line items.
+        """Create a unified order — either a Job Order or Warehouse Restock.
 
-        Auto-generates order_number from job name.
-        Starts in 'draft' status.
+        Phase 7A: this is the single entry-point for creating any parts order.
+
+        Job orders (order_type='job'):
+          - Require a job_id
+          - Auto-number from job name: '{JOB_NAME}-JPO-001'
+          - After creation, learn brand/color/supplier preferences for the job
+
+        Warehouse restocks (order_type='warehouse'):
+          - job_id is None
+          - Auto-number as 'WH-JPO-001'
+          - No preference learning (no job context)
+
+        Special items (non-catalog):
+          - Passed as a list of dicts with description, quantity, etc.
+          - Auto-flagged for office review
+          - Sets has_special_items = 1 on the JPO
+
+        Always starts in 'draft' status.
         """
+        # ── Validate ──────────────────────────────────────────────
+        if order_type == "job" and not job_id:
+            raise ValueError("job_id is required for job orders")
+        if order_type == "warehouse":
+            job_id = None  # Enforce — warehouse restocks never belong to a job
+
+        # ── Generate order number ─────────────────────────────────
         order_number = await self.jpo_repo.get_next_order_number(job_id)
 
+        has_specials = 1 if special_items else 0
+
+        # ── Insert the JPO ────────────────────────────────────────
         jpo_id = await self.jpo_repo.insert({
             "job_id": job_id,
             "order_number": order_number,
             "status": "draft",
             "priority": priority,
+            "order_type": order_type,
+            "has_special_items": has_specials,
+            "smart_suggestions_enabled": 1 if smart_suggestions_enabled else 0,
             "requested_by": requested_by,
             "notes": notes,
         })
 
-        # Insert line items
+        # ── Insert catalog line items ─────────────────────────────
         if lines:
             await self.jpo_line_repo.bulk_insert(jpo_id, lines)
 
-        # Log initial status
+        # ── Insert special (non-catalog) items ────────────────────
+        if special_items:
+            for item in special_items:
+                await self.prefs_service.add_special_item(
+                    jpo_id,
+                    description=item["description"],
+                    quantity=item.get("quantity", 1),
+                    part_number=item.get("part_number"),
+                    unit=item.get("unit", "each"),
+                    estimated_cost=item.get("estimated_cost"),
+                    notes=item.get("notes"),
+                )
+
+        # ── Audit trail ───────────────────────────────────────────
+        label = "Job order created" if order_type == "job" else "Warehouse restock created"
         await self.history_repo.log_change(
-            "jpo", jpo_id, None, "draft", requested_by, "JPO created"
+            "jpo", jpo_id, None, "draft", requested_by, label
         )
 
         await self.db.commit()
+
+        # ── Learn job preferences (async-safe, non-blocking) ─────
+        if order_type == "job" and job_id and lines:
+            try:
+                learned = await self.prefs_service.learn_from_order(jpo_id)
+                logger.info(
+                    "Learned preferences from JPO %d: %s",
+                    jpo_id, learned,
+                )
+            except Exception:
+                # Preference learning is best-effort — never block order creation
+                logger.exception("Failed to learn preferences from JPO %d", jpo_id)
+
         return await self.jpo_repo.get_with_details(jpo_id)
 
     async def submit_jpo(self, jpo_id: int, user_id: int) -> dict | None:

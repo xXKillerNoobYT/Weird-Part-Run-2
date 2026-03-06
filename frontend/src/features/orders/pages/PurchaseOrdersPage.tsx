@@ -12,18 +12,23 @@
  *   Receiving — partially received, delivery in progress
  *   Complete  — received / closed / cancelled
  *
- * Action buttons:
- *   "New Standalone PO" — always visible (office creates POs directly)
- *   "Receive Shipment"  — visible on Submitted / Receiving / All tabs
+ * Phase 7E: Added bulk selection with BulkActionBar for batch
+ * submit (drafts) and status updates (submitted).
  */
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Plus, Search, ShoppingCart, Truck } from 'lucide-react';
-import { listPOs } from '../../../api/orders';
+import { Plus, Search, ShoppingCart, Truck, Send } from 'lucide-react';
+import { listPOs, bulkSubmitPOs } from '../../../api/orders';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { OrderStatusBadge } from '../components/OrderStatusBadge';
+import {
+  useBulkSelection,
+  BulkCheckbox,
+  BulkActionBar,
+  type BulkAction,
+} from '../components/BulkActionBar';
 import type { POListItem } from '../../../lib/types';
 
 // ── Filter tab definitions ───────────────────────────────────────
@@ -49,6 +54,7 @@ const FILTER_STATUSES: Record<POViewFilter, string[] | null> = {
 export function PurchaseOrdersPage() {
   const [activeTab, setActiveTab] = useState<POViewFilter>('all');
   const [search, setSearch] = useState('');
+  const queryClient = useQueryClient();
 
   // Fetch all POs once — client-side filtering by tab is instant
   const { data: allPOs = [], isLoading, isError } = useQuery({
@@ -70,6 +76,33 @@ export function PurchaseOrdersPage() {
           po.supplier_name?.toLowerCase().includes(search.toLowerCase())
       )
     : tabFiltered;
+
+  // Bulk selection
+  const bulk = useBulkSelection(filtered);
+
+  // Bulk submit drafts
+  const bulkSubmitMut = useMutation({
+    mutationFn: () =>
+      bulkSubmitPOs({ po_ids: [...bulk.selectedIds] }),
+    onSuccess: () => {
+      bulk.clear();
+      queryClient.invalidateQueries({ queryKey: ['pos'] });
+    },
+  });
+
+  // Only show submit action when draft POs are selected
+  const hasDraftsSelected = bulk.selectedItems.some((p) => p.status === 'draft');
+
+  const bulkActions: BulkAction[] = [
+    {
+      label: 'Submit',
+      icon: Send,
+      onClick: () => bulkSubmitMut.mutate(),
+      variant: 'primary',
+      loading: bulkSubmitMut.isPending,
+      show: hasDraftsSelected,
+    },
+  ];
 
   // Show "Receive Shipment" on tabs where receiving makes sense
   const showReceiveButton = activeTab !== 'drafts' && activeTab !== 'complete';
@@ -113,7 +146,10 @@ export function PurchaseOrdersPage() {
           return (
             <button
               key={tab.value}
-              onClick={() => setActiveTab(tab.value)}
+              onClick={() => {
+                setActiveTab(tab.value);
+                bulk.clear();
+              }}
               className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap min-h-[44px] ${
                 activeTab === tab.value
                   ? 'border-primary text-primary'
@@ -169,6 +205,12 @@ export function PurchaseOrdersPage() {
           <table className="min-w-full divide-y divide-border">
             <thead className="bg-surface-secondary">
               <tr>
+                <BulkCheckbox
+                  checked={bulk.allSelected}
+                  indeterminate={bulk.someSelected}
+                  onChange={bulk.toggleAll}
+                  isHeader
+                />
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">PO #</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Supplier</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Items</th>
@@ -180,12 +222,25 @@ export function PurchaseOrdersPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {filtered.map((po) => (
-                <PORow key={po.id} po={po} />
+                <PORow
+                  key={po.id}
+                  po={po}
+                  selected={bulk.isSelected(po.id)}
+                  onToggle={() => bulk.toggle(po.id)}
+                />
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      {/* Bulk action bar */}
+      <BulkActionBar
+        count={bulk.selectedIds.size}
+        onClear={bulk.clear}
+        actions={bulkActions}
+        loading={bulkSubmitMut.isPending}
+      />
     </div>
   );
 }
@@ -193,9 +248,20 @@ export function PurchaseOrdersPage() {
 
 /* ── PO table row ──────────────────────────────────────────────── */
 
-function PORow({ po }: { po: POListItem }) {
+function PORow({
+  po,
+  selected,
+  onToggle,
+}: {
+  po: POListItem;
+  selected: boolean;
+  onToggle: () => void;
+}) {
   return (
-    <tr className="hover:bg-surface-secondary/50 transition-colors cursor-pointer">
+    <tr className={`hover:bg-surface-secondary/50 transition-colors cursor-pointer ${
+      selected ? 'bg-primary/5 dark:bg-primary/10' : ''
+    }`}>
+      <BulkCheckbox checked={selected} onChange={onToggle} />
       <td className="px-4 py-3">
         <Link
           to={`/orders/pos/${po.id}`}

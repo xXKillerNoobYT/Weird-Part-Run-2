@@ -43,6 +43,8 @@ from app.models.jobs import (
     QuestionReorderRequest,
 )
 from app.models.notebooks import EntryResponse, NotebookFull
+from app.models.orders import JobPreferenceToggle
+from app.services.job_preferences_service import JobPreferencesService
 from app.services.job_service import JobService
 from app.services.labor_service import LaborService
 from app.services.questionnaire_service import QuestionnaireService
@@ -680,3 +682,71 @@ async def generate_reports_now(
         data=reports,
         message=f"Generated {len(reports)} reports",
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# JOB PREFERENCES — Smart suggestion memory per job (Phase 7A)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@router.get("/{job_id}/preferences", response_model=ApiResponse)
+async def get_job_preferences(
+    job_id: int,
+    preference_type: str | None = None,
+    category: str | None = None,
+    active_only: bool = True,
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get all learned preferences for a job.
+
+    Returns brand, color, supplier, and part preferences that the system
+    has learned from previous orders on this job.  Used by the frontend
+    to power "smart suggestion" filter chips.
+
+    Filters:
+      - preference_type: 'brand', 'color', 'supplier', or 'part'
+      - category:        e.g. 'outlets', 'switches' — limits to that part category
+      - active_only:     exclude disabled preferences (default True)
+    """
+    svc = JobPreferencesService(db)
+    prefs = await svc.get_all_for_job(job_id)
+    return ApiResponse(data=prefs)
+
+
+@router.get("/{job_id}/suggestions", response_model=ApiResponse)
+async def get_job_suggestions(
+    job_id: int,
+    category: str | None = None,
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get ranked smart suggestions for the order form.
+
+    Returns per-category suggestions sorted by confidence score.
+    The frontend uses these to auto-filter the part search.
+    """
+    svc = JobPreferencesService(db)
+    suggestions = await svc.get_suggestions(job_id, category=category)
+    return ApiResponse(data=suggestions)
+
+
+@router.put("/{job_id}/preferences/{pref_id}", response_model=ApiResponse)
+async def toggle_job_preference(
+    job_id: int,
+    pref_id: int,
+    body: JobPreferenceToggle,
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Toggle a specific preference on or off.
+
+    Field workers can disable suggestions they don't want
+    (e.g. "stop suggesting Leviton for this job").
+    """
+    svc = JobPreferencesService(db)
+    success = await svc.toggle_preference(pref_id, body.is_active)
+    if not success:
+        raise HTTPException(404, "Preference not found")
+
+    return ApiResponse(data={"id": pref_id, "is_active": body.is_active})

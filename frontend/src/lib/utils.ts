@@ -94,3 +94,28 @@ export function formatDateTime(date: string | null | undefined): string {
     return date;
   }
 }
+
+/**
+ * Format a date as a human-friendly relative time string.
+ *
+ * Returns "Just now" / "5m ago" / "3h ago" / "2d ago",
+ * then falls back to a localized date for anything older than a week.
+ */
+export function formatRelativeTime(date: string | Date | null | undefined): string {
+  if (!date) return '—';
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60_000);
+
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  return d.toLocaleDateString();
+}

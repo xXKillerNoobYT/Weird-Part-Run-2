@@ -2,15 +2,22 @@
 Orders routes — JPO lifecycle, PO management, receiving, returns, procurement.
 
 Phase 5: Full implementation replacing Phase 1 stubs.
+Phase 7B: Conversations, PO groups, approvals queue, confirmation checklist.
+Phase 7C: Session-based receiving, return sorting guidance.
 
 Route groups:
-  /api/orders/jpos       — Job Parts Orders (field worker requests)
-  /api/orders/pos        — Purchase Orders (supplier-facing)
-  /api/orders/receiving  — Incoming delivery processing
-  /api/orders/returns    — Returns (job→warehouse, warehouse→supplier)
-  /api/orders/procurement — Reorder dashboard & suggestions
-  /api/orders/staging    — Staging zone management
-  /api/orders/history    — Order status audit trail
+  /api/orders/jpos             — Job Parts Orders (field worker requests)
+  /api/orders/pos              — Purchase Orders (supplier-facing)
+  /api/orders/pos/{id}/conv    — PO conversation threads (Phase 7B)
+  /api/orders/pos/group        — PO groups for bundled sending (Phase 7B)
+  /api/orders/office           — Office approval queue (Phase 7B)
+  /api/orders/receiving        — Incoming delivery processing (legacy)
+  /api/orders/receiving/sessions — Session-based receiving (Phase 7C)
+  /api/orders/returns          — Returns (job→warehouse, warehouse→supplier)
+  /api/orders/returns/{id}/sorting — Return sorting guidance (Phase 7C)
+  /api/orders/procurement      — Reorder dashboard & suggestions
+  /api/orders/staging          — Staging zone management
+  /api/orders/history          — Order status audit trail
 """
 
 from __future__ import annotations
@@ -23,26 +30,43 @@ from app.middleware.auth import require_permission, require_user
 from app.models.common import ApiResponse, PaginatedData
 from app.models.orders import (
     BackorderUpdate,
+    BulkApprovalAction,
+    BulkPOStatusUpdate,
+    BulkPOSubmit,
+    BulkReturnApprove,
+    ConfirmationChecklistUpdate,
     DistributeFromStaging,
     JPOApproval,
     JPOCreate,
     JPOListItem,
     JPOResponse,
     JPOUpdate,
+    POConversationCreate,
+    POConversationFollowUp,
     POCreate,
     POFromJPO,
+    POGroupCreate,
     POListItem,
     POResponse,
     POStatusUpdateBody,
     POUpdate,
     ProcurementDashboard,
     ReceiveByPO,
+    # Phase 7C: Session-based receiving models
+    ReceivingSessionCommit,
+    ReceivingSessionCreate,
+    ReceivingSessionItemUpdate,
+    ReceivingSessionResponse,
     ReorderSuggestion,
     ReturnCreate,
     ReturnListItem,
     ReturnResponse,
+    # Phase 7C: Return sorting models
+    ReturnSortingRequest,
     ReturnStatusUpdateBody,
     ReturnUpdate,
+    SpecialItemCreate,
+    SpecialItemResolve,
     StagingZoneCreate,
     StagingZoneResponse,
     StagingZoneUpdate,
@@ -66,6 +90,7 @@ from app.repositories.staging_repo import StagingZoneRepo
 from app.services.notification_service import NotificationService
 from app.services.orders_service import OrdersService
 from app.services.pdf_service import PDFService
+from app.services.po_conversation_service import POConversationService
 from app.services.procurement_service import ProcurementService
 from app.services.receiving_service import ReceivingService
 from app.services.returns_service import ReturnsService
@@ -82,15 +107,30 @@ router = APIRouter(prefix="/api/orders", tags=["Orders"])
 async def list_jpos(
     status: str | None = None,
     job_id: int | None = None,
+    order_type: str | None = None,
+    requested_by: int | None = None,
     limit: int = Query(50, le=200),
     offset: int = 0,
     user: dict = Depends(require_permission("view_orders")),
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    """List Job Parts Orders with optional status/job filtering."""
+    """List Job Parts Orders with optional filters.
+
+    Filters:
+      - status:       JPO workflow status
+      - job_id:       specific job
+      - order_type:   'job' or 'warehouse'
+      - requested_by: user ID of the requester (for "My Orders" view)
+    """
     repo = JPORepo(db)
-    items = await repo.list_with_details(status=status, job_id=job_id, limit=limit, offset=offset)
-    total = await repo.count_filtered(status=status, job_id=job_id)
+    items = await repo.list_with_details(
+        status=status, job_id=job_id, order_type=order_type,
+        requested_by=requested_by, limit=limit, offset=offset,
+    )
+    total = await repo.count_filtered(
+        status=status, job_id=job_id, order_type=order_type,
+        requested_by=requested_by,
+    )
 
     return ApiResponse(data=PaginatedData(items=items, total=total))
 
@@ -101,15 +141,20 @@ async def get_jpo(
     user: dict = Depends(require_permission("view_orders")),
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    """Get a single JPO with all details and line items."""
+    """Get a single JPO with all details, line items, and special items."""
     repo = JPORepo(db)
     jpo = await repo.get_with_details(jpo_id)
     if not jpo:
         raise HTTPException(404, "JPO not found")
 
-    # Attach line items
+    # Attach catalog line items
     line_repo = JPOLineRepo(db)
     jpo["lines"] = await line_repo.get_lines_for_jpo(jpo_id)
+
+    # Attach special (non-catalog) items — Phase 7A
+    from app.services.job_preferences_service import JobPreferencesService
+    prefs_svc = JobPreferencesService(db)
+    jpo["special_items"] = await prefs_svc.get_special_items(jpo_id)
 
     return ApiResponse(data=jpo)
 
@@ -120,22 +165,35 @@ async def create_jpo(
     user: dict = Depends(require_permission("view_orders")),
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    """Create a new Job Parts Order.
+    """Create a unified order — Job Parts Order or Warehouse Restock.
 
-    Any user with view_orders can create JPOs — they're field-worker requests.
+    Any user with view_orders can create job orders.
+    Warehouse restocks require the same permission (office staff always have it).
+
+    The order_type field controls the flow:
+      - 'job'       → requires job_id, learns preferences after creation
+      - 'warehouse'  → job_id must be null, no preference learning
     """
     svc = OrdersService(db)
     lines = [l.model_dump() for l in body.lines]
+    special = [s.model_dump() for s in body.special_items] if body.special_items else None
 
-    jpo = await svc.create_jpo(
-        job_id=body.job_id,
-        requested_by=user["id"],
-        lines=lines,
-        priority=body.priority,
-        notes=body.notes,
-    )
+    try:
+        jpo = await svc.create_jpo(
+            requested_by=user["id"],
+            lines=lines,
+            job_id=body.job_id,
+            order_type=body.order_type,
+            priority=body.priority,
+            smart_suggestions_enabled=body.smart_suggestions_enabled,
+            notes=body.notes,
+            special_items=special,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
 
-    return ApiResponse(data=jpo, message="Parts request created.")
+    label = "Parts request created." if body.order_type == "job" else "Warehouse restock created."
+    return ApiResponse(data=jpo, message=label)
 
 
 @router.put("/jpos/{jpo_id}", response_model=ApiResponse)
@@ -245,6 +303,110 @@ async def get_jpo_suggestions(
         suggestions[line["part_id"]] = await svc.get_supplier_suggestions(line["part_id"])
 
     return ApiResponse(data=suggestions)
+
+
+# ═══════════════════════════════════════════════════════════════
+# Special Items — non-catalog items on orders (Phase 7A)
+# ═══════════════════════════════════════════════════════════════
+
+
+@router.get("/jpos/{jpo_id}/special-items", response_model=ApiResponse)
+async def list_special_items(
+    jpo_id: int,
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List special (non-catalog) items on a JPO.
+
+    Special items are free-text entries that field workers add when a
+    needed part isn't in the catalog.  They're auto-flagged for office
+    review — office staff can then link them to existing catalog parts
+    or order them as-is.
+    """
+    from app.services.job_preferences_service import JobPreferencesService
+    svc = JobPreferencesService(db)
+    items = await svc.get_special_items(jpo_id)
+    return ApiResponse(data=items)
+
+
+@router.post("/jpos/{jpo_id}/special-items", response_model=ApiResponse)
+async def add_special_item(
+    jpo_id: int,
+    body: SpecialItemCreate,
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Add a special (non-catalog) item to a JPO.
+
+    Auto-flagged for office review.  The JPO's `has_special_items`
+    flag is set automatically.
+    """
+    # Verify JPO exists and is editable
+    repo = JPORepo(db)
+    jpo = await repo.get_by_id(jpo_id)
+    if not jpo:
+        raise HTTPException(404, "JPO not found")
+    if jpo["status"] not in ("draft", "pending_approval"):
+        raise HTTPException(400, "Cannot add items to a JPO in this status")
+
+    from app.services.job_preferences_service import JobPreferencesService
+    svc = JobPreferencesService(db)
+    item_id = await svc.add_special_item(
+        jpo_id,
+        description=body.description,
+        quantity=body.quantity,
+        part_number=body.part_number,
+        unit=body.unit,
+        estimated_cost=body.estimated_cost,
+        notes=body.notes,
+    )
+
+    return ApiResponse(
+        data={"id": item_id, "jpo_id": jpo_id},
+        message="Special item added and flagged for review.",
+    )
+
+
+@router.put("/special-items/{item_id}/resolve", response_model=ApiResponse)
+async def resolve_special_item(
+    item_id: int,
+    body: SpecialItemResolve,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Office resolves a flagged special item.
+
+    Optionally links it to an existing catalog part.  Clears the flag
+    and records who resolved it and when.
+    """
+    from app.services.job_preferences_service import JobPreferencesService
+    svc = JobPreferencesService(db)
+    success = await svc.resolve_special_item(
+        item_id, resolved_by=user["id"], linked_part_id=body.linked_part_id,
+    )
+    if not success:
+        raise HTTPException(404, "Special item not found or already resolved")
+
+    return ApiResponse(
+        data={"id": item_id, "resolved": True},
+        message="Special item resolved.",
+    )
+
+
+@router.get("/special-items/flagged", response_model=ApiResponse)
+async def list_flagged_special_items(
+    limit: int = Query(50, le=200),
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List all unresolved flagged special items across all JPOs.
+
+    Used by the office Approvals tab to see items needing attention.
+    """
+    from app.services.job_preferences_service import JobPreferencesService
+    svc = JobPreferencesService(db)
+    items = await svc.get_flagged_items(limit=limit)
+    return ApiResponse(data=items)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -477,6 +639,496 @@ async def get_po_clipboard_text(
 
 
 # ═══════════════════════════════════════════════════════════════
+# PO Conversation Threads (Phase 7B)
+# ═══════════════════════════════════════════════════════════════
+
+
+@router.get("/pos/{po_id}/conversation", response_model=ApiResponse)
+async def get_po_conversation(
+    po_id: int,
+    limit: int = Query(100, le=500),
+    offset: int = 0,
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get the conversation thread for a PO.
+
+    Returns all entries (notes, calls, emails, system events) in
+    reverse chronological order.  Each entry includes the creator's
+    display name.
+    """
+    svc = POConversationService(db)
+    entries = await svc.get_thread(po_id, limit=limit, offset=offset)
+    return ApiResponse(data=entries)
+
+
+@router.post("/pos/{po_id}/conversation", response_model=ApiResponse)
+async def add_po_conversation_entry(
+    po_id: int,
+    body: POConversationCreate,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Add a manual conversation entry to a PO.
+
+    Entry types: note, call, email_summary, action.
+    System entries are auto-created by the backend — don't use this
+    endpoint for those.
+    """
+    svc = POConversationService(db)
+    entry_id = await svc.add_entry(
+        po_id=po_id,
+        entry_type=body.entry_type,
+        message=body.message,
+        user_id=user["id"],
+        follow_up_needed=body.follow_up_needed,
+    )
+
+    return ApiResponse(
+        data={"id": entry_id, "po_id": po_id},
+        message="Conversation entry added.",
+    )
+
+
+@router.get("/suppliers/{supplier_id}/conversation", response_model=ApiResponse)
+async def get_supplier_conversation(
+    supplier_id: int,
+    limit: int = Query(100, le=500),
+    offset: int = 0,
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get all conversation entries across POs for a supplier.
+
+    Aggregates threads from all POs with this supplier.  Each entry
+    includes the PO number for cross-referencing.
+    """
+    svc = POConversationService(db)
+    entries = await svc.get_supplier_thread(
+        supplier_id, limit=limit, offset=offset,
+    )
+    return ApiResponse(data=entries)
+
+
+@router.put("/conversation/{entry_id}/follow-up", response_model=ApiResponse)
+async def toggle_conversation_follow_up(
+    entry_id: int,
+    body: POConversationFollowUp,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Toggle the follow-up resolved status on a conversation entry.
+
+    Set resolved=true to mark a follow-up as done.  Set resolved=false
+    to re-open it.
+    """
+    svc = POConversationService(db)
+    ok = await svc.toggle_follow_up(entry_id, body.resolved)
+    if not ok:
+        raise HTTPException(404, "Conversation entry not found or has no follow-up flag")
+
+    status = "resolved" if body.resolved else "reopened"
+    return ApiResponse(
+        data={"entry_id": entry_id, "resolved": body.resolved},
+        message=f"Follow-up {status}.",
+    )
+
+
+@router.get("/conversation/follow-ups", response_model=ApiResponse)
+async def list_open_follow_ups(
+    supplier_id: int | None = None,
+    limit: int = Query(50, le=200),
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List all open (unresolved) follow-ups across POs.
+
+    Optionally filter by supplier.  Used by the Office dashboard to
+    surface pending action items.
+    """
+    svc = POConversationService(db)
+    items = await svc.get_open_follow_ups(supplier_id=supplier_id, limit=limit)
+
+    return ApiResponse(data=items)
+
+
+# ═══════════════════════════════════════════════════════════════
+# PO Groups — bundle POs for combined sending (Phase 7B)
+# ═══════════════════════════════════════════════════════════════
+
+
+@router.post("/pos/group", response_model=ApiResponse)
+async def create_po_group(
+    body: POGroupCreate,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Create a PO group for bundled sending to a supplier.
+
+    All POs in the group must belong to the specified supplier.
+    If no group_name is provided, one is auto-generated.
+    """
+    svc = POConversationService(db)
+    try:
+        group = await svc.create_group(
+            supplier_id=body.supplier_id,
+            po_ids=body.po_ids,
+            user_id=user["id"],
+            group_name=body.group_name,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+    return ApiResponse(data=group, message="PO group created.")
+
+
+@router.get("/pos/group/{group_id}", response_model=ApiResponse)
+async def get_po_group(
+    group_id: int,
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get a PO group with all its member POs."""
+    svc = POConversationService(db)
+    group = await svc.get_group(group_id)
+    if not group:
+        raise HTTPException(404, "PO group not found")
+
+    return ApiResponse(data=group)
+
+
+@router.get("/pos/groups/by-supplier/{supplier_id}", response_model=ApiResponse)
+async def list_po_groups_for_supplier(
+    supplier_id: int,
+    limit: int = Query(20, le=100),
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List PO groups for a supplier (compact list format)."""
+    svc = POConversationService(db)
+    groups = await svc.list_groups_for_supplier(supplier_id, limit=limit)
+
+    return ApiResponse(data=groups)
+
+
+# ═══════════════════════════════════════════════════════════════
+# Office Approvals Queue (Phase 7B)
+# ═══════════════════════════════════════════════════════════════
+
+
+@router.get("/office/pending-approvals", response_model=ApiResponse)
+async def get_pending_approvals(
+    limit: int = Query(50, le=200),
+    offset: int = 0,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get all pending JPOs and returns for the office approval queue.
+
+    Returns a unified list sorted by created_at (oldest first — FIFO).
+    Each item has `entity_type` ('jpo' or 'return') to identify the type.
+    """
+    svc = POConversationService(db)
+    items = await svc.get_pending_approvals(limit=limit, offset=offset)
+
+    return ApiResponse(data=items)
+
+
+@router.get("/office/pending-approvals/count", response_model=ApiResponse)
+async def count_pending_approvals(
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Count pending items by type for the Approvals tab badge.
+
+    Returns: {jpo_count, return_count, total}
+    """
+    svc = POConversationService(db)
+    counts = await svc.count_pending_approvals()
+
+    return ApiResponse(data=counts)
+
+
+@router.post("/office/bulk-approve", response_model=ApiResponse)
+async def bulk_approve_or_reject(
+    body: BulkApprovalAction,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Bulk approve or reject multiple JPOs and/or returns.
+
+    Processes each item independently so partial success is possible.
+    Returns per-item results with success/failure status.
+    """
+    svc = OrdersService(db)
+    returns_svc = ReturnsService(db)
+    notif_svc = NotificationService(db)
+
+    results = []
+    for target in body.items:
+        try:
+            if target.entity_type == "jpo":
+                if body.action == "approve":
+                    result = await svc.approve_jpo(target.entity_id, user["id"], body.notes)
+                else:
+                    result = await svc.reject_jpo(target.entity_id, user["id"], body.notes)
+
+                if result:
+                    # Notify the requester
+                    action_label = "approved" if body.action == "approve" else "returned for revision"
+                    await notif_svc.notify(
+                        f"jpo_{body.action}d",
+                        f"Your parts request {result.get('order_number', '')} was {action_label}",
+                        message=body.notes,
+                        link=f"/orders/parts-requests/{target.entity_id}",
+                        entity_type="jpo",
+                        entity_id=target.entity_id,
+                        target_user_ids=[result["requested_by"]],
+                    )
+                    results.append({
+                        "entity_type": "jpo",
+                        "entity_id": target.entity_id,
+                        "success": True,
+                        "action": body.action,
+                    })
+                else:
+                    results.append({
+                        "entity_type": "jpo",
+                        "entity_id": target.entity_id,
+                        "success": False,
+                        "error": "Not in pending status",
+                    })
+
+            elif target.entity_type == "return":
+                if body.action == "approve":
+                    result = await returns_svc.approve_return(
+                        target.entity_id, user["id"], body.notes,
+                    )
+                else:
+                    # Returns don't have a "reject" flow — we move to rejected status
+                    result = await returns_svc.update_return_status(
+                        target.entity_id, "rejected", user["id"], notes=body.notes,
+                    )
+
+                results.append({
+                    "entity_type": "return",
+                    "entity_id": target.entity_id,
+                    "success": bool(result),
+                    "action": body.action,
+                    "error": None if result else "Not in pending status",
+                })
+
+        except Exception as exc:
+            results.append({
+                "entity_type": target.entity_type,
+                "entity_id": target.entity_id,
+                "success": False,
+                "error": str(exc),
+            })
+
+    succeeded = sum(1 for r in results if r["success"])
+    failed = len(results) - succeeded
+
+    msg = f"{succeeded} item(s) {body.action}d"
+    if failed:
+        msg += f", {failed} failed"
+
+    return ApiResponse(data={"results": results}, message=msg)
+
+
+# ═══════════════════════════════════════════════════════════════
+# Bulk PO Actions (Phase 7E)
+# ═══════════════════════════════════════════════════════════════
+
+
+@router.post("/pos/bulk-submit", response_model=ApiResponse)
+async def bulk_submit_pos(
+    body: BulkPOSubmit,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Submit multiple draft POs to suppliers at once.
+
+    Each PO is submitted independently — partial success is possible.
+    Only POs in 'draft' status will be submitted; others are skipped.
+    """
+    svc = OrdersService(db)
+    notif_svc = NotificationService(db)
+
+    results = []
+    for po_id in body.po_ids:
+        try:
+            result = await svc.submit_po(po_id, user["id"])
+            if result:
+                # Notify relevant users
+                await notif_svc.notify(
+                    "po_submitted",
+                    f"PO {result.get('po_number', '')} submitted to {result.get('supplier_name', 'supplier')}",
+                    message=body.notes,
+                    link=f"/orders/purchase-orders/{po_id}",
+                    entity_type="po",
+                    entity_id=po_id,
+                )
+                results.append({"po_id": po_id, "success": True})
+            else:
+                results.append({
+                    "po_id": po_id,
+                    "success": False,
+                    "error": "Not in draft status or not found",
+                })
+        except Exception as exc:
+            results.append({"po_id": po_id, "success": False, "error": str(exc)})
+
+    succeeded = sum(1 for r in results if r["success"])
+    failed = len(results) - succeeded
+
+    msg = f"{succeeded} PO(s) submitted"
+    if failed:
+        msg += f", {failed} failed"
+
+    return ApiResponse(data={"results": results}, message=msg)
+
+
+@router.post("/pos/bulk-status", response_model=ApiResponse)
+async def bulk_update_po_status(
+    body: BulkPOStatusUpdate,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update status on multiple POs at once.
+
+    Valid statuses: submitted, confirmed, shipped, delivered, cancelled.
+    Each PO is updated independently — partial success is possible.
+    """
+    svc = OrdersService(db)
+
+    results = []
+    for po_id in body.po_ids:
+        try:
+            ok = await svc.update_po_status(
+                po_id, body.status, user["id"], notes=body.notes,
+            )
+            results.append({
+                "po_id": po_id,
+                "success": ok,
+                "error": None if ok else "PO not found",
+            })
+        except Exception as exc:
+            results.append({"po_id": po_id, "success": False, "error": str(exc)})
+
+    succeeded = sum(1 for r in results if r["success"])
+    failed = len(results) - succeeded
+
+    msg = f"{succeeded} PO(s) updated to '{body.status}'"
+    if failed:
+        msg += f", {failed} failed"
+
+    return ApiResponse(data={"results": results}, message=msg)
+
+
+@router.post("/returns/bulk-approve", response_model=ApiResponse)
+async def bulk_approve_returns(
+    body: BulkReturnApprove,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Approve multiple pending returns at once.
+
+    Only returns in 'pending' status will be approved; others are skipped.
+    Each return is approved independently — partial success is possible.
+    """
+    returns_svc = ReturnsService(db)
+    notif_svc = NotificationService(db)
+
+    results = []
+    for return_id in body.return_ids:
+        try:
+            result = await returns_svc.approve_return(
+                return_id, user["id"], body.notes,
+            )
+            if result:
+                await notif_svc.notify(
+                    "return_approval",
+                    f"Return #{return_id} has been approved",
+                    message=body.notes,
+                    link=f"/orders/returns/{return_id}",
+                    entity_type="return",
+                    entity_id=return_id,
+                )
+                results.append({"return_id": return_id, "success": True})
+            else:
+                results.append({
+                    "return_id": return_id,
+                    "success": False,
+                    "error": "Not in pending status or not found",
+                })
+        except Exception as exc:
+            results.append({
+                "return_id": return_id,
+                "success": False,
+                "error": str(exc),
+            })
+
+    succeeded = sum(1 for r in results if r["success"])
+    failed = len(results) - succeeded
+
+    msg = f"{succeeded} return(s) approved"
+    if failed:
+        msg += f", {failed} failed"
+
+    return ApiResponse(data={"results": results}, message=msg)
+
+
+# ═══════════════════════════════════════════════════════════════
+# PO Confirmation Checklist (Phase 7B)
+# ═══════════════════════════════════════════════════════════════
+
+
+@router.get("/pos/{po_id}/confirmation-checklist", response_model=ApiResponse)
+async def get_confirmation_checklist(
+    po_id: int,
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get the confirmation checklist for a PO.
+
+    Each line item has a confirmed/unconfirmed status.  The checklist
+    is auto-generated from the PO's line items on first access.
+    """
+    svc = POConversationService(db)
+    checklist = await svc.get_confirmation_checklist(po_id)
+
+    return ApiResponse(data=checklist)
+
+
+@router.post("/pos/{po_id}/confirmation-checklist", response_model=ApiResponse)
+async def update_confirmation_checklist(
+    po_id: int,
+    body: ConfirmationChecklistUpdate,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update the confirmation checklist for a PO.
+
+    Send the full checklist with confirmed flags.  Newly confirmed
+    items are stamped with the current user and timestamp.
+    """
+    svc = POConversationService(db)
+    checklist_dicts = [item.model_dump() for item in body.checklist]
+    updated = await svc.update_confirmation_checklist(
+        po_id, checklist_dicts, user["id"],
+    )
+
+    confirmed_count = sum(1 for item in updated if item.get("confirmed"))
+    total_count = len(updated)
+
+    return ApiResponse(
+        data=updated,
+        message=f"Checklist updated ({confirmed_count}/{total_count} confirmed).",
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
 # Receiving Endpoints
 # ═══════════════════════════════════════════════════════════════
 
@@ -567,6 +1219,187 @@ async def mark_backorder(
     )
 
     return ApiResponse(data={"status": "backordered"}, message="Items marked as backordered.")
+
+
+# ═══════════════════════════════════════════════════════════════
+# Receiving Sessions (Phase 7C) — session-based packing slip / scan
+# ═══════════════════════════════════════════════════════════════
+
+
+@router.post("/receiving/sessions", response_model=ApiResponse[ReceivingSessionResponse])
+async def start_receiving_session(
+    body: ReceivingSessionCreate,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Start a new receiving session for a PO.
+
+    Creates the session and pre-populates items from the PO's open lines.
+    The session stays in 'in_progress' until committed or cancelled.
+    """
+    svc = ReceivingService(db)
+    try:
+        session = await svc.start_session(
+            po_id=body.po_id,
+            mode=body.mode,
+            user_id=user["id"],
+            notes=body.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    return ApiResponse(
+        data=ReceivingSessionResponse(**session),
+        message=f"Receiving session started in {body.mode} mode.",
+    )
+
+
+@router.get("/receiving/sessions", response_model=ApiResponse[PaginatedData])
+async def list_receiving_sessions(
+    po_id: int | None = None,
+    status: str | None = None,
+    limit: int = Query(50, le=200),
+    offset: int = 0,
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List receiving sessions, optionally filtered by PO or status."""
+    svc = ReceivingService(db)
+    sessions = await svc.list_sessions(
+        po_id=po_id, status=status, limit=limit, offset=offset,
+    )
+
+    return ApiResponse(data=PaginatedData(items=sessions, total=len(sessions)))
+
+
+@router.get("/receiving/sessions/{session_id}", response_model=ApiResponse[ReceivingSessionResponse])
+async def get_receiving_session(
+    session_id: int,
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get full session detail including items, progress totals, and PO info."""
+    svc = ReceivingService(db)
+    session = await svc.get_session(session_id)
+    if not session:
+        raise HTTPException(404, "Receiving session not found")
+
+    return ApiResponse(data=ReceivingSessionResponse(**session))
+
+
+@router.put(
+    "/receiving/sessions/{session_id}/items",
+    response_model=ApiResponse,
+)
+async def update_session_item(
+    session_id: int,
+    body: ReceivingSessionItemUpdate,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update a single line item in a receiving session.
+
+    Used by both packing-slip mode (per-line quantity entry) and scan mode
+    (after scanning a part, the frontend calls this to update the matched line).
+    """
+    svc = ReceivingService(db)
+    try:
+        item = await svc.update_session_item(
+            session_id=session_id,
+            po_line_id=body.po_line_id,
+            received_qty=body.received_qty,
+            actual_cost=body.actual_cost,
+            staging_zone_id=body.staging_zone_id,
+            notes=body.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    return ApiResponse(data=item, message="Item updated.")
+
+
+@router.post(
+    "/receiving/sessions/{session_id}/commit",
+    response_model=ApiResponse,
+)
+async def commit_receiving_session(
+    session_id: int,
+    body: ReceivingSessionCommit | None = None,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Commit a receiving session — applies quantities to the PO.
+
+    Optionally accepts a final `items` array to merge before committing.
+    On success: stock movements created, PO status updated, session completed.
+    """
+    svc = ReceivingService(db)
+    try:
+        result = await svc.commit_session(
+            session_id=session_id,
+            user_id=user["id"],
+            notes=body.notes if body else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    # Notify about delivery
+    notif_svc = NotificationService(db)
+    po_id = result.get("po_id")
+    await notif_svc.notify(
+        "po_received",
+        f"Delivery received for PO #{po_id} (session #{session_id})",
+        link=f"/orders/pos/{po_id}",
+        entity_type="po",
+        entity_id=po_id,
+    )
+
+    return ApiResponse(data=result, message="Session committed — items received.")
+
+
+@router.post(
+    "/receiving/sessions/{session_id}/cancel",
+    response_model=ApiResponse,
+)
+async def cancel_receiving_session(
+    session_id: int,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Cancel a receiving session — discards all progress."""
+    svc = ReceivingService(db)
+    try:
+        await svc.cancel_session(session_id, user["id"])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    return ApiResponse(
+        data={"session_id": session_id, "status": "cancelled"},
+        message="Session cancelled.",
+    )
+
+
+@router.get(
+    "/receiving/sessions/{session_id}/scan/{part_id}",
+    response_model=ApiResponse,
+)
+async def find_po_line_by_scan(
+    session_id: int,
+    part_id: int,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Scan-mode lookup: find the PO line matching a scanned part within a session.
+
+    Returns the matched PO line item so the frontend can display it for qty entry.
+    If no match is found, returns 404.
+    """
+    svc = ReceivingService(db)
+    match = await svc.find_po_line_by_part_scan(session_id, part_id)
+    if not match:
+        raise HTTPException(404, "No matching PO line found for this part in the current session")
+
+    return ApiResponse(data=match, message="Match found.")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -729,6 +1562,105 @@ async def update_return_status(
         raise HTTPException(400, "Return status update failed")
 
     return ApiResponse(data={"return_id": return_id, "status": body.status})
+
+
+# ═══════════════════════════════════════════════════════════════
+# Return Sorting (Phase 7C) — eligibility, guidance, dispositions
+# ═══════════════════════════════════════════════════════════════
+
+
+@router.get("/returns/{return_id}/sorting", response_model=ApiResponse)
+async def get_sorting_guidance(
+    return_id: int,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get sorting guidance for all lines in a return.
+
+    Analyzes each line's condition, supplier return eligibility, and current
+    stock levels to produce a per-line recommendation:
+      - return_to_supplier: good condition, within return window
+      - restock: usable but below target or not returnable
+      - write_off: damaged / defective beyond use
+    """
+    svc = ReturnsService(db)
+    try:
+        guidance = await svc.get_sorting_guidance(return_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    return ApiResponse(data=guidance)
+
+
+@router.post("/returns/{return_id}/sorting", response_model=ApiResponse)
+async def process_sorting_dispositions(
+    return_id: int,
+    body: ReturnSortingRequest,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Apply sorting dispositions to a return's line items.
+
+    The warehouse worker reviews the guidance, confirms or overrides each
+    recommendation, then submits all dispositions in one batch.
+    Creates stock movements for restock/write-off lines.
+    """
+    svc = ReturnsService(db)
+    dispositions = [d.model_dump() for d in body.dispositions]
+    try:
+        result = await svc.process_sorted_return(
+            return_id, dispositions, user["id"],
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    # Notify about completed sorting
+    notif_svc = NotificationService(db)
+    await notif_svc.notify(
+        "return_sorted",
+        f"Return #{return_id} sorting completed",
+        link=f"/orders/returns/{return_id}",
+        entity_type="return",
+        entity_id=return_id,
+    )
+
+    return ApiResponse(data=result, message="Sorting dispositions applied.")
+
+
+@router.get("/returns/eligibility/{part_id}", response_model=ApiResponse)
+async def check_return_eligibility(
+    part_id: int,
+    condition: str = Query("new", pattern="^(new|like_new|used|damaged|defective)$"),
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Check whether a specific part can be returned to the supplier.
+
+    Examines the part's condition, how long ago it was received (90-day window),
+    and whether it's been modified or opened.
+    """
+    svc = ReturnsService(db)
+    result = await svc.check_return_eligibility(part_id, condition)
+
+    return ApiResponse(data=result)
+
+
+@router.get("/returns/below-target/{part_id}", response_model=ApiResponse)
+async def check_below_target(
+    part_id: int,
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Check whether a part is below its restock target quantity.
+
+    Returns the current stock, target quantity, and whether it's below target.
+    Used by the ReturnSortingPage to show amber warnings on parts the warehouse
+    might want to keep instead of returning.
+    """
+    svc = ReturnsService(db)
+    result = await svc.check_below_target(part_id)
+
+    return ApiResponse(data=result)
 
 
 # ═══════════════════════════════════════════════════════════════

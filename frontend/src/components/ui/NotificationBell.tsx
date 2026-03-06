@@ -6,23 +6,60 @@
  * notification links to the relevant entity (JPO, PO, part, etc.).
  *
  * Auto-refreshes every 60 seconds to keep the count current.
+ *
+ * Phase 7E: Added sound alert support. When new unread notifications
+ * arrive and the user has sound enabled for any notification type,
+ * plays a chime. Respects browser audio policies (requires prior
+ * user interaction before audio can play).
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Bell, Check, X } from 'lucide-react';
+import { Bell, Check, Volume2, VolumeX } from 'lucide-react';
 import {
   getNotificationBadge,
   listNotifications,
   markNotificationsRead,
+  getNotificationSoundSettings,
 } from '../../api/notifications';
 import type { NotificationResponse } from '../../lib/types';
+
+/** Singleton audio element for notification chime */
+let chimeAudio: HTMLAudioElement | null = null;
+
+function getChimeAudio(): HTMLAudioElement {
+  if (!chimeAudio) {
+    chimeAudio = new Audio('/sounds/chime.mp3');
+    chimeAudio.volume = 0.5;
+  }
+  return chimeAudio;
+}
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+
+  // Track previous unread count to detect new notifications
+  const prevCountRef = useRef<number | null>(null);
+  // Track if user has interacted (required for audio autoplay policy)
+  const [userInteracted, setUserInteracted] = useState(false);
+
+  // Register user interaction on first click anywhere
+  useEffect(() => {
+    function handleInteraction() {
+      setUserInteracted(true);
+      document.removeEventListener('click', handleInteraction);
+      document.removeEventListener('keydown', handleInteraction);
+    }
+    document.addEventListener('click', handleInteraction);
+    document.addEventListener('keydown', handleInteraction);
+    return () => {
+      document.removeEventListener('click', handleInteraction);
+      document.removeEventListener('keydown', handleInteraction);
+    };
+  }, []);
 
   // Badge count — polls every 60s
   const { data: badge } = useQuery({
@@ -30,6 +67,39 @@ export function NotificationBell() {
     queryFn: getNotificationBadge,
     refetchInterval: 60_000,
   });
+
+  // Sound settings — cached, refetch rarely
+  const { data: soundSettings } = useQuery({
+    queryKey: ['notifications', 'sound-settings'],
+    queryFn: getNotificationSoundSettings,
+    staleTime: 5 * 60_000, // 5 min cache
+  });
+
+  // Check if ANY sound is enabled
+  const anySoundEnabled = soundSettings?.settings?.some(s => s.sound_enabled) ?? false;
+
+  // Play chime when new notifications arrive
+  const playChime = useCallback(() => {
+    if (!userInteracted || !anySoundEnabled) return;
+    try {
+      const audio = getChimeAudio();
+      audio.currentTime = 0;
+      audio.play().catch(() => {
+        // Browser blocked autoplay — silently ignore
+      });
+    } catch {
+      // Audio not supported — silently ignore
+    }
+  }, [userInteracted, anySoundEnabled]);
+
+  // Detect unread count increase → play sound
+  useEffect(() => {
+    const currentCount = badge?.unread_count ?? 0;
+    if (prevCountRef.current !== null && currentCount > prevCountRef.current) {
+      playChime();
+    }
+    prevCountRef.current = currentCount;
+  }, [badge?.unread_count, playChime]);
 
   // Recent notifications (only fetched when dropdown opens)
   const { data: notifData } = useQuery({
@@ -89,9 +159,17 @@ export function NotificationBell() {
         <div className="absolute right-0 top-full mt-2 w-80 rounded-lg border border-border bg-surface shadow-lg z-50">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-              Notifications
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                Notifications
+              </h3>
+              {/* Sound indicator */}
+              {anySoundEnabled ? (
+                <Volume2 className="h-3.5 w-3.5 text-green-500" title="Sound alerts on" />
+              ) : (
+                <VolumeX className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" title="Sound alerts off" />
+              )}
+            </div>
             {notifications.length > 0 && (
               <button
                 onClick={handleMarkAllRead}

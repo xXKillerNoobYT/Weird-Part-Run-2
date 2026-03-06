@@ -41,6 +41,38 @@ import type {
   // Procurement
   ReorderSuggestion,
   ProcurementDashboard,
+  // Phase 7A: Special Items
+  SpecialItemCreate,
+  SpecialItemResponse,
+  SpecialItemResolve,
+  // Phase 7B: Office Workflow
+  POConversationCreate,
+  POConversationEntry,
+  POConversationFollowUp,
+  POGroupCreate,
+  POGroupResponse,
+  POGroupListItem,
+  PendingApprovalItem,
+  PendingApprovalCounts,
+  BulkApprovalAction,
+  BulkApprovalResult,
+  ConfirmationChecklistItem,
+  ConfirmationChecklistUpdate,
+  // Phase 7C: Receiving Sessions & Return Sorting
+  ReceivingSessionCreate,
+  ReceivingSessionItemUpdate,
+  ReceivingSessionCommit,
+  ReceivingSessionResponse,
+  ReceivingSessionListItem,
+  ReturnSortingGuidance,
+  ReturnSortingRequest,
+  ReturnEligibilityCheck,
+  BelowTargetCheck,
+  // Phase 7E: Bulk Actions
+  BulkPOSubmit,
+  BulkPOStatusUpdate,
+  BulkReturnApprove,
+  BulkActionResult,
 } from '../lib/types';
 
 
@@ -58,10 +90,12 @@ function unwrapPaginated<T>(responseData: unknown): T[] {
 // JOB PARTS ORDERS (JPOs)
 // =================================================================
 
-/** List all JPOs with optional status filter */
+/** List all JPOs with optional filters */
 export async function listJPOs(params?: {
   status?: string;
   job_id?: number;
+  order_type?: 'job' | 'warehouse';
+  requested_by?: number;
 }): Promise<JPOListItem[]> {
   const { data } = await apiClient.get<ApiResponse<unknown>>(
     '/orders/jpos',
@@ -127,6 +161,56 @@ export async function getPartSupplierSuggestions(
   const { data } = await apiClient.get<ApiResponse<SupplierRanking[]>>(
     `/orders/jpos/suggestions/${partId}`,
     { params: jobId ? { job_id: jobId } : undefined }
+  );
+  return data.data ?? [];
+}
+
+
+// =================================================================
+// SPECIAL ITEMS (Phase 7A)
+// =================================================================
+
+/** List special items on a JPO */
+export async function listSpecialItems(
+  jpoId: number
+): Promise<SpecialItemResponse[]> {
+  const { data } = await apiClient.get<ApiResponse<SpecialItemResponse[]>>(
+    `/orders/jpos/${jpoId}/special-items`
+  );
+  return data.data ?? [];
+}
+
+/** Add a special (non-catalog) item to a JPO */
+export async function addSpecialItem(
+  jpoId: number,
+  item: SpecialItemCreate
+): Promise<SpecialItemResponse> {
+  const { data } = await apiClient.post<ApiResponse<SpecialItemResponse>>(
+    `/orders/jpos/${jpoId}/special-items`,
+    item
+  );
+  return data.data!;
+}
+
+/** Office resolves a flagged special item (links to catalog or clears flag) */
+export async function resolveSpecialItem(
+  itemId: number,
+  body: SpecialItemResolve
+): Promise<SpecialItemResponse> {
+  const { data } = await apiClient.put<ApiResponse<SpecialItemResponse>>(
+    `/orders/special-items/${itemId}/resolve`,
+    body
+  );
+  return data.data!;
+}
+
+/** List all unresolved flagged special items (office queue) */
+export async function listFlaggedSpecialItems(
+  limit?: number
+): Promise<SpecialItemResponse[]> {
+  const { data } = await apiClient.get<ApiResponse<SpecialItemResponse[]>>(
+    '/orders/special-items/flagged',
+    { params: limit ? { limit } : undefined }
   );
   return data.data ?? [];
 }
@@ -483,4 +567,343 @@ export async function getContactRatings(
     `/orders/ratings/${supplierId}`
   );
   return data.data?.ratings ?? [];
+}
+
+
+// =================================================================
+// PO CONVERSATION THREADS (Phase 7B)
+// =================================================================
+
+/** Get the conversation thread for a PO */
+export async function getPOConversation(
+  poId: number,
+  params?: { limit?: number; offset?: number }
+): Promise<POConversationEntry[]> {
+  const { data } = await apiClient.get<ApiResponse<POConversationEntry[]>>(
+    `/orders/pos/${poId}/conversation`,
+    { params }
+  );
+  return data.data ?? [];
+}
+
+/** Add a manual conversation entry to a PO thread */
+export async function addPOConversationEntry(
+  poId: number,
+  body: POConversationCreate
+): Promise<POConversationEntry> {
+  const { data } = await apiClient.post<ApiResponse<POConversationEntry>>(
+    `/orders/pos/${poId}/conversation`,
+    body
+  );
+  return data.data!;
+}
+
+/** Get all conversation entries across POs for a supplier */
+export async function getSupplierConversation(
+  supplierId: number,
+  params?: { limit?: number; offset?: number }
+): Promise<POConversationEntry[]> {
+  const { data } = await apiClient.get<ApiResponse<POConversationEntry[]>>(
+    `/orders/suppliers/${supplierId}/conversation`,
+    { params }
+  );
+  return data.data ?? [];
+}
+
+/** Toggle follow-up status on a conversation entry */
+export async function toggleConversationFollowUp(
+  entryId: number,
+  body: POConversationFollowUp
+): Promise<POConversationEntry> {
+  const { data } = await apiClient.put<ApiResponse<POConversationEntry>>(
+    `/orders/conversation/${entryId}/follow-up`,
+    body
+  );
+  return data.data!;
+}
+
+/** List all open (unresolved) follow-ups, optionally filtered by supplier */
+export async function listOpenFollowUps(
+  params?: { supplier_id?: number; limit?: number }
+): Promise<POConversationEntry[]> {
+  const { data } = await apiClient.get<ApiResponse<POConversationEntry[]>>(
+    '/orders/conversation/follow-ups',
+    { params }
+  );
+  return data.data ?? [];
+}
+
+
+// =================================================================
+// PO GROUPS (Phase 7B)
+// =================================================================
+
+/** Create a PO group for bundled sending to a supplier */
+export async function createPOGroup(
+  body: POGroupCreate
+): Promise<POGroupResponse> {
+  const { data } = await apiClient.post<ApiResponse<POGroupResponse>>(
+    '/orders/pos/group',
+    body
+  );
+  return data.data!;
+}
+
+/** Get a PO group with its members */
+export async function getPOGroup(
+  groupId: number
+): Promise<POGroupResponse> {
+  const { data } = await apiClient.get<ApiResponse<POGroupResponse>>(
+    `/orders/pos/group/${groupId}`
+  );
+  return data.data!;
+}
+
+/** List PO groups for a supplier */
+export async function listPOGroupsForSupplier(
+  supplierId: number,
+  params?: { limit?: number }
+): Promise<POGroupListItem[]> {
+  const { data } = await apiClient.get<ApiResponse<POGroupListItem[]>>(
+    `/orders/pos/groups/by-supplier/${supplierId}`,
+    { params }
+  );
+  return data.data ?? [];
+}
+
+
+// =================================================================
+// OFFICE APPROVALS QUEUE (Phase 7B)
+// =================================================================
+
+/** Get all pending JPOs + returns for the approval queue */
+export async function getPendingApprovals(
+  params?: { limit?: number; offset?: number }
+): Promise<PendingApprovalItem[]> {
+  const { data } = await apiClient.get<ApiResponse<PendingApprovalItem[]>>(
+    '/orders/office/pending-approvals',
+    { params }
+  );
+  return data.data ?? [];
+}
+
+/** Get counts for the pending-approvals badge */
+export async function countPendingApprovals(): Promise<PendingApprovalCounts> {
+  const { data } = await apiClient.get<ApiResponse<PendingApprovalCounts>>(
+    '/orders/office/pending-approvals/count'
+  );
+  return data.data!;
+}
+
+/** Bulk approve or reject multiple JPOs/returns */
+export async function bulkApproveOrReject(
+  body: BulkApprovalAction
+): Promise<BulkApprovalResult[]> {
+  const { data } = await apiClient.post<ApiResponse<BulkApprovalResult[]>>(
+    '/orders/office/bulk-approve',
+    body
+  );
+  return data.data ?? [];
+}
+
+
+// =================================================================
+// PO CONFIRMATION CHECKLIST (Phase 7B)
+// =================================================================
+
+/** Get the confirmation checklist for a PO */
+export async function getConfirmationChecklist(
+  poId: number
+): Promise<ConfirmationChecklistItem[]> {
+  const { data } = await apiClient.get<ApiResponse<ConfirmationChecklistItem[]>>(
+    `/orders/pos/${poId}/confirmation-checklist`
+  );
+  return data.data ?? [];
+}
+
+/** Update the confirmation checklist for a PO (full replacement) */
+export async function updateConfirmationChecklist(
+  poId: number,
+  body: ConfirmationChecklistUpdate
+): Promise<ConfirmationChecklistItem[]> {
+  const { data } = await apiClient.post<ApiResponse<ConfirmationChecklistItem[]>>(
+    `/orders/pos/${poId}/confirmation-checklist`,
+    body
+  );
+  return data.data ?? [];
+}
+
+
+// =================================================================
+// RECEIVING SESSIONS (Phase 7C)
+// =================================================================
+
+/** Start a new receiving session for a PO */
+export async function startReceivingSession(
+  body: ReceivingSessionCreate
+): Promise<ReceivingSessionResponse> {
+  const { data } = await apiClient.post<ApiResponse<ReceivingSessionResponse>>(
+    '/orders/receiving/sessions',
+    body
+  );
+  return data.data!;
+}
+
+/** List receiving sessions with optional filters */
+export async function listReceivingSessions(params?: {
+  po_id?: number;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<ReceivingSessionListItem[]> {
+  const { data } = await apiClient.get<ApiResponse<unknown>>(
+    '/orders/receiving/sessions',
+    { params }
+  );
+  return unwrapPaginated<ReceivingSessionListItem>(data.data);
+}
+
+/** Get full session detail with items, progress, PO info */
+export async function getReceivingSession(
+  sessionId: number
+): Promise<ReceivingSessionResponse> {
+  const { data } = await apiClient.get<ApiResponse<ReceivingSessionResponse>>(
+    `/orders/receiving/sessions/${sessionId}`
+  );
+  return data.data!;
+}
+
+/** Update a single line item in a receiving session */
+export async function updateReceivingSessionItem(
+  sessionId: number,
+  body: ReceivingSessionItemUpdate
+): Promise<Record<string, unknown>> {
+  const { data } = await apiClient.put<ApiResponse<Record<string, unknown>>>(
+    `/orders/receiving/sessions/${sessionId}/items`,
+    body
+  );
+  return data.data!;
+}
+
+/** Commit a receiving session — applies quantities to the PO */
+export async function commitReceivingSession(
+  sessionId: number,
+  body?: ReceivingSessionCommit
+): Promise<Record<string, unknown>> {
+  const { data } = await apiClient.post<ApiResponse<Record<string, unknown>>>(
+    `/orders/receiving/sessions/${sessionId}/commit`,
+    body ?? {}
+  );
+  return data.data!;
+}
+
+/** Cancel a receiving session — discards progress */
+export async function cancelReceivingSession(
+  sessionId: number
+): Promise<void> {
+  await apiClient.post(
+    `/orders/receiving/sessions/${sessionId}/cancel`
+  );
+}
+
+/** Scan-mode lookup: find the PO line matching a scanned part */
+export async function findPOLineByPartScan(
+  sessionId: number,
+  partId: number
+): Promise<Record<string, unknown> | null> {
+  try {
+    const { data } = await apiClient.get<ApiResponse<Record<string, unknown>>>(
+      `/orders/receiving/sessions/${sessionId}/scan/${partId}`
+    );
+    return data.data ?? null;
+  } catch {
+    return null;  // 404 = no match
+  }
+}
+
+
+// =================================================================
+// RETURN SORTING (Phase 7C)
+// =================================================================
+
+/** Get sorting guidance for all lines in a return */
+export async function getSortingGuidance(
+  returnId: number
+): Promise<ReturnSortingGuidance[]> {
+  const { data } = await apiClient.get<ApiResponse<ReturnSortingGuidance[]>>(
+    `/orders/returns/${returnId}/sorting`
+  );
+  return data.data ?? [];
+}
+
+/** Apply sorting dispositions to a return's line items */
+export async function processSortingDispositions(
+  returnId: number,
+  body: ReturnSortingRequest
+): Promise<Record<string, unknown>> {
+  const { data } = await apiClient.post<ApiResponse<Record<string, unknown>>>(
+    `/orders/returns/${returnId}/sorting`,
+    body
+  );
+  return data.data!;
+}
+
+/** Check whether a part can be returned to the supplier */
+export async function checkReturnEligibility(
+  partId: number,
+  condition?: string
+): Promise<ReturnEligibilityCheck> {
+  const { data } = await apiClient.get<ApiResponse<ReturnEligibilityCheck>>(
+    `/orders/returns/eligibility/${partId}`,
+    { params: condition ? { condition } : undefined }
+  );
+  return data.data!;
+}
+
+/** Check whether a part is below its restock target */
+export async function checkBelowTarget(
+  partId: number
+): Promise<BelowTargetCheck> {
+  const { data } = await apiClient.get<ApiResponse<BelowTargetCheck>>(
+    `/orders/returns/below-target/${partId}`
+  );
+  return data.data!;
+}
+
+
+// =================================================================
+// BULK ACTIONS (Phase 7E)
+// =================================================================
+
+/** Submit multiple draft POs to suppliers at once */
+export async function bulkSubmitPOs(
+  body: BulkPOSubmit
+): Promise<BulkActionResult[]> {
+  const { data } = await apiClient.post<ApiResponse<BulkActionResult[]>>(
+    '/orders/pos/bulk-submit',
+    body
+  );
+  return data.data ?? [];
+}
+
+/** Update status on multiple POs at once */
+export async function bulkUpdatePOStatus(
+  body: BulkPOStatusUpdate
+): Promise<BulkActionResult[]> {
+  const { data } = await apiClient.post<ApiResponse<BulkActionResult[]>>(
+    '/orders/pos/bulk-status',
+    body
+  );
+  return data.data ?? [];
+}
+
+/** Approve multiple pending returns at once */
+export async function bulkApproveReturns(
+  body: BulkReturnApprove
+): Promise<BulkActionResult[]> {
+  const { data } = await apiClient.post<ApiResponse<BulkActionResult[]>>(
+    '/orders/returns/bulk-approve',
+    body
+  );
+  return data.data ?? [];
 }

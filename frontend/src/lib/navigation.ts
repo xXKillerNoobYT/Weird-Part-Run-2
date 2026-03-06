@@ -47,6 +47,7 @@ export const MODULES: NavModule[] = [
       { id: 'notebook-templates', label: 'Notebook Templates', path: '/office/notebook-templates', permission: 'manage_notebooks' },
       { id: 'clock-out-questions', label: 'Clock-Out Questions', path: '/office/clock-out-questions', permission: 'manage_settings' },
       { id: 'warehouse-locations', label: 'Warehouse Locations', path: '/office/warehouse-locations', permission: 'manage_fleet' },
+      { id: 'spending', label: 'Spending', path: '/office/spending', permission: 'show_dollar_values' },
     ],
   },
   {
@@ -58,10 +59,12 @@ export const MODULES: NavModule[] = [
     tabs: [
       { id: 'dashboard', label: 'Dashboard', path: '/warehouse/dashboard' },
       { id: 'inventory', label: 'Inventory Grid', path: '/warehouse/inventory' },
+      { id: 'receiving', label: 'Receiving', path: '/warehouse/receiving', permission: 'manage_orders' },
+      { id: 'return-sorting', label: 'Return Sorting', path: '/warehouse/return-sorting', permission: 'manage_orders' },
       { id: 'staging', label: 'Pulled/Staging', path: '/warehouse/staging' },
       { id: 'audit', label: 'Audit', path: '/warehouse/audit', permission: 'perform_audit' },
       { id: 'movements', label: 'Movements Log', path: '/warehouse/movements' },
-      { id: 'tools', label: 'Tools', path: '/warehouse/tools' },
+      { id: 'tools', label: 'Tools', path: '/warehouse/tools', permission: 'view_tools' },
     ],
   },
   {
@@ -73,7 +76,7 @@ export const MODULES: NavModule[] = [
     tabs: [
       { id: 'my-truck', label: 'My Vehicle', path: '/trucks/my-truck' },
       { id: 'all', label: 'All Vehicles', path: '/trucks/all' },
-      { id: 'tools', label: 'Tools', path: '/trucks/tools' },
+      { id: 'tools', label: 'Tools', path: '/trucks/tools', permission: 'view_tools' },
       { id: 'maintenance', label: 'Maintenance', path: '/trucks/maintenance' },
       { id: 'mileage', label: 'Mileage', path: '/trucks/mileage' },
       { id: 'fleet', label: 'Fleet', path: '/trucks/fleet', permission: 'manage_fleet' },
@@ -108,13 +111,16 @@ export const MODULES: NavModule[] = [
     path: '/orders',
     permission: 'view_orders',
     tabs: [
-      // ── Job-related ordering ──
-      { id: 'parts-requests', label: 'Job Parts Requests', path: '/orders/parts-requests', group: 'Job Orders' },
-      // ── Supplier-facing purchasing (serves both jobs & warehouse restock) ──
-      { id: 'purchase-orders', label: 'Warehouse Purchase Orders', path: '/orders/purchase-orders', group: 'Purchasing' },
-      // ── Returns & warehouse procurement ──
-      { id: 'returns', label: 'Returns', path: '/orders/returns', group: 'Management' },
-      { id: 'procurement', label: 'Procurement', path: '/orders/procurement', permission: 'manage_orders', group: 'Management' },
+      // ── Field worker tabs (visible to everyone with view_orders) ──
+      { id: 'my-orders', label: 'My Orders', path: '/orders/my-orders', group: 'My Orders' },
+      { id: 'new-order', label: 'New Order', path: '/orders/new-order', group: 'My Orders' },
+      { id: 'returns', label: 'Returns', path: '/orders/returns', group: 'My Orders' },
+      // ── Office / management tabs (requires manage_orders) ──
+      { id: 'approvals', label: 'Approvals', path: '/orders/approvals', permission: 'manage_orders', group: 'Office' },
+      { id: 'all-requests', label: 'All Requests', path: '/orders/all-requests', permission: 'manage_orders', group: 'Office' },
+      { id: 'review-and-send', label: 'Review & Send', path: '/orders/review-and-send', permission: 'manage_orders', group: 'Office' },
+      { id: 'purchase-orders', label: 'Purchase Orders', path: '/orders/purchase-orders', permission: 'manage_orders', group: 'Office' },
+      { id: 'procurement', label: 'Procurement', path: '/orders/procurement', permission: 'manage_orders', group: 'Office' },
     ],
   },
   {

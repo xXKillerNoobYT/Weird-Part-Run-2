@@ -84,3 +84,25 @@ class NotificationBadge(BaseModel):
     """Unread count for the bell icon badge."""
     unread_count: int = 0
     has_urgent: bool = False
+
+
+# ═══════════════════════════════════════════════════════════════
+# Sound Preference Models (Phase 7E)
+# ═══════════════════════════════════════════════════════════════
+
+class NotificationSoundSetting(BaseModel):
+    """A single notification type's sound setting."""
+    notification_type: str
+    sound_enabled: bool = False
+    sound_file: str = "chime.mp3"
+
+
+class NotificationSoundSettingsResponse(BaseModel):
+    """All sound settings for a user."""
+    user_id: int
+    settings: list[NotificationSoundSetting] = Field(default_factory=list)
+
+
+class NotificationSoundSettingsUpdate(BaseModel):
+    """Update sound settings (batch)."""
+    settings: list[NotificationSoundSetting]

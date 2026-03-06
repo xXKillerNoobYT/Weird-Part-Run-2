@@ -35,6 +35,10 @@ import type {
   DailyReportResponse,
   DailyReportFull,
   StatusMessage,
+  // Phase 7A: Preferences
+  JobPreferenceResponse,
+  JobPreferenceToggle,
+  JobPreferencesSummary,
 } from '../lib/types';
 
 
@@ -390,4 +394,51 @@ export async function generateReportsNow(
     { params: targetDate ? { target_date: targetDate } : undefined }
   );
   return data.data ?? [];
+}
+
+
+// =================================================================
+// JOB PREFERENCES (Phase 7A — Smart Suggestions)
+// =================================================================
+
+/** Get all learned preferences for a job (brands, colors, suppliers, parts) */
+export async function getJobPreferences(
+  jobId: number,
+  params?: { preference_type?: string; category?: string }
+): Promise<JobPreferenceResponse[]> {
+  const { data } = await apiClient.get<ApiResponse<JobPreferenceResponse[]>>(
+    `/jobs/${jobId}/preferences`,
+    { params }
+  );
+  return data.data ?? [];
+}
+
+/**
+ * Get ranked smart suggestions for the unified order form.
+ *
+ * Returns a summary grouped by type (brands, colors, suppliers, parts)
+ * that the form uses to auto-filter the part catalog.
+ */
+export async function getJobSuggestions(
+  jobId: number,
+  category?: string
+): Promise<JobPreferencesSummary> {
+  const { data } = await apiClient.get<ApiResponse<JobPreferencesSummary>>(
+    `/jobs/${jobId}/suggestions`,
+    { params: category ? { category } : undefined }
+  );
+  return data.data!;
+}
+
+/** Toggle a learned preference on or off */
+export async function toggleJobPreference(
+  jobId: number,
+  prefId: number,
+  toggle: JobPreferenceToggle
+): Promise<JobPreferenceResponse> {
+  const { data } = await apiClient.put<ApiResponse<JobPreferenceResponse>>(
+    `/jobs/${jobId}/preferences/${prefId}`,
+    toggle
+  );
+  return data.data!;
 }

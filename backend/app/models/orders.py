@@ -2,7 +2,7 @@
 Pydantic models for the Orders & Procurement system.
 
 Covers:
-  - Job Parts Orders (JPO) — field-worker requests
+  - Job Parts Orders (JPO) — field-worker requests (job + warehouse restock)
   - Purchase Orders (PO) — supplier-facing orders
   - PO Line Items — individual items on a PO
   - Returns — job-to-warehouse and warehouse-to-supplier
@@ -10,6 +10,14 @@ Covers:
   - Order Status History — audit trail
   - Price History — supplier pricing over time
   - Supplier Contact Ratings — communication scoring
+  - Job Preferences — smart suggestion memory per job (Phase 7A)
+  - Special Items — non-catalog items on an order (Phase 7A)
+  - PO Conversations — CRM-style conversation threads per PO (Phase 7B)
+  - PO Groups — bundle multiple POs for combined sending (Phase 7B)
+  - Approval Queue — unified pending approvals for office (Phase 7B)
+  - Confirmation Checklist — per-line confirmation tracking (Phase 7B)
+  - Receiving Sessions — session-based receiving workflow (Phase 7C)
+  - Return Sorting — eligibility checking and sorting guidance (Phase 7C)
 """
 
 from __future__ import annotations
@@ -34,12 +42,29 @@ class JPOLineCreate(BaseModel):
     notes: str | None = None
 
 
+class SpecialItemCreate(BaseModel):
+    """A non-catalog item to include in an order."""
+    description: str = Field(..., min_length=1)
+    part_number: str | None = None  # optional manufacturer part number
+    quantity: int = Field(1, ge=1)
+    unit: str = "each"
+    estimated_cost: float | None = None
+    notes: str | None = None
+
+
 class JPOCreate(BaseModel):
-    """Create a new Job Parts Order."""
-    job_id: int
+    """Create a new Job Parts Order (job order or warehouse restock).
+
+    For job orders:  job_id is required, order_type defaults to 'job'.
+    For restocks:    job_id is None, order_type must be 'warehouse'.
+    """
+    job_id: int | None = None  # NULL for warehouse restocks
+    order_type: str = "job"  # 'job' | 'warehouse'
     priority: str = "normal"  # normal | urgent
+    smart_suggestions_enabled: bool = True
     notes: str | None = None
     lines: list[JPOLineCreate] = Field(default_factory=list)
+    special_items: list[SpecialItemCreate] = Field(default_factory=list)
 
 
 class JPOUpdate(BaseModel):
@@ -70,10 +95,13 @@ class JPOLineResponse(BaseModel):
 class JPOResponse(BaseModel):
     """JPO in API responses."""
     id: int
-    job_id: int
+    job_id: int | None = None  # NULL for warehouse restocks
     order_number: str
     status: str
     priority: str = "normal"
+    order_type: str = "job"
+    has_special_items: bool = False
+    smart_suggestions_enabled: bool = True
     requested_by: int
     approved_by: int | None = None
     approved_at: datetime | None = None
@@ -87,15 +115,18 @@ class JPOResponse(BaseModel):
     approver_name: str | None = None
     line_count: int = 0
     lines: list[JPOLineResponse] | None = None
+    special_items: list[Any] | None = None  # populated on detail view
 
 
 class JPOListItem(BaseModel):
     """Compact JPO for list views."""
     id: int
-    job_id: int
+    job_id: int | None = None
     order_number: str
     status: str
     priority: str = "normal"
+    order_type: str = "job"
+    has_special_items: bool = False
     requested_by: int
     requester_name: str | None = None
     job_name: str | None = None
@@ -527,3 +558,416 @@ class ReturnStatusUpdateBody(BaseModel):
 class VerifyCountsBody(BaseModel):
     """Body for POST /procurement/verify — request spot-check audits."""
     part_ids: list[int]
+
+
+# ═══════════════════════════════════════════════════════════════
+# Job Preferences Models (Phase 7A)
+# ═══════════════════════════════════════════════════════════════
+
+class JobPreferenceResponse(BaseModel):
+    """A single learned preference for a job."""
+    id: int
+    job_id: int
+    preference_type: str  # brand | color | supplier | part
+    entity_id: int | None = None
+    text_value: str | None = None
+    category: str | None = None
+    is_active: bool = True
+    auto_learned: bool = True
+    confidence_score: float = 0.5
+    last_used_at: str | None = None
+    created_at: datetime | None = None
+    # Joined fields
+    entity_name: str | None = None
+    hex_code: str | None = None  # for color preferences
+    category_name: str | None = None
+
+
+class JobPreferenceToggle(BaseModel):
+    """Toggle a preference on or off."""
+    is_active: bool
+
+
+class JobPreferencesSummary(BaseModel):
+    """Grouped preferences for the unified order form filter chips."""
+    brands: list[dict] = Field(default_factory=list)
+    colors: list[dict] = Field(default_factory=list)
+    suppliers: list[dict] = Field(default_factory=list)
+    parts: list[dict] = Field(default_factory=list)
+
+
+# ═══════════════════════════════════════════════════════════════
+# Special Item Models (Phase 7A)
+# ═══════════════════════════════════════════════════════════════
+
+class SpecialItemResponse(BaseModel):
+    """A non-catalog special item on an order."""
+    id: int
+    jpo_id: int
+    description: str
+    part_number: str | None = None
+    quantity: int = 1
+    unit: str = "each"
+    estimated_cost: float | None = None
+    notes: str | None = None
+    is_flagged: bool = True
+    flag_resolved_by: int | None = None
+    flag_resolved_at: datetime | None = None
+    linked_part_id: int | None = None
+    created_at: datetime | None = None
+    # Joined fields
+    resolver_name: str | None = None
+    linked_part_description: str | None = None
+
+
+class SpecialItemResolve(BaseModel):
+    """Office resolves a flagged special item."""
+    linked_part_id: int | None = None  # optional match to catalog part
+
+
+# ═══════════════════════════════════════════════════════════════
+# PO Conversation Models (Phase 7B)
+# ═══════════════════════════════════════════════════════════════
+
+class POConversationCreate(BaseModel):
+    """Add a manual entry to a PO's conversation thread.
+
+    entry_type controls the visual treatment in the UI:
+      - 'note':          general notes (blue)
+      - 'call':          phone call log (green)
+      - 'email_summary': email summary (purple)
+      - 'action':        action item (amber)
+    System entries are auto-generated and use a separate code path.
+    """
+    entry_type: str = Field(
+        ...,
+        pattern="^(note|call|email_summary|action)$",
+    )
+    message: str = Field(..., min_length=1)
+    follow_up_needed: bool = False
+
+
+class POConversationResponse(BaseModel):
+    """A single conversation entry in API responses."""
+    id: int
+    po_id: int | None = None
+    supplier_id: int | None = None
+    entry_type: str
+    message: str
+    follow_up_needed: bool = False
+    follow_up_resolved_at: datetime | None = None
+    created_by: int | None = None
+    created_at: datetime | None = None
+    # Joined fields
+    creator_name: str | None = None
+    po_number: str | None = None  # included when viewing supplier-level thread
+
+
+class POConversationFollowUp(BaseModel):
+    """Toggle the follow-up status on a conversation entry."""
+    resolved: bool
+
+
+# ═══════════════════════════════════════════════════════════════
+# PO Group Models (Phase 7B)
+# ═══════════════════════════════════════════════════════════════
+
+class POGroupCreate(BaseModel):
+    """Create a PO group for bundled sending to a supplier.
+
+    Groups allow generating a single combined PDF (or individual PDFs
+    packaged together) for multiple POs going to the same supplier.
+    """
+    group_name: str | None = None  # auto-generated if not provided
+    supplier_id: int
+    po_ids: list[int] = Field(..., min_length=1)
+
+
+class POGroupMemberResponse(BaseModel):
+    """A PO that is part of a group — includes compact PO info."""
+    id: int  # po_group_members.id
+    group_id: int
+    po_id: int
+    po_number: str | None = None
+    status: str | None = None
+    total_cost: float = 0
+    line_count: int = 0
+
+
+class POGroupResponse(BaseModel):
+    """PO group in API responses."""
+    id: int
+    group_name: str | None = None
+    supplier_id: int
+    supplier_name: str | None = None
+    pdf_path: str | None = None
+    individual_pdfs: list[str] | None = None  # deserialized from JSON
+    created_by: int | None = None
+    creator_name: str | None = None
+    created_at: datetime | None = None
+    members: list[POGroupMemberResponse] = Field(default_factory=list)
+    total_value: float = 0  # sum of all member POs
+
+
+class POGroupListItem(BaseModel):
+    """Compact PO group for list views."""
+    id: int
+    group_name: str | None = None
+    supplier_id: int
+    supplier_name: str | None = None
+    po_count: int = 0
+    total_value: float = 0
+    has_pdf: bool = False
+    created_at: datetime | None = None
+
+
+# ═══════════════════════════════════════════════════════════════
+# Approval Queue Models (Phase 7B)
+# ═══════════════════════════════════════════════════════════════
+
+class PendingApprovalItem(BaseModel):
+    """A unified approval queue item — covers both JPOs and Returns.
+
+    This is a view model: it doesn't map to a single table but merges
+    data from job_parts_orders and returns for the Office approvals tab.
+    The `entity_type` field tells the frontend which detail page to link to.
+    """
+    entity_type: str  # 'jpo' | 'return'
+    entity_id: int
+    reference_number: str  # JPO order_number or Return return_number
+    status: str  # pending_approval (always, by definition)
+    priority: str = "normal"
+    order_type: str | None = None  # 'job' | 'warehouse' (JPO only)
+    return_type: str | None = None  # 'job_to_warehouse' | 'warehouse_to_supplier' (Return only)
+    reason: str | None = None  # Return reason
+    has_special_items: bool = False  # JPO only
+    requester_id: int
+    requester_name: str | None = None
+    job_id: int | None = None
+    job_name: str | None = None
+    supplier_name: str | None = None  # Return only
+    line_count: int = 0
+    created_at: datetime | None = None
+
+
+class BulkApprovalTarget(BaseModel):
+    """A single target in a bulk approval action."""
+    entity_type: str = Field(..., pattern="^(jpo|return)$")
+    entity_id: int
+
+
+class BulkApprovalAction(BaseModel):
+    """Approve or reject multiple items at once from the Office approvals tab.
+
+    Each item is identified by (entity_type, entity_id) so that the
+    backend can route to the correct service (JPO or Returns).
+    """
+    items: list[BulkApprovalTarget] = Field(..., min_length=1)
+    action: str = Field(..., pattern="^(approve|reject)$")
+    notes: str | None = None
+
+
+# ═══════════════════════════════════════════════════════════════
+# Bulk PO Actions (Phase 7E)
+# ═══════════════════════════════════════════════════════════════
+
+class BulkPOSubmit(BaseModel):
+    """Submit multiple draft POs to suppliers at once."""
+    po_ids: list[int] = Field(..., min_length=1)
+    notes: str | None = None
+
+
+class BulkPOStatusUpdate(BaseModel):
+    """Update status on multiple POs at once."""
+    po_ids: list[int] = Field(..., min_length=1)
+    status: str = Field(..., pattern="^(submitted|confirmed|shipped|delivered|cancelled)$")
+    notes: str | None = None
+
+
+class BulkReturnApprove(BaseModel):
+    """Approve multiple pending returns at once."""
+    return_ids: list[int] = Field(..., min_length=1)
+    notes: str | None = None
+
+
+# ═══════════════════════════════════════════════════════════════
+# Confirmation Checklist Models (Phase 7B)
+# ═══════════════════════════════════════════════════════════════
+
+class ConfirmationChecklistItem(BaseModel):
+    """A single line in the PO confirmation checklist.
+
+    Office staff check off each line item as they confirm it has been
+    ordered correctly with the supplier. Stored as JSON array in the
+    purchase_orders.confirmation_checklist column.
+    """
+    po_line_id: int
+    part_id: int
+    confirmed: bool = False
+    confirmed_by: int | None = None
+    confirmed_at: str | None = None  # ISO datetime string
+    # Joined (only populated in response, not stored in JSON)
+    part_description: str | None = None
+    confirmer_name: str | None = None
+
+
+class ConfirmationChecklistUpdate(BaseModel):
+    """Update the confirmation checklist for a PO.
+
+    Accepts a full checklist (all items, including unchanged ones).
+    The service layer diffs against existing state to find changes.
+    """
+    checklist: list[ConfirmationChecklistItem] = Field(..., min_length=1)
+
+
+# ═══════════════════════════════════════════════════════════════
+# Receiving Session Models (Phase 7C)
+# ═══════════════════════════════════════════════════════════════
+
+class ReceivingSessionCreate(BaseModel):
+    """Start a new receiving session for a PO.
+
+    Mode determines the UI experience:
+      - 'packing_slip': show all expected lines, user enters qty per line
+      - 'scan':         QR scanner active, user scans parts and enters qty
+    """
+    po_id: int
+    mode: str = Field("packing_slip", pattern="^(packing_slip|scan)$")
+    notes: str | None = None
+
+
+class ReceivingSessionItemUpdate(BaseModel):
+    """Update a single line in a receiving session.
+
+    The frontend sends incremental updates as the user fills in quantities.
+    `received_qty` is the TOTAL quantity for this line (not a delta).
+    """
+    po_line_id: int
+    received_qty: int = Field(0, ge=0)
+    actual_cost: float | None = None  # if different from PO price
+    staging_zone_id: int | None = None
+    notes: str | None = None
+
+
+class ReceivingSessionCommit(BaseModel):
+    """Commit a receiving session — applies all received quantities to the PO.
+
+    The `items` array should contain only lines with received_qty > 0.
+    On commit the service:
+      1. Updates PO line received quantities
+      2. Creates stock movements
+      3. Updates PO status (partially_received / received)
+      4. Marks session as completed
+    """
+    items: list[ReceivingSessionItemUpdate] = Field(default_factory=list)
+    notes: str | None = None
+
+
+class ReceivingSessionItemResponse(BaseModel):
+    """A single line in a receiving session (API response)."""
+    id: int
+    session_id: int
+    po_line_id: int
+    expected_qty: int = 0
+    received_qty: int = 0
+    actual_cost: float | None = None
+    staging_zone_id: int | None = None
+    scanned_at: datetime | None = None
+    notes: str | None = None
+    created_at: datetime | None = None
+    # Joined fields
+    part_id: int | None = None
+    part_number: str | None = None
+    part_description: str | None = None
+    unit_cost: float | None = None  # from PO line
+    zone_label: str | None = None
+
+
+class ReceivingSessionResponse(BaseModel):
+    """Receiving session in API responses."""
+    id: int
+    po_id: int
+    po_number: str | None = None
+    supplier_name: str | None = None
+    started_by: int
+    starter_name: str | None = None
+    mode: str = "packing_slip"
+    status: str = "in_progress"
+    completed_at: datetime | None = None
+    notes: str | None = None
+    created_at: datetime | None = None
+    items: list[ReceivingSessionItemResponse] = Field(default_factory=list)
+    # Progress summary
+    total_expected: int = 0
+    total_received: int = 0
+    line_count: int = 0
+
+
+class ReceivingSessionListItem(BaseModel):
+    """Compact session for list views."""
+    id: int
+    po_id: int
+    po_number: str | None = None
+    supplier_name: str | None = None
+    mode: str = "packing_slip"
+    status: str = "in_progress"
+    total_expected: int = 0
+    total_received: int = 0
+    started_by: int
+    starter_name: str | None = None
+    created_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+# ═══════════════════════════════════════════════════════════════
+# Return Sorting Models (Phase 7C)
+# ═══════════════════════════════════════════════════════════════
+
+class ReturnSortingGuidance(BaseModel):
+    """Sorting guidance for a single return line item.
+
+    The service analyzes each line's condition, supplier return eligibility,
+    and current stock levels to produce a recommendation:
+      - 'return_to_supplier':  good condition, within return window
+      - 'restock':             usable but not returnable (or below target)
+      - 'write_off':           damaged/defective beyond use
+    """
+    return_line_id: int
+    part_id: int
+    part_number: str | None = None
+    part_description: str | None = None
+    qty: int = 1
+    condition: str = "new"
+    current_stock: int = 0
+    target_qty: int = 0
+    below_target: bool = False
+    returnable_to_supplier: bool = True
+    non_return_reason: str | None = None
+    recommended_disposition: str  # return_to_supplier | restock | write_off
+    recommendation_reason: str  # human-readable explanation
+
+
+class ReturnSortingDisposition(BaseModel):
+    """Apply a sorting disposition to a return line item.
+
+    The warehouse worker confirms or overrides the recommendation.
+    """
+    return_line_id: int
+    disposition: str = Field(..., pattern="^(return_to_supplier|restock|write_off)$")
+    dest_type: str | None = None  # warehouse | truck (for restock)
+    dest_id: int | None = None    # staging_zone_id or location_id
+    notes: str | None = None
+
+
+class ReturnSortingRequest(BaseModel):
+    """Process sorting dispositions for all lines in a return."""
+    dispositions: list[ReturnSortingDisposition] = Field(..., min_length=1)
+
+
+class ReturnEligibilityCheck(BaseModel):
+    """Response for checking a part's return eligibility to supplier."""
+    part_id: int
+    returnable: bool = True
+    reasons: list[str] = Field(default_factory=list)  # why not returnable
+    supplier_return_window_days: int | None = None  # if known
+    days_since_receipt: int | None = None

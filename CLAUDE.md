@@ -137,7 +137,7 @@ Plans are living documents that build our project's institutional memory. Treat 
 
 1. **Always save to `docs/`.** Never leave plans only in `.claude/plans/` — those are ephemeral and won't persist.
 2. **Use descriptive filenames:** `phase-N-short-name.md` or `feature-short-name.md`.
-3. **Read existing plans before starting work.** At the start of a new phase, read the master plan AND the relevant phase plan. Understand what's been done and what's next. Don't duplicate work or contradict previous decisions.
+3. **ALWAYS read plans before making edits.** Before writing ANY code in a phase, read BOTH the plan you built (in `.claude/plans/`) AND the saved copy (in `docs/plans/`). Understand the full design before implementing. This prevents drift, contradictions, and wasted rework. At the start of a new phase, also read the master plan to understand cross-phase dependencies.
 4. **Update plans as work completes.** Mark completed items, note any deviations from the original plan, and add learnings. Plans should reflect reality, not just intent.
 5. **Preserve plan history.** Don't delete old plans when creating new ones. The progression from Phase 1 → 2 → 3 → ... tells the story of the project's evolution. Future agents (and the user) benefit from this context.
 6. **When creating a new plan,** reference the master plan and summarize what phases came before. This makes each plan self-contained enough to understand in isolation.
@@ -148,3 +148,7 @@ Plans are living documents that build our project's institutional memory. Treat 
 - Phase 3.5 + 4: Jobs & Labor (complete)
 - Phase 4.5: Unified Notebook System (complete)
 - Phase 5: Orders & Procurement (complete)
+- Phase 6: Fleet & Vehicle Management (complete)
+- Phase 7A: Core Ordering Experience (complete)
+- Phase 8: People Full (complete)
+- Phase 9: Tools & Kits (complete)

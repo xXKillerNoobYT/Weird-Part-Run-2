@@ -9,6 +9,12 @@ Truck return flow:
   Job → Truck (job→truck movement, optional notebook entry)
   Truck → Staging (truck→staging movement at warehouse)
   Staging → Shelf (restock) or → Supplier Return (RMA)
+
+Phase 7C additions:
+  - get_sorting_guidance(return_id) — per-line recommendations
+  - check_return_eligibility(part_id, condition) — supplier return check
+  - check_below_target(part_id) — restock target comparison
+  - process_sorted_return(return_id, dispositions) — apply sorting decisions
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ from app.repositories.orders_repo import (
     ReturnLineRepo,
     ReturnRepo,
 )
+from app.services.cost_tracking_service import CostTrackingService
 
 logger = logging.getLogger(__name__)
 
@@ -204,16 +211,198 @@ class ReturnsService:
         await self.db.commit()
         return True
 
-    async def process_staging_sort(
+    # ═══════════════════════════════════════════════════════════════
+    # Return Sorting Guidance (Phase 7C)
+    # ═══════════════════════════════════════════════════════════════
+
+    async def get_sorting_guidance(self, return_id: int) -> list[dict]:
+        """Generate per-line sorting guidance for a return.
+
+        For each line item, analyzes:
+          - Item condition (new, used, damaged, defective)
+          - Whether the supplier accepts returns for this condition
+          - Current stock vs restock target
+          - Time since last receipt (return window)
+
+        Returns a list of guidance objects, one per line.
+        """
+        # Fetch return lines with part details
+        cursor = await self.db.execute(
+            """
+            SELECT rli.id AS return_line_id,
+                   rli.part_id, rli.qty, rli.condition,
+                   rli.disposition AS current_disposition,
+                   rli.returnable_to_supplier,
+                   rli.non_return_reason,
+                   rli.below_target_flag,
+                   p.part_number, p.description AS part_description,
+                   p.reorder_point, p.target_qty
+            FROM return_line_items rli
+            JOIN parts p ON p.id = rli.part_id
+            WHERE rli.return_id = ?
+            ORDER BY rli.id
+            """,
+            (return_id,),
+        )
+        lines = await cursor.fetchall()
+
+        guidance_list = []
+        for line in lines:
+            part_id = line["part_id"]
+
+            # Get current warehouse stock
+            current_stock = await self._get_current_stock(part_id)
+
+            # Get target qty (defaults)
+            target_qty = line["target_qty"] or 0
+            reorder_point = line["reorder_point"] or 0
+            below_target = current_stock < target_qty
+
+            # Check supplier returnability
+            eligibility = await self.check_return_eligibility(
+                part_id, line["condition"]
+            )
+
+            # Determine recommendation
+            recommendation, reason = self._compute_recommendation(
+                condition=line["condition"],
+                returnable=eligibility["returnable"],
+                eligibility_reasons=eligibility["reasons"],
+                below_target=below_target,
+                current_stock=current_stock,
+                target_qty=target_qty,
+            )
+
+            # Update the return line item with computed flags
+            await self.db.execute(
+                """
+                UPDATE return_line_items
+                SET returnable_to_supplier = ?,
+                    below_target_flag = ?,
+                    non_return_reason = ?
+                WHERE id = ?
+                """,
+                (
+                    1 if eligibility["returnable"] else 0,
+                    1 if below_target else 0,
+                    eligibility["reasons"][0] if eligibility["reasons"] else None,
+                    line["return_line_id"],
+                ),
+            )
+
+            guidance_list.append({
+                "return_line_id": line["return_line_id"],
+                "part_id": part_id,
+                "part_number": line["part_number"],
+                "part_description": line["part_description"],
+                "qty": line["qty"],
+                "condition": line["condition"],
+                "current_stock": current_stock,
+                "target_qty": target_qty,
+                "below_target": below_target,
+                "returnable_to_supplier": eligibility["returnable"],
+                "non_return_reason": (
+                    eligibility["reasons"][0] if eligibility["reasons"] else None
+                ),
+                "recommended_disposition": recommendation,
+                "recommendation_reason": reason,
+            })
+
+        await self.db.commit()
+        return guidance_list
+
+    async def check_return_eligibility(
+        self, part_id: int, condition: str
+    ) -> dict:
+        """Determine if a part can be returned to its supplier.
+
+        Factors:
+          - Condition: 'new' or 'unused' are returnable; 'used', 'damaged',
+            'defective' may not be (depends on supplier policy)
+          - Time since receipt: most suppliers have a 30-90 day window
+          - Custom modifications: not returnable
+        """
+        reasons: list[str] = []
+
+        # Condition-based check
+        non_returnable_conditions = ("used", "damaged")
+        if condition in non_returnable_conditions:
+            reasons.append(f"Item is in '{condition}' condition")
+
+        # Check most recent receipt date for this part
+        cursor = await self.db.execute(
+            """
+            SELECT MAX(sm.created_at) AS last_received
+            FROM stock_movements sm
+            WHERE sm.part_id = ? AND sm.movement_type = 'receive'
+            """,
+            (part_id,),
+        )
+        row = await cursor.fetchone()
+        last_received = row["last_received"] if row else None
+
+        days_since_receipt = None
+        if last_received:
+            cursor2 = await self.db.execute(
+                "SELECT julianday('now') - julianday(?) AS days",
+                (last_received,),
+            )
+            days_row = await cursor2.fetchone()
+            if days_row and days_row["days"] is not None:
+                days_since_receipt = int(days_row["days"])
+
+                # Default return window: 90 days
+                if days_since_receipt > 90:
+                    reasons.append(
+                        f"Received {days_since_receipt} days ago (exceeds 90-day return window)"
+                    )
+
+        returnable = len(reasons) == 0
+
+        return {
+            "part_id": part_id,
+            "returnable": returnable,
+            "reasons": reasons,
+            "supplier_return_window_days": 90,  # configurable in future
+            "days_since_receipt": days_since_receipt,
+        }
+
+    async def check_below_target(self, part_id: int) -> dict:
+        """Check if a part is below its restock target quantity."""
+        cursor = await self.db.execute(
+            "SELECT target_qty, reorder_point FROM parts WHERE id = ?",
+            (part_id,),
+        )
+        part = await cursor.fetchone()
+        if not part:
+            return {"part_id": part_id, "below_target": False, "current_stock": 0, "target_qty": 0}
+
+        current_stock = await self._get_current_stock(part_id)
+        target = part["target_qty"] or 0
+
+        return {
+            "part_id": part_id,
+            "below_target": current_stock < target,
+            "current_stock": current_stock,
+            "target_qty": target,
+            "reorder_point": part["reorder_point"] or 0,
+            "deficit": max(0, target - current_stock),
+        }
+
+    async def process_sorted_return(
         self,
         return_id: int,
         dispositions: list[dict],
         user_id: int,
     ) -> dict:
-        """Sort return items from staging to final destinations.
+        """Apply sorting dispositions to all lines in a return.
 
-        Each disposition: {return_line_id, disposition, dest_type, dest_id}
-        disposition: 'restock' → warehouse shelf, 'return_to_supplier' → RMA
+        Each disposition: {return_line_id, disposition, dest_type?, dest_id?, notes?}
+
+        disposition values:
+          - 'restock':              move to warehouse shelf
+          - 'return_to_supplier':   queue for supplier RMA
+          - 'write_off':            record as loss
         """
         results = {"restocked": [], "supplier_returns": [], "write_offs": []}
 
@@ -221,6 +410,15 @@ class ReturnsService:
             line = await self.return_line_repo.get_by_id(item["return_line_id"])
             if not line:
                 continue
+
+            # Update the line's disposition
+            update_data: dict[str, Any] = {
+                "disposition": item["disposition"],
+            }
+            if item.get("notes"):
+                update_data["notes"] = item["notes"]
+
+            await self.return_line_repo.update(item["return_line_id"], update_data)
 
             if item["disposition"] == "restock":
                 # Move to warehouse shelf
@@ -235,13 +433,61 @@ class ReturnsService:
                     return_id=return_id,
                     condition=line.get("condition", "new"),
                 )
-                results["restocked"].append(line["part_id"])
+
+                # ── Phase 7D: Restore cost layers via LIFO ──
+                try:
+                    cost_svc = CostTrackingService(self.db)
+                    await cost_svc.return_lifo(line["part_id"], line["qty"])
+                except Exception as e:
+                    logger.warning(
+                        "LIFO return failed for part %d: %s", line["part_id"], e
+                    )
+
+                results["restocked"].append({
+                    "part_id": line["part_id"],
+                    "qty": line["qty"],
+                    "return_line_id": item["return_line_id"],
+                })
 
             elif item["disposition"] == "return_to_supplier":
-                results["supplier_returns"].append(line["part_id"])
+                results["supplier_returns"].append({
+                    "part_id": line["part_id"],
+                    "qty": line["qty"],
+                    "return_line_id": item["return_line_id"],
+                })
 
             elif item["disposition"] == "write_off":
-                results["write_offs"].append(line["part_id"])
+                # Create a write-off movement (from warehouse → void)
+                await self._create_return_movement(
+                    part_id=line["part_id"],
+                    qty=line["qty"],
+                    from_type="warehouse",
+                    from_id=None,
+                    to_type=None,
+                    to_id=None,
+                    user_id=user_id,
+                    return_id=return_id,
+                    condition=line.get("condition", "damaged"),
+                )
+                results["write_offs"].append({
+                    "part_id": line["part_id"],
+                    "qty": line["qty"],
+                    "return_line_id": item["return_line_id"],
+                })
+
+        # Update return status to reflect sorting is done
+        ret = await self.return_repo.get_by_id(return_id)
+        if ret and ret["status"] == "approved":
+            has_supplier_returns = len(results["supplier_returns"]) > 0
+            new_status = "shipped" if has_supplier_returns else "closed"
+            await self.return_repo.update(return_id, {"status": new_status})
+            await self.history_repo.log_change(
+                "return", return_id, "approved", new_status,
+                user_id,
+                f"Sorted: {len(results['restocked'])} restocked, "
+                f"{len(results['supplier_returns'])} to supplier, "
+                f"{len(results['write_offs'])} written off"
+            )
 
         await self.db.commit()
         return results
@@ -270,7 +516,88 @@ class ReturnsService:
         cursor = await self.db.execute(sql, tuple(params))
         return await cursor.fetchall()
 
-    # ── Internal Helpers ──────────────────────────────────────
+    # ═══════════════════════════════════════════════════════════════
+    # Internal Helpers
+    # ═══════════════════════════════════════════════════════════════
+
+    def _compute_recommendation(
+        self,
+        condition: str,
+        returnable: bool,
+        eligibility_reasons: list[str],
+        below_target: bool,
+        current_stock: int,
+        target_qty: int,
+    ) -> tuple[str, str]:
+        """Compute a sorting recommendation for a single return line.
+
+        Returns (disposition, human-readable reason).
+        """
+        # Write-off damaged/defective items that can't be returned
+        if condition in ("damaged", "defective") and not returnable:
+            return (
+                "write_off",
+                f"Item is {condition} and cannot be returned to supplier",
+            )
+
+        # Defective items that CAN be returned → return to supplier
+        if condition == "defective" and returnable:
+            return (
+                "return_to_supplier",
+                "Defective item — return to supplier for credit/replacement",
+            )
+
+        # New/unused items that are returnable → return to supplier
+        if condition in ("new",) and returnable and not below_target:
+            return (
+                "return_to_supplier",
+                "Item in new condition, eligible for supplier return",
+            )
+
+        # Below target → prefer restocking
+        if below_target:
+            deficit = target_qty - current_stock
+            return (
+                "restock",
+                f"Below target by {deficit} units (stock: {current_stock}, "
+                f"target: {target_qty}) — recommend restocking",
+            )
+
+        # Used items → restock (can't return)
+        if condition == "used":
+            return (
+                "restock",
+                "Used condition — restock in warehouse (not returnable to supplier)",
+            )
+
+        # Default: return to supplier if eligible, otherwise restock
+        if returnable:
+            return (
+                "return_to_supplier",
+                "Eligible for supplier return",
+            )
+
+        reason_str = "; ".join(eligibility_reasons) if eligibility_reasons else "Not eligible"
+        return ("restock", f"Cannot return to supplier: {reason_str}")
+
+    async def _get_current_stock(self, part_id: int) -> int:
+        """Get the current warehouse stock for a part."""
+        cursor = await self.db.execute(
+            """
+            SELECT COALESCE(
+                (SELECT SUM(CASE
+                    WHEN to_location_type = 'warehouse' THEN qty
+                    WHEN from_location_type = 'warehouse' THEN -qty
+                    ELSE 0
+                END)
+                FROM stock_movements
+                WHERE part_id = ?), 0
+            ) AS stock
+            """,
+            (part_id,),
+        )
+        row = await cursor.fetchone()
+        return max(0, row["stock"]) if row else 0
 
     async def _create_return_movement(
         self,
