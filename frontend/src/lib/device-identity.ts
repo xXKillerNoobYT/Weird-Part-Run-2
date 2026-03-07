@@ -31,7 +31,7 @@ function generateUUID(): string {
 /** Get or create a persistent device ID */
 export async function getDeviceId(): Promise<string> {
   if (isCapacitor()) {
-    const { Preferences } = await import('@capacitor/preferences');
+    const { Preferences } = await import(/* @vite-ignore */ '@capacitor/preferences');
     const result = await Preferences.get({ key: DEVICE_ID_KEY });
     if (result.value) return result.value;
 

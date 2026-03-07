@@ -50,7 +50,7 @@ function SyncIndicatorInner() {
   const handleManualSync = useCallback(async () => {
     // Get device ID from Preferences
     try {
-      const { Preferences } = await import('@capacitor/preferences');
+      const { Preferences } = await import(/* @vite-ignore */ '@capacitor/preferences');
       const result = await Preferences.get({ key: 'device_id' });
       if (result.value) {
         await runSync(result.value);

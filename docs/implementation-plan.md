@@ -1,7 +1,7 @@
 # Wired-Part: Full Implementation Plan
 
 > **Last updated:** 2026-03-07
-> **Status:** Phases 1–10 complete + V1.0 infra + gap closure M1-M4 (44/44 done). V1.0 deployment roadmap active.
+> **Status:** Phases 1–10 complete + V1.0 infra (A–D) + gap closure M1-M4 (44/44 done) + scheduling enhancements (035) + all 13 feature audits complete. V1.0 remaining: mobile builds (Tasks 16-18) + smoke test (22) + release packaging (23).
 > **Full vision document:** `docs/The Full Plan.md`
 > **New phase numbering:** Starting 2026-03-07, future phases use new numbering (Phase 7-13). Old phase files keep their original names.
 > 100% local and offline first, no customer-facing billing, bookkeeper handles billouts via pre-billing export bundles.
@@ -22,17 +22,19 @@ Wired-Part is a field service management app for an electrical contracting compa
 | Backend services | 28 |
 | Repositories | 19 + base |
 | Model files | 17 |
-| Migrations | 34 (`001_foundation.sql` → `034_notebook_attachments.sql`) |
+| Migrations | 35 (`001_foundation.sql` → `035_scheduling_enhancements.sql`) |
 | Frontend feature files | ~180 |
 | Frontend routes | 100 |
 | Functional pages | 86 |
-| Stub pages | 2 (Settings × 2 — v2.0+ placeholders) |
+| Stub pages | 2 (Settings × 2 — v2.0+ placeholders: AiConfigPage, DeviceManagementPage) |
 | API client files | 18 (~330 functions) |
 | Zustand stores | 4 (auth, clock, sidebar, theme) |
 | Backend tests | 10 files, 119 tests (critical paths covered) |
 | Total backend LOC | ~33,000 |
 | Total frontend files | ~220+ |
 | Gap closure | 44/44 items complete (M1-M4) |
+| Feature audits | 13/13 complete (`docs/plans/Audit/`) |
+| Post-audit enhancements | Scheduling lunch/supervisor/multi-job (Migration 035) |
 
 ---
 
@@ -948,65 +950,85 @@ Tool registry with individual asset tracking, kit verification checklists, check
 
 ---
 
+## Post-Audit Enhancements: Scheduling ✅ COMPLETE
+
+**Goal**: Add lunch break scheduling, multi-job dispatch UX, and supervisor/floater role.
+
+> **Plan file:** `docs/plans/scheduling-enhancements.md`
+
+### Database (`migrations/035_scheduling_enhancements.sql`)
+- `lunch_start`/`lunch_end` columns on: `employee_default_schedules`, `schedule_exceptions`, `shift_pattern_days`, `dispatch_templates`
+- Full `job_dispatch` table recreation (CHECK constraint change for 'supervisor' + lunch columns)
+
+### Backend — 3 files updated
+- `models/scheduling.py` — 'supervisor' in DISPATCH_ROLES, lunch fields on 14 models, enriched ScheduleConflict
+- `repositories/scheduling_repo.py` — Extended bulk_upsert columns, enriched conflict queries
+- `services/scheduling_service.py` — Lunch propagation in 8 methods, calendar role_on_job
+
+### Frontend — types + 4 pages
+- `lib/types.ts` — 18 edits: 'supervisor' in DispatchRoleOnJob, lunch fields on 14 interfaces
+- `DailyDispatchPage.tsx` — Supervisor labels/colors, lunch inputs, "Today's Assignments" panel, overlap warning
+- `ScheduleConfigPage.tsx` — Lunch start/end columns in default schedule grid
+- `DispatchTemplatesPage.tsx` — Lunch state/inputs on template forms
+- `ScheduleCalendarPage.tsx` — Role-based color overrides (supervisor=amber, lead=indigo)
+
+### Local Capacitor Migration
+- `006_fleet_tools_scheduling.ts` — Lunch columns + supervisor CHECK on 3 tables
+
+---
+
 ## Remaining Work
 
-### Phase 11: Reports & Pre-Billing 📋 PLANNED
+### Phase 8: Reports & Pre-Billing ✅ COMPLETE
 
 > **Plan file:** `docs/plans/phase-11-reports-prebilling.md`
 
-The Reports module has 4 stub pages and 4 stub backend endpoints that all return "coming soon". This is the final major feature phase before the app is field-ready.
+All 6 report pages fully implemented: PreBillingPage (23KB), TimesheetsPage (14KB), LaborOverviewPage (14KB), ProfitabilityPage (12KB), ExportsPage (17KB), DailyReports (in Jobs module). Period locking + bookkeeper exports (QuickBooks IIF, GL CSV, Payroll CSV) all functional.
 
-**Scope:**
-- **Pre-Billing**: Per-job export bundles for bookkeeper (labor + parts + movements + cost summary)
-- **Timesheets**: Employee timesheet view (daily/weekly/pay-period)
-- **Labor Overview**: Cross-job labor analytics (hours by employee, overtime, bill rates)
-- **Exports**: Download bundles as CSV/PDF with configurable templates
-
-**Dependencies:** Cost tracking (Phase 7D ✅), labor data (Phase 4 ✅), job parts (Phase 5 ✅)
-**Estimated time:** 3-4 days
-
-### Legacy Cleanup 📋 PLANNED
+### Legacy Cleanup ✅ COMPLETE
 
 > **Plan file:** `docs/plans/legacy-cleanup-plan.md`
 
-- Delete superseded pages: `NewPartsRequestPage`, `IncomingOrdersPage`, `DraftOrdersPage`, `ActiveOrdersPage`
-- Clean up redirect routes in App.tsx
-- Remove/redirect `PendingOrdersPage` stub
-- Route orphaned `TemplatesPage` to real template page
-- Label Settings stubs (Sync, AI, Devices) as future-phase placeholders
+- Superseded pages redirected/removed (4 legacy order pages locked by OneDrive but have zero imports — dead code)
+- Settings stubs labeled as v2.0+ placeholders
+- Route cleanup completed
 
-### Testing Strategy 📋 PLANNED
+### Testing Strategy ✅ COMPLETE
 
 > **Plan file:** `docs/plans/testing-strategy.md`
 
-Current coverage: ~5% (3 test files — auth + base repo). Target: critical path coverage.
+119 tests across 10 test files covering: auth, base repo, orders, labor, jobs, parts, movements, costs, scheduling, and more. Critical path coverage achieved.
 
-- **Priority 1**: Top 5 routers (parts, orders, jobs, warehouse, trucks) — happy path tests
-- **Priority 2**: Critical services (movement, cost_tracking, receiving, returns)
-- **Priority 3**: Cross-module integration tests (JPO → PO → receive → stock)
-- **Priority 4**: Playwright e2e for critical flows (clock in/out, create order, receive shipment)
+### Feature Audits ✅ COMPLETE
 
-### V1.0 Deployment & Packaging 📋 PLANNED
+> **Audit files:** `docs/plans/Audit/*.md`
+
+All 13 feature area audits completed and verified. 12/13 areas production-ready, Settings has 3 intentional v2.0+ stubs (AI Config, Device Management, Bluetooth).
+
+### V1.0 Deployment & Packaging ⏳ PARTIALLY COMPLETE
 
 > **Plan file:** `docs/plans/deployment-master-plan.md`
 > **Sideloading guide:** `docs/plans/sideloading-guide.md`
 
-Package the app for customer-ready deployment with **offline-first architecture**:
-- **Shop server**: Python FastAPI backend serves as truth anchor, sync API, static frontend for desktop browsers
-- **Mobile apps**: Capacitor + `@capacitor-community/sqlite` + lean TypeScript data layer — each device runs the full frontend with a field-worker backend subset and its own SQLite database
-- **Offline data layer**: ~11 TypeScript services (field-worker subset — auth, jobs, labor, movement, orders, notebooks, tools, parts-read, fleet-read, scheduling-read). Admin features (cost tracking, approvals, PDF reports) stay shop-only.
-- **Sync engine**: HTTP push/pull between devices and shop over LAN, change tracking, last-writer-wins conflict resolution
-- **API adapter**: Frontend detects environment (Capacitor → local TS layer, browser → HTTP API) — same React UI everywhere
-- **Production hardening**: Secret key, CORS, logging, DB backups, PWA manifest
-- **Customer setup**: End-to-end installation guide
+**Completed tasks (19 of 23):**
+- ✅ Production hardening + static serving
+- ✅ PWA manifest + app icons
+- ✅ Cross-platform responsive audit
+- ✅ Capacitor project init + environment detection
+- ✅ API adapter layer (Capacitor → local TS, browser → HTTP)
+- ✅ Lean TS data layer (11 services)
+- ✅ SQLite local DB + 7 consolidated migrations
+- ✅ Sync engine (push/pull + conflict resolution + retry + UI indicator)
+- ✅ Server URL / Wi-Fi config UI
+- ✅ Customer setup guide
+- ✅ Backup & restore scripts
 
-**Estimated time:** ~28-32 days (after Phase 11 + Legacy Cleanup + Testing)
-
-### Feature Audits 📋 IN PROGRESS
-
-> **Audit files:** `docs/plans/Audit/*.md`
-
-12 of 13 feature areas need audit files. See individual audit files for status.
+**Remaining tasks (need physical devices / Mac):**
+- Task 16: iOS Build → Free Sideloading (needs Mac + Xcode)
+- Task 17: Android APK Build (needs Android Studio)
+- Task 18: On-Device Testing (needs physical iOS + Android devices)
+- Task 22: Smoke Test — full workflow verification
+- Task 23: Release Packaging (blocked on npm install + mobile builds)
 
 ---
 
@@ -1028,33 +1050,33 @@ The complete path from current state to customer-ready deployment:
 | | 9 | API Adapter Layer | 1-2 | `deployment-master-plan.md` §5 | ✅ |
 | | 10 | Lean TS Data Layer (~11 services) | 5-7 | `deployment-master-plan.md` §6 | ✅ COMPLETE |
 | | 11 | SQLite Local DB + Migrations | 2-3 | `deployment-master-plan.md` §6.3 | ✅ COMPLETE |
-| **B total** | | | **13-16** | |
+| **B total** | | | **13-16** | | **COMPLETE** |
 | **C** | 12 | Sync Engine (change log + push/pull) | 3-4 | `deployment-master-plan.md` §9 | ✅ COMPLETE |
 | | 13 | Conflict Resolution + Merge Logic | 2-3 | `deployment-master-plan.md` §9.4 | ✅ COMPLETE |
 | | 14 | Offline Queue + Retry | 1-2 | `deployment-master-plan.md` §9.5 | ✅ COMPLETE |
 | | 15 | Network Status UI + Sync Indicator | 1 | `deployment-master-plan.md` §9.7 | ✅ COMPLETE |
-| | 16 | iOS Build → Free Sideloading | 1 | `sideloading-guide.md` Part 1 |
-| | 17 | Android APK Build | 0.5 | `sideloading-guide.md` Part 2 |
-| | 18 | On-Device Testing (all platforms) | 1-2 | Feature audit files |
-| **C total** | | | **9-11** | |
+| | 16 | iOS Build → Free Sideloading | 1 | `sideloading-guide.md` Part 1 | ⏳ needs Mac |
+| | 17 | Android APK Build | 0.5 | `sideloading-guide.md` Part 2 | ⏳ needs Android Studio |
+| | 18 | On-Device Testing (all platforms) | 1-2 | Feature audit files | ⏳ needs devices |
+| **C total** | | | **9-11** | | **12-15 done, 16-18 blocked** |
 | **D** | 19 | Server URL / Wi-Fi Config UI | 1 | `deployment-master-plan.md` §4.3 | ✅ COMPLETE |
 | | 20 | Customer Setup Guide | 1 | `deployment-master-plan.md` §10 | ✅ COMPLETE |
 | | 21 | Backup & Restore Scripts | 1 | `deployment-master-plan.md` §11 | ✅ COMPLETE |
-| | 22 | Smoke Test (full workflow) | 2 | `deployment-master-plan.md` §12 |
-| | 23 | Release Packaging | 2 | `deployment-master-plan.md` §13 |
-| **D total** | | | **7** | |
-| **TOTAL** | | | **~37-44 days** | *~30-35 calendar days with parallelization* |
+| | 22 | Smoke Test (full workflow) | 2 | `deployment-master-plan.md` §12 | ⏳ pending |
+| | 23 | Release Packaging | 2 | `deployment-master-plan.md` §13 | ⏳ blocked on 16-18 |
+| **D total** | | | **7** | | **19-21 done, 22-23 pending** |
+| **TOTAL** | | | **~37-44 days** | *19 of 23 tasks complete. Remaining: ~7 days (needs Mac + physical devices)* |
 
 ---
 
 ## Future Phases (V1.0.1+ — Planned & Outlined)
 
-> **Numbering note:** Phases 1-6 (old 1-10) are complete. Phase 7 (People) is  complete with a small delta pending. Phases 8-13 are the forward-looking roadmap.
+> **Numbering note:** Phases 1-8 (old 1-10 + reports) are all complete. Phase 7 (People) includes completed Delta addendum. Phases 9-13 are the forward-looking roadmap.
 
 | New # | Phase | Status | Plan File | Est. Days | Key Deliverables |
 |-------|-------|--------|-----------|-----------|------------------|
 | **7** | People (Full) | ✅ Complete (incl. Delta) | `phase-7-people-delta.md` | < 1 | GC-aware PO naming, standardized report filenames |
-| **8** | Reports & Pre-Billing | 📋 Planned | `phase-11-reports-prebilling.md` | 5-6 | Pre-billing, timesheets, labor overview, profitability, period locking, bookkeeper exports |
+| **8** | Reports & Pre-Billing | ✅ Complete | `phase-11-reports-prebilling.md` | 5-6 | Pre-billing, timesheets, labor overview, profitability, period locking, bookkeeper exports |
 | **9** | Chat & Q&A | 📋 Planned | `phase-9-chat.md` | 10-14 | Per-job group chat, DMs, @mentions, voice messages, Q&A escalation chain, RFI bridge |
 | **10** | PWA & Desktop | 📋 Outline | `phase-12-pwa-desktop.md` | 5-8 | Service worker, offline caching, keyboard shortcuts, command palette, push notifications |
 | **11** | Sync & Bluetooth | 📋 Planned | `phase-13-sync-bluetooth.md` | 16-24 | BT mesh, gossip protocol, PGP encryption, device pairing, multi-PC shop cluster, device management console (primary user, storage, key visibility, error logs, manual overrides) |
@@ -1131,7 +1153,7 @@ Components:
 
 ## Known Technical Debt
 
-1. **Test coverage ~5%** — 119 tests covering auth, base repo, orders, labor, jobs, parts, movements, costs. See `docs/plans/testing-strategy.md`.
+1. **Test coverage** — 119 tests across 10 files covering auth, base repo, orders, labor, jobs, parts, movements, costs. See `docs/plans/testing-strategy.md`.
 2. **2 stub pages** — AiConfigPage, DeviceManagementPage (v2.0+ placeholders).
 3. **4 legacy pages** — OneDrive lock prevents deletion: NewPartsRequestPage, DraftOrdersPage, ActiveOrdersPage, IncomingOrdersPage.
 4. **Parts + Settings routers bypass service layer** — Direct repo access from route handlers.

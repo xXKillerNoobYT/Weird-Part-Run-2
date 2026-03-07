@@ -4756,6 +4756,8 @@ export interface DefaultScheduleDay {
   day_of_week: number; // 0=Sunday, 1=Monday, ...
   start_time: string;  // "07:00"
   end_time: string;    // "15:30"
+  lunch_start?: string | null;
+  lunch_end?: string | null;
   is_working_day: boolean;
   notes: string | null;
 }
@@ -4766,6 +4768,8 @@ export interface DefaultScheduleResponse {
   day_of_week: number;
   start_time: string;
   end_time: string;
+  lunch_start: string | null;
+  lunch_end: string | null;
   is_working_day: boolean;
   notes: string | null;
 }
@@ -4797,6 +4801,8 @@ export interface ScheduleExceptionResponse {
   exception_type: ExceptionType;
   start_time: string | null;
   end_time: string | null;
+  lunch_start: string | null;
+  lunch_end: string | null;
   is_approved: boolean;
   approved_by: number | null;
   approved_by_name?: string;
@@ -4810,6 +4816,8 @@ export interface ScheduleExceptionCreate {
   exception_type: ExceptionType;
   start_time?: string | null;
   end_time?: string | null;
+  lunch_start?: string | null;
+  lunch_end?: string | null;
   reason?: string | null;
   notes?: string | null;
 }
@@ -4819,6 +4827,8 @@ export interface ScheduleExceptionUpdate {
   exception_type?: ExceptionType;
   start_time?: string | null;
   end_time?: string | null;
+  lunch_start?: string | null;
+  lunch_end?: string | null;
   reason?: string | null;
   notes?: string | null;
 }
@@ -4828,7 +4838,7 @@ export interface ScheduleExceptionUpdate {
 // SCHEDULING — DISPATCH
 // ══════════════════════════════════════════════════════════════════
 
-export type DispatchRoleOnJob = 'lead' | 'worker' | 'apprentice' | 'helper';
+export type DispatchRoleOnJob = 'lead' | 'worker' | 'apprentice' | 'helper' | 'supervisor';
 export type DispatchStatus =
   | 'scheduled'
   | 'confirmed'
@@ -4846,6 +4856,8 @@ export interface DispatchResponse {
   dispatch_date: string;
   shift_start: string | null;
   shift_end: string | null;
+  lunch_start: string | null;
+  lunch_end: string | null;
   role_on_job: DispatchRoleOnJob;
   status: DispatchStatus;
   dispatched_by: number | null;
@@ -4861,6 +4873,8 @@ export interface DispatchCreate {
   dispatch_date: string;
   shift_start?: string | null;
   shift_end?: string | null;
+  lunch_start?: string | null;
+  lunch_end?: string | null;
   role_on_job?: DispatchRoleOnJob;
   notes?: string | null;
 }
@@ -4868,6 +4882,8 @@ export interface DispatchCreate {
 export interface DispatchUpdate {
   shift_start?: string | null;
   shift_end?: string | null;
+  lunch_start?: string | null;
+  lunch_end?: string | null;
   role_on_job?: DispatchRoleOnJob;
   notes?: string | null;
 }
@@ -4878,6 +4894,8 @@ export interface BulkDispatchCreate {
   dispatch_date: string;
   shift_start?: string | null;
   shift_end?: string | null;
+  lunch_start?: string | null;
+  lunch_end?: string | null;
   role_on_job?: DispatchRoleOnJob;
   notes?: string | null;
 }
@@ -4890,7 +4908,12 @@ export interface BulkDispatchResult {
 export interface ScheduleConflict {
   conflict_type: string;
   description: string;
-  date: string;
+  date?: string;
+  related_job_id?: number | null;
+  related_job_name?: string | null;
+  shift_start?: string | null;
+  shift_end?: string | null;
+  role_on_job?: string | null;
 }
 
 export interface DailyDispatchView {
@@ -4968,6 +4991,7 @@ export interface CalendarEntry {
   gc_id: number | null;
   gc_name: string | null;
   status: string;
+  role_on_job?: string | null;
   label: string;
 }
 
@@ -4996,6 +5020,8 @@ export interface DispatchTemplateCreate {
   job_id: number;
   shift_start?: string;
   shift_end?: string;
+  lunch_start?: string;
+  lunch_end?: string;
   role_on_job?: string;
   days_of_week?: number;
   members?: DispatchTemplateMember[];
@@ -5007,6 +5033,8 @@ export interface DispatchTemplateUpdate {
   job_id?: number;
   shift_start?: string;
   shift_end?: string;
+  lunch_start?: string;
+  lunch_end?: string;
   role_on_job?: string;
   days_of_week?: number;
   members?: DispatchTemplateMember[];
@@ -5020,6 +5048,8 @@ export interface DispatchTemplateResponse {
   job_name?: string;
   shift_start?: string;
   shift_end?: string;
+  lunch_start?: string;
+  lunch_end?: string;
   role_on_job: string;
   days_of_week: number;
   days_labels: string[];
@@ -5041,6 +5071,8 @@ export interface ShiftPatternDayCreate {
   day_of_week: number;
   start_time: string;
   end_time: string;
+  lunch_start?: string | null;
+  lunch_end?: string | null;
   is_working_day: boolean;
 }
 
@@ -5061,6 +5093,8 @@ export interface ShiftPatternDayResponse {
   day_of_week: number;
   start_time: string;
   end_time: string;
+  lunch_start: string | null;
+  lunch_end: string | null;
   is_working_day: boolean;
 }
 

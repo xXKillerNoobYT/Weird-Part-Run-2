@@ -99,10 +99,29 @@ const STATUS_BADGE: Record<string, 'success' | 'warning' | 'danger' | 'info' | '
 
 // ── Calendar Entry Card ───────────────────────────────────────────
 
+// Role-specific overrides for dispatch entries (supervisor = amber, lead = indigo)
+const ROLE_OVERRIDES: Record<string, { bg: string; text: string }> = {
+  supervisor: {
+    bg: 'bg-amber-100 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700',
+    text: 'text-amber-700 dark:text-amber-300',
+  },
+  lead: {
+    bg: 'bg-indigo-100 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-700',
+    text: 'text-indigo-700 dark:text-indigo-300',
+  },
+};
+
 function EntryCard({ entry }: { entry: CalendarEntry }) {
   const navigate = useNavigate();
-  const config = ENTRY_TYPE_CONFIG[entry.entry_type];
-  const Icon = config.icon;
+  const baseConfig = ENTRY_TYPE_CONFIG[entry.entry_type];
+  const Icon = baseConfig.icon;
+
+  // Use role-specific colors for dispatch entries with special roles
+  const roleOverride = entry.entry_type === 'dispatch' && entry.role_on_job
+    ? ROLE_OVERRIDES[entry.role_on_job]
+    : undefined;
+  const bg = roleOverride?.bg ?? baseConfig.bg;
+  const text = roleOverride?.text ?? baseConfig.text;
 
   function handleClick() {
     if (entry.entry_type === 'dispatch' && entry.job_id) {
@@ -116,16 +135,22 @@ function EntryCard({ entry }: { entry: CalendarEntry }) {
       disabled={entry.entry_type !== 'dispatch'}
       className={`
         w-full text-left p-2 rounded-lg border text-xs
-        ${config.bg}
+        ${bg}
         ${entry.entry_type === 'dispatch' ? 'cursor-pointer hover:shadow-sm' : 'cursor-default'}
         transition-shadow
       `}
     >
       <div className="flex items-center gap-1.5 mb-0.5">
-        <Icon size={12} className={config.text} />
-        <span className={`font-medium truncate ${config.text}`}>
+        <Icon size={12} className={text} />
+        <span className={`font-medium truncate ${text}`}>
           {entry.label}
         </span>
+        {/* Role badge for non-worker dispatch entries */}
+        {entry.entry_type === 'dispatch' && entry.role_on_job && entry.role_on_job !== 'worker' && (
+          <span className={`text-[10px] px-1 py-0.5 rounded font-medium flex-shrink-0 ${text} opacity-75`}>
+            {entry.role_on_job}
+          </span>
+        )}
       </div>
 
       {/* Person or GC name */}

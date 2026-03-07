@@ -162,6 +162,8 @@ class SchedulingService:
             "dispatch_date": data.dispatch_date,
             "shift_start": data.shift_start,
             "shift_end": data.shift_end,
+            "lunch_start": data.lunch_start,
+            "lunch_end": data.lunch_end,
             "role_on_job": data.role_on_job,
             "status": "scheduled",
             "dispatched_by": dispatched_by,
@@ -194,6 +196,8 @@ class SchedulingService:
                     "dispatch_date": data.dispatch_date,
                     "shift_start": data.shift_start,
                     "shift_end": data.shift_end,
+                    "lunch_start": data.lunch_start,
+                    "lunch_end": data.lunch_end,
                     "role_on_job": data.role_on_job,
                     "status": "scheduled",
                     "dispatched_by": dispatched_by,
@@ -353,6 +357,7 @@ class SchedulingService:
 
         # Dispatches → calendar entries
         for d in dispatches:
+            role = d.get("role_on_job", "worker")
             entries.append({
                 "date": d["dispatch_date"],
                 "entry_type": "dispatch",
@@ -363,6 +368,7 @@ class SchedulingService:
                 "gc_id": None,
                 "gc_name": None,
                 "status": d.get("status", "scheduled"),
+                "role_on_job": role,
                 "label": f"{d.get('user_name', '?')} → {d.get('job_name', '?')}",
             })
 
@@ -430,7 +436,7 @@ class SchedulingService:
         """List all dispatch templates with members and job names."""
         where = "WHERE dt.is_active = 1" if active_only else ""
         cursor = await self.db.execute(
-            f"""SELECT dt.*, j.name AS job_name
+            f"""SELECT dt.*, j.job_name AS job_name
                 FROM dispatch_templates dt
                 LEFT JOIN jobs j ON j.id = dt.job_id
                 {where}
@@ -455,7 +461,7 @@ class SchedulingService:
     async def get_dispatch_template(self, template_id: int) -> dict | None:
         """Get a single dispatch template with members."""
         cursor = await self.db.execute(
-            """SELECT dt.*, j.name AS job_name
+            """SELECT dt.*, j.job_name AS job_name
                FROM dispatch_templates dt
                LEFT JOIN jobs j ON j.id = dt.job_id
                WHERE dt.id = ?""",
@@ -482,10 +488,11 @@ class SchedulingService:
         """Create a dispatch template with members. Returns new ID."""
         cursor = await self.db.execute(
             """INSERT INTO dispatch_templates
-               (name, job_id, shift_start, shift_end, role_on_job,
-                days_of_week, notes, created_by)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (name, job_id, shift_start, shift_end, lunch_start, lunch_end,
+                role_on_job, days_of_week, notes, created_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (data.name, data.job_id, data.shift_start, data.shift_end,
+             data.lunch_start, data.lunch_end,
              data.role_on_job, data.days_of_week, data.notes, created_by),
         )
         template_id = cursor.lastrowid
@@ -506,6 +513,7 @@ class SchedulingService:
         fields: list[str] = []
         values: list[Any] = []
         for field in ("name", "job_id", "shift_start", "shift_end",
+                      "lunch_start", "lunch_end",
                       "role_on_job", "days_of_week", "notes"):
             val = getattr(data, field, None)
             if val is not None:
@@ -592,6 +600,8 @@ class SchedulingService:
                     "dispatch_date": date_str,
                     "shift_start": template.get("shift_start"),
                     "shift_end": template.get("shift_end"),
+                    "lunch_start": template.get("lunch_start"),
+                    "lunch_end": template.get("lunch_end"),
                     "role_on_job": role,
                     "status": "scheduled",
                     "dispatched_by": dispatched_by,
@@ -651,9 +661,11 @@ class SchedulingService:
         for day in data.days:
             await self.db.execute(
                 """INSERT INTO shift_pattern_days
-                   (pattern_id, day_of_week, start_time, end_time, is_working_day)
-                   VALUES (?, ?, ?, ?, ?)""",
+                   (pattern_id, day_of_week, start_time, end_time,
+                    lunch_start, lunch_end, is_working_day)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (pattern_id, day.day_of_week, day.start_time, day.end_time,
+                 day.lunch_start, day.lunch_end,
                  1 if day.is_working_day else 0),
             )
         await self.db.commit()
@@ -685,9 +697,11 @@ class SchedulingService:
             for day in data.days:
                 await self.db.execute(
                     """INSERT INTO shift_pattern_days
-                       (pattern_id, day_of_week, start_time, end_time, is_working_day)
-                       VALUES (?, ?, ?, ?, ?)""",
+                       (pattern_id, day_of_week, start_time, end_time,
+                        lunch_start, lunch_end, is_working_day)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     (pattern_id, day.day_of_week, day.start_time, day.end_time,
+                     day.lunch_start, day.lunch_end,
                      1 if day.is_working_day else 0),
                 )
         await self.db.commit()
@@ -714,6 +728,8 @@ class SchedulingService:
                 "day_of_week": d["day_of_week"],
                 "start_time": d["start_time"],
                 "end_time": d["end_time"],
+                "lunch_start": d.get("lunch_start"),
+                "lunch_end": d.get("lunch_end"),
                 "is_working_day": bool(d["is_working_day"]),
             }
             for d in pattern["days"]

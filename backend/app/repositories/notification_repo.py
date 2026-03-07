@@ -139,14 +139,15 @@ class NotificationPrefRepo(BaseRepo):
     async def is_enabled(self, user_id: int, notification_type: str) -> bool:
         """Check if a specific notification type is enabled for a user.
 
-        Defaults to False (opt-in system).
+        Defaults to True (opt-out system) — notifications are ON unless
+        the user explicitly disables them.
         """
         cursor = await self.db.execute(
             "SELECT is_enabled FROM notification_preferences WHERE user_id = ? AND notification_type = ?",
             (user_id, notification_type),
         )
         row = await cursor.fetchone()
-        return bool(row["is_enabled"]) if row else False
+        return bool(row["is_enabled"]) if row else True
 
     async def get_users_with_enabled(self, notification_type: str) -> list[int]:
         """Get all user IDs that have a specific notification type enabled."""

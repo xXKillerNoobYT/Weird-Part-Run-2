@@ -1,7 +1,7 @@
 # Tools & Kits Module Audit
 
 > **Date:** 2026-03-06
-> **Status:** ✅ Verified Complete (2026-03-07) — Job Tools tab implemented in JobDetailPage (lines 828-897). Bulk ops, tool photos, kit auto-verification, maintenance type delete all done via M3/M4 gap closure.
+> **Status:** ✅ Verified Complete (2026-03-07) — Job Tools tab implemented in JobDetailPage (lines 828-897). Bulk ops, tool photos, kit auto-verification, maintenance type delete all done via M3/M4 gap closure. E2E responsive validated at mobile/tablet/desktop.
 > **Scope:** Tool registry, kit templates, checkout/return flow, kit verification, maintenance tracking, dashboard, QR code scanning, cross-module visibility (warehouse, trucks, jobs)
 
 ---
@@ -263,6 +263,8 @@ Functions breakdown:
 
 ### ⚠️ Not Implemented / Potential Gaps
 
+Implement. Properly take care of the gaps.
+
 | Area | Status | Notes |
 |------|--------|-------|
 | **Job Tools Page** | Not implemented | Tools can be checked out to jobs, but there is no `/jobs/:id/tools` tab or embedded tools view on the job detail page. QR scan redirect targets `/jobs/{jobId}?tab=tools&tool={id}` but this tab doesn't exist yet. |
@@ -302,8 +304,10 @@ Functions breakdown:
 
 ## 5. Issues & TODOs
 
+Fix this.
+
 ### No TODOs Found in Code
-Zero `TODO`, `FIXME`, `HACK`, or `STUB` comments across all Tools frontend and backend files. The code is clean.
+Zero `TODO`, `FIXME`, `HACK`, or `STUB` comments across all Tools frontend and backend files. The code is clean. In some cases, in order to complete A to do for a job, we may need a grab shop tools. So if we want to mark those tools on the to do. That way, when we're gearing up to do that to do, we can see all the tools we'll need to grab. 
 
 ### Structural Observations
 

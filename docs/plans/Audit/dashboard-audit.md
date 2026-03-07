@@ -1,7 +1,7 @@
 # Dashboard Audit
 
 > **Date:** 2026-03-06
-> **Status:** ✅ Verified Complete (2026-03-07) — all 13/13 features functional. No open items.
+> **Status:** ✅ Verified Complete (2026-03-07) — all 13/13 features functional. No open items. E2E responsive validated at mobile/tablet/desktop (2026-03-07).
 > **Scope:** Full audit of the Dashboard module — KPIs, Fast Drive, Daily Report tab, cert alerts
 
 ---
@@ -215,16 +215,22 @@ Zero TODO, FIXME, HACK, or TEMP comments in any dashboard file.
 ### Architectural Notes
 
 1. **No dedicated service layer** — KPI queries are raw SQL inline in the router. For a small dashboard this is fine, but if more KPIs are added, consider extracting a `DashboardService`.
+ ADD this
 
-2. **Quick Actions are hardcoded** — The routes are returned from the backend but are static. If user-specific or role-specific quick actions are desired in the future, this needs a more dynamic approach.
+2. **Quick Actions are hardcoded** — The routes are returned from the backend but are static. If user-specific or role-specific quick actions are desired in the future, this needs a more dynamic approach. 
+DO this if we want to support role-based quick actions in the future.
 
 3. **Daily Report tab uses costs router, not dashboard** — The `DailyReportTab` component calls `GET /api/costs/daily-report`, not a dashboard endpoint. This is logically correct (it IS cost/spending data) but creates a cross-module dependency.
+  If the dashboard grows more complex, consider moving the daily report endpoint into the dashboard router for better cohesion.
 
 4. **Low stock KPI has a rewritten query** — The code contains both the original GROUP BY query and a rewritten subquery version. The first one is dead code (immediately overwritten). Minor cleanup opportunity.
+Clean this up by removing the dead code version of the low stock query.
 
-5. **No caching on KPI queries** — KPIs hit the database on every request. The frontend caches for 30s via react-query `staleTime`, but the backend has no caching. At scale, consider caching.
+5. **No caching on KPI queries** — KPIs hit the database on every request. The frontend caches for 30s via react-query `staleTime`, but the backend has no caching. At scale, consider caching. 
+If performance becomes an issue, implement caching for KPI queries with a short TTL (e.g., 30s).
 
-6. **Fast Drive "from" label inference is simplistic** — `inferFromLabel()` assumes: going to shop = from home, going to job = from shop, going home = from shop. Real trip chains (job → job) would need smarter inference or user input.
+6. **Fast Drive "from" label inference is simplistic** — `inferFromLabel()` assumes: going to shop = from home, going to job = from shop, going home = from shop. Real trip chains (job → job) would need smarter inference or user input. 
+add this if we want to support more complex trip patterns in the future.
 
 ### Feature Gaps
 

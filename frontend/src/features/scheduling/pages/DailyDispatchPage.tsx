@@ -49,7 +49,15 @@ function addDays(d: Date, n: number): Date {
 }
 
 const ROLE_LABELS: Record<DispatchRoleOnJob, string> = {
-  lead: 'Lead', worker: 'Worker', apprentice: 'Apprentice', helper: 'Helper',
+  lead: 'Lead', worker: 'Worker', apprentice: 'Apprentice', helper: 'Helper', supervisor: 'Supervisor',
+};
+
+const ROLE_COLORS: Record<DispatchRoleOnJob, string> = {
+  lead: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
+  worker: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
+  apprentice: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
+  helper: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
+  supervisor: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
 };
 
 const STATUS_BADGE: Record<DispatchStatus, 'success' | 'warning' | 'danger' | 'info' | 'neutral'> = {
@@ -252,9 +260,9 @@ export function DailyDispatchPage() {
                             <span className="text-sm font-medium text-gray-900 dark:text-white truncate">
                               {d.user_name ?? `User #${d.user_id}`}
                             </span>
-                            <Badge variant="neutral" className="text-[10px]">
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${ROLE_COLORS[d.role_on_job] ?? ''}`}>
                               {ROLE_LABELS[d.role_on_job] ?? d.role_on_job}
-                            </Badge>
+                            </span>
                             <Badge variant={STATUS_BADGE[d.status]} className="text-[10px]">
                               {d.status.replace(/_/g, ' ')}
                             </Badge>
@@ -263,6 +271,11 @@ export function DailyDispatchPage() {
                             <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                               <Clock size={10} />
                               {d.shift_start ?? '—'} – {d.shift_end ?? '—'}
+                              {(d.lunch_start || d.lunch_end) && (
+                                <span className="ml-1 text-gray-400 dark:text-gray-500">
+                                  (lunch {d.lunch_start ?? '—'}–{d.lunch_end ?? '—'})
+                                </span>
+                              )}
                             </div>
                           )}
                         </div>
@@ -357,6 +370,8 @@ function DispatchModal({
   const [role, setRole] = useState<DispatchRoleOnJob>('worker');
   const [shiftStart, setShiftStart] = useState('07:00');
   const [shiftEnd, setShiftEnd] = useState('15:30');
+  const [lunchStart, setLunchStart] = useState('');
+  const [lunchEnd, setLunchEnd] = useState('');
   const [notes, setNotes] = useState('');
   const [conflicts, setConflicts] = useState<ScheduleConflict[]>([]);
   const [saving, setSaving] = useState(false);
@@ -389,6 +404,8 @@ function DispatchModal({
         dispatch_date: date,
         shift_start: shiftStart || undefined,
         shift_end: shiftEnd || undefined,
+        lunch_start: lunchStart || undefined,
+        lunch_end: lunchEnd || undefined,
         role_on_job: role,
         notes: notes || undefined,
       });
@@ -418,14 +435,35 @@ function DispatchModal({
           </div>
         </div>
 
-        {/* Conflict warnings */}
-        {displayConflicts.length > 0 && (
+        {/* Today's Assignments — existing dispatches for this employee */}
+        {displayConflicts.filter(c => c.conflict_type === 'already_dispatched').length > 0 && (
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+            <div className="flex items-center gap-1.5 text-blue-700 dark:text-blue-300 text-sm font-medium mb-1.5">
+              <Briefcase size={14} />
+              Today's Assignments
+            </div>
+            {displayConflicts.filter(c => c.conflict_type === 'already_dispatched').map((c, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 ml-5 mb-1">
+                <span className="font-medium">{c.related_job_name ?? 'Unknown job'}</span>
+                {c.shift_start && <span className="text-blue-500 dark:text-blue-500">{c.shift_start}–{c.shift_end ?? '?'}</span>}
+                {c.role_on_job && (
+                  <span className={`inline-flex px-1 py-0.5 rounded text-[10px] font-medium ${ROLE_COLORS[c.role_on_job as DispatchRoleOnJob] ?? 'bg-gray-100 text-gray-600'}`}>
+                    {ROLE_LABELS[c.role_on_job as DispatchRoleOnJob] ?? c.role_on_job}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Conflict warnings (non-dispatch: time off, not working day) */}
+        {displayConflicts.filter(c => c.conflict_type !== 'already_dispatched').length > 0 && (
           <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
             <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-300 text-sm font-medium mb-1">
               <AlertTriangle size={14} />
               Scheduling Conflicts
             </div>
-            {displayConflicts.map((c, i) => (
+            {displayConflicts.filter(c => c.conflict_type !== 'already_dispatched').map((c, i) => (
               <div key={i} className="text-xs text-amber-600 dark:text-amber-400 ml-5">
                 &bull; {c.description}
               </div>
@@ -489,6 +527,32 @@ function DispatchModal({
               type="time"
               value={shiftEnd}
               onChange={e => setShiftEnd(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Lunch break */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Lunch Start
+            </label>
+            <Input
+              type="time"
+              value={lunchStart}
+              onChange={e => setLunchStart(e.target.value)}
+              placeholder="12:00"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Lunch End
+            </label>
+            <Input
+              type="time"
+              value={lunchEnd}
+              onChange={e => setLunchEnd(e.target.value)}
+              placeholder="12:30"
             />
           </div>
         </div>

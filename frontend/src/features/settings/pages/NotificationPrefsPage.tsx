@@ -1,26 +1,37 @@
 /**
  * NotificationPrefsPage — manage notification preferences.
  *
- * Users opt into notification types they want to receive.
- * Defaults are OFF — users must explicitly enable categories.
+ * Notifications default to ON — users opt out of categories they don't want.
+ * If a user's hat/role doesn't grant the required permission for a notification
+ * type, that toggle is locked off and greyed out.
+ *
  * Preferences are per-user and stored in the notification_preferences table.
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bell, BellOff, Save, Check } from 'lucide-react';
+import { Bell, BellOff, Lock, Save, Check } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import {
   getNotificationPreferences,
   updateNotificationPreferences,
 } from '../../../api/notifications';
 import type { NotificationPreference } from '../../../lib/types';
+import { useAuthStore } from '../../../stores/auth-store';
 
-/** Known notification types with human-friendly labels and descriptions */
+/**
+ * Known notification types with human-friendly labels, descriptions,
+ * and the permission required to receive them.
+ *
+ * If `requiredPermission` is null, every user can receive that notification.
+ * If set, the user's hat must grant that permission — otherwise the toggle
+ * is locked off.
+ */
 const NOTIFICATION_TYPES: {
   type: string;
   label: string;
   description: string;
   category: string;
+  requiredPermission: string | null;
 }[] = [
   // Orders & Procurement
   {
@@ -28,42 +39,49 @@ const NOTIFICATION_TYPES: {
     label: 'Parts Request Submitted',
     description: 'When a field worker submits a new parts request for approval.',
     category: 'Orders',
+    requiredPermission: 'manage_orders',
   },
   {
     type: 'jpo_approved',
     label: 'Parts Request Approved',
     description: 'When your parts request is approved by a manager.',
     category: 'Orders',
+    requiredPermission: null,
   },
   {
     type: 'jpo_rejected',
     label: 'Parts Request Rejected',
     description: 'When your parts request is rejected.',
     category: 'Orders',
+    requiredPermission: null,
   },
   {
     type: 'po_submitted',
     label: 'Purchase Order Submitted',
     description: 'When a PO is submitted to a supplier.',
     category: 'Orders',
+    requiredPermission: 'manage_orders',
   },
   {
     type: 'po_acknowledged',
     label: 'PO Acknowledged by Supplier',
     description: 'When a supplier acknowledges receipt of a PO.',
     category: 'Orders',
+    requiredPermission: 'manage_orders',
   },
   {
     type: 'po_shipped',
     label: 'Shipment Notification',
     description: 'When a supplier marks items as shipped.',
     category: 'Orders',
+    requiredPermission: 'manage_orders',
   },
   {
     type: 'po_received',
     label: 'Items Received',
     description: 'When ordered items are received at the warehouse.',
     category: 'Orders',
+    requiredPermission: 'manage_warehouse',
   },
 
   // Inventory
@@ -72,12 +90,14 @@ const NOTIFICATION_TYPES: {
     label: 'Low Stock Alert',
     description: 'When a part drops below its reorder point.',
     category: 'Inventory',
+    requiredPermission: 'manage_warehouse',
   },
   {
     type: 'reorder_suggestion',
     label: 'Reorder Suggestions',
     description: 'Weekly summary of parts that need reordering.',
     category: 'Inventory',
+    requiredPermission: 'manage_warehouse',
   },
 
   // Returns
@@ -86,26 +106,30 @@ const NOTIFICATION_TYPES: {
     label: 'Return Submitted',
     description: 'When a return is submitted for approval.',
     category: 'Returns',
+    requiredPermission: 'manage_orders',
   },
   {
     type: 'return_approved',
     label: 'Return Approved',
     description: 'When your return is approved.',
     category: 'Returns',
+    requiredPermission: null,
   },
 
   // Jobs
   {
     type: 'job_status_change',
     label: 'Job Status Changes',
-    description: 'When a job you\'re assigned to changes status.',
+    description: "When a job you're assigned to changes status.",
     category: 'Jobs',
+    requiredPermission: null,
   },
 ];
 
 export function NotificationPrefsPage() {
   const queryClient = useQueryClient();
   const [saved, setSaved] = useState(false);
+  const { hasPermission } = useAuthStore();
 
   // Fetch current preferences
   const { data: prefData, isLoading } = useQuery({
@@ -113,7 +137,7 @@ export function NotificationPrefsPage() {
     queryFn: getNotificationPreferences,
   });
 
-  // Build local state from fetched preferences
+  // Build local state from fetched preferences — default is ON (opt-out)
   const [localPrefs, setLocalPrefs] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -162,13 +186,13 @@ export function NotificationPrefsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
             Notification Preferences
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Choose which notifications you want to receive. All notifications are off by default.
+            All notifications are enabled by default. Toggle off any you don't need.
           </p>
         </div>
         <button
@@ -179,12 +203,12 @@ export function NotificationPrefsPage() {
           {saved ? (
             <>
               <Check className="h-4 w-4" />
-              Saved!
+              <span className="hidden sm:inline">Saved!</span>
             </>
           ) : (
             <>
               <Save className="h-4 w-4" />
-              Save Preferences
+              <span className="hidden sm:inline">Save Preferences</span>
             </>
           )}
         </button>
@@ -200,18 +224,33 @@ export function NotificationPrefsPage() {
           <div className="divide-y divide-border">
             {NOTIFICATION_TYPES.filter((t) => t.category === category).map(
               (notifType) => {
-                const isEnabled = localPrefs[notifType.type] ?? false;
+                // Check if user's hat qualifies for this notification
+                const hasRequiredPerm =
+                  notifType.requiredPermission === null ||
+                  hasPermission(notifType.requiredPermission);
+
+                // Default ON when no stored preference (opt-out model)
+                const isEnabled = hasRequiredPerm
+                  ? (localPrefs[notifType.type] ?? true)
+                  : false;
 
                 return (
-                  <label
+                  <div
                     key={notifType.type}
-                    className="flex items-center justify-between px-4 py-3 hover:bg-surface-secondary/50 transition-colors cursor-pointer"
+                    className={`flex items-center justify-between px-4 py-3 transition-colors ${
+                      hasRequiredPerm
+                        ? 'hover:bg-surface-secondary/50 cursor-pointer'
+                        : 'opacity-50 cursor-not-allowed'
+                    }`}
+                    onClick={hasRequiredPerm ? () => toggle(notifType.type) : undefined}
                   >
                     <div className="flex items-center gap-3">
-                      {isEnabled ? (
-                        <Bell className="h-4 w-4 text-primary flex-shrink-0" />
+                      {!hasRequiredPerm ? (
+                        <Lock className="h-4 w-4 text-gray-300 dark:text-gray-600 flex-shrink-0" />
+                      ) : isEnabled ? (
+                        <Bell className="h-4 w-4 text-green-500 dark:text-green-400 flex-shrink-0" />
                       ) : (
-                        <BellOff className="h-4 w-4 text-gray-300 dark:text-gray-600 flex-shrink-0" />
+                        <BellOff className="h-4 w-4 text-red-400 dark:text-red-500 flex-shrink-0" />
                       )}
                       <div>
                         <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
@@ -220,19 +259,30 @@ export function NotificationPrefsPage() {
                         <p className="text-xs text-gray-500 dark:text-gray-400">
                           {notifType.description}
                         </p>
+                        {!hasRequiredPerm && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                            Requires {notifType.requiredPermission?.replace(/_/g, ' ')} permission
+                          </p>
+                        )}
                       </div>
                     </div>
 
-                    {/* Toggle switch */}
+                    {/* Toggle switch — locked if no permission */}
                     <button
                       type="button"
                       role="switch"
                       aria-checked={isEnabled}
-                      onClick={() => toggle(notifType.type)}
+                      disabled={!hasRequiredPerm}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (hasRequiredPerm) toggle(notifType.type);
+                      }}
                       className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
-                        isEnabled
-                          ? 'bg-primary'
-                          : 'bg-gray-200 dark:bg-gray-700'
+                        !hasRequiredPerm
+                          ? 'bg-gray-200 dark:bg-gray-700 cursor-not-allowed'
+                          : isEnabled
+                            ? 'bg-green-500 dark:bg-green-600'
+                            : 'bg-red-400 dark:bg-red-500'
                       }`}
                     >
                       <span
@@ -241,7 +291,7 @@ export function NotificationPrefsPage() {
                         }`}
                       />
                     </button>
-                  </label>
+                  </div>
                 );
               }
             )}

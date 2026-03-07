@@ -21,7 +21,7 @@ EXCEPTION_TYPES = Literal[
     "jury_duty", "bereavement",
 ]
 
-DISPATCH_ROLES = Literal["lead", "worker", "apprentice", "helper"]
+DISPATCH_ROLES = Literal["lead", "worker", "apprentice", "helper", "supervisor"]
 
 DISPATCH_STATUSES = Literal[
     "scheduled", "confirmed", "on_site",
@@ -41,6 +41,8 @@ class DefaultScheduleDay(BaseModel):
     day_of_week: int = Field(..., ge=0, le=6)  # 0=Sun, 6=Sat
     start_time: str = "07:00"
     end_time: str = "15:30"
+    lunch_start: str | None = None
+    lunch_end: str | None = None
     is_working_day: bool = True
     notes: str | None = None
 
@@ -63,6 +65,8 @@ class DefaultScheduleDayResponse(BaseModel):
     day_of_week: int
     start_time: str = "07:00"
     end_time: str = "15:30"
+    lunch_start: str | None = None
+    lunch_end: str | None = None
     is_working_day: bool = True
     notes: str | None = None
 
@@ -75,6 +79,8 @@ class ScheduleExceptionCreate(BaseModel):
     exception_type: EXCEPTION_TYPES
     start_time: str | None = None  # NULL = full day
     end_time: str | None = None
+    lunch_start: str | None = None
+    lunch_end: str | None = None
     reason: str | None = None
     notes: str | None = None
 
@@ -84,6 +90,8 @@ class ScheduleExceptionUpdate(BaseModel):
     exception_type: EXCEPTION_TYPES | None = None
     start_time: str | None = None
     end_time: str | None = None
+    lunch_start: str | None = None
+    lunch_end: str | None = None
     reason: str | None = None
     notes: str | None = None
 
@@ -97,6 +105,8 @@ class ScheduleExceptionResponse(BaseModel):
     exception_type: str
     start_time: str | None = None
     end_time: str | None = None
+    lunch_start: str | None = None
+    lunch_end: str | None = None
     is_approved: bool = False
     approved_by: int | None = None
     approved_by_name: str | None = None
@@ -115,6 +125,8 @@ class DispatchCreate(BaseModel):
     dispatch_date: str = Field(..., min_length=10, max_length=10)
     shift_start: str | None = None
     shift_end: str | None = None
+    lunch_start: str | None = None
+    lunch_end: str | None = None
     role_on_job: DISPATCH_ROLES = "worker"
     notes: str | None = None
 
@@ -126,6 +138,8 @@ class BulkDispatchCreate(BaseModel):
     user_ids: list[int] = Field(..., min_length=1)
     shift_start: str | None = None
     shift_end: str | None = None
+    lunch_start: str | None = None
+    lunch_end: str | None = None
     role_on_job: DISPATCH_ROLES = "worker"
     notes: str | None = None
 
@@ -134,6 +148,8 @@ class DispatchUpdate(BaseModel):
     """Partial update for a dispatch assignment."""
     shift_start: str | None = None
     shift_end: str | None = None
+    lunch_start: str | None = None
+    lunch_end: str | None = None
     role_on_job: DISPATCH_ROLES | None = None
     status: DISPATCH_STATUSES | None = None
     notes: str | None = None
@@ -149,6 +165,8 @@ class DispatchResponse(BaseModel):
     dispatch_date: str
     shift_start: str | None = None
     shift_end: str | None = None
+    lunch_start: str | None = None
+    lunch_end: str | None = None
     role_on_job: str = "worker"
     status: str = "scheduled"
     dispatched_by: int | None = None
@@ -182,6 +200,9 @@ class ScheduleConflict(BaseModel):
     description: str
     related_job_id: int | None = None
     related_job_name: str | None = None
+    shift_start: str | None = None
+    shift_end: str | None = None
+    role_on_job: str | None = None
 
 
 # ── Subcontractor Schedules ───────────────────────────────────────
@@ -238,6 +259,7 @@ class CalendarEntry(BaseModel):
     gc_id: int | None = None
     gc_name: str | None = None
     status: str | None = None
+    role_on_job: str | None = None  # for dispatch entries
     label: str = ""  # human-readable summary
 
 
@@ -262,6 +284,8 @@ class DispatchTemplateCreate(BaseModel):
     job_id: int
     shift_start: str | None = None
     shift_end: str | None = None
+    lunch_start: str | None = None
+    lunch_end: str | None = None
     role_on_job: DISPATCH_ROLES = "worker"
     days_of_week: int = Field(62, ge=0, le=127)  # bitmask: bit0=Sun..bit6=Sat
     members: list[DispatchTemplateMember] = Field(default_factory=list)
@@ -274,6 +298,8 @@ class DispatchTemplateUpdate(BaseModel):
     job_id: int | None = None
     shift_start: str | None = None
     shift_end: str | None = None
+    lunch_start: str | None = None
+    lunch_end: str | None = None
     role_on_job: DISPATCH_ROLES | None = None
     days_of_week: int | None = Field(default=None, ge=0, le=127)
     members: list[DispatchTemplateMember] | None = None
@@ -288,6 +314,8 @@ class DispatchTemplateResponse(BaseModel):
     job_name: str | None = None
     shift_start: str | None = None
     shift_end: str | None = None
+    lunch_start: str | None = None
+    lunch_end: str | None = None
     role_on_job: str = "worker"
     days_of_week: int = 62
     days_labels: list[str] = Field(default_factory=list)  # e.g. ["Mon","Tue",...]
@@ -318,6 +346,8 @@ class ShiftPatternDayCreate(BaseModel):
     day_of_week: int = Field(..., ge=0, le=6)
     start_time: str = "07:00"
     end_time: str = "15:30"
+    lunch_start: str | None = None
+    lunch_end: str | None = None
     is_working_day: bool = True
 
 
@@ -341,6 +371,8 @@ class ShiftPatternDayResponse(BaseModel):
     day_of_week: int
     start_time: str
     end_time: str
+    lunch_start: str | None = None
+    lunch_end: str | None = None
     is_working_day: bool
 
 

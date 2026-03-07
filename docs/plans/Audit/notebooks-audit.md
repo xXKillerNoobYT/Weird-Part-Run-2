@@ -1,7 +1,7 @@
 # Notebooks Module Audit
 
 > **Date:** 2026-03-06
-> **Status:** ✅ Verified Complete (2026-03-07) — M4 gap closure: template duplication, entry reordering, notebook attachments (migration 034 + backend + API), bulk task updates all implemented. NotebookService intentionally monolithic — no repo layer needed at current scale.
+> **Status:** ✅ Verified Complete (2026-03-07) — M4 gap closure: template duplication, entry reordering, notebook attachments (migration 034 + backend + API), bulk task updates all implemented. NotebookService intentionally monolithic — no repo layer needed at current scale. E2E responsive validated at mobile/tablet/desktop.
 > **Scope:** Unified Notebook System — templates (Office), notebooks (job + general), sections, entries (notes/tasks/fields), permissions, task stages
 
 ---
@@ -219,6 +219,8 @@ Functions breakdown:
 
 ### ⚠️ Incomplete or Potential Gaps
 
+Fix all od these
+
 | Area | Status | Notes |
 |------|--------|-------|
 | **task_order_links table** | Schema exists, not wired | Migration 013 creates `task_order_links` for "Future PO linking (Phase 5)" but no service/router code references it |
@@ -253,6 +255,8 @@ Functions breakdown:
 ---
 
 ## 5. Issues & TODOs
+
+Fix all of these 
 
 ### No TODOs Found in Code
 Zero `TODO`, `FIXME`, `HACK`, or `STUB` comments across all Notebooks frontend and backend files. The code is clean.

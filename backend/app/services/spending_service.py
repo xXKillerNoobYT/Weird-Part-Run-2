@@ -97,7 +97,7 @@ class SpendingService:
             FROM po_line_items pli
             JOIN purchase_orders po ON po.id = pli.po_id
             JOIN parts p ON p.id = pli.part_id
-            LEFT JOIN categories cat ON cat.id = p.category_id
+            LEFT JOIN part_categories cat ON cat.id = p.category_id
             WHERE po.status NOT IN ('draft', 'cancelled')
               AND po.created_at >= ? AND po.created_at < ?
             GROUP BY cat.id, cat.name

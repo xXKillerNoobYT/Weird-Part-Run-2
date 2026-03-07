@@ -80,6 +80,8 @@ export function DispatchTemplatesPage() {
   const [formJobId, setFormJobId] = useState<number>(0);
   const [formShiftStart, setFormShiftStart] = useState('07:00');
   const [formShiftEnd, setFormShiftEnd] = useState('15:30');
+  const [formLunchStart, setFormLunchStart] = useState('');
+  const [formLunchEnd, setFormLunchEnd] = useState('');
   const [formDays, setFormDays] = useState<boolean[]>([false, true, true, true, true, true, false]);
   const [formMembers, setFormMembers] = useState<DispatchTemplateMember[]>([]);
   const [formNotes, setFormNotes] = useState('');
@@ -142,6 +144,8 @@ export function DispatchTemplatesPage() {
     setFormJobId(jobs[0]?.id ?? 0);
     setFormShiftStart('07:00');
     setFormShiftEnd('15:30');
+    setFormLunchStart('');
+    setFormLunchEnd('');
     setFormDays([false, true, true, true, true, true, false]);
     setFormMembers([]);
     setFormNotes('');
@@ -154,6 +158,8 @@ export function DispatchTemplatesPage() {
     setFormJobId(t.job_id);
     setFormShiftStart(t.shift_start ?? '07:00');
     setFormShiftEnd(t.shift_end ?? '15:30');
+    setFormLunchStart(t.lunch_start ?? '');
+    setFormLunchEnd(t.lunch_end ?? '');
     setFormDays(DAY_LABELS.map((_, i) => Boolean(t.days_of_week & (1 << i))));
     setFormMembers(t.members.map(m => ({ user_id: m.user_id, role_on_job: m.role_on_job })));
     setFormNotes(t.notes ?? '');
@@ -166,6 +172,8 @@ export function DispatchTemplatesPage() {
       job_id: formJobId,
       shift_start: formShiftStart || undefined,
       shift_end: formShiftEnd || undefined,
+      lunch_start: formLunchStart || undefined,
+      lunch_end: formLunchEnd || undefined,
       days_of_week: daysToBitmask(formDays),
       members: formMembers,
       notes: formNotes || undefined,
@@ -294,10 +302,15 @@ export function DispatchTemplatesPage() {
                 ))}
               </div>
 
-              {/* Shift */}
+              {/* Shift + Lunch */}
               {t.shift_start && (
                 <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
                   {t.shift_start} – {t.shift_end}
+                  {(t.lunch_start || t.lunch_end) && (
+                    <span className="ml-2 text-gray-400 dark:text-gray-500">
+                      (lunch {t.lunch_start ?? '—'}–{t.lunch_end ?? '—'})
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -371,6 +384,23 @@ export function DispatchTemplatesPage() {
               type="time"
               value={formShiftEnd}
               onChange={e => setFormShiftEnd(e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Lunch Start"
+              type="time"
+              value={formLunchStart}
+              onChange={e => setFormLunchStart(e.target.value)}
+              placeholder="12:00"
+            />
+            <Input
+              label="Lunch End"
+              type="time"
+              value={formLunchEnd}
+              onChange={e => setFormLunchEnd(e.target.value)}
+              placeholder="12:30"
             />
           </div>
 

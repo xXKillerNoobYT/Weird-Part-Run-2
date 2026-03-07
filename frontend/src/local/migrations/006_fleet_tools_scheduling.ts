@@ -240,6 +240,8 @@ CREATE TABLE IF NOT EXISTS employee_default_schedules (
     day_of_week     INTEGER NOT NULL CHECK(day_of_week BETWEEN 0 AND 6),
     start_time      TEXT    DEFAULT '07:00',
     end_time        TEXT    DEFAULT '15:30',
+    lunch_start     TEXT    DEFAULT NULL,
+    lunch_end       TEXT    DEFAULT NULL,
     is_working_day  INTEGER DEFAULT 1,
     notes           TEXT,
     UNIQUE(user_id, day_of_week)
@@ -257,6 +259,8 @@ CREATE TABLE IF NOT EXISTS schedule_exceptions (
         )),
     start_time      TEXT,
     end_time        TEXT,
+    lunch_start     TEXT    DEFAULT NULL,
+    lunch_end       TEXT    DEFAULT NULL,
     is_approved     INTEGER DEFAULT 0,
     approved_by     INTEGER REFERENCES users(id),
     approved_at     TEXT,
@@ -274,8 +278,10 @@ CREATE TABLE IF NOT EXISTS job_dispatch (
     dispatch_date   TEXT    NOT NULL,
     shift_start     TEXT,
     shift_end       TEXT,
+    lunch_start     TEXT    DEFAULT NULL,
+    lunch_end       TEXT    DEFAULT NULL,
     role_on_job     TEXT    DEFAULT 'worker'
-        CHECK(role_on_job IN ('lead','worker','apprentice','helper')),
+        CHECK(role_on_job IN ('lead','worker','apprentice','helper','supervisor')),
     status          TEXT    DEFAULT 'scheduled'
         CHECK(status IN (
             'scheduled','confirmed','on_site',

@@ -1,7 +1,7 @@
 # Parts & Inventory Audit
 
 > **Date:** 2026-03-06
-> **Status:** ✅ Complete
+> **Status:** ✅ Complete — E2E responsive validated at mobile/tablet/desktop (2026-03-07). BUG-003 fixed: EmptyState component crash with forwardRef Lucide icons.
 > **Scope:** Full audit of Parts & Inventory module (Hierarchy, Catalog, Brands, Suppliers, Companions, Alternatives, Import/Export)
 > **Phases:** Phase 2 (core), Phase 2.5 (hierarchy UX), Phase 3.5 (companions, alternatives), Phase 7D (cost display)
 
@@ -175,10 +175,12 @@ Parts module — 9 nav items:
 
 ### ⚠️ Minor Limitations
 
+Fix these 
+
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Forecasting | Read-only | Data computed by APScheduler; users can't manually trigger recalculation from parts UI |
-| QR Images | Auto-computed | Fields exist + auto-compute; upload UX is in warehouse module (QRLabelModal) |
+| QR Images | Auto-computed | Fields exist + auto-compute; upload UX is in warehouse module (QRLabelModal) | We need a bulk print option for QR codes.
 | CSV Import | Basic | Create/update by code only; no hierarchy auto-resolution by name (only by ID) |
 
 ---

@@ -1,7 +1,7 @@
 # Warehouse & Movements Audit
 
 > **Date:** 2026-03-06
-> **Status:** ✅ Complete
+> **Status:** ✅ Complete — E2E responsive validated at mobile/tablet/desktop (2026-03-07).
 > **Scope:** Full audit of Warehouse module (Movements, Inventory, Staging, Audit, Receiving, Return Sorting, Tools tab)
 > **Phases:** Phase 3 (core movements + dashboard), Phase 3.5 (QR scanner, bin locations), Phase 7C (receiving sessions, return sorting), Phase 9 (tools tab)
 
@@ -156,6 +156,8 @@ Zero stub pages — every page is fully functional.
 ---
 
 ## 5. Issues & Observations
+
+Fix this properly. Take care of everything in here.
 
 | # | Issue | Severity | Notes |
 |---|-------|----------|-------|

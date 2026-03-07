@@ -1,7 +1,7 @@
 # People, Employees & Contacts Audit
 
 > **Date:** 2026-03-06
-> **Status:** ✅ Verified Complete (2026-03-07) — M3 gap closure: employee avatar upload UI (EmployeeDetailPage), CSV import, contact dedupe, cert document upload, billing/COI fields all implemented. Feature gaps listed below are closed.
+> **Status:** ✅ Verified Complete (2026-03-07) — M3 gap closure: employee avatar upload UI (EmployeeDetailPage), CSV import, contact dedupe, cert document upload, billing/COI fields all implemented. Feature gaps listed below are closed. E2E responsive validated at mobile/tablet/desktop.
 > **Scope:** Full audit of the People module — employees, certifications, wages, notes, skills, hats/permissions, elevations, customers, general contractors, supplier contacts, contact directory
 
 ---
@@ -450,6 +450,8 @@ Zero TODO, FIXME, HACK, or TEMP comments in any People or Contacts file (backend
 6. **Wage history is append-only** — There's no update or delete for wage records, only add. This preserves audit trail but means corrections require adding a new record.
 
 ### Feature Gaps
+
+Fix these in M3 if not already addressed:
 
 - **No employee photo/avatar** — Employee records have no image field. The list and detail pages show initials only.
 - **No bulk employee operations** — No bulk create, bulk deactivate, or CSV import for employees.

@@ -29,4 +29,4 @@ ALTER TABLE tools ADD COLUMN photo_path TEXT;
 -- ── Certification Documents ────────────────────────────────────
 -- GAP-031: Add document_path for scanned certificates
 
-ALTER TABLE employee_certifications ADD COLUMN document_path TEXT;
+ALTER TABLE certifications ADD COLUMN document_path TEXT;

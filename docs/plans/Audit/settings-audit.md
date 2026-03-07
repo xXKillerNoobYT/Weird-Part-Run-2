@@ -1,7 +1,7 @@
 # Settings Audit
 
 > **Date:** 2026-03-06
-> **Status:** ✅ Verified Complete (2026-03-07) — 5/8 tabs functional. 3 intentional v2.0+ stubs: SyncPage, AiConfigPage, DeviceManagementPage. AboutPage added via M4 gap closure (GAP-043).
+> **Status:** ✅ Verified Complete (2026-03-07) — 5/8 tabs functional. 3 intentional v2.0+ stubs: SyncPage, AiConfigPage, DeviceManagementPage. AboutPage added via M4 gap closure (GAP-043). E2E validated: notification opt-out model with green/red toggles, responsive at all 3 breakpoints.
 > **Scope:** Full audit of the Settings module — theme, app config, company profiles, staging zones, notifications, sync, AI, devices
 
 ---
@@ -184,15 +184,19 @@ Open tabs (no permission): Themes, Notifications.
 - Primary profile designation (auto-unsets previous primary)
 - Delete with confirmation dialog
 
-#### NotificationPrefsPage (✅ Functional — ~230 lines)
+#### NotificationPrefsPage (✅ Functional — ~303 lines)
 - Toggle switches for 13 notification types across 4 categories:
   - **Orders** (7): JPO submitted/approved/rejected, PO submitted/acknowledged/shipped/received
   - **Inventory** (2): Low stock alert, Reorder suggestions
   - **Returns** (2): Return submitted/approved
-  - **Jobs** (2): Job status changes
+  - **Jobs** (1): Job status changes
+- **Opt-out model**: All notifications default to ON — users toggle OFF what they don't need
+- **Permission-gated locking**: If user's hat doesn't grant the required permission for a notification type, the toggle is locked off with a Lock icon and amber "Requires X permission" text
+- **Color-coded toggles**: Green (`bg-green-500`) for enabled, Red (`bg-red-400`) for disabled — provides instant visual clarity
+- **Color-coded icons**: Green Bell for enabled, Red BellOff for disabled, gray Lock for permission-locked
 - Per-user preferences (stored in `notification_preferences` table)
-- Defaults OFF — user must enable each type
 - Save button with confirmation feedback
+- **E2E verified (2026-03-07)**: Responsive at mobile/tablet/desktop, toggle interaction confirmed
 
 #### ClockOutQuestionsPage (✅ Functional — ~321 lines)
 - **Lives in settings directory but navigated from Office module**
@@ -302,7 +306,43 @@ All three stubs are **intentionally deferred** to future phases and are not bloc
 
 ### Missing Features
 
-- **No user profile/account page** — There's no page for the logged-in user to see/edit their own profile (name, password, etc.). This might be expected to live in Settings but doesn't exist.
-- **No about/version page** — No way to see the app version, build info, or system status.
+- **No user profile/account page** — There's no page for the logged-in user to see/edit their own profile (name, password, etc.). This might be expected to live in Settings but doesn't exist. *(Self-service profile page added in V1.0 Hotfix Pack — `/settings/profile`)*
+- ~~**No about/version page**~~ — ✅ **RESOLVED**: AboutPage added via M4 gap closure (GAP-043). Shows app version, build info, tech stack, and system status.
 - **No backup/restore settings** — No mechanism to export/import settings configuration.
 - **Primary color and font family** — The `ThemeSettings` model supports `primary_color` and `font_family`, but the ThemesPage UI only exposes mode (light/dark/system). Color and font customization are not surfaced.
+
+---
+
+## 6. E2E Test Results (2026-03-07)
+
+### Bugs Found & Fixed
+
+| Bug | File | Fix |
+|-----|------|-----|
+| BUG-001: Competing `vite.config.mjs` | `frontend/vite.config.mjs` | Deleted duplicate file (only `vite.config.ts` should exist) |
+| BUG-002: Migration 033 table name mismatch | `backend/app/migrations/033_attachments_photos.sql` | Fixed CREATE TABLE name to match referenced table |
+| BUG-003: EmptyState crash with forwardRef icons | `frontend/src/components/ui/EmptyState.tsx` | Added check for `$$typeof` property to handle forwardRef components |
+| Notification defaults were opt-in | `NotificationPrefsPage.tsx` + `notification_repo.py` | Changed to opt-out model (ON by default), backend `is_enabled()` defaults to `True` |
+| Toggle colors unclear | `NotificationPrefsPage.tsx` | Changed from brand-primary/gray to green/red for clear ON/OFF visual |
+| Permission-locked notifications not visible | `NotificationPrefsPage.tsx` | Added Lock icon + amber text showing required permission |
+
+### Responsive Validation
+
+| Breakpoint | Status | Notes |
+|------------|--------|-------|
+| Mobile (375×812) | ✅ Pass | Toggle text wraps, Save button icon-only, scrollable categories |
+| Tablet (768×1024) | ✅ Pass | Sidebar as overlay, full content width, all toggles visible |
+| Desktop (1400×900) | ✅ Pass | Persistent sidebar, all tabs visible, green/red toggles clearly distinguishable |
+
+### Final Regression
+
+| Check | Result |
+|-------|--------|
+| TypeScript `npx tsc --noEmit` | 0 errors |
+| Python AST parse (97 files) | All pass |
+| pytest (119 tests) | All pass |
+
+
+This page here needs to be completed properly and intelligently.
+
+A note on the page that says devices. I want that to be a version one. This whole thing, everything in the plans, all that, that's all version one as far as I'm concerned, despite what other papers may say.

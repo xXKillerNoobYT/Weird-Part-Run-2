@@ -1,7 +1,7 @@
 # Fleet & Vehicles Audit
 
 > **Date:** 2026-03-06
-> **Status:** ✅ Verified Complete (2026-03-07) — 100% functional (44 endpoints, all pages). Architectural notes about large files (vehicle_repo 915L, trucks router 974L) are informational; no refactoring needed for V1.0.
+> **Status:** ✅ Verified Complete (2026-03-07) — 100% functional (44 endpoints, all pages). E2E responsive validated at mobile/tablet/desktop. Architectural notes about large files (vehicle_repo 915L, trucks router 974L) are informational; no refactoring needed for V1.0.
 > **Scope:** Full audit of the Fleet module — vehicles, assignments, vehicle inventory, deliveries, maintenance (types/schedules/records), mileage (logs/trips/estimates), reimbursements, warehouse locations, fleet dashboard
 
 ---
@@ -520,20 +520,30 @@ Zero TODO, FIXME, HACK, or TEMP comments in any fleet file (backend or frontend)
 ### Architectural Notes
 
 1. **Monolithic repository** — `vehicle_repo.py` at 915 lines is the largest repo in the codebase. It contains 10 separate repo classes. Consider splitting into separate files (e.g., `mileage_repo.py`, `maintenance_repo.py`) for maintainability.
+Do this we want to be able to hadel larg fleeats 100+ vehicles and 1000+ mileage logs and 1000+ maintenance records. We want to be able to scale the codebase to handle this volume without hitting maintainability issues. The current monolithic repo is already at 915 lines, which is quite large. By splitting into separate repos, we can keep each file focused and easier to navigate. For example, `mileage_repo.py` would contain all mileage-related database interactions, while `maintenance_repo.py` would handle maintenance records and schedules. This separation would make it easier for developers to find and work with the relevant code when making changes or debugging issues related to specific features.
 
 2. **Monolithic router** — `trucks.py` at 974 lines is the largest router. The route-ordering constraint (catch-all `/{vehicle_id}` must be last) adds fragility. Any new endpoint must be placed before the catch-all section. Consider splitting into sub-routers (e.g., `trucks_maintenance.py`, `trucks_mileage.py`).
+The `trucks.py` router currently handles all 44 endpoints, which makes it quite large and potentially difficult to maintain. The catch-all routes for vehicle details at the bottom create a risk of route collisions if new endpoints are added above them. By splitting the router into sub-routers based on feature areas (e.g., `trucks_maintenance.py` for maintenance-related endpoints, `trucks_mileage.py` for mileage-related endpoints), we can reduce the size of each router and eliminate the risk of route collisions. Each sub-router would be mounted in `main.py` with its own prefix (e.g., `/api/trucks/maintenance`, `/api/trucks/mileage`), allowing for better organization and maintainability. Do this to improve code organization and reduce the risk of route collisions. With 44 endpoints, the router is already quite large, and as we add more features in the future, it could become unwieldy. By splitting into sub-routers, we can keep each file focused on a specific area of functionality, making it easier for developers to find and work with the relevant code when making changes or adding new features.
 
 3. **Four services for one router** — The trucks router instantiates `VehicleService`, `DeliveryService`, `MaintenanceService`, and `MileageService` depending on the endpoint group. This is good separation but there's no shared initialization — each endpoint creates its own service instance.
+Consider a service factory or dependency injection to manage this more cleanly. For example, we could have a `FleetServiceFactory` that initializes and provides instances of each service
 
 4. **Warehouse locations under trucks** — `WarehouseLocationRepo` and the `/warehouse-locations` endpoints live in the fleet module, but warehouse locations are conceptually part of the warehouse/inventory system. This creates a cross-cutting concern where the warehouse module depends on fleet data.
+Consider moving warehouse location management to the warehouse module, or at least abstracting it behind a service interface that both modules can use. This would reduce coupling between the fleet and warehouse modules and better align with the conceptual domain boundaries. The fleet module should focus on vehicles and their management, while the warehouse module should handle inventory and location management. By moving warehouse location management to the warehouse module, we can keep the responsibilities of each module clear and reduce the risk of unintended side effects when making changes to one module that affect the other.
 
 5. **Mileage rate from settings** — `MileageService` reads the reimbursement rate from `SettingsRepo`/`app_settings`. If the rate changes, historical reimbursements are unaffected (amount is stored at creation), which is correct behavior.
+However, there's no audit trail for rate changes. Consider adding a `MileageRateChangeLog` table to track when and how the rate changes over time for better transparency and historical analysis. This would allow us to see when the mileage reimbursement rate was changed, what the previous and new rates were, and who made the change. This audit trail would be valuable for understanding trends in reimbursement costs and for accountability in case of disputes or questions about past reimbursements.
+add a Gas Receipt fast capture for reimbursements. This would allow users to quickly capture a photo of their gas receipt when submitting a reimbursement request, providing additional documentation for the expense and potentially speeding up the approval process. The receipt image could be stored in the database and linked to the reimbursement record, making it easy for managers to review the expense with the supporting documentation. Make an Image mandatory for. Reimbursement.
 
-6. **No vehicle image/photo** — Vehicle records have no image field. VehicleCard shows a truck icon placeholder.
+6. **No vehicle image/photo** — Vehicle records have no image field. VehicleCard shows a truck icon placeholder. 
+Add this, 
 
 7. **Route collision risk** — The `/{vehicle_id}` catch-all at the bottom means any future top-level path (e.g., `/fuel-logs`) must be added above it. A code comment warns about this, but it's an ongoing maintenance concern.
+we We kinda want this tract. Per vehicle and also. Uh, when getting uh fuel records, we also want the user to put in the current total mileage for the vehicle. Just in case the vehicle has been driven a bit more than what's necessarily on the records. And then we can have the different specially calibrated. If the records say it's been driven more than the vehicle says, we have informational notes on that. In the log. I want the maintenance to. Use the mainly input and mileage. For the vehicle as a soft. Reset for maintenance. The other one's good for guidance, but this one's good for accuracy.
 
 ### Feature Gaps
+
+Add all of the gaps 
 
 - **No vehicle photo/image upload** — Just metadata, no visual identification.
 - **No fuel tracking** — Mileage is tracked but fuel consumption/cost is not. Combined with maintenance costs, this would give a true total cost of ownership.

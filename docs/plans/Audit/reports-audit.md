@@ -1,7 +1,7 @@
 # Reports Audit
 
 > **Date:** 2026-03-06
-> **Status:** ✅ Verified Complete (2026-03-07) — Phase 11 fully implemented: PreBillingPage (518L), TimesheetsPage (356L), LaborOverviewPage (322L), ExportsPage (430L), period locking, bookkeeper exports. Stub ❌ markers in tables below are stale.
+> **Status:** ✅ Verified Complete (2026-03-07) — Phase 11 fully implemented: PreBillingPage (518L), TimesheetsPage (356L), LaborOverviewPage (322L), ExportsPage (430L), period locking, bookkeeper exports. Stub ❌ markers in tables below are stale. E2E responsive validated at mobile/tablet/desktop.
 > **Scope:** Full audit of the Reports module — daily reports, pre-billing, timesheets, labor overview, exports
 
 ---
@@ -270,7 +270,9 @@ The Phase 11 plan (`docs/plans/phase-11-reports-prebilling.md`) is detailed and 
 
 ### Feature Gaps (beyond Phase 11 scope)
 
-- **No scheduled report emails** — No mechanism to email reports to stakeholders on a schedule
+Take care of the gaps. And complete this page Completely.
+
+- **No scheduled report emails** — No mechanism to email reports to stakeholders on a schedule NOTE: Don't care about actually emailing from this app at this point. We want to be able to provide the resources for the users to send emails.
 - **No report templates** — No customizable report layouts/templates
 - **No report sharing** — No way to share a report link with external parties (GCs, customers)
 - **No print-optimized view** — Daily report view is web-optimized but has no print stylesheet

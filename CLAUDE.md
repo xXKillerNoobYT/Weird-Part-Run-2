@@ -162,14 +162,16 @@ Plans are living documents that build our project's institutional memory. Treat 
 - Phase 9: Tools & Kits — tool registry, kit verification, checkout/return, maintenance tracking (complete)
 - Phase 10: People, Contacts & Scheduling — customers, GCs, contacts, scheduling, dispatch, time-off, subcontractors (complete)
 
-**Upcoming / In Progress (new numbering as of 2026-03-07):**
+**Recently Completed (2026-03-07):**
 
-- Phase 7 Delta: People additions — PO naming convention, report filename naming (planned — see `docs/plans/phase-7-people-delta.md`)
-- Phase 8: Reports & Pre-Billing — pre-billing, timesheets, labor overview, profitability, period locking, bookkeeper exports (planned — see `docs/plans/phase-11-reports-prebilling.md`)
-- V1.0 Deployment — **offline-first architecture**: lean TypeScript data layer (~11 field-worker services) + Capacitor SQLite on every device, LAN sync engine, shop as truth anchor. ~30-35 days estimated. (planned — see `docs/plans/deployment-master-plan.md` + `docs/plans/sideloading-guide.md`)
-- Legacy Cleanup — remove superseded pages, clean up redirects (planned — see `docs/plans/legacy-cleanup-plan.md`)
-- Testing Strategy — expand test coverage from ~5% to critical paths (planned — see `docs/plans/testing-strategy.md`)
-- Feature Audits — full audit of all 13 feature areas in `docs/plans/Audit/` (in progress)
+- Phase 7 Delta: People additions — PO naming convention, report filename naming (✅ complete — see `docs/plans/phase-7-people-delta.md`)
+- Phase 8: Reports & Pre-Billing — all 6 pages, period locking, bookkeeper exports (✅ complete — see `docs/plans/phase-11-reports-prebilling.md`)
+- Legacy Cleanup — superseded pages removed/redirected (✅ complete — see `docs/plans/legacy-cleanup-plan.md`)
+- Testing Strategy — 119 tests across 10 files (✅ complete — see `docs/plans/testing-strategy.md`)
+- Feature Audits — all 13 areas audited (✅ complete — see `docs/plans/Audit/`)
+- Gap Closure — M1-M4, 44/44 items (✅ complete — see `docs/plans/full-program-gap-closure-plan.md`)
+- Scheduling Enhancements — lunch breaks, supervisor role, multi-job dispatch UX (✅ complete — see `docs/plans/scheduling-enhancements.md`)
+- V1.0 Deployment — 19 of 23 tasks complete. Remaining 5 tasks need Mac + physical devices (see `docs/plans/deployment-master-plan.md`)
 
 **Architecture (V1.0):**
 
@@ -193,13 +195,13 @@ Every device runs the full frontend with its own local database. Mobile gets a *
 
 | Metric | Count |
 |--------|-------|
-| Backend routers | 17 (all mounted) |
-| API endpoints | ~440 |
+| Backend routers | 18 (all mounted) |
+| API endpoints | ~480 |
 | Backend services | 28 |
 | Repositories | 19 + base |
-| Migrations | 30 |
-| Frontend feature files | ~166 |
-| Frontend routes | ~90 |
-| Functional pages | ~67 |
+| Migrations | 35 |
+| Frontend feature files | ~180 |
+| Frontend routes | 100 |
+| Functional pages | 86 |
 | Stub pages | 2 (AiConfigPage, DeviceManagementPage — v2.0+) |
 | API client functions | ~300 |

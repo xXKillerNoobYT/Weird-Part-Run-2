@@ -1,8 +1,8 @@
 # Scheduling & Dispatch Audit
 
-> **Date:** 2026-03-06
-> **Status:** ✅ Verified Complete (2026-03-07) — M3 gap closure: DispatchTemplatesPage (494L, full CRUD + apply), WeeklyAvailabilityPage (277L, color-coded grid), shift patterns (migration 032) all implemented. Feature gaps listed below are closed.
-> **Scope:** Full audit of the Scheduling module — default schedules, time-off requests, employee dispatching (single + bulk), subcontractor scheduling, unified calendar
+> **Date:** 2026-03-06 (updated 2026-03-07)
+> **Status:** ✅ Verified Complete (2026-03-07) — M3 gap closure: DispatchTemplatesPage (494L, full CRUD + apply), WeeklyAvailabilityPage (277L, color-coded grid), shift patterns (migration 032) all implemented. Post-audit enhancements (2026-03-07): lunch break scheduling (lunch_start/lunch_end on default schedules, dispatch, templates, shift patterns), supervisor role on dispatches, multi-job dispatch UX (enriched conflicts + "Today's Assignments" panel), calendar role-based coloring. Migration 035 + full-stack implementation. E2E responsive validated at mobile/tablet/desktop.
+> **Scope:** Full audit of the Scheduling module — default schedules, time-off requests, employee dispatching (single + bulk), subcontractor scheduling, unified calendar, lunch breaks, supervisor/floater role
 
 ---
 
@@ -378,12 +378,19 @@ Zero TODO, FIXME, HACK, or TEMP comments in any scheduling file (backend or fron
 
 ### Feature Gaps
 
-- **No recurring dispatches** — Dispatches are one-time per date. There's no way to set up "dispatch employee X to job Y every Tuesday for 4 weeks." Managers must manually create each day's dispatches.
-- **No drag-and-drop calendar** — The calendar is view-only with click-to-detail. Users can't drag dispatches between days or employees.
-- **No notification integration** — Creating a dispatch doesn't notify the assigned employee. Time-off approval/denial doesn't send a notification. Users must check the app manually.
-- **No availability view** — There's no "who's available this week?" overview. The daily dispatch page shows per-day availability, but there's no multi-day/weekly availability matrix.
-- **No shift patterns** — Default schedules are weekly (7-day pattern). There's no support for rotating shifts, alternating week patterns (e.g., 4-day × 10-hour), or seasonal schedules.
-- **No time-off balance tracking** — Employees can request unlimited time off. There's no PTO balance, accrual, or cap enforcement.
-- **No dashboard scheduling widget** — The main dashboard has no "today's dispatches" or "upcoming schedule" card. Users must navigate to the scheduling module to see their assignments.
-- **No sub-schedule cost tracking** — Sub-schedule records don't track cost/rate for the subcontractor work. There's no link to billing or cost tracking for subcontracted work.
-- **No schedule templates** — Common dispatch patterns (e.g., "standard crew for residential install") can't be saved as templates for quick reuse.
+#### Closed (post-audit enhancements)
+
+- ~~**No recurring dispatches**~~ — ✅ **Closed (M3 GAP-020):** Dispatch templates with day-of-week bitmask, CRUD + apply to date range.
+- ~~**No availability view**~~ — ✅ **Closed (M3 GAP-021):** WeeklyAvailabilityPage with employee×day grid.
+- ~~**No shift patterns**~~ — ✅ **Closed (M3 GAP-022):** Shift patterns table, CRUD, apply-to-user.
+- ~~**No schedule templates**~~ — ✅ **Closed (M3 GAP-020):** Same as recurring dispatches — dispatch templates.
+- ~~**No lunch break scheduling**~~ — ✅ **Closed (Migration 035):** lunch_start/lunch_end on default schedules, dispatches, templates, shift patterns, schedule exceptions. Full-stack: backend models/repos/services, frontend types/pages, local Capacitor migration.
+- ~~**No supervisor/floater role**~~ — ✅ **Closed (Migration 035):** 'supervisor' added to role_on_job CHECK constraint + types + UI with amber color styling on calendar and dispatch pages.
+- ~~**No multi-job dispatch UX**~~ — ✅ **Closed (Migration 035):** Enriched ScheduleConflict with shift_start/shift_end/role_on_job/related_job_name. "Today's Assignments" panel in DailyDispatchPage. Time overlap warning (non-blocking).
+
+#### Remaining (v2.0+ / intentional deferral)
+
+- **No drag-and-drop calendar** — The calendar is view-only with click-to-detail. Users can't drag dispatches between days or employees. (Complexity: high, ROI: moderate — deferred to v2.0.)
+- **No notification integration** — Creating a dispatch doesn't notify the assigned employee. Time-off approval/denial doesn't send a notification. (Note: notification hooks exist for orders; dispatch notifications were added in V1.0 Hotfix Pack for in-app. Push notifications deferred to Phase 10/PWA.)
+- **No time-off balance tracking** — Employees can request unlimited time off. There's no PTO balance, accrual, or cap enforcement. (Business decision: may not be needed for V1.0 — electricians typically have simple PTO policies.)
+- **No dashboard scheduling widget** — The main dashboard has no "today's dispatches" card. (Low complexity — could be added as a dashboard enhancement.)

@@ -52,6 +52,8 @@ function buildDayState(response: DefaultScheduleResponse[]): DefaultScheduleDay[
         day_of_week: i,
         start_time: existing.start_time,
         end_time: existing.end_time,
+        lunch_start: existing.lunch_start ?? null,
+        lunch_end: existing.lunch_end ?? null,
         is_working_day: existing.is_working_day,
         notes: existing.notes,
       };
@@ -61,6 +63,8 @@ function buildDayState(response: DefaultScheduleResponse[]): DefaultScheduleDay[
       day_of_week: i,
       start_time: '07:00',
       end_time: '15:30',
+      lunch_start: null,
+      lunch_end: null,
       is_working_day: false,
       notes: null,
     };
@@ -292,6 +296,8 @@ export function ScheduleConfigPage() {
                       <th className="text-center py-2 px-2 text-gray-500 dark:text-gray-400 font-medium w-20">Working</th>
                       <th className="text-left py-2 px-2 text-gray-500 dark:text-gray-400 font-medium w-32">Start</th>
                       <th className="text-left py-2 px-2 text-gray-500 dark:text-gray-400 font-medium w-32">End</th>
+                      <th className="text-left py-2 px-2 text-gray-500 dark:text-gray-400 font-medium w-28">Lunch Start</th>
+                      <th className="text-left py-2 px-2 text-gray-500 dark:text-gray-400 font-medium w-28">Lunch End</th>
                       <th className="text-left py-2 px-2 text-gray-500 dark:text-gray-400 font-medium">Notes</th>
                     </tr>
                   </thead>
@@ -345,6 +351,26 @@ export function ScheduleConfigPage() {
                         </td>
                         <td className="py-2 px-2">
                           <Input
+                            type="time"
+                            value={day.lunch_start ?? ''}
+                            onChange={e => updateDay(day.day_of_week, 'lunch_start', e.target.value || null)}
+                            disabled={!day.is_working_day || !canManage}
+                            placeholder="12:00"
+                            className="text-sm !py-1"
+                          />
+                        </td>
+                        <td className="py-2 px-2">
+                          <Input
+                            type="time"
+                            value={day.lunch_end ?? ''}
+                            onChange={e => updateDay(day.day_of_week, 'lunch_end', e.target.value || null)}
+                            disabled={!day.is_working_day || !canManage}
+                            placeholder="12:30"
+                            className="text-sm !py-1"
+                          />
+                        </td>
+                        <td className="py-2 px-2">
+                          <Input
                             value={day.notes ?? ''}
                             onChange={e => updateDay(day.day_of_week, 'notes', e.target.value || null)}
                             disabled={!canManage}
@@ -391,26 +417,52 @@ export function ScheduleConfigPage() {
                     </div>
 
                     {day.is_working_day && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[10px] text-gray-500 dark:text-gray-400">Start</label>
-                          <Input
-                            type="time"
-                            value={day.start_time}
-                            onChange={e => updateDay(day.day_of_week, 'start_time', e.target.value)}
-                            disabled={!canManage}
-                            className="text-sm !py-1"
-                          />
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] text-gray-500 dark:text-gray-400">Start</label>
+                            <Input
+                              type="time"
+                              value={day.start_time}
+                              onChange={e => updateDay(day.day_of_week, 'start_time', e.target.value)}
+                              disabled={!canManage}
+                              className="text-sm !py-1"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-gray-500 dark:text-gray-400">End</label>
+                            <Input
+                              type="time"
+                              value={day.end_time}
+                              onChange={e => updateDay(day.day_of_week, 'end_time', e.target.value)}
+                              disabled={!canManage}
+                              className="text-sm !py-1"
+                            />
+                          </div>
                         </div>
-                        <div>
-                          <label className="text-[10px] text-gray-500 dark:text-gray-400">End</label>
-                          <Input
-                            type="time"
-                            value={day.end_time}
-                            onChange={e => updateDay(day.day_of_week, 'end_time', e.target.value)}
-                            disabled={!canManage}
-                            className="text-sm !py-1"
-                          />
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] text-gray-500 dark:text-gray-400">Lunch Start</label>
+                            <Input
+                              type="time"
+                              value={day.lunch_start ?? ''}
+                              onChange={e => updateDay(day.day_of_week, 'lunch_start', e.target.value || null)}
+                              disabled={!canManage}
+                              placeholder="12:00"
+                              className="text-sm !py-1"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-gray-500 dark:text-gray-400">Lunch End</label>
+                            <Input
+                              type="time"
+                              value={day.lunch_end ?? ''}
+                              onChange={e => updateDay(day.day_of_week, 'lunch_end', e.target.value || null)}
+                              disabled={!canManage}
+                              placeholder="12:30"
+                              className="text-sm !py-1"
+                            />
+                          </div>
                         </div>
                       </div>
                     )}
@@ -435,7 +487,14 @@ export function ScheduleConfigPage() {
                             if (!d.is_working_day) continue;
                             const [sh, sm] = d.start_time.split(':').map(Number);
                             const [eh, em] = d.end_time.split(':').map(Number);
-                            totalMinutes += (eh * 60 + em) - (sh * 60 + sm);
+                            let dayMin = (eh * 60 + em) - (sh * 60 + sm);
+                            // Subtract lunch if both times are set
+                            if (d.lunch_start && d.lunch_end) {
+                              const [lsh, lsm] = d.lunch_start.split(':').map(Number);
+                              const [leh, lem] = d.lunch_end.split(':').map(Number);
+                              dayMin -= (leh * 60 + lem) - (lsh * 60 + lsm);
+                            }
+                            totalMinutes += dayMin;
                           }
                           return (totalMinutes / 60).toFixed(1);
                         })()} hours/week

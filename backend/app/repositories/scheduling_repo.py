@@ -40,13 +40,16 @@ class DefaultScheduleRepo(BaseRepo):
         for day in days:
             await self.db.execute(
                 """INSERT OR REPLACE INTO employee_default_schedules
-                   (user_id, day_of_week, start_time, end_time, is_working_day, notes)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   (user_id, day_of_week, start_time, end_time,
+                    lunch_start, lunch_end, is_working_day, notes)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     user_id,
                     day["day_of_week"],
                     day.get("start_time", "07:00"),
                     day.get("end_time", "15:30"),
+                    day.get("lunch_start"),
+                    day.get("lunch_end"),
                     1 if day.get("is_working_day", True) else 0,
                     day.get("notes"),
                 ),
@@ -242,7 +245,8 @@ class JobDispatchRepo(BaseRepo):
 
         # 1. Existing dispatches (not cancelled)
         cursor = await self.db.execute(
-            """SELECT d.id, d.job_id, j.job_name AS job_name
+            """SELECT d.id, d.job_id, j.job_name AS job_name,
+                      d.shift_start, d.shift_end, d.role_on_job
                FROM job_dispatch d
                JOIN jobs j ON j.id = d.job_id
                WHERE d.user_id = ? AND d.dispatch_date = ?
@@ -255,6 +259,9 @@ class JobDispatchRepo(BaseRepo):
                 "description": f"Already dispatched to {row['job_name']}",
                 "related_job_id": row["job_id"],
                 "related_job_name": row["job_name"],
+                "shift_start": row["shift_start"],
+                "shift_end": row["shift_end"],
+                "role_on_job": row["role_on_job"],
             })
 
         # 2. Approved time off

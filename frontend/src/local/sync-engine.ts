@@ -184,7 +184,7 @@ export async function runSync(deviceId: string): Promise<boolean> {
 
     // Store last sync time persistently
     try {
-      const { Preferences } = await import('@capacitor/preferences');
+      const { Preferences } = await import(/* @vite-ignore */ '@capacitor/preferences');
       await Preferences.set({ key: 'last_sync_at', value: now });
     } catch { /* non-critical */ }
 
@@ -300,7 +300,7 @@ export async function runInitialSync(deviceId: string): Promise<boolean> {
 
     // Store last sync time
     try {
-      const { Preferences } = await import('@capacitor/preferences');
+      const { Preferences } = await import(/* @vite-ignore */ '@capacitor/preferences');
       await Preferences.set({ key: 'last_sync_at', value: now });
     } catch { /* non-critical */ }
 
@@ -387,7 +387,7 @@ export async function setupNetworkListener(deviceId: string): Promise<void> {
   networkListenerSetup = true;
 
   try {
-    const { Network } = await import('@capacitor/network');
+    const { Network } = await import(/* @vite-ignore */ '@capacitor/network');
     Network.addListener('networkStatusChange', async (status) => {
       if (status.connected) {
         // Network came back — try syncing after a short delay
@@ -411,7 +411,7 @@ export async function setupNetworkListener(deviceId: string): Promise<void> {
  */
 export async function setupAppStateListener(deviceId: string): Promise<void> {
   try {
-    const { App } = await import('@capacitor/app');
+    const { App } = await import(/* @vite-ignore */ '@capacitor/app');
     App.addListener('appStateChange', (state) => {
       if (state.isActive) {
         // App came to foreground — sync if it's been a while
@@ -436,7 +436,7 @@ export async function setupAppStateListener(deviceId: string): Promise<void> {
 
 export async function restoreLastSyncTime(): Promise<void> {
   try {
-    const { Preferences } = await import('@capacitor/preferences');
+    const { Preferences } = await import(/* @vite-ignore */ '@capacitor/preferences');
     const result = await Preferences.get({ key: 'last_sync_at' });
     if (result.value) {
       syncState.lastSyncAt = result.value;
