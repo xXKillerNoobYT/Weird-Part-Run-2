@@ -2,7 +2,7 @@
 
 > **Purpose:** Use this as the active implementation directive for coding sessions.
 > **Last updated:** 2026-03-07
-> **Current status:** M1 + M2 gap milestones complete. **Now executing M3** (`GAP-019` → `GAP-036`).
+> **Current status:** ALL GAP MILESTONES COMPLETE (M1 + M2 + M3 + M4 — all 44 gaps closed). **Stage D (device validation) blocked on hardware.** Next active work: Phase 7 Delta or Phase 8 planning.
 
 ---
 
@@ -217,6 +217,11 @@ At the start of each coding session:
 
 ## 9) Current Active Objective
 
-**Complete M3 fully and cleanly, then proceed to M4, then final release/device verification.**
+**All 44 gap milestones (M1–M4) are complete. Phase 7 Delta is verified complete.**
+
+Next work:
+1. Phase 8: Reports & Pre-Billing (`docs/plans/phase-11-reports-prebilling.md`)
+2. Stage D — Device/release validation (blocked on Mac hardware + npm install in OneDrive)
+3. Future phases 9–13 (Chat, PWA, Bluetooth, AI, Remote Sync) — not yet started
 
 Target result: V1 with no validated open gaps, no hidden regressions, and all plan files synchronized with actual implementation.

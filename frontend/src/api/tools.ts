@@ -365,3 +365,105 @@ export async function getMaintenanceAlerts(
   >('/tools/maintenance-alerts', { params: { days_ahead: daysAhead } });
   return data.data;
 }
+
+
+// =================================================================
+// PENDING KIT VERIFICATIONS
+// =================================================================
+
+export interface PendingVerification {
+  session_id: number;
+  tool_id: number;
+  trigger_type: string;
+  created_at: string;
+  tool_number: string;
+  description: string;
+}
+
+/** Get all incomplete kit verification sessions (auto-triggered but not completed) */
+export async function getPendingVerifications(): Promise<PendingVerification[]> {
+  const { data } = await apiClient.get<ApiResponse<PendingVerification[]>>(
+    '/tools/pending-verifications',
+  );
+  return data.data ?? [];
+}
+
+
+// =================================================================
+// TOOL PHOTOS
+// =================================================================
+
+/** Upload or replace a tool's photo */
+export async function uploadToolPhoto(
+  toolId: number,
+  file: File,
+): Promise<{ photo_path: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await apiClient.post<ApiResponse<{ photo_path: string }>>(
+    `/tools/${toolId}/photo`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data.data!;
+}
+
+
+// =================================================================
+// BULK TOOL OPERATIONS
+// =================================================================
+
+interface BulkToolResult {
+  tool_id: number;
+  movement_id?: number;
+  record_id?: number;
+  error?: string;
+}
+
+/** Check out multiple tools at once */
+export async function bulkCheckoutTools(
+  toolIds: number[],
+  locationType: string,
+  locationId: number,
+  notes?: string,
+): Promise<{ checked_out: BulkToolResult[]; errors: BulkToolResult[] }> {
+  const { data } = await apiClient.post<
+    ApiResponse<{ checked_out: BulkToolResult[]; errors: BulkToolResult[] }>
+  >('/tools/bulk/checkout', {
+    tool_ids: toolIds,
+    location_type: locationType,
+    location_id: locationId,
+    notes,
+  });
+  return data.data!;
+}
+
+/** Return multiple tools at once */
+export async function bulkReturnTools(
+  toolIds: number[],
+  notes?: string,
+): Promise<{ returned: BulkToolResult[]; errors: BulkToolResult[] }> {
+  const { data } = await apiClient.post<
+    ApiResponse<{ returned: BulkToolResult[]; errors: BulkToolResult[] }>
+  >('/tools/bulk/return', {
+    tool_ids: toolIds,
+    notes,
+  });
+  return data.data!;
+}
+
+/** Log maintenance for multiple tools at once */
+export async function bulkLogMaintenance(
+  toolIds: number[],
+  maintenanceTypeId: number,
+  notes?: string,
+): Promise<{ serviced: BulkToolResult[]; errors: BulkToolResult[] }> {
+  const { data } = await apiClient.post<
+    ApiResponse<{ serviced: BulkToolResult[]; errors: BulkToolResult[] }>
+  >('/tools/bulk/maintenance', {
+    tool_ids: toolIds,
+    maintenance_type_id: maintenanceTypeId,
+    notes,
+  });
+  return data.data!;
+}

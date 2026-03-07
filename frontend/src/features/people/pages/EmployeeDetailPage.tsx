@@ -6,13 +6,13 @@
  * reference (Jobs, Trucks, Orders, etc. all link here for employee contact).
  */
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Mail, Phone, AlertTriangle, Calendar, DollarSign,
   Shield, Award, FileText, Wrench, Edit2, UserCheck, UserX,
-  Plus, Trash2, X, Clock, ChevronRight,
+  Plus, Trash2, X, Clock, ChevronRight, Camera,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { Button } from '../../../components/ui/Button';
@@ -24,6 +24,7 @@ import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import {
   getEmployee, updateEmployee, toggleEmployeeActive,
+  uploadEmployeeAvatar,
   createCertification, updateCertification, deleteCertification,
   createWageEntry,
   createEmployeeNote, updateEmployeeNote, deleteEmployeeNote,
@@ -110,6 +111,12 @@ export function EmployeeDetailPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['employee-detail', userId] }),
   });
 
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const avatarMutation = useMutation({
+    mutationFn: (file: File) => uploadEmployeeAvatar(userId, file),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['employee-detail', userId] }),
+  });
+
   if (isLoading) return <PageSpinner label="Loading employee..." />;
   if (error || !emp) {
     return (
@@ -133,12 +140,37 @@ export function EmployeeDetailPage() {
           <ArrowLeft size={20} className="text-gray-500 dark:text-gray-400" />
         </button>
 
-        {/* Avatar */}
-        <div className="flex-shrink-0 w-12 h-12 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-700 dark:text-primary-300 font-bold text-lg">
-          {emp.avatar_url ? (
-            <img src={emp.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" />
-          ) : (
-            emp.display_name.charAt(0).toUpperCase()
+        {/* Avatar — click to upload when canManage */}
+        <div className="flex-shrink-0 relative group">
+          <div className="w-12 h-12 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-700 dark:text-primary-300 font-bold text-lg overflow-hidden">
+            {emp.avatar_url ? (
+              <img src={emp.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" />
+            ) : (
+              emp.display_name.charAt(0).toUpperCase()
+            )}
+          </div>
+          {canManage && (
+            <>
+              <button
+                onClick={() => avatarInputRef.current?.click()}
+                className="absolute inset-0 rounded-full flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Change photo"
+                disabled={avatarMutation.isPending}
+              >
+                <Camera size={16} className="text-white" />
+              </button>
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) avatarMutation.mutate(file);
+                  e.target.value = '';
+                }}
+              />
+            </>
           )}
         </div>
 

@@ -389,3 +389,73 @@ export async function unlinkGCFromJob(
 ): Promise<void> {
   await apiClient.delete(`/jobs/${jobId}/general-contractors/${linkId}`);
 }
+
+
+// =================================================================
+// CSV IMPORT
+// =================================================================
+
+export interface CSVImportResult {
+  created: number;
+  skipped: number;
+  errors: { row: number; error: string }[];
+}
+
+/** Import customers from a CSV file */
+export async function importCustomersCSV(file: File): Promise<CSVImportResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await apiClient.post<ApiResponse<CSVImportResult>>(
+    '/contacts/import/customers',
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data.data!;
+}
+
+/** Import general contractors from a CSV file */
+export async function importContractorsCSV(file: File): Promise<CSVImportResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await apiClient.post<ApiResponse<CSVImportResult>>(
+    '/contacts/import/contractors',
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data.data!;
+}
+
+
+// =================================================================
+// CONTACT DEDUPE / MERGE
+// =================================================================
+
+export interface DuplicatePair {
+  a: { id: number; name: string; email?: string; phone?: string };
+  b: { id: number; name: string; email?: string; phone?: string };
+  similarity: number;
+  match_type: string;
+}
+
+/** Find potential duplicate customers */
+export async function findDuplicateCustomers(
+  threshold = 0.8,
+): Promise<DuplicatePair[]> {
+  const { data } = await apiClient.get<ApiResponse<DuplicatePair[]>>(
+    '/contacts/dedupe/customers',
+    { params: { threshold } },
+  );
+  return data.data ?? [];
+}
+
+/** Merge two customers: keep one, deactivate the other */
+export async function mergeCustomers(
+  keepId: number,
+  mergeId: number,
+): Promise<{ keep_id: number; merged_id: number }> {
+  const { data } = await apiClient.post<ApiResponse<{ keep_id: number; merged_id: number }>>(
+    '/contacts/merge/customers',
+    { keep_id: keepId, merge_id: mergeId },
+  );
+  return data.data!;
+}

@@ -178,7 +178,7 @@ export function WeeklyAvailabilityPage() {
       {/* Availability grid */}
       {!availability || availability.length === 0 ? (
         <EmptyState
-          icon={Users}
+          icon={<Users className="h-12 w-12" />}
           title="No employees"
           description="No active employees found for this period."
         />

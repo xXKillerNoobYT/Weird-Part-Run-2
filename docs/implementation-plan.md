@@ -1,7 +1,7 @@
 # Wired-Part: Full Implementation Plan
 
 > **Last updated:** 2026-03-07
-> **Status:** Phases 1–7 complete (old numbering 1-1). Phase 8 (Reports) planned. V1.0 deployment roadmap active.
+> **Status:** Phases 1–10 complete + V1.0 infra + gap closure M1-M4 (44/44 done). V1.0 deployment roadmap active.
 > **Full vision document:** `docs/The Full Plan.md`
 > **New phase numbering:** Starting 2026-03-07, future phases use new numbering (Phase 7-13). Old phase files keep their original names.
 > 100% local and offline first, no customer-facing billing, bookkeeper handles billouts via pre-billing export bundles.
@@ -18,20 +18,21 @@ Wired-Part is a field service management app for an electrical contracting compa
 | Metric | Count |
 |--------|-------|
 | Backend routers | 18 (all mounted in `main.py`) |
-| API endpoints | 458 |
+| API endpoints | ~480 |
 | Backend services | 28 |
 | Repositories | 19 + base |
 | Model files | 17 |
-| Migrations | 30 (`001_foundation.sql` → `030_sync_engine.sql`) |
-| Frontend feature files | ~166 |
-| Frontend routes | ~90 |
-| Functional pages | ~67 |
+| Migrations | 34 (`001_foundation.sql` → `034_notebook_attachments.sql`) |
+| Frontend feature files | ~180 |
+| Frontend routes | 100 |
+| Functional pages | 86 |
 | Stub pages | 2 (Settings × 2 — v2.0+ placeholders) |
-| API client files | 18 (~300 functions) |
+| API client files | 18 (~330 functions) |
 | Zustand stores | 4 (auth, clock, sidebar, theme) |
 | Backend tests | 10 files, 119 tests (critical paths covered) |
-| Total backend LOC | ~31,000 |
-| Total frontend files | ~210+ |
+| Total backend LOC | ~33,000 |
+| Total frontend files | ~220+ |
+| Gap closure | 44/44 items complete (M1-M4) |
 
 ---
 

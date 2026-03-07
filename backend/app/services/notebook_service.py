@@ -168,6 +168,46 @@ class NotebookService:
         await self.db.commit()
         return True
 
+    async def duplicate_template(
+        self, template_id: int, new_name: str, created_by: int,
+    ) -> TemplateFull | None:
+        """Deep-clone a template with all sections and entries under a new name."""
+        source = await self.get_template_full(template_id)
+        if not source:
+            return None
+
+        # Create new template
+        cursor = await self.db.execute(
+            """INSERT INTO notebook_templates (name, description, job_type, is_default, created_by)
+               VALUES (?, ?, ?, 0, ?)""",
+            (new_name, source.description, source.job_type, created_by),
+        )
+        new_tmpl_id = cursor.lastrowid
+
+        # Clone sections and entries
+        for sec in source.sections:
+            cursor = await self.db.execute(
+                """INSERT INTO template_sections
+                       (template_id, name, section_type, sort_order, is_locked)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (new_tmpl_id, sec.name, sec.section_type,
+                 sec.sort_order, 1 if sec.is_locked else 0),
+            )
+            new_sec_id = cursor.lastrowid
+            for entry in sec.entries:
+                await self.db.execute(
+                    """INSERT INTO template_entries
+                           (section_id, title, default_content, entry_type,
+                            field_type, field_required, sort_order)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (new_sec_id, entry.title, entry.default_content,
+                     entry.entry_type, entry.field_type,
+                     1 if entry.field_required else 0, entry.sort_order),
+                )
+
+        await self.db.commit()
+        return await self.get_template_full(new_tmpl_id)
+
     # ── Template Sections ──────────────────────────────────────────
 
     async def add_template_section(
@@ -600,6 +640,56 @@ class NotebookService:
         )
         rows = await cursor.fetchall()
         return [self._row_to_section(r) for r in rows]
+
+    async def reorder_entries(
+        self, section_id: int, ordered_ids: list[int]
+    ) -> list[dict]:
+        """Bulk reorder entries within a section by setting sort_order from list position."""
+        for idx, entry_id in enumerate(ordered_ids):
+            await self.db.execute(
+                "UPDATE notebook_entries SET sort_order = ? "
+                "WHERE id = ? AND section_id = ?",
+                (idx, entry_id, section_id),
+            )
+        await self.db.commit()
+        await self._touch_notebook_from_section(section_id)
+
+        cursor = await self.db.execute(
+            "SELECT * FROM notebook_entries WHERE section_id = ? ORDER BY sort_order",
+            (section_id,),
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+
+    async def bulk_update_tasks(
+        self, entry_ids: list[int], task_status: str | None, task_assigned_to: int | None,
+    ) -> int:
+        """Bulk update task status and/or assignee for multiple entries. Returns count updated."""
+        if not entry_ids:
+            return 0
+
+        set_parts = []
+        params: list = []
+        if task_status is not None:
+            set_parts.append("task_status = ?")
+            params.append(task_status)
+        if task_assigned_to is not None:
+            set_parts.append("task_assigned_to = ?")
+            params.append(task_assigned_to)
+
+        if not set_parts:
+            return 0
+
+        set_parts.append("updated_at = datetime('now')")
+        placeholders = ",".join("?" for _ in entry_ids)
+        params.extend(entry_ids)
+
+        cursor = await self.db.execute(
+            f"UPDATE notebook_entries SET {', '.join(set_parts)} "
+            f"WHERE id IN ({placeholders}) AND entry_type = 'task'",
+            params,
+        )
+        await self.db.commit()
+        return cursor.rowcount or 0
 
     # ═══════════════════════════════════════════════════════════════════
     # ENTRIES

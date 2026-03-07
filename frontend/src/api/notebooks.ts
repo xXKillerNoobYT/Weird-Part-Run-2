@@ -347,6 +347,109 @@ export async function revokeEditPermission(
 
 
 // =================================================================
+// TEMPLATE DUPLICATION
+// =================================================================
+
+/** Deep-clone a template with all sections and entries under a new name */
+export async function duplicateTemplate(
+  templateId: number,
+  newName: string,
+): Promise<TemplateFull> {
+  const { data } = await apiClient.post<ApiResponse<TemplateFull>>(
+    `/notebook-templates/${templateId}/duplicate`,
+    { new_name: newName },
+  );
+  return data.data!;
+}
+
+
+// =================================================================
+// ENTRY REORDERING
+// =================================================================
+
+/** Reorder entries within a section */
+export async function reorderEntries(
+  sectionId: number,
+  orderedIds: number[],
+): Promise<void> {
+  await apiClient.put(
+    `/notebooks/sections/${sectionId}/entries/reorder`,
+    { ordered_ids: orderedIds },
+  );
+}
+
+
+// =================================================================
+// BULK TASK OPERATIONS
+// =================================================================
+
+/** Bulk update task status and/or assignee for multiple entries */
+export async function bulkUpdateTasks(
+  entryIds: number[],
+  taskStatus?: string,
+  taskAssignedTo?: number,
+): Promise<{ updated: number }> {
+  const { data } = await apiClient.put<ApiResponse<{ updated: number }>>(
+    '/notebooks/tasks/bulk',
+    {
+      entry_ids: entryIds,
+      ...(taskStatus !== undefined && { task_status: taskStatus }),
+      ...(taskAssignedTo !== undefined && { task_assigned_to: taskAssignedTo }),
+    },
+  );
+  return data.data!;
+}
+
+
+// =================================================================
+// NOTEBOOK ATTACHMENTS
+// =================================================================
+
+export interface NotebookAttachment {
+  id: number;
+  entry_id: number;
+  file_path: string;
+  file_name: string;
+  file_type: string | null;
+  file_size: number | null;
+  uploaded_by: number | null;
+  created_at: string;
+}
+
+/** List attachments for a notebook entry */
+export async function listEntryAttachments(
+  entryId: number,
+): Promise<NotebookAttachment[]> {
+  const { data } = await apiClient.get<ApiResponse<NotebookAttachment[]>>(
+    `/notebooks/entries/${entryId}/attachments`,
+  );
+  return data.data ?? [];
+}
+
+/** Upload a file attachment to a notebook entry */
+export async function uploadEntryAttachment(
+  entryId: number,
+  file: File,
+): Promise<NotebookAttachment> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await apiClient.post<ApiResponse<NotebookAttachment>>(
+    `/notebooks/entries/${entryId}/attachments`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data.data!;
+}
+
+/** Delete a notebook attachment */
+export async function deleteEntryAttachment(
+  attachmentId: number,
+): Promise<void> {
+  await apiClient.delete(`/notebooks/attachments/${attachmentId}`);
+}
+
+
+// =================================================================
 // JOB TASKS (cross-cutting)
 // =================================================================
 

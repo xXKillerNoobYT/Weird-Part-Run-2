@@ -183,6 +183,7 @@ export const MODULES: NavModule[] = [
       { id: 'sync', label: 'Sync', path: '/settings/sync', permission: 'manage_settings' },
       { id: 'ai-config', label: 'AI Config', path: '/settings/ai-config', permission: 'manage_settings' },
       { id: 'devices', label: 'Device Management', path: '/settings/devices', permission: 'manage_devices' },
+      { id: 'about', label: 'About', path: '/settings/about' },
     ],
   },
 ];

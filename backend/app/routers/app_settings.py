@@ -17,6 +17,9 @@ otherwise FastAPI will match "company-profiles" as a key parameter.
 
 from __future__ import annotations
 
+import os
+import time
+
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -248,6 +251,50 @@ async def update_staging_zone(
         raise HTTPException(404, "Staging zone not found")
 
     return ApiResponse(data={"id": zone_id}, message="Staging zone updated.")
+
+
+# ═══════════════════════════════════════════════════════════════
+# System Info (About page)
+# ═══════════════════════════════════════════════════════════════
+
+_start_time = time.time()
+
+
+@router.get("/system-info")
+async def system_info(
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get system information for the About page."""
+    # Table count
+    cursor = await db.execute(
+        "SELECT COUNT(*) AS cnt FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    )
+    tables = (await cursor.fetchone())["cnt"]
+
+    # DB file size
+    cursor = await db.execute("PRAGMA database_list")
+    db_row = await cursor.fetchone()
+    db_path = db_row["file"] if db_row else ""
+    db_size_mb = os.path.getsize(db_path) / (1024 * 1024) if db_path and os.path.exists(db_path) else 0
+
+    # Quick data counts
+    counts = {}
+    for table, key in [("users", "active_users"), ("jobs", "total_jobs"),
+                       ("parts", "total_parts"), ("tools", "total_tools")]:
+        try:
+            cond = " WHERE is_active = 1" if table == "users" else ""
+            cursor = await db.execute(f"SELECT COUNT(*) AS cnt FROM {table}{cond}")
+            counts[key] = (await cursor.fetchone())["cnt"]
+        except Exception:
+            counts[key] = 0
+
+    return ApiResponse(data={
+        "db_tables": tables,
+        "db_size_mb": round(db_size_mb, 2),
+        "uptime_seconds": int(time.time() - _start_time),
+        **counts,
+    })
 
 
 # ═══════════════════════════════════════════════════════════════

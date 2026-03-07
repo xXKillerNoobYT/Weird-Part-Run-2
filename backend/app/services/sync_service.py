@@ -56,6 +56,7 @@ SYNCED_TABLES_ORDERED: list[str] = [
     "notebook_templates", "template_sections", "template_entries",
     "notebooks", "notebook_sections", "notebook_entries",
     "notebook_entry_permissions",
+    "notebook_attachments",
     # "task_order_links" — deprecated: Phase 5 implemented its own order model; table unused
     # Orders
     "job_parts_orders", "jpo_line_items",
@@ -78,8 +79,10 @@ SYNCED_TABLES_ORDERED: list[str] = [
     "job_dispatch", "subcontractor_schedules",
     "dispatch_templates", "dispatch_template_members",
     "shift_patterns", "shift_pattern_days",
+    # Attachments
+    "order_attachments",
     # Reports
-    "period_locks", "company_codes",
+    "period_locks",
 ]
 
 # Set for O(1) lookup

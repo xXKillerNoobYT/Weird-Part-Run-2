@@ -4416,6 +4416,7 @@ export type PaymentTerms = 'due_on_receipt' | 'net_15' | 'net_30' | 'net_45' | '
 export interface CustomerDetail {
   id: number;
   company_name: string | null;
+  company_code: string | null;
   first_name: string;
   last_name: string;
   display_name: string;
@@ -4446,6 +4447,7 @@ export interface CustomerDetail {
 
 export interface CustomerCreate {
   company_name?: string | null;
+  company_code?: string | null;
   first_name: string;
   last_name: string;
   phone?: string | null;
@@ -4469,6 +4471,7 @@ export interface CustomerCreate {
 
 export interface CustomerUpdate {
   company_name?: string | null;
+  company_code?: string | null;
   first_name?: string;
   last_name?: string;
   phone?: string | null;

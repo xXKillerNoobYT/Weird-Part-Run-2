@@ -75,6 +75,7 @@ import { WarehouseLocationsPage } from './features/office/pages/WarehouseLocatio
 
 // Pages — Orders
 import { PartsRequestsPage } from './features/orders/pages/PartsRequestsPage';
+import { MyOrdersPage } from './features/orders/pages/MyOrdersPage';
 import { UnifiedOrderPage } from './features/orders/pages/UnifiedOrderPage';
 import { NewPurchaseOrderPage } from './features/orders/pages/NewPurchaseOrderPage';
 import { ReceiveShipmentPage } from './features/orders/pages/ReceiveShipmentPage';
@@ -128,6 +129,7 @@ import { NotificationPrefsPage } from './features/settings/pages/NotificationPre
 import { SyncPage } from './features/settings/pages/SyncPage';
 import { AiConfigPage } from './features/settings/pages/AiConfigPage';
 import { DeviceManagementPage } from './features/settings/pages/DeviceManagementPage';
+import AboutPage from './features/settings/pages/AboutPage';
 import { ClockOutQuestionsPage } from './features/settings/pages/ClockOutQuestionsPage';
 
 // ── React Query Client ─────────────────────────────────────────────
@@ -212,7 +214,7 @@ export default function App() {
               {/* Orders — Phase 7A: Field-worker tabs + Office tabs */}
               <Route path="/orders" element={<Navigate to="/orders/my-orders" replace />} />
               {/* Field worker tabs */}
-              <Route path="/orders/my-orders" element={<PartsRequestsPage />} />
+              <Route path="/orders/my-orders" element={<MyOrdersPage />} />
               <Route path="/orders/new-order" element={<UnifiedOrderPage />} />
               <Route path="/orders/returns" element={<ReturnsPage />} />
               <Route path="/orders/returns/new" element={<NewReturnPage />} />
@@ -273,6 +275,7 @@ export default function App() {
               <Route path="/settings/sync" element={<SyncPage />} />
               <Route path="/settings/ai-config" element={<AiConfigPage />} />
               <Route path="/settings/devices" element={<DeviceManagementPage />} />
+              <Route path="/settings/about" element={<AboutPage />} />
 
               {/* Tools — QR scan redirect (cross-module) */}
               <Route path="/tools/scan/:toolNumber" element={<ToolScanRedirect />} />

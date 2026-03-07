@@ -194,6 +194,7 @@ function OverviewTab({ customer, canManage }: { customer: CustomerDetail; canMan
   const [firstName, setFirstName] = useState(customer.first_name);
   const [lastName, setLastName] = useState(customer.last_name);
   const [companyName, setCompanyName] = useState(customer.company_name ?? '');
+  const [companyCode, setCompanyCode] = useState(customer.company_code ?? '');
   const [phone, setPhone] = useState(customer.phone ?? '');
   const [email, setEmail] = useState(customer.email ?? '');
   const [customerType, setCustomerType] = useState<CustomerType>(customer.customer_type);
@@ -223,6 +224,7 @@ function OverviewTab({ customer, canManage }: { customer: CustomerDetail; canMan
       first_name: firstName.trim(),
       last_name: lastName.trim(),
       company_name: companyName.trim() || null,
+      company_code: companyCode.trim().toUpperCase() || null,
       phone: phone.trim() || null,
       email: email.trim() || null,
       customer_type: customerType,
@@ -253,6 +255,7 @@ function OverviewTab({ customer, canManage }: { customer: CustomerDetail; canMan
     setState(customer.state ?? '');
     setZip(customer.zip ?? '');
     setNotes(customer.notes ?? '');
+    setCompanyCode(customer.company_code ?? '');
     setBillingAddress(customer.billing_address_line1 ?? '');
     setBillingCity(customer.billing_city ?? '');
     setBillingState(customer.billing_state ?? '');
@@ -331,6 +334,17 @@ function OverviewTab({ customer, canManage }: { customer: CustomerDetail; canMan
                 <Input label="Billing Email" value={billingEmail} onChange={(e) => setBillingEmail(e.target.value)} />
                 <Input label="Tax ID" value={taxId} onChange={(e) => setTaxId(e.target.value)} />
               </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <Input
+                    label="Company Code"
+                    value={companyCode}
+                    onChange={(e) => setCompanyCode(e.target.value.toUpperCase())}
+                    placeholder="e.g. SMITH, CITYCO"
+                  />
+                  <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">Short code used in PO numbers</p>
+                </div>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Payment Terms</label>
                 <select
@@ -399,7 +413,7 @@ function OverviewTab({ customer, canManage }: { customer: CustomerDetail; canMan
           )}
 
           {/* Billing */}
-          {(customer.payment_terms || customer.billing_email || customer.billing_address_line1 || customer.tax_id) && (
+          {(customer.payment_terms || customer.billing_email || customer.billing_address_line1 || customer.tax_id || customer.company_code) && (
             <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700/50">
               <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Billing</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -411,6 +425,9 @@ function OverviewTab({ customer, canManage }: { customer: CustomerDetail; canMan
                 )}
                 {customer.billing_email && (
                   <p><span className="text-gray-500 dark:text-gray-400">Billing Email:</span> {customer.billing_email}</p>
+                )}
+                {customer.company_code && (
+                  <p><span className="text-gray-500 dark:text-gray-400">Company Code:</span> <span className="font-mono">{customer.company_code}</span></p>
                 )}
                 {customer.billing_address_line1 && (
                   <p><span className="text-gray-500 dark:text-gray-400">Billing Address:</span> {customer.billing_address_line1}{customer.billing_city ? `, ${customer.billing_city}` : ''}</p>

@@ -9,10 +9,14 @@ Permission gates:
 
 from __future__ import annotations
 
+import csv
+import io
+import uuid
+from pathlib import Path
 from typing import Any
 
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 from app.database import get_db
 from app.middleware.auth import require_permission, require_user
@@ -550,3 +554,135 @@ async def get_cert_alerts(
     svc = PeopleService(db)
     alerts = await svc.get_cert_alerts(days=days)
     return ApiResponse(data=alerts, message=f"{len(alerts)} cert alerts")
+
+
+# ═════════════════════════════════════════════════════════════════
+# EMPLOYEE AVATAR
+# ═════════════════════════════════════════════════════════════════
+
+UPLOAD_DIR = Path("uploads")
+
+
+@router.post("/employees/{employee_id}/avatar")
+async def upload_employee_avatar(
+    employee_id: int,
+    file: UploadFile = File(...),
+    user: dict = Depends(require_permission("manage_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Upload or replace an employee's avatar photo."""
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename or "avatar.jpg").suffix or ".jpg"
+    unique_name = f"avatar_{employee_id}_{uuid.uuid4().hex[:8]}{ext}"
+    file_path = UPLOAD_DIR / unique_name
+
+    contents = await file.read()
+    file_path.write_bytes(contents)
+
+    # Update the user's avatar_url
+    await db.execute(
+        "UPDATE users SET avatar_url = ? WHERE id = ?",
+        (str(file_path), employee_id),
+    )
+    await db.commit()
+
+    return ApiResponse(
+        data={"avatar_url": str(file_path)},
+        message="Avatar updated",
+    )
+
+
+# ═════════════════════════════════════════════════════════════════
+# CERTIFICATION DOCUMENT UPLOAD
+# ═════════════════════════════════════════════════════════════════
+
+
+@router.post("/certifications/{cert_id}/document")
+async def upload_certification_document(
+    cert_id: int,
+    file: UploadFile = File(...),
+    user: dict = Depends(require_permission("manage_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Upload a certification document (scan, PDF, photo)."""
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename or "cert.pdf").suffix or ".pdf"
+    unique_name = f"cert_{cert_id}_{uuid.uuid4().hex[:8]}{ext}"
+    file_path = UPLOAD_DIR / unique_name
+
+    contents = await file.read()
+    file_path.write_bytes(contents)
+
+    # Update the certification's document_path
+    await db.execute(
+        "UPDATE employee_certifications SET document_path = ? WHERE id = ?",
+        (str(file_path), cert_id),
+    )
+    await db.commit()
+
+    return ApiResponse(
+        data={"document_path": str(file_path)},
+        message="Certification document uploaded",
+    )
+
+
+# ═════════════════════════════════════════════════════════════════
+# CSV IMPORT
+# ═════════════════════════════════════════════════════════════════
+
+
+@router.post("/employees/import")
+async def import_employees_csv(
+    file: UploadFile = File(...),
+    user: dict = Depends(require_permission("manage_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Import employees from a CSV file.
+
+    Expected columns: display_name, email, phone, pin (optional, auto-generated),
+    certification, hire_date, pay_rate, emergency_contact_name, emergency_contact_phone.
+    Returns { created, skipped, errors }.
+    """
+    content = await file.read()
+    text = content.decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text))
+
+    svc = PeopleService(db)
+    created, skipped, errors = 0, 0, []
+
+    for i, row in enumerate(reader, start=2):
+        name = (row.get("display_name") or "").strip()
+        if not name:
+            errors.append({"row": i, "error": "Missing display_name"})
+            continue
+
+        # Check for duplicate by name
+        existing = await db.execute(
+            "SELECT id FROM users WHERE LOWER(display_name) = LOWER(?) AND is_active = 1",
+            (name,),
+        )
+        if await existing.fetchone():
+            skipped += 1
+            continue
+
+        try:
+            emp_data = EmployeeCreate(
+                display_name=name,
+                email=row.get("email", "").strip() or None,
+                phone=row.get("phone", "").strip() or None,
+                pin=row.get("pin", "").strip() or None,
+                certification=row.get("certification", "").strip() or None,
+                hire_date=row.get("hire_date", "").strip() or None,
+                pay_rate=float(row["pay_rate"]) if row.get("pay_rate", "").strip() else None,
+                emergency_contact_name=row.get("emergency_contact_name", "").strip() or None,
+                emergency_contact_phone=row.get("emergency_contact_phone", "").strip() or None,
+            )
+            await svc.create_employee(emp_data)
+            created += 1
+        except Exception as e:
+            errors.append({"row": i, "error": str(e)})
+
+    return ApiResponse(
+        data={"created": created, "skipped": skipped, "errors": errors},
+        message=f"{created} employees imported, {skipped} skipped",
+    )

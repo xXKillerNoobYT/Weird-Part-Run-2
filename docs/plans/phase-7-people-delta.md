@@ -1,7 +1,7 @@
 # Phase 7: People (Full) — Delta Addendum
 
 > **Date:** 2026-03-07
-> **Status:** ✅ Complete
+> **Status:** ✅ Verified Complete (2026-03-07 — company_code exposed in models, types, and UI)
 > **Context:** Phase 7 (People Full) is built and functional. This addendum adds two naming convention features that weren't in the original scope but are needed before V1.0.
 > **Estimated work:** < 1 day
 > **Previous plans:** `phase-8-people-full.md`, `phase-10-people-contacts-scheduling.md`

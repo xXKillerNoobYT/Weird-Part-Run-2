@@ -19,6 +19,7 @@ from typing import Any
 
 import aiosqlite
 
+from app.repositories.settings_repo import SettingsRepo
 from app.repositories.tools_repo import (
     KitTemplateRepo,
     KitVerificationItemRepo,
@@ -46,6 +47,7 @@ class ToolsService:
         self.maint_type_repo = ToolMaintenanceTypeRepo(db)
         self.maint_schedule_repo = ToolMaintenanceScheduleRepo(db)
         self.maint_record_repo = ToolMaintenanceRecordRepo(db)
+        self.settings_repo = SettingsRepo(db)
 
     # ═══════════════════════════════════════════════════════════════
     # TOOL CRUD
@@ -226,10 +228,15 @@ class ToolsService:
         })
 
         updated = await self.get_tool(tool_id)
-
-        # Attach movement_id for kit verification trigger (caller may use)
         if updated:
             updated["_movement_id"] = movement_id
+
+        # Auto-trigger kit verification if setting is enabled and tool has a kit
+        verification = await self._auto_verify_if_required(
+            tool_id, "checkout", user_id, movement_id
+        )
+        if updated and verification:
+            updated["_pending_verification"] = verification
 
         return updated
 
@@ -280,7 +287,44 @@ class ToolsService:
         if updated:
             updated["_movement_id"] = movement_id
 
+        # Auto-trigger kit verification if setting is enabled and tool has a kit
+        verification = await self._auto_verify_if_required(
+            tool_id, "return", user_id, movement_id
+        )
+        if updated and verification:
+            updated["_pending_verification"] = verification
+
         return updated
+
+    async def _auto_verify_if_required(
+        self,
+        tool_id: int,
+        trigger_type: str,
+        user_id: int,
+        movement_id: int | None = None,
+    ) -> dict | None:
+        """Auto-start a kit verification session if the tool has a kit
+        and the corresponding setting is enabled.
+
+        Returns the session dict if created, or None if skipped.
+        """
+        tool = await self.tool_repo.get_by_id(tool_id)
+        if not tool or not tool.get("has_kit"):
+            return None
+
+        setting_key = f"require_kit_verification_on_{trigger_type}"
+        setting_val = await self.settings_repo.get_by_key(setting_key)
+        # Setting is stored as "1"/"0" string; default to enabled
+        if setting_val in (0, "0", False):
+            return None
+
+        try:
+            return await self.start_verification(
+                tool_id, trigger_type, user_id, movement_id
+            )
+        except ValueError:
+            # No kit template items — skip silently
+            return None
 
     # ═══════════════════════════════════════════════════════════════
     # KIT TEMPLATES
@@ -755,6 +799,18 @@ class ToolsService:
         stats["kits_with_missing_items"] = kits_missing
 
         return stats
+
+    async def get_pending_verifications(self) -> list[dict]:
+        """Get all incomplete kit verification sessions (auto-triggered but not yet completed)."""
+        cursor = await self.db.execute("""
+            SELECT s.id AS session_id, s.tool_id, s.trigger_type,
+                   s.created_at, t.tool_number, t.description
+            FROM kit_verification_sessions s
+            JOIN tools t ON t.id = s.tool_id
+            WHERE s.is_complete = 0
+            ORDER BY s.created_at DESC
+        """)
+        return [dict(r) for r in await cursor.fetchall()]
 
     async def _count_kits_with_missing(self) -> int:
         """Count tools whose most recent kit verification had missing critical items."""

@@ -12,8 +12,11 @@ Permission gates:
 
 from __future__ import annotations
 
+import uuid
+from pathlib import Path
+
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
 
 from app.database import get_db
 from app.middleware.auth import require_permission, require_user
@@ -107,6 +110,20 @@ async def maintenance_alerts(
     svc = ToolsService(db)
     alerts = await svc.get_maintenance_alerts(days_ahead=days_ahead)
     return ApiResponse(data=alerts, message="Maintenance alerts loaded")
+
+
+@router.get("/pending-verifications")
+async def pending_verifications(
+    user: dict = Depends(require_permission("view_tools")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get all incomplete kit verification sessions (auto-triggered but not yet completed)."""
+    svc = ToolsService(db)
+    pending = await svc.get_pending_verifications()
+    return ApiResponse(
+        data=pending,
+        message=f"{len(pending)} pending verification(s)",
+    )
 
 
 @router.get("/maintenance-types")
@@ -536,4 +553,137 @@ async def service_history(
     return ApiResponse(
         data=records,
         message=f"Loaded {len(records)} service records",
+    )
+
+
+# ═════════════════════════════════════════════════════════════════
+# TOOL PHOTOS
+# ═════════════════════════════════════════════════════════════════
+
+UPLOAD_DIR = Path("uploads")
+
+
+@router.post("/{tool_id}/photo")
+async def upload_tool_photo(
+    tool_id: int,
+    file: UploadFile = File(...),
+    user: dict = Depends(require_permission("manage_tools")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Upload or replace a tool's photo."""
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename or "tool.jpg").suffix or ".jpg"
+    unique_name = f"tool_{tool_id}_{uuid.uuid4().hex[:8]}{ext}"
+    file_path = UPLOAD_DIR / unique_name
+
+    contents = await file.read()
+    file_path.write_bytes(contents)
+
+    await db.execute(
+        "UPDATE tools SET photo_path = ? WHERE id = ?",
+        (str(file_path), tool_id),
+    )
+    await db.commit()
+
+    return ApiResponse(
+        data={"photo_path": str(file_path)},
+        message="Tool photo uploaded",
+    )
+
+
+# ═════════════════════════════════════════════════════════════════
+# BULK TOOL OPERATIONS
+# ═════════════════════════════════════════════════════════════════
+
+
+@router.post("/bulk/checkout")
+async def bulk_checkout_tools(
+    tool_ids: list[int] = Body(..., embed=True),
+    location_type: str = Body(..., embed=True),
+    location_id: int = Body(..., embed=True),
+    notes: str | None = Body(None, embed=True),
+    user: dict = Depends(require_permission("checkout_tools")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Check out multiple tools at once to the same location."""
+    svc = ToolsService(db)
+    results: list[dict] = []
+    errors: list[dict] = []
+
+    for tid in tool_ids:
+        try:
+            movement_id = await svc.checkout_tool(
+                tool_id=tid,
+                to_location_type=location_type,
+                to_location_id=location_id,
+                moved_by=user["id"],
+                notes=notes,
+            )
+            results.append({"tool_id": tid, "movement_id": movement_id})
+        except Exception as e:
+            errors.append({"tool_id": tid, "error": str(e)})
+
+    return ApiResponse(
+        data={"checked_out": results, "errors": errors},
+        message=f"{len(results)} checked out, {len(errors)} errors",
+    )
+
+
+@router.post("/bulk/return")
+async def bulk_return_tools(
+    tool_ids: list[int] = Body(..., embed=True),
+    notes: str | None = Body(None, embed=True),
+    user: dict = Depends(require_permission("checkout_tools")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Return multiple tools at once to the warehouse."""
+    svc = ToolsService(db)
+    results: list[dict] = []
+    errors: list[dict] = []
+
+    for tid in tool_ids:
+        try:
+            movement_id = await svc.return_tool(
+                tool_id=tid,
+                moved_by=user["id"],
+                notes=notes,
+            )
+            results.append({"tool_id": tid, "movement_id": movement_id})
+        except Exception as e:
+            errors.append({"tool_id": tid, "error": str(e)})
+
+    return ApiResponse(
+        data={"returned": results, "errors": errors},
+        message=f"{len(results)} returned, {len(errors)} errors",
+    )
+
+
+@router.post("/bulk/maintenance")
+async def bulk_log_maintenance(
+    tool_ids: list[int] = Body(..., embed=True),
+    maintenance_type_id: int = Body(..., embed=True),
+    notes: str | None = Body(None, embed=True),
+    user: dict = Depends(require_permission("manage_tools")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Log a maintenance service for multiple tools at once."""
+    svc = ToolsService(db)
+    results: list[dict] = []
+    errors: list[dict] = []
+
+    for tid in tool_ids:
+        try:
+            record_id = await svc.log_maintenance(
+                tool_id=tid,
+                maintenance_type_id=maintenance_type_id,
+                performed_by=user["id"],
+                notes=notes,
+            )
+            results.append({"tool_id": tid, "record_id": record_id})
+        except Exception as e:
+            errors.append({"tool_id": tid, "error": str(e)})
+
+    return ApiResponse(
+        data={"serviced": results, "errors": errors},
+        message=f"{len(results)} serviced, {len(errors)} errors",
     )

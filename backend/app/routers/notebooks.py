@@ -9,16 +9,20 @@ task stage transitions, field first-fill logic, and delegated permissions.
 from __future__ import annotations
 
 import logging
+import uuid
+from pathlib import Path
 
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 from app.database import get_db
 from app.middleware.auth import require_permission, require_user
 from app.models.common import ApiResponse, StatusMessage
 from app.models.notebooks import (
+    BulkTaskUpdate,
     EntryCreate,
     EntryPermissionGrant,
+    EntryReorderRequest,
     EntryResponse,
     EntryUpdate,
     FieldValueUpdate,
@@ -35,6 +39,7 @@ from app.models.notebooks import (
     TaskStatusUpdate,
     TaskSummary,
     TemplateCreate,
+    TemplateDuplicateRequest,
     TemplateEntryCreate,
     TemplateEntryResponse,
     TemplateFull,
@@ -140,6 +145,26 @@ async def delete_template(
         data=StatusMessage(status="deleted"),
         message="Template deleted",
     )
+
+
+@router.post(
+    "/notebook-templates/{template_id}/duplicate",
+    response_model=ApiResponse[TemplateFull],
+    status_code=status.HTTP_201_CREATED,
+    summary="Duplicate template",
+)
+async def duplicate_template(
+    template_id: int,
+    data: TemplateDuplicateRequest,
+    user: dict = Depends(require_permission("manage_notebooks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Deep-clone a template with all sections and entries."""
+    svc = NotebookService(db)
+    result = await svc.duplicate_template(template_id, data.new_name, user["id"])
+    if not result:
+        raise HTTPException(status_code=404, detail="Source template not found")
+    return ApiResponse(data=result, message=f"Template duplicated as '{data.new_name}'")
 
 
 # ── Template Sections ──────────────────────────────────────────────
@@ -600,4 +625,130 @@ async def revoke_edit_permission(
     return ApiResponse(
         data=StatusMessage(status="revoked"),
         message="Edit permission revoked",
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# ENTRY REORDERING
+# ═══════════════════════════════════════════════════════════════════════
+
+@router.put(
+    "/notebooks/sections/{section_id}/entries/reorder",
+    summary="Reorder entries within a section",
+)
+async def reorder_entries(
+    section_id: int,
+    data: EntryReorderRequest,
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Reorder entries by providing ordered list of IDs."""
+    svc = NotebookService(db)
+    entries = await svc.reorder_entries(section_id, data.ordered_ids)
+    return ApiResponse(data=entries, message="Entries reordered")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# BULK TASK OPERATIONS
+# ═══════════════════════════════════════════════════════════════════════
+
+@router.put(
+    "/notebooks/tasks/bulk",
+    summary="Bulk update tasks",
+)
+async def bulk_update_tasks(
+    data: BulkTaskUpdate,
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Bulk update task status and/or assignee for multiple entries."""
+    svc = NotebookService(db)
+    count = await svc.bulk_update_tasks(
+        data.entry_ids, data.task_status, data.task_assigned_to,
+    )
+    return ApiResponse(
+        data={"updated": count},
+        message=f"{count} task(s) updated",
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# NOTEBOOK ATTACHMENTS
+# ═══════════════════════════════════════════════════════════════════════
+
+UPLOAD_DIR = Path("uploads/notebook_attachments")
+
+
+@router.get(
+    "/notebooks/entries/{entry_id}/attachments",
+    summary="List entry attachments",
+)
+async def list_entry_attachments(
+    entry_id: int,
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get all attachments for a notebook entry."""
+    cursor = await db.execute(
+        "SELECT * FROM notebook_attachments WHERE entry_id = ? ORDER BY created_at DESC",
+        (entry_id,),
+    )
+    rows = await cursor.fetchall()
+    return ApiResponse(data=[dict(r) for r in rows], message=f"{len(rows)} attachment(s)")
+
+
+@router.post(
+    "/notebooks/entries/{entry_id}/attachments",
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload entry attachment",
+)
+async def upload_entry_attachment(
+    entry_id: int,
+    file: UploadFile = File(...),
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Upload a file attachment to a notebook entry."""
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename or "file").suffix
+    stored_name = f"{uuid.uuid4().hex}{ext}"
+    file_path = UPLOAD_DIR / stored_name
+
+    content = await file.read()
+    file_path.write_bytes(content)
+
+    cursor = await db.execute(
+        """INSERT INTO notebook_attachments
+               (entry_id, file_path, file_name, file_type, file_size, uploaded_by)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (entry_id, str(file_path), file.filename, file.content_type,
+         len(content), user["id"]),
+    )
+    await db.commit()
+
+    row_id = cursor.lastrowid
+    cursor = await db.execute(
+        "SELECT * FROM notebook_attachments WHERE id = ?", (row_id,),
+    )
+    row = await cursor.fetchone()
+    return ApiResponse(data=dict(row), message="Attachment uploaded")
+
+
+@router.delete(
+    "/notebooks/attachments/{attachment_id}",
+    summary="Delete entry attachment",
+)
+async def delete_entry_attachment(
+    attachment_id: int,
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Delete a notebook attachment."""
+    await db.execute(
+        "DELETE FROM notebook_attachments WHERE id = ?", (attachment_id,),
+    )
+    await db.commit()
+    return ApiResponse(
+        data=StatusMessage(status="deleted"),
+        message="Attachment deleted",
     )

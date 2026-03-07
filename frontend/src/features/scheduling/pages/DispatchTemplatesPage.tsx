@@ -229,7 +229,7 @@ export function DispatchTemplatesPage() {
       {/* Template list */}
       {!templates || templates.length === 0 ? (
         <EmptyState
-          icon={Repeat}
+          icon={<Repeat className="h-12 w-12" />}
           title="No templates yet"
           description="Create a dispatch template to save a recurring crew assignment."
         />

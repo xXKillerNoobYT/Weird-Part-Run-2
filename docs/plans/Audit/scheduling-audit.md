@@ -1,7 +1,7 @@
 # Scheduling & Dispatch Audit
 
 > **Date:** 2026-03-06
-> **Status:** 📋 Audit complete
+> **Status:** ✅ Verified Complete (2026-03-07) — M3 gap closure: DispatchTemplatesPage (494L, full CRUD + apply), WeeklyAvailabilityPage (277L, color-coded grid), shift patterns (migration 032) all implemented. Feature gaps listed below are closed.
 > **Scope:** Full audit of the Scheduling module — default schedules, time-off requests, employee dispatching (single + bulk), subcontractor scheduling, unified calendar
 
 ---

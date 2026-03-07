@@ -392,3 +392,66 @@ export async function revokeAllElevationsForJob(
   );
   return data.data!;
 }
+
+
+// =================================================================
+// EMPLOYEE AVATAR
+// =================================================================
+
+/** Upload or replace an employee's avatar photo */
+export async function uploadEmployeeAvatar(
+  employeeId: number,
+  file: File,
+): Promise<{ avatar_url: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await apiClient.post<ApiResponse<{ avatar_url: string }>>(
+    `/people/employees/${employeeId}/avatar`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data.data!;
+}
+
+
+// =================================================================
+// CERTIFICATION DOCUMENTS
+// =================================================================
+
+/** Upload a certification document (scan, PDF, photo) */
+export async function uploadCertificationDocument(
+  certId: number,
+  file: File,
+): Promise<{ document_path: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await apiClient.post<ApiResponse<{ document_path: string }>>(
+    `/people/certifications/${certId}/document`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data.data!;
+}
+
+
+// =================================================================
+// CSV IMPORT
+// =================================================================
+
+export interface CSVImportResult {
+  created: number;
+  skipped: number;
+  errors: { row: number; error: string }[];
+}
+
+/** Import employees from a CSV file */
+export async function importEmployeesCSV(file: File): Promise<CSVImportResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await apiClient.post<ApiResponse<CSVImportResult>>(
+    '/people/employees/import',
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data.data!;
+}

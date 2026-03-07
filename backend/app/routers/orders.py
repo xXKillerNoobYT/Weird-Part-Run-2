@@ -22,8 +22,11 @@ Route groups:
 
 from __future__ import annotations
 
+import uuid
+from pathlib import Path
+
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 from app.database import get_db
 from app.middleware.auth import require_permission, require_user
@@ -1987,3 +1990,84 @@ async def get_price_history(
             "variance": variance,
         }
     )
+
+
+# ═════════════════════════════════════════════════════════════════
+# ORDER ATTACHMENTS
+# ═════════════════════════════════════════════════════════════════
+
+UPLOAD_DIR = Path("uploads")
+
+
+@router.get("/attachments/{entity_type}/{entity_id}")
+async def list_order_attachments(
+    entity_type: str,
+    entity_id: int,
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List attachments for a JPO, PO, or return."""
+    if entity_type not in ("jpo", "po", "return"):
+        raise HTTPException(status_code=400, detail="Invalid entity_type")
+    cursor = await db.execute(
+        """SELECT * FROM order_attachments
+           WHERE entity_type = ? AND entity_id = ?
+           ORDER BY created_at DESC""",
+        (entity_type, entity_id),
+    )
+    rows = [dict(r) for r in await cursor.fetchall()]
+    return ApiResponse(data=rows, message=f"{len(rows)} attachments")
+
+
+@router.post("/attachments/{entity_type}/{entity_id}")
+async def upload_order_attachment(
+    entity_type: str,
+    entity_id: int,
+    file: UploadFile = File(...),
+    description: str | None = Query(None),
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Upload a file attachment to a JPO, PO, or return."""
+    if entity_type not in ("jpo", "po", "return"):
+        raise HTTPException(status_code=400, detail="Invalid entity_type")
+
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    original = file.filename or "attachment"
+    ext = Path(original).suffix or ""
+    unique_name = f"{entity_type}_{entity_id}_{uuid.uuid4().hex[:8]}{ext}"
+    file_path = UPLOAD_DIR / unique_name
+
+    contents = await file.read()
+    file_path.write_bytes(contents)
+
+    cursor = await db.execute(
+        """INSERT INTO order_attachments
+           (entity_type, entity_id, file_path, file_name, file_type, file_size,
+            description, uploaded_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (entity_type, entity_id, str(file_path), original,
+         file.content_type, len(contents), description, user.get("id")),
+    )
+    await db.commit()
+
+    return ApiResponse(
+        data={"id": cursor.lastrowid, "file_path": str(file_path)},
+        message="Attachment uploaded",
+    )
+
+
+@router.delete("/attachments/{attachment_id}")
+async def delete_order_attachment(
+    attachment_id: int,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Delete an order attachment."""
+    cursor = await db.execute(
+        "DELETE FROM order_attachments WHERE id = ?", (attachment_id,),
+    )
+    await db.commit()
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    return ApiResponse(data={"id": attachment_id}, message="Attachment deleted")

@@ -42,6 +42,7 @@ PAYMENT_TERMS = Literal[
 class CustomerCreate(BaseModel):
     """Create a new customer."""
     company_name: str | None = None
+    company_code: str | None = None   # short code used in PO numbers (e.g. "SMITH", "CITYCO")
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
     phone: str | None = None
@@ -67,6 +68,7 @@ class CustomerCreate(BaseModel):
 class CustomerUpdate(BaseModel):
     """Partial update for an existing customer."""
     company_name: str | None = None
+    company_code: str | None = None   # short code used in PO numbers
     first_name: str | None = Field(default=None, min_length=1, max_length=100)
     last_name: str | None = Field(default=None, min_length=1, max_length=100)
     phone: str | None = None
@@ -93,6 +95,7 @@ class CustomerResponse(BaseModel):
     """Full customer detail returned from the API."""
     id: int
     company_name: str | None = None
+    company_code: str | None = None   # short code used in PO numbers
     first_name: str
     last_name: str
     display_name: str | None = None

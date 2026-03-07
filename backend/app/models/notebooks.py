@@ -189,6 +189,23 @@ class SectionReorderRequest(BaseModel):
     ordered_ids: list[int]
 
 
+class EntryReorderRequest(BaseModel):
+    """Reorder entries within a section by providing ordered list of IDs."""
+    ordered_ids: list[int]
+
+
+class TemplateDuplicateRequest(BaseModel):
+    """Duplicate a template with a new name."""
+    new_name: str
+
+
+class BulkTaskUpdate(BaseModel):
+    """Bulk update tasks — set status or assigned_to for multiple entries."""
+    entry_ids: list[int]
+    task_status: str | None = None
+    task_assigned_to: int | None = None
+
+
 # ── Entry Models ─────────────────────────────────────────────────────
 
 class EntryCreate(BaseModel):
