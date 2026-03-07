@@ -26,12 +26,12 @@ import {
   getCustomer, updateCustomer, toggleCustomerActive,
   getCustomerContacts, addCustomerContact,
   updateEntityContact, deleteEntityContact,
+  getCustomerJobs,
 } from '../../../api/contacts';
-import { getJobCustomers } from '../../../api/contacts';
 import type {
   CustomerDetail, CustomerUpdate, CustomerType,
   EntityContactResponse, EntityContactCreate, EntityContactUpdate,
-  JobCustomerResponse,
+  CustomerJobLink,
 } from '../../../lib/types';
 
 
@@ -202,6 +202,13 @@ function OverviewTab({ customer, canManage }: { customer: CustomerDetail; canMan
   const [state, setState] = useState(customer.state ?? '');
   const [zip, setZip] = useState(customer.zip ?? '');
   const [notes, setNotes] = useState(customer.notes ?? '');
+  const [billingAddress, setBillingAddress] = useState(customer.billing_address_line1 ?? '');
+  const [billingCity, setBillingCity] = useState(customer.billing_city ?? '');
+  const [billingState, setBillingState] = useState(customer.billing_state ?? '');
+  const [billingZip, setBillingZip] = useState(customer.billing_zip ?? '');
+  const [paymentTerms, setPaymentTerms] = useState(customer.payment_terms ?? 'net_30');
+  const [taxId, setTaxId] = useState(customer.tax_id ?? '');
+  const [billingEmail, setBillingEmail] = useState(customer.billing_email ?? '');
 
   const saveMutation = useMutation({
     mutationFn: (data: CustomerUpdate) => updateCustomer(customer.id, data),
@@ -224,6 +231,13 @@ function OverviewTab({ customer, canManage }: { customer: CustomerDetail; canMan
       state: state.trim() || null,
       zip: zip.trim() || null,
       notes: notes.trim() || null,
+      billing_address_line1: billingAddress.trim() || null,
+      billing_city: billingCity.trim() || null,
+      billing_state: billingState.trim() || null,
+      billing_zip: billingZip.trim() || null,
+      payment_terms: paymentTerms as any,
+      tax_id: taxId.trim() || null,
+      billing_email: billingEmail.trim() || null,
     });
   };
 
@@ -239,6 +253,13 @@ function OverviewTab({ customer, canManage }: { customer: CustomerDetail; canMan
     setState(customer.state ?? '');
     setZip(customer.zip ?? '');
     setNotes(customer.notes ?? '');
+    setBillingAddress(customer.billing_address_line1 ?? '');
+    setBillingCity(customer.billing_city ?? '');
+    setBillingState(customer.billing_state ?? '');
+    setBillingZip(customer.billing_zip ?? '');
+    setPaymentTerms(customer.payment_terms ?? 'net_30');
+    setTaxId(customer.tax_id ?? '');
+    setBillingEmail(customer.billing_email ?? '');
     setEditing(false);
   };
 
@@ -301,6 +322,38 @@ function OverviewTab({ customer, canManage }: { customer: CustomerDetail; canMan
               className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm resize-none"
             />
           </div>
+
+          {/* Billing Section */}
+          <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+            <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Billing Information</p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Input label="Billing Email" value={billingEmail} onChange={(e) => setBillingEmail(e.target.value)} />
+                <Input label="Tax ID" value={taxId} onChange={(e) => setTaxId(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Payment Terms</label>
+                <select
+                  value={paymentTerms}
+                  onChange={(e) => setPaymentTerms(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm min-h-[44px]"
+                >
+                  <option value="due_on_receipt">Due on Receipt</option>
+                  <option value="net_15">Net 15</option>
+                  <option value="net_30">Net 30</option>
+                  <option value="net_45">Net 45</option>
+                  <option value="net_60">Net 60</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <Input label="Billing Address" value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} />
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <Input label="City" value={billingCity} onChange={(e) => setBillingCity(e.target.value)} />
+                <Input label="State" value={billingState} onChange={(e) => setBillingState(e.target.value)} />
+                <Input label="ZIP" value={billingZip} onChange={(e) => setBillingZip(e.target.value)} />
+              </div>
+            </div>
+          </div>
         </div>
       ) : (
         <div className="space-y-3">
@@ -342,6 +395,27 @@ function OverviewTab({ customer, canManage }: { customer: CustomerDetail; canMan
             <div className="mt-4 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50">
               <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Notes</p>
               <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{customer.notes}</p>
+            </div>
+          )}
+
+          {/* Billing */}
+          {(customer.payment_terms || customer.billing_email || customer.billing_address_line1 || customer.tax_id) && (
+            <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700/50">
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Billing</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-700 dark:text-gray-300">
+                {customer.payment_terms && (
+                  <p><span className="text-gray-500 dark:text-gray-400">Terms:</span> {customer.payment_terms.replace(/_/g, ' ')}</p>
+                )}
+                {customer.tax_id && (
+                  <p><span className="text-gray-500 dark:text-gray-400">Tax ID:</span> {customer.tax_id}</p>
+                )}
+                {customer.billing_email && (
+                  <p><span className="text-gray-500 dark:text-gray-400">Billing Email:</span> {customer.billing_email}</p>
+                )}
+                {customer.billing_address_line1 && (
+                  <p><span className="text-gray-500 dark:text-gray-400">Billing Address:</span> {customer.billing_address_line1}{customer.billing_city ? `, ${customer.billing_city}` : ''}</p>
+                )}
+              </div>
             </div>
           )}
 
@@ -498,7 +572,7 @@ function JobsTab({ customerId }: { customerId: number }) {
 
   const { data: links, isLoading } = useQuery({
     queryKey: ['customer-jobs', customerId],
-    queryFn: () => getJobCustomers(customerId),
+    queryFn: () => getCustomerJobs(customerId),
     staleTime: 15_000,
   });
 
@@ -524,9 +598,10 @@ function JobsTab({ customerId }: { customerId: number }) {
           >
             <Briefcase size={16} className="text-gray-400 dark:text-gray-500 flex-shrink-0" />
             <div className="flex-1 min-w-0">
-              <span className="font-medium text-gray-900 dark:text-gray-100">{link.customer_name}</span>
+              <span className="font-medium text-gray-900 dark:text-gray-100">{link.job_name}</span>
               <div className="flex items-center gap-2 mt-0.5">
-                <Badge variant="default">{link.contact_role}</Badge>
+                <Badge variant="default">{link.contact_role.replace(/_/g, ' ')}</Badge>
+                <Badge variant="neutral">{link.job_status.replace(/_/g, ' ')}</Badge>
                 {link.is_primary && <Badge variant="primary">Primary</Badge>}
               </div>
             </div>
@@ -580,7 +655,7 @@ function ContactFormModal({
   };
 
   return (
-    <Modal title={title} onClose={onClose}>
+    <Modal isOpen title={title} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
           <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm">

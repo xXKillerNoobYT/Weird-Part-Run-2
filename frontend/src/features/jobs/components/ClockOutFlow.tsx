@@ -14,11 +14,11 @@
  * questions into a single payload to minimize round-trips.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   CheckCircle2, XCircle, MessageSquare, ArrowRight,
-  ArrowLeft, Clock, MapPin, Loader2,
+  ArrowLeft, Clock, MapPin, Loader2, Camera,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { PageSpinner } from '../../../components/ui/Spinner';
@@ -36,6 +36,83 @@ interface ClockOutFlowProps {
   laborEntryId: number;
   onComplete: () => void;
   onCancel: () => void;
+}
+
+// ── Photo Capture Input ─────────────────────────────────────────
+
+function PhotoCaptureInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (dataUrl: string) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const hasPhoto = value.startsWith('data:');
+
+  function handleFile(file: File | undefined) {
+    if (!file) return;
+    // Resize large photos to keep payload manageable (~800px max dimension)
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 800;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          const scale = MAX / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+        onChange(canvas.toDataURL('image/jpeg', 0.8));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  return (
+    <div className="pl-6 space-y-2">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => handleFile(e.target.files?.[0])}
+      />
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors"
+        >
+          <Camera className="h-4 w-4" />
+          {hasPhoto ? 'Retake Photo' : 'Take Photo'}
+        </button>
+      </div>
+      {hasPhoto && (
+        <div className="relative">
+          <img
+            src={value}
+            alt="Captured"
+            className="w-full max-w-xs rounded-md border border-border"
+          />
+          <button
+            type="button"
+            onClick={() => onChange('')}
+            className="absolute top-1 right-1 p-1 bg-black/50 rounded-full text-white hover:bg-black/70"
+          >
+            <XCircle className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Step 1: Questions ───────────────────────────────────────────
@@ -124,12 +201,17 @@ function QuestionStep({
                   No
                 </button>
               </div>
+            ) : q.answer_type === 'photo' ? (
+              <PhotoCaptureInput
+                value={answer?.text ?? ''}
+                onChange={(dataUrl) => onGlobalChange(q.id, { text: dataUrl })}
+              />
             ) : (
               <div className="pl-6">
                 <textarea
                   value={answer?.text ?? ''}
                   onChange={(e) => onGlobalChange(q.id, { text: e.target.value })}
-                  placeholder={q.answer_type === 'photo' ? 'Photo URL or description...' : 'Type your answer...'}
+                  placeholder="Type your answer..."
                   rows={2}
                   className="w-full px-3 py-2 text-sm border border-border rounded-md bg-surface text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />

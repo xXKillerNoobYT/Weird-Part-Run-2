@@ -68,7 +68,6 @@ from app.models.parts import (
     PartListItem,
     PartPricingUpdate,
     PartResponse,
-    PartSearchParams,
     PartUpdate,
     PendingPartNumberItem,
     # Part ↔ Supplier
@@ -1992,12 +1991,34 @@ async def delete_supplier(
     user: dict = Depends(require_permission("edit_parts_catalog")),
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    """Delete a supplier."""
+    """Delete a supplier. Returns 409 if referenced by POs, stock, or other records."""
     repo = SupplierRepo(db)
 
     existing = await repo.get_by_id(supplier_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Supplier not found")
+
+    # FK guard — check for references in critical tables before deleting
+    refs: list[str] = []
+    for table, label in [
+        ("purchase_orders", "purchase orders"),
+        ("stock", "stock records"),
+        ("stock_movements", "stock movements"),
+        ("returns", "returns"),
+        ("price_history", "price history records"),
+        ("part_supplier_links", "part-supplier links"),
+    ]:
+        cursor = await db.execute(
+            f"SELECT COUNT(*) as cnt FROM {table} WHERE supplier_id = ?",  # noqa: S608
+            (supplier_id,),
+        )
+        row = await cursor.fetchone()
+        if row and row["cnt"] > 0:
+            refs.append(f"{row['cnt']} {label}")
+
+    if refs:
+        detail = f"Cannot delete supplier '{existing['name']}' — referenced by: {', '.join(refs)}. Remove or reassign these records first."
+        raise HTTPException(status_code=409, detail=detail)
 
     await repo.delete(supplier_id)
     return ApiResponse(message=f"Supplier '{existing['name']}' deleted.")

@@ -4411,6 +4411,8 @@ export interface CustomerListItem {
   contact_count: number;
 }
 
+export type PaymentTerms = 'due_on_receipt' | 'net_15' | 'net_30' | 'net_45' | 'net_60' | 'custom';
+
 export interface CustomerDetail {
   id: number;
   company_name: string | null;
@@ -4431,6 +4433,15 @@ export interface CustomerDetail {
   job_count: number;
   created_at: string | null;
   updated_at: string | null;
+  // Billing
+  billing_address_line1: string | null;
+  billing_address_line2: string | null;
+  billing_city: string | null;
+  billing_state: string | null;
+  billing_zip: string | null;
+  payment_terms: PaymentTerms;
+  tax_id: string | null;
+  billing_email: string | null;
 }
 
 export interface CustomerCreate {
@@ -4446,6 +4457,14 @@ export interface CustomerCreate {
   zip?: string | null;
   customer_type?: CustomerType;
   notes?: string | null;
+  billing_address_line1?: string | null;
+  billing_address_line2?: string | null;
+  billing_city?: string | null;
+  billing_state?: string | null;
+  billing_zip?: string | null;
+  payment_terms?: PaymentTerms;
+  tax_id?: string | null;
+  billing_email?: string | null;
 }
 
 export interface CustomerUpdate {
@@ -4461,6 +4480,14 @@ export interface CustomerUpdate {
   zip?: string | null;
   customer_type?: CustomerType;
   notes?: string | null;
+  billing_address_line1?: string | null;
+  billing_address_line2?: string | null;
+  billing_city?: string | null;
+  billing_state?: string | null;
+  billing_zip?: string | null;
+  payment_terms?: PaymentTerms;
+  tax_id?: string | null;
+  billing_email?: string | null;
 }
 
 
@@ -4511,6 +4538,15 @@ export interface GCDetail {
   job_count: number;
   created_at: string | null;
   updated_at: string | null;
+  // COI tracking
+  coi_carrier: string | null;
+  coi_policy_number: string | null;
+  coi_expiry_date: string | null;
+  coi_coverage_amount: number | null;
+  coi_on_file: boolean;
+  workers_comp_expiry: string | null;
+  bonded: boolean;
+  bond_amount: number | null;
 }
 
 export interface GCCreate {
@@ -4528,6 +4564,14 @@ export interface GCCreate {
   zip?: string | null;
   insurance_info?: string | null;
   notes?: string | null;
+  coi_carrier?: string | null;
+  coi_policy_number?: string | null;
+  coi_expiry_date?: string | null;
+  coi_coverage_amount?: number | null;
+  coi_on_file?: boolean;
+  workers_comp_expiry?: string | null;
+  bonded?: boolean;
+  bond_amount?: number | null;
 }
 
 export interface GCUpdate {
@@ -4545,6 +4589,14 @@ export interface GCUpdate {
   zip?: string | null;
   insurance_info?: string | null;
   notes?: string | null;
+  coi_carrier?: string | null;
+  coi_policy_number?: string | null;
+  coi_expiry_date?: string | null;
+  coi_coverage_amount?: number | null;
+  coi_on_file?: boolean;
+  workers_comp_expiry?: string | null;
+  bonded?: boolean;
+  bond_amount?: number | null;
 }
 
 
@@ -4662,6 +4714,34 @@ export interface JobGCCreate {
   contract_number?: string | null;
   is_primary?: boolean;
   notes?: string | null;
+}
+
+/** Job linked to a customer — used on the Customer Detail "Jobs" tab (reverse of JobCustomerResponse) */
+export interface CustomerJobLink {
+  id: number;
+  job_id: number;
+  customer_id: number;
+  job_name: string;
+  job_status: string;
+  contact_role: CustomerContactRole;
+  is_primary: boolean;
+  notes: string | null;
+  created_at: string | null;
+}
+
+/** Job linked to a GC — used on the Contractor Detail "Jobs" tab (reverse of JobGCResponse) */
+export interface GCJobLink {
+  id: number;
+  job_id: number;
+  gc_id: number;
+  job_name: string;
+  job_status: string;
+  relationship: GCRelationship;
+  contract_amount: number | null;
+  contract_number: string | null;
+  is_primary: boolean;
+  notes: string | null;
+  created_at: string | null;
 }
 
 
@@ -4895,6 +4975,117 @@ export interface CalendarData {
 }
 
 
+// ── Dispatch Templates ──────────────────────────────────────────
+
+export interface DispatchTemplateMember {
+  user_id: number;
+  role_on_job?: string;
+}
+
+export interface DispatchTemplateMemberResponse {
+  user_id: number;
+  user_name?: string;
+  role_on_job: string;
+}
+
+export interface DispatchTemplateCreate {
+  name: string;
+  job_id: number;
+  shift_start?: string;
+  shift_end?: string;
+  role_on_job?: string;
+  days_of_week?: number;
+  members?: DispatchTemplateMember[];
+  notes?: string;
+}
+
+export interface DispatchTemplateUpdate {
+  name?: string;
+  job_id?: number;
+  shift_start?: string;
+  shift_end?: string;
+  role_on_job?: string;
+  days_of_week?: number;
+  members?: DispatchTemplateMember[];
+  notes?: string;
+}
+
+export interface DispatchTemplateResponse {
+  id: number;
+  name: string;
+  job_id: number;
+  job_name?: string;
+  shift_start?: string;
+  shift_end?: string;
+  role_on_job: string;
+  days_of_week: number;
+  days_labels: string[];
+  members: DispatchTemplateMemberResponse[];
+  notes?: string;
+  is_active: boolean;
+  created_at?: string;
+}
+
+export interface DispatchTemplateApply {
+  date_from: string;
+  date_to: string;
+  skip_conflicts?: boolean;
+}
+
+// ── Shift Patterns ──────────────────────────────────────────────
+
+export interface ShiftPatternDayCreate {
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  is_working_day: boolean;
+}
+
+export interface ShiftPatternCreate {
+  name: string;
+  description?: string;
+  days: ShiftPatternDayCreate[];
+}
+
+export interface ShiftPatternUpdate {
+  name?: string;
+  description?: string;
+  days?: ShiftPatternDayCreate[];
+}
+
+export interface ShiftPatternDayResponse {
+  id: number;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  is_working_day: boolean;
+}
+
+export interface ShiftPatternResponse {
+  id: number;
+  name: string;
+  description?: string;
+  is_active: boolean;
+  days: ShiftPatternDayResponse[];
+  created_at?: string;
+}
+
+// ── Weekly Availability ──────────────────────────────────────────
+
+export interface AvailabilityDay {
+  date: string;
+  dispatches: number;
+  time_off: boolean;
+  available: boolean;
+}
+
+export interface EmployeeAvailability {
+  user_id: number;
+  user_name: string;
+  days: AvailabilityDay[];
+}
+
+
 // ══════════════════════════════════════════════════════════════════
 // JOB LEAD ELEVATIONS
 // ══════════════════════════════════════════════════════════════════
@@ -4908,7 +5099,7 @@ export interface JobLeadElevationResponse {
   permission_key: string;
   granted_by: number;
   granted_by_name?: string;
-  created_at: string | null;
+  granted_at: string | null;
 }
 
 export interface JobLeadElevationCreate {

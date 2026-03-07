@@ -43,6 +43,21 @@ class VerifyPinRequest(BaseModel):
     pin: str = Field(..., min_length=4, max_length=6, pattern=r"^\d{4,6}$")
 
 
+class UpdateProfileRequest(BaseModel):
+    """Self-service profile update. Users can edit their own contact info."""
+    display_name: str | None = Field(None, min_length=1, max_length=100)
+    email: str | None = Field(None, max_length=255)
+    phone: str | None = Field(None, max_length=30)
+    emergency_contact_name: str | None = Field(None, max_length=100)
+    emergency_contact_phone: str | None = Field(None, max_length=30)
+
+
+class ChangePinRequest(BaseModel):
+    """Change own PIN. Requires current PIN for verification."""
+    current_pin: str = Field(..., min_length=4, max_length=6, pattern=r"^\d{4,6}$")
+    new_pin: str = Field(..., min_length=4, max_length=6, pattern=r"^\d{4,6}$")
+
+
 # ── Response Models ─────────────────────────────────────────────────
 
 class TokenResponse(BaseModel):

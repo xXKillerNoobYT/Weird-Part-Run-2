@@ -35,6 +35,11 @@ NOTIFICATION_TYPES = [
     "return_approval",
     "distribution_waiting",
     "job_status_changed",
+    "dispatch_created",
+    "dispatch_cancelled",
+    "time_off_approved",
+    "time_off_denied",
+    "vehicle_expiry",
 ]
 
 

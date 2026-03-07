@@ -295,6 +295,11 @@ export async function updateMaintenanceType(
   return data.data;
 }
 
+/** Delete (deactivate) a maintenance type */
+export async function deleteMaintenanceType(typeId: number): Promise<void> {
+  await apiClient.delete(`/tools/maintenance-types/${typeId}`);
+}
+
 
 // =================================================================
 // PER-TOOL MAINTENANCE

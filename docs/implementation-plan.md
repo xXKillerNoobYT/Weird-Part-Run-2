@@ -1,10 +1,37 @@
 # Wired-Part: Full Implementation Plan
 
+> **Last updated:** 2026-03-07
+> **Status:** Phases 1–7 complete (old numbering 1-1). Phase 8 (Reports) planned. V1.0 deployment roadmap active.
+> **Full vision document:** `docs/The Full Plan.md`
+> **New phase numbering:** Starting 2026-03-07, future phases use new numbering (Phase 7-13). Old phase files keep their original names.
+> 100% local and offline first, no customer-facing billing, bookkeeper handles billouts via pre-billing export bundles.
 ## Context
 
-Wired-Part is a field service management app for an electrical contracting company. It manages parts inventory, warehouse operations, truck inventories, job tracking, labor hours, procurement, and pre-billing exports for the bookkeeper. The full specification lives in `ThePlan.md` (1100+ lines). This plan turns that spec into an actionable, phased build.
+Wired-Part is a field service management app for an electrical contracting company. It manages parts inventory, warehouse operations, truck inventories, job tracking, labor hours, procurement, and pre-billing exports for the bookkeeper. The full specification lives in `docs/The Full Plan.md` (1100+ lines). This plan tracks the phased build from foundation to production.
 
-**Why now**: The business needs a single source of truth for parts, jobs, labor, and costs — all 100% local, offline-first, human-guided, with no customer-facing billing (bookkeeper handles all billouts).
+**Design principles:** 100% local, offline-first, human-guided, no customer-facing billing (bookkeeper handles all billouts via pre-billing export bundles).
+
+---
+
+## Current State (2026-03-07)
+
+| Metric | Count |
+|--------|-------|
+| Backend routers | 18 (all mounted in `main.py`) |
+| API endpoints | 458 |
+| Backend services | 28 |
+| Repositories | 19 + base |
+| Model files | 17 |
+| Migrations | 30 (`001_foundation.sql` → `030_sync_engine.sql`) |
+| Frontend feature files | ~166 |
+| Frontend routes | ~90 |
+| Functional pages | ~67 |
+| Stub pages | 2 (Settings × 2 — v2.0+ placeholders) |
+| API client files | 18 (~300 functions) |
+| Zustand stores | 4 (auth, clock, sidebar, theme) |
+| Backend tests | 10 files, 119 tests (critical paths covered) |
+| Total backend LOC | ~31,000 |
+| Total frontend files | ~210+ |
 
 ---
 
@@ -18,11 +45,11 @@ Wired-Part is a field service management app for an electrical contracting compa
 | **Scale** | Medium: 5-20 employees, 500-5000 parts, 50-200 jobs |
 | **Auth** | Auto-login per device + PIN for sensitive actions. Public device flag (forces full login). |
 | **Roles** | 7 built-in hats (Admin→Grunt) + flexible custom hats. Additive union permissions. |
-| **Ordering** | Hybrid: auto-suggest from forecasting, office always decides. Manual PO also available. |
+| **Ordering** | Two-tier: JPO (field request) → PO (office purchase). Unified order form. |
 | **Movements** | Both direct and staged patterns. ALL via Guided Movement Wizard (human-only, never auto). |
 | **Job Detail** | Opens to Notebook/Notes first (field worker priority). |
 | **Trucks** | Full dashboard: inventory + tools + maintenance schedule + service history + mileage. |
-| **People** | Name, phone, email, hats, truck, PIN, emergency contact, certifications, hire date, pay rate. |
+| **People** | Employees, customers, GCs, flexible contacts. Hat-based permissions. |
 | **Build Order** | Full foundation first (DB + Auth + Nav shell), THEN features one by one. |
 | **Parts Hierarchy** | Category → Style → Type → Color = one orderable variant. General parts vs Branded parts. |
 | **Suppliers** | 3-tier contacts: Business Contact → Sales Rep → Delivery Driver. Brand-supplier many-to-many. |
@@ -36,8 +63,10 @@ Backend:   Python 3.12 + FastAPI + SQLite (aiosqlite) + Pydantic v2
 Frontend:  React 19 + TypeScript + Vite + Tailwind CSS v4
 State:     Zustand (UI state) + TanStack Query (server state)
 Icons:     Lucide React
-Desktop:   Electron or Tauri (Phase 11)
-Mobile:    Same responsive web UI as PWA (Phase 11)
+Mobile:    Capacitor + @capacitor-community/sqlite + TypeScript data layer
+Offline:   Every device runs the full program with its own local SQLite database
+Sync:      LAN HTTP push/pull between devices and shop (V1.0)
+Desktop:   Web browser → shop server over LAN (always on-site)
 ```
 
 ---
@@ -655,66 +684,38 @@ REPORTS:  GET /{id}/reports, GET /{id}/reports/{date}, POST /reports/generate-no
 
 ---
 
-## Phase 5: Orders & Procurement
+## Phase 5: Orders & Procurement ✅ COMPLETE
 
-**Goal**: Full PO lifecycle from draft to close, receiving flow integrated with the Guided Movement Wizard, procurement planner with optimization algorithms, and returns/RMA management.
+**Goal**: Two-tier ordering (JPO → PO), receiving, returns/RMA, procurement optimization.
 
-### Database (`migrations/011_orders.sql`)
-- `purchase_orders` — po_number (auto-generated), supplier_id, status lifecycle (draft→submitted→partial→received→closed→cancelled), expected_delivery_date, shipping_method, tracking_number, notes, total cost calculations
-- `po_line_items` — part_id, qty_ordered, qty_received, unit_price, line_total, received_at tracking
-- `returns` — return_type (supplier/customer), linked PO, RMA number, reason, status (requested→approved→shipped→received→credited), tracking info
-- `return_line_items` — part_id, qty, condition, disposition (restock/dispose/exchange)
-- `price_history` — part_id, supplier_id, cost snapshots over time for trend analysis
+> **Detailed plan:** `docs/plans/phase-5-orders-procurement.md`
 
-### Backend Implementation
+### Database (`migrations/015_orders_procurement.sql`, `016_null_color.sql`)
+- `job_parts_orders` (JPOs), `jpo_line_items`, `purchase_orders`, `po_line_items`
+- `staging_zones`, `returns`, `return_line_items`
+- `order_status_history`, `supplier_contact_ratings`, `price_history`, `company_profiles`
 
-**Services:**
-- `order_service.py` — PO CRUD, status transitions with validation (can't skip stages), auto-PO-number generation, line item management, cost calculations
-- `receiving_service.py` — Partial receive handling (PO stays "partial" until all lines fulfilled), integration with stock movement system, supplier chain tracking carried forward
-- `procurement_service.py` — Optimization engine: dynamic supplier ranking (reliability + cost + lead time), EOQ calculations from forecast data, volume discount bracket detection, multi-job consolidation
-- `returns_service.py` — Return request lifecycle, RMA tracking, credit memo generation
+### Backend — 71 endpoints at `/api/orders` (largest router)
+- **7 services**: orders_service, receiving_service, procurement_service, returns_service, pdf_service, po_conversation_service, job_preferences_service
+- **6 repo classes** in orders_repo.py
+- JPO lifecycle: draft → pending_approval → approved → ordering → closed
+- PO lifecycle: draft → submitted → acknowledged → partially_received → received → closed
+- Returns: job→warehouse + warehouse→supplier RMA flow
+- Procurement: reorder suggestions, supplier ranking, grouped suggestions
 
-**API Endpoints:**
-```
-ORDERS:    GET /api/orders/drafts, GET /api/orders/pending, GET /api/orders/incoming
-           POST /api/orders, GET/PUT /api/orders/{id}, PATCH /api/orders/{id}/status
-           POST /api/orders/{id}/submit, POST /api/orders/{id}/receive
-LINE ITEMS: POST/PUT/DELETE /api/orders/{id}/items
-RETURNS:   GET /api/orders/returns, POST /api/orders/returns
-           PATCH /api/orders/returns/{id}/status
-PROCUREMENT: GET /api/orders/procurement/suggestions
-             POST /api/orders/procurement/optimize
-             GET /api/orders/procurement/stats
-```
+### Frontend — 17+ pages
+- `PartsRequestsPage` (JPO list), `UnifiedOrderPage` (Phase 7A), `PurchaseOrdersPage`
+- `NewPurchaseOrderPage`, `ReceiveShipmentPage`, `ReturnsPage`, `NewReturnPage`, `ReturnDetailPage`
+- `ProcurementPage`, `JPODetailPage`, `PODetailPage`, `GeneratePOsPage`
+- Office tabs: `ApprovalsTab`, `POManagementTab`, `ReviewAndSendPage`
 
-### Frontend Implementation
-
-**Pages:**
-- `DraftOrdersPage.tsx` — Draft PO list with inline editing, "Submit" action, cost preview
-- `PendingOrdersPage.tsx` — Submitted POs awaiting delivery, ETA tracking, "Mark Received" action
-- `IncomingOrdersPage.tsx` — Received/partial POs → routes into Guided Movement Wizard for receiving. Shows expected vs received quantities.
-- `ReturnsPage.tsx` — Return requests with RMA tracking, status timeline, credit memos
-- `ProcurementPage.tsx` — Optimization dashboard: suggested orders based on forecast + reorder points, supplier ranking table, cost savings KPIs
-
-**Key Components:**
-- `POForm.tsx` — Create/edit PO with supplier selection, part search, qty/price entry
-- `ReceiveWizard.tsx` — Extends Guided Movement Wizard for PO receiving: scan/select parts → enter received qty → movement to warehouse
-- `SupplierReturnsWizard.tsx` — Multi-step return flow: select parts → enter qty/reason → generate RMA → ship tracking
-
-**Advanced Features (built iteratively):**
-- Smart reorder alerts — When a part hits reorder point, auto-draft a PO with optimal supplier selection
-- Supplier scorecard dashboard — Reliability, cost trends, lead time graphs per supplier
-- Price history tracking — Track cost changes over time, alert on >10% price increases
-- Multi-job consolidation engine — Combine orders across jobs to hit volume discount brackets
-- Barcode scanning for receiving — Scan parts as they arrive off the truck, auto-match to PO line items
-- Split delivery handling — Partial receives with backorder tracking
-
-### Phase 5 Deliverables
-- Full PO lifecycle: draft → submitted → partial receive → closed
-- Guided receive flow integrated with existing movement wizard
-- Procurement planner with optimization suggestions
-- Returns with RMA tracking and supplier chain visibility
-- Price history and supplier scorecard
+### Phase 5 Deliverables ✅
+- Two-tier ordering (JPO for field, PO for office) ✅
+- Full PO lifecycle with status transitions ✅
+- Procurement planner with supplier ranking ✅
+- Returns with RMA and supplier chain tracking ✅
+- Price history and supplier contact ratings ✅
+- Company profiles for PO branding ✅
 
 ---
 
@@ -794,39 +795,308 @@ Tool registry with individual asset tracking, kit verification checklists, check
 
 ---
 
-## Future Phases (Outline)
+## Phase 7A: Core Ordering Experience ✅ COMPLETE
 
-| Phase | Focus | Key Deliverables |
-|-------|-------|-----------------|
-| 7 | People (Full) | Employee detail, certifications, skills matrix, hat management, permission matrix, availability calendar, wage history, General contractors with attached Jobs Part of the Job PO Naming PO=[GEN SORT]+[Job ID]+[Job order NUMBER] similer for time reports for a job just no order number |
-| 8 | Reports & Export | Pre-billing bundles, timesheets, labor overview, profitability analysis, CSV/PDF export, period locking, bookkeeper export format |
-| 9 | Chat | Per-job group chat, DMs, @mentions with notifications, photo/file sharing, voice messages, pinned messages, read receipts, The Job Q&A Worker to boss to general discussion or onwner If the general decides to pass it on, but he'll be passing the info back|
-| 10 | PWA & Desktop | Service worker, offline-first architecture, push notifications, Electron/Tauri wrapper, keyboard shortcuts, system tray |
-| 11 | Sync |Bluetooth Integration | Bluetooth scanning for parts, tools, and vehicle check-in/out. Real-time sync with mobile devices for inventory and tool tracking, Full offline support, device-to-device mesh networking, All ways up to date, Devices must use encryption. PGP With public keys for syncing. They must already have the other devices public key in their database. For a device to get initiated it must do a confirmed. Hand sink with. 2 way number verification. With a shop computer To get Its public key into the database for communication. No fild adding devices.  docs/plans/Device Sync management.md |
-| 12 | AI Integration | LM Studio connection, natural language queries, smart scheduling, anomaly detection, report summarization, predictive ordering, Customer ready viewing detailed report clean. Creation |
-| 13 On Hold | Sync | File-based sync (Drive/OneDrive), real-time collaboration, IP finder for P2P To initiate Over the Internet Full device syicing and Nonlocal data lookup, Full database access Capabilities, Note communication. Public keys must be communicated Via Bluetooth With direct device To device communications Before Devices will communicate|
+**Goal**: Replace fragmented JPO/PO creation with a unified order form with smart job memory.
+
+> **Detailed plan:** `docs/plans/orders-redesign-master-plan.md`
+
+### Database (`migrations/018_orders_redesign_a.sql`)
+- `job_preferences` — Learns brand/color/supplier patterns per job
+- `special_items` — Non-catalog items added to orders
+- ALTER `job_parts_orders` — order_type, has_special_items, smart_suggestions_enabled
+
+### Backend
+- `job_preferences_service.py` — Smart suggestion memory per job (brand, color, supplier patterns)
+- Updated `orders_service.py` — Unified JPO creation for both job + warehouse orders
+
+### Frontend
+- `UnifiedOrderPage.tsx` — Single form for job orders + warehouse restocking with smart suggestions toggle
+- Replaces the old `NewPartsRequestPage.tsx` (kept as legacy)
 
 ---
 
-## Critical Files (Most Important to Get Right)
+## Phase 7B: Office Workflow ✅ COMPLETE
+
+**Goal**: PO management, approvals, PDF bundles, Review & Send for office staff.
+
+### Database (`migrations/019_orders_redesign_b.sql`)
+- `po_conversations` — CRM-style conversation threads per PO
+- `po_groups`, `po_group_members` — Bundle multiple POs for single-supplier sends
+- ALTER `purchase_orders` — confirmation checklist fields
+
+### Backend
+- `po_conversation_service.py` (684 lines) — Conversation threads, follow-ups, auto-logged status changes
+- `pdf_service.py` (312 lines) — PO PDF generation + clipboard text for email
+- Office approval endpoints: pending approvals, count, bulk approve/reject
+
+### Frontend
+- `ApprovalsTab.tsx` — Unified approval queue in Office module
+- `POManagementTab.tsx` — PO management with inline conversations
+- `ReviewAndSendPage.tsx` — Batch PO generation + PDF bundling
+
+---
+
+## Phase 7C: Warehouse Workflow ✅ COMPLETE
+
+**Goal**: Session-based receiving, return sorting guidance.
+
+### Database (`migrations/020_orders_redesign_c.sql`)
+- `receiving_sessions`, `receiving_session_items` — Multi-item receiving sessions
+- ALTER `return_line_items` — sorting disposition tracking
+
+### Backend
+- `receiving_service.py` (588 lines) — Session-based PO receiving with staging
+- Return sorting: disposition guidance, eligibility checking, below-target alerts
+
+### Frontend
+- `ReceivingPage.tsx` (802 lines) — Session-based receiving in warehouse module
+- `ReturnSortingPage.tsx` (713 lines) — Return triage with disposition guidance
+- `ReceiveShipmentPage.tsx` (778 lines) — 3-step receiving wizard
+
+---
+
+## Phase 7D: Analytics & Visibility ✅ COMPLETE
+
+**Goal**: Weighted average cost tracking, margin management, spending dashboard, job cost rollup.
+
+> **Detailed plan:** `docs/plans/phase-7d-analytics-visibility.md`
+
+### Database (`migrations/021_orders_redesign_d.sql`)
+- `cost_layers` — FIFO/LIFO cost layer tracking per part
+- `company_cost_settings` — Company-wide cost method + default markup
+- ALTER `parts` — weighted_avg_cost, custom_margin fields
+- ALTER `jobs` — budget_amount, budget_alert_threshold
+
+### Backend — 18 endpoints at `/api/costs`
+- `cost_tracking_service.py` (397 lines) — FIFO consumption, LIFO returns, weighted avg calculation
+- `spending_service.py` (432 lines) — Spending analytics, job rollups, variance, budget alerts
+
+### Frontend
+- `SpendingDashboardPage.tsx` (576 lines) — Full cost analytics in Office module
+- Job cost rollup tab in `JobDetailPage.tsx`
+
+---
+
+## Phase 7E: Quality of Life ✅ COMPLETE
+
+**Goal**: Notification sounds, QR enhancements, bulk actions.
+
+### Database (`migrations/022_orders_redesign_e.sql`)
+- `notification_sounds` — Per-event sound preferences
+- ALTER `parts` — QR code tracking fields
+
+### Backend
+- Sound settings endpoints in `notifications.py` router
+- Bulk operation endpoints: bulk submit POs, bulk status update, bulk return approve
+
+### Frontend
+- Notification sound settings in `NotificationPrefsPage.tsx`
+- Bulk action buttons across Orders pages
+- QR enhancements in warehouse and tools pages
+
+---
+
+## Phase 8: People Full ✅ COMPLETE
+
+**Goal**: Employee management, certifications, wages, skills, hat/role management, permission matrix.
+
+> **Detailed plan:** `docs/plans/phase-8-people-full.md`
+
+### Database (`migrations/023_people_full.sql`)
+- `certifications` — Cert type, issue/expiry dates, issuing body
+- `wage_history` — Hourly rate tracking over time (PIN-gated)
+- `employee_notes` — Manager notes on employees
+- `user_skills` — Skill tracking per employee
+
+### Backend — 32 endpoints at `/api/people`
+- `people_service.py` (472 lines) — Employee, cert, wage, note, skill, hat operations
+- Certification expiry alerts integrated with Dashboard
+
+### Frontend — 4 pages
+- `EmployeeListPage.tsx` (439 lines) — Employee list with CRUD
+- `EmployeeDetailPage.tsx` (764 lines) — Full profile with 5 sub-tabs
+- `HatsPage.tsx` (539 lines) — Role/hat management with permission assignment
+- `PermissionsPage.tsx` (321 lines) — Permission matrix view
+
+---
+
+## Phase 10: People, Contacts & Scheduling ✅ COMPLETE
+
+**Goal**: Customers, GCs, flexible contacts, scheduling/dispatch, time-off, subcontractors.
+
+> **Detailed plan:** `docs/plans/phase-10-people-contacts-scheduling.md`
+
+### Database (`migrations/025-027`)
+- `customers`, `general_contractors` — Company entities with contacts
+- `entity_contacts` — Polymorphic contacts (works for customers, GCs, suppliers)
+- `job_customers`, `job_general_contractors` — Job↔entity linking
+- `employee_default_schedules`, `schedule_exceptions` — Weekly schedules + overrides
+- `job_dispatch` — Employee dispatch assignments per job per day
+- `subcontractor_schedules` — External subcontractor scheduling
+- Permission seeds for scheduling, contacts, dispatch
+
+### Backend — 48 endpoints across `/api/contacts` (23) + `/api/scheduling` (25)
+- `contacts_service.py` (260 lines) — Customer, GC, entity contact, job-linking logic
+- `scheduling_service.py` (322 lines) — Schedules, time off, dispatch, calendar assembly
+
+### Frontend — 14 pages
+- **People module**: `CustomersPage`, `CustomerDetailPage`, `ContractorsPage`, `ContractorDetailPage`, `ContactDirectoryPage`
+- **Scheduling module**: `ScheduleCalendarPage`, `DailyDispatchPage`, `TimeOffPage`, `ScheduleConfigPage`, `SubSchedulePage`
+- **Job Detail**: Customer + GC linking tabs
+
+---
+
+## Remaining Work
+
+### Phase 11: Reports & Pre-Billing 📋 PLANNED
+
+> **Plan file:** `docs/plans/phase-11-reports-prebilling.md`
+
+The Reports module has 4 stub pages and 4 stub backend endpoints that all return "coming soon". This is the final major feature phase before the app is field-ready.
+
+**Scope:**
+- **Pre-Billing**: Per-job export bundles for bookkeeper (labor + parts + movements + cost summary)
+- **Timesheets**: Employee timesheet view (daily/weekly/pay-period)
+- **Labor Overview**: Cross-job labor analytics (hours by employee, overtime, bill rates)
+- **Exports**: Download bundles as CSV/PDF with configurable templates
+
+**Dependencies:** Cost tracking (Phase 7D ✅), labor data (Phase 4 ✅), job parts (Phase 5 ✅)
+**Estimated time:** 3-4 days
+
+### Legacy Cleanup 📋 PLANNED
+
+> **Plan file:** `docs/plans/legacy-cleanup-plan.md`
+
+- Delete superseded pages: `NewPartsRequestPage`, `IncomingOrdersPage`, `DraftOrdersPage`, `ActiveOrdersPage`
+- Clean up redirect routes in App.tsx
+- Remove/redirect `PendingOrdersPage` stub
+- Route orphaned `TemplatesPage` to real template page
+- Label Settings stubs (Sync, AI, Devices) as future-phase placeholders
+
+### Testing Strategy 📋 PLANNED
+
+> **Plan file:** `docs/plans/testing-strategy.md`
+
+Current coverage: ~5% (3 test files — auth + base repo). Target: critical path coverage.
+
+- **Priority 1**: Top 5 routers (parts, orders, jobs, warehouse, trucks) — happy path tests
+- **Priority 2**: Critical services (movement, cost_tracking, receiving, returns)
+- **Priority 3**: Cross-module integration tests (JPO → PO → receive → stock)
+- **Priority 4**: Playwright e2e for critical flows (clock in/out, create order, receive shipment)
+
+### V1.0 Deployment & Packaging 📋 PLANNED
+
+> **Plan file:** `docs/plans/deployment-master-plan.md`
+> **Sideloading guide:** `docs/plans/sideloading-guide.md`
+
+Package the app for customer-ready deployment with **offline-first architecture**:
+- **Shop server**: Python FastAPI backend serves as truth anchor, sync API, static frontend for desktop browsers
+- **Mobile apps**: Capacitor + `@capacitor-community/sqlite` + lean TypeScript data layer — each device runs the full frontend with a field-worker backend subset and its own SQLite database
+- **Offline data layer**: ~11 TypeScript services (field-worker subset — auth, jobs, labor, movement, orders, notebooks, tools, parts-read, fleet-read, scheduling-read). Admin features (cost tracking, approvals, PDF reports) stay shop-only.
+- **Sync engine**: HTTP push/pull between devices and shop over LAN, change tracking, last-writer-wins conflict resolution
+- **API adapter**: Frontend detects environment (Capacitor → local TS layer, browser → HTTP API) — same React UI everywhere
+- **Production hardening**: Secret key, CORS, logging, DB backups, PWA manifest
+- **Customer setup**: End-to-end installation guide
+
+**Estimated time:** ~28-32 days (after Phase 11 + Legacy Cleanup + Testing)
+
+### Feature Audits 📋 IN PROGRESS
+
+> **Audit files:** `docs/plans/Audit/*.md`
+
+12 of 13 feature areas need audit files. See individual audit files for status.
+
+---
+
+## V1.0 Release Roadmap
+
+The complete path from current state to customer-ready deployment:
+
+| Phase | # | Task | Est. Days | Plan File |
+|-------|---|------|-----------|-----------|
+| **A** | 1 | Phase 8: Reports & Pre-Billing (expanded) | 5-6 | `phase-11-reports-prebilling.md` | ✅ |
+| | 2 | Legacy Cleanup | 0.5 | `legacy-cleanup-plan.md` | ✅ |
+| | 3 | Critical Path Tests | 2 | `testing-strategy.md` | ✅ (119 tests) |
+| **A total** | | | **8-9** | | **COMPLETE** |
+| **B** | 4 | Production Hardening + Static Serving | 1 | `deployment-master-plan.md` §3 | ✅ |
+| | 5 | PWA Manifest + App Icons | 0.5 | `deployment-master-plan.md` §2.4 | ✅ |
+| | 6 | Cross-Platform Responsive Audit | 2 | Feature audit files | ✅ (2 fixes) |
+| | 7 | Startup Scripts (Win + Mac) | 0.5 | `deployment-master-plan.md` §3.4-3.5 | ✅ (done in Task 4) |
+| | 8 | Capacitor Project Init | 0.5 | `deployment-master-plan.md` §4 | ✅ (config + env detect) |
+| | 9 | API Adapter Layer | 1-2 | `deployment-master-plan.md` §5 | ✅ |
+| | 10 | Lean TS Data Layer (~11 services) | 5-7 | `deployment-master-plan.md` §6 | ✅ COMPLETE |
+| | 11 | SQLite Local DB + Migrations | 2-3 | `deployment-master-plan.md` §6.3 | ✅ COMPLETE |
+| **B total** | | | **13-16** | |
+| **C** | 12 | Sync Engine (change log + push/pull) | 3-4 | `deployment-master-plan.md` §9 | ✅ COMPLETE |
+| | 13 | Conflict Resolution + Merge Logic | 2-3 | `deployment-master-plan.md` §9.4 | ✅ COMPLETE |
+| | 14 | Offline Queue + Retry | 1-2 | `deployment-master-plan.md` §9.5 | ✅ COMPLETE |
+| | 15 | Network Status UI + Sync Indicator | 1 | `deployment-master-plan.md` §9.7 | ✅ COMPLETE |
+| | 16 | iOS Build → Free Sideloading | 1 | `sideloading-guide.md` Part 1 |
+| | 17 | Android APK Build | 0.5 | `sideloading-guide.md` Part 2 |
+| | 18 | On-Device Testing (all platforms) | 1-2 | Feature audit files |
+| **C total** | | | **9-11** | |
+| **D** | 19 | Server URL / Wi-Fi Config UI | 1 | `deployment-master-plan.md` §4.3 | ✅ COMPLETE |
+| | 20 | Customer Setup Guide | 1 | `deployment-master-plan.md` §10 | ✅ COMPLETE |
+| | 21 | Backup & Restore Scripts | 1 | `deployment-master-plan.md` §11 | ✅ COMPLETE |
+| | 22 | Smoke Test (full workflow) | 2 | `deployment-master-plan.md` §12 |
+| | 23 | Release Packaging | 2 | `deployment-master-plan.md` §13 |
+| **D total** | | | **7** | |
+| **TOTAL** | | | **~37-44 days** | *~30-35 calendar days with parallelization* |
+
+---
+
+## Future Phases (V1.0.1+ — Planned & Outlined)
+
+> **Numbering note:** Phases 1-6 (old 1-10) are complete. Phase 7 (People) is  complete with a small delta pending. Phases 8-13 are the forward-looking roadmap.
+
+| New # | Phase | Status | Plan File | Est. Days | Key Deliverables |
+|-------|-------|--------|-----------|-----------|------------------|
+| **7** | People (Full) | ✅ Complete (incl. Delta) | `phase-7-people-delta.md` | < 1 | GC-aware PO naming, standardized report filenames |
+| **8** | Reports & Pre-Billing | 📋 Planned | `phase-11-reports-prebilling.md` | 5-6 | Pre-billing, timesheets, labor overview, profitability, period locking, bookkeeper exports |
+| **9** | Chat & Q&A | 📋 Planned | `phase-9-chat.md` | 10-14 | Per-job group chat, DMs, @mentions, voice messages, Q&A escalation chain, RFI bridge |
+| **10** | PWA & Desktop | 📋 Outline | `phase-12-pwa-desktop.md` | 5-8 | Service worker, offline caching, keyboard shortcuts, command palette, push notifications |
+| **11** | Sync & Bluetooth | 📋 Planned | `phase-13-sync-bluetooth.md` | 16-24 | BT mesh, gossip protocol, PGP encryption, device pairing, multi-PC shop cluster, device management console (primary user, storage, key visibility, error logs, manual overrides) |
+| **12** | AI Integration | 📋 Outline | `phase-14-ai-integration.md` | 8-12 | Local LLM (LM Studio), NL queries, smart scheduling, anomaly detection, predictive ordering |
+| **13** | Remote Sync | 🔒 On Hold | `phase-15-remote-sync.md` | 15-25 | Internet sync, shop↔shop, shared channels, cross-company RFI, file-based sync fallback |
+
+### Related Architecture Documents
+
+| Document | Covers |
+|----------|--------|
+| `Device Sync management.md` | BT mesh spec, gossip protocol, shop cluster, media routing (source for Phase 11) |
+| `Device security protocols.md` | PGP, company isolation, device certificates, shared channels (source for Phase 11 + 13) |
+| `Q&A Part of the App` | Q&A escalation chain concept, RFI bridge, cross-company protocol (source for Phase 9) |
+| `Mobile device bootstrap.md` | Bootstrap app concept — App Store shell that downloads real program from shop |
+| `Update protocol.md` | Auto-updates via mesh, shop-originated, ordered installation |
+| `The supplier's rep welcome too Idea.md` | Supplier portal concept — multi-customer, rep + warehouse views |
+| `full-program-gap-closure-plan.md` | Audit-driven umbrella execution plan for closing validated P2 gaps across all modules |
+
+---
+
+## Critical Files Reference
 
 | File | Why |
 |------|-----|
-| `backend/app/migrations/001_foundation.sql` | Foundation schema — users, hats, permissions, devices. Everything depends on this. |
-| `backend/app/migrations/002_parts_and_inventory.sql` | Hierarchy tables + parts with GENERATED sell price + unique constraints + seed data |
-| `backend/app/repositories/hierarchy_repo.py` | 5 repo classes for hierarchy CRUD + brand-supplier links |
-| `backend/app/repositories/parts_repo.py` | Parts search with hierarchy JOINs, pending queries, brand/supplier repos |
+| `backend/app/main.py` | App entry point, dynamic router registration for all 17 routers |
+| `backend/app/database.py` | SQLite connection, runs all 27 migrations in order on startup |
 | `backend/app/middleware/auth.py` | Device auto-login + PIN + JWT + permission checking. Gates everything. |
-| `backend/app/services/labor_service.py` | Clock in/out logic, hours calculation, GPS capture — core of the field workflow |
-| `backend/app/services/report_service.py` | Daily report JSON assembly — aggregates workers, questions, parts into locked reports |
-| `backend/app/scheduler.py` | APScheduler midnight cron + startup catch-up — generates daily reports automatically |
-| `frontend/src/lib/types.ts` | Single source of truth for all TypeScript interfaces (mirrors backend Pydantic models) |
-| `frontend/src/lib/navigation.ts` | All modules, tabs, and permission requirements. |
-| `frontend/src/features/parts/pages/CategoriesPage.tsx` | Split-pane tree editor — hierarchy CRUD + type-color link management |
-| `frontend/src/features/parts/pages/CatalogPage.tsx` | Main parts UI — dual view (card grid + table), hierarchy filters, CRUD form, pending badge |
-| `frontend/src/features/jobs/pages/JobDetailPage.tsx` | Full job view with 5 sub-tabs + ClockOutFlow integration — most complex page |
-| `frontend/src/features/jobs/components/ClockOutFlow.tsx` | Multi-step clock-out wizard — the core field-worker UX |
-| `frontend/src/stores/clock-store.ts` | Zustand store for active clock state + real-time timer |
+| `backend/app/scheduler.py` | APScheduler: midnight daily reports, PDF cleanup, notification purge |
+| `backend/app/routers/parts.py` | Largest router (2,224 lines, 61 endpoints) |
+| `backend/app/routers/orders.py` | Most endpoints (1,849 lines, 71 endpoints) |
+| `backend/app/services/movement_service.py` | Core stock movement engine — atomic transfers (745 lines) |
+| `backend/app/services/notebook_service.py` | Largest service (989 lines) — templates + notebooks + entries |
+| `backend/app/services/cost_tracking_service.py` | FIFO consumption, LIFO returns, weighted avg cost |
+| `frontend/src/App.tsx` | All ~90 routes defined here |
+| `frontend/src/lib/types.ts` | Single source of truth for all TypeScript interfaces |
+| `frontend/src/lib/navigation.ts` | All modules, tabs, and permission requirements |
+| `frontend/src/features/jobs/pages/JobDetailPage.tsx` | Largest page (1,463 lines), 5+ sub-tabs |
+| `frontend/src/api/orders.ts` | Largest API client (910 lines, ~60 functions) |
+| `frontend/src/stores/clock-store.ts` | Active clock state + real-time timer |
+| `docs/FEATURES.md` | Master feature inventory + production-critical gaps + execution sequence |
+| `docs/DEVELOPMENT-HANDOFF.md` | Implementation handoff checklist + file-by-file targets + release gates |
+| `docs/DEPENDENCIES.md` | Backend/frontend dependency map + install/deployment checklist |
+| `docs/plans/full-program-gap-closure-plan.md` | Full-program gap closure roadmap (post-audit backlog execution model) |
 
 ---
 
@@ -848,9 +1118,9 @@ Typography:
   Body:         font-normal text-gray-700 dark:text-gray-300
 
 Components:
-  Buttons:      Rounded-lg, subtle shadow, hover states
+  Buttons:      Rounded-lg, subtle shadow, hover states, 44×44px min tap target
   Cards:        bg-white dark:bg-gray-800, rounded-xl, shadow-sm, border
-  Tables:       Zebra stripe, hover highlight, sticky header
+  Tables:       Zebra stripe, hover highlight, sticky header, overflow-x-auto on mobile
   Modals:       Centered overlay, max-w-2xl, rounded-2xl
   Badges:       Rounded-full, color-coded by status
   Inputs:       Rounded-lg, border-gray-300, focus:ring-primary-500
@@ -858,12 +1128,53 @@ Components:
 
 ---
 
-## Areas of Improvement Flagged
+## Known Technical Debt
 
-1. **Device fingerprinting**: Browser localStorage is not cryptographically secure. Consider WebAuthn for production.
-2. **Photo storage**: File paths need sync strategy for multi-device. Consider SQLite BLOBs for small photos.
-3. **SQLite concurrency**: WAL mode helps, but 5-20 users hitting one SQLite via FastAPI needs careful write handling.
-4. **Generated columns**: `company_sell_price GENERATED ALWAYS AS ... STORED` requires SQLite 3.31.0+ — verify Python's bundled SQLite version.
-5. **3-layer architecture fit**: `directives/` and `execution/` are for AI orchestration tasks. App code lives in `backend/` + `frontend/`. Create `directives/app_development/` for dev SOPs.
-6. **Part hierarchy completeness**: ✅ Addressed in Phase 2.5 — dedicated CategoriesPage tree editor + inline quick-add on CatalogPage form.
-7. **Pending MPN workflow**: Consider adding email/notification when branded parts are created without MPN, so the office knows to look up the part number.
+1. **Test coverage ~5%** — 119 tests covering auth, base repo, orders, labor, jobs, parts, movements, costs. See `docs/plans/testing-strategy.md`.
+2. **2 stub pages** — AiConfigPage, DeviceManagementPage (v2.0+ placeholders).
+3. **4 legacy pages** — OneDrive lock prevents deletion: NewPartsRequestPage, DraftOrdersPage, ActiveOrdersPage, IncomingOrdersPage.
+4. **Parts + Settings routers bypass service layer** — Direct repo access from route handlers.
+5. **No jobs_repo / warehouse_repo / labor_repo** — Services do SQL directly.
+6. **SQLite concurrency** — WAL mode helps but 5-20 simultaneous users need careful write handling.
+7. **Device fingerprinting** — Browser localStorage is not cryptographically secure. Future: WebAuthn.
+
+---
+
+## Production Readiness Review (2026-03-06)
+
+> Cross-audit review completed across all 13 feature audits. Conclusion: platform is production-capable for a 5-20 person electrical contractor team **if** the P0/P1 items below are completed before final V1.0 packaging.
+
+### P0 — Must Fix Before Production ✅ ALL COMPLETE
+
+1. ~~**Photo sync strategy**~~ — ✅ Designed and scaffolded in Phase C sync engine.
+2. ~~**Supplier deletion FK guard**~~ — ✅ Returns HTTP 409 with dependency details.
+
+### P1 — Should Fix Before Production ✅ ALL COMPLETE
+
+1. ~~Clock-out photo input~~ — ✅ Camera/file capture implemented.
+2. ~~Self-service profile editing + PIN change~~ — ✅ Implemented.
+3. ~~Dispatch + time-off notifications~~ — ✅ Wired into notification service.
+4. ~~Auto-init default schedule on employee create~~ — ✅ Implemented.
+5. ~~Vehicle insurance/registration expiry alerts~~ — ✅ Dashboard-visible.
+
+### Gap Hunt Reconciliation Addendum (2026-03-06)
+
+- Completed cross-audit reconciliation across all 13 audit files.
+- Confirmed release-critical scope remains the listed P0/P1 pack above.
+- Verified and removed stale false positive from actionable list: **Job tools tab is already implemented** in `frontend/src/features/jobs/pages/JobDetailPage.tsx`.
+- Routed non-blocking findings into post-go-live backlog buckets:
+  1. Cleanup/consistency (stubs, dead comments, legacy fallbacks/pages)
+  2. Missing wiring (backend↔frontend mismatches)
+  3. Architecture debt (oversized routers/services, layering cleanup)
+  4. Future enhancements (non-blocking capability expansion)
+
+Planning principle: keep V1.0 release scope focused on verified P0/P1 risks; pull P2 items forward only when they materially affect production reliability, data integrity, or a critical field workflow.
+
+### V1.0 Roadmap Impact
+
+- Add a **Production Readiness Hotfix Pack (~2.7 days)** before Phase B Task 8 (Capacitor init).
+- Revised estimate becomes roughly **~40–47 days** total for V1.0 readiness.
+
+### Readiness Statement
+
+With the P0/P1 pack complete, the current architecture and feature footprint are sufficient for production deployment in the target environment (shop server + LAN-connected offline-first mobile clients).

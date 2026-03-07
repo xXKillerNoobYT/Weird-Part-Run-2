@@ -1,7 +1,7 @@
 /**
  * Button — primary UI action component.
  *
- * Variants: primary, secondary, ghost, danger
+ * Variants: primary, secondary, ghost, danger, success
  * Sizes: sm, md, lg
  * Supports icons, loading state, and full-width mode.
  */
@@ -19,6 +19,8 @@ const variants = {
     'text-gray-600 hover:bg-gray-100 active:bg-gray-200 dark:text-gray-300 dark:hover:bg-gray-800',
   danger:
     'bg-red-500 text-white hover:bg-red-600 active:bg-red-700 shadow-sm',
+  success:
+    'bg-green-600 text-white hover:bg-green-700 active:bg-green-800 shadow-sm',
 };
 
 const sizes = {

@@ -3,14 +3,21 @@ Base repository with common database operations.
 
 All repositories inherit from BaseRepo to get standard CRUD helpers.
 The connection is injected — repos don't manage their own connections.
+
+Every write (insert/update/delete) on a syncable table automatically
+logs to _shop_change_log so the sync engine can push changes to devices.
 """
 
 from __future__ import annotations
 
+import json
+import logging
 import re
 from typing import Any
 
 import aiosqlite
+
+_logger = logging.getLogger(__name__)
 
 # Whitelist pattern for ORDER BY clauses to prevent SQL injection.
 # Allows: column names (letters, digits, underscores), ASC/DESC,
@@ -47,8 +54,45 @@ class BaseRepo:
     # Subclasses can override to True/False, or it's auto-detected.
     HAS_UPDATED_AT: bool | None = None
 
+    # Set False on repos whose tables should never be tracked for sync
+    # (e.g., the sync tables themselves). Default True = track if syncable.
+    TRACK_CHANGES: bool = True
+
     def __init__(self, db: aiosqlite.Connection) -> None:
         self.db = db
+
+    async def _track_change(
+        self,
+        record_id: int,
+        operation: str,
+        changed_fields: dict[str, Any] | None = None,
+    ) -> None:
+        """Log a change to _shop_change_log for sync.
+
+        Only logs if the table is in the SYNCED_TABLES set.
+        Uses lazy import to avoid circular dependency.
+        """
+        if not self.TRACK_CHANGES or not self.TABLE:
+            return
+        # Lazy import to avoid circular deps
+        from app.services.sync_service import SYNCED_TABLES
+        if self.TABLE not in SYNCED_TABLES:
+            return
+        try:
+            await self.db.execute(
+                """INSERT INTO _shop_change_log
+                   (source_device_id, table_name, record_id, operation, changed_fields)
+                   VALUES (NULL, ?, ?, ?, ?)""",
+                (
+                    self.TABLE,
+                    record_id,
+                    operation,
+                    json.dumps(changed_fields, default=str) if changed_fields else None,
+                ),
+            )
+        except Exception as exc:
+            # Don't let change tracking failures break normal operations
+            _logger.debug("Change tracking skipped for %s.%d: %s", self.TABLE, record_id, exc)
 
     @staticmethod
     def _validate_order_by(order_by: str) -> str:
@@ -120,8 +164,10 @@ class BaseRepo:
             f"INSERT INTO {self.TABLE} ({columns}) VALUES ({placeholders})",  # noqa: S608
             tuple(data.values()),
         )
+        row_id = cursor.lastrowid or 0
+        await self._track_change(row_id, "INSERT", data)
         await self.db.commit()
-        return cursor.lastrowid  # type: ignore[return-value]
+        return row_id
 
     async def update(self, id: int, data: dict[str, Any]) -> bool:
         """Update a row by ID. Returns True if the row was found and updated.
@@ -157,6 +203,8 @@ class BaseRepo:
                 f"UPDATE {self.TABLE} SET {set_clause} WHERE id = ?",  # noqa: S608
                 (*data.values(), id),
             )
+        if cursor.rowcount > 0:
+            await self._track_change(id, "UPDATE", data)
         await self.db.commit()
         return cursor.rowcount > 0
 
@@ -166,6 +214,8 @@ class BaseRepo:
             f"DELETE FROM {self.TABLE} WHERE id = ?",  # noqa: S608
             (id,),
         )
+        if cursor.rowcount > 0:
+            await self._track_change(id, "DELETE")
         await self.db.commit()
         return cursor.rowcount > 0
 

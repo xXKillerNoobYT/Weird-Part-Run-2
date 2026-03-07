@@ -27,10 +27,12 @@ import {
   getGC, updateGC, toggleGCActive,
   getGCContacts, addGCContact,
   updateEntityContact, deleteEntityContact,
+  getGCJobs,
 } from '../../../api/contacts';
 import type {
   GCDetail, GCUpdate, GCTradeType,
   EntityContactResponse, EntityContactCreate, EntityContactUpdate,
+  GCJobLink,
 } from '../../../lib/types';
 
 
@@ -218,6 +220,14 @@ function OverviewTab({ gc, canManage }: { gc: GCDetail; canManage: boolean }) {
   const [zip, setZip] = useState(gc.zip ?? '');
   const [insuranceInfo, setInsuranceInfo] = useState(gc.insurance_info ?? '');
   const [notes, setNotes] = useState(gc.notes ?? '');
+  const [coiCarrier, setCoiCarrier] = useState(gc.coi_carrier ?? '');
+  const [coiPolicyNumber, setCoiPolicyNumber] = useState(gc.coi_policy_number ?? '');
+  const [coiExpiryDate, setCoiExpiryDate] = useState(gc.coi_expiry_date ?? '');
+  const [coiCoverage, setCoiCoverage] = useState(gc.coi_coverage_amount?.toString() ?? '');
+  const [coiOnFile, setCoiOnFile] = useState(gc.coi_on_file ?? false);
+  const [workersCompExpiry, setWorkersCompExpiry] = useState(gc.workers_comp_expiry ?? '');
+  const [bonded, setBonded] = useState(gc.bonded ?? false);
+  const [bondAmount, setBondAmount] = useState(gc.bond_amount?.toString() ?? '');
 
   const saveMutation = useMutation({
     mutationFn: (data: GCUpdate) => updateGC(gc.id, data),
@@ -242,6 +252,14 @@ function OverviewTab({ gc, canManage }: { gc: GCDetail; canManage: boolean }) {
       zip: zip.trim() || null,
       insurance_info: insuranceInfo.trim() || null,
       notes: notes.trim() || null,
+      coi_carrier: coiCarrier.trim() || null,
+      coi_policy_number: coiPolicyNumber.trim() || null,
+      coi_expiry_date: coiExpiryDate || null,
+      coi_coverage_amount: coiCoverage ? parseFloat(coiCoverage) : null,
+      coi_on_file: coiOnFile,
+      workers_comp_expiry: workersCompExpiry || null,
+      bonded,
+      bond_amount: bondAmount ? parseFloat(bondAmount) : null,
     });
   };
 
@@ -259,6 +277,14 @@ function OverviewTab({ gc, canManage }: { gc: GCDetail; canManage: boolean }) {
     setZip(gc.zip ?? '');
     setInsuranceInfo(gc.insurance_info ?? '');
     setNotes(gc.notes ?? '');
+    setCoiCarrier(gc.coi_carrier ?? '');
+    setCoiPolicyNumber(gc.coi_policy_number ?? '');
+    setCoiExpiryDate(gc.coi_expiry_date ?? '');
+    setCoiCoverage(gc.coi_coverage_amount?.toString() ?? '');
+    setCoiOnFile(gc.coi_on_file ?? false);
+    setWorkersCompExpiry(gc.workers_comp_expiry ?? '');
+    setBonded(gc.bonded ?? false);
+    setBondAmount(gc.bond_amount?.toString() ?? '');
     setEditing(false);
   };
 
@@ -333,6 +359,37 @@ function OverviewTab({ gc, canManage }: { gc: GCDetail; canManage: boolean }) {
               className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm resize-none"
             />
           </div>
+
+          {/* COI Section */}
+          <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+            <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Certificate of Insurance</p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Input label="COI Carrier" value={coiCarrier} onChange={(e) => setCoiCarrier(e.target.value)} />
+                <Input label="Policy Number" value={coiPolicyNumber} onChange={(e) => setCoiPolicyNumber(e.target.value)} />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Input label="COI Expiry" type="date" value={coiExpiryDate} onChange={(e) => setCoiExpiryDate(e.target.value)} />
+                <Input label="Coverage Amount" type="number" value={coiCoverage} onChange={(e) => setCoiCoverage(e.target.value)} />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Input label="Workers' Comp Expiry" type="date" value={workersCompExpiry} onChange={(e) => setWorkersCompExpiry(e.target.value)} />
+                <Input label="Bond Amount" type="number" value={bondAmount} onChange={(e) => setBondAmount(e.target.value)} />
+              </div>
+              <div className="flex gap-6">
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input type="checkbox" checked={coiOnFile} onChange={(e) => setCoiOnFile(e.target.checked)}
+                    className="rounded border-gray-300 dark:border-gray-600" />
+                  COI on File
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                  <input type="checkbox" checked={bonded} onChange={(e) => setBonded(e.target.checked)}
+                    className="rounded border-gray-300 dark:border-gray-600" />
+                  Bonded
+                </label>
+              </div>
+            </div>
+          </div>
         </div>
       ) : (
         <div className="space-y-3">
@@ -393,6 +450,34 @@ function OverviewTab({ gc, canManage }: { gc: GCDetail; canManage: boolean }) {
             <div className="mt-4 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50">
               <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Notes</p>
               <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{gc.notes}</p>
+            </div>
+          )}
+
+          {/* COI Summary */}
+          {(gc.coi_carrier || gc.coi_on_file || gc.bonded) && (
+            <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700/50">
+              <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Certificate of Insurance</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm text-gray-700 dark:text-gray-300">
+                {gc.coi_carrier && (
+                  <p><span className="text-gray-500 dark:text-gray-400">Carrier:</span> {gc.coi_carrier}</p>
+                )}
+                {gc.coi_policy_number && (
+                  <p><span className="text-gray-500 dark:text-gray-400">Policy:</span> {gc.coi_policy_number}</p>
+                )}
+                {gc.coi_expiry_date && (
+                  <p><span className="text-gray-500 dark:text-gray-400">Expires:</span> {new Date(gc.coi_expiry_date).toLocaleDateString()}</p>
+                )}
+                {gc.coi_coverage_amount != null && (
+                  <p><span className="text-gray-500 dark:text-gray-400">Coverage:</span> ${gc.coi_coverage_amount.toLocaleString()}</p>
+                )}
+                {gc.workers_comp_expiry && (
+                  <p><span className="text-gray-500 dark:text-gray-400">Workers' Comp Exp:</span> {new Date(gc.workers_comp_expiry).toLocaleDateString()}</p>
+                )}
+                <div className="flex gap-3">
+                  {gc.coi_on_file && <Badge variant="success">COI on File</Badge>}
+                  {gc.bonded && <Badge variant="info">Bonded{gc.bond_amount ? ` ($${gc.bond_amount.toLocaleString()})` : ''}</Badge>}
+                </div>
+              </div>
             </div>
           )}
 
@@ -544,26 +629,64 @@ function ContactsTab({ gcId, canManage }: { gcId: number; canManage: boolean }) 
 // Jobs Tab — Linked jobs (read-only; linking is done from Job Detail)
 // ═════════════════════════════════════════════════════════════════
 
+const RELATIONSHIP_LABELS: Record<string, string> = {
+  they_are_gc: 'They hired us',
+  we_hired_them: 'We hired them',
+};
+const RELATIONSHIP_BADGE: Record<string, 'info' | 'warning'> = {
+  they_are_gc: 'info',
+  we_hired_them: 'warning',
+};
+
 function JobsTab({ gcId }: { gcId: number }) {
   const navigate = useNavigate();
 
-  // We reuse getJobGCs endpoint but need to query from GC perspective
-  // The contacts API has a function for this on the customer side, but for GCs
-  // we need to go through the GC detail which includes job_count.
-  // For now, show a message directing to the jobs module.
-  // TODO: Add a dedicated "get jobs for GC" endpoint if needed
+  const { data: links, isLoading } = useQuery({
+    queryKey: ['gc-jobs', gcId],
+    queryFn: () => getGCJobs(gcId),
+    staleTime: 15_000,
+  });
+
+  if (isLoading) return <PageSpinner label="Loading jobs..." />;
+
+  if (!links || links.length === 0) {
+    return (
+      <EmptyState
+        icon={<Briefcase size={48} />}
+        title="No linked jobs"
+        description="This contractor hasn't been linked to any jobs yet. Link contractors from the Job Detail page."
+      />
+    );
+  }
 
   return (
-    <EmptyState
-      icon={<Briefcase size={48} />}
-      title="Job Relationships"
-      description="Link this contractor to jobs from the Job Detail page. Use the 'People' tab on any job to add this contractor as a GC."
-      action={
-        <Button size="sm" variant="ghost" onClick={() => navigate('/jobs/active')}>
-          Go to Jobs
-        </Button>
-      }
-    />
+    <div className="space-y-2">
+      {links.map((link) => (
+        <Card key={link.id} noPadding>
+          <button
+            onClick={() => navigate(`/jobs/active/${link.job_id}`)}
+            className="w-full flex items-center gap-3 p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors rounded-lg"
+          >
+            <Briefcase size={16} className="text-gray-400 dark:text-gray-500 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <span className="font-medium text-gray-900 dark:text-gray-100">{link.job_name}</span>
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                <Badge variant={RELATIONSHIP_BADGE[link.relationship] ?? 'default'}>
+                  {RELATIONSHIP_LABELS[link.relationship] ?? link.relationship}
+                </Badge>
+                <Badge variant="neutral">{link.job_status.replace(/_/g, ' ')}</Badge>
+                {link.is_primary && <Badge variant="primary">Primary</Badge>}
+                {link.contract_number && (
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    Contract: {link.contract_number}
+                  </span>
+                )}
+              </div>
+            </div>
+          </button>
+        </Card>
+      ))}
+    </div>
   );
 }
 
@@ -610,7 +733,7 @@ function ContactFormModal({
   };
 
   return (
-    <Modal title={title} onClose={onClose}>
+    <Modal isOpen title={title} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
           <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm">

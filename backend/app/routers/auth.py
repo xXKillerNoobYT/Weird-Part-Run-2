@@ -19,12 +19,14 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.database import get_db
 from app.middleware.auth import require_user
 from app.models.auth import (
+    ChangePinRequest,
     DeviceLoginRequest,
     DeviceLoginResponse,
     HatSummary,
     PinLoginRequest,
     PinTokenResponse,
     TokenResponse,
+    UpdateProfileRequest,
     UserPickerItem,
     UserProfile,
     VerifyPinRequest,
@@ -279,3 +281,79 @@ async def verify_pin_for_action(
         ),
         message="PIN verified. Token valid for sensitive actions.",
     )
+
+
+@router.patch("/me", response_model=ApiResponse[UserProfile])
+async def update_own_profile(
+    req: UpdateProfileRequest,
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update the current user's own profile (contact info only).
+
+    Users can edit their own display name, email, phone, and emergency contacts.
+    They cannot change their hats, permissions, or active status.
+    """
+    user_repo = UserRepo(db)
+    updates: dict = {}
+    for field in ("display_name", "email", "phone", "emergency_contact_name", "emergency_contact_phone"):
+        value = getattr(req, field, None)
+        if value is not None:
+            updates[field] = value
+
+    if updates:
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        await db.execute(
+            f"UPDATE users SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (*updates.values(), user["id"]),
+        )
+        await db.commit()
+
+    # Return updated profile
+    updated_user = await user_repo.get_by_id_with_hats(user["id"])
+    return ApiResponse(
+        data=UserProfile(
+            id=updated_user["id"],
+            display_name=updated_user["display_name"],
+            email=updated_user.get("email"),
+            phone=updated_user.get("phone"),
+            avatar_url=updated_user.get("avatar_url"),
+            certification=updated_user.get("certification"),
+            hire_date=updated_user.get("hire_date"),
+            is_active=bool(updated_user.get("is_active", True)),
+            hats=[
+                HatSummary(id=h["id"], name=h["name"], level=h["level"])
+                for h in updated_user.get("hats", [])
+            ],
+            permissions=updated_user.get("permissions", []),
+            created_at=updated_user.get("created_at"),
+        ),
+        message="Profile updated.",
+    )
+
+
+@router.post("/change-pin", response_model=ApiResponse)
+async def change_own_pin(
+    req: ChangePinRequest,
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Change the current user's own PIN.
+
+    Requires the current PIN for security — prevents someone with a
+    stolen session from locking out the real user.
+    """
+    user_repo = UserRepo(db)
+    pin_hash = await user_repo.get_pin_hash(user["id"])
+
+    if not pin_hash or not verify_pin(req.current_pin, pin_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Current PIN is incorrect",
+        )
+
+    new_hash = hash_pin(req.new_pin)
+    await user_repo.update_pin_hash(user["id"], new_hash)
+
+    logger.info("PIN changed for user %s (id=%d)", user["display_name"], user["id"])
+    return ApiResponse(message="PIN changed successfully.")

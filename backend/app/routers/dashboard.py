@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from app.database import get_db
@@ -68,18 +68,6 @@ async def get_dashboard(user: dict = Depends(require_user), db=Depends(get_db)):
         "SELECT COUNT(*) FROM purchase_orders WHERE status = 'pending'"
     )
     # Low stock = warehouse qty fell below part's min_stock_level
-    low_stock = await _count("""
-        SELECT COUNT(DISTINCT p.id)
-        FROM parts p
-        JOIN stock s ON s.part_id = p.id AND s.location_type = 'warehouse'
-        WHERE p.is_active = 1
-          AND p.min_stock_level > 0
-        GROUP BY p.id
-        HAVING SUM(s.qty) < p.min_stock_level
-    """)
-    # The GROUP BY / HAVING returns rows for each low-stock part.
-    # We actually want the total count of those rows.
-    # Rewrite as sub-query:
     low_stock = await _count("""
         SELECT COUNT(*) FROM (
             SELECT p.id
@@ -326,7 +314,7 @@ async def start_drive(
 
 @router.get("/cert-alerts")
 async def get_cert_alerts(
-    days: int = 60,
+    days: int = Query(60, ge=1, le=365, description="Look-ahead window in days"),
     user: dict = Depends(require_permission("view_people")),
     db=Depends(get_db),
 ):
@@ -338,3 +326,66 @@ async def get_cert_alerts(
     svc = PeopleService(db)
     alerts = await svc.get_cert_alerts(days=days)
     return ApiResponse(data=alerts, message=f"{len(alerts)} cert alerts")
+
+
+# ═════════════════════════════════════════════════════════════════
+# VEHICLE EXPIRY ALERTS
+# ═════════════════════════════════════════════════════════════════
+
+
+@router.get("/vehicle-alerts")
+async def get_vehicle_expiry_alerts(
+    days: int = Query(60, ge=1, le=365, description="Look-ahead window in days"),
+    user: dict = Depends(require_user),
+    db=Depends(get_db),
+):
+    """Get vehicles with insurance or registration expiring within the look-ahead window.
+
+    Returns list of { vehicle_id, vehicle_name, vehicle_number, alert_type,
+    expiry_date, days_until_expiry }. Used by the dashboard vehicle alert card.
+    """
+    cursor = await db.execute(
+        """SELECT id, vehicle_name, vehicle_number,
+                  insurance_expiry, registration_expiry
+           FROM vehicles
+           WHERE is_active = 1
+             AND (
+               (insurance_expiry IS NOT NULL
+                AND insurance_expiry <= date('now', '+' || ? || ' days')
+                AND insurance_expiry >= date('now', '-30 days'))
+               OR
+               (registration_expiry IS NOT NULL
+                AND registration_expiry <= date('now', '+' || ? || ' days')
+                AND registration_expiry >= date('now', '-30 days'))
+             )
+           ORDER BY COALESCE(insurance_expiry, registration_expiry) ASC""",
+        (days, days),
+    )
+    rows = await cursor.fetchall()
+
+    alerts = []
+    from datetime import date as dt_date
+    today = dt_date.today()
+
+    for v in rows:
+        for alert_type, field in [("insurance", "insurance_expiry"), ("registration", "registration_expiry")]:
+            expiry = v[field]
+            if not expiry:
+                continue
+            try:
+                exp_date = dt_date.fromisoformat(expiry)
+            except (ValueError, TypeError):
+                continue
+            days_until = (exp_date - today).days
+            if days_until <= days and days_until >= -30:
+                alerts.append({
+                    "vehicle_id": v["id"],
+                    "vehicle_name": v["vehicle_name"],
+                    "vehicle_number": v["vehicle_number"],
+                    "alert_type": alert_type,
+                    "expiry_date": expiry,
+                    "days_until_expiry": days_until,
+                })
+
+    alerts.sort(key=lambda a: a["days_until_expiry"])
+    return ApiResponse(data=alerts, message=f"{len(alerts)} vehicle expiry alerts")

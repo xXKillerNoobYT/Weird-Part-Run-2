@@ -29,6 +29,9 @@ import type {
   JobCustomerCreate,
   JobGCResponse,
   JobGCCreate,
+  // Reverse job links (entity → jobs)
+  CustomerJobLink,
+  GCJobLink,
 } from '../lib/types';
 
 
@@ -132,6 +135,16 @@ export async function addCustomerContact(
   return data.data!;
 }
 
+/** Get all jobs linked to a customer (reverse lookup) */
+export async function getCustomerJobs(
+  customerId: number,
+): Promise<CustomerJobLink[]> {
+  const { data } = await apiClient.get<ApiResponse<CustomerJobLink[]>>(
+    `/contacts/customers/${customerId}/jobs`,
+  );
+  return data.data!;
+}
+
 
 // =================================================================
 // GENERAL CONTRACTORS
@@ -229,6 +242,16 @@ export async function addGCContact(
   const { data } = await apiClient.post<ApiResponse<{ id: number }>>(
     `/contacts/general-contractors/${gcId}/contacts`,
     contact,
+  );
+  return data.data!;
+}
+
+/** Get all jobs linked to a GC (reverse lookup) */
+export async function getGCJobs(
+  gcId: number,
+): Promise<GCJobLink[]> {
+  const { data } = await apiClient.get<ApiResponse<GCJobLink[]>>(
+    `/contacts/general-contractors/${gcId}/jobs`,
   );
   return data.data!;
 }

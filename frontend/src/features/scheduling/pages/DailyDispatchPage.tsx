@@ -404,7 +404,7 @@ function DispatchModal({
   }
 
   return (
-    <Modal open onClose={onClose} title="Dispatch Employee">
+    <Modal isOpen onClose={onClose} title="Dispatch Employee">
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Employee info */}
         <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">

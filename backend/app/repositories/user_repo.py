@@ -346,7 +346,11 @@ class UserRepo(BaseRepo):
         permission_key: str,
         granted_by: int,
     ) -> int:
-        """Grant a job-level permission elevation. Returns the new row ID."""
+        """Grant a job-level permission elevation. Returns the row ID.
+
+        Uses INSERT OR IGNORE so duplicates are silently skipped.
+        If the elevation already exists, returns the existing row ID.
+        """
         cursor = await self.db.execute(
             """INSERT OR IGNORE INTO job_lead_elevations
                (user_id, job_id, permission_key, granted_by)
@@ -354,7 +358,18 @@ class UserRepo(BaseRepo):
             (user_id, job_id, permission_key, granted_by),
         )
         await self.db.commit()
-        return cursor.lastrowid  # type: ignore[return-value]
+
+        if cursor.lastrowid:
+            return cursor.lastrowid  # type: ignore[return-value]
+
+        # Already existed — fetch the existing row ID
+        cursor = await self.db.execute(
+            """SELECT id FROM job_lead_elevations
+               WHERE user_id = ? AND job_id = ? AND permission_key = ?""",
+            (user_id, job_id, permission_key),
+        )
+        row = await cursor.fetchone()
+        return row["id"] if row else 0
 
     async def revoke_elevation(self, elevation_id: int) -> bool:
         """Revoke a single elevation by ID."""

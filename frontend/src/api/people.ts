@@ -36,6 +36,9 @@ import type {
   HatUpdate,
   // Permissions
   PermissionMatrixData,
+  // Elevations
+  JobLeadElevationResponse,
+  JobLeadElevationCreate,
 } from '../lib/types';
 
 
@@ -340,4 +343,52 @@ export async function getPermissionKeys(): Promise<string[]> {
     '/people/permissions/keys',
   );
   return data.data ?? [];
+}
+
+
+// =================================================================
+// JOB LEAD ELEVATIONS
+// =================================================================
+
+/** Get all job-lead elevations for an employee */
+export async function getUserElevations(
+  userId: number,
+): Promise<JobLeadElevationResponse[]> {
+  const { data } = await apiClient.get<ApiResponse<JobLeadElevationResponse[]>>(
+    `/people/employees/${userId}/elevations`,
+  );
+  return data.data!;
+}
+
+/** Grant a job-specific permission elevation to an employee */
+export async function grantElevation(
+  userId: number,
+  elevation: JobLeadElevationCreate,
+): Promise<{ id: number }> {
+  const { data } = await apiClient.post<ApiResponse<{ id: number }>>(
+    `/people/employees/${userId}/elevations`,
+    elevation,
+  );
+  return data.data!;
+}
+
+/** Revoke a single job-lead elevation */
+export async function revokeElevation(
+  elevationId: number,
+): Promise<{ id: number }> {
+  const { data } = await apiClient.delete<ApiResponse<{ id: number }>>(
+    `/people/elevations/${elevationId}`,
+  );
+  return data.data!;
+}
+
+/** Revoke all elevations for an employee on a specific job */
+export async function revokeAllElevationsForJob(
+  userId: number,
+  jobId: number,
+): Promise<{ count: number }> {
+  const { data } = await apiClient.delete<ApiResponse<{ count: number }>>(
+    `/people/employees/${userId}/elevations/job/${jobId}`,
+  );
+  return data.data!;
 }

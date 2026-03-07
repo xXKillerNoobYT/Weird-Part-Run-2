@@ -509,44 +509,30 @@ async def get_locations(
          "label": "Staging Area", "sub_label": "Pulled items"},
     ]
 
-    # Add trucks (table may not exist yet — deferred to Phase 4+)
-    try:
-        cursor = await db.execute(
-            "SELECT id, name FROM trucks WHERE is_active = 1 ORDER BY name"
-        )
-        trucks = await cursor.fetchall()
-        for t in trucks:
-            locations.append({
-                "location_type": "truck",
-                "location_id": t["id"],
-                "label": f"Truck #{t['id']}",
-                "sub_label": t["name"],
-            })
-    except Exception:
-        # trucks table doesn't exist yet — provide a placeholder
+    # Add trucks
+    cursor = await db.execute(
+        "SELECT id, name FROM trucks WHERE is_active = 1 ORDER BY name"
+    )
+    trucks = await cursor.fetchall()
+    for t in trucks:
         locations.append({
-            "location_type": "truck", "location_id": 1,
-            "label": "Truck #1", "sub_label": "Default Truck",
+            "location_type": "truck",
+            "location_id": t["id"],
+            "label": f"Truck #{t['id']}",
+            "sub_label": t["name"],
         })
 
-    # Add active jobs (table may not exist yet — deferred to Phase 4+)
-    try:
-        cursor = await db.execute(
-            "SELECT id, name FROM jobs WHERE status = 'active' ORDER BY name"
-        )
-        jobs = await cursor.fetchall()
-        for j in jobs:
-            locations.append({
-                "location_type": "job",
-                "location_id": j["id"],
-                "label": f"Job #{j['id']}",
-                "sub_label": j["name"],
-            })
-    except Exception:
-        # jobs table doesn't exist yet — provide a placeholder
+    # Add active jobs
+    cursor = await db.execute(
+        "SELECT id, name FROM jobs WHERE status = 'active' ORDER BY name"
+    )
+    jobs = await cursor.fetchall()
+    for j in jobs:
         locations.append({
-            "location_type": "job", "location_id": 1,
-            "label": "Job #1", "sub_label": "Default Job",
+            "location_type": "job",
+            "location_id": j["id"],
+            "label": f"Job #{j['id']}",
+            "sub_label": j["name"],
         })
 
     return ApiResponse(data=locations)

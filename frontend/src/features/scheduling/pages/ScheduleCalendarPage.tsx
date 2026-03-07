@@ -164,7 +164,12 @@ export function ScheduleCalendarPage() {
   const [typeFilter, setTypeFilter] = useState<CalendarEntryType | 'all'>('all');
 
   const weekEnd = addDays(weekStart, 6);
-  const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+
+  // Memoize weekDates so the reference is stable (changes only when weekStart changes)
+  const weekDates = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
+    [weekStart],
+  );
 
   // ── Data ─────────────────────────────────────────────────────────
   const { data: calendar, isLoading } = useQuery({
@@ -195,7 +200,7 @@ export function ScheduleCalendarPage() {
   // ── Loading ──────────────────────────────────────────────────────
   if (isLoading) return <PageSpinner />;
 
-  const totalEntries = calendar?.entries.length ?? 0;
+  const totalEntries = calendar?.entries?.length ?? 0;
   const weekLabel = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 
   return (

@@ -298,18 +298,18 @@ class JobLeadElevationResponse(BaseModel):
     permission_key: str
     granted_by: int | None = None
     granted_by_name: str | None = None
-    created_at: datetime | None = None
+    granted_at: datetime | None = None
 
 
 # ── Cert Expiry Alerts ────────────────────────────────────────────
 
 class CertAlertItem(BaseModel):
-    """A certification nearing or past expiry, for dashboard alerts."""
+    """A certification nearing expiry, for dashboard alerts."""
     cert_id: int
     user_id: int
     user_name: str
     cert_name: str
     cert_type: str
     expiry_date: str
-    days_until_expiry: int  # negative = already expired
+    days_until_expiry: int  # 0 = expires today, positive = days remaining
     severity: str  # 'red' (<30 days), 'amber' (<60 days)

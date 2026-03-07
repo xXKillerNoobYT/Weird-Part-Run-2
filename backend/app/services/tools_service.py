@@ -505,6 +505,17 @@ class ToolsService:
             await self.maint_type_repo.update(type_id, patch)
         return dict(await self.maint_type_repo.get_by_id(type_id))
 
+    async def delete_maintenance_type(self, type_id: int) -> bool:
+        """Soft-delete a maintenance type (set is_active = 0).
+
+        Hard delete would violate FK constraints from schedules/records.
+        """
+        existing = await self.maint_type_repo.get_by_id(type_id)
+        if not existing:
+            return False
+        await self.maint_type_repo.update(type_id, {"is_active": 0})
+        return True
+
     # ═══════════════════════════════════════════════════════════════
     # PER-TOOL MAINTENANCE SCHEDULES
     # ═══════════════════════════════════════════════════════════════

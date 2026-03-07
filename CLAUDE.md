@@ -2,7 +2,7 @@
 
 > This file is mirrored across CLAUDE.md, copilot-instructions.md, AGENTS.md, and GEMINI.md so the same instructions load in any AI environment.
 
----
+--- MEMORY.md use this for project context and architectural patterns. Re-read at ~80% context usage to prevent drift.
 
 ## Working Style & Collaboration
 
@@ -144,11 +144,62 @@ Plans are living documents that build our project's institutional memory. Treat 
 
 **Current plan history:**
 
-- Phase 1–3: Foundation, Parts & Inventory, Warehouse (complete)
-- Phase 3.5 + 4: Jobs & Labor (complete)
-- Phase 4.5: Unified Notebook System (complete)
-- Phase 5: Orders & Procurement (complete)
-- Phase 6: Fleet & Vehicle Management (complete)
-- Phase 7A: Core Ordering Experience (complete)
-- Phase 8: People Full (complete)
-- Phase 9: Tools & Kits (complete)
+- Phase 1: Foundation — DB, auth, nav shell, theme system (complete)
+- Phase 2: Parts & Inventory Core — hierarchy CRUD, catalog, brands, suppliers, pricing, stock, forecasting, import/export (complete)
+- Phase 2.5: Parts Hierarchy UX — categories tree editor, type-color links, grouped card view (complete)
+- Phase 3: Warehouse & Movements — Guided Movement Wizard, dashboard, pulled staging, audit (complete)
+- Phase 3.5: Companions & Enhancements — companion rules, alternatives, QR scanner, bin locations (complete)
+- Phase 4: Jobs & Labor — job CRUD, clock in/out with GPS, questionnaire, daily reports, APScheduler (complete)
+- Phase 4.5: Unified Notebook System — job + general notebooks, todo stages, templates (complete)
+- Phase 5: Orders & Procurement — JPO→PO lifecycle, procurement planner, returns, price history (complete)
+- Phase 6: Fleet & Vehicle Management — vehicles, assignments, deliveries, maintenance, mileage, reimbursements (complete)
+- Phase 7A: Core Ordering Experience — unified order form, job preferences, special items (complete)
+- Phase 7B: Office Workflow — PO management, approvals, PDF bundles, Review & Send (complete)
+- Phase 7C: Warehouse Workflow — receiving sessions, return sorting (complete)
+- Phase 7D: Analytics & Visibility — cost tracking (FIFO/LIFO), spending dashboard, job cost rollup, budget alerts (complete)
+- Phase 7E: Quality of Life — notification sounds, QR enhancements, bulk actions (complete)
+- Phase 8: People Full — employees, certifications, wages, skills, hats, permissions (complete)
+- Phase 9: Tools & Kits — tool registry, kit verification, checkout/return, maintenance tracking (complete)
+- Phase 10: People, Contacts & Scheduling — customers, GCs, contacts, scheduling, dispatch, time-off, subcontractors (complete)
+
+**Upcoming / In Progress (new numbering as of 2026-03-07):**
+
+- Phase 7 Delta: People additions — PO naming convention, report filename naming (planned — see `docs/plans/phase-7-people-delta.md`)
+- Phase 8: Reports & Pre-Billing — pre-billing, timesheets, labor overview, profitability, period locking, bookkeeper exports (planned — see `docs/plans/phase-11-reports-prebilling.md`)
+- V1.0 Deployment — **offline-first architecture**: lean TypeScript data layer (~11 field-worker services) + Capacitor SQLite on every device, LAN sync engine, shop as truth anchor. ~30-35 days estimated. (planned — see `docs/plans/deployment-master-plan.md` + `docs/plans/sideloading-guide.md`)
+- Legacy Cleanup — remove superseded pages, clean up redirects (planned — see `docs/plans/legacy-cleanup-plan.md`)
+- Testing Strategy — expand test coverage from ~5% to critical paths (planned — see `docs/plans/testing-strategy.md`)
+- Feature Audits — full audit of all 13 feature areas in `docs/plans/Audit/` (in progress)
+
+**Architecture (V1.0):**
+
+Every device runs the full frontend with its own local database. Mobile gets a **lean field-worker backend** (~11 TS services), not a full mirror of the shop's 28 Python services:
+- **Shop computer:** Python FastAPI + SQLite (truth anchor + sync API + serves desktop browsers). Runs all 28 services.
+- **Mobile devices (Capacitor):** React frontend + lean TS data layer + `@capacitor-community/sqlite` — works fully offline. ~11 field-worker services (auth, jobs, labor, movement, orders, notebooks, tools, parts-read, fleet-read, scheduling-read). Admin features (cost tracking, approvals, PDF reports) stay shop-only.
+- **Desktop browsers:** Hit shop server directly over LAN (always at the shop)
+- **Sync:** Device ↔ Shop over HTTP on LAN. Change tracking via `_change_log` table. Last-writer-wins conflict resolution.
+- **API adapter pattern:** Frontend detects environment — Capacitor → local TS services, browser → HTTP API. Same React UI everywhere.
+
+**Future phases (planned — all have plan files):**
+
+- Phase 9: Chat & Q&A — per-job group chat, DMs, Q&A escalation chain, RFI bridge (see `docs/plans/phase-9-chat.md`)
+- Phase 10: PWA & Desktop — service worker, keyboard shortcuts, command palette, push notifications (see `docs/plans/phase-12-pwa-desktop.md`)
+- Phase 11: Sync & Bluetooth — BT mesh, gossip protocol, PGP encryption, device pairing, shop cluster (see `docs/plans/phase-13-sync-bluetooth.md`)
+- Phase 12: AI Integration — LM Studio local LLM, NL queries, anomaly detection, predictive ordering (see `docs/plans/phase-14-ai-integration.md`)
+- Phase 13: Remote Sync — ON HOLD — internet sync, shop↔shop, shared channels (see `docs/plans/phase-15-remote-sync.md`)
+- Bootstrap App — App Store shell that downloads real program from shop (see `docs/plans/Mobile device bootstrap.md`)
+
+**Codebase stats (as of 2026-03-07):**
+
+| Metric | Count |
+|--------|-------|
+| Backend routers | 17 (all mounted) |
+| API endpoints | ~440 |
+| Backend services | 28 |
+| Repositories | 19 + base |
+| Migrations | 30 |
+| Frontend feature files | ~166 |
+| Frontend routes | ~90 |
+| Functional pages | ~67 |
+| Stub pages | 2 (AiConfigPage, DeviceManagementPage — v2.0+) |
+| API client functions | ~300 |

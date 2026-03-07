@@ -83,10 +83,11 @@ export function TimeOffPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   // ── Pending requests ─────────────────────────────────────────────
+  // Always enabled so the "All" tab can combine pending + mine
   const { data: pending, isLoading: pendingLoading } = useQuery({
     queryKey: ['time-off', 'pending'],
     queryFn: () => getPendingTimeOff(),
-    enabled: activeTab === 'pending',
+    enabled: canApprove,
     staleTime: 15_000,
   });
 
@@ -94,7 +95,7 @@ export function TimeOffPage() {
   const { data: myRequests, isLoading: myLoading } = useQuery({
     queryKey: ['time-off', 'user', user?.id],
     queryFn: () => getUserTimeOff(user!.id),
-    enabled: activeTab === 'mine' && !!user?.id,
+    enabled: !!user?.id,
     staleTime: 30_000,
   });
 
@@ -387,7 +388,7 @@ function CreateTimeOffModal({
   }
 
   return (
-    <Modal open onClose={onClose} title="Request Time Off">
+    <Modal isOpen onClose={onClose} title="Request Time Off">
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Date */}
         <div>

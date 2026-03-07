@@ -102,7 +102,9 @@ export const MODULES: NavModule[] = [
     tabs: [
       { id: 'calendar', label: 'Calendar', path: '/scheduling/calendar' },
       { id: 'dispatch', label: 'Daily Dispatch', path: '/scheduling/dispatch', permission: 'dispatch_employees' },
+      { id: 'availability', label: 'Availability', path: '/scheduling/availability', permission: 'view_schedule' },
       { id: 'time-off', label: 'Time Off', path: '/scheduling/time-off' },
+      { id: 'templates', label: 'Templates', path: '/scheduling/templates', permission: 'dispatch_employees' },
       { id: 'schedules', label: 'Default Schedules', path: '/scheduling/schedules', permission: 'manage_schedule' },
       { id: 'subcontractors', label: 'Subcontractors', path: '/scheduling/subcontractors', permission: 'dispatch_employees' },
     ],
@@ -135,6 +137,7 @@ export const MODULES: NavModule[] = [
       { id: 'review-and-send', label: 'Review & Send', path: '/orders/review-and-send', permission: 'manage_orders', group: 'Office' },
       { id: 'purchase-orders', label: 'Purchase Orders', path: '/orders/purchase-orders', permission: 'manage_orders', group: 'Office' },
       { id: 'procurement', label: 'Procurement', path: '/orders/procurement', permission: 'manage_orders', group: 'Office' },
+      { id: 'return-analytics', label: 'Return Analytics', path: '/orders/return-analytics', permission: 'view_orders', group: 'Office' },
     ],
   },
   {
@@ -163,6 +166,7 @@ export const MODULES: NavModule[] = [
       { id: 'pre-billing', label: 'Pre-Billing', path: '/reports/pre-billing' },
       { id: 'timesheets', label: 'Timesheets', path: '/reports/timesheets' },
       { id: 'labor-overview', label: 'Labor Overview', path: '/reports/labor-overview' },
+      { id: 'profitability', label: 'Profitability', path: '/reports/profitability' },
       { id: 'exports', label: 'Exports', path: '/reports/exports', permission: 'export_reports' },
     ],
   },

@@ -124,4 +124,5 @@ toast.error = (message: string, options?: ToastOptions) => {
   showToast(message, 'error', options);
 };
 
+export { toast };
 export default toast;

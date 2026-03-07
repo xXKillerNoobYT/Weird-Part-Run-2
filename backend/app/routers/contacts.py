@@ -159,6 +159,18 @@ async def add_customer_contact(
     return ApiResponse(data={"id": contact_id}, message="Contact added")
 
 
+@router.get("/customers/{customer_id}/jobs")
+async def get_customer_jobs(
+    customer_id: int,
+    user: dict = Depends(require_permission("view_customers")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get all jobs linked to a customer (reverse of GET /jobs/{id}/customers)."""
+    svc = ContactsService(db)
+    jobs = await svc.get_customer_jobs(customer_id)
+    return ApiResponse(data=jobs, message=f"{len(jobs)} linked jobs")
+
+
 # ═════════════════════════════════════════════════════════════════
 # GENERAL CONTRACTORS
 # ═════════════════════════════════════════════════════════════════
@@ -284,6 +296,18 @@ async def add_gc_contact(
     svc = ContactsService(db)
     contact_id = await svc.add_entity_contact("general_contractor", gc_id, data)
     return ApiResponse(data={"id": contact_id}, message="Contact added")
+
+
+@router.get("/general-contractors/{gc_id}/jobs")
+async def get_gc_jobs(
+    gc_id: int,
+    user: dict = Depends(require_permission("view_contractors")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get all jobs linked to a GC (reverse of GET /jobs/{id}/general-contractors)."""
+    svc = ContactsService(db)
+    jobs = await svc.get_gc_jobs(gc_id)
+    return ApiResponse(data=jobs, message=f"{len(jobs)} linked jobs")
 
 
 # ═════════════════════════════════════════════════════════════════

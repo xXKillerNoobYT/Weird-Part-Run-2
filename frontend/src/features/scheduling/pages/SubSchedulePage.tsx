@@ -390,7 +390,7 @@ function CreateSubScheduleModal({
   }
 
   return (
-    <Modal open onClose={onClose} title="Schedule Subcontractor Visit">
+    <Modal isOpen onClose={onClose} title="Schedule Subcontractor Visit">
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* GC selector with search */}
         <div>
@@ -568,7 +568,7 @@ function EditSubScheduleModal({
   }
 
   return (
-    <Modal open onClose={onClose} title="Edit Visit">
+    <Modal isOpen onClose={onClose} title="Edit Visit">
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* GC info (read-only) */}
         <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-3">

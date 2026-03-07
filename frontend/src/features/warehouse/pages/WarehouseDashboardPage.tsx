@@ -19,7 +19,6 @@
  * The Trucks > Tools tab manages tools assigned per-truck.
  * The Jobs dashboard should show tools checked out to that job.
  * But the Warehouse Dashboard is the global view / tool admin center.
- * ── Stubbed for Phase 6 ──────────────────────────────────────
  */
 
 import { useQuery } from '@tanstack/react-query';

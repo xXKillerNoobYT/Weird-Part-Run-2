@@ -246,3 +246,109 @@ class CalendarData(BaseModel):
     date_from: str
     date_to: str
     entries: list[CalendarEntry] = Field(default_factory=list)
+
+
+# ── Dispatch Templates ──────────────────────────────────────────
+
+class DispatchTemplateMember(BaseModel):
+    """One crew member in a dispatch template."""
+    user_id: int
+    role_on_job: DISPATCH_ROLES = "worker"
+
+
+class DispatchTemplateCreate(BaseModel):
+    """Create a recurring dispatch template."""
+    name: str = Field(..., min_length=1, max_length=200)
+    job_id: int
+    shift_start: str | None = None
+    shift_end: str | None = None
+    role_on_job: DISPATCH_ROLES = "worker"
+    days_of_week: int = Field(62, ge=0, le=127)  # bitmask: bit0=Sun..bit6=Sat
+    members: list[DispatchTemplateMember] = Field(default_factory=list)
+    notes: str | None = None
+
+
+class DispatchTemplateUpdate(BaseModel):
+    """Partial update for a dispatch template."""
+    name: str | None = None
+    job_id: int | None = None
+    shift_start: str | None = None
+    shift_end: str | None = None
+    role_on_job: DISPATCH_ROLES | None = None
+    days_of_week: int | None = Field(default=None, ge=0, le=127)
+    members: list[DispatchTemplateMember] | None = None
+    notes: str | None = None
+
+
+class DispatchTemplateResponse(BaseModel):
+    """Dispatch template returned from the API."""
+    id: int
+    name: str
+    job_id: int
+    job_name: str | None = None
+    shift_start: str | None = None
+    shift_end: str | None = None
+    role_on_job: str = "worker"
+    days_of_week: int = 62
+    days_labels: list[str] = Field(default_factory=list)  # e.g. ["Mon","Tue",...]
+    members: list[DispatchTemplateMemberResponse] = Field(default_factory=list)
+    notes: str | None = None
+    is_active: bool = True
+    created_at: datetime | None = None
+
+
+class DispatchTemplateMemberResponse(BaseModel):
+    """Template member with user name."""
+    user_id: int
+    user_name: str | None = None
+    role_on_job: str = "worker"
+
+
+class DispatchTemplateApply(BaseModel):
+    """Apply a template to generate dispatches for a date range."""
+    date_from: str = Field(..., min_length=10, max_length=10)
+    date_to: str = Field(..., min_length=10, max_length=10)
+    skip_conflicts: bool = False  # if True, skip dates with conflicts
+
+
+# ── Shift Patterns ───────────────────────────────────────────────
+
+class ShiftPatternDayCreate(BaseModel):
+    """One day in a shift pattern."""
+    day_of_week: int = Field(..., ge=0, le=6)
+    start_time: str = "07:00"
+    end_time: str = "15:30"
+    is_working_day: bool = True
+
+
+class ShiftPatternCreate(BaseModel):
+    """Create a named shift pattern."""
+    name: str = Field(..., min_length=1, max_length=100)
+    description: str | None = None
+    days: list[ShiftPatternDayCreate] = Field(..., min_length=7, max_length=7)
+
+
+class ShiftPatternUpdate(BaseModel):
+    """Partial update for a shift pattern."""
+    name: str | None = None
+    description: str | None = None
+    days: list[ShiftPatternDayCreate] | None = None
+
+
+class ShiftPatternDayResponse(BaseModel):
+    """One day in a shift pattern response."""
+    id: int
+    day_of_week: int
+    start_time: str
+    end_time: str
+    is_working_day: bool
+
+
+class ShiftPatternResponse(BaseModel):
+    """Named shift pattern returned from the API."""
+    id: int
+    name: str
+    description: str | None = None
+    is_active: bool = True
+    days: list[ShiftPatternDayResponse] = Field(default_factory=list)
+    created_at: datetime | None = None

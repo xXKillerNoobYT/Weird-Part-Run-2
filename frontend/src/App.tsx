@@ -76,11 +76,11 @@ import { WarehouseLocationsPage } from './features/office/pages/WarehouseLocatio
 // Pages — Orders
 import { PartsRequestsPage } from './features/orders/pages/PartsRequestsPage';
 import { UnifiedOrderPage } from './features/orders/pages/UnifiedOrderPage';
-import { PurchaseOrdersPage } from './features/orders/pages/PurchaseOrdersPage';
 import { NewPurchaseOrderPage } from './features/orders/pages/NewPurchaseOrderPage';
 import { ReceiveShipmentPage } from './features/orders/pages/ReceiveShipmentPage';
 import { ReturnsPage } from './features/orders/pages/ReturnsPage';
 import { ProcurementPage } from './features/orders/pages/ProcurementPage';
+import { ReturnAnalyticsPage } from './features/orders/pages/ReturnAnalyticsPage';
 import { JPODetailPage } from './features/orders/pages/JPODetailPage';
 import { PODetailPage } from './features/orders/pages/PODetailPage';
 import { NewReturnPage } from './features/orders/pages/NewReturnPage';
@@ -104,7 +104,9 @@ import { ContactDirectoryPage } from './features/people/pages/ContactDirectoryPa
 // Pages — Scheduling
 import { ScheduleCalendarPage } from './features/scheduling/pages/ScheduleCalendarPage';
 import { DailyDispatchPage } from './features/scheduling/pages/DailyDispatchPage';
+import { WeeklyAvailabilityPage } from './features/scheduling/pages/WeeklyAvailabilityPage';
 import { TimeOffPage } from './features/scheduling/pages/TimeOffPage';
+import { DispatchTemplatesPage } from './features/scheduling/pages/DispatchTemplatesPage';
 import { ScheduleConfigPage } from './features/scheduling/pages/ScheduleConfigPage';
 import { SubSchedulePage } from './features/scheduling/pages/SubSchedulePage';
 
@@ -113,6 +115,7 @@ import { PreBillingPage } from './features/reports/pages/PreBillingPage';
 import { TimesheetsPage } from './features/reports/pages/TimesheetsPage';
 import { LaborOverviewPage } from './features/reports/pages/LaborOverviewPage';
 import { ExportsPage } from './features/reports/pages/ExportsPage';
+import { ProfitabilityPage } from './features/reports/pages/ProfitabilityPage';
 
 // Pages — Tools (cross-module)
 import { ToolScanRedirect } from './features/tools/components/ToolScanRedirect';
@@ -218,27 +221,23 @@ export default function App() {
               <Route path="/orders/approvals" element={<ApprovalsTab />} />
               <Route path="/orders/all-requests" element={<PartsRequestsPage />} />
               <Route path="/orders/purchase-orders" element={<POManagementTab />} />
-              <Route path="/orders/purchase-orders-legacy" element={<PurchaseOrdersPage />} />
               <Route path="/orders/purchase-orders/new" element={<NewPurchaseOrderPage />} />
               <Route path="/orders/purchase-orders/receive" element={<ReceiveShipmentPage />} />
               <Route path="/orders/review-and-send" element={<ReviewAndSendPage />} />
               <Route path="/orders/procurement" element={<ProcurementPage />} />
+              <Route path="/orders/return-analytics" element={<ReturnAnalyticsPage />} />
               {/* Detail pages (shared between field + office) */}
               <Route path="/orders/parts-requests/:id" element={<JPODetailPage />} />
               <Route path="/orders/pos/:id" element={<PODetailPage />} />
               <Route path="/orders/parts-requests/:id/generate-pos" element={<GeneratePOsPage />} />
-              {/* Legacy redirects */}
-              <Route path="/orders/parts-requests" element={<Navigate to="/orders/my-orders" replace />} />
-              <Route path="/orders/parts-requests/new" element={<Navigate to="/orders/new-order" replace />} />
-              <Route path="/orders/drafts" element={<Navigate to="/orders/purchase-orders" replace />} />
-              <Route path="/orders/active" element={<Navigate to="/orders/purchase-orders" replace />} />
-              <Route path="/orders/incoming" element={<Navigate to="/orders/purchase-orders" replace />} />
 
               {/* Scheduling */}
               <Route path="/scheduling" element={<Navigate to="/scheduling/calendar" replace />} />
               <Route path="/scheduling/calendar" element={<ScheduleCalendarPage />} />
               <Route path="/scheduling/dispatch" element={<DailyDispatchPage />} />
+              <Route path="/scheduling/availability" element={<WeeklyAvailabilityPage />} />
               <Route path="/scheduling/time-off" element={<TimeOffPage />} />
+              <Route path="/scheduling/templates" element={<DispatchTemplatesPage />} />
               <Route path="/scheduling/schedules" element={<ScheduleConfigPage />} />
               <Route path="/scheduling/subcontractors" element={<SubSchedulePage />} />
 
@@ -261,6 +260,7 @@ export default function App() {
               <Route path="/reports/pre-billing" element={<PreBillingPage />} />
               <Route path="/reports/timesheets" element={<TimesheetsPage />} />
               <Route path="/reports/labor-overview" element={<LaborOverviewPage />} />
+              <Route path="/reports/profitability" element={<ProfitabilityPage />} />
               <Route path="/reports/exports" element={<ExportsPage />} />
 
               {/* Settings */}

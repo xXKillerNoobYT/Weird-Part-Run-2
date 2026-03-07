@@ -81,6 +81,7 @@ from app.repositories.orders_repo import (
     JPORepo,
     OrderStatusHistoryRepo,
     POLineRepo,
+    PriceHistoryRepo,
     PurchaseOrderRepo,
     ReturnLineRepo,
     ReturnRepo,
@@ -1663,6 +1664,107 @@ async def check_below_target(
     return ApiResponse(data=result)
 
 
+@router.get("/returns/analytics", response_model=ApiResponse)
+async def return_analytics(
+    start_date: str | None = Query(None, description="Period start (YYYY-MM-DD)"),
+    end_date: str | None = Query(None, description="Period end (YYYY-MM-DD)"),
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Return reason analytics — breakdowns by reason, type, condition, disposition."""
+    date_filter = ""
+    params: list = []
+    if start_date:
+        date_filter += " AND r.created_at >= ?"
+        params.append(start_date)
+    if end_date:
+        date_filter += " AND r.created_at <= ?"
+        params.append(end_date + " 23:59:59")
+
+    # By reason
+    cursor = await db.execute(
+        f"""SELECT r.reason, COUNT(*) AS count, SUM(rli.qty) AS total_qty
+            FROM returns r
+            JOIN return_line_items rli ON rli.return_id = r.id
+            WHERE 1=1 {date_filter}
+            GROUP BY r.reason ORDER BY count DESC""",
+        params,
+    )
+    by_reason = [dict(row) for row in await cursor.fetchall()]
+
+    # By return type
+    cursor = await db.execute(
+        f"""SELECT r.return_type, COUNT(DISTINCT r.id) AS return_count,
+                   SUM(rli.qty) AS total_qty
+            FROM returns r
+            JOIN return_line_items rli ON rli.return_id = r.id
+            WHERE 1=1 {date_filter}
+            GROUP BY r.return_type""",
+        params,
+    )
+    by_type = [dict(row) for row in await cursor.fetchall()]
+
+    # By line item condition
+    cursor = await db.execute(
+        f"""SELECT rli.condition, COUNT(*) AS count, SUM(rli.qty) AS total_qty
+            FROM return_line_items rli
+            JOIN returns r ON r.id = rli.return_id
+            WHERE 1=1 {date_filter}
+            GROUP BY rli.condition ORDER BY count DESC""",
+        params,
+    )
+    by_condition = [dict(row) for row in await cursor.fetchall()]
+
+    # By disposition
+    cursor = await db.execute(
+        f"""SELECT rli.disposition, COUNT(*) AS count, SUM(rli.qty) AS total_qty,
+                   SUM(rli.qty * COALESCE(rli.unit_cost, 0)) AS total_cost
+            FROM return_line_items rli
+            JOIN returns r ON r.id = rli.return_id
+            WHERE 1=1 {date_filter}
+            GROUP BY rli.disposition ORDER BY total_cost DESC""",
+        params,
+    )
+    by_disposition = [dict(row) for row in await cursor.fetchall()]
+
+    # Top returned parts
+    cursor = await db.execute(
+        f"""SELECT rli.part_id, p.part_name, p.part_code,
+                   SUM(rli.qty) AS total_qty, COUNT(*) AS return_count
+            FROM return_line_items rli
+            JOIN returns r ON r.id = rli.return_id
+            JOIN parts p ON p.id = rli.part_id
+            WHERE 1=1 {date_filter}
+            GROUP BY rli.part_id ORDER BY total_qty DESC LIMIT 20""",
+        params,
+    )
+    top_parts = [dict(row) for row in await cursor.fetchall()]
+
+    # Totals
+    cursor = await db.execute(
+        f"""SELECT COUNT(DISTINCT r.id) AS total_returns,
+                   SUM(rli.qty) AS total_items,
+                   SUM(rli.qty * COALESCE(rli.unit_cost, 0)) AS total_cost
+            FROM returns r
+            JOIN return_line_items rli ON rli.return_id = r.id
+            WHERE 1=1 {date_filter}""",
+        params,
+    )
+    totals_row = await cursor.fetchone()
+    totals = dict(totals_row) if totals_row else {
+        "total_returns": 0, "total_items": 0, "total_cost": 0,
+    }
+
+    return ApiResponse(data={
+        "totals": totals,
+        "by_reason": by_reason,
+        "by_type": by_type,
+        "by_condition": by_condition,
+        "by_disposition": by_disposition,
+        "top_parts": top_parts,
+    })
+
+
 # ═══════════════════════════════════════════════════════════════
 # Procurement Endpoints
 # ═══════════════════════════════════════════════════════════════
@@ -1846,3 +1948,42 @@ async def get_contact_ratings(
     avg = await repo.get_avg_score(supplier_id)
 
     return ApiResponse(data={"ratings": ratings, "avg_score": avg})
+
+
+# ═══════════════════════════════════════════════════════════════
+# PRICE HISTORY
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/price-history/{part_id}/{supplier_id}", response_model=ApiResponse)
+async def get_price_history(
+    part_id: int,
+    supplier_id: int,
+    limit: int = Query(20, le=100),
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get price history for a part+supplier combo, ordered newest first."""
+    repo = PriceHistoryRepo(db)
+    history = await repo.get_for_part_supplier(part_id, supplier_id, limit)
+    latest = await repo.get_latest_price(part_id, supplier_id)
+
+    # Compute variance vs previous entry
+    variance = None
+    if len(history) >= 2:
+        current = history[0]["price"]
+        previous = history[1]["price"]
+        if previous > 0:
+            variance = {
+                "current": current,
+                "previous": previous,
+                "change": round(current - previous, 2),
+                "pct": round(((current - previous) / previous) * 100, 1),
+            }
+
+    return ApiResponse(
+        data={
+            "history": history,
+            "latest_price": latest,
+            "variance": variance,
+        }
+    )

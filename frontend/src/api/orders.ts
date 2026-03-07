@@ -872,6 +872,32 @@ export async function checkBelowTarget(
 
 
 // =================================================================
+// RETURN ANALYTICS
+// =================================================================
+
+export interface ReturnAnalytics {
+  totals: { total_returns: number; total_items: number; total_cost: number };
+  by_reason: { reason: string; count: number; total_qty: number }[];
+  by_type: { return_type: string; return_count: number; total_qty: number }[];
+  by_condition: { condition: string; count: number; total_qty: number }[];
+  by_disposition: { disposition: string; count: number; total_qty: number; total_cost: number }[];
+  top_parts: { part_id: number; part_name: string; part_code: string; total_qty: number; return_count: number }[];
+}
+
+/** Get return reason analytics for a period */
+export async function getReturnAnalytics(params?: {
+  start_date?: string;
+  end_date?: string;
+}): Promise<ReturnAnalytics> {
+  const { data } = await apiClient.get<ApiResponse<ReturnAnalytics>>(
+    '/orders/returns/analytics',
+    { params },
+  );
+  return data.data!;
+}
+
+
+// =================================================================
 // BULK ACTIONS (Phase 7E)
 // =================================================================
 
@@ -906,4 +932,48 @@ export async function bulkApproveReturns(
     body
   );
   return data.data ?? [];
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// PRICE HISTORY
+// ═══════════════════════════════════════════════════════════════
+
+export interface PriceVariance {
+  current: number;
+  previous: number;
+  change: number;
+  pct: number;
+}
+
+export interface PriceHistoryEntry {
+  id: number;
+  part_id: number;
+  supplier_id: number;
+  price: number;
+  effective_date: string;
+  source: string;
+  reference_id: number | null;
+  notes: string | null;
+  supplier_name: string;
+  part_number: string;
+}
+
+export interface PriceHistoryResponse {
+  history: PriceHistoryEntry[];
+  latest_price: number | null;
+  variance: PriceVariance | null;
+}
+
+/** Get price history for a part+supplier combo */
+export async function getPriceHistory(
+  partId: number,
+  supplierId: number,
+  limit: number = 20,
+): Promise<PriceHistoryResponse> {
+  const { data } = await apiClient.get<ApiResponse<PriceHistoryResponse>>(
+    `/orders/price-history/${partId}/${supplierId}`,
+    { params: { limit } },
+  );
+  return data.data!;
 }

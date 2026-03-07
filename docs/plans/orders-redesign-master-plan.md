@@ -47,8 +47,8 @@ The current Orders system works but is **fragmented and confusing**. Key pain po
 | **7A** | Core Ordering Experience | Unified order form, job memory, special items | New order form, job_preferences table, smart suggestions | ✅ Complete |
 | **7B** | Office Workflow | PO management, approvals, PDF bundles | Office tabs, conversation threads, grouped PDFs | ✅ Complete |
 | **7C** | Warehouse Workflow | Enhanced receiving, returns streamlining | Packing slip mode, return sorting guidance, staging | ✅ Complete |
-| **7D** | Analytics & Visibility | Cost tracking, procurement, dashboard/reports | Weighted avg cost, margin management, daily report | 📋 Planned |
-| **7E** | Quality of Life | Notifications, QR enhancements, bulk actions, help | Sound alerts, image requirements, bulk ops, help tooltips | 📋 Planned |
+| **7D** | Analytics & Visibility | Cost tracking, procurement, dashboard/reports | Weighted avg cost, margin management, daily report | ✅ Complete |
+| **7E** | Quality of Life | Notifications, QR enhancements, bulk actions, help | Sound alerts, image requirements, bulk ops, help tooltips | ✅ Complete |
 
 > **Note:** Using Phase 7 numbering since Phase 6 (Fleet) is complete.
 
@@ -882,11 +882,10 @@ These are the next areas to plan after all Orders redesign phases are complete:
 | **7A** | **Core Ordering Experience** | ✅ Complete | Unified form, job memory, special items |
 | **7B** | **Office Workflow** | ✅ Complete | PO management, approvals, PDF bundles |
 | **7C** | **Warehouse Workflow** | ✅ Complete | Receiving, returns streamlining |
-| **7D** | **Analytics & Visibility** | Planned | Cost tracking, margins, dashboard |
-| **7E** | **Quality of Life** | Planned | Notifications, QR, bulk actions, cleanup |
-| 8 | Tools & Equipment | Future | Tool tracking, checkout, maintenance |
-| 9 | Server-Free Syncing | Future | P2P sync, conflict resolution, LAN discovery |
-| 10 | Reporting & BI | Future | Reports, exports, analytics |
-| 11 | Customer Management | Future | Customers, quotes, invoices |
-| 12 | Advanced Integrations | Future | Email, accounting, supplier portal |
-| 13 | Mobile Enhancements | Future | PWA, offline mode, GPS |
+| **7D** | **Analytics & Visibility** | ✅ Complete | Cost tracking (FIFO/LIFO), margins, spending dashboard, job cost rollup |
+| **7E** | **Quality of Life** | ✅ Complete | Notification sounds, QR enhancements, bulk actions |
+| 8 | People Full | ✅ Complete | Employees, certifications, wages, skills, hats, permissions |
+| 9 | Tools & Kits | ✅ Complete | Tool registry, kit verification, checkout/return, maintenance |
+| 10 | People, Contacts & Scheduling | ✅ Complete | Customers, GCs, contacts, scheduling, dispatch, time-off, subcontractors |
+| 11 | Reports & Pre-Billing | Planned | Pre-billing exports, timesheets, labor overview, export bundles |
+| — | V1.0 Deployment | Planned | Shop server package, Capacitor mobile apps, production hardening |

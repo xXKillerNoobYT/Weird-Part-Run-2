@@ -9,7 +9,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Plus, BookOpen, FolderPlus } from 'lucide-react';
+import { ArrowLeft, Plus, BookOpen, FolderPlus, Archive } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import {
@@ -20,7 +20,10 @@ import {
   updateFieldValue,
   deleteEntry,
   createSection,
+  archiveNotebook,
+  reorderSections,
 } from '../../../api/notebooks';
+import { toast } from '../../../lib/toast';
 import { SectionPanel } from '../components/SectionPanel';
 import { CreateEntryModal } from '../components/CreateEntryModal';
 import { AddSectionModal } from '../components/AddSectionModal';
@@ -93,6 +96,22 @@ export function NotebookDetailPage() {
     onSuccess: () => { invalidate(); setShowAddSection(false); },
   });
 
+  const archiveMut = useMutation({
+    mutationFn: () => archiveNotebook(nbId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['notebooks'] });
+      toast.success('Notebook archived');
+      navigate(-1);
+    },
+    onError: () => toast.error('Failed to archive notebook'),
+  });
+
+  const reorderMut = useMutation({
+    mutationFn: (orderedIds: number[]) => reorderSections(nbId, orderedIds),
+    onSuccess: invalidate,
+    onError: () => toast.error('Failed to reorder sections'),
+  });
+
   // ── Handlers ────────────────────────────────────────────────────
   const handleAddEntry = (sectionId: number, type: 'note' | 'task') => {
     setShowCreateEntry({ sectionId, type });
@@ -114,6 +133,22 @@ export function NotebookDetailPage() {
 
   const handleFieldSave = (entryId: number, value: string) => {
     fieldValueMut.mutate({ entryId, value });
+  };
+
+  const handleArchive = () => {
+    if (window.confirm('Archive this notebook? It will be hidden from the list but can be restored later.')) {
+      archiveMut.mutate();
+    }
+  };
+
+  const handleSectionMove = (sectionId: number, direction: 'up' | 'down') => {
+    const ids = sections.map((s: SectionWithEntries) => s.id);
+    const idx = ids.indexOf(sectionId);
+    if (idx < 0) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= ids.length) return;
+    [ids[idx], ids[targetIdx]] = [ids[targetIdx], ids[idx]];
+    reorderMut.mutate(ids);
   };
 
   // ── Render ──────────────────────────────────────────────────────
@@ -151,13 +186,24 @@ export function NotebookDetailPage() {
             </p>
           )}
         </div>
-        <button
-          onClick={() => setShowAddSection(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-        >
-          <FolderPlus className="h-4 w-4" />
-          Add Section
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setShowAddSection(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+          >
+            <FolderPlus className="h-4 w-4" />
+            <span className="hidden sm:inline">Add Section</span>
+          </button>
+          <button
+            onClick={handleArchive}
+            disabled={archiveMut.isPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+            title="Archive notebook"
+          >
+            <Archive className="h-4 w-4" />
+            <span className="hidden sm:inline">Archive</span>
+          </button>
+        </div>
       </div>
 
       {/* Sections */}
@@ -169,7 +215,7 @@ export function NotebookDetailPage() {
         />
       ) : (
         <div className="space-y-3">
-          {sections.map((section: SectionWithEntries) => (
+          {sections.map((section: SectionWithEntries, idx: number) => (
             <SectionPanel
               key={section.id}
               section={section}
@@ -179,6 +225,8 @@ export function NotebookDetailPage() {
               onTaskStatusChange={handleTaskStatusChange}
               onAddEntry={handleAddEntry}
               savingFieldId={savingFieldId}
+              onMoveUp={idx > 0 ? () => handleSectionMove(section.id, 'up') : undefined}
+              onMoveDown={idx < sections.length - 1 ? () => handleSectionMove(section.id, 'down') : undefined}
             />
           ))}
         </div>

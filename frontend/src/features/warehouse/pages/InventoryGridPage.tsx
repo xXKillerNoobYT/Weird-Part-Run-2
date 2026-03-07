@@ -8,6 +8,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { Card } from '../../../components/ui/Card';
@@ -23,6 +24,7 @@ import { QRLabelModal } from '../components/inventory/QRLabelModal';
 import type { StockStatus, WarehouseInventoryItem } from '../../../lib/types';
 
 export function InventoryGridPage() {
+  const navigate = useNavigate();
   const { open: openWizard } = useMovementWizardStore();
 
   // ── Filter state ───────────────────────────────────────
@@ -89,8 +91,14 @@ export function InventoryGridPage() {
     });
   };
 
-  const handleSpotCheck = (_item: WarehouseInventoryItem) => {
-    // TODO: Navigate to audit page with spot-check for this part
+  const handleSpotCheck = (item: WarehouseInventoryItem) => {
+    navigate('/warehouse/audit', {
+      state: {
+        spotCheck: true,
+        partId: item.part_id,
+        partName: item.part_name,
+      },
+    });
   };
 
   if (isLoading && !data) {

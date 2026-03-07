@@ -34,6 +34,11 @@ GC_RELATIONSHIPS = Literal["they_are_gc", "we_hired_them"]
 
 # ── Customer ──────────────────────────────────────────────────────
 
+PAYMENT_TERMS = Literal[
+    "due_on_receipt", "net_15", "net_30", "net_45", "net_60", "custom",
+]
+
+
 class CustomerCreate(BaseModel):
     """Create a new customer."""
     company_name: str | None = None
@@ -48,6 +53,15 @@ class CustomerCreate(BaseModel):
     zip: str | None = None
     customer_type: CUSTOMER_TYPES = "residential"
     notes: str | None = None
+    # Billing
+    billing_address_line1: str | None = None
+    billing_address_line2: str | None = None
+    billing_city: str | None = None
+    billing_state: str | None = None
+    billing_zip: str | None = None
+    payment_terms: PAYMENT_TERMS = "net_30"
+    tax_id: str | None = None
+    billing_email: str | None = None
 
 
 class CustomerUpdate(BaseModel):
@@ -64,6 +78,15 @@ class CustomerUpdate(BaseModel):
     zip: str | None = None
     customer_type: CUSTOMER_TYPES | None = None
     notes: str | None = None
+    # Billing
+    billing_address_line1: str | None = None
+    billing_address_line2: str | None = None
+    billing_city: str | None = None
+    billing_state: str | None = None
+    billing_zip: str | None = None
+    payment_terms: PAYMENT_TERMS | None = None
+    tax_id: str | None = None
+    billing_email: str | None = None
 
 
 class CustomerResponse(BaseModel):
@@ -85,6 +108,15 @@ class CustomerResponse(BaseModel):
     is_active: bool = True
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    # Billing
+    billing_address_line1: str | None = None
+    billing_address_line2: str | None = None
+    billing_city: str | None = None
+    billing_state: str | None = None
+    billing_zip: str | None = None
+    payment_terms: str = "net_30"
+    tax_id: str | None = None
+    billing_email: str | None = None
 
     # Hydrated in detail endpoint
     contacts: list[EntityContactResponse] = Field(default_factory=list)
@@ -124,6 +156,15 @@ class GCCreate(BaseModel):
     zip: str | None = None
     insurance_info: str | None = None
     notes: str | None = None
+    # COI tracking
+    coi_carrier: str | None = None
+    coi_policy_number: str | None = None
+    coi_expiry_date: str | None = None
+    coi_coverage_amount: float | None = None
+    coi_on_file: bool = False
+    workers_comp_expiry: str | None = None
+    bonded: bool = False
+    bond_amount: float | None = None
 
 
 class GCUpdate(BaseModel):
@@ -142,6 +183,15 @@ class GCUpdate(BaseModel):
     zip: str | None = None
     insurance_info: str | None = None
     notes: str | None = None
+    # COI tracking
+    coi_carrier: str | None = None
+    coi_policy_number: str | None = None
+    coi_expiry_date: str | None = None
+    coi_coverage_amount: float | None = None
+    coi_on_file: bool | None = None
+    workers_comp_expiry: str | None = None
+    bonded: bool | None = None
+    bond_amount: float | None = None
 
 
 class GCResponse(BaseModel):
@@ -164,6 +214,15 @@ class GCResponse(BaseModel):
     is_active: bool = True
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    # COI tracking
+    coi_carrier: str | None = None
+    coi_policy_number: str | None = None
+    coi_expiry_date: str | None = None
+    coi_coverage_amount: float | None = None
+    coi_on_file: bool = False
+    workers_comp_expiry: str | None = None
+    bonded: bool = False
+    bond_amount: float | None = None
 
     # Hydrated in detail endpoint
     contacts: list[EntityContactResponse] = Field(default_factory=list)

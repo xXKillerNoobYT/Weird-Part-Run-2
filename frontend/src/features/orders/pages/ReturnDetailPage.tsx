@@ -33,11 +33,13 @@ import {
   approveReturn,
   updateReturnStatus,
   updateReturn,
+  getStatusHistory,
 } from '../../../api/orders';
 import type {
   ReturnResponse,
   ReturnLineResponse,
   ReturnStatus,
+  StatusHistoryEntry,
 } from '../../../lib/types';
 
 
@@ -106,10 +108,17 @@ export function ReturnDetailPage() {
     enabled: !isNaN(returnId),
   });
 
+  const { data: history = [] } = useQuery({
+    queryKey: ['status-history', 'return', returnId],
+    queryFn: () => getStatusHistory('return', returnId),
+    enabled: !isNaN(returnId),
+  });
+
   // ── Mutations ─────────────────────────────────────────────────
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['return-detail', returnId] });
     queryClient.invalidateQueries({ queryKey: ['returns'] });
+    queryClient.invalidateQueries({ queryKey: ['status-history', 'return', returnId] });
   };
 
   const submitMut = useMutation({
@@ -423,6 +432,35 @@ export function ReturnDetailPage() {
                 )}
                 {action.label}
               </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Status History Timeline */}
+      {history.length > 0 && (
+        <div className="rounded-lg border border-border bg-surface p-4">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+            Status History
+          </h2>
+          <div className="space-y-3">
+            {history.map((entry: StatusHistoryEntry) => (
+              <div key={entry.id} className="flex items-start gap-3">
+                <div className="mt-1.5 h-2 w-2 rounded-full bg-primary flex-shrink-0" />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="font-medium text-gray-900 dark:text-gray-100">
+                      {entry.from_status ? `${entry.from_status} → ${entry.to_status}` : entry.to_status}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    {entry.changer_name} · {new Date(entry.created_at).toLocaleString()}
+                  </p>
+                  {entry.notes && (
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{entry.notes}</p>
+                  )}
+                </div>
+              </div>
             ))}
           </div>
         </div>

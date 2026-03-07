@@ -250,4 +250,10 @@ class TestHealthCheck:
     async def test_root(self, client: AsyncClient):
         resp = await client.get("/")
         assert resp.status_code == 200
-        assert "docs" in resp.json()
+        # In production, / serves index.html (SPA). In API-only mode, returns JSON.
+        try:
+            data = resp.json()
+            assert "docs" in data or "app" in data
+        except Exception:
+            # SPA mode — returns HTML
+            assert "text/html" in resp.headers.get("content-type", "")

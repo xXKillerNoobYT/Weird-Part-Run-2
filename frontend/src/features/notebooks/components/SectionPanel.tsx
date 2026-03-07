@@ -9,7 +9,7 @@
  */
 
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Lock, Plus, FileText, ListTodo, Info } from 'lucide-react';
+import { ChevronDown, ChevronRight, Lock, Plus, FileText, ListTodo, Info, ArrowUp, ArrowDown } from 'lucide-react';
 import { InfoFieldRenderer } from './InfoFieldRenderer';
 import { NoteEntryCard } from './NoteEntryCard';
 import { TaskEntryCard } from './TaskEntryCard';
@@ -24,6 +24,8 @@ interface SectionPanelProps {
   onAddEntry?: (sectionId: number, type: 'note' | 'task') => void;
   /** Whether a field save is in progress (for InfoFieldRenderer spinner) */
   savingFieldId?: number | null;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }
 
 const SECTION_TYPE_ICONS = {
@@ -40,6 +42,8 @@ export function SectionPanel({
   onTaskStatusChange,
   onAddEntry,
   savingFieldId,
+  onMoveUp,
+  onMoveDown,
 }: SectionPanelProps) {
   const [expanded, setExpanded] = useState(true);
 
@@ -84,6 +88,28 @@ export function SectionPanel({
         <span className="text-[11px] text-gray-400 dark:text-gray-500">
           {activeEntries.length}
         </span>
+
+        {/* Reorder buttons */}
+        {(onMoveUp || onMoveDown) && (
+          <span className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={(e) => { e.stopPropagation(); onMoveUp?.(); }}
+              disabled={!onMoveUp}
+              className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Move section up"
+            >
+              <ArrowUp className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onMoveDown?.(); }}
+              disabled={!onMoveDown}
+              className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Move section down"
+            >
+              <ArrowDown className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
+            </button>
+          </span>
+        )}
       </button>
 
       {/* Section body */}

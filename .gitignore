@@ -58,3 +58,7 @@ coverage.xml
 
 # Logs
 *.log
+backend/logs/
+
+# Backups
+backups/

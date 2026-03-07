@@ -152,6 +152,20 @@ async def update_maintenance_type(
     return ApiResponse(data=result, message="Maintenance type updated")
 
 
+@router.delete("/maintenance-types/{type_id}")
+async def delete_maintenance_type(
+    type_id: int,
+    user: dict = Depends(require_permission("manage_tools")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Soft-delete a tool maintenance type (deactivate)."""
+    svc = ToolsService(db)
+    deleted = await svc.delete_maintenance_type(type_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Maintenance type not found")
+    return ApiResponse(data=None, message="Maintenance type deactivated")
+
+
 @router.get("/scan/{tool_number}")
 async def scan_tool(
     tool_number: str,

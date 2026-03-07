@@ -18,6 +18,7 @@ import { useAuthStore } from '../../stores/auth-store';
 import { useSidebarStore } from '../../stores/sidebar-store';
 import { useThemeStore } from '../../stores/theme-store';
 import { NotificationBell } from '../ui/NotificationBell';
+import { SyncStatusIndicator } from '../ui/SyncStatusIndicator';
 
 export function TopBar() {
   const location = useLocation();
@@ -60,6 +61,9 @@ export function TopBar() {
         >
           <ThemeIcon className="h-5 w-5" />
         </button>
+
+        {/* Sync status (Capacitor only) */}
+        <SyncStatusIndicator />
 
         {/* Notification bell */}
         <NotificationBell />

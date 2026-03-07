@@ -29,6 +29,17 @@ import type {
   SubScheduleUpdate,
   // Calendar
   CalendarData,
+  // Dispatch Templates
+  DispatchTemplateCreate,
+  DispatchTemplateUpdate,
+  DispatchTemplateResponse,
+  DispatchTemplateApply,
+  // Shift Patterns
+  ShiftPatternCreate,
+  ShiftPatternUpdate,
+  ShiftPatternResponse,
+  // Weekly Availability
+  EmployeeAvailability,
 } from '../lib/types';
 
 
@@ -335,6 +346,163 @@ export async function getCalendarData(
 ): Promise<CalendarData> {
   const { data } = await apiClient.get<ApiResponse<CalendarData>>(
     '/scheduling/calendar',
+    { params: { date_from: dateFrom, date_to: dateTo } },
+  );
+  return data.data!;
+}
+
+
+// =================================================================
+// DISPATCH TEMPLATES
+// =================================================================
+
+/** List all dispatch templates */
+export async function listDispatchTemplates(
+  activeOnly = true,
+): Promise<DispatchTemplateResponse[]> {
+  const { data } = await apiClient.get<ApiResponse<DispatchTemplateResponse[]>>(
+    '/scheduling/templates',
+    { params: { active_only: activeOnly } },
+  );
+  return data.data!;
+}
+
+/** Get a single dispatch template */
+export async function getDispatchTemplate(
+  templateId: number,
+): Promise<DispatchTemplateResponse> {
+  const { data } = await apiClient.get<ApiResponse<DispatchTemplateResponse>>(
+    `/scheduling/templates/${templateId}`,
+  );
+  return data.data!;
+}
+
+/** Create a dispatch template */
+export async function createDispatchTemplate(
+  template: DispatchTemplateCreate,
+): Promise<{ id: number }> {
+  const { data } = await apiClient.post<ApiResponse<{ id: number }>>(
+    '/scheduling/templates',
+    template,
+  );
+  return data.data!;
+}
+
+/** Update a dispatch template */
+export async function updateDispatchTemplate(
+  templateId: number,
+  updates: DispatchTemplateUpdate,
+): Promise<{ id: number }> {
+  const { data } = await apiClient.put<ApiResponse<{ id: number }>>(
+    `/scheduling/templates/${templateId}`,
+    updates,
+  );
+  return data.data!;
+}
+
+/** Delete a dispatch template */
+export async function deleteDispatchTemplate(
+  templateId: number,
+): Promise<{ id: number }> {
+  const { data } = await apiClient.delete<ApiResponse<{ id: number }>>(
+    `/scheduling/templates/${templateId}`,
+  );
+  return data.data!;
+}
+
+/** Apply a template to generate dispatches for a date range */
+export async function applyDispatchTemplate(
+  templateId: number,
+  apply: DispatchTemplateApply,
+): Promise<{ created: number; skipped: number; conflicts: ScheduleConflict[] }> {
+  const { data } = await apiClient.post<
+    ApiResponse<{ created: number; skipped: number; conflicts: ScheduleConflict[] }>
+  >(`/scheduling/templates/${templateId}/apply`, apply);
+  return data.data!;
+}
+
+
+// =================================================================
+// SHIFT PATTERNS
+// =================================================================
+
+/** List all shift patterns */
+export async function listShiftPatterns(
+  activeOnly = true,
+): Promise<ShiftPatternResponse[]> {
+  const { data } = await apiClient.get<ApiResponse<ShiftPatternResponse[]>>(
+    '/scheduling/shift-patterns',
+    { params: { active_only: activeOnly } },
+  );
+  return data.data!;
+}
+
+/** Get a single shift pattern */
+export async function getShiftPattern(
+  patternId: number,
+): Promise<ShiftPatternResponse> {
+  const { data } = await apiClient.get<ApiResponse<ShiftPatternResponse>>(
+    `/scheduling/shift-patterns/${patternId}`,
+  );
+  return data.data!;
+}
+
+/** Create a shift pattern */
+export async function createShiftPattern(
+  pattern: ShiftPatternCreate,
+): Promise<{ id: number }> {
+  const { data } = await apiClient.post<ApiResponse<{ id: number }>>(
+    '/scheduling/shift-patterns',
+    pattern,
+  );
+  return data.data!;
+}
+
+/** Update a shift pattern */
+export async function updateShiftPattern(
+  patternId: number,
+  updates: ShiftPatternUpdate,
+): Promise<{ id: number }> {
+  const { data } = await apiClient.put<ApiResponse<{ id: number }>>(
+    `/scheduling/shift-patterns/${patternId}`,
+    updates,
+  );
+  return data.data!;
+}
+
+/** Delete a shift pattern */
+export async function deleteShiftPattern(
+  patternId: number,
+): Promise<{ id: number }> {
+  const { data } = await apiClient.delete<ApiResponse<{ id: number }>>(
+    `/scheduling/shift-patterns/${patternId}`,
+  );
+  return data.data!;
+}
+
+/** Apply a shift pattern to a user's default schedule */
+export async function applyShiftPatternToUser(
+  patternId: number,
+  userId: number,
+): Promise<{ user_id: number; pattern_id: number }> {
+  const { data } = await apiClient.post<
+    ApiResponse<{ user_id: number; pattern_id: number }>
+  >(`/scheduling/shift-patterns/${patternId}/apply/${userId}`);
+  return data.data!;
+}
+
+
+// =================================================================
+// WEEKLY AVAILABILITY
+// =================================================================
+
+/** Get weekly employee availability for a date range */
+export async function getWeeklyAvailability(
+  dateFrom: string,
+  dateTo: string,
+): Promise<EmployeeAvailability[]> {
+  const { data } = await apiClient.get<ApiResponse<EmployeeAvailability[]>>(
+    '/scheduling/availability/weekly',
     { params: { date_from: dateFrom, date_to: dateTo } },
   );
   return data.data!;

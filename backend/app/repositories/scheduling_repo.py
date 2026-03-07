@@ -177,14 +177,14 @@ class JobDispatchRepo(BaseRepo):
         """Get all dispatches for a date, with user and job names."""
         cursor = await self.db.execute(
             """SELECT d.*, u.display_name AS user_name,
-                      j.name AS job_name,
+                      j.job_name AS job_name,
                       disp.display_name AS dispatched_by_name
                FROM job_dispatch d
                JOIN users u ON u.id = d.user_id
                JOIN jobs j ON j.id = d.job_id
                LEFT JOIN users disp ON disp.id = d.dispatched_by
                WHERE d.dispatch_date = ?
-               ORDER BY j.name ASC, u.display_name ASC""",
+               ORDER BY j.job_name ASC, u.display_name ASC""",
             (date,),
         )
         return await cursor.fetchall()
@@ -194,7 +194,7 @@ class JobDispatchRepo(BaseRepo):
     ) -> list[dict]:
         """Get dispatches for a user within a date range."""
         cursor = await self.db.execute(
-            """SELECT d.*, j.name AS job_name
+            """SELECT d.*, j.job_name AS job_name
                FROM job_dispatch d
                JOIN jobs j ON j.id = d.job_id
                WHERE d.user_id = ?
@@ -242,7 +242,7 @@ class JobDispatchRepo(BaseRepo):
 
         # 1. Existing dispatches (not cancelled)
         cursor = await self.db.execute(
-            """SELECT d.id, d.job_id, j.name AS job_name
+            """SELECT d.id, d.job_id, j.job_name AS job_name
                FROM job_dispatch d
                JOIN jobs j ON j.id = d.job_id
                WHERE d.user_id = ? AND d.dispatch_date = ?
@@ -336,7 +336,7 @@ class JobDispatchRepo(BaseRepo):
     ) -> list[dict]:
         """Get all dispatches in a date range (all users), for calendar view."""
         cursor = await self.db.execute(
-            """SELECT d.*, u.display_name AS user_name, j.name AS job_name
+            """SELECT d.*, u.display_name AS user_name, j.job_name AS job_name
                FROM job_dispatch d
                JOIN users u ON u.id = d.user_id
                JOIN jobs j ON j.id = d.job_id
@@ -375,7 +375,7 @@ class SubcontractorScheduleRepo(BaseRepo):
         where = " AND ".join(conditions)
         cursor = await self.db.execute(
             f"""SELECT ss.*, g.company_name AS gc_name, g.gc_code,
-                       j.name AS job_name
+                       j.job_name AS job_name
                 FROM subcontractor_schedules ss
                 JOIN general_contractors g ON g.id = ss.gc_id
                 JOIN jobs j ON j.id = ss.job_id
@@ -389,12 +389,12 @@ class SubcontractorScheduleRepo(BaseRepo):
         """Get all sub schedules for a date across all jobs."""
         cursor = await self.db.execute(
             """SELECT ss.*, g.company_name AS gc_name, g.gc_code,
-                      j.name AS job_name
+                      j.job_name AS job_name
                FROM subcontractor_schedules ss
                JOIN general_contractors g ON g.id = ss.gc_id
                JOIN jobs j ON j.id = ss.job_id
                WHERE ss.scheduled_date = ?
-               ORDER BY j.name ASC, g.company_name ASC""",
+               ORDER BY j.job_name ASC, g.company_name ASC""",
             (date,),
         )
         return await cursor.fetchall()
@@ -405,12 +405,12 @@ class SubcontractorScheduleRepo(BaseRepo):
         """Get all sub schedules in a date range, for calendar view."""
         cursor = await self.db.execute(
             """SELECT ss.*, g.company_name AS gc_name, g.gc_code,
-                      j.name AS job_name
+                      j.job_name AS job_name
                FROM subcontractor_schedules ss
                JOIN general_contractors g ON g.id = ss.gc_id
                JOIN jobs j ON j.id = ss.job_id
                WHERE ss.scheduled_date >= ? AND ss.scheduled_date <= ?
-               ORDER BY ss.scheduled_date ASC, j.name ASC""",
+               ORDER BY ss.scheduled_date ASC, j.job_name ASC""",
             (date_from, date_to),
         )
         return await cursor.fetchall()

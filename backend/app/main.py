@@ -3,29 +3,39 @@ Wired-Part Backend — FastAPI Application Entry Point
 
 This is the main application module. It:
 1. Creates the FastAPI app with metadata and lifespan handler
-2. Configures CORS for frontend access
+2. Configures CORS for frontend + Capacitor access
 3. Runs database migrations on startup
 4. Seeds the default admin user's PIN hash
-5. Registers all API routers (auth, settings, and module stubs)
-6. Provides a health check endpoint
+5. Registers all API routers
+6. Provides health check + server-info endpoints
+7. Serves the built React frontend as static files (production)
 
 Start with:
-    cd backend
-    uvicorn app.main:app --reload --port 8000
+    Dev:  cd backend && uvicorn app.main:app --reload --port 8000
+    Prod: cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 --log-level info
 """
 
 from __future__ import annotations
 
 import importlib
 import logging
+import socket
 from contextlib import asynccontextmanager
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import get_connection, init_db
 from app.services.auth_service import hash_pin
+
+# ── Paths ──────────────────────────────────────────────────────────
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+_FRONTEND_DIST = _BACKEND_DIR.parent / "frontend" / "dist"
 
 # ── Logging ─────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -34,6 +44,20 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("wiredpart")
+
+# Production file logging — rotating 10MB files, keep 5 backups
+_LOG_DIR = _BACKEND_DIR / "logs"
+try:
+    _LOG_DIR.mkdir(parents=True, exist_ok=True)
+    _file_handler = RotatingFileHandler(
+        _LOG_DIR / "wiredpart.log", maxBytes=10_000_000, backupCount=5
+    )
+    _file_handler.setFormatter(
+        logging.Formatter("%(asctime)s │ %(levelname)-8s │ %(name)s │ %(message)s")
+    )
+    logging.getLogger().addHandler(_file_handler)
+except OSError:
+    pass  # Skip file logging if logs directory can't be created (e.g. OneDrive)
 
 
 # ── Lifespan (replaces deprecated on_event) ────────────────────────
@@ -62,6 +86,19 @@ async def lifespan(app: FastAPI):
 
     # 4. Catch up any missed daily reports (server may have been down at midnight)
     await catch_up_missed_reports()
+
+    # 5. Log LAN access info for field device setup
+    try:
+        hostname = socket.gethostname()
+        lan_ip = socket.gethostbyname(hostname)
+        logger.info("LAN access: http://%s:%s", lan_ip, settings.BACKEND_PORT)
+    except Exception:
+        pass
+
+    if _FRONTEND_DIST.exists():
+        logger.info("Serving frontend from: %s", _FRONTEND_DIST)
+    else:
+        logger.info("No frontend build found — API-only mode")
 
     logger.info("Startup complete. API docs at /docs")
 
@@ -115,8 +152,7 @@ app = FastAPI(
 
 
 # ── CORS ────────────────────────────────────────────────────────────
-# Allow the React frontend (localhost:5173) to call the API.
-# In production, restrict this to the actual domain.
+# Includes dev origins + Capacitor native app origins for sync requests.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -148,6 +184,7 @@ ROUTER_MODULES = [
     "app.routers.reports",
     "app.routers.costs",
     "app.routers.tools",
+    "app.routers.sync",
 ]
 
 for _module_path in ROUTER_MODULES:
@@ -159,7 +196,7 @@ for _module_path in ROUTER_MODULES:
         logger.warning("Router skipped (%s): %s", _module_path, exc)
 
 
-# ── Health Check ────────────────────────────────────────────────────
+# ── System Endpoints ───────────────────────────────────────────────
 @app.get("/api/health", tags=["System"])
 async def health_check():
     """Health check endpoint for monitoring and load balancers."""
@@ -170,12 +207,86 @@ async def health_check():
     }
 
 
-@app.get("/", tags=["System"])
-async def root():
-    """Root redirect — shows API info."""
+@app.get("/api/server-info", tags=["System"])
+async def server_info(request: Request):
+    """Return server info for mobile device setup and pairing.
+
+    Mobile devices use this to discover the shop server URL.
+    The shop can display a QR code with this info for easy setup.
+    """
+    try:
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+    except Exception:
+        hostname = "unknown"
+        local_ip = "127.0.0.1"
+
     return {
-        "app": settings.APP_NAME,
+        "hostname": hostname,
+        "local_ip": local_ip,
+        "port": settings.BACKEND_PORT,
+        "url": f"http://{local_ip}:{settings.BACKEND_PORT}",
         "version": settings.APP_VERSION,
-        "docs": "/docs",
-        "health": "/api/health",
+        "app": settings.APP_NAME,
     }
+
+
+# ── Static File Serving (Production) ──────────────────────────────
+# When frontend/dist/ exists (after `npm run build`), serve it from
+# FastAPI so the shop computer needs only one process.
+# API routes are registered above, so they always take priority.
+
+if _FRONTEND_DIST.exists():
+    # Serve Vite's hashed assets (JS, CSS, fonts, images)
+    _assets_dir = _FRONTEND_DIST / "assets"
+    if _assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(_assets_dir)), name="assets")
+
+    # Serve specific well-known files
+    @app.get("/manifest.json", tags=["System"], include_in_schema=False)
+    async def serve_manifest():
+        manifest_path = _FRONTEND_DIST / "manifest.json"
+        if manifest_path.is_file():
+            return FileResponse(manifest_path)
+        return {"error": "manifest.json not found"}
+
+    @app.get("/favicon.ico", tags=["System"], include_in_schema=False)
+    async def serve_favicon():
+        favicon_path = _FRONTEND_DIST / "favicon.ico"
+        if favicon_path.is_file():
+            return FileResponse(favicon_path)
+        # Fall back to SVG
+        svg_path = _FRONTEND_DIST / "vite.svg"
+        if svg_path.is_file():
+            return FileResponse(svg_path)
+        return FileResponse(_FRONTEND_DIST / "index.html")
+
+    # SPA catch-all — MUST be last. Returns index.html for client-side routing.
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_catchall(full_path: str):
+        """Serve the React SPA for any non-API route.
+
+        Checks if the path matches an actual file in dist/ first
+        (images, fonts, etc.), otherwise returns index.html so
+        React Router can handle the route client-side.
+        """
+        # Prevent path traversal
+        if ".." in full_path:
+            return FileResponse(_FRONTEND_DIST / "index.html")
+
+        file_path = _FRONTEND_DIST / full_path
+        if file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(_FRONTEND_DIST / "index.html")
+else:
+    # No frontend build — show API info at root
+    @app.get("/", tags=["System"])
+    async def root():
+        """Root — shows API info when no frontend build is present."""
+        return {
+            "app": settings.APP_NAME,
+            "version": settings.APP_VERSION,
+            "docs": "/docs",
+            "health": "/api/health",
+            "note": "No frontend build found. Run 'cd frontend && npm run build' to serve the UI.",
+        }

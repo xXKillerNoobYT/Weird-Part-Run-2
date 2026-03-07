@@ -8,27 +8,54 @@
  * Uses local state to track which screen is active.
  */
 
-import { useState, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Spinner } from '../../../components/ui/Spinner';
 import {
-  getAudit, getNextAuditItem, completeAudit,
+  getAudit, getNextAuditItem, completeAudit, startAudit,
 } from '../../../api/warehouse';
 import { AuditSetup } from '../components/audit/AuditSetup';
 import { AuditProgressBar } from '../components/audit/AuditProgressBar';
 import { AuditCard } from '../components/audit/AuditCard';
 import { AuditSummaryView } from '../components/audit/AuditSummaryView';
+import { toast } from '../../../lib/toast';
 import type { AuditResponse, AuditSummary } from '../../../lib/types';
 
 type AuditScreen = 'setup' | 'counting' | 'summary';
 
 export function AuditPage() {
+  const location = useLocation();
   const [screen, setScreen] = useState<AuditScreen>('setup');
   const [activeAuditId, setActiveAuditId] = useState<number | null>(null);
   const [summary, setSummary] = useState<AuditSummary | null>(null);
   const [itemVersion, setItemVersion] = useState(0);
+  const spotCheckStarted = useRef(false);
+
+  // Auto-start spot check when navigated from inventory grid
+  const spotCheckMut = useMutation({
+    mutationFn: startAudit,
+    onSuccess: (audit) => {
+      setActiveAuditId(audit.id);
+      setScreen('counting');
+    },
+    onError: () => toast.error('Failed to start spot check'),
+  });
+
+  useEffect(() => {
+    const state = location.state as { spotCheck?: boolean; partId?: number; partName?: string } | null;
+    if (state?.spotCheck && state.partId && !spotCheckStarted.current) {
+      spotCheckStarted.current = true;
+      spotCheckMut.mutate({
+        audit_type: 'spot_check',
+        location_type: 'warehouse',
+        location_id: 1,
+        part_ids: [state.partId],
+      });
+    }
+  }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch the active audit (if any)
   const { data: audit, refetch: refetchAudit } = useQuery({
@@ -86,6 +113,14 @@ export function AuditPage() {
   }, []);
 
   // ── Render ────────────────────────────────────────────
+
+  if (spotCheckMut.isPending) {
+    return (
+      <div className="flex justify-center py-12">
+        <Spinner label="Starting spot check..." />
+      </div>
+    );
+  }
 
   if (screen === 'setup') {
     return (

@@ -261,7 +261,10 @@ class OrdersService:
         notes: str | None = None,
     ) -> dict:
         """Create a PO from selected JPO lines for a specific supplier."""
-        po_number = await self.po_repo.get_next_po_number(supplier_id)
+        # Get job_id from JPO for GC-aware PO naming
+        jpo = await self.jpo_repo.get_by_id(jpo_id)
+        jpo_job_id = jpo["job_id"] if jpo else None
+        po_number = await self.po_repo.get_next_po_number(supplier_id, job_id=jpo_job_id)
 
         po_id = await self.po_repo.insert({
             "po_number": po_number,

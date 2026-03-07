@@ -32,6 +32,7 @@ from app.repositories.people_repo import (
     UserSkillRepo,
     WageHistoryRepo,
 )
+from app.repositories.scheduling_repo import DefaultScheduleRepo
 from app.repositories.user_repo import HatRepo, UserRepo
 from app.services.auth_service import hash_pin
 
@@ -189,6 +190,10 @@ class PeopleService:
                 "reason": "hire",
                 "changed_by": created_by,
             })
+
+        # Auto-initialize default Mon-Fri schedule
+        schedule_repo = DefaultScheduleRepo(self.db)
+        await schedule_repo.init_defaults(user_id)
 
         return user_id
 

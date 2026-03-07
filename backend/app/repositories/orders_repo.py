@@ -233,8 +233,40 @@ class PurchaseOrderRepo(BaseRepo):
     TABLE = "purchase_orders"
     HAS_UPDATED_AT = True
 
-    async def get_next_po_number(self, supplier_id: int | None = None) -> str:
-        """Generate the next PO number: 'PO-001' sequential."""
+    async def get_next_po_number(
+        self, supplier_id: int | None = None, *, job_id: int | None = None
+    ) -> str:
+        """Generate the next PO number.
+
+        For GC-attached jobs: {GC_CODE}-{JOB_ID}-{SEQ} (e.g. SMITH-42-001)
+        For all others:       PO-{SEQ} (e.g. PO-0001)
+        """
+        # Check if the job is attached to a GC
+        gc_code = None
+        if job_id:
+            cursor = await self.db.execute(
+                """SELECT gc.gc_code
+                   FROM job_general_contractors jgc
+                   JOIN general_contractors gc ON gc.id = jgc.gc_id
+                   WHERE jgc.job_id = ?
+                   LIMIT 1""",
+                (job_id,),
+            )
+            row = await cursor.fetchone()
+            if row:
+                gc_code = row["gc_code"]
+
+        if gc_code:
+            # GC-specific sequential numbering
+            cursor = await self.db.execute(
+                "SELECT COUNT(*) as cnt FROM purchase_orders WHERE po_number LIKE ?",
+                (f"{gc_code}-{job_id}-%",),
+            )
+            row = await cursor.fetchone()
+            seq = (row["cnt"] if row else 0) + 1
+            return f"{gc_code}-{job_id}-{seq:03d}"
+
+        # Standard sequential numbering
         cursor = await self.db.execute(
             "SELECT COUNT(*) as cnt FROM purchase_orders"
         )

@@ -23,10 +23,14 @@ import {
   getDefaultSchedule,
   setDefaultSchedule,
   initDefaultSchedule,
+  listShiftPatterns,
+  applyShiftPatternToUser,
 } from '../../../api/scheduling';
 import { getEmployees } from '../../../api/people';
+import { toast } from '../../../lib/toast';
 import type {
   DefaultScheduleResponse, DefaultScheduleDay, EmployeeListItem,
+  ShiftPatternResponse,
 } from '../../../lib/types';
 
 
@@ -121,6 +125,23 @@ export function ScheduleConfigPage() {
     },
   });
 
+  // ── Shift Patterns ────────────────────────────────────────────
+  const { data: shiftPatterns } = useQuery({
+    queryKey: ['shift-patterns'],
+    queryFn: () => listShiftPatterns(),
+    staleTime: 120_000,
+  });
+
+  const applyPatternMut = useMutation({
+    mutationFn: (patternId: number) =>
+      applyShiftPatternToUser(patternId, selectedUserId!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['default-schedule', selectedUserId] });
+      toast.success('Shift pattern applied');
+    },
+    onError: () => toast.error('Failed to apply shift pattern'),
+  });
+
   // ── Day update helpers ───────────────────────────────────────────
   function updateDay(dayOfWeek: number, field: keyof DefaultScheduleDay, value: unknown) {
     setDays(prev => prev.map(d =>
@@ -149,6 +170,27 @@ export function ScheduleConfigPage() {
 
         {selectedUserId && canManage && (
           <div className="flex items-center gap-2">
+            {/* Shift pattern quick-apply */}
+            {shiftPatterns && shiftPatterns.length > 0 && (
+              <select
+                className="text-sm border border-gray-300 dark:border-gray-600 rounded-lg
+                           bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300
+                           px-2 py-1.5"
+                value=""
+                onChange={(e) => {
+                  const id = Number(e.target.value);
+                  if (id) applyPatternMut.mutate(id);
+                }}
+                disabled={applyPatternMut.isPending}
+              >
+                <option value="">Apply Pattern...</option>
+                {shiftPatterns.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            )}
             <Button
               size="sm"
               variant="secondary"
@@ -208,9 +250,9 @@ export function ScheduleConfigPage() {
                     <User size={14} className="flex-shrink-0" />
                     <span className="truncate">{emp.display_name}</span>
                   </div>
-                  {emp.primary_hat && (
+                  {emp.hat_names?.[0] && (
                     <Badge variant="neutral" className="text-[10px] mt-0.5 ml-5">
-                      {emp.primary_hat}
+                      {emp.hat_names[0]}
                     </Badge>
                   )}
                 </button>
