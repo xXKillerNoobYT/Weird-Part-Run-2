@@ -250,6 +250,17 @@ export async function getSuggestedRollingParts(
   return data.data ?? [];
 }
 
+/** Get the top N parts most urgently needing a spot check (zero/low-stock first, then oldest count) */
+export async function getSuggestedSpotCheckParts(
+  limit: number = 3
+): Promise<SuggestedRollingPart[]> {
+  const { data } = await apiClient.get<ApiResponse<SuggestedRollingPart[]>>(
+    '/warehouse/audit/suggested-spot-check',
+    { params: { limit } }
+  );
+  return data.data ?? [];
+}
+
 /** Get audit detail with progress stats */
 export async function getAudit(auditId: number): Promise<AuditResponse> {
   const { data } = await apiClient.get<ApiResponse<AuditResponse>>(

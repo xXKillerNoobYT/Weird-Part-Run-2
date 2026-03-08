@@ -14,7 +14,7 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
-  FileText, Calendar, Users, Clock, Package, ChevronRight,
+  FileText, Calendar, Users, Clock, Package, ChevronRight, AlertTriangle,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { Badge } from '../../../components/ui/Badge';
@@ -158,7 +158,7 @@ export function JobReportsListPage() {
                     </div>
 
                     {/* Stats */}
-                    <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 shrink-0">
+                    <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 shrink-0 flex-wrap justify-end">
                       <span className="flex items-center gap-1" title="Workers">
                         <Users className="h-3.5 w-3.5" />
                         {report.worker_count}
@@ -173,6 +173,29 @@ export function JobReportsListPage() {
                           ${report.total_parts_cost.toFixed(0)}
                         </span>
                       )}
+                      {/* Drive time warning — shown when drive exceeds 33% of labor */}
+                      {(() => {
+                        const driveMin = report.total_drive_time_minutes ?? 0;
+                        const laborMin = report.total_labor_hours * 60;
+                        if (driveMin === 0 || laborMin === 0) return null;
+                        const ratio = driveMin / laborMin;
+                        if (ratio < 0.33) return null;
+                        const isDanger = ratio >= 0.5;
+                        const driveHrs = (driveMin / 60).toFixed(1);
+                        return (
+                          <span
+                            title={`${driveHrs}h drive time (${Math.round(ratio * 100)}% of labor)`}
+                            className={`flex items-center gap-1 ${
+                              isDanger
+                                ? 'text-red-500 dark:text-red-400'
+                                : 'text-amber-500 dark:text-amber-400'
+                            }`}
+                          >
+                            <AlertTriangle className="h-3.5 w-3.5" />
+                            {driveHrs}h drive
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     {/* Chevron */}

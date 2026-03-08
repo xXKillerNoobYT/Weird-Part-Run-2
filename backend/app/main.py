@@ -184,6 +184,10 @@ ROUTER_MODULES = [
     "app.routers.reports",
     "app.routers.costs",
     "app.routers.tools",
+    "app.routers.chat",
+    "app.routers.bootstrap",
+    "app.routers.security",
+    "app.routers.updates",
     "app.routers.sync",
 ]
 

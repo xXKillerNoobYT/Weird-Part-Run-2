@@ -188,18 +188,26 @@ export function ScheduleCalendarPage() {
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
   const [typeFilter, setTypeFilter] = useState<CalendarEntryType | 'all'>('all');
 
-  const weekEnd = addDays(weekStart, 6);
+  // 3-week span: 21 days total
+  const spanEnd = addDays(weekStart, 20);
 
   // Memoize weekDates so the reference is stable (changes only when weekStart changes)
   const weekDates = useMemo(
-    () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
+    () => Array.from({ length: 21 }, (_, i) => addDays(weekStart, i)),
     [weekStart],
   );
 
+  // Split into 3 groups of 7 for the desktop grid
+  const weeks = useMemo(() => [
+    weekDates.slice(0, 7),
+    weekDates.slice(7, 14),
+    weekDates.slice(14, 21),
+  ], [weekDates]);
+
   // ── Data ─────────────────────────────────────────────────────────
   const { data: calendar, isLoading } = useQuery({
-    queryKey: ['calendar', isoDate(weekStart), isoDate(weekEnd)],
-    queryFn: () => getCalendarData(isoDate(weekStart), isoDate(weekEnd)),
+    queryKey: ['calendar', isoDate(weekStart), isoDate(spanEnd)],
+    queryFn: () => getCalendarData(isoDate(weekStart), isoDate(spanEnd)),
     staleTime: 30_000,
   });
 
@@ -226,7 +234,7 @@ export function ScheduleCalendarPage() {
   if (isLoading) return <PageSpinner />;
 
   const totalEntries = calendar?.entries?.length ?? 0;
-  const weekLabel = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  const weekLabel = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${spanEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} (3 weeks)`;
 
   return (
     <div className="space-y-4">
@@ -278,62 +286,81 @@ export function ScheduleCalendarPage() {
         ))}
       </div>
 
-      {/* ── Desktop: 7-column grid ─────────────────────────────── */}
-      <div className="hidden md:grid grid-cols-7 gap-px bg-gray-200 dark:bg-gray-700 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-        {weekDates.map((d, i) => {
-          const dateStr = isoDate(d);
-          const entries = entriesByDate.get(dateStr) ?? [];
-          const today = isToday(d);
-
-          return (
-            <div
-              key={dateStr}
-              className={`
-                bg-white dark:bg-gray-900 min-h-[180px] p-2 flex flex-col
-                ${today ? 'ring-2 ring-inset ring-blue-500' : ''}
-              `}
-            >
-              {/* Day header */}
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                  {DAY_NAMES[i]}
-                </span>
-                <span className={`
-                  text-sm font-semibold
-                  ${today
-                    ? 'bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center'
-                    : 'text-gray-700 dark:text-gray-300'
-                  }
-                `}>
-                  {d.getDate()}
-                </span>
-              </div>
-
-              {/* Entries */}
-              <div className="flex-1 space-y-1 overflow-y-auto max-h-[240px]">
-                {entries.length === 0 && (
-                  <div className="text-[10px] text-gray-400 dark:text-gray-600 text-center pt-4">
-                    No entries
-                  </div>
-                )}
-                {entries.map((entry, j) => (
-                  <EntryCard key={`${entry.entry_type}-${entry.user_id ?? entry.gc_id}-${j}`} entry={entry} />
-                ))}
-              </div>
+      {/* ── Desktop: 3-week stacked grid ──────────────────────── */}
+      <div className="hidden md:flex flex-col gap-2">
+        {weeks.map((weekGroup, weekIdx) => (
+          <div key={weekIdx} className="rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+            {/* Week label bar */}
+            <div className="px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                Week {weekIdx + 1} &middot; {weekGroup[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {weekGroup[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </span>
             </div>
-          );
-        })}
+            <div className="grid grid-cols-7 gap-px bg-gray-200 dark:bg-gray-700">
+              {weekGroup.map((d, i) => {
+                const dateStr = isoDate(d);
+                const entries = entriesByDate.get(dateStr) ?? [];
+                const today = isToday(d);
+
+                return (
+                  <div
+                    key={dateStr}
+                    className={`
+                      bg-white dark:bg-gray-900 min-h-[150px] p-2 flex flex-col
+                      ${today ? 'ring-2 ring-inset ring-blue-500' : ''}
+                    `}
+                  >
+                    {/* Day header */}
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                        {DAY_NAMES[i]}
+                      </span>
+                      <span className={`
+                        text-sm font-semibold
+                        ${today
+                          ? 'bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center'
+                          : 'text-gray-700 dark:text-gray-300'
+                        }
+                      `}>
+                        {d.getDate()}
+                      </span>
+                    </div>
+
+                    {/* Entries */}
+                    <div className="flex-1 space-y-1 overflow-y-auto max-h-[200px]">
+                      {entries.length === 0 && (
+                        <div className="text-[10px] text-gray-400 dark:text-gray-600 text-center pt-4">
+                          No entries
+                        </div>
+                      )}
+                      {entries.map((entry, j) => (
+                        <EntryCard key={`${entry.entry_type}-${entry.user_id ?? entry.gc_id}-${j}`} entry={entry} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* ── Mobile: daily list ─────────────────────────────────── */}
       <div className="md:hidden space-y-4">
         {weekDates.map((d, i) => {
+          const isWeekStart = i % 7 === 0;
           const dateStr = isoDate(d);
           const entries = entriesByDate.get(dateStr) ?? [];
           const today = isToday(d);
 
           return (
             <div key={dateStr}>
+              {/* Week separator on mobile */}
+              {isWeekStart && (
+                <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide px-2 pb-1 pt-1 border-b border-gray-100 dark:border-gray-800 mb-2">
+                  Week {Math.floor(i / 7) + 1}
+                </div>
+              )}
               <div className={`
                 flex items-center gap-2 mb-2 px-2 py-1 rounded-lg
                 ${today ? 'bg-blue-50 dark:bg-blue-900/20' : ''}

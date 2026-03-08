@@ -21,21 +21,30 @@ const FLOW_NODES: {
   label: string;
   icon: React.ElementType;
 }[] = [
-  { type: 'warehouse', label: 'Warehouse', icon: Warehouse },
-  { type: 'pulled', label: 'Staging', icon: Package },
-  { type: 'truck', label: 'Truck', icon: Truck },
-  { type: 'job', label: 'Job', icon: Briefcase },
-];
+    { type: 'warehouse', label: 'Warehouse', icon: Warehouse },
+    { type: 'pulled', label: 'Staging', icon: Package },
+    { type: 'truck', label: 'Truck', icon: Truck },
+    { type: 'trailer', label: 'Trailer', icon: Truck },
+    { type: 'job', label: 'Job', icon: Briefcase },
+  ];
 
 // Valid movement paths
 const VALID_PATHS: [LocationType, LocationType][] = [
   ['warehouse', 'pulled'],
   ['pulled', 'truck'],
+  ['pulled', 'trailer'],
   ['warehouse', 'truck'],
+  ['warehouse', 'trailer'],
+  ['truck', 'trailer'],
+  ['trailer', 'truck'],
   ['truck', 'job'],
+  ['trailer', 'job'],
   ['job', 'truck'],
+  ['job', 'trailer'],
   ['truck', 'warehouse'],
+  ['trailer', 'warehouse'],
   ['pulled', 'warehouse'],
+  ['trailer', 'pulled'],
 ];
 
 export function StepLocations() {
@@ -43,7 +52,6 @@ export function StepLocations() {
     fromLocationType, fromLocationId,
     toLocationType, toLocationId,
     setFromLocation, setToLocation,
-    setDestination,
   } = useMovementWizardStore();
 
   const { data: locations = [] } = useQuery({
@@ -129,16 +137,16 @@ export function StepLocations() {
                   'flex flex-col items-center gap-1 rounded-xl border-2 transition-all duration-300 ease-out',
                   // FROM — grows, blue glow
                   state === 'from' &&
-                    'px-4 py-3 min-w-[88px] border-blue-500 bg-blue-50 dark:bg-blue-900/30 shadow-md shadow-blue-200/60 dark:shadow-blue-900/40',
+                  'px-4 py-3 min-w-[88px] border-blue-500 bg-blue-50 dark:bg-blue-900/30 shadow-md shadow-blue-200/60 dark:shadow-blue-900/40',
                   // TO — grows, green glow
                   state === 'to' &&
-                    'px-4 py-3 min-w-[88px] border-green-500 bg-green-50 dark:bg-green-900/30 shadow-md shadow-green-200/60 dark:shadow-green-900/40',
+                  'px-4 py-3 min-w-[88px] border-green-500 bg-green-50 dark:bg-green-900/30 shadow-md shadow-green-200/60 dark:shadow-green-900/40',
                   // Default — normal size, neutral border
                   state === 'default' &&
-                    'px-3 py-2 min-w-[80px] border-gray-200 dark:border-gray-700',
+                  'px-3 py-2 min-w-[80px] border-gray-200 dark:border-gray-700',
                   // Inactive / between — shrink and fade out of the way
                   (state === 'inactive' || state === 'between') &&
-                    'px-2 py-1.5 min-w-[52px] border-gray-200/60 dark:border-gray-700/40 opacity-35 scale-[0.85]',
+                  'px-2 py-1.5 min-w-[52px] border-gray-200/60 dark:border-gray-700/40 opacity-35 scale-[0.85]',
                 )}
               >
                 <Icon
@@ -157,7 +165,7 @@ export function StepLocations() {
                     state === 'to' && 'text-xs text-green-700 dark:text-green-400',
                     state === 'default' && 'text-xs text-gray-500 dark:text-gray-400',
                     (state === 'inactive' || state === 'between') &&
-                      'text-[10px] text-gray-400 dark:text-gray-500',
+                    'text-[10px] text-gray-400 dark:text-gray-500',
                   )}
                 >
                   {node.label}
@@ -212,7 +220,6 @@ export function StepLocations() {
           {FLOW_NODES.map((node) => {
             const Icon = node.icon;
             const isSelected = node.type === fromLocationType;
-            const options = getOptionsForType(node.type);
             // Any location type can be a "from" if it appears in valid paths
             const canBeFrom = VALID_PATHS.some(([f]) => f === node.type);
 
@@ -226,8 +233,8 @@ export function StepLocations() {
                   isSelected
                     ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30'
                     : canBeFrom
-                    ? 'border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700'
-                    : 'border-gray-100 dark:border-gray-800 opacity-40 cursor-not-allowed',
+                      ? 'border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700'
+                      : 'border-gray-100 dark:border-gray-800 opacity-40 cursor-not-allowed',
                 )}
               >
                 <Icon className={cn('h-5 w-5', isSelected ? 'text-blue-500' : 'text-gray-400')} />
@@ -240,7 +247,7 @@ export function StepLocations() {
         </div>
 
         {/* Sub-picker for specific location (truck #, job #) */}
-        {fromLocationType && ['truck', 'job'].includes(fromLocationType) && (
+        {fromLocationType && ['truck', 'trailer', 'job'].includes(fromLocationType) && (
           <div className="mt-2">
             <select
               className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm"
@@ -279,8 +286,8 @@ export function StepLocations() {
                     isSelected
                       ? 'border-green-500 bg-green-50 dark:bg-green-900/30'
                       : isValid
-                      ? 'border-gray-200 dark:border-gray-700 hover:border-green-300 dark:hover:border-green-700'
-                      : 'border-gray-100 dark:border-gray-800 opacity-40 cursor-not-allowed',
+                        ? 'border-gray-200 dark:border-gray-700 hover:border-green-300 dark:hover:border-green-700'
+                        : 'border-gray-100 dark:border-gray-800 opacity-40 cursor-not-allowed',
                   )}
                 >
                   <Icon className={cn('h-5 w-5', isSelected ? 'text-green-500' : 'text-gray-400')} />
@@ -293,7 +300,7 @@ export function StepLocations() {
           </div>
 
           {/* Sub-picker for specific location */}
-          {toLocationType && ['truck', 'job'].includes(toLocationType) && (
+          {toLocationType && ['truck', 'trailer', 'job'].includes(toLocationType) && (
             <div className="mt-2">
               <select
                 className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm"

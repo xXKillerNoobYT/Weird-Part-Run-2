@@ -6,7 +6,6 @@
  * Changes are persisted to the backend via the settings API.
  */
 
-import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Sun, Moon, Monitor, Palette, Type } from 'lucide-react';
 import { Card, CardHeader } from '../../../components/ui/Card';
@@ -55,29 +54,32 @@ const FONT_OPTIONS = [
 ];
 
 export function ThemesPage() {
-  const { mode, setMode, isDark } = useThemeStore();
+  const {
+    mode, setMode, isDark,
+    primaryColor: storeColor,
+    fontFamily: storeFont,
+    setPrimaryColor: storeSetColor,
+    setFontFamily: storeSetFont,
+  } = useThemeStore();
   const queryClient = useQueryClient();
 
-  // Load saved theme settings from backend
+  // Load saved theme settings from backend to seed initial values
   const themeQuery = useQuery({
     queryKey: ['settings', 'theme'],
     queryFn: getTheme,
     staleTime: 60_000,
   });
 
-  const [primaryColor, setPrimaryColor] = useState<string | null>(null);
-  const [fontFamily, setFontFamily] = useState<string | null>(null);
-
-  // Use server values as defaults until user changes them
-  const currentColor = primaryColor ?? themeQuery.data?.primary_color ?? '#3B82F6';
-  const currentFont = fontFamily ?? themeQuery.data?.font_family ?? 'Inter';
+  // The store is the live source of truth (already applied to DOM).
+  const currentColor = storeColor ?? themeQuery.data?.primary_color ?? '#3B82F6';
+  const currentFont  = storeFont  ?? themeQuery.data?.font_family   ?? 'Inter';
 
   const saveMut = useMutation({
     mutationFn: (params: { color?: string; font?: string; themeMode?: string }) =>
       updateTheme({
-        theme_mode: params.themeMode ?? mode,
-        primary_color: params.color ?? currentColor,
-        font_family: params.font ?? currentFont,
+        theme_mode:    params.themeMode ?? mode,
+        primary_color: params.color     ?? currentColor,
+        font_family:   params.font      ?? currentFont,
       }),
     onSuccess: (data) => {
       queryClient.setQueryData(['settings', 'theme'], data);
@@ -87,18 +89,18 @@ export function ThemesPage() {
   });
 
   const handleModeChange = (newMode: 'light' | 'dark' | 'system') => {
-    setMode(newMode);
-    saveMut.mutate({ themeMode: newMode });
+    setMode(newMode);                       // applies dark class immediately
+    saveMut.mutate({ themeMode: newMode }); // persists to backend
   };
 
   const handleColorChange = (color: string) => {
-    setPrimaryColor(color);
-    saveMut.mutate({ color });
+    storeSetColor(color);          // applies --color-primary-* CSS vars immediately
+    saveMut.mutate({ color });     // persists to backend
   };
 
   const handleFontChange = (font: string) => {
-    setFontFamily(font);
-    saveMut.mutate({ font });
+    storeSetFont(font);            // applies --font-sans immediately
+    saveMut.mutate({ font });      // persists to backend
   };
 
   return (

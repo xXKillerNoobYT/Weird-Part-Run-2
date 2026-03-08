@@ -55,22 +55,22 @@ export function SuggestedParts({ jobId, onSelect, excludePartIds }: SuggestedPar
     // so the parent page can add it to form lines
     const part: PartListItem = {
       id: suggestion.part_id,
-      category_name: null,
+      category_name: suggestion.category_name ?? null,
       style_name: null,
-      type_name: null,
-      color_name: null,
+      type_name: suggestion.type_name ?? null,
+      color_name: suggestion.color_name ?? null,
       color_id: null,
-      color_hex: null,
+      color_hex: suggestion.color_hex ?? null,
       part_type: 'general',
       code: suggestion.part_number ?? null,
-      name: suggestion.part_description ?? `Part #${suggestion.part_id}`,
+      name: suggestion.part_name ?? suggestion.part_description ?? `Part #${suggestion.part_id}`,
       brand_id: null,
-      brand_name: null,
+      brand_name: suggestion.brand_name ?? null,
       manufacturer_part_number: null,
       has_pending_part_number: false,
       unit_of_measure: 'ea',
       company_cost_price: suggestion.estimated_cost != null
-        ? suggestion.estimated_cost / Math.max(suggestion.suggested_qty, 1)
+        ? suggestion.estimated_cost / Math.max(suggestion.suggested_order_qty, 1)
         : null,
       company_markup_percent: null,
       company_sell_price: null,
@@ -78,6 +78,16 @@ export function SuggestedParts({ jobId, onSelect, excludePartIds }: SuggestedPar
       min_stock_level: 0,
       max_stock_level: 0,
       target_stock_level: suggestion.target_qty ?? 0,
+      // IDs not available from reorder suggestions — safe defaults
+      category_id: null,
+      style_id: null,
+      // Forecast fields
+      forecast_adu_30: null,
+      forecast_days_until_low: suggestion.days_until_stockout ?? null,
+      forecast_suggested_order: suggestion.suggested_order_qty,
+      // Status flags
+      is_deprecated: false,
+      is_qr_tagged: false,
     };
     onSelect(part);
   };
@@ -99,7 +109,7 @@ export function SuggestedParts({ jobId, onSelect, excludePartIds }: SuggestedPar
             <Plus className="h-3 w-3" />
             {s.part_number ?? `#${s.part_id}`}
             <span className="text-amber-600/70 dark:text-amber-400/70">
-              ({s.current_stock} in stock, need {s.suggested_qty})
+              ({s.current_stock} in stock, need {s.suggested_order_qty})
             </span>
           </button>
         ))}

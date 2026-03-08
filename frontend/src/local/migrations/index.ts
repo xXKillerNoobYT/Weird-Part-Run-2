@@ -12,6 +12,7 @@
  * Migration 004: Notebooks (templates, sections, entries, tasks)
  * Migration 005: Orders (JPOs, POs, returns, staging, special items)
  * Migration 006: Fleet, Tools & Scheduling (vehicles, tools, kits, dispatch)
+ * Migration 007: Chat & Q&A (channels, messages, Q&A threads, RFIs)
  */
 
 import { migration as m001 } from './001_foundation';
@@ -20,6 +21,7 @@ import { migration as m003 } from './003_jobs_labor';
 import { migration as m004 } from './004_notebooks';
 import { migration as m005 } from './005_orders';
 import { migration as m006 } from './006_fleet_tools_scheduling';
+import { migration as m007 } from './007_chat';
 
 export interface Migration {
   name: string;
@@ -54,4 +56,5 @@ export const migrations: Migration[] = [
   m004,
   m005,
   m006,
+  m007,
 ];

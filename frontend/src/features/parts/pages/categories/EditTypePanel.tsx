@@ -9,7 +9,7 @@
  * linking colors and creating parts happen in the same place.
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box, Check, ToggleLeft, ToggleRight, Trash2,
@@ -20,8 +20,7 @@ import { Input } from '../../../../components/ui/Input';
 import { Badge } from '../../../../components/ui/Badge';
 import { Spinner } from '../../../../components/ui/Spinner';
 import {
-  listCategories, listStylesByCategory, listTypesByStyle,
-  updateType,
+  getType, updateType,
   listTypeBrands, linkBrandToType, unlinkBrandFromType,
   listBrands,
 } from '../../../../api/parts';
@@ -37,41 +36,25 @@ export interface EditTypePanelProps {
 export function EditTypePanel({ typeId, canEdit, onDelete }: EditTypePanelProps) {
   const queryClient = useQueryClient();
 
-  // ── Lookup this type (iterate through hierarchy) ──────────
-  const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: () => listCategories() });
-
-  const [type, setType] = useState<PartType | null>(null);
+  // ── Fetch this type directly by ID ──────────────────────
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
-  const [initialized, setInitialized] = useState(false);
-  const [prevId, setPrevId] = useState(typeId);
 
-  const typeLookup = useQuery({
-    queryKey: ['type-lookup', typeId],
-    queryFn: async () => {
-      if (!categories) return null;
-      for (const cat of categories) {
-        const styles = await listStylesByCategory(cat.id);
-        for (const style of styles) {
-          const types = await listTypesByStyle(style.id);
-          const found = types.find((t) => t.id === typeId);
-          if (found) return found;
-        }
-      }
-      return null;
-    },
-    enabled: !!categories && categories.length > 0,
+  const { data: type } = useQuery({
+    queryKey: ['type-detail', typeId],
+    queryFn: () => getType(typeId),
+    staleTime: 30_000,
   });
 
-  if (typeLookup.data && (!initialized || typeId !== prevId)) {
-    setType(typeLookup.data);
-    setName(typeLookup.data.name);
-    setDescription(typeLookup.data.description ?? '');
-    setImageUrl(typeLookup.data.image_url ?? '');
-    setInitialized(true);
-    setPrevId(typeId);
-  }
+  // Seed form fields when type data loads or typeId changes
+  useEffect(() => {
+    if (type) {
+      setName(type.name);
+      setDescription(type.description ?? '');
+      setImageUrl(type.image_url ?? '');
+    }
+  }, [type, typeId]);
 
   // ── Type ↔ Brand links ────────────────────────────────────
   const { data: brandLinks, isLoading: brandLinksLoading } = useQuery({
@@ -89,6 +72,7 @@ export function EditTypePanel({ typeId, canEdit, onDelete }: EditTypePanelProps)
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['type-brands', typeId] });
       queryClient.invalidateQueries({ queryKey: ['types'] });
+      queryClient.invalidateQueries({ queryKey: ['type-detail', typeId] });
     },
   });
 
@@ -97,6 +81,7 @@ export function EditTypePanel({ typeId, canEdit, onDelete }: EditTypePanelProps)
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['type-brands', typeId] });
       queryClient.invalidateQueries({ queryKey: ['types'] });
+      queryClient.invalidateQueries({ queryKey: ['type-detail', typeId] });
     },
   });
 
@@ -105,7 +90,7 @@ export function EditTypePanel({ typeId, canEdit, onDelete }: EditTypePanelProps)
     mutationFn: (data: PartTypeUpdate) => updateType(typeId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['types'] });
-      queryClient.invalidateQueries({ queryKey: ['type-lookup', typeId] });
+      queryClient.invalidateQueries({ queryKey: ['type-detail', typeId] });
     },
   });
 
@@ -113,7 +98,7 @@ export function EditTypePanel({ typeId, canEdit, onDelete }: EditTypePanelProps)
     mutationFn: (is_active: boolean) => updateType(typeId, { is_active }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['types'] });
-      queryClient.invalidateQueries({ queryKey: ['type-lookup', typeId] });
+      queryClient.invalidateQueries({ queryKey: ['type-detail', typeId] });
     },
   });
 

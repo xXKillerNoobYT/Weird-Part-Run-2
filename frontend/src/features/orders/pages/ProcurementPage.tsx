@@ -29,6 +29,7 @@ import {
   listPOs,
 } from '../../../api/orders';
 import { EmptyState } from '../../../components/ui/EmptyState';
+import { PartIdentity } from '../../../components/ui/PartIdentity';
 import type { ReorderSuggestion, POListItem } from '../../../lib/types';
 
 type ViewMode = 'alerts' | 'grouped' | 'kanban';
@@ -423,14 +424,18 @@ function SupplierGroupedView({ suggestions }: { suggestions: ReorderSuggestion[]
               >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    {s.part_number && (
-                      <span className="text-xs font-mono bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded">
-                        {s.part_number}
-                      </span>
-                    )}
-                    <span className="text-sm text-gray-900 dark:text-gray-100 truncate">
-                      {s.part_description ?? `Part #${s.part_id}`}
-                    </span>
+                    <PartIdentity
+                      compact
+                      partName={s.part_name}
+                      partDescription={s.part_description}
+                      partNumber={s.part_number}
+                      partId={s.part_id}
+                      brandName={s.brand_name}
+                      colorName={s.color_name}
+                      colorHex={s.color_hex}
+                      categoryName={s.category_name}
+                      typeName={s.type_name}
+                    />
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 dark:text-gray-400">
                     <span className="tabular-nums">
@@ -633,16 +638,18 @@ function SuggestionKanbanCard({ suggestion: s }: { suggestion: ReorderSuggestion
       }`}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-            {s.part_number ?? `Part #${s.part_id}`}
-          </p>
-          {s.part_description && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
-              {s.part_description}
-            </p>
-          )}
-        </div>
+        <PartIdentity
+          partName={s.part_name}
+          partDescription={s.part_description}
+          partNumber={s.part_number}
+          partId={s.part_id}
+          brandName={s.brand_name}
+          colorName={s.color_name}
+          colorHex={s.color_hex}
+          categoryName={s.category_name}
+          typeName={s.type_name}
+          className="min-w-0 flex-1"
+        />
         {isUrgent && (
           <span className="flex-shrink-0 text-xs font-medium text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 rounded">
             OUT

@@ -28,22 +28,29 @@ import {
   Sparkles,
   User,
   Briefcase,
+  FolderTree,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
+import { Button } from '../../../components/ui/Button';
 import { OrderStatusBadge } from '../../orders/components/OrderStatusBadge';
+import { SpecialItemPlacementModal } from '../../orders/components/SpecialItemPlacementModal';
 import {
   getPendingApprovals,
   countPendingApprovals,
   bulkApproveOrReject,
+  listFlaggedSpecialItems,
+  resolveSpecialItem,
 } from '../../../api/orders';
+import { toast } from '../../../lib/toast';
 import { formatRelativeTime } from '../../../lib/utils';
 import type {
   PendingApprovalItem,
   BulkApprovalTarget,
   BulkApprovalResult,
+  SpecialItemResponse,
 } from '../../../lib/types';
 
 
@@ -216,6 +223,7 @@ export function ApprovalsTab() {
   const [bulkAction, setBulkAction] = useState<'approve' | 'reject'>('approve');
   const [bulkNotes, setBulkNotes] = useState('');
   const [bulkResults, setBulkResults] = useState<BulkApprovalResult[] | null>(null);
+  const [placementItem, setPlacementItem] = useState<SpecialItemResponse | null>(null);
 
   // ── Queries ───────────────────────────────────────────────────
   const {
@@ -234,6 +242,12 @@ export function ApprovalsTab() {
     queryFn: countPendingApprovals,
     staleTime: 15_000,
     refetchInterval: 30_000,
+  });
+
+  const { data: flaggedItems = [] } = useQuery({
+    queryKey: ['flagged-special-items'],
+    queryFn: listFlaggedSpecialItems,
+    staleTime: 30_000,
   });
 
   // ── Filtered items ────────────────────────────────────────────
@@ -289,6 +303,16 @@ export function ApprovalsTab() {
       queryClient.invalidateQueries({ queryKey: ['returns'] });
       setSelected(new Set());
     },
+  });
+
+  const dismissMutation = useMutation({
+    mutationFn: (itemId: number) =>
+      resolveSpecialItem(itemId, { notes: 'Dismissed from Approvals' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['flagged-special-items'] });
+      toast.success('Special item dismissed');
+    },
+    onError: () => toast.error('Failed to dismiss item'),
   });
 
   const handleBulkAction = (action: 'approve' | 'reject') => {
@@ -442,6 +466,76 @@ export function ApprovalsTab() {
         </div>
       )}
 
+      {/* ── Flagged Special Items ────────────────────────── */}
+      {flaggedItems.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <FolderTree className="h-4 w-4 text-violet-500 dark:text-violet-400" />
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+              Flagged Special Items
+            </h3>
+            <Badge variant="default">{flaggedItems.length}</Badge>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              — These items aren't in the catalog yet. Place them or dismiss.
+            </span>
+          </div>
+
+          <div className="rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-900/10 overflow-hidden divide-y divide-violet-100 dark:divide-violet-800/50">
+            {flaggedItems.map((flagged) => (
+              <div
+                key={flagged.id}
+                className="flex items-center gap-3 px-4 py-3 min-h-[52px] flex-wrap"
+              >
+                <Sparkles className="h-4 w-4 text-violet-500 dark:text-violet-400 flex-shrink-0" />
+
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                    {flagged.description}
+                  </p>
+                  <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
+                    {flagged.part_number && (
+                      <span className="font-mono">MPN: {flagged.part_number}</span>
+                    )}
+                    {flagged.requested_by_name && (
+                      <span className="inline-flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        {flagged.requested_by_name}
+                      </span>
+                    )}
+                    {flagged.job_name && (
+                      <span className="inline-flex items-center gap-1">
+                        <Briefcase className="h-3 w-3" />
+                        {flagged.job_name}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setPlacementItem(flagged)}
+                  >
+                    <FolderTree className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline ml-1">Place in Catalog</span>
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => dismissMutation.mutate(flagged.id)}
+                    disabled={dismissMutation.isPending}
+                    className="p-1.5 rounded text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
+                    title="Dismiss"
+                  >
+                    <XCircle className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Bulk action confirmation modal ──────────────────── */}
       <Modal
         isOpen={showBulkModal}
@@ -550,6 +644,14 @@ export function ApprovalsTab() {
           </div>
         )}
       </Modal>
+
+      {/* ── Special item placement wizard ────────────────── */}
+      {placementItem && (
+        <SpecialItemPlacementModal
+          item={placementItem}
+          onClose={() => setPlacementItem(null)}
+        />
+      )}
     </div>
   );
 }

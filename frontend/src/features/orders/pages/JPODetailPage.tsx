@@ -22,6 +22,7 @@ import {
 import { getJPO, submitJPO, reviewJPO, getStatusHistory } from '../../../api/orders';
 import { OrderStatusBadge } from '../components/OrderStatusBadge';
 import { EmptyState } from '../../../components/ui/EmptyState';
+import { PartIdentity } from '../../../components/ui/PartIdentity';
 import type { StatusHistoryEntry } from '../../../lib/types';
 
 export function JPODetailPage() {
@@ -227,14 +228,18 @@ export function JPODetailPage() {
               {jpo.lines.map((line) => (
                 <tr key={line.id} className="hover:bg-surface-secondary/30 transition-colors">
                   <td className="px-4 py-3">
-                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                      {line.part_number || `Part #${line.part_id}`}
-                    </div>
-                    {line.part_description && (
-                      <div className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[250px]">
-                        {line.part_description}
-                      </div>
-                    )}
+                    <PartIdentity
+                      compact
+                      partName={line.part_name}
+                      partDescription={line.part_description}
+                      partNumber={line.part_number}
+                      partId={line.part_id}
+                      brandName={line.brand_name}
+                      colorName={line.color_name}
+                      colorHex={line.color_hex}
+                      categoryName={line.category_name}
+                      typeName={line.type_name}
+                    />
                   </td>
                   <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-900 dark:text-gray-100">
                     {line.qty_requested}
@@ -287,9 +292,9 @@ export function JPODetailPage() {
                     <span className="font-medium text-gray-900 dark:text-gray-100">
                       {entry.old_status ? `${entry.old_status} → ${entry.new_status}` : entry.new_status}
                     </span>
-                    {entry.changed_by_name && (
+                    {entry.changer_name && (
                       <span className="text-gray-500 dark:text-gray-400">
-                        by {entry.changed_by_name}
+                        by {entry.changer_name}
                       </span>
                     )}
                   </div>

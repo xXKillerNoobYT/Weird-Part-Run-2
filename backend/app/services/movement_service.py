@@ -225,7 +225,7 @@ class MovementService:
         nothing — e.g., a delivery arrived, or we're doing initial inventory setup.
         Each item:
         1. Validates the part exists
-        2. UPSERTs into the stock table (warehouse, location_id=1)
+        2. UPSERTs into the stock table (warehouse, selected location_id)
         3. Logs a 'receive' movement for the audit trail
         4. Updates parts.shelf_location if provided
         5. Recalculates forecast
@@ -243,7 +243,7 @@ class MovementService:
                 await self._add_stock(
                     part_id=item.part_id,
                     location_type="warehouse",
-                    location_id=1,
+                    location_id=req.warehouse_location_id,
                     qty=item.qty,
                     supplier_id=item.supplier_id,
                 )
@@ -253,7 +253,7 @@ class MovementService:
                     part_id=item.part_id,
                     qty=item.qty,
                     to_location_type="warehouse",
-                    to_location_id=1,
+                    to_location_id=req.warehouse_location_id,
                     supplier_id=item.supplier_id,
                     movement_type="receive",
                     reason=req.reason,

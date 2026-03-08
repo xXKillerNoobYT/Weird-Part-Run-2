@@ -44,6 +44,12 @@ class ProcurementService:
         cursor = await self.db.execute(
             """
             SELECT p.id AS part_id, p.code AS part_number, p.description AS part_description,
+                   p.name AS part_name,
+                   cat.name AS category_name,
+                   typ.name AS type_name,
+                   col.name AS color_name,
+                   col.hex_code AS color_hex,
+                   b.name AS brand_name,
                    p.forecast_reorder_point AS reorder_point,
                    p.forecast_target_qty AS target_qty,
                    p.forecast_days_until_low AS days_until_stockout,
@@ -88,6 +94,10 @@ class ProcurementService:
                     LIMIT 1) AS estimated_unit_cost
 
             FROM parts p
+            LEFT JOIN part_categories cat ON cat.id = p.category_id
+            LEFT JOIN part_types typ ON typ.id = p.type_id
+            LEFT JOIN part_colors col ON col.id = p.color_id
+            LEFT JOIN brands b ON b.id = p.brand_id
             WHERE p.is_deprecated = 0
               AND p.forecast_reorder_point > 0
             ORDER BY p.forecast_days_until_low ASC, p.forecast_reorder_point DESC

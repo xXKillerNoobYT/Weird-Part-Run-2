@@ -1,3 +1,9 @@
+> **Implemented admin surface (2026-03-07):**
+> - In-app page: **Settings → Update Protocol** (`/settings/updates`)
+> - Plan + implementation log: `docs/plans/update-protocol-admin-surface.md`
+>
+> This document remains the architecture/spec source of truth.
+
 You’ve just described the **final missing piece** of your ecosystem:  
 a **shop‑originated, offline‑capable, mesh‑propagated update pipeline** that:
 

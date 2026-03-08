@@ -141,13 +141,23 @@ class ReceivingService:
             """
             SELECT rsi.*,
                    pli.part_id,
-                   p.part_number,
+                   p.code AS part_number,
                    p.description AS part_description,
+                   p.name AS part_name,
+                   cat.name AS category_name,
+                   typ.name AS type_name,
+                   col.name AS color_name,
+                   col.hex_code AS color_hex,
+                   b.name AS brand_name,
                    pli.unit_cost,
                    sz.label AS zone_label
             FROM receiving_session_items rsi
             JOIN po_line_items pli ON pli.id = rsi.po_line_id
             JOIN parts p ON p.id = pli.part_id
+            LEFT JOIN part_categories cat ON cat.id = p.category_id
+            LEFT JOIN part_types typ ON typ.id = p.type_id
+            LEFT JOIN part_colors col ON col.id = p.color_id
+            LEFT JOIN brands b ON b.id = p.brand_id
             LEFT JOIN staging_zones sz ON sz.id = rsi.staging_zone_id
             WHERE rsi.session_id = ?
             ORDER BY rsi.id
@@ -369,7 +379,13 @@ class ReceivingService:
             """
             SELECT pli.id AS po_line_id, pli.part_id,
                    pli.qty_ordered, pli.qty_received,
-                   p.part_number, p.description AS part_description,
+                   p.code AS part_number, p.description AS part_description,
+                   p.name AS part_name,
+                   cat.name AS category_name,
+                   typ.name AS type_name,
+                   col.name AS color_name,
+                   col.hex_code AS color_hex,
+                   b.name AS brand_name,
                    pli.unit_cost,
                    rsi.id AS session_item_id,
                    rsi.expected_qty,
@@ -377,6 +393,10 @@ class ReceivingService:
             FROM receiving_sessions rs
             JOIN po_line_items pli ON pli.po_id = rs.po_id
             JOIN parts p ON p.id = pli.part_id
+            LEFT JOIN part_categories cat ON cat.id = p.category_id
+            LEFT JOIN part_types typ ON typ.id = p.type_id
+            LEFT JOIN part_colors col ON col.id = p.color_id
+            LEFT JOIN brands b ON b.id = p.brand_id
             LEFT JOIN receiving_session_items rsi
                 ON rsi.session_id = rs.id AND rsi.po_line_id = pli.id
             WHERE rs.id = ? AND pli.part_id = ? AND pli.status NOT IN ('cancelled')

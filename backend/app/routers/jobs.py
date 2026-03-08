@@ -36,6 +36,8 @@ from app.models.jobs import (
     JobPartResponse,
     JobResponse,
     JobStatusUpdate,
+    JobTeamMemberAdd,
+    JobTeamMemberResponse,
     JobUpdate,
     LaborEntryResponse,
     OneTimeQuestionCreate,
@@ -847,3 +849,134 @@ async def unlink_gc_from_job(
     if not removed:
         raise HTTPException(status_code=404, detail="Contractor link not found")
     return ApiResponse(data={"id": link_id}, message="Contractor unlinked from job")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# JOB TEAM MEMBERS
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@router.get(
+    "/{job_id}/team",
+    response_model=ApiResponse[list[JobTeamMemberResponse]],
+)
+async def get_job_team(
+    job_id: int,
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List all employees assigned to a job's team."""
+    cursor = await db.execute(
+        """
+        SELECT jtm.id, jtm.job_id, jtm.user_id, jtm.role,
+               jtm.assigned_at, jtm.notes,
+               COALESCE(u.display_name, u.username) AS display_name,
+               u.email
+        FROM job_team_members jtm
+        JOIN users u ON u.id = jtm.user_id
+        WHERE jtm.job_id = ?
+        ORDER BY
+            CASE jtm.role WHEN 'lead' THEN 0 ELSE 1 END,
+            u.display_name ASC
+        """,
+        (job_id,),
+    )
+    rows = await cursor.fetchall()
+    members = [
+        JobTeamMemberResponse(
+            id=r["id"],
+            job_id=r["job_id"],
+            user_id=r["user_id"],
+            display_name=r["display_name"] or "Unknown",
+            email=r["email"],
+            role=r["role"],
+            assigned_at=r["assigned_at"],
+            notes=r["notes"],
+        )
+        for r in rows
+    ]
+    return ApiResponse(data=members, message=f"{len(members)} team members")
+
+
+@router.post(
+    "/{job_id}/team",
+    response_model=ApiResponse[JobTeamMemberResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_job_team_member(
+    job_id: int,
+    payload: JobTeamMemberAdd,
+    user: dict = Depends(require_permission("manage_jobs")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Add an employee to a job's team.
+
+    If the employee is already on the team, returns 409.
+    Role must be 'lead' or 'member'.
+    """
+    # Verify the job exists
+    job_row = await db.execute("SELECT id FROM jobs WHERE id = ?", (job_id,))
+    if not await job_row.fetchone():
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Verify the user exists
+    user_row = await db.execute(
+        "SELECT id, COALESCE(display_name, username) AS display_name, email FROM users WHERE id = ?",
+        (payload.user_id,),
+    )
+    usr = await user_row.fetchone()
+    if not usr:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        cursor = await db.execute(
+            """
+            INSERT INTO job_team_members (job_id, user_id, role, assigned_by, notes)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (job_id, payload.user_id, payload.role, user.get("id"), payload.notes),
+        )
+        await db.commit()
+        new_id = cursor.lastrowid
+    except Exception as exc:
+        if "UNIQUE" in str(exc):
+            raise HTTPException(status_code=409, detail="Employee is already on this team")
+        raise
+
+    # Fetch the assigned_at value
+    row = await db.execute(
+        "SELECT assigned_at FROM job_team_members WHERE id = ?", (new_id,)
+    )
+    inserted = await row.fetchone()
+
+    return ApiResponse(
+        data=JobTeamMemberResponse(
+            id=new_id,
+            job_id=job_id,
+            user_id=payload.user_id,
+            display_name=usr["display_name"] or "Unknown",
+            email=usr["email"],
+            role=payload.role,
+            assigned_at=inserted["assigned_at"] if inserted else "",
+            notes=payload.notes,
+        ),
+        message="Team member added",
+    )
+
+
+@router.delete("/{job_id}/team/{member_id}")
+async def remove_job_team_member(
+    job_id: int,
+    member_id: int,
+    user: dict = Depends(require_permission("manage_jobs")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Remove a team member from a job."""
+    result = await db.execute(
+        "DELETE FROM job_team_members WHERE id = ? AND job_id = ?",
+        (member_id, job_id),
+    )
+    await db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Team member not found")
+    return ApiResponse(data={"id": member_id}, message="Team member removed")

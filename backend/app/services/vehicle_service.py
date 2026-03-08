@@ -21,14 +21,18 @@ import aiosqlite
 
 from app.repositories.stock_repo import StockRepo
 from app.repositories.vehicle_repo import (
+    JobTrailerRepo,
     MaintenanceScheduleRepo,
     MileageLogRepo,
     ReimbursementRepo,
+    TrailerLocationEventRepo,
     VehicleAssignmentRepo,
     VehicleDeliveryRepo,
     VehicleRepo,
     WarehouseLocationRepo,
 )
+from app.services.movement_service import MovementService
+from app.models.warehouse import MovementLineItem, MovementRequest
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +50,8 @@ class VehicleService:
         self.reimbursement_repo = ReimbursementRepo(db)
         self.stock_repo = StockRepo(db)
         self.warehouse_repo = WarehouseLocationRepo(db)
+        self.trailer_repo = JobTrailerRepo(db)
+        self.trailer_location_repo = TrailerLocationEventRepo(db)
 
     # ── Vehicle CRUD ───────────────────────────────────────────
 
@@ -380,47 +386,32 @@ class VehicleService:
         from_location_id: int = 1,
         notes: str | None = None,
     ) -> dict:
-        """Add parts to a vehicle (stock movement from source to truck).
+        """Add parts to a vehicle via MovementService (atomic, supplier-preserving).
 
-        Creates a stock_movement record and updates stock levels.
+        Routes through the standard movement engine so FIFO, audit trail,
+        and supplier tracking are all handled consistently.
         """
-        # Verify vehicle exists
         vehicle = await self.vehicle_repo.get_by_id(vehicle_id)
         if not vehicle:
             raise ValueError(f"Vehicle {vehicle_id} not found")
 
-        # Create stock movement
-        await self.db.execute(
-            """
-            INSERT INTO stock_movements (
-                part_id, qty, movement_type,
-                from_location_type, from_location_id,
-                to_location_type, to_location_id,
-                performed_by, notes
-            ) VALUES (?, ?, 'transfer', ?, ?, 'truck', ?, ?, ?)
-            """,
-            (
-                part_id, qty,
-                from_location_type, from_location_id,
-                vehicle_id,
-                user_id,
-                notes or f"Added to vehicle {vehicle.get('vehicle_number', vehicle_id)}",
-            ),
+        movement_service = MovementService(self.db)
+        req = MovementRequest(
+            from_location_type=from_location_type,
+            from_location_id=from_location_id,
+            to_location_type="truck",
+            to_location_id=vehicle_id,
+            items=[MovementLineItem(part_id=part_id, qty=qty)],
+            reason="Vehicle Stock",
+            notes=notes or f"Added to vehicle {vehicle.get('vehicle_number', vehicle_id)}",
         )
-
-        # Decrement source stock
-        await self.db.execute(
-            """
-            UPDATE stock SET qty = MAX(qty - ?, 0), updated_at = datetime('now')
-            WHERE part_id = ? AND location_type = ? AND location_id = ?
-            """,
-            (qty, part_id, from_location_type, from_location_id),
-        )
-
-        # Increment truck stock (upsert)
-        await self.stock_repo.add_stock(part_id, "truck", vehicle_id, qty)
-
-        return {"part_id": part_id, "qty_added": qty, "vehicle_id": vehicle_id}
+        result = await movement_service.execute_movement(req, performed_by=user_id)
+        return {
+            "part_id": part_id,
+            "qty_added": qty,
+            "vehicle_id": vehicle_id,
+            "movement_count": len(result.movements),
+        }
 
     async def remove_from_vehicle_inventory(
         self,
@@ -433,46 +424,553 @@ class VehicleService:
         to_location_id: int = 1,
         notes: str | None = None,
     ) -> dict:
-        """Remove parts from a vehicle back to a destination.
+        """Remove parts from a vehicle via MovementService (atomic, supplier-preserving).
 
-        Creates a stock_movement record and updates stock levels.
+        Routes through the standard movement engine for FIFO order,
+        audit trail, and supplier tracking consistency.
         """
         vehicle = await self.vehicle_repo.get_by_id(vehicle_id)
         if not vehicle:
             raise ValueError(f"Vehicle {vehicle_id} not found")
 
-        # Create stock movement
-        await self.db.execute(
+        movement_service = MovementService(self.db)
+        req = MovementRequest(
+            from_location_type="truck",
+            from_location_id=vehicle_id,
+            to_location_type=to_location_type,
+            to_location_id=to_location_id,
+            items=[MovementLineItem(part_id=part_id, qty=qty)],
+            reason="Vehicle Return",
+            notes=notes or f"Removed from vehicle {vehicle.get('vehicle_number', vehicle_id)}",
+        )
+        result = await movement_service.execute_movement(req, performed_by=user_id)
+        return {
+            "part_id": part_id,
+            "qty_removed": qty,
+            "vehicle_id": vehicle_id,
+            "movement_count": len(result.movements),
+        }
+
+    # ── Job Trailers ────────────────────────────────────────────
+
+    async def list_trailers(self, *, search: str | None = None) -> list[dict]:
+        return await self.trailer_repo.list_active(search=search)
+
+    async def create_trailer(self, data: dict) -> dict:
+        existing = await self.trailer_repo.get_by_code(data["trailer_code"])
+        if existing:
+            raise ValueError(f"Trailer code '{data['trailer_code']}' already exists")
+
+        trailer_id = await self.trailer_repo.insert(data)
+        await self.db.commit()
+        trailer = await self.trailer_repo.get_by_id(trailer_id)
+        return dict(trailer) if trailer else {}
+
+    async def update_trailer(self, trailer_id: int, data: dict) -> dict | None:
+        trailer = await self.trailer_repo.get_by_id(trailer_id)
+        if not trailer:
+            return None
+        patch = {k: v for k, v in data.items() if v is not None}
+        if patch:
+            await self.trailer_repo.update(trailer_id, patch)
+            await self.db.commit()
+        updated = await self.trailer_repo.get_by_id(trailer_id)
+        return dict(updated) if updated else None
+
+    async def deactivate_trailer(self, trailer_id: int) -> bool:
+        trailer = await self.trailer_repo.get_by_id(trailer_id)
+        if not trailer:
+            return False
+        await self.trailer_repo.update(trailer_id, {"is_active": 0, "status": "inactive"})
+        await self.db.commit()
+        return True
+
+    async def get_trailer_inventory(
+        self, trailer_id: int, *, search: str | None = None
+    ) -> list[dict]:
+        trailer = await self.trailer_repo.get_by_id(trailer_id)
+        if not trailer:
+            raise ValueError(f"Trailer {trailer_id} not found")
+
+        cursor = await self.db.execute(
             """
-            INSERT INTO stock_movements (
-                part_id, qty, movement_type,
-                from_location_type, from_location_id,
-                to_location_type, to_location_id,
-                performed_by, notes
-            ) VALUES (?, ?, 'transfer', 'truck', ?, ?, ?, ?, ?)
+            SELECT s.id, s.part_id, s.qty, s.supplier_id,
+                   p.code AS part_number, p.name AS part_description,
+                   pc.name AS category, b.name AS brand,
+                   sup.name AS supplier_name
+            FROM stock s
+            JOIN parts p ON p.id = s.part_id
+            LEFT JOIN part_categories pc ON pc.id = p.category_id
+            LEFT JOIN brands b ON b.id = p.brand_id
+            LEFT JOIN suppliers sup ON sup.id = s.supplier_id
+            WHERE s.location_type = 'trailer' AND s.location_id = ?
+              AND s.qty > 0
+            """
+            + (" AND (p.code LIKE ? OR p.name LIKE ?)" if search else "")
+            + " ORDER BY p.code ASC",
+            (trailer_id,) + ((f"%{search}%", f"%{search}%") if search else ()),
+        )
+        return await cursor.fetchall()
+
+    async def preload_trailer_inventory(
+        self,
+        trailer_id: int,
+        part_id: int,
+        qty: int,
+        user_id: int,
+        *,
+        from_location_type: str = "warehouse",
+        from_location_id: int = 1,
+        notes: str | None = None,
+    ) -> dict:
+        trailer = await self.trailer_repo.get_by_id(trailer_id)
+        if not trailer:
+            raise ValueError(f"Trailer {trailer_id} not found")
+
+        movement_service = MovementService(self.db)
+        req = MovementRequest(
+            from_location_type=from_location_type,
+            from_location_id=from_location_id,
+            to_location_type="trailer",
+            to_location_id=trailer_id,
+            items=[MovementLineItem(part_id=part_id, qty=qty)],
+            reason="Trailer Preload",
+            notes=notes or f"Preload to trailer {trailer.get('trailer_code', trailer_id)}",
+        )
+        result = await movement_service.execute_movement(req, performed_by=user_id)
+        return {
+            "part_id": part_id,
+            "qty_added": qty,
+            "trailer_id": trailer_id,
+            "movement_count": len(result.movements),
+        }
+
+    async def consume_trailer_inventory_to_job(
+        self,
+        trailer_id: int,
+        part_id: int,
+        qty: int,
+        job_id: int,
+        user_id: int,
+        *,
+        notes: str | None = None,
+        photo_path: str | None = None,
+        scan_confirmed: bool = False,
+    ) -> dict:
+        trailer = await self.trailer_repo.get_by_id(trailer_id)
+        if not trailer:
+            raise ValueError(f"Trailer {trailer_id} not found")
+
+        movement_service = MovementService(self.db)
+        req = MovementRequest(
+            from_location_type="trailer",
+            from_location_id=trailer_id,
+            to_location_type="job",
+            to_location_id=job_id,
+            items=[MovementLineItem(part_id=part_id, qty=qty)],
+            reason="Trailer Job Pull",
+            notes=notes or f"Consumed from trailer {trailer.get('trailer_code', trailer_id)} to job",
+            job_id=job_id,
+            photo_path=photo_path,
+            scan_confirmed=scan_confirmed,
+        )
+        result = await movement_service.execute_movement(req, performed_by=user_id)
+        return {
+            "part_id": part_id,
+            "qty_consumed": qty,
+            "trailer_id": trailer_id,
+            "job_id": job_id,
+            "movement_count": len(result.movements),
+        }
+
+    async def return_trailer_inventory(
+        self,
+        trailer_id: int,
+        part_id: int,
+        qty: int,
+        user_id: int,
+        *,
+        to_location_type: str = "warehouse",
+        to_location_id: int = 1,
+        notes: str | None = None,
+    ) -> dict:
+        trailer = await self.trailer_repo.get_by_id(trailer_id)
+        if not trailer:
+            raise ValueError(f"Trailer {trailer_id} not found")
+
+        movement_service = MovementService(self.db)
+        req = MovementRequest(
+            from_location_type="trailer",
+            from_location_id=trailer_id,
+            to_location_type=to_location_type,
+            to_location_id=to_location_id,
+            items=[MovementLineItem(part_id=part_id, qty=qty)],
+            reason="Trailer Return",
+            notes=notes or f"Returned from trailer {trailer.get('trailer_code', trailer_id)}",
+        )
+        result = await movement_service.execute_movement(req, performed_by=user_id)
+        return {
+            "part_id": part_id,
+            "qty_returned": qty,
+            "trailer_id": trailer_id,
+            "movement_count": len(result.movements),
+        }
+
+    async def record_trailer_location_event(
+        self,
+        trailer_id: int,
+        data: dict,
+        *,
+        recorded_by: int,
+    ) -> dict:
+        trailer = await self.trailer_repo.get_by_id(trailer_id)
+        if not trailer:
+            raise ValueError(f"Trailer {trailer_id} not found")
+
+        payload = {
+            **data,
+            "trailer_id": trailer_id,
+            "recorded_by": recorded_by,
+        }
+        event_id = await self.trailer_location_repo.insert(payload)
+
+        # Keep trailer snapshot columns aligned for quick list rendering.
+        patch: dict[str, Any] = {}
+        if data.get("job_id") is not None:
+            patch["current_job_id"] = data.get("job_id")
+        if data.get("warehouse_id") is not None and data.get("location_kind") == "warehouse":
+            patch["home_warehouse_id"] = data.get("warehouse_id")
+        if data.get("event_type") == "departed":
+            patch["status"] = "in_transit"
+        elif data.get("event_type") in {"arrived_job", "arrived_warehouse", "check_in", "manual_update"}:
+            patch["status"] = "active"
+        if patch:
+            await self.trailer_repo.update(trailer_id, patch)
+
+        await self.db.commit()
+        event = await self.trailer_location_repo.get_by_id(event_id)
+        return dict(event) if event else {}
+
+    async def get_trailer_location(self, trailer_id: int) -> dict | None:
+        trailer = await self.trailer_repo.get_by_id(trailer_id)
+        if not trailer:
+            return None
+        latest = await self.trailer_location_repo.get_latest_for_trailer(trailer_id)
+        if not latest:
+            return {
+                "trailer_id": trailer_id,
+                "location_kind": "other",
+                "event_type": "manual_update",
+                "message": "No location events recorded",
+            }
+        return dict(latest)
+
+    async def list_trailer_location_events(self, trailer_id: int, *, limit: int = 100) -> list[dict]:
+        trailer = await self.trailer_repo.get_by_id(trailer_id)
+        if not trailer:
+            raise ValueError(f"Trailer {trailer_id} not found")
+        return await self.trailer_location_repo.list_for_trailer(trailer_id, limit=limit)
+
+    # ── Trailer Stock Templates ────────────────────────────────
+
+    async def list_trailer_templates(
+        self,
+        *,
+        trailer_id: int | None = None,
+        include_global: bool = True,
+    ) -> list[dict]:
+        """List stock templates, optionally scoped to a trailer.
+
+        When trailer_id is provided and include_global=True (default),
+        returns both trailer-specific *and* global (trailer_id IS NULL) templates.
+        """
+        if trailer_id is not None:
+            if include_global:
+                cursor = await self.db.execute(
+                    """
+                    SELECT t.*, jt.trailer_code
+                    FROM trailer_stock_templates t
+                    LEFT JOIN job_trailers jt ON jt.id = t.trailer_id
+                    WHERE t.trailer_id = ? OR t.trailer_id IS NULL
+                    ORDER BY t.trailer_id IS NULL ASC, t.name ASC
+                    """,
+                    (trailer_id,),
+                )
+            else:
+                cursor = await self.db.execute(
+                    """
+                    SELECT t.*, jt.trailer_code
+                    FROM trailer_stock_templates t
+                    LEFT JOIN job_trailers jt ON jt.id = t.trailer_id
+                    WHERE t.trailer_id = ?
+                    ORDER BY t.name ASC
+                    """,
+                    (trailer_id,),
+                )
+        else:
+            cursor = await self.db.execute(
+                """
+                SELECT t.*, jt.trailer_code
+                FROM trailer_stock_templates t
+                LEFT JOIN job_trailers jt ON jt.id = t.trailer_id
+                ORDER BY t.trailer_id IS NULL ASC, t.name ASC
+                """,
+            )
+        return await cursor.fetchall()
+
+    async def get_trailer_template(self, template_id: int) -> dict | None:
+        """Get a single template with its lines."""
+        cursor = await self.db.execute(
+            """
+            SELECT t.*, jt.trailer_code
+            FROM trailer_stock_templates t
+            LEFT JOIN job_trailers jt ON jt.id = t.trailer_id
+            WHERE t.id = ?
+            """,
+            (template_id,),
+        )
+        template = await cursor.fetchone()
+        if not template:
+            return None
+
+        lines_cursor = await self.db.execute(
+            """
+            SELECT tl.*, p.code AS part_code, p.name AS part_name,
+                   pc.name AS category_name, b.name AS brand_name
+            FROM trailer_stock_template_lines tl
+            JOIN parts p ON p.id = tl.part_id
+            LEFT JOIN part_categories pc ON pc.id = p.category_id
+            LEFT JOIN brands b ON b.id = p.brand_id
+            WHERE tl.template_id = ?
+            ORDER BY p.code ASC
+            """,
+            (template_id,),
+        )
+        lines = await lines_cursor.fetchall()
+        result = dict(template)
+        result["lines"] = [dict(ln) for ln in lines]
+        return result
+
+    async def create_trailer_template(self, data: dict) -> dict:
+        """Create a new stock template.
+
+        data keys: name, trailer_id (optional), is_default, notes, lines[]
+        """
+        # If setting as default, clear other defaults for same scope
+        if data.get("is_default"):
+            if data.get("trailer_id"):
+                await self.db.execute(
+                    "UPDATE trailer_stock_templates SET is_default = 0 WHERE trailer_id = ?",
+                    (data["trailer_id"],),
+                )
+            else:
+                await self.db.execute(
+                    "UPDATE trailer_stock_templates SET is_default = 0 WHERE trailer_id IS NULL",
+                )
+
+        cursor = await self.db.execute(
+            """
+            INSERT INTO trailer_stock_templates (trailer_id, name, is_default, notes)
+            VALUES (?, ?, ?, ?)
             """,
             (
-                part_id, qty,
-                vehicle_id,
-                to_location_type, to_location_id,
-                user_id,
-                notes or f"Removed from vehicle {vehicle.get('vehicle_number', vehicle_id)}",
+                data.get("trailer_id"),
+                data["name"],
+                1 if data.get("is_default") else 0,
+                data.get("notes"),
             ),
         )
+        template_id = cursor.lastrowid
 
-        # Decrement truck stock
-        await self.db.execute(
-            """
-            UPDATE stock SET qty = MAX(qty - ?, 0), updated_at = datetime('now')
-            WHERE part_id = ? AND location_type = 'truck' AND location_id = ?
-            """,
-            (qty, part_id, vehicle_id),
+        # Insert lines if provided
+        for line in data.get("lines", []):
+            await self.db.execute(
+                """
+                INSERT INTO trailer_stock_template_lines
+                    (template_id, part_id, target_qty, min_qty)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    template_id,
+                    line["part_id"],
+                    line["target_qty"],
+                    line.get("min_qty", 0),
+                ),
+            )
+
+        await self.db.commit()
+        return await self.get_trailer_template(template_id)
+
+    async def update_trailer_template(self, template_id: int, data: dict) -> dict | None:
+        """Update template header and optionally replace all lines."""
+        cursor = await self.db.execute(
+            "SELECT * FROM trailer_stock_templates WHERE id = ?", (template_id,)
         )
+        existing = await cursor.fetchone()
+        if not existing:
+            return None
 
-        # Increment destination stock
-        await self.stock_repo.add_stock(part_id, to_location_type, to_location_id, qty)
+        # Handle default flag
+        if data.get("is_default"):
+            trailer_id = data.get("trailer_id", existing["trailer_id"])
+            if trailer_id:
+                await self.db.execute(
+                    "UPDATE trailer_stock_templates SET is_default = 0 WHERE trailer_id = ? AND id != ?",
+                    (trailer_id, template_id),
+                )
+            else:
+                await self.db.execute(
+                    "UPDATE trailer_stock_templates SET is_default = 0 WHERE trailer_id IS NULL AND id != ?",
+                    (template_id,),
+                )
 
-        return {"part_id": part_id, "qty_removed": qty, "vehicle_id": vehicle_id}
+        # Update header
+        sets = []
+        params = []
+        for field in ("name", "trailer_id", "is_default", "notes"):
+            if field in data:
+                sets.append(f"{field} = ?")
+                val = data[field]
+                if field == "is_default":
+                    val = 1 if val else 0
+                params.append(val)
+        if sets:
+            sets.append("updated_at = datetime('now')")
+            params.append(template_id)
+            await self.db.execute(
+                f"UPDATE trailer_stock_templates SET {', '.join(sets)} WHERE id = ?",
+                params,
+            )
+
+        # Replace lines if provided
+        if "lines" in data:
+            await self.db.execute(
+                "DELETE FROM trailer_stock_template_lines WHERE template_id = ?",
+                (template_id,),
+            )
+            for line in data["lines"]:
+                await self.db.execute(
+                    """
+                    INSERT INTO trailer_stock_template_lines
+                        (template_id, part_id, target_qty, min_qty)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        template_id,
+                        line["part_id"],
+                        line["target_qty"],
+                        line.get("min_qty", 0),
+                    ),
+                )
+
+        await self.db.commit()
+        return await self.get_trailer_template(template_id)
+
+    async def delete_trailer_template(self, template_id: int) -> bool:
+        """Delete a template and its lines (CASCADE via FK)."""
+        cursor = await self.db.execute(
+            "SELECT id FROM trailer_stock_templates WHERE id = ?", (template_id,)
+        )
+        if not await cursor.fetchone():
+            return False
+        await self.db.execute(
+            "DELETE FROM trailer_stock_templates WHERE id = ?", (template_id,)
+        )
+        await self.db.commit()
+        return True
+
+    async def get_restock_guidance(self, trailer_id: int) -> dict:
+        """Compare trailer actual stock vs template targets.
+
+        Uses the default template for the trailer (or global default if none).
+        Returns per-line: part info, target_qty, min_qty, actual_qty, deficit.
+        """
+        # Find applicable template: trailer-specific default, then global default
+        cursor = await self.db.execute(
+            """
+            SELECT id FROM trailer_stock_templates
+            WHERE trailer_id = ? AND is_default = 1
+            LIMIT 1
+            """,
+            (trailer_id,),
+        )
+        template = await cursor.fetchone()
+        if not template:
+            cursor = await self.db.execute(
+                """
+                SELECT id FROM trailer_stock_templates
+                WHERE trailer_id IS NULL AND is_default = 1
+                LIMIT 1
+                """,
+            )
+            template = await cursor.fetchone()
+
+        if not template:
+            return {
+                "trailer_id": trailer_id,
+                "template_id": None,
+                "message": "No default template found",
+                "lines": [],
+                "summary": {"total_parts": 0, "parts_below_min": 0, "parts_below_target": 0},
+            }
+
+        template_id = template["id"]
+
+        # Get template lines + actual stock
+        cursor = await self.db.execute(
+            """
+            SELECT tl.part_id, tl.target_qty, tl.min_qty,
+                   p.code AS part_code, p.name AS part_name,
+                   pc.name AS category_name,
+                   COALESCE(SUM(s.qty), 0) AS actual_qty
+            FROM trailer_stock_template_lines tl
+            JOIN parts p ON p.id = tl.part_id
+            LEFT JOIN part_categories pc ON pc.id = p.category_id
+            LEFT JOIN stock s ON s.part_id = tl.part_id
+                              AND s.location_type = 'trailer'
+                              AND s.location_id = ?
+            WHERE tl.template_id = ?
+            GROUP BY tl.part_id
+            ORDER BY p.code ASC
+            """,
+            (trailer_id, template_id),
+        )
+        rows = await cursor.fetchall()
+
+        lines = []
+        below_min = 0
+        below_target = 0
+        for row in rows:
+            actual = row["actual_qty"]
+            target = row["target_qty"]
+            min_qty = row["min_qty"]
+            deficit = max(target - actual, 0)
+            if actual < min_qty:
+                below_min += 1
+            if actual < target:
+                below_target += 1
+            lines.append({
+                "part_id": row["part_id"],
+                "part_code": row["part_code"],
+                "part_name": row["part_name"],
+                "category_name": row["category_name"],
+                "target_qty": target,
+                "min_qty": min_qty,
+                "actual_qty": actual,
+                "deficit": deficit,
+                "status": "critical" if actual < min_qty else ("low" if actual < target else "ok"),
+            })
+
+        return {
+            "trailer_id": trailer_id,
+            "template_id": template_id,
+            "lines": lines,
+            "summary": {
+                "total_parts": len(lines),
+                "parts_below_min": below_min,
+                "parts_below_target": below_target,
+            },
+        }
 
     # ── Warehouse Locations ────────────────────────────────────
 

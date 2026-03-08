@@ -173,9 +173,19 @@ class JPOLineRepo(BaseRepo):
             """
             SELECT li.*,
                    p.code AS part_number, p.description AS part_description,
+                   p.name AS part_name,
+                   cat.name AS category_name,
+                   typ.name AS type_name,
+                   col.name AS color_name,
+                   col.hex_code AS color_hex,
+                   b.name AS brand_name,
                    s.name AS supplier_name
             FROM jpo_line_items li
             JOIN parts p ON p.id = li.part_id
+            LEFT JOIN part_categories cat ON cat.id = p.category_id
+            LEFT JOIN part_types typ ON typ.id = p.type_id
+            LEFT JOIN part_colors col ON col.id = p.color_id
+            LEFT JOIN brands b ON b.id = p.brand_id
             LEFT JOIN suppliers s ON s.id = li.suggested_supplier_id
             WHERE li.jpo_id = ?
             ORDER BY li.id
@@ -190,9 +200,19 @@ class JPOLineRepo(BaseRepo):
             """
             SELECT li.*,
                    p.code AS part_number, p.description AS part_description,
+                   p.name AS part_name,
+                   cat.name AS category_name,
+                   typ.name AS type_name,
+                   col.name AS color_name,
+                   col.hex_code AS color_hex,
+                   b.name AS brand_name,
                    s.name AS supplier_name
             FROM jpo_line_items li
             JOIN parts p ON p.id = li.part_id
+            LEFT JOIN part_categories cat ON cat.id = p.category_id
+            LEFT JOIN part_types typ ON typ.id = p.type_id
+            LEFT JOIN part_colors col ON col.id = p.color_id
+            LEFT JOIN brands b ON b.id = p.brand_id
             LEFT JOIN suppliers s ON s.id = li.suggested_supplier_id
             WHERE li.jpo_id = ? AND li.qty_ordered < li.qty_requested
             ORDER BY li.id
@@ -418,9 +438,19 @@ class POLineRepo(BaseRepo):
             """
             SELECT li.*,
                    p.code AS part_number, p.description AS part_description,
+                   p.name AS part_name,
+                   cat.name AS category_name,
+                   typ.name AS type_name,
+                   col.name AS color_name,
+                   col.hex_code AS color_hex,
+                   b.name AS brand_name,
                    (li.qty_ordered * COALESCE(li.unit_cost, 0)) AS line_total
             FROM po_line_items li
             JOIN parts p ON p.id = li.part_id
+            LEFT JOIN part_categories cat ON cat.id = p.category_id
+            LEFT JOIN part_types typ ON typ.id = p.type_id
+            LEFT JOIN part_colors col ON col.id = p.color_id
+            LEFT JOIN brands b ON b.id = p.brand_id
             WHERE li.po_id = ?
             ORDER BY li.id
             """,
@@ -433,10 +463,20 @@ class POLineRepo(BaseRepo):
         cursor = await self.db.execute(
             """
             SELECT li.*, po.po_number, po.id AS po_id,
-                   p.code AS part_number, p.description AS part_description
+                   p.code AS part_number, p.description AS part_description,
+                   p.name AS part_name,
+                   cat.name AS category_name,
+                   typ.name AS type_name,
+                   col.name AS color_name,
+                   col.hex_code AS color_hex,
+                   b.name AS brand_name
             FROM po_line_items li
             JOIN purchase_orders po ON po.id = li.po_id
             JOIN parts p ON p.id = li.part_id
+            LEFT JOIN part_categories cat ON cat.id = p.category_id
+            LEFT JOIN part_types typ ON typ.id = p.type_id
+            LEFT JOIN part_colors col ON col.id = p.color_id
+            LEFT JOIN brands b ON b.id = p.brand_id
             WHERE po.supplier_id = ?
               AND li.status IN ('pending', 'partial', 'backordered')
               AND po.status IN ('submitted', 'acknowledged', 'partially_received')
@@ -451,10 +491,22 @@ class POLineRepo(BaseRepo):
         cursor = await self.db.execute(
             """
             SELECT li.*, po.po_number, po.supplier_id,
-                   s.name AS supplier_name
+                   s.name AS supplier_name,
+                   p.code AS part_number, p.description AS part_description,
+                   p.name AS part_name,
+                   cat.name AS category_name,
+                   typ.name AS type_name,
+                   col.name AS color_name,
+                   col.hex_code AS color_hex,
+                   b.name AS brand_name
             FROM po_line_items li
             JOIN purchase_orders po ON po.id = li.po_id
             JOIN suppliers s ON s.id = po.supplier_id
+            JOIN parts p ON p.id = li.part_id
+            LEFT JOIN part_categories cat ON cat.id = p.category_id
+            LEFT JOIN part_types typ ON typ.id = p.type_id
+            LEFT JOIN part_colors col ON col.id = p.color_id
+            LEFT JOIN brands b ON b.id = p.brand_id
             WHERE li.part_id = ?
               AND li.status IN ('pending', 'partial', 'backordered')
               AND po.status IN ('submitted', 'acknowledged', 'partially_received')
@@ -595,9 +647,19 @@ class ReturnLineRepo(BaseRepo):
         cursor = await self.db.execute(
             """
             SELECT rli.*,
-                   p.code AS part_number, p.description AS part_description
+                   p.code AS part_number, p.description AS part_description,
+                   p.name AS part_name,
+                   cat.name AS category_name,
+                   typ.name AS type_name,
+                   col.name AS color_name,
+                   col.hex_code AS color_hex,
+                   b.name AS brand_name
             FROM return_line_items rli
             JOIN parts p ON p.id = rli.part_id
+            LEFT JOIN part_categories cat ON cat.id = p.category_id
+            LEFT JOIN part_types typ ON typ.id = p.type_id
+            LEFT JOIN part_colors col ON col.id = p.color_id
+            LEFT JOIN brands b ON b.id = p.brand_id
             WHERE rli.return_id = ?
             ORDER BY rli.id
             """,

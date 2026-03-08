@@ -47,7 +47,7 @@ class MovementRequest(BaseModel):
     gps_lat: float | None = None
     gps_lng: float | None = None
     # Staging destination hint (only for moves TO pulled)
-    destination_type: str | None = None  # 'truck' or 'job'
+    destination_type: str | None = None  # 'truck' | 'trailer' | 'job'
     destination_id: int | None = None
     destination_label: str | None = None
 
@@ -117,16 +117,25 @@ class MovementExecuteResponse(BaseModel):
 # =================================================================
 
 MOVEMENT_RULES: dict[tuple[str, str], dict[str, Any]] = {
-    ("warehouse", "pulled"):   {"type": "transfer", "photo_required": False},
-    ("pulled", "truck"):       {"type": "transfer", "photo_required": False},
-    ("warehouse", "truck"):    {"type": "transfer", "photo_required": False},
-    ("truck", "job"):          {"type": "consume",  "photo_required": True},
-    ("job", "truck"):          {"type": "return",   "photo_required": True},
-    ("truck", "warehouse"):    {"type": "return",   "photo_required": False},
-    ("pulled", "warehouse"):   {"type": "return",   "photo_required": False},
+    ("warehouse", "pulled"):     {"type": "transfer", "photo_required": False},
+    ("warehouse", "warehouse"):  {"type": "transfer", "photo_required": False},  # inter-warehouse transfer
+    ("pulled", "truck"):         {"type": "transfer", "photo_required": False},
+    ("pulled", "trailer"):       {"type": "transfer", "photo_required": False},
+    ("warehouse", "truck"):      {"type": "transfer", "photo_required": False},
+    ("warehouse", "trailer"):    {"type": "transfer", "photo_required": False},
+    ("truck", "trailer"):        {"type": "transfer", "photo_required": False},
+    ("trailer", "truck"):        {"type": "transfer", "photo_required": False},
+    ("truck", "job"):            {"type": "consume",  "photo_required": True},
+    ("trailer", "job"):          {"type": "consume",  "photo_required": True},
+    ("job", "truck"):            {"type": "return",   "photo_required": True},
+    ("job", "trailer"):          {"type": "return",   "photo_required": True},
+    ("truck", "warehouse"):      {"type": "return",   "photo_required": False},
+    ("trailer", "warehouse"):    {"type": "return",   "photo_required": False},
+    ("pulled", "warehouse"):     {"type": "return",   "photo_required": False},
+    ("trailer", "pulled"):       {"type": "return",   "photo_required": False},
 }
 
-VALID_LOCATION_TYPES = {"warehouse", "pulled", "truck", "job"}
+VALID_LOCATION_TYPES = {"warehouse", "pulled", "truck", "trailer", "job"}
 
 # Reason categories and sub-reasons for the wizard
 REASON_CATEGORIES: dict[str, list[str]] = {
@@ -202,6 +211,7 @@ class WarehouseInventoryItem(BaseModel):
     warehouse_qty: int = 0
     pulled_qty: int = 0
     truck_qty: int = 0
+    trailer_qty: int = 0
     total_qty: int = 0
     # Targets
     min_stock_level: int = 0
@@ -385,6 +395,7 @@ class ReceiveStockRequest(BaseModel):
     — not a transfer between locations.
     """
     items: list[ReceiveStockItem] = Field(min_length=1, max_length=50)
+    warehouse_location_id: int = 1      # target warehouse location
     reason: str | None = "Stock Received"  # Overall reason
     notes: str | None = None               # Overall notes
     reference_number: str | None = None    # PO number, delivery ref, etc.

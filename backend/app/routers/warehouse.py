@@ -68,37 +68,40 @@ UPLOAD_DIR = Path("uploads")
 
 @router.get("/dashboard")
 async def warehouse_dashboard(
+    warehouse_id: int | None = Query(None, description="Scope to specific warehouse location"),
     user: dict = Depends(require_permission("view_warehouse")),
     db: aiosqlite.Connection = Depends(get_db),
 ):
     """Combined dashboard: KPIs + recent activity + pending tasks."""
     show_dollars = "show_dollar_values" in user.get("permissions", [])
     svc = WarehouseService(db)
-    data = await svc.get_dashboard(show_dollars=show_dollars)
+    data = await svc.get_dashboard(show_dollars=show_dollars, warehouse_id=warehouse_id)
     return ApiResponse(data=data, message="Dashboard loaded")
 
 
 @router.get("/dashboard/kpis")
 async def dashboard_kpis(
+    warehouse_id: int | None = Query(None, description="Scope to specific warehouse location"),
     user: dict = Depends(require_permission("view_warehouse")),
     db: aiosqlite.Connection = Depends(get_db),
 ):
     """Dashboard KPI cards (stock health %, units, value, shortfall, tasks)."""
     show_dollars = "show_dollar_values" in user.get("permissions", [])
     svc = WarehouseService(db)
-    kpis = await svc.get_kpis(show_dollars=show_dollars)
+    kpis = await svc.get_kpis(show_dollars=show_dollars, warehouse_id=warehouse_id)
     return ApiResponse(data=kpis)
 
 
 @router.get("/dashboard/activity")
 async def dashboard_activity(
     limit: int = Query(10, ge=1, le=50),
+    warehouse_id: int | None = Query(None, description="Scope to specific warehouse location"),
     user: dict = Depends(require_permission("view_warehouse")),
     db: aiosqlite.Connection = Depends(get_db),
 ):
     """Recent movement activity feed (one-line summaries)."""
     svc = WarehouseService(db)
-    activity = await svc.get_recent_activity(limit=limit)
+    activity = await svc.get_recent_activity(limit=limit, warehouse_id=warehouse_id)
     return ApiResponse(data=activity)
 
 
@@ -129,6 +132,7 @@ async def warehouse_inventory(
     sort_dir: str = Query("asc", description="asc|desc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=10, le=200),
+    warehouse_id: int | None = Query(None, description="Scope to specific warehouse location"),
     user: dict = Depends(require_permission("view_warehouse")),
     db: aiosqlite.Connection = Depends(get_db),
 ):
@@ -146,6 +150,7 @@ async def warehouse_inventory(
         page=page,
         page_size=page_size,
         show_dollars=show_dollars,
+        warehouse_id=warehouse_id,
     )
     total_pages = (total + page_size - 1) // page_size if total > 0 else 0
     return ApiResponse(data=PaginatedData(
@@ -411,6 +416,22 @@ async def suggested_rolling_parts(
     return ApiResponse(data=[dict(p) for p in parts])
 
 
+@router.get("/audit/suggested-spot-check")
+async def suggested_spot_check_parts(
+    limit: int = Query(3, ge=1, le=20),
+    user: dict = Depends(require_permission("perform_audit")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get parts most urgently needing a spot check.
+
+    Returns zero-stock and low-stock parts first, then by staleness.
+    Default limit of 3 is intentional — spot checks are quick sanity checks.
+    """
+    svc = AuditService(db)
+    parts = await svc.get_suggested_spot_check_parts(limit=limit)
+    return ApiResponse(data=[dict(p) for p in parts])
+
+
 @router.get("/audit/{audit_id}")
 async def get_audit(
     audit_id: int,
@@ -502,16 +523,42 @@ async def get_locations(
     db: aiosqlite.Connection = Depends(get_db),
 ):
     """Get all valid from/to locations for the wizard dropdowns."""
-    locations: list[dict] = [
-        {"location_type": "warehouse", "location_id": 1,
-         "label": "Warehouse", "sub_label": "Main"},
-        {"location_type": "pulled", "location_id": 1,
-         "label": "Staging Area", "sub_label": "Pulled items"},
-    ]
+    locations: list[dict] = []
+
+    # Add active warehouse locations (multi-warehouse aware)
+    cursor = await db.execute(
+        """
+        SELECT id, name, is_primary
+        FROM warehouse_locations
+        WHERE is_active = 1
+        ORDER BY is_primary DESC, name ASC
+        """
+    )
+    warehouses = await cursor.fetchall()
+    for wh in warehouses:
+        locations.append({
+            "location_type": "warehouse",
+            "location_id": wh["id"],
+            "label": wh["name"],
+            "sub_label": "Primary" if wh.get("is_primary") else "Warehouse",
+        })
+
+    # Pulled/staging area remains a singleton queue scope
+    locations.append({
+        "location_type": "pulled",
+        "location_id": 1,
+        "label": "Staging Area",
+        "sub_label": "Pulled items",
+    })
 
     # Add trucks
     cursor = await db.execute(
-        "SELECT id, name FROM trucks WHERE is_active = 1 ORDER BY name"
+        """
+        SELECT id, COALESCE(vehicle_name, vehicle_number) AS display_name
+        FROM vehicles
+        WHERE is_active = 1 AND vehicle_type IN ('company_truck', 'company_van', 'company_car')
+        ORDER BY vehicle_number ASC
+        """
     )
     trucks = await cursor.fetchall()
     for t in trucks:
@@ -519,12 +566,30 @@ async def get_locations(
             "location_type": "truck",
             "location_id": t["id"],
             "label": f"Truck #{t['id']}",
-            "sub_label": t["name"],
+            "sub_label": t["display_name"],
+        })
+
+    # Add trailers
+    cursor = await db.execute(
+        """
+        SELECT id, trailer_code, name
+        FROM job_trailers
+        WHERE is_active = 1
+        ORDER BY trailer_code ASC
+        """
+    )
+    trailers = await cursor.fetchall()
+    for tr in trailers:
+        locations.append({
+            "location_type": "trailer",
+            "location_id": tr["id"],
+            "label": tr["trailer_code"],
+            "sub_label": tr["name"],
         })
 
     # Add active jobs
     cursor = await db.execute(
-        "SELECT id, name FROM jobs WHERE status = 'active' ORDER BY name"
+        "SELECT id, COALESCE(job_name, job_number) AS display_name FROM jobs WHERE status = 'active' ORDER BY display_name"
     )
     jobs = await cursor.fetchall()
     for j in jobs:
@@ -532,7 +597,7 @@ async def get_locations(
             "location_type": "job",
             "location_id": j["id"],
             "label": f"Job #{j['id']}",
-            "sub_label": j["name"],
+            "sub_label": j["display_name"],
         })
 
     return ApiResponse(data=locations)

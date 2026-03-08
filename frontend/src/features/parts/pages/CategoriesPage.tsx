@@ -250,7 +250,7 @@ export function CategoriesPage() {
           <BrandColorPanel
             typeId={selected.typeId!}
             brandId={selected.brandId ?? null}
-            brandName={selected.brandId === null ? 'General' : 'Brand'}
+            brandName={selected.brandId === null ? 'General' : (selected.brandName ?? 'Brand')}
             categoryId={selected.categoryId!}
             styleId={selected.styleId!}
             canEdit={canEdit}

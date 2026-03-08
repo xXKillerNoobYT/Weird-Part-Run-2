@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import aiosqlite
@@ -564,9 +564,20 @@ class POConversationService:
         cursor = await self.db.execute(
             """
             SELECT li.id AS po_line_id, li.part_id,
-                   p.description AS part_description
+                   p.description AS part_description,
+                   p.code AS part_number,
+                   p.name AS part_name,
+                   cat.name AS category_name,
+                   typ.name AS type_name,
+                   col.name AS color_name,
+                   col.hex_code AS color_hex,
+                   b.name AS brand_name
             FROM po_line_items li
             JOIN parts p ON p.id = li.part_id
+            LEFT JOIN part_categories cat ON cat.id = p.category_id
+            LEFT JOIN part_types typ ON typ.id = p.type_id
+            LEFT JOIN part_colors col ON col.id = p.color_id
+            LEFT JOIN brands b ON b.id = p.brand_id
             WHERE li.po_id = ?
             ORDER BY li.id
             """,
@@ -582,6 +593,13 @@ class POConversationService:
                 "confirmed_by": None,
                 "confirmed_at": None,
                 "part_description": line["part_description"],
+                "part_number": line["part_number"],
+                "part_name": line["part_name"],
+                "category_name": line["category_name"],
+                "type_name": line["type_name"],
+                "color_name": line["color_name"],
+                "color_hex": line["color_hex"],
+                "brand_name": line["brand_name"],
                 "confirmer_name": None,
             }
             for line in lines
@@ -598,7 +616,7 @@ class POConversationService:
         Stamps confirmed_by and confirmed_at on any newly confirmed items.
         Stores the checklist as JSON in the purchase_orders row.
         """
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
 
         # Process each item: stamp user/time on newly confirmed items
         stored_items = []
@@ -647,15 +665,26 @@ class POConversationService:
         part_ids = [i["part_id"] for i in items if i.get("part_id")]
         user_ids = [i["confirmed_by"] for i in items if i.get("confirmed_by")]
 
-        part_names: dict[int, str] = {}
+        part_map: dict[int, dict] = {}
         if part_ids:
             placeholders = ",".join(["?"] * len(part_ids))
             cursor = await self.db.execute(
-                f"SELECT id, description FROM parts WHERE id IN ({placeholders})",
+                f"""SELECT p.id, p.description, p.code, p.name AS part_name,
+                       cat.name AS category_name,
+                       typ.name AS type_name,
+                       col.name AS color_name,
+                       col.hex_code AS color_hex,
+                       b.name AS brand_name
+                FROM parts p
+                LEFT JOIN part_categories cat ON cat.id = p.category_id
+                LEFT JOIN part_types typ ON typ.id = p.type_id
+                LEFT JOIN part_colors col ON col.id = p.color_id
+                LEFT JOIN brands b ON b.id = p.brand_id
+                WHERE p.id IN ({placeholders})""",
                 part_ids,
             )
             for row in await cursor.fetchall():
-                part_names[row["id"]] = row["description"]
+                part_map[row["id"]] = dict(row)
 
         user_names: dict[int, str] = {}
         if user_ids:
@@ -670,7 +699,14 @@ class POConversationService:
         return [
             {
                 **item,
-                "part_description": part_names.get(item.get("part_id", 0)),
+                "part_description": part_map.get(item.get("part_id", 0), {}).get("description"),
+                "part_number": part_map.get(item.get("part_id", 0), {}).get("code"),
+                "part_name": part_map.get(item.get("part_id", 0), {}).get("part_name"),
+                "category_name": part_map.get(item.get("part_id", 0), {}).get("category_name"),
+                "type_name": part_map.get(item.get("part_id", 0), {}).get("type_name"),
+                "color_name": part_map.get(item.get("part_id", 0), {}).get("color_name"),
+                "color_hex": part_map.get(item.get("part_id", 0), {}).get("color_hex"),
+                "brand_name": part_map.get(item.get("part_id", 0), {}).get("brand_name"),
                 "confirmer_name": user_names.get(item.get("confirmed_by", 0)),
             }
             for item in items

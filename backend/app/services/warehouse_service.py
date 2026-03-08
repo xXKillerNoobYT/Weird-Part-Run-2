@@ -33,18 +33,29 @@ class WarehouseService:
 
     # ── Dashboard ─────────────────────────────────────────────────
 
-    async def get_dashboard(self, show_dollars: bool = False) -> DashboardData:
+    async def get_dashboard(self, show_dollars: bool = False, *, warehouse_id: int | None = None) -> DashboardData:
         """Combined dashboard payload in a single call."""
-        kpis = await self.get_kpis(show_dollars=show_dollars)
-        activity = await self.get_recent_activity(limit=10)
+        kpis = await self.get_kpis(show_dollars=show_dollars, warehouse_id=warehouse_id)
+        activity = await self.get_recent_activity(limit=10, warehouse_id=warehouse_id)
         tasks = await self.get_pending_tasks()
         return DashboardData(kpis=kpis, recent_activity=activity, pending_tasks=tasks)
 
-    async def get_kpis(self, show_dollars: bool = False) -> DashboardKPIs:
-        """Calculate dashboard KPI numbers."""
+    async def get_kpis(self, show_dollars: bool = False, *, warehouse_id: int | None = None) -> DashboardKPIs:
+        """Calculate dashboard KPI numbers.
+
+        When warehouse_id is provided, scopes stock queries to that
+        specific warehouse location.  Otherwise aggregates all warehouses.
+        """
+        # Build optional warehouse filter fragment
+        wh_filter = ""
+        wh_params: tuple = ()
+        if warehouse_id is not None:
+            wh_filter = " AND location_id = ?"
+            wh_params = (warehouse_id,)
+
         # Stock health %: parts that have warehouse qty within min-max range
         cursor = await self.db.execute(
-            """SELECT
+            f"""SELECT
                    COUNT(DISTINCT p.id) AS total_parts,
                    COUNT(DISTINCT CASE
                        WHEN COALESCE(s.wh_qty, 0) >= p.min_stock_level
@@ -54,11 +65,12 @@ class WarehouseService:
                FROM parts p
                LEFT JOIN (
                    SELECT part_id, SUM(qty) AS wh_qty
-                   FROM stock WHERE location_type = 'warehouse'
+                   FROM stock WHERE location_type = 'warehouse'{wh_filter}
                    GROUP BY part_id
                ) s ON s.part_id = p.id
                WHERE p.is_deprecated = 0
-                 AND p.target_stock_level > 0"""
+                 AND p.target_stock_level > 0""",
+            wh_params,
         )
         row = await cursor.fetchone()
         total_parts = row["total_parts"] or 0
@@ -67,7 +79,8 @@ class WarehouseService:
 
         # Total units in warehouse
         cursor = await self.db.execute(
-            "SELECT COALESCE(SUM(qty), 0) AS total FROM stock WHERE location_type = 'warehouse'"
+            f"SELECT COALESCE(SUM(qty), 0) AS total FROM stock WHERE location_type = 'warehouse'{wh_filter}",
+            wh_params,
         )
         row = await cursor.fetchone()
         total_units = row["total"] if row else 0
@@ -76,26 +89,28 @@ class WarehouseService:
         warehouse_value = None
         if show_dollars:
             cursor = await self.db.execute(
-                """SELECT COALESCE(SUM(s.qty * p.company_cost_price), 0) AS val
+                f"""SELECT COALESCE(SUM(s.qty * p.company_cost_price), 0) AS val
                    FROM stock s JOIN parts p ON p.id = s.part_id
-                   WHERE s.location_type = 'warehouse'"""
+                   WHERE s.location_type = 'warehouse'{wh_filter}""",
+                wh_params,
             )
             row = await cursor.fetchone()
             warehouse_value = round(row["val"], 2) if row else 0.0
 
         # Shortfall count (parts below min, excluding winding-down)
         cursor = await self.db.execute(
-            """SELECT COUNT(DISTINCT p.id) AS cnt
+            f"""SELECT COUNT(DISTINCT p.id) AS cnt
                FROM parts p
                LEFT JOIN (
                    SELECT part_id, SUM(qty) AS wh_qty
-                   FROM stock WHERE location_type = 'warehouse'
+                   FROM stock WHERE location_type = 'warehouse'{wh_filter}
                    GROUP BY part_id
                ) s ON s.part_id = p.id
                WHERE p.is_deprecated = 0
                  AND p.target_stock_level > 0
                  AND p.min_stock_level > 0
-                 AND COALESCE(s.wh_qty, 0) < p.min_stock_level"""
+                 AND COALESCE(s.wh_qty, 0) < p.min_stock_level""",
+            wh_params,
         )
         row = await cursor.fetchone()
         shortfall = row["cnt"] if row else 0
@@ -111,10 +126,23 @@ class WarehouseService:
             pending_task_count=len(tasks),
         )
 
-    async def get_recent_activity(self, limit: int = 10) -> list[ActivitySummary]:
-        """Get recent movements as one-line summaries."""
+    async def get_recent_activity(self, limit: int = 10, *, warehouse_id: int | None = None) -> list[ActivitySummary]:
+        """Get recent movements as one-line summaries.
+
+        When warehouse_id is given, only shows movements that touch that warehouse.
+        """
+        wh_filter = ""
+        wh_params: tuple = ()
+        if warehouse_id is not None:
+            wh_filter = """
+                AND (
+                    (m.from_location_type = 'warehouse' AND m.from_location_id = ?)
+                    OR (m.to_location_type = 'warehouse' AND m.to_location_id = ?)
+                )"""
+            wh_params = (warehouse_id, warehouse_id)
+
         cursor = await self.db.execute(
-            """SELECT m.id, m.movement_type, m.qty,
+            f"""SELECT m.id, m.movement_type, m.qty,
                       m.from_location_type, m.to_location_type,
                       m.created_at,
                       p.name AS part_name,
@@ -122,9 +150,10 @@ class WarehouseService:
                FROM stock_movements m
                JOIN parts p ON p.id = m.part_id
                LEFT JOIN users u ON u.id = m.performed_by
+               WHERE 1=1{wh_filter}
                ORDER BY m.created_at DESC
                LIMIT ?""",
-            (limit,),
+            (*wh_params, limit),
         )
         rows = await cursor.fetchall()
 
@@ -243,13 +272,22 @@ class WarehouseService:
         page: int = 1,
         page_size: int = 50,
         show_dollars: bool = False,
+        warehouse_id: int | None = None,
     ) -> tuple[list[WarehouseInventoryItem], int]:
         """Paginated warehouse inventory with health calculations.
 
         Only shows "warehouse-relevant" parts: those with actual stock
         or a non-zero target level. Parts with 0 stock AND 0 target
         (wound-out / never stocked) are excluded.
+
+        When warehouse_id is provided, warehouse qty scopes to that location.
         """
+        # Build warehouse filter for stock subquery
+        wh_filter = ""
+        wh_params: list[Any] = []
+        if warehouse_id is not None:
+            wh_filter = " AND location_id = ?"
+            wh_params = [warehouse_id]
         where_clauses = [
             "p.is_deprecated = 0",
             # Only warehouse-relevant: has stock or has a target
@@ -310,12 +348,12 @@ class WarehouseService:
             FROM parts p
             LEFT JOIN (
                 SELECT part_id, SUM(qty) AS qty
-                FROM stock WHERE location_type = 'warehouse'
+                FROM stock WHERE location_type = 'warehouse'{wh_filter}
                 GROUP BY part_id
             ) wh ON wh.part_id = p.id
             WHERE {where_sql}
         """
-        cursor = await self.db.execute(count_sql, params)
+        cursor = await self.db.execute(count_sql, (*wh_params, *params))
         row = await cursor.fetchone()
         total = row["cnt"] if row else 0
 
@@ -336,7 +374,8 @@ class WarehouseService:
                 COALESCE(wh.qty, 0) AS warehouse_qty,
                 COALESCE(pulled.qty, 0) AS pulled_qty,
                 COALESCE(truck.qty, 0) AS truck_qty,
-                COALESCE(wh.qty, 0) + COALESCE(pulled.qty, 0) + COALESCE(truck.qty, 0) AS total_qty,
+                COALESCE(trailer.qty, 0) AS trailer_qty,
+                COALESCE(wh.qty, 0) + COALESCE(pulled.qty, 0) + COALESCE(truck.qty, 0) + COALESCE(trailer.qty, 0) AS total_qty,
                 p.min_stock_level,
                 p.target_stock_level,
                 p.max_stock_level,
@@ -349,7 +388,7 @@ class WarehouseService:
             LEFT JOIN brands b ON b.id = p.brand_id
             LEFT JOIN (
                 SELECT part_id, SUM(qty) AS qty FROM stock
-                WHERE location_type = 'warehouse' GROUP BY part_id
+                WHERE location_type = 'warehouse'{wh_filter} GROUP BY part_id
             ) wh ON wh.part_id = p.id
             LEFT JOIN (
                 SELECT part_id, SUM(qty) AS qty FROM stock
@@ -359,11 +398,15 @@ class WarehouseService:
                 SELECT part_id, SUM(qty) AS qty FROM stock
                 WHERE location_type = 'truck' GROUP BY part_id
             ) truck ON truck.part_id = p.id
+            LEFT JOIN (
+                SELECT part_id, SUM(qty) AS qty FROM stock
+                WHERE location_type = 'trailer' GROUP BY part_id
+            ) trailer ON trailer.part_id = p.id
             WHERE {where_sql}
             ORDER BY {order_col} {order_dir}
             LIMIT ? OFFSET ?
         """
-        cursor = await self.db.execute(data_sql, (*params, page_size, offset))
+        cursor = await self.db.execute(data_sql, (*wh_params, *params, page_size, offset))
         rows = await cursor.fetchall()
 
         items = []
@@ -407,6 +450,7 @@ class WarehouseService:
                 warehouse_qty=wh,
                 pulled_qty=row["pulled_qty"],
                 truck_qty=row["truck_qty"],
+                trailer_qty=row["trailer_qty"],
                 total_qty=row["total_qty"],
                 min_stock_level=min_s,
                 target_stock_level=target,

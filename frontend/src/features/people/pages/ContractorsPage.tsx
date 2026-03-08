@@ -24,6 +24,7 @@ import { Card } from '../../../components/ui/Card';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import { getGCs, createGC } from '../../../api/contacts';
+import { toast } from '../../../lib/toast';
 import type { GCListItem, GCCreate, GCTradeType } from '../../../lib/types';
 
 
@@ -105,6 +106,12 @@ export function ContractorsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['general-contractors'] });
       setShowCreate(false);
+      toast.success('Contractor created');
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        ?? 'Failed to create contractor';
+      toast.error(msg);
     },
   });
 

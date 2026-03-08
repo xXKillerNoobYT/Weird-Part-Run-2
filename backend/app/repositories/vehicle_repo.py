@@ -360,6 +360,93 @@ class WarehouseLocationRepo(BaseRepo):
 
 
 # ═══════════════════════════════════════════════════════════════
+# Job Trailers Repository
+# ═══════════════════════════════════════════════════════════════
+
+class JobTrailerRepo(BaseRepo):
+    """Data access for job trailers (mobile mini-warehouses)."""
+
+    TABLE = "job_trailers"
+    HAS_UPDATED_AT = True
+
+    async def get_by_code(self, trailer_code: str) -> dict | None:
+        cursor = await self.db.execute(
+            "SELECT * FROM job_trailers WHERE trailer_code = ?",
+            (trailer_code,),
+        )
+        return await cursor.fetchone()
+
+    async def list_active(self, *, search: str | None = None) -> list[dict]:
+        params: list[Any] = []
+        where = "WHERE jt.is_active = 1"
+        if search:
+            where += " AND (jt.trailer_code LIKE ? OR jt.name LIKE ?)"
+            params.extend([f"%{search}%", f"%{search}%"])
+
+        cursor = await self.db.execute(
+            f"""
+            SELECT jt.*,
+                   wh.name AS home_warehouse_name,
+                   j.job_name AS current_job_name,
+                   u.display_name AS assigned_driver_name
+            FROM job_trailers jt
+            LEFT JOIN warehouse_locations wh ON wh.id = jt.home_warehouse_id
+            LEFT JOIN jobs j ON j.id = jt.current_job_id
+            LEFT JOIN users u ON u.id = jt.assigned_driver_user_id
+            {where}
+            ORDER BY jt.trailer_code ASC
+            """,
+            tuple(params),
+        )
+        return await cursor.fetchall()
+
+
+class TrailerLocationEventRepo(BaseRepo):
+    """Data access for trailer location timeline events."""
+
+    TABLE = "trailer_location_events"
+    HAS_UPDATED_AT = False
+
+    async def list_for_trailer(self, trailer_id: int, *, limit: int = 100) -> list[dict]:
+        cursor = await self.db.execute(
+            """
+            SELECT tle.*,
+                   u.display_name AS recorded_by_name,
+                   wh.name AS warehouse_name,
+                   j.job_name AS job_name
+            FROM trailer_location_events tle
+            LEFT JOIN users u ON u.id = tle.recorded_by
+            LEFT JOIN warehouse_locations wh ON wh.id = tle.warehouse_id
+            LEFT JOIN jobs j ON j.id = tle.job_id
+            WHERE tle.trailer_id = ?
+            ORDER BY tle.recorded_at DESC, tle.id DESC
+            LIMIT ?
+            """,
+            (trailer_id, limit),
+        )
+        return await cursor.fetchall()
+
+    async def get_latest_for_trailer(self, trailer_id: int) -> dict | None:
+        cursor = await self.db.execute(
+            """
+            SELECT tle.*,
+                   u.display_name AS recorded_by_name,
+                   wh.name AS warehouse_name,
+                   j.job_name AS job_name
+            FROM trailer_location_events tle
+            LEFT JOIN users u ON u.id = tle.recorded_by
+            LEFT JOIN warehouse_locations wh ON wh.id = tle.warehouse_id
+            LEFT JOIN jobs j ON j.id = tle.job_id
+            WHERE tle.trailer_id = ?
+            ORDER BY tle.recorded_at DESC, tle.id DESC
+            LIMIT 1
+            """,
+            (trailer_id,),
+        )
+        return await cursor.fetchone()
+
+
+# ═══════════════════════════════════════════════════════════════
 # Vehicle Delivery Items Repository
 # ═══════════════════════════════════════════════════════════════
 

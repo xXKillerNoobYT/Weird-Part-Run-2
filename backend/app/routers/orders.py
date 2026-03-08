@@ -69,6 +69,7 @@ from app.models.orders import (
     ReturnStatusUpdateBody,
     ReturnUpdate,
     SpecialItemCreate,
+    SpecialItemPlaceInCatalog,
     SpecialItemResolve,
     StagingZoneCreate,
     StagingZoneResponse,
@@ -394,6 +395,102 @@ async def resolve_special_item(
     return ApiResponse(
         data={"id": item_id, "resolved": True},
         message="Special item resolved.",
+    )
+
+
+@router.post("/special-items/{item_id}/place-in-catalog", response_model=ApiResponse)
+async def place_special_item_in_catalog(
+    item_id: int,
+    body: SpecialItemPlaceInCatalog,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Place a special item into the parts catalog hierarchy.
+
+    Creates a new catalog part at the specified type+brand+color position,
+    then resolves the special item linked to the new part — all in one step.
+    """
+    from app.repositories.hierarchy_repo import (
+        PartCategoryRepo, PartStyleRepo, PartTypeRepo, PartColorRepo,
+        TypeBrandLinkRepo,
+    )
+    from app.repositories.parts_repo import BrandRepo, PartsRepo
+    from app.services.job_preferences_service import JobPreferencesService
+
+    # Validate the special item exists and is not yet resolved
+    prefs_svc = JobPreferencesService(db)
+    items = await prefs_svc.get_flagged_items(limit=1000)
+    special_item = next((i for i in items if i["id"] == item_id), None)
+    if not special_item:
+        raise HTTPException(404, "Special item not found or already resolved")
+
+    # Validate the hierarchy position
+    type_repo = PartTypeRepo(db)
+    ptype = await type_repo.get_by_id(body.type_id)
+    if not ptype:
+        raise HTTPException(404, "Type not found")
+
+    style_repo = PartStyleRepo(db)
+    style = await style_repo.get_by_id(ptype["style_id"])
+    cat_repo = PartCategoryRepo(db)
+    category = await cat_repo.get_by_id(style["category_id"])  # type: ignore[index]
+
+    color_repo = PartColorRepo(db)
+    color = await color_repo.get_by_id(body.color_id)
+    if not color:
+        raise HTTPException(404, "Color not found")
+
+    brand_name = None
+    if body.brand_id is not None:
+        brand_repo = BrandRepo(db)
+        brand = await brand_repo.get_by_id(body.brand_id)
+        if not brand:
+            raise HTTPException(404, "Brand not found")
+        brand_name = brand["name"]
+
+    # Validate type-brand link exists
+    tbl_repo = TypeBrandLinkRepo(db)
+    if not await tbl_repo.link_exists(body.type_id, body.brand_id):
+        raise HTTPException(
+            400, "Brand is not enabled for this type — link it in the hierarchy first",
+        )
+
+    # Auto-generate part name from hierarchy
+    name_parts = [category["name"], style["name"], ptype["name"]]  # type: ignore[index]
+    if brand_name:
+        name_parts.append(brand_name)
+    name_parts.append(color["name"])
+    part_name = " ".join(name_parts)
+
+    # Create the part
+    parts_repo = PartsRepo(db)
+    part_data = {
+        "category_id": category["id"],  # type: ignore[index]
+        "style_id": style["id"],        # type: ignore[index]
+        "type_id": body.type_id,
+        "color_id": body.color_id,
+        "brand_id": body.brand_id,
+        "part_type": "general" if body.brand_id is None else "specific",
+        "name": part_name,
+    }
+    if body.manufacturer_part_number:
+        part_data["manufacturer_part_number"] = body.manufacturer_part_number
+
+    try:
+        new_part_id = await parts_repo.insert(part_data)
+    except Exception as exc:
+        if "UNIQUE constraint" in str(exc):
+            raise HTTPException(409, f"A part already exists at this position: {part_name}")
+        raise
+
+    # Resolve the special item linked to the new part
+    await prefs_svc.resolve_special_item(
+        item_id, resolved_by=user["id"], linked_part_id=new_part_id,
+    )
+
+    return ApiResponse(
+        data={"id": item_id, "new_part_id": new_part_id, "part_name": part_name},
+        message=f"Special item placed in catalog as '{part_name}'.",
     )
 
 

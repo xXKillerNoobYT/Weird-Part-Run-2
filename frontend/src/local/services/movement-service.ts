@@ -84,11 +84,19 @@ export interface MovementResult {
 const MOVEMENT_RULES: Record<string, { type: string; photoRequired: boolean }> = {
   'warehouse:pulled': { type: 'transfer', photoRequired: false },
   'pulled:truck': { type: 'transfer', photoRequired: false },
+  'pulled:trailer': { type: 'transfer', photoRequired: false },
   'warehouse:truck': { type: 'transfer', photoRequired: false },
+  'warehouse:trailer': { type: 'transfer', photoRequired: false },
+  'truck:trailer': { type: 'transfer', photoRequired: false },
+  'trailer:truck': { type: 'transfer', photoRequired: false },
   'truck:job': { type: 'consume', photoRequired: true },
+  'trailer:job': { type: 'consume', photoRequired: true },
   'job:truck': { type: 'return', photoRequired: true },
+  'job:trailer': { type: 'return', photoRequired: true },
   'truck:warehouse': { type: 'return', photoRequired: false },
+  'trailer:warehouse': { type: 'return', photoRequired: false },
   'pulled:warehouse': { type: 'return', photoRequired: false },
+  'trailer:pulled': { type: 'return', photoRequired: false },
 };
 
 // ── Service Functions ──────────────────────────────────────────────

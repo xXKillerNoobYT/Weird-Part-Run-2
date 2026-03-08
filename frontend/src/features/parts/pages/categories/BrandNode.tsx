@@ -85,6 +85,7 @@ export function BrandNode({
               styleId,
               categoryId,
               brandId: link.brand_id,
+              brandName: displayName,
             });
           }}
         >

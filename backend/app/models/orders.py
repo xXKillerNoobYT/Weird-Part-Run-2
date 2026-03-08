@@ -90,6 +90,13 @@ class JPOLineResponse(BaseModel):
     part_number: str | None = None
     part_description: str | None = None
     supplier_name: str | None = None
+    # Hierarchy fields
+    part_name: str | None = None
+    category_name: str | None = None
+    type_name: str | None = None
+    color_name: str | None = None
+    color_hex: str | None = None
+    brand_name: str | None = None
 
 
 class JPOResponse(BaseModel):
@@ -196,6 +203,13 @@ class POLineResponse(BaseModel):
     part_number: str | None = None
     part_description: str | None = None
     line_total: float | None = None
+    # Hierarchy fields
+    part_name: str | None = None
+    category_name: str | None = None
+    type_name: str | None = None
+    color_name: str | None = None
+    color_hex: str | None = None
+    brand_name: str | None = None
 
 
 class POResponse(BaseModel):
@@ -337,6 +351,13 @@ class ReturnLineResponse(BaseModel):
     # Joined fields
     part_number: str | None = None
     part_description: str | None = None
+    # Hierarchy fields
+    part_name: str | None = None
+    category_name: str | None = None
+    type_name: str | None = None
+    color_name: str | None = None
+    color_hex: str | None = None
+    brand_name: str | None = None
 
 
 class ReturnResponse(BaseModel):
@@ -524,6 +545,13 @@ class ReorderSuggestion(BaseModel):
     best_supplier_name: str | None = None
     estimated_cost: float | None = None
     days_until_stockout: int | None = None
+    # Hierarchy fields
+    part_name: str | None = None
+    category_name: str | None = None
+    type_name: str | None = None
+    color_name: str | None = None
+    color_hex: str | None = None
+    brand_name: str | None = None
 
 
 class ProcurementDashboard(BaseModel):
@@ -623,6 +651,19 @@ class SpecialItemResponse(BaseModel):
 class SpecialItemResolve(BaseModel):
     """Office resolves a flagged special item."""
     linked_part_id: int | None = None  # optional match to catalog part
+
+
+class SpecialItemPlaceInCatalog(BaseModel):
+    """Place a special item into the parts catalog hierarchy.
+
+    Creates a new part at the specified position in the hierarchy
+    (type + brand + color), then resolves the special item linked
+    to the newly created part.
+    """
+    type_id: int
+    brand_id: int | None = None       # None = General (unbranded)
+    color_id: int
+    manufacturer_part_number: str | None = None  # pre-filled from special item
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -809,6 +850,14 @@ class ConfirmationChecklistItem(BaseModel):
     # Joined (only populated in response, not stored in JSON)
     part_description: str | None = None
     confirmer_name: str | None = None
+    # Hierarchy fields
+    part_number: str | None = None
+    part_name: str | None = None
+    category_name: str | None = None
+    type_name: str | None = None
+    color_name: str | None = None
+    color_hex: str | None = None
+    brand_name: str | None = None
 
 
 class ConfirmationChecklistUpdate(BaseModel):
@@ -881,6 +930,13 @@ class ReceivingSessionItemResponse(BaseModel):
     part_description: str | None = None
     unit_cost: float | None = None  # from PO line
     zone_label: str | None = None
+    # Hierarchy fields
+    part_name: str | None = None
+    category_name: str | None = None
+    type_name: str | None = None
+    color_name: str | None = None
+    color_hex: str | None = None
+    brand_name: str | None = None
 
 
 class ReceivingSessionResponse(BaseModel):

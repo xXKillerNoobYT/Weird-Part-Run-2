@@ -23,11 +23,11 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Plus, Wrench, AlertTriangle, Truck, CheckCircle, ChevronRight } from 'lucide-react';
+import { Plus, Wrench, AlertTriangle, Truck, CheckCircle, ChevronRight, ClipboardList, RotateCcw, Clock } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { Card, CardHeader } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
-import { getDashboard } from '../../../api/warehouse';
+import { getDashboard, listAudits, getSuggestedRollingParts } from '../../../api/warehouse';
 import { getToolsDashboard } from '../../../api/tools';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
@@ -82,6 +82,9 @@ export function WarehouseDashboardPage() {
           <div className="space-y-6">
             <PendingTasksList tasks={dashboard.pending_tasks} />
 
+            {/* Audit status health card */}
+            <AuditStatusCard />
+
             {/* Tools summary card */}
             <ToolsSummaryCard />
           </div>
@@ -102,6 +105,91 @@ export function WarehouseDashboardPage() {
       {/* Movement Wizard (renders when open) */}
       <MovementWizard />
     </>
+  );
+}
+
+
+// ── Audit Status Health Card ─────────────────────────────────────
+
+function AuditStatusCard() {
+  const { data: audits } = useQuery({
+    queryKey: ['audits-dashboard-summary'],
+    queryFn: () => listAudits({ limit: 30 }),
+    staleTime: 60_000,
+  });
+
+  const { data: suggestedParts } = useQuery({
+    queryKey: ['suggested-rolling-dashboard'],
+    queryFn: () => getSuggestedRollingParts(20),
+    staleTime: 60_000,
+  });
+
+  const openAudits = audits?.filter(a => a.status === 'in_progress') ?? [];
+  const completedAudits = audits?.filter(a => a.status === 'completed' && a.completed_at) ?? [];
+  const lastCompleted = completedAudits.sort((a, b) =>
+    (b.completed_at ?? '').localeCompare(a.completed_at ?? '')
+  )[0];
+  const overdueCount = suggestedParts?.length ?? 0;
+
+  const lastCompletedLabel = lastCompleted?.completed_at
+    ? new Date(lastCompleted.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : 'Never';
+
+  return (
+    <Card>
+      <CardHeader
+        title="Audit Health"
+        subtitle="Inventory accuracy at a glance"
+        action={
+          <Link
+            to="/warehouse/audit"
+            className="text-xs text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1"
+          >
+            View All <ChevronRight size={12} />
+          </Link>
+        }
+      />
+      <div className="grid grid-cols-3 gap-3 px-4 pb-4">
+        {/* Open audits */}
+        <div className="flex flex-col items-center gap-1 p-2 rounded-lg bg-gray-50 dark:bg-gray-800">
+          <ClipboardList
+            size={16}
+            className={openAudits.length > 0 ? 'text-blue-500' : 'text-gray-400 dark:text-gray-500'}
+          />
+          <span className={`text-lg font-bold ${openAudits.length > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-gray-900 dark:text-gray-100'}`}>
+            {openAudits.length}
+          </span>
+          <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center leading-tight">
+            Open
+          </span>
+        </div>
+
+        {/* Parts overdue for count */}
+        <div className="flex flex-col items-center gap-1 p-2 rounded-lg bg-gray-50 dark:bg-gray-800">
+          <RotateCcw
+            size={16}
+            className={overdueCount > 10 ? 'text-amber-500' : 'text-gray-400 dark:text-gray-500'}
+          />
+          <span className={`text-lg font-bold ${overdueCount > 10 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-gray-100'}`}>
+            {overdueCount}
+          </span>
+          <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center leading-tight">
+            Due for Count
+          </span>
+        </div>
+
+        {/* Last completed */}
+        <div className="flex flex-col items-center gap-1 p-2 rounded-lg bg-gray-50 dark:bg-gray-800">
+          <Clock size={16} className="text-green-500" />
+          <span className="text-sm font-bold text-gray-900 dark:text-gray-100 text-center leading-tight">
+            {lastCompletedLabel}
+          </span>
+          <span className="text-[10px] text-gray-500 dark:text-gray-400 text-center leading-tight">
+            Last Audit
+          </span>
+        </div>
+      </div>
+    </Card>
   );
 }
 

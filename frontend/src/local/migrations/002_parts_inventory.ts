@@ -6,8 +6,8 @@
  */
 
 export const migration = {
-  name: '002_parts_inventory',
-  sql: `
+    name: '002_parts_inventory',
+    sql: `
 -- ─── PART CATEGORIES ────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS part_categories (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -184,7 +184,7 @@ CREATE TABLE IF NOT EXISTS part_supplier_links (
 CREATE TABLE IF NOT EXISTS stock (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     part_id         INTEGER NOT NULL REFERENCES parts(id) ON DELETE CASCADE,
-    location_type   TEXT    NOT NULL CHECK(location_type IN ('warehouse','pulled','truck','job')),
+    location_type   TEXT    NOT NULL CHECK(location_type IN ('warehouse','pulled','truck','trailer','job')),
     location_id     INTEGER NOT NULL DEFAULT 1,
     qty             INTEGER NOT NULL DEFAULT 0 CHECK(qty >= 0),
     supplier_id     INTEGER REFERENCES suppliers(id),

@@ -223,6 +223,80 @@ async def pre_billing(
     return ApiResponse(data=bundle, message="Pre-billing bundle generated")
 
 
+@router.get("/pre-billing/all-jobs")
+async def pre_billing_all_jobs(
+    start_date: str = Query(..., description="Period start (YYYY-MM-DD)"),
+    end_date: str = Query(..., description="Period end (YYYY-MM-DD)"),
+    user: dict = Depends(require_permission("view_reports")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Summary row per job for the given date range (all active/recent jobs).
+
+    Returns lightweight rows: job_id, job_number, job_name, total_hours,
+    total_parts_cost, total_parts_sell, budget_limit, budget_used_pct.
+    """
+    cursor = await db.execute(
+        """
+        SELECT j.id AS job_id,
+               j.job_number,
+               j.job_name,
+               j.budget_limit,
+
+               ROUND(COALESCE((
+                   SELECT SUM(
+                       (julianday(COALESCE(le2.clock_out, datetime('now')))
+                        - julianday(le2.clock_in)) * 24
+                   )
+                   FROM labor_entries le2
+                   WHERE le2.job_id = j.id
+                     AND DATE(le2.clock_in) BETWEEN ? AND ?
+                     AND le2.clock_out IS NOT NULL
+               ), 0), 2) AS total_labor_hours,
+
+               ROUND(COALESCE((
+                   SELECT SUM(sm2.qty * COALESCE(sm2.unit_cost, 0))
+                   FROM stock_movements sm2
+                   WHERE sm2.to_location_type = 'job'
+                     AND sm2.to_location_id = j.id
+                     AND DATE(sm2.moved_at) BETWEEN ? AND ?
+               ), 0), 2) AS total_parts_cost,
+
+               ROUND(COALESCE((
+                   SELECT SUM(sm3.qty * COALESCE(sm3.unit_sell, 0))
+                   FROM stock_movements sm3
+                   WHERE sm3.to_location_type = 'job'
+                     AND sm3.to_location_id = j.id
+                     AND DATE(sm3.moved_at) BETWEEN ? AND ?
+               ), 0), 2) AS total_parts_sell
+
+        FROM jobs j
+        WHERE j.status IN ('active', 'completed')
+          AND j.created_at >= date(?, '-6 months')
+        ORDER BY j.job_number
+        """,
+        (start_date, end_date, start_date, end_date, start_date, end_date, start_date),
+    )
+    rows = await cursor.fetchall()
+
+    summary = []
+    for row in rows:
+        budget = row["budget_limit"]
+        parts_cost = float(row["total_parts_cost"] or 0)
+        budget_pct = round(parts_cost / float(budget) * 100, 1) if budget else None
+        summary.append({
+            "job_id": row["job_id"],
+            "job_number": row["job_number"],
+            "job_name": row["job_name"],
+            "total_labor_hours": float(row["total_labor_hours"] or 0),
+            "total_parts_cost": parts_cost,
+            "total_parts_sell": float(row["total_parts_sell"] or 0),
+            "budget_limit": budget,
+            "budget_used_pct": budget_pct,
+        })
+
+    return ApiResponse(data=summary, message=f"{len(summary)} jobs in period")
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Endpoint 2: Timesheets
 # ═══════════════════════════════════════════════════════════════════

@@ -24,11 +24,8 @@ import {
   Building2,
   ChevronDown,
   ChevronRight,
-  FileText,
-  Layers,
   Loader2,
   Package,
-  Send,
   ShoppingCart,
   Sparkles,
   Zap,
@@ -40,21 +37,17 @@ import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
 import { OrderStatusBadge } from '../../orders/components/OrderStatusBadge';
+import { PartIdentity } from '../../../components/ui/PartIdentity';
 import {
   listJPOs,
   getJPO,
   createPOFromJPO,
-  createPOGroup,
 } from '../../../api/orders';
-import { listSuppliers } from '../../../api/parts';
 import { formatRelativeTime } from '../../../lib/utils';
-import { cn } from '../../../lib/utils';
 import type {
   JPOListItem,
   JPOResponse,
   JPOLineResponse,
-  Supplier,
-  POFromJPO,
 } from '../../../lib/types';
 
 
@@ -71,6 +64,12 @@ interface SupplierGroup {
     partId: number;
     partNumber: string | null;
     partDescription: string | null;
+    partName: string | null;
+    categoryName: string | null;
+    typeName: string | null;
+    colorName: string | null;
+    colorHex: string | null;
+    brandName: string | null;
     qtyNeeded: number;
   }[];
 }
@@ -100,17 +99,10 @@ export function ReviewAndSendPage() {
     enabled: !!expandedJpoId,
   });
 
-  // Suppliers list (for reference)
-  const suppliersQ = useQuery({
-    queryKey: ['suppliers', { is_active: true }],
-    queryFn: () => listSuppliers({ is_active: true }),
-    staleTime: 60_000,
-  });
-
   // ── Generate POs mutation ───────────────────────────────────
   const generateMut = useMutation({
     mutationFn: createPOFromJPO,
-    onSuccess: (pos, variables) => {
+    onSuccess: (pos, _variables) => {
       setSuccess(
         `Created ${pos.length} PO${pos.length !== 1 ? 's' : ''} from order — POs are now in Draft status`
       );
@@ -158,6 +150,12 @@ export function ReviewAndSendPage() {
         partId: l.part_id,
         partNumber: l.part_number,
         partDescription: l.part_description,
+        partName: l.part_name,
+        categoryName: l.category_name,
+        typeName: l.type_name,
+        colorName: l.color_name,
+        colorHex: l.color_hex,
+        brandName: l.brand_name,
         qtyNeeded: l.qty_requested - l.qty_ordered,
       });
     }
@@ -326,13 +324,13 @@ function JPOCard({
             </span>
             <OrderStatusBadge status={jpo.status} type="jpo" />
             {jpo.has_special_items && (
-              <Badge variant="amber">
+              <Badge variant="warning">
                 <Sparkles className="h-3 w-3 mr-0.5" />
                 Special
               </Badge>
             )}
             {jpo.order_type === 'warehouse' && (
-              <Badge variant="blue">Restock</Badge>
+              <Badge variant="info">Restock</Badge>
             )}
           </div>
           <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -391,7 +389,7 @@ function JPOCard({
                           </span>
                         )}
                       </span>
-                      <Badge variant={group.supplierId ? 'blue' : 'amber'}>
+                      <Badge variant={group.supplierId ? 'info' : 'warning'}>
                         {group.lines.length} item{group.lines.length !== 1 ? 's' : ''}
                       </Badge>
                     </div>
@@ -401,14 +399,19 @@ function JPOCard({
                           key={line.lineId}
                           className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 pl-6"
                         >
-                          {line.partNumber && (
-                            <span className="font-mono bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1 py-0.5 rounded">
-                              {line.partNumber}
-                            </span>
-                          )}
-                          <span className="truncate">
-                            {line.partDescription ?? `Part #${line.partId}`}
-                          </span>
+                          <PartIdentity
+                            compact
+                            partName={line.partName}
+                            partDescription={line.partDescription}
+                            partNumber={line.partNumber}
+                            partId={line.partId}
+                            brandName={line.brandName}
+                            colorName={line.colorName}
+                            colorHex={line.colorHex}
+                            categoryName={line.categoryName}
+                            typeName={line.typeName}
+                            className="flex-1 min-w-0"
+                          />
                           <span className="ml-auto flex-shrink-0 font-medium text-gray-700 dark:text-gray-300">
                             ×{line.qtyNeeded}
                           </span>

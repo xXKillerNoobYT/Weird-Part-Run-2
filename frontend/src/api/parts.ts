@@ -140,6 +140,12 @@ export async function listTypesByStyle(styleId: number, params?: { is_active?: b
   return data.data ?? [];
 }
 
+/** Get a single type by ID with enriched context. */
+export async function getType(typeId: number): Promise<PartType> {
+  const { data } = await apiClient.get<ApiResponse<PartType>>(`/parts/types/${typeId}`);
+  return data.data!;
+}
+
 /** Create a new type. */
 export async function createType(body: PartTypeCreate): Promise<PartType> {
   const { data } = await apiClient.post<ApiResponse<PartType>>('/parts/types', body);

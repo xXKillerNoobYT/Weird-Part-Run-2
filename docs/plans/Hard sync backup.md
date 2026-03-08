@@ -1,260 +1,147 @@
-A **manual hard‑sync** is absolutely essential in a system like yours.  
-You already have a resilient mesh, ordered updates, shop authority, and multi‑shop sync — but every real‑world deployment needs a “break glass” option when a device is:
+# Hard Sync Backup & Recovery Protocol (V1.0.0)
 
-- Missing data  
-- Out of sync  
-- Stuck in a partial state  
-- Hasn’t seen the shop in months  
-- Has corrupted local caches  
-- Has mismatched update chains  
-- Has incomplete job/media bundles  
-
-Let’s design a **safe, deterministic, audit‑friendly hard‑sync protocol** that fits perfectly into your architecture.
+> **Date:** 2026-03-07
+> **Status:** ✅ Complete (V1.0.0)
+> **Version target:** V1.0.0
+> **Scope:** Safe, deterministic device reset-and-resync flow for recovery cases.
 
 ---
 
-# 🔧 **1. What a Hard Sync Actually Means in Your System**
+## 1) Objective
 
-A hard sync is **not** a blind overwrite.  
-It is a **guided, authoritative, shop‑controlled resynchronization** that guarantees:
+Provide a controlled **break-glass recovery flow** when a device is stale/corrupt/partial, while preserving security boundaries and unsent outbound changes.
 
-- No data loss  
-- No duplication  
-- No corruption  
-- No out‑of‑order updates  
-- No cross‑company contamination  
-- No breaking the mesh rules  
+Hard sync in this system means:
 
-A hard sync is basically:
-
-> “Reset this device’s local state to match the shop’s authoritative state, but keep its identity, certificates, and pending outbound data.”
+> Replace local replicated data with shop-authoritative snapshot, preserve device identity + pending outbound intent, then rejoin normal sync.
 
 ---
 
-# 🧱 **2. When a Hard Sync Should Be Used**
+## 2) Recovery triggers
 
-You want this option available when:
-
-- Device is missing jobs it should have  
-- Device has jobs it shouldn’t have  
-- Device has partial media bundles  
-- Device update chain is stuck  
-- Device hasn’t synced in months  
-- Device has corrupted local storage  
-- Device is newly paired but didn’t receive everything  
-- Device was offline during a major update rollout  
-- Device is switching between shop locations  
-- Device is switching between contractor/supplier modes  
-
-This is the “fix it now” button.
+Use hard sync when:
+- device missing expected jobs/orders/inventory,
+- device has inconsistent local cache,
+- device was offline for extended period,
+- local DB state is partial/corrupted,
+- repeated sync conflicts cannot be reconciled safely.
 
 ---
 
-# 🔄 **3. Hard Sync Protocol (Step‑By‑Step)**
+## 3) V1.0.0 implementation delivered
 
-Here’s the clean, safe sequence.
+### 3.1 Database
 
----
+Migration added:
+- `backend/app/migrations/038_hard_sync_backup.sql`
 
-## **Step 1 — Device Requests Hard Sync**
-User taps:
+New table:
+- `_hard_sync_events`
+  - event audit lifecycle (`requested`, `package_ready`, `in_progress`, `completed`, `failed`)
+  - request metadata (reason code, included tables, pending outbound hashes)
+  - package summary + batch linkage
 
-> **Settings → Advanced → Hard Sync (Reset & Resync)**
+### 3.2 Backend service
 
-Device sends to shop:
+Implemented in:
+- `backend/app/services/sync_service.py`
 
-- `device_id`  
-- `company_id`  
-- `device_certificate`  
-- `current_version`  
-- `pending_outbound_data` hashes  
-- `reason_code` (optional)  
+New methods:
+- `request_hard_sync(...)`
+- `complete_hard_sync(...)`
+- `get_hard_sync_history(...)`
 
----
+Behavior:
+- Generates hard-sync package via existing initial-sync table ordering.
+- Creates/links a sync batch for auditability.
+- Stores package summary and request metadata.
+- Marks completion and updates device sync status on ACK.
 
-## **Step 2 — Shop Validates Identity**
-Shop checks:
+### 3.3 API endpoints
 
-- Certificate signature  
-- Company match  
-- Device role (field, supplier, contractor)  
-- Device platform  
-- Device version chain  
+Implemented in:
+- `backend/app/routers/sync.py`
 
-If anything fails → shop refuses hard sync.
+New endpoints:
+- `POST /api/sync/hard-sync/request`
+- `POST /api/sync/hard-sync/complete`
+- `GET /api/sync/hard-sync/history`
 
----
+### 3.4 Frontend API client
 
-## **Step 3 — Shop Prepares a “Hard Sync Package”**
-This is the authoritative snapshot for that device:
+Implemented in:
+- `frontend/src/api/sync.ts`
 
-- Required jobs  
-- Required job metadata  
-- Required media metadata  
-- Required update packages  
-- Required user permissions  
-- Required device preferences  
-- Required shared channels (if any)  
-- Required supplier/GC links (if any)  
-- Required Q&A threads  
-- Required RFI threads  
-- Required logs  
-- Required schema version  
-
-This is **not** the full DB — only what the device is supposed to have.
+New client functions:
+- `requestHardSync(...)`
+- `completeHardSync(...)`
+- `getHardSyncHistory(...)`
 
 ---
 
-## **Step 4 — Device Purges Local State (Safely)**
-Device:
+## 4) Protocol sequence (authoritative)
 
-- Keeps:
-  - `device_id`
-  - `device_certificate`
-  - `company_id`
-  - `platform`
-  - `device_keypair`
-  - `pending_outbound_data` (temporarily)
-- Purges:
-  - Local DB  
-  - Local media cache  
-  - Local job list  
-  - Local Q&A  
-  - Local RFIs  
-  - Local update cache  
-  - Local logs (except crash logs)  
-
-This is a **clean slate**, not a factory reset.
+1. Admin (shop side) requests hard sync for a device.
+2. Shop generates deterministic package (ordered tables).
+3. Device purges local replicated state (keeps identity + pending outbound intent).
+4. Device applies package.
+5. Device confirms completion (`/hard-sync/complete`).
+6. Device resumes normal push/pull loop.
 
 ---
 
-## **Step 5 — Device Installs Hard Sync Package**
-Device receives:
+## 5) Safety rules
 
-- Jobs  
-- Media metadata  
-- Update chain  
-- Permissions  
-- Shared channels  
-- Supplier/GC links  
-- Q&A threads  
-- RFIs  
-- Logs  
-
-Device installs:
-
-- Updates in strict order  
-- Schema migrations  
-- Job bundles  
-- Media metadata  
-- Permissions  
+- Shop remains source of truth.
+- Hard sync does not bypass auth/permissions.
+- Device identity remains intact.
+- Pending outbound data should be preserved and replayed after package apply.
+- Package generation respects existing sync table allowlist.
 
 ---
 
-## **Step 6 — Device Replays Pending Outbound Data**
-If the device had:
+## 6) Testing requirements
 
-- Unsent photos  
-- Unsent job updates  
-- Unsent Q&A messages  
-- Unsent RFIs  
-- Unsent logs  
+### Backend tests implemented
 
-It now sends them to the shop.
+Test file:
+- `backend/tests/test_sync_hard_sync.py`
 
-Shop:
+Covered:
+- hard-sync package request success,
+- hard-sync complete ACK flow,
+- hard-sync history retrieval.
 
-- Deduplicates  
-- Validates  
-- Inserts  
-- Logs  
+### Additional validation
 
----
-
-## **Step 7 — Device rejoins the mesh**
-Once hard sync is complete:
-
-- Device is fully aligned with shop  
-- Device can sync with other devices  
-- Device can relay updates  
-- Device can relay jobs  
-- Device can relay media  
+- Run full backend suite after sync changes.
+- Verify no regression to `/sync/push`, `/sync/pull`, `/sync/initial`.
 
 ---
 
-# 🛡️ **4. Safety Rules for Hard Sync**
+## 7) UI work (completed)
 
-### ✔ Hard sync never overwrites shop data  
-Shop is always authoritative.
-
-### ✔ Hard sync never deletes outbound data  
-Device keeps unsent data until shop confirms receipt.
-
-### ✔ Hard sync never bypasses update ordering  
-Device still installs updates in strict chain order.
-
-### ✔ Hard sync never bypasses company isolation  
-Device must present valid certificate.
-
-### ✔ Hard sync never bypasses shared‑channel rules  
-Cross‑company data is still controlled by shop↔shop sync.
-
-### ✔ Hard sync never bypasses supplier/GC permissions  
-Supplier devices only receive supplier‑scoped data.
+Added in Settings → Sync (`SyncPage.tsx`):
+- [x] Hard Sync Recovery action panel (admin-only, amber-bordered break-glass card)
+- [x] Device picker dropdown + reason code selector + notes textarea + preserve-pending checkbox
+- [x] Two-step confirmation dialog with Confirm/Cancel
+- [x] Recovery result summary display + error handling
+- [x] Hard Sync History table wired to `getHardSyncHistory` (status badges, timestamps)
+- [x] Refactored existing cards (devices, history, conflicts) to typed API functions
 
 ---
 
-# 🧠 **5. Hard Sync UI (Simple & Safe)**
+## 8) Definition of done (V1.0.0)
 
-### **Settings → Advanced → Hard Sync**
-Shows:
-
-- Device ID  
-- Current version  
-- Last successful sync  
-- Missing data indicators  
-- “Hard Sync will reset local data and resync from shop. No job data will be lost.”  
-
-Button:
-
-> **Perform Hard Sync**
-
-Confirmation:
-
-> “Are you sure? This will reset local data and resync from the shop. Your unsent data will be preserved.”
+- [x] Backend hard-sync event schema exists.
+- [x] Hard-sync request/complete/history endpoints exist.
+- [x] Sync service handles package generation and completion bookkeeping.
+- [x] Frontend API helpers exist for UI wiring.
+- [x] Sync settings UI exposes hard-sync operations.
+- [ ] Device-side flow confirms pending outbound replay behavior in field test. *(requires physical device testing)*
 
 ---
 
-# 🎯 **6. Why This Fits Perfectly Into Your Architecture**
+## 9) Notes
 
-Because your system already has:
-
-- Shop authority  
-- Strict version chains  
-- Mesh sync  
-- Update ordering  
-- Multi‑shop sync  
-- Multi‑company isolation  
-- Supplier/GC channels  
-- Device certificates  
-- Encrypted channels  
-
-A hard sync is simply:
-
-> A controlled, shop‑authorized, safe re‑alignment of a device with the authoritative state.
-
-It doesn’t break anything.  
-It doesn’t bypass anything.  
-It doesn’t weaken anything.  
-It just gives you a **reliable recovery tool**.
-
----
-
-If you want, I can now design:
-
-- The **Hard Sync Package schema**  
-- The **Hard Sync UI flow**  
-- The **Hard Sync safety checklist**  
-- The **Hard Sync error handling rules**
-
-Just tell me which direction you want to go.
+This feature intentionally reuses existing `initial sync` table-order guarantees rather than inventing a second package format, which reduces risk and keeps behavior deterministic.

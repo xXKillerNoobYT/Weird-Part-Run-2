@@ -25,8 +25,6 @@ import {
   Trash2,
   Home,
   AlertTriangle,
-  Clock,
-  Calendar,
   DollarSign,
   MapPin,
   Search,
@@ -38,7 +36,8 @@ import { EmptyState } from '../../../components/ui/EmptyState';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import { Badge } from '../../../components/ui/Badge';
-import { Card, CardHeader } from '../../../components/ui/Card';
+import { Card } from '../../../components/ui/Card';
+import { PartIdentity } from '../../../components/ui/PartIdentity';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import {
@@ -65,15 +64,12 @@ import type {
   VehicleType,
   VehicleStatus,
   VehicleAssignment,
-  VehicleInventoryItem,
   VehicleDeliveryItem,
   DeliveryStatus,
   MaintenanceSchedule,
   MaintenanceRecord,
   MaintenanceRecordCreate,
-  MaintenanceCostSummary,
   MileageLog,
-  MaintenanceType,
 } from '../../../lib/types';
 
 
@@ -202,11 +198,10 @@ export function VehicleDetailPage() {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-              activeTab === tab.id
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === tab.id
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-            }`}
+              }`}
           >
             {tab.icon}
             <span className="hidden sm:inline">{tab.label}</span>
@@ -658,12 +653,14 @@ function InventoryTab({ vehicleId }: { vehicleId: number }) {
                 {inventory.map((item) => (
                   <tr key={item.id}>
                     <td className="py-2">
-                      <span className="text-gray-900 dark:text-gray-100">
-                        {item.part_description || item.part_number || `Part #${item.part_id}`}
-                      </span>
-                      {item.part_number && item.part_description && (
-                        <span className="ml-1 text-xs text-gray-400 font-mono">({item.part_number})</span>
-                      )}
+                      <PartIdentity
+                        compact
+                        partName={item.part_description}
+                        partNumber={item.part_number}
+                        partId={item.part_id}
+                        brandName={item.brand}
+                        categoryName={item.category}
+                      />
                     </td>
                     <td className="py-2 text-gray-500 dark:text-gray-400">{item.category ?? '—'}</td>
                     <td className="py-2 text-right font-mono">{item.qty}</td>
@@ -748,9 +745,12 @@ function DeliveriesTab({ vehicleId }: { vehicleId: number }) {
             {items.map((item) => (
               <div key={item.id} className="flex items-center gap-3 px-4 py-2.5">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-900 dark:text-gray-100 truncate">
-                    {item.part_description ?? item.part_number ?? `Part #${item.part_id}`}
-                  </p>
+                  <PartIdentity
+                    compact
+                    partName={item.part_description}
+                    partNumber={item.part_number}
+                    partId={item.part_id}
+                  />
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     Qty: {item.qty_assigned}
                     {item.qty_delivered > 0 && ` · Delivered: ${item.qty_delivered}`}
@@ -818,9 +818,8 @@ function MaintenanceTab({ vehicleId }: { vehicleId: number }) {
   const isLoading = loadingSchedule || loadingHistory;
   if (isLoading) return <PageSpinner label="Loading maintenance..." />;
 
-  // Separate overdue / upcoming
+  // Separate overdue items
   const overdue = (schedule ?? []).filter((s) => s.urgency === 'overdue');
-  const soon = (schedule ?? []).filter((s) => s.urgency === 'soon');
 
   return (
     <div className="space-y-4">
@@ -833,7 +832,7 @@ function MaintenanceTab({ vehicleId }: { vehicleId: number }) {
           </div>
           <div className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
             <Wrench className="h-4 w-4 shrink-0" />
-            <span>{costs.total_services ?? 0} service{(costs.total_services ?? 0) !== 1 ? 's' : ''}</span>
+            <span>{costs.total_records ?? 0} service{(costs.total_records ?? 0) !== 1 ? 's' : ''}</span>
           </div>
         </div>
       )}

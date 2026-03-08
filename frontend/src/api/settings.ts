@@ -39,6 +39,26 @@ export async function getAllSettings(): Promise<Record<string, unknown>> {
   return data.data ?? {};
 }
 
+// ── Generic key-value settings ──────────────────────────────────
+
+/** Get a single setting by key. Returns null if not set. */
+export async function getSetting(key: string): Promise<string | null> {
+  try {
+    const { data } = await apiClient.get<ApiResponse<{ key: string; value: string | null }>>(
+      `/settings/${key}`,
+    );
+    return data.data?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Update a single setting by key. */
+export async function updateSetting(key: string, value: string, category = 'general'): Promise<void> {
+  await apiClient.put(`/settings/${key}`, { value, category });
+}
+
+
 // ── Warranty Settings ───────────────────────────────────────────
 
 /** Get default warranty length in days from global settings. */

@@ -157,7 +157,7 @@ Zero stub pages — every page is fully functional.
 
 ## 5. Issues & Observations
 
-Fix this properly. Take care of everything in here.
+Address each issue below according to its severity. Low-severity items are cleanup tasks that can be batched; Info items are architectural observations worth tracking but not blocking.
 
 | # | Issue | Severity | Notes |
 |---|-------|----------|-------|

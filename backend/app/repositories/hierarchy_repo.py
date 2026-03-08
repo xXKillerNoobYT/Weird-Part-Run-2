@@ -168,6 +168,33 @@ class PartTypeRepo(BaseRepo):
         cursor = await self.db.execute(sql, tuple(params))
         return await cursor.fetchall()
 
+    async def get_with_context(self, type_id: int) -> dict | None:
+        """Fetch a single type by ID with enriched context (style name, category name, counts)."""
+        cursor = await self.db.execute(
+            """SELECT
+                t.*,
+                ps.name AS style_name,
+                pc.name AS category_name,
+                COALESCE(ptc.part_count, 0) AS part_count,
+                COALESCE(cc.color_count, 0) AS color_count
+               FROM part_types t
+               JOIN part_styles ps ON ps.id = t.style_id
+               JOIN part_categories pc ON pc.id = ps.category_id
+               LEFT JOIN (
+                   SELECT type_id, COUNT(*) AS part_count
+                   FROM parts WHERE type_id IS NOT NULL
+                   GROUP BY type_id
+               ) ptc ON ptc.type_id = t.id
+               LEFT JOIN (
+                   SELECT type_id, COUNT(*) AS color_count
+                   FROM type_color_links
+                   GROUP BY type_id
+               ) cc ON cc.type_id = t.id
+               WHERE t.id = ?""",
+            (type_id,),
+        )
+        return await cursor.fetchone()
+
     async def get_by_name_in_style(self, style_id: int, name: str) -> dict | None:
         """Find a type by name within a style (case-insensitive)."""
         cursor = await self.db.execute(

@@ -1,11 +1,25 @@
 # Phase 9: Chat & Q&A System
 
 > **Date:** 2026-03-07
-> **Status:** 📋 Planned
+> **Status:** ✅ Complete (with post-completion gap closure)
 > **Concept doc:** `docs/plans/Q&A Part of the App` (307 lines — escalation chain design, decision fork, RFI bridge)
 > **Dependencies:** People/Contacts (Phase 7 ✅), Jobs (Phase 4 ✅), Sync (Phase 11 — chat must work offline-first)
 > **Estimated work:** 10-14 days
 > **Architecture:** Offline-first. Messages stored locally, synced to shop via LAN. No cloud push — uses local polling + BT mesh gossip.
+>
+> **Implementation summary:**
+> - Migration 038 (backend) + 007 (local device) — 7 tables, indexes, permission seeds
+> - Backend: `models/chat.py`, `repositories/chat_repo.py` + `qa_repo.py`, `services/chat_service.py` + `qa_service.py`, `routers/chat.py` (16 endpoints)
+> - Frontend: `api/chat.ts` (22 functions), 3 pages (ChatInboxPage, QABoardPage, RFIListPage), 5 components (ChannelList, MessageView, MessageBubble, MessageComposer, PinnedBanner), EscalationTimeline, QAQuestionForm
+> - Local service: `chat-service.ts` (offline read/write), `007_chat.ts` migration
+> - Integration: navigation.ts (Chat module), App.tsx (4 routes), JobDetailPage (Chat sub-tab), sync_service (7 tables), notification_service (5 types)
+> - Voice messages deferred to Phase 9.5
+> - 125 backend tests passing, 0 TypeScript errors
+>
+> **Post-completion patch (2026-03-07):**
+> - Q&A/RFI closure fixes applied (Send-to-GC office UX, thread-level RFI visibility,
+>   external-response writeback into originating Q&A thread, and status-key alignment).
+> - See: `docs/plans/phase-9-qa-rfi-gap-closure.md`
 
 ---
 

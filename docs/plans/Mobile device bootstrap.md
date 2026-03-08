@@ -1,277 +1,157 @@
-    You want the “app store version” to be nothing more than:
+# Mobile Device Bootstrap Plan (V1.0.0)
 
-- A **bootstrap shell**
-- A **pairing tool**
-- A **handshake client**
-- A **receiver for the real program**
-- A **device identity initializer**
-
-That’s the right move. Let’s design it cleanly.
+> **Date:** 2026-03-07
+> **Status:** ✅ Complete (V1.0.0 baseline)
+> **Version target:** V1.0.0
+> **Purpose:** App-store bootstrap shell pairs with shop and receives fleet-approved program package.
 
 ---
 
-# 🌱 **THE BOOTSTRAP APP (App Store Version)**  
-### *A tiny installer whose only job is to pair with the shop computer and receive the real program.*
+## 1) Architecture intent
 
-This bootstrap app is intentionally small and dumb. It does **not** contain:
+Bootstrap app is intentionally minimal:
+- pairing and handshake only,
+- receives shop-approved artifact manifest,
+- installs real app package,
+- reports install progress/errors.
 
-- The real program  
-- The update logic  
-- The data schema  
-- The mesh sync engine  
-- The job logic  
-- The media logic  
-
-It contains only:
-
-- Bluetooth pairing  
-- LAN discovery  
-- Device identity setup  
-- Secure handshake  
-- “Pull program from shop” logic  
-
-This ensures:
-
-- No app store review delays  
-- No app store update requirements  
-- No dependency on Apple/Google for updates  
-- No risk of mismatched versions  
-- No risk of devices running ahead of the shop  
-- No risk of devices running behind the shop  
-
-The shop is the **only** source of truth.
+Bootstrap does **not** carry business logic, sync business tables, or module UI.
 
 ---
 
-# 🧱 **1. First‑Run Flow (New Device Setup)**
+## 2) V1.0.0 backend implementation delivered
 
-Here’s what happens when someone installs the bootstrap app from the App Store:
+### 2.1 Schema
 
-### **Step 1 — Launch bootstrap app**
-User sees:
+Migration added:
+- `backend/app/migrations/040_bootstrap_shell.sql`
 
-> “Pair with Shop Computer to Install Program”
+Tables:
+- `_bootstrap_pairing_codes`
+- `_bootstrap_artifacts`
+- `_bootstrap_install_events`
 
-### **Step 2 — Device identity creation**
-Bootstrap app generates:
+### 2.2 Service
 
-- `device_id` (UUID)
-- `device_public_key`
-- `device_platform` (iOS/Android/Windows/Mac)
-- `device_model`
-- `device_capabilities` (camera, storage, etc.)
+Service added:
+- `backend/app/services/bootstrap_service.py`
 
-### **Step 3 — Discover shop computer**
-Bootstrap app uses:
+Capabilities:
+- pairing code create/validate/consume
+- active artifact register and lookup
+- bootstrap handshake orchestration
+- install event logging + history
 
-- Bluetooth  
-- Local network broadcast  
-- QR code scan (optional)  
+### 2.3 API Router
 
-To find a shop computer.
+Router added and mounted:
+- `backend/app/routers/bootstrap.py`
+- mounted in `backend/app/main.py`
 
-### **Step 4 — Secure pairing**
-Bootstrap app and shop computer exchange:
+Endpoints:
+- `POST /api/bootstrap/pairing-codes` (admin)
+- `POST /api/bootstrap/handshake` (bootstrap client)
+- `POST /api/bootstrap/artifacts` (admin)
+- `GET /api/bootstrap/artifacts` (admin)
+- `POST /api/bootstrap/install-events` (bootstrap client)
+- `GET /api/bootstrap/install-events` (admin)
 
-- Public keys  
-- Device ID  
-- Platform  
-- Version = “0.0.0-bootstrap”  
+### 2.4 Frontend API contract helpers
 
-### **Step 5 — Shop sends the real program**
-Shop computer sends:
+Added to:
+- `frontend/src/api/bootstrap.ts`
 
-- The **current fleet‑approved version**  
-- The **update chain** (if needed)  
-- The **platform‑specific binary**  
-- The **initial configuration**  
-- The **device profile template**  
-
-### **Step 6 — Bootstrap app installs the real program**
-Bootstrap app:
-
-- Stores the binary  
-- Runs the installer  
-- Registers the device  
-- Launches the real program  
-
-Bootstrap app becomes dormant except for:
-
-- Update relay  
-- Emergency recovery  
-- Reinstall logic  
+Typed bootstrap helpers are available for pairing, handshake, artifact management, and install telemetry wiring.
 
 ---
 
-# 🔄 **2. Why this works perfectly with your update protocol**
+## 3) Bootstrap first-run protocol (V1)
 
-Your update protocol already has:
-
-- Strict version chain  
-- Shop‑validated updates  
-- Per‑platform compatibility  
-- Mesh propagation  
-- Ordered installation  
-- Rollback  
-- Backup  
-- Fleet‑wide gating  
-
-The bootstrap app simply plugs into this system as the **entry point**.
-
-### ✔ New devices always start at the shop’s current version  
-No matter what version the App Store shell is.
-
-### ✔ No device ever runs a version the shop hasn’t approved  
-Because the bootstrap app doesn’t contain the real program.
-
-### ✔ No device ever jumps ahead  
-Because the shop only sends the **fleet_target_version_platform**.
-
-### ✔ No device ever gets stuck  
-Because the bootstrap app can always reinstall the real program.
+1. Admin generates pairing code at shop.
+2. Bootstrap app enters pairing code + device metadata.
+3. `POST /api/bootstrap/handshake` validates and consumes code.
+4. Shop registers device and returns active platform artifact + sync endpoint map.
+5. Bootstrap app downloads, verifies checksum/signature, installs real app.
+6. Bootstrap app posts install event status (`requested/downloaded/installed/failed`).
 
 ---
 
-# 🧩 **3. What happens if the App Store version is ancient?**
+## 4) Security / safety constraints
 
-Doesn’t matter.
-
-Bootstrap app version could be:
-
-- 1 year old  
-- 3 years old  
-- 5 years old  
-
-As long as it can:
-
-- Pair  
-- Authenticate  
-- Receive the real program  
-
-…it’s fine.
-
-The shop computer always sends the **current fleet version**, not the GitHub version.
+- Pairing codes are one-time and expiry-bound.
+- Admin permission required for code/artifact management.
+- Bootstrap handshake never grants business data directly.
+- Artifact delivery is platform-scoped and fleet-controlled by shop.
+- Install telemetry is auditable per-device.
 
 ---
 
-# 🛡️ **4. What if the shop is offline for weeks?**
+## 5) Test coverage
 
-Still fine.
+Added test file:
+- `backend/tests/test_bootstrap_router.py`
 
-Bootstrap app → shop → real program  
-Bootstrap app never touches GitHub.
-
-If the shop is offline:
-
-- Bootstrap app waits  
-- Device cannot install the real program  
-- No risk of mismatched versions  
-- No risk of partial installs  
-- No risk of running ahead of the fleet  
-
-When the shop comes back online:
-
-- It fetches updates  
-- Validates them  
-- Publishes the next fleet version  
-- New devices can now install normally  
+Covers:
+- pairing code creation,
+- artifact registration,
+- unauthenticated bootstrap handshake with valid pairing code,
+- install event logging,
+- admin event listing.
 
 ---
 
-# 🔥 **5. What if the shop has 17 updates waiting?**
+## 6) Implementation status
 
-Bootstrap app doesn’t care.
+### 6.1 Bootstrap client UI/app flow (implemented)
+- Pairing screen + code entry
+- Device identity bootstrap (public key + metadata inputs)
+- Install progress/status controls (`requested`, `downloaded`, `installed`, `failed`)
 
-Shop sends:
+Implemented as **Bootstrap Client Flow (Simulator)** in:
+- `frontend/src/features/settings/pages/BootstrapAdminPage.tsx`
 
-- The **fleet_target_version**  
-- Not the latest GitHub version  
-- Not the entire chain  
-- Not the experimental builds  
+### 6.2 Shop admin UI (implemented)
+- Artifact upload/activation screen
+- Pairing code management screen
+- Bootstrap install telemetry dashboard
 
-Bootstrap app installs **only** the version the shop has approved for the fleet.
+Implemented in:
+- `frontend/src/features/settings/pages/BootstrapAdminPage.tsx`
+- `frontend/src/api/bootstrap.ts`
+- Route: `/settings/bootstrap`
+- Settings navigation tab: **Bootstrap**
 
----
-
-# 🧠 **6. What if the real program breaks during install?**
-
-Bootstrap app handles recovery:
-
-- Detects failure  
-- Rolls back  
-- Requests a fresh copy from the shop  
-- Logs the error  
-- Reports it to the shop on next contact  
-
-Bootstrap app is your **safety net**.
-
----
-
-# 📦 **7. What the bootstrap app actually contains**
-
-### **A. Pairing & Discovery**
-- Bluetooth LE  
-- LAN broadcast  
-- QR code pairing  
-
-### **B. Secure Handshake**
-- Public key exchange  
-- Device identity  
-- Platform info  
-
-### **C. Installer**
-- Download binary  
-- Verify checksum  
-- Verify signature  
-- Install  
-- Launch  
-
-### **D. Recovery**
-- Rollback  
-- Reinstall  
-- Error reporting  
-
-### **E. Nothing else**
-No job logic.  
-No media logic.  
-No sync logic.  
-No update logic.  
-No schema.  
-No data.  
-
-Just pairing + installation.
+### 6.3 Backend management support (expanded)
+- Added pairing code listing endpoint for admin management:
+	- `GET /api/bootstrap/pairing-codes`
+- Added test coverage for pairing code listing.
 
 ---
 
-# 🎯 **8. Why this is the perfect design**
+## 7) Remaining planned work (future hardening)
 
-Because it gives you:
+### 7.1 Artifact delivery hardening
+- Signed manifest verification on client
+- Resume/chunked download support
+- Rollback bundle fallback
 
-- **Total control**  
-- **Offline safety**  
-- **Mesh compatibility**  
-- **Fleet‑wide version discipline**  
-- **No dependency on app stores**  
-- **No dependency on internet**  
-- **No risk of mismatched versions**  
-- **No risk of devices running ahead**  
-- **No risk of devices running behind**  
-- **No risk of bricking**  
-
-And it makes onboarding a new device:
-
-- Fast  
-- Simple  
-- Foolproof  
+### 7.2 Production bootstrap shell packaging
+- Move simulator flow into dedicated standalone bootstrap shell build target (separate app-store package)
+- Add OTA-safe installer orchestration per platform
 
 ---
 
-If you want, I can now design:
+## 8) Definition of done (V1.0.0)
 
-- The **bootstrap app UI flow**  
-- The **pairing protocol**  
-- The **binary transfer protocol**  
-- The **bootstrap → real program handoff**  
-- The **bootstrap recovery system**  
+- [x] Shop-side pairing + handshake backend exists
+- [x] Platform artifact manifest registry exists
+- [x] Install event telemetry exists
+- [x] Router mounted and tested
+- [x] Bootstrap client screens implemented
+- [ ] Artifact download/install verification integrated on mobile shells
 
-Just tell me which direction you want to go next.
+---
+
+## 9) Notes
+
+This plan intentionally keeps the bootstrap backend independent from app-store release cadence. Shop remains authoritative for what version enters the fleet.

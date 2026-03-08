@@ -10,7 +10,7 @@
  */
 
 import { useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -20,7 +20,6 @@ import {
   CheckCircle2,
   Truck,
   DollarSign,
-  XCircle,
   Package,
   FileText,
   Clock,
@@ -36,11 +35,11 @@ import {
   getStatusHistory,
 } from '../../../api/orders';
 import type {
-  ReturnResponse,
   ReturnLineResponse,
   ReturnStatus,
   StatusHistoryEntry,
 } from '../../../lib/types';
+import { PartIdentity } from '../../../components/ui/PartIdentity';
 
 
 // ── Status config ────────────────────────────────────────────────
@@ -86,7 +85,6 @@ const DISPOSITION_COLORS: Record<string, string> = {
 
 export function ReturnDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const returnId = Number(id);
 
@@ -210,9 +208,8 @@ export function ReturnDetailPage() {
               {ret.return_number}
             </h1>
             <span
-              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${
-                STATUS_COLORS[ret.status]
-              }`}
+              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_COLORS[ret.status]
+                }`}
             >
               {STATUS_LABELS[ret.status]}
             </span>
@@ -296,16 +293,18 @@ export function ReturnDetailPage() {
             {(ret.lines ?? []).map((line: ReturnLineResponse) => (
               <div key={line.id} className="flex items-center gap-4 px-5 py-3">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {line.part_number && (
-                      <span className="text-xs font-mono bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-1.5 py-0.5 rounded">
-                        {line.part_number}
-                      </span>
-                    )}
-                    <span className="text-sm text-gray-900 dark:text-gray-100">
-                      {line.part_description ?? `Part #${line.part_id}`}
-                    </span>
-                  </div>
+                  <PartIdentity
+                    compact
+                    partName={line.part_name}
+                    partDescription={line.part_description}
+                    partNumber={line.part_number}
+                    partId={line.part_id}
+                    brandName={line.brand_name}
+                    colorName={line.color_name}
+                    colorHex={line.color_hex}
+                    categoryName={line.category_name}
+                    typeName={line.type_name}
+                  />
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                     <span className="text-xs text-gray-500 dark:text-gray-400">
                       Qty: {line.qty}
@@ -314,9 +313,8 @@ export function ReturnDetailPage() {
                       · {CONDITION_LABELS[line.condition] ?? line.condition}
                     </span>
                     <span
-                      className={`inline-flex rounded-full px-1.5 py-0.5 text-xs font-medium ${
-                        DISPOSITION_COLORS[line.disposition] ?? 'bg-gray-100 text-gray-600'
-                      }`}
+                      className={`inline-flex rounded-full px-1.5 py-0.5 text-xs font-medium ${DISPOSITION_COLORS[line.disposition] ?? 'bg-gray-100 text-gray-600'
+                        }`}
                     >
                       {DISPOSITION_LABELS[line.disposition] ?? line.disposition}
                     </span>
@@ -450,11 +448,11 @@ export function ReturnDetailPage() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 text-sm">
                     <span className="font-medium text-gray-900 dark:text-gray-100">
-                      {entry.from_status ? `${entry.from_status} → ${entry.to_status}` : entry.to_status}
+                      {entry.old_status ? `${entry.old_status} → ${entry.new_status}` : entry.new_status}
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {entry.changer_name} · {new Date(entry.created_at).toLocaleString()}
+                    {entry.changer_name} · {entry.created_at ? new Date(entry.created_at).toLocaleString() : '—'}
                   </p>
                   {entry.notes && (
                     <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{entry.notes}</p>

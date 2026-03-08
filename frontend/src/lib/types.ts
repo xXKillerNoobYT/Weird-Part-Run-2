@@ -276,6 +276,7 @@ export interface SelectedCategoryNode {
   styleId?: number;
   typeId?: number;
   brandId?: number | null;   // null = General
+  brandName?: string;        // display name for the selected brand
   colorId?: number;
   partId?: number;
 }
@@ -776,7 +777,7 @@ export interface ImportResult {
 
 // ── Movement Wizard ───────────────────────────────────────────────
 
-export type LocationType = 'warehouse' | 'pulled' | 'truck' | 'job';
+export type LocationType = 'warehouse' | 'pulled' | 'truck' | 'trailer' | 'job';
 
 export interface MovementLineItem {
   part_id: number;
@@ -985,6 +986,7 @@ export interface ReceiveStockItem {
 
 export interface ReceiveStockRequest {
   items: ReceiveStockItem[];
+  warehouse_location_id?: number;
   reason?: string | null;
   notes?: string | null;
   reference_number?: string | null;
@@ -1445,6 +1447,17 @@ export interface JobUpdate {
   warranty_end_date?: string | null;
 }
 
+export interface JobTeamMember {
+  id: number;
+  job_id: number;
+  user_id: number;
+  display_name: string;
+  email?: string | null;
+  role: 'lead' | 'member';
+  assigned_at: string;
+  notes?: string | null;
+}
+
 export interface JobResponse {
   id: number;
   job_number: string;
@@ -1659,6 +1672,7 @@ export interface DailyReportResponse {
   worker_count: number;
   total_labor_hours: number;
   total_parts_cost: number;
+  total_drive_time_minutes?: number;
 }
 
 export interface DailyReportFull {
@@ -2040,7 +2054,7 @@ export type JPOStatus =
   | 'received' | 'closed';
 
 export type POStatus =
-  | 'draft' | 'submitted' | 'acknowledged'
+  | 'draft' | 'submitted' | 'acknowledged' | 'confirmed'
   | 'partially_received' | 'received' | 'closed' | 'cancelled';
 
 export type POLineStatus = 'pending' | 'partial' | 'received' | 'backordered' | 'cancelled';
@@ -2073,8 +2087,9 @@ export const JPO_STATUS_LABELS: Record<JPOStatus, string> = {
 /** Human-readable labels for PO statuses */
 export const PO_STATUS_LABELS: Record<POStatus, string> = {
   draft: 'Draft',
-  submitted: 'Submitted',
+  submitted: 'Sent',
   acknowledged: 'Acknowledged',
+  confirmed: 'Confirmed',
   partially_received: 'Partially Received',
   received: 'Received',
   closed: 'Closed',
@@ -2144,6 +2159,13 @@ export interface JPOLineResponse {
   part_number: string | null;
   part_description: string | null;
   supplier_name: string | null;
+  // Hierarchy fields
+  part_name: string | null;
+  category_name: string | null;
+  type_name: string | null;
+  color_name: string | null;
+  color_hex: string | null;
+  brand_name: string | null;
 }
 
 export interface JPOResponse {
@@ -2243,6 +2265,13 @@ export interface POLineResponse {
   part_number: string | null;
   part_description: string | null;
   line_total: number | null;
+  // Hierarchy fields
+  part_name: string | null;
+  category_name: string | null;
+  type_name: string | null;
+  color_name: string | null;
+  color_hex: string | null;
+  brand_name: string | null;
 }
 
 export interface POResponse {
@@ -2359,6 +2388,13 @@ export interface ReturnLineResponse {
   // Joined fields
   part_number: string | null;
   part_description: string | null;
+  // Hierarchy fields
+  part_name: string | null;
+  category_name: string | null;
+  type_name: string | null;
+  color_name: string | null;
+  color_hex: string | null;
+  brand_name: string | null;
 }
 
 export interface ReturnResponse {
@@ -2510,6 +2546,13 @@ export interface ReorderSuggestion {
   best_supplier_name: string | null;
   estimated_cost: number | null;
   days_until_stockout: number | null;
+  // Hierarchy fields
+  part_name: string | null;
+  category_name: string | null;
+  type_name: string | null;
+  color_name: string | null;
+  color_hex: string | null;
+  brand_name: string | null;
 }
 
 export interface ProcurementDashboard {
@@ -3213,9 +3256,9 @@ export interface MaintenanceCostSummary {
   per_vehicle?: { vehicle_name: string; vehicle_number: string; total_cost: number; record_count: number }[];
 }
 
-// ── Dashboard ──────────────────────────────────────────────────────
+// ── Home Dashboard (landing page) ──────────────────────────────────
 
-export interface DashboardData {
+export interface HomeDashboardData {
   kpis: {
     total_parts: number;
     active_jobs: number;
@@ -3317,6 +3360,12 @@ export interface SpecialItemResponse {
   // Joined fields
   resolver_name: string | null;
   linked_part_description: string | null;
+  // Joined when fetched via flagged-items endpoint
+  order_number?: string | null;
+  job_id?: number | null;
+  job_name?: string | null;
+  job_number?: string | null;
+  requester_name?: string | null;
 }
 
 export interface SpecialItemResolve {
@@ -3470,6 +3519,14 @@ export interface ConfirmationChecklistItem {
   // Joined (only populated in response, not stored in JSON)
   part_description?: string | null;
   confirmer_name?: string | null;
+  // Hierarchy fields
+  part_number?: string | null;
+  part_name?: string | null;
+  category_name?: string | null;
+  type_name?: string | null;
+  color_name?: string | null;
+  color_hex?: string | null;
+  brand_name?: string | null;
 }
 
 /** Update the full confirmation checklist for a PO */
@@ -3523,6 +3580,13 @@ export interface ReceivingSessionItemResponse {
   part_description: string | null;
   unit_cost: number | null;
   zone_label: string | null;
+  // Hierarchy fields
+  part_name: string | null;
+  category_name: string | null;
+  type_name: string | null;
+  color_name: string | null;
+  color_hex: string | null;
+  brand_name: string | null;
 }
 
 /** Full receiving session (API response) */
@@ -5155,4 +5219,226 @@ export interface CertAlertItem {
   cert_name: string;
   expiry_date: string;
   days_until_expiry: number;
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// CHAT & MESSAGING
+// ══════════════════════════════════════════════════════════════════
+
+export type ChannelType = 'job' | 'dm' | 'general';
+export type MessageType = 'text' | 'photo' | 'system' | 'qa_question' | 'qa_answer' | 'qa_escalation';
+export type QALevel = 'worker' | 'lead' | 'foreman' | 'supervisor' | 'office';
+export type QAStatus = 'open' | 'escalated' | 'answered' | 'closed' | 'sent_to_gc';
+export type QAPriority = 'normal' | 'urgent';
+export type RFIStatus = 'draft' | 'sent_text' | 'sent_email' | 'sent_app' | 'responded' | 'closed';
+
+// ── Channels ──────────────────────────────────────────────────────
+
+export interface ChatChannelResponse {
+  id: number;
+  channel_type: ChannelType;
+  job_id: number | null;
+  name: string | null;
+  created_by: number | null;
+  created_at: string | null;
+  updated_at: string | null;
+  member_count: number;
+  unread_count: number;
+  last_message: ChatMessagePreview | null;
+  job_name: string | null;
+  job_number: string | null;
+  members: ChatChannelMember[] | null;
+}
+
+export interface ChatChannelMember {
+  id: number;
+  channel_id: number;
+  user_id: number;
+  role: string;
+  muted_until: string | null;
+  joined_at: string | null;
+  display_name: string | null;
+  username: string | null;
+}
+
+export interface ChatChannelDetailResponse {
+  channel: ChatChannelResponse;
+  messages: ChatMessageResponse[];
+  members: ChatChannelMember[];
+  pinned_messages: ChatMessageResponse[];
+  has_more: boolean;
+}
+
+export interface ChatInboxResponse {
+  channels: ChatChannelResponse[];
+  total_unread: number;
+  unread_mentions: number;
+}
+
+// ── Messages ──────────────────────────────────────────────────────
+
+export interface ChatMessageResponse {
+  id: number;
+  channel_id: number;
+  sender_id: number;
+  message_type: MessageType;
+  content: string | null;
+  media_path: string | null;
+  media_mime_type: string | null;
+  media_size_bytes: number | null;
+  reply_to_id: number | null;
+  pinned_at: string | null;
+  pinned_by: number | null;
+  edited_at: string | null;
+  deleted_at: string | null;
+  created_at: string | null;
+  qa_thread_id: number | null;
+  qa_level: string | null;
+  // Joined
+  sender_name: string | null;
+  sender_username: string | null;
+  reply_preview: string | null;
+  reply_sender_name: string | null;
+}
+
+export interface ChatMessagePreview {
+  id: number;
+  content: string | null;
+  message_type: MessageType;
+  sender_name: string | null;
+  created_at: string | null;
+}
+
+export interface SendMessageRequest {
+  content?: string | null;
+  message_type?: MessageType;
+  media_path?: string | null;
+  media_mime_type?: string | null;
+  media_size_bytes?: number | null;
+  reply_to_id?: number | null;
+  mention_ids?: number[];
+}
+
+export interface EditMessageRequest {
+  content: string;
+}
+
+export interface MarkReadRequest {
+  last_read_message_id: number;
+}
+
+// ── Mentions ──────────────────────────────────────────────────────
+
+export interface ChatMentionResponse {
+  id: number;
+  message_id: number;
+  mentioned_user_id: number;
+  acknowledged_at: string | null;
+  channel_id: number | null;
+  channel_name: string | null;
+  job_id: number | null;
+  sender_name: string | null;
+  content: string | null;
+  created_at: string | null;
+}
+
+export interface ChatBadgeResponse {
+  total_unread: number;
+  unread_mentions: number;
+}
+
+// ── Q&A Threads ───────────────────────────────────────────────────
+
+export interface QAThreadResponse {
+  id: number;
+  channel_id: number;
+  job_id: number | null;
+  asked_by: number;
+  subject: string;
+  current_level: QALevel;
+  assigned_to: number | null;
+  status: QAStatus;
+  priority: QAPriority;
+  answered_by: number | null;
+  answered_at: string | null;
+  closed_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  // Joined
+  asker_name: string | null;
+  assigned_name: string | null;
+  answerer_name: string | null;
+  job_name: string | null;
+  job_number: string | null;
+  message_count: number;
+}
+
+export interface QAThreadDetailResponse {
+  thread: QAThreadResponse;
+  messages: ChatMessageResponse[];
+  timeline: EscalationStep[];
+  rfi?: RFIResponse | null;
+}
+
+export interface EscalationStep {
+  level: QALevel;
+  action: 'asked' | 'escalated' | 'answered' | 'sent_to_gc' | 'closed';
+  user_name: string | null;
+  user_id: number | null;
+  timestamp: string | null;
+  comment: string | null;
+}
+
+export interface AskQuestionRequest {
+  job_id: number;
+  subject: string;
+  body: string;
+  priority?: QAPriority;
+  media_path?: string | null;
+}
+
+export interface EscalateRequest {
+  comment?: string | null;
+}
+
+export interface AnswerRequest {
+  answer: string;
+}
+
+// ── RFIs ──────────────────────────────────────────────────────────
+
+export interface RFIResponse {
+  id: number;
+  qa_thread_id: number;
+  job_id: number;
+  gc_contact_id: number | null;
+  subject: string;
+  body: string;
+  status: RFIStatus;
+  sent_via: string | null;
+  sent_at: string | null;
+  response_text: string | null;
+  responded_at: string | null;
+  created_by: number;
+  created_at: string | null;
+  updated_at: string | null;
+  // Joined
+  gc_name: string | null;
+  gc_phone: string | null;
+  gc_email: string | null;
+  job_name: string | null;
+  job_number: string | null;
+  thread_subject: string | null;
+}
+
+export interface SendToGCRequest {
+  gc_contact_id: number;
+  via: 'sms' | 'email';
+}
+
+export interface UpdateRFIRequest {
+  status?: RFIStatus;
+  response_text?: string | null;
+  sent_via?: string | null;
 }

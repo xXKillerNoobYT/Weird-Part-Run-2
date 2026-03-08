@@ -34,6 +34,7 @@ import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
+import { PartIdentity } from '../../../components/ui/PartIdentity';
 import {
   startReceivingSession,
   getReceivingSession,
@@ -46,7 +47,6 @@ import {
 } from '../../../api/orders';
 import { formatRelativeTime } from '../../../lib/utils';
 import type {
-  ReceivingSessionResponse,
   ReceivingSessionItemResponse,
   ReceivingSessionListItem,
   ReceivingMode,
@@ -285,21 +285,19 @@ export function ReceivingPage() {
           <div className="flex gap-2">
             <button
               onClick={() => setView('start')}
-              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                view === 'start'
+              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${view === 'start'
                   ? 'bg-primary-500 text-white'
                   : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-              }`}
+                }`}
             >
               New Session
             </button>
             <button
               onClick={() => setView('history')}
-              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                view === 'history'
+              className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${view === 'history'
                   ? 'bg-primary-500 text-white'
                   : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-              }`}
+                }`}
             >
               History
             </button>
@@ -363,22 +361,20 @@ export function ReceivingPage() {
             <div className="flex gap-2 mb-4">
               <button
                 onClick={() => setSelectedMode('packing_slip')}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  selectedMode === 'packing_slip'
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${selectedMode === 'packing_slip'
                     ? 'bg-primary-500 text-white'
                     : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
+                  }`}
               >
                 <ClipboardList className="h-4 w-4" />
                 Packing Slip
               </button>
               <button
                 onClick={() => setSelectedMode('scan')}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  selectedMode === 'scan'
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${selectedMode === 'scan'
                     ? 'bg-primary-500 text-white'
                     : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
+                  }`}
               >
                 <ScanLine className="h-4 w-4" />
                 Scan
@@ -654,7 +650,7 @@ function ReceivingItemRow({
   zones,
   onQtyChange,
   onZoneChange,
-  isUpdating,
+  isUpdating: _isUpdating,
 }: {
   item: ReceivingSessionItemResponse;
   zones: StagingZoneResponse[];
@@ -682,14 +678,18 @@ function ReceivingItemRow({
     <tr className={`${isComplete ? 'bg-green-50/50 dark:bg-green-900/10' : ''}`}>
       {/* Part info */}
       <td className="px-4 py-3">
-        <div className="font-medium text-gray-900 dark:text-white text-sm">
-          {item.part_description || `Part #${item.part_id}`}
-        </div>
-        {item.part_number && (
-          <div className="text-xs text-gray-500 dark:text-gray-400">
-            {item.part_number}
-          </div>
-        )}
+        <PartIdentity
+          compact
+          partName={item.part_name}
+          partDescription={item.part_description}
+          partNumber={item.part_number}
+          partId={item.part_id ?? undefined}
+          brandName={item.brand_name}
+          colorName={item.color_name}
+          colorHex={item.color_hex}
+          categoryName={item.category_name}
+          typeName={item.type_name}
+        />
       </td>
 
       {/* Expected qty */}
@@ -707,13 +707,12 @@ function ReceivingItemRow({
           onChange={(e) => setLocalQty(Math.max(0, parseInt(e.target.value) || 0))}
           onBlur={handleBlur}
           onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-          className={`w-20 min-h-[44px] text-center rounded-lg border text-sm font-medium transition-colors ${
-            isComplete
+          className={`w-20 min-h-[44px] text-center rounded-lg border text-sm font-medium transition-colors ${isComplete
               ? 'border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400'
               : isPartial
                 ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
                 : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white'
-          } focus:ring-2 focus:ring-primary-500 focus:border-transparent`}
+            } focus:ring-2 focus:ring-primary-500 focus:border-transparent`}
         />
       </td>
 

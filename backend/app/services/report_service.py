@@ -475,6 +475,8 @@ class ReportService:
         # Extract summary from JSON for list views
         report_data = json.loads(row["report_json"]) if row["report_json"] else {}
         summary = report_data.get("summary", {})
+        workers = report_data.get("workers", [])
+        total_drive = sum(w.get("drive_time_minutes", 0) for w in workers)
 
         return DailyReportResponse(
             id=row["id"],
@@ -489,4 +491,5 @@ class ReportService:
             worker_count=summary.get("worker_count", 0),
             total_labor_hours=summary.get("total_labor_hours", 0),
             total_parts_cost=summary.get("total_parts_cost", 0),
+            total_drive_time_minutes=total_drive,
         )

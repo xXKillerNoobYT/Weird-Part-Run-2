@@ -22,8 +22,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   Building2,
-  ChevronDown,
-  ChevronRight,
   FileText,
   Loader2,
   Send,
@@ -32,18 +30,21 @@ import {
   ClipboardCheck,
   MessageSquare,
   Package,
-  X,
   Filter,
   TrendingUp,
-  AlertTriangle,
   Copy,
   Check,
+  ShieldCheck,
+  MailCheck,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
+import { Modal } from '../../../components/ui/Modal';
+import { Button } from '../../../components/ui/Button';
 import { OrderStatusBadge } from '../../orders/components/OrderStatusBadge';
 import { ConversationThread } from '../../orders/components/ConversationThread';
+import { PartIdentity } from '../../../components/ui/PartIdentity';
 import {
   listPOs,
   getPO,
@@ -60,7 +61,6 @@ import { cn } from '../../../lib/utils';
 import type {
   POListItem,
   POResponse,
-  POLineResponse,
   Supplier,
   ConfirmationChecklistItem,
 } from '../../../lib/types';
@@ -68,13 +68,14 @@ import type {
 
 // ── Status filter chips ─────────────────────────────────────────
 
-type StatusFilter = 'all' | 'draft' | 'submitted' | 'acknowledged' | 'partially_received' | 'received';
+type StatusFilter = 'all' | 'draft' | 'submitted' | 'acknowledged' | 'confirmed' | 'partially_received' | 'received';
 
 const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
   { label: 'All', value: 'all' },
   { label: 'Draft', value: 'draft' },
-  { label: 'Submitted', value: 'submitted' },
+  { label: 'Sent', value: 'submitted' },
   { label: 'Acknowledged', value: 'acknowledged' },
+  { label: 'Confirmed', value: 'confirmed' },
   { label: 'Partial', value: 'partially_received' },
   { label: 'Received', value: 'received' },
 ];
@@ -101,6 +102,14 @@ export function POManagementTab() {
   const [expandedChecklist, setExpandedChecklist] = useState<number | null>(null);
   const [copiedPoId, setCopiedPoId] = useState<number | null>(null);
 
+  // Confirmation popup state
+  const [confirmAction, setConfirmAction] = useState<{
+    type: 'send' | 'acknowledged' | 'confirmed';
+    poId: number;
+    poNumber: string;
+    supplierName: string;
+  } | null>(null);
+
   // ── Data queries ────────────────────────────────────────────
 
   // Supplier list (for sidebar)
@@ -110,11 +119,13 @@ export function POManagementTab() {
     staleTime: 60_000,
   });
 
-  // POs for selected supplier
+  // POs — always fetch, optionally filtered by supplier
   const posQ = useQuery({
     queryKey: ['pos', { supplier_id: selectedSupplierId }],
-    queryFn: () => listPOs({ supplier_id: selectedSupplierId! }),
-    enabled: !!selectedSupplierId,
+    queryFn: () =>
+      selectedSupplierId
+        ? listPOs({ supplier_id: selectedSupplierId })
+        : listPOs(),
     refetchInterval: 30_000,
   });
 
@@ -178,7 +189,7 @@ export function POManagementTab() {
 
   // ── Handlers ────────────────────────────────────────────────
 
-  const handleSelectSupplier = useCallback((id: number) => {
+  const handleSelectSupplier = useCallback((id: number | null) => {
     setSelectedSupplierId(id);
     setSelectedPoId(null); // reset PO selection when supplier changes
     setExpandedChecklist(null);
@@ -259,71 +270,89 @@ export function POManagementTab() {
 
         {/* ── Panel 2: PO List ────────────────────────────────── */}
         <div className="flex-1 min-w-0 flex flex-col gap-3">
-          {selectedSupplierId ? (
-            <>
-              {/* Status filter chips */}
-              <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                <Filter className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                {STATUS_FILTERS.map((f) => (
-                  <button
-                    key={f.value}
-                    onClick={() => setStatusFilter(f.value)}
-                    className={cn(
-                      'whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium transition-colors',
-                      statusFilter === f.value
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
-                    )}
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
+          {/* Status filter chips */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <Filter className="h-4 w-4 text-gray-400 flex-shrink-0" />
+            {STATUS_FILTERS.map((f) => (
+              <button
+                key={f.value}
+                onClick={() => setStatusFilter(f.value)}
+                className={cn(
+                  'whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                  statusFilter === f.value
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
 
-              {/* PO cards */}
-              {posQ.isLoading ? (
-                <PageSpinner />
-              ) : filteredPOs.length === 0 ? (
-                <EmptyState
-                  icon={Package}
-                  title="No purchase orders"
-                  description={
-                    statusFilter !== 'all'
-                      ? `No POs with status "${statusFilter}" for this supplier`
-                      : 'No POs found for this supplier'
-                  }
-                />
-              ) : (
-                <div className="space-y-2 overflow-y-auto max-h-[calc(100vh-320px)]">
-                  {filteredPOs.map((po) => (
-                    <POCard
-                      key={po.id}
-                      po={po}
-                      isSelected={selectedPoId === po.id}
-                      isChecklistExpanded={expandedChecklist === po.id}
-                      checklistItems={expandedChecklist === po.id ? checklistQ.data : undefined}
-                      checklistLoading={expandedChecklist === po.id && checklistQ.isLoading}
-                      isCopied={copiedPoId === po.id}
-                      onSelect={() => handleSelectPO(po.id)}
-                      onToggleChecklist={() => handleToggleChecklist(po.id)}
-                      onCheckItem={(lineId, checked) => handleCheckItem(po.id, lineId, checked)}
-                      onSubmit={() => submitMut.mutate(po.id)}
-                      onGeneratePdf={() => pdfMut.mutate(po.id)}
-                      onCopyClipboard={() => handleCopyClipboard(po.id)}
-                      onUpdateStatus={(status) => statusMut.mutate({ poId: po.id, status })}
-                      submitting={submitMut.isPending}
-                      generatingPdf={pdfMut.isPending}
-                    />
-                  ))}
-                </div>
-              )}
-            </>
-          ) : (
+          {/* PO cards */}
+          {posQ.isLoading ? (
+            <PageSpinner />
+          ) : filteredPOs.length === 0 ? (
             <EmptyState
-              icon={Building2}
-              title="Select a supplier"
-              description="Choose a supplier from the list to view their purchase orders"
+              icon={Package}
+              title="No purchase orders"
+              description={
+                statusFilter !== 'all'
+                  ? `No POs with status "${statusFilter}"${selectedSupplierId ? ' for this supplier' : ''}`
+                  : selectedSupplierId
+                    ? 'No POs found for this supplier'
+                    : 'No purchase orders yet'
+              }
             />
+          ) : (
+            <div className="space-y-2 overflow-y-auto max-h-[calc(100vh-320px)]">
+              {filteredPOs.map((po) => (
+                <POCard
+                  key={po.id}
+                  po={po}
+                  showSupplier={!selectedSupplierId}
+                  isSelected={selectedPoId === po.id}
+                  isChecklistExpanded={expandedChecklist === po.id}
+                  checklistItems={expandedChecklist === po.id ? checklistQ.data : undefined}
+                  checklistLoading={expandedChecklist === po.id && checklistQ.isLoading}
+                  isCopied={copiedPoId === po.id}
+                  onSelect={() => handleSelectPO(po.id)}
+                  onToggleChecklist={() => handleToggleChecklist(po.id)}
+                  onCheckItem={(lineId, checked) => handleCheckItem(po.id, lineId, checked)}
+                  onSubmit={() =>
+                    setConfirmAction({
+                      type: 'send',
+                      poId: po.id,
+                      poNumber: po.po_number,
+                      supplierName: po.supplier_name ?? 'Unknown',
+                    })
+                  }
+                  onGeneratePdf={() => pdfMut.mutate(po.id)}
+                  onCopyClipboard={() => handleCopyClipboard(po.id)}
+                  onUpdateStatus={(status) => {
+                    if (status === 'acknowledged') {
+                      setConfirmAction({
+                        type: 'acknowledged',
+                        poId: po.id,
+                        poNumber: po.po_number,
+                        supplierName: po.supplier_name ?? 'Unknown',
+                      });
+                    } else if (status === 'confirmed') {
+                      setConfirmAction({
+                        type: 'confirmed',
+                        poId: po.id,
+                        poNumber: po.po_number,
+                        supplierName: po.supplier_name ?? 'Unknown',
+                      });
+                    } else {
+                      statusMut.mutate({ poId: po.id, status });
+                    }
+                  }}
+                  submitting={submitMut.isPending}
+                  generatingPdf={pdfMut.isPending}
+                />
+              ))}
+            </div>
           )}
         </div>
 
@@ -371,14 +400,42 @@ export function POManagementTab() {
           )}
         </div>
       </div>
+
+      {/* ── Confirmation Modal ───────────────────────────────── */}
+      {confirmAction && (
+        <ConfirmStatusModal
+          action={confirmAction}
+          isSubmitting={
+            confirmAction.type === 'send' ? submitMut.isPending : statusMut.isPending
+          }
+          onConfirm={() => {
+            if (confirmAction.type === 'send') {
+              submitMut.mutate(confirmAction.poId, {
+                onSuccess: () => {
+                  setConfirmAction(null);
+                  queryClient.invalidateQueries({ queryKey: ['pos'] });
+                  queryClient.invalidateQueries({ queryKey: ['po', selectedPoId] });
+                },
+              });
+            } else {
+              statusMut.mutate(
+                { poId: confirmAction.poId, status: confirmAction.type },
+                {
+                  onSuccess: () => {
+                    setConfirmAction(null);
+                    queryClient.invalidateQueries({ queryKey: ['pos'] });
+                    queryClient.invalidateQueries({ queryKey: ['po', selectedPoId] });
+                  },
+                }
+              );
+            }
+          }}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
     </div>
   );
 }
-
-
-// ═══════════════════════════════════════════════════════════════
-// SupplierPanel — sidebar on desktop, horizontal scroll on mobile
-// ═══════════════════════════════════════════════════════════════
 
 function SupplierPanel({
   suppliers,
@@ -387,7 +444,7 @@ function SupplierPanel({
 }: {
   suppliers: Supplier[];
   selectedId: number | null;
-  onSelect: (id: number) => void;
+  onSelect: (id: number | null) => void;
 }) {
   const [search, setSearch] = useState('');
 
@@ -413,6 +470,20 @@ function SupplierPanel({
 
         {/* Supplier list — horizontal scroll on mobile, vertical on desktop */}
         <div className="flex lg:flex-col overflow-x-auto lg:overflow-x-hidden lg:overflow-y-auto lg:max-h-[calc(100vh-340px)] p-1 gap-1">
+          {/* All Suppliers option */}
+          <button
+            onClick={() => onSelect(null)}
+            className={cn(
+              'flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors w-full whitespace-nowrap lg:whitespace-normal min-w-[140px] lg:min-w-0',
+              selectedId === null
+                ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 font-medium'
+                : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
+            )}
+          >
+            <Package className="h-4 w-4 flex-shrink-0" />
+            <span className="truncate">All Suppliers</span>
+          </button>
+
           {filtered.length === 0 ? (
             <p className="text-xs text-gray-500 dark:text-gray-400 p-3 text-center w-full">
               No suppliers found
@@ -447,6 +518,7 @@ function SupplierPanel({
 
 function POCard({
   po,
+  showSupplier,
   isSelected,
   isChecklistExpanded,
   checklistItems,
@@ -463,6 +535,7 @@ function POCard({
   generatingPdf,
 }: {
   po: POListItem;
+  showSupplier?: boolean;
   isSelected: boolean;
   isChecklistExpanded: boolean;
   checklistItems?: ConfirmationChecklistItem[];
@@ -502,6 +575,12 @@ function POCard({
             </span>
             <OrderStatusBadge status={po.status} type="po" />
           </div>
+          {showSupplier && po.supplier_name && (
+            <div className="flex items-center gap-1 mt-0.5 text-xs text-blue-600 dark:text-blue-400">
+              <Building2 className="h-3 w-3" />
+              <span className="truncate">{po.supplier_name}</span>
+            </div>
+          )}
           <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
             <span>{po.line_count} item{po.line_count !== 1 ? 's' : ''}</span>
             <span>{fmtCost(po.total_cost)}</span>
@@ -532,9 +611,18 @@ function POCard({
           {/* Acknowledge (only if submitted) */}
           {po.status === 'submitted' && (
             <ActionButton
-              icon={CheckCircle}
+              icon={MailCheck}
               label="Acknowledged"
               onClick={(e) => { e.stopPropagation(); onUpdateStatus('acknowledged'); }}
+            />
+          )}
+
+          {/* Confirmed (only if acknowledged) */}
+          {po.status === 'acknowledged' && (
+            <ActionButton
+              icon={ShieldCheck}
+              label="Confirmed"
+              onClick={(e) => { e.stopPropagation(); onUpdateStatus('confirmed'); }}
             />
           )}
 
@@ -583,7 +671,7 @@ function POCard({
               Confirmation Checklist
             </span>
             {totalCount > 0 && (
-              <Badge variant={confirmedCount === totalCount ? 'green' : 'amber'}>
+              <Badge variant={confirmedCount === totalCount ? 'success' : 'warning'}>
                 {confirmedCount}/{totalCount}
               </Badge>
             )}
@@ -610,15 +698,24 @@ function POCard({
                   ) : (
                     <Circle className="h-4 w-4 text-gray-300 dark:text-gray-600 flex-shrink-0" />
                   )}
-                  <span
-                    className={cn(
-                      'text-sm flex-1 min-w-0 truncate',
-                      item.confirmed
-                        ? 'text-gray-500 dark:text-gray-400 line-through'
-                        : 'text-gray-800 dark:text-gray-200'
-                    )}
-                  >
-                    {item.part_description ?? `Part #${item.part_id}`}
+                  <span className={cn(
+                    'flex-1 min-w-0',
+                    item.confirmed
+                      ? 'line-through opacity-60'
+                      : ''
+                  )}>
+                    <PartIdentity
+                      compact
+                      partName={item.part_name}
+                      partDescription={item.part_description}
+                      partNumber={item.part_number}
+                      partId={item.part_id}
+                      brandName={item.brand_name}
+                      colorName={item.color_name}
+                      colorHex={item.color_hex}
+                      categoryName={item.category_name}
+                      typeName={item.type_name}
+                    />
                   </span>
                   {item.confirmed && item.confirmer_name && (
                     <span className="text-[10px] text-gray-500 dark:text-gray-400 flex-shrink-0">
@@ -671,5 +768,76 @@ function ActionButton({
       )}
       <span className="hidden sm:inline">{label}</span>
     </button>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// ConfirmStatusModal — confirmation popup for PO status changes
+// ═══════════════════════════════════════════════════════════════
+
+const CONFIRM_MESSAGES: Record<
+  'send' | 'acknowledged' | 'confirmed',
+  { title: string; description: (po: string, supplier: string) => string; buttonLabel: string; icon: React.ComponentType<{ className?: string }> }
+> = {
+  send: {
+    title: 'Mark Order as Sent?',
+    description: (po, supplier) =>
+      `This confirms that ${po} has been sent to ${supplier} by email. Make sure the order has actually been emailed before confirming.`,
+    buttonLabel: 'Yes, Mark as Sent',
+    icon: Send,
+  },
+  acknowledged: {
+    title: 'Mark as Acknowledged?',
+    description: (po, supplier) =>
+      `This confirms that ${supplier} has acknowledged receiving order ${po}. Only mark this once the supplier has confirmed they received it.`,
+    buttonLabel: 'Yes, Mark Acknowledged',
+    icon: MailCheck,
+  },
+  confirmed: {
+    title: 'Confirm Order?',
+    description: (po, supplier) =>
+      `This confirms that ${supplier} has confirmed they will fulfill order ${po}. This means the supplier has reviewed the order and committed to sending the parts.`,
+    buttonLabel: 'Yes, Confirm Order',
+    icon: ShieldCheck,
+  },
+};
+
+function ConfirmStatusModal({
+  action,
+  isSubmitting,
+  onConfirm,
+  onCancel,
+}: {
+  action: { type: 'send' | 'acknowledged' | 'confirmed'; poId: number; poNumber: string; supplierName: string };
+  isSubmitting: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const msg = CONFIRM_MESSAGES[action.type];
+  const Icon = msg.icon;
+
+  return (
+    <Modal isOpen onClose={onCancel} title={msg.title} size="sm">
+      <div className="space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="flex-shrink-0 rounded-full bg-blue-100 dark:bg-blue-900/30 p-2">
+            <Icon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+          </div>
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {msg.description(action.poNumber, action.supplierName)}
+          </p>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 pt-2">
+          <Button variant="secondary" onClick={onCancel} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={onConfirm} isLoading={isSubmitting}>
+            {msg.buttonLabel}
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }

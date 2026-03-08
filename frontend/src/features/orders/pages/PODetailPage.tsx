@@ -15,11 +15,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Send,
-  FileText,
   Clipboard,
   Check,
   Package,
   DollarSign,
+  MailCheck,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   getPO,
@@ -30,6 +31,9 @@ import {
 } from '../../../api/orders';
 import { OrderStatusBadge } from '../components/OrderStatusBadge';
 import { EmptyState } from '../../../components/ui/EmptyState';
+import { Modal } from '../../../components/ui/Modal';
+import { Button } from '../../../components/ui/Button';
+import { PartIdentity } from '../../../components/ui/PartIdentity';
 import type { StatusHistoryEntry } from '../../../lib/types';
 
 export function PODetailPage() {
@@ -37,6 +41,7 @@ export function PODetailPage() {
   const queryClient = useQueryClient();
   const poId = Number(id);
   const [mutationError, setMutationError] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'send' | 'acknowledged' | 'confirmed' | null>(null);
 
   const {
     data: po,
@@ -64,14 +69,20 @@ export function PODetailPage() {
 
   const submitMutation = useMutation({
     mutationFn: () => submitPO(poId),
-    onSuccess: invalidatePO,
+    onSuccess: () => { invalidatePO(); setConfirmAction(null); },
     onError: () => setMutationError('Failed to submit PO. Please try again.'),
   });
 
   const acknowledgeMutation = useMutation({
     mutationFn: () => updatePOStatus(poId, 'acknowledged'),
-    onSuccess: invalidatePO,
+    onSuccess: () => { invalidatePO(); setConfirmAction(null); },
     onError: () => setMutationError('Failed to mark as acknowledged. Please try again.'),
+  });
+
+  const confirmedMutation = useMutation({
+    mutationFn: () => updatePOStatus(poId, 'confirmed'),
+    onSuccess: () => { invalidatePO(); setConfirmAction(null); },
+    onError: () => setMutationError('Failed to mark as confirmed. Please try again.'),
   });
 
   const copyTextMutation = useMutation({
@@ -111,7 +122,8 @@ export function PODetailPage() {
 
   const isSubmittable = po.status === 'draft';
   const canAcknowledge = po.status === 'submitted';
-  const canCopyText = ['submitted', 'acknowledged', 'partially_received', 'received'].includes(po.status);
+  const canConfirm = po.status === 'acknowledged';
+  const canCopyText = ['submitted', 'acknowledged', 'confirmed', 'partially_received', 'received'].includes(po.status);
 
   return (
     <div className="space-y-6">
@@ -133,25 +145,38 @@ export function PODetailPage() {
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {isSubmittable && (
               <button
-                onClick={() => submitMutation.mutate()}
+                onClick={() => setConfirmAction('send')}
                 disabled={submitMutation.isPending}
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-primary/90 transition-colors disabled:opacity-50"
               >
                 <Send className="h-4 w-4" />
-                Submit to Supplier
+                <span className="hidden sm:inline">Send to Supplier</span>
+                <span className="sm:hidden">Send</span>
               </button>
             )}
             {canAcknowledge && (
               <button
-                onClick={() => acknowledgeMutation.mutate()}
+                onClick={() => setConfirmAction('acknowledged')}
                 disabled={acknowledgeMutation.isPending}
                 className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 transition-colors disabled:opacity-50"
               >
-                <FileText className="h-4 w-4" />
-                Mark Acknowledged
+                <MailCheck className="h-4 w-4" />
+                <span className="hidden sm:inline">Mark Acknowledged</span>
+                <span className="sm:hidden">Ack'd</span>
+              </button>
+            )}
+            {canConfirm && (
+              <button
+                onClick={() => setConfirmAction('confirmed')}
+                disabled={confirmedMutation.isPending}
+                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 transition-colors disabled:opacity-50"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                <span className="hidden sm:inline">Mark Confirmed</span>
+                <span className="sm:hidden">Confirm</span>
               </button>
             )}
             {canCopyText && (
@@ -256,14 +281,18 @@ export function PODetailPage() {
               {po.lines.map((line) => (
                 <tr key={line.id} className="hover:bg-surface-secondary/30 transition-colors">
                   <td className="px-4 py-3">
-                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                      {line.part_number || `Part #${line.part_id}`}
-                    </div>
-                    {line.part_description && (
-                      <div className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[250px]">
-                        {line.part_description}
-                      </div>
-                    )}
+                    <PartIdentity
+                      compact
+                      partName={line.part_name}
+                      partDescription={line.part_description}
+                      partNumber={line.part_number}
+                      partId={line.part_id}
+                      brandName={line.brand_name}
+                      colorName={line.color_name}
+                      colorHex={line.color_hex}
+                      categoryName={line.category_name}
+                      typeName={line.type_name}
+                    />
                   </td>
                   <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-900 dark:text-gray-100">
                     {line.qty_ordered}
@@ -358,9 +387,9 @@ export function PODetailPage() {
                     <span className="font-medium text-gray-900 dark:text-gray-100">
                       {entry.old_status ? `${entry.old_status} → ${entry.new_status}` : entry.new_status}
                     </span>
-                    {entry.changed_by_name && (
+                    {entry.changer_name && (
                       <span className="text-gray-500 dark:text-gray-400">
-                        by {entry.changed_by_name}
+                        by {entry.changer_name}
                       </span>
                     )}
                   </div>
@@ -377,6 +406,28 @@ export function PODetailPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* ── Confirmation Modal ──────────────────────────────── */}
+      {confirmAction && (
+        <POConfirmModal
+          type={confirmAction}
+          poNumber={po.po_number}
+          supplierName={po.supplier_name ?? 'Unknown'}
+          isSubmitting={
+            confirmAction === 'send'
+              ? submitMutation.isPending
+              : confirmAction === 'acknowledged'
+                ? acknowledgeMutation.isPending
+                : confirmedMutation.isPending
+          }
+          onConfirm={() => {
+            if (confirmAction === 'send') submitMutation.mutate();
+            else if (confirmAction === 'acknowledged') acknowledgeMutation.mutate();
+            else confirmedMutation.mutate();
+          }}
+          onCancel={() => setConfirmAction(null)}
+        />
       )}
     </div>
   );
@@ -402,5 +453,85 @@ function InfoCard({
         {value}
       </p>
     </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// POConfirmModal — confirmation popup for PO status transitions
+// ═══════════════════════════════════════════════════════════════
+
+const PO_CONFIRM_MESSAGES: Record<
+  'send' | 'acknowledged' | 'confirmed',
+  {
+    title: string;
+    description: (po: string, supplier: string) => string;
+    buttonLabel: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }
+> = {
+  send: {
+    title: 'Mark Order as Sent?',
+    description: (po, supplier) =>
+      `This confirms that ${po} has been sent to ${supplier} by email. Make sure the order has actually been emailed before confirming.`,
+    buttonLabel: 'Yes, Mark as Sent',
+    icon: Send,
+  },
+  acknowledged: {
+    title: 'Mark as Acknowledged?',
+    description: (po, supplier) =>
+      `This confirms that ${supplier} has acknowledged receiving order ${po}. Only mark this once the supplier has confirmed they received it.`,
+    buttonLabel: 'Yes, Mark Acknowledged',
+    icon: MailCheck,
+  },
+  confirmed: {
+    title: 'Confirm Order?',
+    description: (po, supplier) =>
+      `This confirms that ${supplier} has confirmed they will fulfill order ${po}. This means the supplier has reviewed the order and committed to sending the parts.`,
+    buttonLabel: 'Yes, Confirm Order',
+    icon: ShieldCheck,
+  },
+};
+
+function POConfirmModal({
+  type,
+  poNumber,
+  supplierName,
+  isSubmitting,
+  onConfirm,
+  onCancel,
+}: {
+  type: 'send' | 'acknowledged' | 'confirmed';
+  poNumber: string;
+  supplierName: string;
+  isSubmitting: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const msg = PO_CONFIRM_MESSAGES[type];
+  const Icon = msg.icon;
+
+  return (
+    <Modal isOpen onClose={onCancel} title={msg.title} size="sm">
+      <div className="space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="flex-shrink-0 rounded-full bg-blue-100 dark:bg-blue-900/30 p-2">
+            <Icon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+          </div>
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            {msg.description(poNumber, supplierName)}
+          </p>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 pt-2">
+          <Button variant="secondary" onClick={onCancel} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={onConfirm} isLoading={isSubmitting}>
+            {msg.buttonLabel}
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }

@@ -351,6 +351,28 @@ class DailyReportResponse(BaseModel):
     worker_count: int = 0
     total_labor_hours: float = 0
     total_parts_cost: float = 0
+    total_drive_time_minutes: int = 0
+
+
+# ── Job Team Members ──────────────────────────────────────────────────
+
+class JobTeamMemberAdd(BaseModel):
+    """Add an employee to a job's team."""
+    user_id: int
+    role: str = "member"  # 'lead' | 'member'
+    notes: str | None = None
+
+
+class JobTeamMemberResponse(BaseModel):
+    """A single team member assignment."""
+    id: int
+    job_id: int
+    user_id: int
+    display_name: str
+    email: str | None = None
+    role: str
+    assigned_at: str
+    notes: str | None = None
 
 
 class DailyReportFull(BaseModel):

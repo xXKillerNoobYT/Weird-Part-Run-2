@@ -26,6 +26,9 @@ from app.models.vehicles import (
     DeliveryItemResponse,
     DeliveryItemUpdate,
     FleetDashboardStats,
+    JobTrailerCreate,
+    JobTrailerResponse,
+    JobTrailerUpdate,
     MaintenanceAlert,
     MaintenanceRecordCreate,
     MaintenanceRecordResponse,
@@ -44,6 +47,8 @@ from app.models.vehicles import (
     ReimbursementResponse,
     TripLegBulkCreate,
     TripLegResponse,
+    TrailerLocationEventCreate,
+    TrailerLocationEventResponse,
     VehicleAssignmentCreate,
     VehicleAssignmentResponse,
     VehicleCreate,
@@ -125,6 +130,348 @@ async def create_vehicle(
         return ApiResponse(data=vehicle, message="Vehicle created")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# JOB TRAILERS
+# ═══════════════════════════════════════════════════════════════════════
+
+@router.get(
+    "/trailers",
+    response_model=ApiResponse[list[JobTrailerResponse]],
+)
+async def list_trailers(
+    search: str | None = None,
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List active job trailers."""
+    svc = VehicleService(db)
+    trailers = await svc.list_trailers(search=search)
+    return ApiResponse(data=[dict(t) for t in trailers])
+
+
+@router.post(
+    "/trailers",
+    response_model=ApiResponse[JobTrailerResponse],
+    status_code=201,
+)
+async def create_trailer(
+    body: JobTrailerCreate,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Create a job trailer."""
+    svc = VehicleService(db)
+    try:
+        trailer = await svc.create_trailer(body.model_dump(exclude_none=True))
+        return ApiResponse(data=trailer, message="Trailer created")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put(
+    "/trailers/{trailer_id}",
+    response_model=ApiResponse[JobTrailerResponse],
+)
+async def update_trailer(
+    trailer_id: int,
+    body: JobTrailerUpdate,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update trailer metadata."""
+    svc = VehicleService(db)
+    updated = await svc.update_trailer(trailer_id, body.model_dump(exclude_unset=True))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Trailer not found")
+    return ApiResponse(data=updated, message="Trailer updated")
+
+
+@router.delete(
+    "/trailers/{trailer_id}",
+    response_model=ApiResponse[dict],
+)
+async def deactivate_trailer(
+    trailer_id: int,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Soft deactivate a trailer."""
+    svc = VehicleService(db)
+    ok = await svc.deactivate_trailer(trailer_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Trailer not found")
+    return ApiResponse(data={"id": trailer_id}, message="Trailer deactivated")
+
+
+@router.get(
+    "/trailers/{trailer_id}/inventory",
+    response_model=ApiResponse[list[dict]],
+)
+async def get_trailer_inventory(
+    trailer_id: int,
+    search: str | None = None,
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get inventory currently on a trailer."""
+    svc = VehicleService(db)
+    try:
+        items = await svc.get_trailer_inventory(trailer_id, search=search)
+        return ApiResponse(data=items)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post(
+    "/trailers/{trailer_id}/inventory/preload",
+    response_model=ApiResponse[dict],
+)
+async def preload_trailer_inventory(
+    trailer_id: int,
+    part_id: int = Query(...),
+    qty: int = Query(..., ge=1),
+    from_location_type: str = Query("warehouse"),
+    from_location_id: int = Query(1),
+    notes: str | None = None,
+    user: dict = Depends(require_permission("move_stock_warehouse")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Preload stock onto trailer (transfer only, not job consumption)."""
+    svc = VehicleService(db)
+    try:
+        result = await svc.preload_trailer_inventory(
+            trailer_id,
+            part_id,
+            qty,
+            user["id"],
+            from_location_type=from_location_type,
+            from_location_id=from_location_id,
+            notes=notes,
+        )
+        return ApiResponse(data=result, message="Trailer preloaded")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post(
+    "/trailers/{trailer_id}/inventory/consume",
+    response_model=ApiResponse[dict],
+)
+async def consume_trailer_inventory(
+    trailer_id: int,
+    part_id: int = Query(...),
+    qty: int = Query(..., ge=1),
+    job_id: int = Query(...),
+    notes: str | None = None,
+    photo_path: str | None = None,
+    scan_confirmed: bool = False,
+    user: dict = Depends(require_permission("move_stock_warehouse")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Consume stock from trailer to a job (explicit billing boundary)."""
+    svc = VehicleService(db)
+    try:
+        result = await svc.consume_trailer_inventory_to_job(
+            trailer_id,
+            part_id,
+            qty,
+            job_id,
+            user["id"],
+            notes=notes,
+            photo_path=photo_path,
+            scan_confirmed=scan_confirmed,
+        )
+        return ApiResponse(data=result, message="Trailer inventory consumed to job")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post(
+    "/trailers/{trailer_id}/inventory/return",
+    response_model=ApiResponse[dict],
+)
+async def return_trailer_inventory(
+    trailer_id: int,
+    part_id: int = Query(...),
+    qty: int = Query(..., ge=1),
+    to_location_type: str = Query("warehouse"),
+    to_location_id: int = Query(1),
+    notes: str | None = None,
+    user: dict = Depends(require_permission("move_stock_warehouse")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Return stock from trailer to destination (default warehouse)."""
+    svc = VehicleService(db)
+    try:
+        result = await svc.return_trailer_inventory(
+            trailer_id,
+            part_id,
+            qty,
+            user["id"],
+            to_location_type=to_location_type,
+            to_location_id=to_location_id,
+            notes=notes,
+        )
+        return ApiResponse(data=result, message="Trailer inventory returned")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get(
+    "/trailers/{trailer_id}/location",
+    response_model=ApiResponse[dict],
+)
+async def get_trailer_location(
+    trailer_id: int,
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get latest known trailer location snapshot."""
+    svc = VehicleService(db)
+    location = await svc.get_trailer_location(trailer_id)
+    if not location:
+        raise HTTPException(status_code=404, detail="Trailer not found")
+    return ApiResponse(data=location)
+
+
+@router.get(
+    "/trailers/{trailer_id}/location-events",
+    response_model=ApiResponse[list[TrailerLocationEventResponse]],
+)
+async def list_trailer_location_events(
+    trailer_id: int,
+    limit: int = Query(100, ge=1, le=500),
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List trailer location timeline events (newest first)."""
+    svc = VehicleService(db)
+    try:
+        events = await svc.list_trailer_location_events(trailer_id, limit=limit)
+        return ApiResponse(data=[dict(e) for e in events])
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post(
+    "/trailers/{trailer_id}/location-events",
+    response_model=ApiResponse[TrailerLocationEventResponse],
+    status_code=201,
+)
+async def create_trailer_location_event(
+    trailer_id: int,
+    body: TrailerLocationEventCreate,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Create a trailer location event/check-in."""
+    svc = VehicleService(db)
+    try:
+        event = await svc.record_trailer_location_event(
+            trailer_id,
+            body.model_dump(exclude_none=True),
+            recorded_by=user["id"],
+        )
+        return ApiResponse(data=event, message="Trailer location updated")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TRAILER STOCK TEMPLATES
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@router.get("/trailer-templates", response_model=ApiResponse[list[dict]])
+async def list_trailer_templates(
+    trailer_id: int | None = Query(None, description="Filter to a specific trailer"),
+    include_global: bool = Query(True, description="Include global templates when filtering by trailer"),
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List trailer stock templates (global + trailer-specific)."""
+    svc = VehicleService(db)
+    templates = await svc.list_trailer_templates(
+        trailer_id=trailer_id, include_global=include_global
+    )
+    return ApiResponse(data=[dict(t) for t in templates])
+
+
+@router.get("/trailer-templates/{template_id}", response_model=ApiResponse[dict])
+async def get_trailer_template(
+    template_id: int,
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get a single template with its lines."""
+    svc = VehicleService(db)
+    template = await svc.get_trailer_template(template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return ApiResponse(data=template)
+
+
+@router.post("/trailer-templates", response_model=ApiResponse[dict], status_code=201)
+async def create_trailer_template(
+    body: dict,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Create a new trailer stock template.
+
+    Body: { name, trailer_id?, is_default?, notes?, lines: [{part_id, target_qty, min_qty?}] }
+    """
+    if not body.get("name"):
+        raise HTTPException(status_code=422, detail="Template name is required")
+    svc = VehicleService(db)
+    template = await svc.create_trailer_template(body)
+    return ApiResponse(data=template, message="Template created")
+
+
+@router.put("/trailer-templates/{template_id}", response_model=ApiResponse[dict])
+async def update_trailer_template(
+    template_id: int,
+    body: dict,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update a template header and/or replace its lines."""
+    svc = VehicleService(db)
+    result = await svc.update_trailer_template(template_id, body)
+    if not result:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return ApiResponse(data=result, message="Template updated")
+
+
+@router.delete("/trailer-templates/{template_id}", response_model=ApiResponse[dict])
+async def delete_trailer_template(
+    template_id: int,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Delete a template (CASCADE deletes its lines)."""
+    svc = VehicleService(db)
+    deleted = await svc.delete_trailer_template(template_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return ApiResponse(data={"deleted": True}, message="Template deleted")
+
+
+@router.get(
+    "/trailers/{trailer_id}/restock-guidance",
+    response_model=ApiResponse[dict],
+)
+async def trailer_restock_guidance(
+    trailer_id: int,
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Restock guidance: compare trailer stock vs default template targets."""
+    svc = VehicleService(db)
+    guidance = await svc.get_restock_guidance(trailer_id)
+    return ApiResponse(data=guidance)
 
 
 @router.get("/my-vehicle", response_model=ApiResponse[MyVehicleDashboard])

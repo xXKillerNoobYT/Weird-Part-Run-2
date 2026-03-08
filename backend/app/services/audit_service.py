@@ -321,7 +321,10 @@ class AuditService:
     # ── Suggested Rolling Parts ───────────────────────────────────
 
     async def get_suggested_rolling_parts(self, limit: int = 20) -> list[dict]:
-        """Get parts suggested for the next rolling audit batch."""
+        """Get parts suggested for the next rolling audit batch.
+
+        Ordered by staleness (oldest count first), then shelf location.
+        """
         cursor = await self.db.execute(
             """SELECT p.id, p.name, p.code, p.shelf_location,
                       pc.name AS category_name,
@@ -337,6 +340,43 @@ class AuditService:
                WHERE p.is_deprecated = 0
                GROUP BY p.id
                ORDER BY
+                   COALESCE(MAX(ai.counted_at), '2000-01-01') ASC,
+                   p.shelf_location, p.name
+               LIMIT ?""",
+            (limit,),
+        )
+        return await cursor.fetchall()
+
+    async def get_suggested_spot_check_parts(self, limit: int = 3) -> list[dict]:
+        """Get parts most urgently needing a spot check.
+
+        Priority order:
+          1. Zero-stock parts (any discrepancy is critical)
+          2. Below min_stock_level (low-stock health risk)
+          3. Longest since last count (staleness)
+        """
+        cursor = await self.db.execute(
+            """SELECT p.id, p.name, p.code, p.shelf_location,
+                      pc.name AS category_name,
+                      COALESCE(MAX(ai.counted_at), 'never') AS last_counted_at,
+                      COALESCE(s.qty, 0) AS warehouse_qty,
+                      COALESCE(p.min_stock_level, 0) AS min_stock_level
+               FROM parts p
+               JOIN part_categories pc ON pc.id = p.category_id
+               LEFT JOIN audit_items ai ON ai.part_id = p.id
+               LEFT JOIN (
+                   SELECT part_id, SUM(qty) AS qty FROM stock
+                   WHERE location_type = 'warehouse' GROUP BY part_id
+               ) s ON s.part_id = p.id
+               WHERE p.is_deprecated = 0
+               GROUP BY p.id
+               ORDER BY
+                   CASE
+                       WHEN COALESCE(s.qty, 0) = 0 THEN 0
+                       WHEN COALESCE(s.qty, 0) <= p.min_stock_level
+                            AND p.min_stock_level > 0 THEN 1
+                       ELSE 2
+                   END ASC,
                    COALESCE(MAX(ai.counted_at), '2000-01-01') ASC,
                    p.shelf_location, p.name
                LIMIT ?""",

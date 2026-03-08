@@ -18,7 +18,7 @@ Learning pipeline:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import aiosqlite
@@ -114,7 +114,7 @@ class JobPreferencesRepo(BaseRepo):
         )
         existing = await cursor.fetchone()
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
 
         if existing:
             # Boost confidence (cap at 1.0) and touch last_used_at

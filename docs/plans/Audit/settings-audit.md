@@ -1,7 +1,7 @@
 # Settings Audit
 
 > **Date:** 2026-03-06
-> **Status:** ✅ Verified Complete (2026-03-07) — 5/8 tabs functional. 3 intentional v2.0+ stubs: SyncPage, AiConfigPage, DeviceManagementPage. AboutPage added via M4 gap closure (GAP-043). E2E validated: notification opt-out model with green/red toggles, responsive at all 3 breakpoints.
+> **Status:** ✅ Updated (2026-03-07) — 7/8 tabs functional. AiConfigPage (LM Studio config + feature toggles) and DeviceManagementPage (devices/history/conflicts tabs using live sync API) fully implemented. 1 remaining stub: SyncPage (future Bluetooth mesh phase). AboutPage added via M4 gap closure (GAP-043).
 > **Scope:** Full audit of the Settings module — theme, app config, company profiles, staging zones, notifications, sync, AI, devices
 
 ---

@@ -8,6 +8,51 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Clock, Download, MapPin, Briefcase, Calendar } from 'lucide-react';
+
+// ── Pay period fast filters ───────────────────────────────────────
+
+type PayPeriod = 'this_week' | 'last_week' | 'this_2weeks' | 'last_2weeks' | 'this_month' | 'custom';
+
+function isoDate(d: Date): string { return d.toISOString().split('T')[0]; }
+
+function getPayPeriodRange(p: PayPeriod): { start: string; end: string } | null {
+  const today = new Date();
+  const dow = today.getDay();
+  const monOffset = dow === 0 ? -6 : 1 - dow;
+  if (p === 'this_week') {
+    const mon = new Date(today); mon.setDate(today.getDate() + monOffset);
+    return { start: isoDate(mon), end: isoDate(today) };
+  }
+  if (p === 'last_week') {
+    const mon = new Date(today); mon.setDate(today.getDate() + monOffset - 7);
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    return { start: isoDate(mon), end: isoDate(sun) };
+  }
+  if (p === 'this_2weeks') {
+    const mon = new Date(today); mon.setDate(today.getDate() + monOffset);
+    const twoBack = new Date(mon); twoBack.setDate(mon.getDate() - 7);
+    return { start: isoDate(twoBack), end: isoDate(today) };
+  }
+  if (p === 'last_2weeks') {
+    const mon = new Date(today); mon.setDate(today.getDate() + monOffset - 14);
+    const end = new Date(mon); end.setDate(mon.getDate() + 13);
+    return { start: isoDate(mon), end: isoDate(end) };
+  }
+  if (p === 'this_month') {
+    const y = today.getFullYear(); const m = today.getMonth();
+    return { start: isoDate(new Date(y, m, 1)), end: isoDate(today) };
+  }
+  return null;
+}
+
+const PAY_PERIOD_LABELS: Record<PayPeriod, string> = {
+  this_week:   'This Week',
+  last_week:   'Last Week',
+  this_2weeks: 'This Fortnight',
+  last_2weeks: 'Last Fortnight',
+  this_month:  'This Month',
+  custom:      'Custom',
+};
 import { Card } from '../../../components/ui/Card';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -21,16 +66,22 @@ import {
 export function TimesheetsPage() {
   // ── Controls ──────────────────────────────────────────────
   const [employeeId, setEmployeeId] = useState<number | undefined>(undefined);
+  const [payPeriod, setPayPeriod] = useState<PayPeriod>('this_week');
   const [startDate, setStartDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 6); // last 7 days
-    return d.toISOString().split('T')[0];
+    const range = getPayPeriodRange('this_week');
+    return range?.start ?? new Date().toISOString().split('T')[0];
   });
   const [endDate, setEndDate] = useState(() =>
     new Date().toISOString().split('T')[0],
   );
   const [submitted, setSubmitted] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  const handlePayPeriodChange = (p: PayPeriod) => {
+    setPayPeriod(p);
+    const range = getPayPeriodRange(p);
+    if (range) { setStartDate(range.start); setEndDate(range.end); }
+  };
 
   // ── Data ──────────────────────────────────────────────────
   const employeesQuery = useQuery({
@@ -96,6 +147,23 @@ export function TimesheetsPage() {
           )}
         </div>
 
+        {/* Pay period fast filters */}
+        <div className="flex items-center gap-1.5 flex-wrap mb-4">
+          {(Object.keys(PAY_PERIOD_LABELS) as PayPeriod[]).map((p) => (
+            <button
+              key={p}
+              onClick={() => handlePayPeriodChange(p)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
+                payPeriod === p
+                  ? 'bg-primary-600 text-white'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+              }`}
+            >
+              {PAY_PERIOD_LABELS[p]}
+            </button>
+          ))}
+        </div>
+
         <div className="flex items-end flex-wrap gap-4">
           {/* Employee Selector */}
           <div className="flex-1 min-w-[200px]">
@@ -126,7 +194,7 @@ export function TimesheetsPage() {
             <input
               type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => { setStartDate(e.target.value); setPayPeriod('custom'); }}
               className="w-full rounded-lg border border-gray-300 dark:border-gray-600
                          bg-white dark:bg-gray-700 px-3 py-2 text-sm
                          text-gray-900 dark:text-gray-100 min-h-[44px]"
@@ -139,7 +207,7 @@ export function TimesheetsPage() {
             <input
               type="date"
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(e) => { setEndDate(e.target.value); setPayPeriod('custom'); }}
               className="w-full rounded-lg border border-gray-300 dark:border-gray-600
                          bg-white dark:bg-gray-700 px-3 py-2 text-sm
                          text-gray-900 dark:text-gray-100 min-h-[44px]"

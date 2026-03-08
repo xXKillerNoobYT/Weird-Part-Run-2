@@ -204,6 +204,18 @@ export async function resolveSpecialItem(
   return data.data!;
 }
 
+/** Place a special item into the parts catalog hierarchy (creates a new part + resolves the item) */
+export async function placeSpecialItemInCatalog(
+  itemId: number,
+  body: { type_id: number; brand_id: number | null; color_id: number; manufacturer_part_number?: string }
+): Promise<{ id: number; new_part_id: number; part_name: string }> {
+  const { data } = await apiClient.post<ApiResponse<{ id: number; new_part_id: number; part_name: string }>>(
+    `/orders/special-items/${itemId}/place-in-catalog`,
+    body
+  );
+  return data.data!;
+}
+
 /** List all unresolved flagged special items (office queue) */
 export async function listFlaggedSpecialItems(
   limit?: number

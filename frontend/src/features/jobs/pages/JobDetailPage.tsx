@@ -17,7 +17,7 @@ import {
   Navigation, Users, Square, BookOpen, AlertTriangle,
   Pause, RotateCcw, Shield, CalendarClock, DollarSign,
   TrendingUp, Layers, Wrench, Star, UserPlus, Building2,
-  Link2, Unlink, Phone, Mail, X,
+  Link2, Unlink, Phone, Mail, X, HardHat, Crown, MessageSquare,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { Button } from '../../../components/ui/Button';
@@ -30,7 +30,9 @@ import { PERMISSIONS } from '../../../lib/constants';
 import {
   getJob, getJobLabor, getJobParts,
   getOneTimeQuestions, createOneTimeQuestion, updateJobStatus,
+  getJobTeam, addJobTeamMember, removeJobTeamMember,
 } from '../../../api/jobs';
+import { getEmployees } from '../../../api/people';
 import { getJobCostRollup, getJobBudgetStatus } from '../../../api/costs';
 import { getToolsAtLocation } from '../../../api/tools';
 import {
@@ -39,7 +41,8 @@ import {
 } from '../../../api/contacts';
 import type {
   JobCustomerResponse, JobGCResponse, CustomerContactRole,
-  GCRelationship, CustomerListItem, GCListItem,
+  GCRelationship, CustomerListItem, GCListItem, JobTeamMember,
+  EmployeeListItem,
 } from '../../../lib/types';
 import { ClockOutFlow } from '../components/ClockOutFlow';
 import {
@@ -56,8 +59,9 @@ import {
 import { SectionPanel } from '../../notebooks/components/SectionPanel';
 import { CreateEntryModal } from '../../notebooks/components/CreateEntryModal';
 import { AddSectionModal } from '../../notebooks/components/AddSectionModal';
+import { ChatMessageView } from '../../chat/components/ChatMessageView';
 
-type SubTab = 'notebook' | 'overview' | 'people' | 'labor' | 'parts' | 'tools' | 'questions' | 'costs';
+type SubTab = 'notebook' | 'overview' | 'people' | 'labor' | 'parts' | 'tools' | 'chat' | 'questions' | 'costs';
 
 const BASE_TABS: { id: SubTab; label: string; icon: React.ReactNode }[] = [
   { id: 'notebook', label: 'Notebook', icon: <BookOpen className="h-4 w-4" /> },
@@ -66,6 +70,7 @@ const BASE_TABS: { id: SubTab; label: string; icon: React.ReactNode }[] = [
   { id: 'labor', label: 'Labor', icon: <Clock className="h-4 w-4" /> },
   { id: 'parts', label: 'Parts', icon: <Package className="h-4 w-4" /> },
   { id: 'tools', label: 'Tools', icon: <Wrench className="h-4 w-4" /> },
+  { id: 'chat', label: 'Chat', icon: <MessageSquare className="h-4 w-4" /> },
   { id: 'questions', label: 'One-Time Qs', icon: <HelpCircle className="h-4 w-4" /> },
 ];
 
@@ -283,6 +288,7 @@ export function JobDetailPage() {
           {activeTab === 'labor' && <LaborTab jobId={jobId} />}
           {activeTab === 'parts' && <PartsTab jobId={jobId} />}
           {activeTab === 'tools' && <ToolsTab jobId={jobId} />}
+          {activeTab === 'chat' && <ChatTab jobId={jobId} jobNumber={job.job_number} />}
           {activeTab === 'questions' && <QuestionsTab jobId={jobId} />}
           {activeTab === 'costs' && canSeeCosts && <CostsTab jobId={jobId} jobName={job.job_name} />}
         </>
@@ -820,6 +826,57 @@ function QuestionsTab({ jobId }: { jobId: number }) {
 // ── Costs Tab ──────────────────────────────────────────────────────
 
 /**
+ * ChatTab — embedded job chat channel view.
+ *
+ * Fetches the job's auto-created channel and renders the full message view
+ * inline. If no channel exists yet, shows a prompt to start chatting.
+ */
+function ChatTab({ jobId, jobNumber }: { jobId: number; jobNumber: string }) {
+  const { user } = useAuthStore();
+  const navigate = useNavigate();
+
+  // Find the job's channel from the inbox
+  const { data: inbox, isLoading } = useQuery({
+    queryKey: ['chat-inbox'],
+    queryFn: () => import('../../../api/chat').then(m => m.getInbox()),
+  });
+
+  const jobChannel = inbox?.channels?.find(
+    (c) => c.channel_type === 'job' && c.job_id === jobId
+  );
+
+  if (isLoading) return <PageSpinner label="Loading chat..." />;
+
+  if (!jobChannel) {
+    return (
+      <div className="text-center py-12 px-4">
+        <MessageSquare className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+        <p className="text-sm text-gray-500 dark:text-gray-400">No chat channel yet</p>
+        <p className="text-xs text-gray-400 mt-1 mb-3">
+          Chat channels are automatically created when messages are sent.
+        </p>
+        <button
+          onClick={() => navigate('/chat/inbox')}
+          className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
+        >
+          Go to Chat Inbox
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-[500px] sm:h-[600px] border border-border rounded-lg overflow-hidden">
+      <ChatMessageView
+        channelId={jobChannel.id}
+        currentUserId={user!.id}
+        channelName={`${jobNumber} Chat`}
+      />
+    </div>
+  );
+}
+
+/**
  * ToolsTab — read-only view of tools checked out to this job.
  *
  * Tools are checked out from the truck or warehouse tools pages;
@@ -1149,6 +1206,39 @@ function PeopleTab({ jobId }: { jobId: number }) {
   const { hasPermission } = useAuthStore();
   const canManage = hasPermission(PERMISSIONS.MANAGE_JOBS);
 
+  // ── Team members ──
+  const { data: teamMembers = [] } = useQuery({
+    queryKey: ['job-team', jobId],
+    queryFn: () => getJobTeam(jobId),
+    staleTime: 30_000,
+  });
+
+  const [showAddTeam, setShowAddTeam] = useState(false);
+  const [teamSearch, setTeamSearch] = useState('');
+  const [teamRole, setTeamRole] = useState<'lead' | 'member'>('member');
+  const [empResults, setEmpResults] = useState<EmployeeListItem[]>([]);
+
+  const searchEmpMut = useMutation({
+    mutationFn: (q: string) => getEmployees({ search: q, page_size: 10 }),
+    onSuccess: (data) => setEmpResults(data.items),
+  });
+
+  const addTeamMut = useMutation({
+    mutationFn: (userId: number) =>
+      addJobTeamMember(jobId, { user_id: userId, role: teamRole }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['job-team', jobId] });
+      setShowAddTeam(false);
+      setTeamSearch('');
+      setEmpResults([]);
+    },
+  });
+
+  const removeTeamMut = useMutation({
+    mutationFn: (memberId: number) => removeJobTeamMember(jobId, memberId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['job-team', jobId] }),
+  });
+
   // ── Linked customers & GCs ──
   const { data: customers = [] } = useQuery({
     queryKey: ['job-customers', jobId],
@@ -1219,6 +1309,150 @@ function PeopleTab({ jobId }: { jobId: number }) {
 
   return (
     <div className="space-y-6">
+      {/* ── Team Section ──────────────────────────────────── */}
+      <Card className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <HardHat size={16} />
+            Assigned Team
+            <Badge variant="neutral" className="text-xs">{teamMembers.length}</Badge>
+          </h3>
+          {canManage && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setShowAddTeam(!showAddTeam)}
+            >
+              <UserPlus size={14} />
+              <span className="hidden sm:inline ml-1">Add Member</span>
+            </Button>
+          )}
+        </div>
+
+        {/* Add member search panel */}
+        {showAddTeam && (
+          <div className="mb-3 p-3 bg-surface-secondary rounded-lg border border-border space-y-2">
+            {/* Role selector */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 dark:text-gray-400">Role:</span>
+              <button
+                onClick={() => setTeamRole('member')}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  teamRole === 'member'
+                    ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
+                    : 'text-gray-500 dark:text-gray-400 hover:bg-surface'
+                }`}
+              >
+                Member
+              </button>
+              <button
+                onClick={() => setTeamRole('lead')}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  teamRole === 'lead'
+                    ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
+                    : 'text-gray-500 dark:text-gray-400 hover:bg-surface'
+                }`}
+              >
+                <Crown size={11} />
+                Lead
+              </button>
+            </div>
+            {/* Employee search */}
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={teamSearch}
+                onChange={e => {
+                  setTeamSearch(e.target.value);
+                  if (e.target.value.length >= 1) searchEmpMut.mutate(e.target.value);
+                  else setEmpResults([]);
+                }}
+                placeholder="Search employees by name…"
+                className="flex-1 text-sm px-3 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                autoFocus
+              />
+              <button onClick={() => { setShowAddTeam(false); setTeamSearch(''); setEmpResults([]); }}>
+                <X size={16} className="text-gray-400" />
+              </button>
+            </div>
+            {empResults.length > 0 && (
+              <div className="space-y-1 max-h-40 overflow-y-auto">
+                {empResults
+                  .filter(e => !teamMembers.some(m => m.user_id === e.id))
+                  .map(emp => (
+                    <button
+                      key={emp.id}
+                      onClick={() => addTeamMut.mutate(emp.id)}
+                      disabled={addTeamMut.isPending}
+                      className="w-full text-left px-3 py-2 rounded-lg hover:bg-surface text-sm text-gray-900 dark:text-white transition-colors"
+                    >
+                      <span className="font-medium">{emp.display_name}</span>
+                      {emp.email && (
+                        <span className="text-gray-500 dark:text-gray-400 ml-2 text-xs">
+                          {emp.email}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+              </div>
+            )}
+            {teamSearch.length >= 1 && empResults.length === 0 && !searchEmpMut.isPending && (
+              <p className="text-xs text-gray-400 dark:text-gray-500 px-1">No matching employees</p>
+            )}
+          </div>
+        )}
+
+        {/* Team member list */}
+        {teamMembers.length === 0 ? (
+          <p className="text-sm text-gray-400 dark:text-gray-500 py-2">
+            No team members assigned yet.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {teamMembers.map(member => (
+              <div
+                key={member.id}
+                className="flex items-center gap-3 p-2.5 rounded-lg bg-surface-secondary border border-border"
+              >
+                <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
+                  member.role === 'lead'
+                    ? 'bg-amber-100 dark:bg-amber-900/40'
+                    : 'bg-blue-100 dark:bg-blue-900/40'
+                }`}>
+                  {member.role === 'lead'
+                    ? <Crown size={13} className="text-amber-600 dark:text-amber-400" />
+                    : <Users size={13} className="text-blue-600 dark:text-blue-400" />
+                  }
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                    {member.display_name}
+                  </p>
+                  {member.email && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                      {member.email}
+                    </p>
+                  )}
+                </div>
+                <Badge variant={member.role === 'lead' ? 'warning' : 'default'}>
+                  {member.role === 'lead' ? 'Lead' : 'Member'}
+                </Badge>
+                {canManage && (
+                  <button
+                    onClick={() => removeTeamMut.mutate(member.id)}
+                    disabled={removeTeamMut.isPending}
+                    className="text-gray-300 dark:text-gray-600 hover:text-red-400 dark:hover:text-red-400 transition-colors flex-shrink-0"
+                    title="Remove from team"
+                  >
+                    <X size={15} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
       {/* ── Customers Section ─────────────────────────────── */}
       <Card className="p-4">
         <div className="flex items-center justify-between mb-3">

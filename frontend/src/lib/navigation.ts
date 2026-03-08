@@ -6,18 +6,28 @@
  * TabBar components read this config and filter by the user's permissions.
  *
  * If you need to add a new page or tab, add it HERE first.
+ *
+ * Phase 16 restructure:
+ *  - Office is now the Admin Hub — contains employee management, all reports,
+ *    and scheduling admin (dispatch, templates, default schedules, subcontractors).
+ *  - People = external contacts only (Customers, Contractors, Directory).
+ *  - Scheduling = personal/field view only (Calendar 3-wk default, Time Off).
+ *  - Reports module removed from sidebar (all tabs now live in Office).
  */
 
 import type { NavModule } from './types';
 
 export const MODULES: NavModule[] = [
+  // ── Dashboard ────────────────────────────────────────────────────────────
   {
     id: 'dashboard',
     label: 'Dashboard',
     icon: 'LayoutDashboard',
     path: '/dashboard',
-    tabs: [],  // Dashboard has no sub-tabs
+    tabs: [],
   },
+
+  // ── Parts & Inventory ────────────────────────────────────────────────────
   {
     id: 'parts',
     label: 'Parts',
@@ -35,21 +45,49 @@ export const MODULES: NavModule[] = [
       { id: 'import-export', label: 'Import/Export', path: '/parts/import-export' },
     ],
   },
+
+  // ── Office (Admin Hub) ───────────────────────────────────────────────────
+  // The central management destination for admin and manager roles.
+  // Contains: warehouse exec, job management, employee admin, all reports,
+  // scheduling management (dispatch/templates/schedules/subs), and spending.
   {
     id: 'office',
     label: 'Office',
     icon: 'Building2',
     path: '/office',
-    permission: 'view_warehouse',
+    permission: 'view_people',
     tabs: [
-      { id: 'warehouse-exec', label: 'Warehouse Executive', path: '/office/warehouse-exec', permission: 'manage_warehouse' },
-      { id: 'manage-jobs', label: 'Manage Jobs', path: '/office/manage-jobs', permission: 'manage_jobs' },
-      { id: 'notebook-templates', label: 'Notebook Templates', path: '/office/notebook-templates', permission: 'manage_notebooks' },
-      { id: 'clock-out-questions', label: 'Clock-Out Questions', path: '/office/clock-out-questions', permission: 'manage_settings' },
-      { id: 'warehouse-locations', label: 'Warehouse Locations', path: '/office/warehouse-locations', permission: 'manage_fleet' },
-      { id: 'spending', label: 'Spending', path: '/office/spending', permission: 'show_dollar_values' },
+      // ── Warehouse / Operations ──────────────────────────────────────────
+      { id: 'warehouse-exec', label: 'Warehouse Executive', path: '/office/warehouse-exec', permission: 'manage_warehouse', group: 'Operations' },
+      { id: 'manage-jobs', label: 'Manage Jobs', path: '/office/manage-jobs', permission: 'manage_jobs', group: 'Operations' },
+      { id: 'spending', label: 'Spending', path: '/office/spending', permission: 'show_dollar_values', group: 'Operations' },
+      { id: 'notebook-templates', label: 'Notebook Templates', path: '/office/notebook-templates', permission: 'manage_notebooks', group: 'Operations' },
+      { id: 'clock-out-questions', label: 'Clock-Out Questions', path: '/office/clock-out-questions', permission: 'manage_settings', group: 'Operations' },
+      { id: 'warehouse-locations', label: 'Warehouse Locations', path: '/office/warehouse-locations', permission: 'manage_fleet', group: 'Operations' },
+
+      // ── People / HR ─────────────────────────────────────────────────────
+      { id: 'employees', label: 'Employee List', path: '/people/employees', permission: 'view_people', group: 'People' },
+      { id: 'hats', label: 'Roles & Hats', path: '/people/hats', permission: 'manage_people', group: 'People' },
+      { id: 'permissions', label: 'Permissions', path: '/people/permissions', permission: 'manage_people', group: 'People' },
+
+      // ── Scheduling Admin ─────────────────────────────────────────────────
+      { id: 'dispatch', label: 'Daily Dispatch', path: '/scheduling/dispatch', permission: 'dispatch_employees', group: 'Scheduling' },
+      { id: 'availability', label: 'Team Availability', path: '/scheduling/availability', permission: 'view_schedule', group: 'Scheduling' },
+      { id: 'templates', label: 'Dispatch Templates', path: '/scheduling/templates', permission: 'dispatch_employees', group: 'Scheduling' },
+      { id: 'schedules', label: 'Default Schedules', path: '/scheduling/schedules', permission: 'manage_schedule', group: 'Scheduling' },
+      { id: 'subcontractors', label: 'Subcontractors', path: '/scheduling/subcontractors', permission: 'manage_schedule', group: 'Scheduling' },
+
+      // ── Reports ──────────────────────────────────────────────────────────
+      { id: 'daily-reports', label: 'Daily Reports', path: '/reports/daily-reports', permission: 'view_reports', group: 'Reports' },
+      { id: 'pre-billing', label: 'Pre-Billing', path: '/reports/pre-billing', permission: 'view_reports', group: 'Reports' },
+      { id: 'timesheets', label: 'Timesheets', path: '/reports/timesheets', permission: 'view_reports', group: 'Reports' },
+      { id: 'labor-overview', label: 'Labor Overview', path: '/reports/labor-overview', permission: 'view_reports', group: 'Reports' },
+      { id: 'profitability', label: 'Profitability', path: '/reports/profitability', permission: 'view_reports', group: 'Reports' },
+      { id: 'exports', label: 'Exports', path: '/reports/exports', permission: 'export_reports', group: 'Reports' },
     ],
   },
+
+  // ── Warehouse ────────────────────────────────────────────────────────────
   {
     id: 'warehouse',
     label: 'Warehouse',
@@ -65,8 +103,11 @@ export const MODULES: NavModule[] = [
       { id: 'audit', label: 'Audit', path: '/warehouse/audit', permission: 'perform_audit' },
       { id: 'movements', label: 'Movements Log', path: '/warehouse/movements' },
       { id: 'tools', label: 'Tools', path: '/warehouse/tools', permission: 'view_tools' },
+      { id: 'wh-settings', label: 'Settings', path: '/warehouse/settings', permission: 'manage_warehouse' },
     ],
   },
+
+  // ── Trucks / Fleet ───────────────────────────────────────────────────────
   {
     id: 'trucks',
     label: 'Trucks',
@@ -82,6 +123,8 @@ export const MODULES: NavModule[] = [
       { id: 'fleet', label: 'Fleet', path: '/trucks/fleet', permission: 'manage_fleet' },
     ],
   },
+
+  // ── Jobs ─────────────────────────────────────────────────────────────────
   {
     id: 'jobs',
     label: 'Jobs',
@@ -93,6 +136,10 @@ export const MODULES: NavModule[] = [
       { id: 'my-clock', label: 'My Clock', path: '/jobs/my-clock' },
     ],
   },
+
+  // ── Scheduling (personal / field view) ──────────────────────────────────
+  // Admin scheduling (dispatch, templates, schedules, subs) has moved to Office.
+  // This module is for personal use: view your schedule, request time off.
   {
     id: 'scheduling',
     label: 'Scheduling',
@@ -100,15 +147,12 @@ export const MODULES: NavModule[] = [
     path: '/scheduling',
     permission: 'view_schedule',
     tabs: [
-      { id: 'calendar', label: 'Calendar', path: '/scheduling/calendar' },
-      { id: 'dispatch', label: 'Daily Dispatch', path: '/scheduling/dispatch', permission: 'dispatch_employees' },
-      { id: 'availability', label: 'Availability', path: '/scheduling/availability', permission: 'view_schedule' },
+      { id: 'calendar', label: 'My Schedule', path: '/scheduling/calendar' },
       { id: 'time-off', label: 'Time Off', path: '/scheduling/time-off' },
-      { id: 'templates', label: 'Templates', path: '/scheduling/templates', permission: 'dispatch_employees' },
-      { id: 'schedules', label: 'Default Schedules', path: '/scheduling/schedules', permission: 'manage_schedule' },
-      { id: 'subcontractors', label: 'Subcontractors', path: '/scheduling/subcontractors', permission: 'dispatch_employees' },
     ],
   },
+
+  // ── Notebooks ────────────────────────────────────────────────────────────
   {
     id: 'notebooks',
     label: 'Notebooks',
@@ -120,6 +164,22 @@ export const MODULES: NavModule[] = [
       { id: 'general', label: 'General', path: '/notebooks/general' },
     ],
   },
+
+  // ── Chat & Q&A ──────────────────────────────────────────────────────
+  {
+    id: 'chat',
+    label: 'Chat',
+    icon: 'MessageSquare',
+    path: '/chat',
+    permission: 'use_chat',
+    tabs: [
+      { id: 'inbox', label: 'Inbox', path: '/chat/inbox' },
+      { id: 'qa-board', label: 'Q&A Board', path: '/chat/qa-board', permission: 'ask_qa' },
+      { id: 'rfis', label: 'RFIs', path: '/chat/rfis', permission: 'send_rfi' },
+    ],
+  },
+
+  // ── Orders ───────────────────────────────────────────────────────────────
   {
     id: 'orders',
     label: 'Orders',
@@ -127,11 +187,11 @@ export const MODULES: NavModule[] = [
     path: '/orders',
     permission: 'view_orders',
     tabs: [
-      // ── Field worker tabs (visible to everyone with view_orders) ──
+      // Field worker tabs
       { id: 'my-orders', label: 'My Orders', path: '/orders/my-orders', group: 'My Orders' },
       { id: 'new-order', label: 'New Order', path: '/orders/new-order', group: 'My Orders' },
       { id: 'returns', label: 'Returns', path: '/orders/returns', group: 'My Orders' },
-      // ── Office / management tabs (requires manage_orders) ──
+      // Office / management tabs
       { id: 'approvals', label: 'Approvals', path: '/orders/approvals', permission: 'manage_orders', group: 'Office' },
       { id: 'all-requests', label: 'All Requests', path: '/orders/all-requests', permission: 'manage_orders', group: 'Office' },
       { id: 'review-and-send', label: 'Review & Send', path: '/orders/review-and-send', permission: 'manage_orders', group: 'Office' },
@@ -140,36 +200,24 @@ export const MODULES: NavModule[] = [
       { id: 'return-analytics', label: 'Return Analytics', path: '/orders/return-analytics', permission: 'view_orders', group: 'Office' },
     ],
   },
+
+  // ── People (external contacts) ───────────────────────────────────────────
+  // Employee management, hats, and permissions have moved to Office.
+  // This module is for managing external relationships: customers, GCs, contacts.
   {
     id: 'people',
     label: 'People',
     icon: 'Users',
     path: '/people',
-    permission: 'view_people',
+    permission: 'view_customers',
     tabs: [
-      { id: 'employees', label: 'Employee List', path: '/people/employees' },
       { id: 'customers', label: 'Customers', path: '/people/customers', permission: 'view_customers' },
       { id: 'contractors', label: 'Contractors', path: '/people/contractors', permission: 'view_contractors' },
       { id: 'directory', label: 'All Contacts', path: '/people/directory' },
-      { id: 'hats', label: 'Roles/Hats', path: '/people/hats', permission: 'manage_people' },
-      { id: 'permissions', label: 'Permissions', path: '/people/permissions', permission: 'manage_people' },
     ],
   },
-  {
-    id: 'reports',
-    label: 'Reports',
-    icon: 'BarChart3',
-    path: '/reports',
-    permission: 'view_reports',
-    tabs: [
-      { id: 'daily-reports', label: 'Daily Reports', path: '/reports/daily-reports' },
-      { id: 'pre-billing', label: 'Pre-Billing', path: '/reports/pre-billing' },
-      { id: 'timesheets', label: 'Timesheets', path: '/reports/timesheets' },
-      { id: 'labor-overview', label: 'Labor Overview', path: '/reports/labor-overview' },
-      { id: 'profitability', label: 'Profitability', path: '/reports/profitability' },
-      { id: 'exports', label: 'Exports', path: '/reports/exports', permission: 'export_reports' },
-    ],
-  },
+
+  // ── Settings ─────────────────────────────────────────────────────────────
   {
     id: 'settings',
     label: 'Settings',
@@ -181,8 +229,12 @@ export const MODULES: NavModule[] = [
       { id: 'themes', label: 'Themes', path: '/settings/themes' },
       { id: 'notifications', label: 'Notifications', path: '/settings/notifications' },
       { id: 'sync', label: 'Sync', path: '/settings/sync', permission: 'manage_settings' },
+      { id: 'bootstrap', label: 'Bootstrap', path: '/settings/bootstrap', permission: 'manage_people' },
+      { id: 'supplier-bridge', label: 'Supplier Bridge', path: '/settings/supplier-bridge', permission: 'manage_people' },
+      { id: 'updates', label: 'Update Protocol', path: '/settings/updates', permission: 'manage_people' },
       { id: 'ai-config', label: 'AI Config', path: '/settings/ai-config', permission: 'manage_settings' },
       { id: 'devices', label: 'Device Management', path: '/settings/devices', permission: 'manage_devices' },
+      { id: 'security', label: 'Security', path: '/settings/security', permission: 'manage_people' },
       { id: 'about', label: 'About', path: '/settings/about' },
     ],
   },

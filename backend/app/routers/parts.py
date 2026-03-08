@@ -603,6 +603,20 @@ async def create_type(
     return ApiResponse(data=ptype, message=f"Type '{body.name}' created.")
 
 
+@router.get("/types/{type_id}", response_model=ApiResponse[PartTypeResponse])
+async def get_type(
+    type_id: int,
+    user: dict = Depends(require_permission("view_parts_catalog")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get a single type by ID with enriched context (style name, category name, counts)."""
+    repo = PartTypeRepo(db)
+    ptype = await repo.get_with_context(type_id)
+    if not ptype:
+        raise HTTPException(status_code=404, detail="Type not found")
+    return ApiResponse(data={**dict(ptype), "is_active": bool(ptype.get("is_active", 1))})
+
+
 @router.put("/types/{type_id}", response_model=ApiResponse[PartTypeResponse])
 async def update_type(
     type_id: int,

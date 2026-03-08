@@ -5,7 +5,7 @@
 import apiClient from './client';
 import type {
   ApiResponse,
-  DashboardData,
+  HomeDashboardData,
   FastDriveContext,
   FastDriveStartRequest,
   FastDriveResult,
@@ -14,8 +14,8 @@ import type {
 
 
 /** Fetch live KPI counts and quick actions. */
-export async function getDashboard(): Promise<DashboardData> {
-  const { data } = await apiClient.get<ApiResponse<DashboardData>>(
+export async function getDashboard(): Promise<HomeDashboardData> {
+  const { data } = await apiClient.get<ApiResponse<HomeDashboardData>>(
     '/dashboard',
   );
   return data.data!;

@@ -11,6 +11,8 @@
 
 ## Quick Summary
 
+> **In-app shortcut:** Open **Settings → Device Management → Setup Helper** for a fast per-device checklist (iPhone, iPad, Android).
+
 | Platform | Method | Cost | Install From | Update Process | Notes |
 |----------|--------|------|--------------|----------------|-------|
 | **iOS** | Sideloadly + AltServer | **Free** | Mac or Windows via USB | Rebuild IPA → re-sideload | 7-day signing, auto-refreshed by AltServer |

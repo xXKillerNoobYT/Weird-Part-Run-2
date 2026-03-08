@@ -39,6 +39,8 @@ import type {
   JobPreferenceResponse,
   JobPreferenceToggle,
   JobPreferencesSummary,
+  // Team
+  JobTeamMember,
 } from '../lib/types';
 
 
@@ -441,4 +443,37 @@ export async function toggleJobPreference(
     toggle
   );
   return data.data!;
+}
+
+
+// =================================================================
+// JOB TEAM MEMBERS
+// =================================================================
+
+/** List all employees assigned to a job's team */
+export async function getJobTeam(jobId: number): Promise<JobTeamMember[]> {
+  const { data } = await apiClient.get<ApiResponse<JobTeamMember[]>>(
+    `/jobs/${jobId}/team`
+  );
+  return data.data ?? [];
+}
+
+/** Add an employee to a job's team */
+export async function addJobTeamMember(
+  jobId: number,
+  payload: { user_id: number; role?: 'lead' | 'member'; notes?: string }
+): Promise<JobTeamMember> {
+  const { data } = await apiClient.post<ApiResponse<JobTeamMember>>(
+    `/jobs/${jobId}/team`,
+    payload
+  );
+  return data.data!;
+}
+
+/** Remove a team member from a job */
+export async function removeJobTeamMember(
+  jobId: number,
+  memberId: number
+): Promise<void> {
+  await apiClient.delete(`/jobs/${jobId}/team/${memberId}`);
 }

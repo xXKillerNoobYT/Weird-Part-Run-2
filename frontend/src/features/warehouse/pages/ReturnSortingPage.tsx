@@ -41,6 +41,8 @@ import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
 import { Modal } from '../../../components/ui/Modal';
+/** Displays full part hierarchy (name, code, brand, color, category/type) for each return line item */
+import { PartIdentity } from '../../../components/ui/PartIdentity';
 
 import { listReturns, getSortingGuidance, processSortingDispositions } from '../../../api/orders';
 import type {
@@ -492,14 +494,12 @@ function SortingLineItem({
         {/* Part info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-gray-900 dark:text-white text-sm truncate">
-              {item.part_description || item.part_number || `Part #${item.part_id}`}
-            </span>
-            {item.part_number && item.part_description && (
-              <span className="text-xs text-gray-400 dark:text-gray-500">
-                {item.part_number}
-              </span>
-            )}
+            <PartIdentity
+              compact
+              partDescription={item.part_description}
+              partNumber={item.part_number}
+              partId={item.part_id}
+            />
           </div>
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -607,11 +607,10 @@ function SortingLineItem({
                   <button
                     key={d}
                     onClick={() => onChangeDisposition(d)}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm min-h-[44px] transition-colors ${
-                      isActive
-                        ? `border-primary-500 ${DISPOSITION_COLORS[d]} ring-2 ring-primary-300 dark:ring-primary-700`
-                        : 'border-border bg-surface hover:bg-surface-secondary text-gray-700 dark:text-gray-300'
-                    }`}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm min-h-[44px] transition-colors ${isActive
+                      ? `border-primary-500 ${DISPOSITION_COLORS[d]} ring-2 ring-primary-300 dark:ring-primary-700`
+                      : 'border-border bg-surface hover:bg-surface-secondary text-gray-700 dark:text-gray-300'
+                      }`}
                   >
                     <DIcon className="h-4 w-4" />
                     {DISPOSITION_LABELS[d]}

@@ -157,6 +157,29 @@ export interface LaborOverviewReport {
 
 // ── API Functions ─────────────────────────────────────────────────
 
+export interface PreBillingJobSummary {
+  job_id: number;
+  job_number: string;
+  job_name: string;
+  total_labor_hours: number;
+  total_parts_cost: number;
+  total_parts_sell: number;
+  budget_limit: number | null;
+  budget_used_pct: number | null;
+}
+
+/** All-jobs pre-billing summary for a date range */
+export async function getPreBillingAllJobs(params: {
+  start_date: string;
+  end_date: string;
+}): Promise<PreBillingJobSummary[]> {
+  const { data } = await apiClient.get<ApiResponse<PreBillingJobSummary[]>>(
+    '/reports/pre-billing/all-jobs',
+    { params },
+  );
+  return data.data ?? [];
+}
+
 /** Pre-billing bundle for a job + date range */
 export async function getPreBilling(params: {
   job_id: number;

@@ -224,6 +224,81 @@ class WarehouseLocationResponse(BaseModel):
 
 
 # ═══════════════════════════════════════════════════════════════
+# Job Trailer Models
+# ═══════════════════════════════════════════════════════════════
+
+class JobTrailerCreate(BaseModel):
+    """Create a new job trailer."""
+    trailer_code: str = Field(..., min_length=1, max_length=30)
+    name: str = Field(..., min_length=1, max_length=100)
+    status: str = "active"
+    home_warehouse_id: int | None = None
+    current_job_id: int | None = None
+    assigned_driver_user_id: int | None = None
+    notes: str | None = None
+
+
+class JobTrailerUpdate(BaseModel):
+    """Update an existing job trailer."""
+    name: str | None = Field(None, min_length=1, max_length=100)
+    status: str | None = None
+    home_warehouse_id: int | None = None
+    current_job_id: int | None = None
+    assigned_driver_user_id: int | None = None
+    notes: str | None = None
+    is_active: bool | None = None
+
+
+class JobTrailerResponse(BaseModel):
+    """Trailer detail in API responses."""
+    id: int
+    trailer_code: str
+    name: str
+    status: str = "active"
+    home_warehouse_id: int | None = None
+    current_job_id: int | None = None
+    assigned_driver_user_id: int | None = None
+    notes: str | None = None
+    is_active: bool = True
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    # joined fields
+    home_warehouse_name: str | None = None
+    current_job_name: str | None = None
+    assigned_driver_name: str | None = None
+
+
+class TrailerLocationEventCreate(BaseModel):
+    """Create a trailer location event."""
+    event_type: str = "manual_update"
+    location_kind: str = "other"  # warehouse | job | road | other
+    warehouse_id: int | None = None
+    job_id: int | None = None
+    lat: float | None = None
+    lng: float | None = None
+    notes: str | None = None
+
+
+class TrailerLocationEventResponse(BaseModel):
+    """Trailer location event payload."""
+    id: int
+    trailer_id: int
+    event_type: str
+    location_kind: str
+    warehouse_id: int | None = None
+    job_id: int | None = None
+    lat: float | None = None
+    lng: float | None = None
+    recorded_by: int
+    recorded_at: datetime | None = None
+    notes: str | None = None
+    # joined fields
+    recorded_by_name: str | None = None
+    warehouse_name: str | None = None
+    job_name: str | None = None
+
+
+# ═══════════════════════════════════════════════════════════════
 # Vehicle Delivery Item Models
 # ═══════════════════════════════════════════════════════════════
 

@@ -50,6 +50,7 @@ import { MovementsLogPage } from './features/warehouse/pages/MovementsLogPage';
 import { WarehouseToolsPage } from './features/warehouse/pages/ToolsPage';
 import { ReceivingPage } from './features/warehouse/pages/ReceivingPage';
 import { ReturnSortingPage } from './features/warehouse/pages/ReturnSortingPage';
+import { WarehouseSettingsPage } from './features/warehouse/pages/WarehouseSettingsPage';
 
 // Pages — Trucks
 import { MyTruckPage } from './features/trucks/pages/MyTruckPage';
@@ -73,11 +74,15 @@ import { NotebookDetailPage } from './features/notebooks/pages/NotebookDetailPag
 import { JobNotebookTemplatePage } from './features/office/pages/JobNotebookTemplatePage';
 import { WarehouseLocationsPage } from './features/office/pages/WarehouseLocationsPage';
 
+// Pages — Chat
+import ChatInboxPage from './features/chat/pages/ChatInboxPage';
+import QABoardPage from './features/chat/pages/QABoardPage';
+import RFIListPage from './features/chat/pages/RFIListPage';
+
 // Pages — Orders
 import { PartsRequestsPage } from './features/orders/pages/PartsRequestsPage';
 import { MyOrdersPage } from './features/orders/pages/MyOrdersPage';
 import { UnifiedOrderPage } from './features/orders/pages/UnifiedOrderPage';
-import { NewPurchaseOrderPage } from './features/orders/pages/NewPurchaseOrderPage';
 import { ReceiveShipmentPage } from './features/orders/pages/ReceiveShipmentPage';
 import { ReturnsPage } from './features/orders/pages/ReturnsPage';
 import { ProcurementPage } from './features/orders/pages/ProcurementPage';
@@ -86,7 +91,6 @@ import { JPODetailPage } from './features/orders/pages/JPODetailPage';
 import { PODetailPage } from './features/orders/pages/PODetailPage';
 import { NewReturnPage } from './features/orders/pages/NewReturnPage';
 import { ReturnDetailPage } from './features/orders/pages/ReturnDetailPage';
-import { GeneratePOsPage } from './features/orders/pages/GeneratePOsPage';
 import { ApprovalsTab } from './features/office/pages/ApprovalsTab';
 import { POManagementTab } from './features/office/pages/POManagementTab';
 import { ReviewAndSendPage } from './features/office/pages/ReviewAndSendPage';
@@ -129,6 +133,10 @@ import { NotificationPrefsPage } from './features/settings/pages/NotificationPre
 import { SyncPage } from './features/settings/pages/SyncPage';
 import { AiConfigPage } from './features/settings/pages/AiConfigPage';
 import { DeviceManagementPage } from './features/settings/pages/DeviceManagementPage';
+import { SecurityAdminPage } from './features/settings/pages/SecurityAdminPage';
+import { BootstrapAdminPage } from './features/settings/pages/BootstrapAdminPage';
+import { SupplierBridgePage } from './features/settings/pages/SupplierBridgePage';
+import { UpdateProtocolPage } from './features/settings/pages/UpdateProtocolPage';
 import AboutPage from './features/settings/pages/AboutPage';
 import { ClockOutQuestionsPage } from './features/settings/pages/ClockOutQuestionsPage';
 
@@ -187,6 +195,7 @@ export default function App() {
               <Route path="/warehouse/audit" element={<AuditPage />} />
               <Route path="/warehouse/movements" element={<MovementsLogPage />} />
               <Route path="/warehouse/tools" element={<WarehouseToolsPage />} />
+              <Route path="/warehouse/settings" element={<WarehouseSettingsPage />} />
 
               {/* Trucks */}
               <Route path="/trucks" element={<Navigate to="/trucks/my-truck" replace />} />
@@ -211,6 +220,12 @@ export default function App() {
               <Route path="/notebooks/general" element={<NotebooksPage />} />
               <Route path="/notebooks/:notebookId" element={<NotebookDetailPage />} />
 
+              {/* Chat & Q&A */}
+              <Route path="/chat" element={<Navigate to="/chat/inbox" replace />} />
+              <Route path="/chat/inbox" element={<ChatInboxPage />} />
+              <Route path="/chat/qa-board" element={<QABoardPage />} />
+              <Route path="/chat/rfis" element={<RFIListPage />} />
+
               {/* Orders — Phase 7A: Field-worker tabs + Office tabs */}
               <Route path="/orders" element={<Navigate to="/orders/my-orders" replace />} />
               {/* Field worker tabs */}
@@ -223,7 +238,7 @@ export default function App() {
               <Route path="/orders/approvals" element={<ApprovalsTab />} />
               <Route path="/orders/all-requests" element={<PartsRequestsPage />} />
               <Route path="/orders/purchase-orders" element={<POManagementTab />} />
-              <Route path="/orders/purchase-orders/new" element={<NewPurchaseOrderPage />} />
+              <Route path="/orders/purchase-orders/new" element={<Navigate to="/orders/new-order" replace />} />
               <Route path="/orders/purchase-orders/receive" element={<ReceiveShipmentPage />} />
               <Route path="/orders/review-and-send" element={<ReviewAndSendPage />} />
               <Route path="/orders/procurement" element={<ProcurementPage />} />
@@ -231,7 +246,7 @@ export default function App() {
               {/* Detail pages (shared between field + office) */}
               <Route path="/orders/parts-requests/:id" element={<JPODetailPage />} />
               <Route path="/orders/pos/:id" element={<PODetailPage />} />
-              <Route path="/orders/parts-requests/:id/generate-pos" element={<GeneratePOsPage />} />
+              <Route path="/orders/parts-requests/:id/generate-pos" element={<Navigate to="/orders/review-and-send" replace />} />
 
               {/* Scheduling */}
               <Route path="/scheduling" element={<Navigate to="/scheduling/calendar" replace />} />
@@ -273,8 +288,12 @@ export default function App() {
               <Route path="/settings/notifications" element={<NotificationPrefsPage />} />
               <Route path="/settings/questions" element={<Navigate to="/office/clock-out-questions" replace />} />
               <Route path="/settings/sync" element={<SyncPage />} />
+              <Route path="/settings/bootstrap" element={<BootstrapAdminPage />} />
+              <Route path="/settings/supplier-bridge" element={<SupplierBridgePage />} />
+              <Route path="/settings/updates" element={<UpdateProtocolPage />} />
               <Route path="/settings/ai-config" element={<AiConfigPage />} />
               <Route path="/settings/devices" element={<DeviceManagementPage />} />
+              <Route path="/settings/security" element={<SecurityAdminPage />} />
               <Route path="/settings/about" element={<AboutPage />} />
 
               {/* Tools — QR scan redirect (cross-module) */}

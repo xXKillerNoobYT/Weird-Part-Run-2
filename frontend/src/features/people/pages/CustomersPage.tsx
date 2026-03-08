@@ -24,6 +24,7 @@ import { Card } from '../../../components/ui/Card';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import { getCustomers, createCustomer } from '../../../api/contacts';
+import { toast } from '../../../lib/toast';
 import type { CustomerListItem, CustomerCreate, CustomerType } from '../../../lib/types';
 
 
@@ -97,6 +98,12 @@ export function CustomersPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       setShowCreate(false);
+      toast.success('Customer created');
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+        ?? 'Failed to create customer';
+      toast.error(msg);
     },
   });
 

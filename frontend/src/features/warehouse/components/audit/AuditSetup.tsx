@@ -8,14 +8,14 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Search, Layers, RefreshCw, Play, ClipboardCheck,
+  Search, Layers, RefreshCw, Play, ClipboardCheck, AlertTriangle, PackageX,
 } from 'lucide-react';
 import { Card, CardHeader } from '../../../../components/ui/Card';
 import { Button } from '../../../../components/ui/Button';
 import { Badge } from '../../../../components/ui/Badge';
 import { Spinner } from '../../../../components/ui/Spinner';
 import {
-  listAudits, startAudit, getSuggestedRollingParts,
+  listAudits, startAudit, getSuggestedRollingParts, getSuggestedSpotCheckParts,
 } from '../../../../api/warehouse';
 import { formatDateTime } from '../../../../lib/utils';
 import type { AuditType, AuditResponse } from '../../../../lib/types';
@@ -36,12 +36,20 @@ export function AuditSetup({ onAuditStarted, onResumeAudit }: AuditSetupProps) {
     staleTime: 10_000,
   });
 
-  // Suggested rolling parts
+  // Suggested rolling parts (loaded when rolling is selected)
   const { data: rollingParts } = useQuery({
     queryKey: ['audit-rolling-suggestions'],
     queryFn: () => getSuggestedRollingParts(20),
     staleTime: 60_000,
     enabled: selectedType === 'rolling',
+  });
+
+  // Suggested spot check parts — 3 most urgent (zero/low-stock, then oldest count)
+  const { data: spotParts, isLoading: spotLoading } = useQuery({
+    queryKey: ['audit-spot-suggestions'],
+    queryFn: () => getSuggestedSpotCheckParts(3),
+    staleTime: 60_000,
+    enabled: selectedType === 'spot_check',
   });
 
   const startMutation = useMutation({
@@ -54,11 +62,16 @@ export function AuditSetup({ onAuditStarted, onResumeAudit }: AuditSetupProps) {
 
   const handleStart = () => {
     if (!selectedType) return;
-    startMutation.mutate({
+    const payload: Parameters<typeof startAudit>[0] = {
       audit_type: selectedType,
       location_type: 'warehouse',
       location_id: 1,
-    });
+    };
+    // Pre-populate spot checks with the suggested part IDs
+    if (selectedType === 'spot_check' && spotParts && spotParts.length > 0) {
+      payload.part_ids = spotParts.map(p => p.id);
+    }
+    startMutation.mutate(payload);
   };
 
   const auditTypes = [
@@ -153,6 +166,60 @@ export function AuditSetup({ onAuditStarted, onResumeAudit }: AuditSetupProps) {
             </button>
           ))}
         </div>
+
+        {/* Spot check suggestions — 3 most urgent parts */}
+        {selectedType === 'spot_check' && (
+          <div className="mb-4">
+            {spotLoading ? (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-gray-50 dark:bg-gray-800">
+                <Spinner size="sm" />
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  Finding parts that need counting…
+                </span>
+              </div>
+            ) : spotParts && spotParts.length > 0 ? (
+              <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 space-y-2">
+                <p className="text-sm text-amber-700 dark:text-amber-300 font-medium">
+                  Suggested — {spotParts.length} parts to count
+                </p>
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  Zero-stock and low-stock items prioritized, then oldest since last count.
+                </p>
+                <div className="space-y-1.5">
+                  {spotParts.map((part) => {
+                    const isZero = (part.warehouse_qty ?? 0) === 0;
+                    return (
+                      <div
+                        key={part.id}
+                        className="flex items-center gap-2 text-xs text-amber-800 dark:text-amber-200"
+                      >
+                        {isZero
+                          ? <PackageX size={12} className="text-red-500 flex-shrink-0" />
+                          : <AlertTriangle size={12} className="text-amber-500 flex-shrink-0" />
+                        }
+                        <span className="font-medium truncate">{part.name}</span>
+                        {part.code && (
+                          <span className="text-amber-600 dark:text-amber-400 flex-shrink-0">
+                            {part.code}
+                          </span>
+                        )}
+                        <span className="ml-auto flex-shrink-0 text-amber-600 dark:text-amber-400">
+                          Qty: {part.warehouse_qty ?? 0}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 rounded-lg bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                <p className="text-sm text-green-700 dark:text-green-300">
+                  No urgent parts found — stock looks healthy!
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Rolling audit suggestions */}
         {selectedType === 'rolling' && rollingParts && rollingParts.length > 0 && (

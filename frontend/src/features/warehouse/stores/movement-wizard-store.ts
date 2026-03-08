@@ -29,11 +29,19 @@ const MOVEMENT_RULES: Record<
 > = {
   'warehouse->pulled': { type: 'transfer', photo_required: false },
   'pulled->truck': { type: 'transfer', photo_required: false },
+  'pulled->trailer': { type: 'transfer', photo_required: false },
   'warehouse->truck': { type: 'transfer', photo_required: false },
+  'warehouse->trailer': { type: 'transfer', photo_required: false },
+  'truck->trailer': { type: 'transfer', photo_required: false },
+  'trailer->truck': { type: 'transfer', photo_required: false },
   'truck->job': { type: 'consume', photo_required: true },
+  'trailer->job': { type: 'consume', photo_required: true },
   'job->truck': { type: 'return', photo_required: true },
+  'job->trailer': { type: 'return', photo_required: true },
   'truck->warehouse': { type: 'return', photo_required: false },
+  'trailer->warehouse': { type: 'return', photo_required: false },
   'pulled->warehouse': { type: 'return', photo_required: false },
+  'trailer->pulled': { type: 'return', photo_required: false },
 };
 
 // ── Types ────────────────────────────────────────────────────────
@@ -384,7 +392,7 @@ export const useMovementWizardStore = create<MovementWizardState>()(
               !!state.toLocationType &&
               state.fromLocationType !== state.toLocationType &&
               !!MOVEMENT_RULES[
-                `${state.fromLocationType}->${state.toLocationType}`
+              `${state.fromLocationType}->${state.toLocationType}`
               ]
             );
 

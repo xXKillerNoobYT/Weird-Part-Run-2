@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
@@ -65,6 +65,8 @@ SYNCED_TABLES_ORDERED: list[str] = [
     "order_status_history", "special_items", "job_preferences",
     # Fleet & Vehicles
     "vehicles", "vehicle_assignments",
+    "job_trailers", "trailer_location_events",
+    "trailer_stock_templates", "trailer_stock_template_lines",
     "vehicle_delivery_items",
     "maintenance_types", "vehicle_maintenance_schedules",
     "vehicle_maintenance_records",
@@ -83,6 +85,11 @@ SYNCED_TABLES_ORDERED: list[str] = [
     "order_attachments",
     # Reports
     "period_locks",
+    # Chat & Q&A (Phase 9)
+    "chat_channels", "chat_channel_members",
+    "qa_threads", "chat_messages",
+    "chat_read_receipts", "chat_mentions",
+    "rfi_objects",
 ]
 
 # Set for O(1) lookup
@@ -111,10 +118,131 @@ class SyncService:
             (device_id, device_name, platform, user_id),
         )
         await self.db.commit()
+
+        # Ensure device sync profile exists (primary-user-owned behavior defaults)
+        await self.db.execute(
+            """
+            INSERT OR IGNORE INTO _device_sync_profiles
+            (device_id, primary_user_id, updated_by)
+            VALUES (?, ?, ?)
+            """,
+            (device_id, user_id, user_id),
+        )
+        await self.db.commit()
+
         cursor = await self.db.execute(
             "SELECT * FROM _device_registry WHERE device_id = ?", (device_id,),
         )
         return dict(await cursor.fetchone())
+
+    async def get_device_sync_profile(self, device_id: str) -> dict | None:
+        cursor = await self.db.execute(
+            "SELECT * FROM _device_sync_profiles WHERE device_id = ?",
+            (device_id,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def upsert_device_sync_profile(
+        self,
+        *,
+        device_id: str,
+        updated_by: int | None,
+        fields: dict,
+    ) -> dict:
+        existing = await self.get_device_sync_profile(device_id)
+        if not existing:
+            await self.db.execute(
+                """
+                INSERT INTO _device_sync_profiles (device_id, primary_user_id, updated_by)
+                VALUES (?, ?, ?)
+                """,
+                (device_id, updated_by, updated_by),
+            )
+
+        allowed = {
+            "primary_user_id",
+            "storage_policy",
+            "media_policy",
+            "media_retention_days",
+            "force_carry_undelivered_media",
+            "allow_borrowed_user_overrides",
+            "active_only_sync",
+        }
+        patch = {k: v for k, v in fields.items() if k in allowed}
+        patch["updated_by"] = updated_by
+
+        set_sql = ", ".join([f"{k} = ?" for k in patch] + ["updated_at = datetime('now')"])
+        values = list(patch.values()) + [device_id]
+        await self.db.execute(
+            f"UPDATE _device_sync_profiles SET {set_sql} WHERE device_id = ?",
+            values,
+        )
+        await self.db.commit()
+
+        result = await self.get_device_sync_profile(device_id)
+        return result or {}
+
+    async def log_mesh_relay_event(
+        self,
+        *,
+        source_device_id: str,
+        peer_device_id: str,
+        relay_type: str = "gossip",
+        carried_change_count: int = 0,
+        carried_media_count: int = 0,
+        undelivered_after_count: int = 0,
+        metadata: dict | None = None,
+    ) -> dict:
+        cursor = await self.db.execute(
+            """
+            INSERT INTO _mesh_relay_events (
+                source_device_id, peer_device_id, relay_type,
+                carried_change_count, carried_media_count,
+                undelivered_after_count, metadata_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                source_device_id,
+                peer_device_id,
+                relay_type,
+                carried_change_count,
+                carried_media_count,
+                undelivered_after_count,
+                json.dumps(metadata or {}),
+            ),
+        )
+        event_id = cursor.lastrowid
+        await self.db.commit()
+        cursor = await self.db.execute("SELECT * FROM _mesh_relay_events WHERE id = ?", (event_id,))
+        row = await cursor.fetchone()
+        data = dict(row) if row else {}
+        if data:
+            data["metadata"] = json.loads(data.get("metadata_json") or "{}")
+        return data
+
+    async def get_mesh_relay_events(
+        self,
+        *,
+        device_id: str | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        sql = "SELECT * FROM _mesh_relay_events"
+        params: list[Any] = []
+        if device_id:
+            sql += " WHERE source_device_id = ? OR peer_device_id = ?"
+            params.extend([device_id, device_id])
+        sql += " ORDER BY recorded_at DESC, id DESC LIMIT ?"
+        params.append(limit)
+
+        cursor = await self.db.execute(sql, tuple(params))
+        rows = await cursor.fetchall()
+        out: list[dict] = []
+        for r in rows:
+            d = dict(r)
+            d["metadata"] = json.loads(d.get("metadata_json") or "{}")
+            out.append(d)
+        return out
 
     async def get_device_status(self, device_id: str) -> dict | None:
         """Get a device's sync status."""
@@ -130,6 +258,156 @@ class SyncService:
             "SELECT * FROM _device_registry ORDER BY registered_at DESC",
         )
         return [dict(r) for r in await cursor.fetchall()]
+
+    # ── Hard Sync Backup / Recovery ─────────────────────────────
+
+    async def request_hard_sync(
+        self,
+        *,
+        device_id: str,
+        requested_by: int | None,
+        reason_code: str | None = None,
+        pending_outbound_hashes: list[str] | None = None,
+        include_tables: list[str] | None = None,
+        preserve_pending_data: bool = True,
+        notes: str | None = None,
+    ) -> dict:
+        """Prepare a deterministic hard-sync package for a device.
+
+        The package is a full table snapshot (or scoped table subset) using the
+        existing initial-sync ordering so FK integrity is preserved.
+        """
+        # Ensure device is known for auditability.
+        status = await self.get_device_status(device_id)
+        if not status:
+            await self.register_device(
+                device_id=device_id,
+                device_name="Hard Sync Device",
+                platform="unknown",
+                user_id=requested_by,
+            )
+
+        batch_id = await self.create_batch(device_id=device_id, direction="full")
+        tables = await self.get_initial_sync_data(include_tables)
+        total_rows = sum(len(rows) for rows in tables.values())
+
+        summary = {
+            "table_count": len(tables),
+            "total_rows": total_rows,
+            "generated_at": datetime.now(UTC).isoformat(),
+        }
+
+        cursor = await self.db.execute(
+            """
+            INSERT INTO _hard_sync_events (
+                device_id, requested_by, reason_code,
+                pending_outbound_hashes, include_tables,
+                preserve_pending_data, sync_batch_id,
+                package_summary, status, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'package_ready', ?)
+            """,
+            (
+                device_id,
+                requested_by,
+                reason_code,
+                json.dumps(pending_outbound_hashes or []),
+                json.dumps(include_tables or []),
+                1 if preserve_pending_data else 0,
+                batch_id,
+                json.dumps(summary),
+                notes,
+            ),
+        )
+        hard_sync_id = cursor.lastrowid
+
+        await self.update_batch(
+            batch_id,
+            sent=total_rows,
+            received=0,
+            conflicts=0,
+        )
+        await self.db.execute(
+            """
+            UPDATE _sync_batches
+            SET status = 'completed', completed_at = datetime('now')
+            WHERE id = ?
+            """,
+            (batch_id,),
+        )
+        await self.db.commit()
+
+        return {
+            "hard_sync_id": hard_sync_id,
+            "sync_batch_id": batch_id,
+            "device_id": device_id,
+            "tables": tables,
+            "table_count": len(tables),
+            "total_rows": total_rows,
+            "preserve_pending_data": preserve_pending_data,
+            "server_time": datetime.now(UTC).isoformat(),
+        }
+
+    async def complete_hard_sync(
+        self,
+        *,
+        hard_sync_id: int,
+        device_id: str,
+        sync_batch_id: str,
+        completed_by: int | None,
+        applied_tables: list[str] | None = None,
+        restored_pending_count: int = 0,
+        notes: str | None = None,
+    ) -> dict | None:
+        """Mark a hard sync as completed by the device."""
+        cursor = await self.db.execute(
+            "SELECT * FROM _hard_sync_events WHERE id = ? AND device_id = ?",
+            (hard_sync_id, device_id),
+        )
+        existing = await cursor.fetchone()
+        if not existing:
+            return None
+
+        await self.db.execute(
+            """
+            UPDATE _hard_sync_events
+            SET status = 'completed',
+                started_at = COALESCE(started_at, datetime('now')),
+                completed_at = datetime('now'),
+                notes = COALESCE(?, notes)
+            WHERE id = ?
+            """,
+            (notes, hard_sync_id),
+        )
+
+        await self.mark_device_synced(device_id, sync_batch_id)
+
+        return {
+            "hard_sync_id": hard_sync_id,
+            "device_id": device_id,
+            "sync_batch_id": sync_batch_id,
+            "applied_tables": applied_tables or [],
+            "restored_pending_count": restored_pending_count,
+            "completed_by": completed_by,
+            "completed_at": datetime.now(UTC).isoformat(),
+        }
+
+    async def get_hard_sync_history(
+        self,
+        *,
+        device_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        sql = "SELECT * FROM _hard_sync_events"
+        params: list[Any] = []
+        if device_id:
+            sql += " WHERE device_id = ?"
+            params.append(device_id)
+        sql += " ORDER BY requested_at DESC LIMIT ?"
+        params.append(limit)
+
+        cursor = await self.db.execute(sql, tuple(params))
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
 
     # ── Shop-Side Change Tracking ────────────────────────────────
 
@@ -381,7 +659,12 @@ class SyncService:
 
     # ── Initial Sync (Full Pull) ─────────────────────────────────
 
-    async def get_initial_sync_data(self, tables: list[str] | None = None) -> dict:
+    async def get_initial_sync_data(
+        self,
+        tables: list[str] | None = None,
+        *,
+        only_active_jobs: bool = False,
+    ) -> dict:
         """Get full table data for initial device setup.
 
         Returns all rows from synced tables. Used when a device first
@@ -390,11 +673,34 @@ class SyncService:
         target_tables = tables or SYNCED_TABLES_ORDERED
         data: dict[str, list[dict]] = {}
 
+        active_job_ids: list[int] = []
+        if only_active_jobs:
+            cursor = await self.db.execute("SELECT id FROM jobs WHERE status = 'active'")
+            active_job_ids = [int(r["id"]) for r in await cursor.fetchall()]
+
         for table in target_tables:
             if table not in SYNCED_TABLES:
                 continue
             try:
-                cursor = await self.db.execute(f"SELECT * FROM {table}")
+                # Core rule: only active jobs on devices when requested.
+                if only_active_jobs and table == "jobs":
+                    cursor = await self.db.execute(
+                        "SELECT * FROM jobs WHERE status = 'active'",
+                    )
+                elif only_active_jobs and active_job_ids:
+                    # Generic filter for tables that carry a direct job_id FK.
+                    info_cur = await self.db.execute(f"PRAGMA table_info({table})")
+                    cols = [r["name"] for r in await info_cur.fetchall()]
+                    if "job_id" in cols:
+                        placeholders = ",".join("?" for _ in active_job_ids)
+                        cursor = await self.db.execute(
+                            f"SELECT * FROM {table} WHERE job_id IS NULL OR job_id IN ({placeholders})",
+                            tuple(active_job_ids),
+                        )
+                    else:
+                        cursor = await self.db.execute(f"SELECT * FROM {table}")
+                else:
+                    cursor = await self.db.execute(f"SELECT * FROM {table}")
                 rows = await cursor.fetchall()
                 data[table] = [dict(r) for r in rows]
             except Exception as exc:
@@ -409,7 +715,7 @@ class SyncService:
         self, device_id: str, batch_id: str,
     ) -> None:
         """Mark a device as synced after it confirms applying shop changes."""
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
         await self.db.execute(
             """UPDATE _device_registry
                SET last_sync_at = ?, last_sync_batch_id = ?, pending_changes = 0
@@ -477,7 +783,7 @@ class SyncService:
         )
         return [dict(r) for r in await cursor.fetchall()]
 
-    async def cleanup_old_logs(self, days: int = 90) -> dict:
+    async def cleanup_old_logs(self, days: int = 365) -> dict:
         """Clean up old sync logs. Called by scheduler."""
         cursor = await self.db.execute(
             "DELETE FROM _shop_change_log WHERE timestamp < datetime('now', '-' || ? || ' days')",

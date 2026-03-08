@@ -40,6 +40,12 @@ NOTIFICATION_TYPES = [
     "time_off_approved",
     "time_off_denied",
     "vehicle_expiry",
+    # Phase 9: Chat & Q&A
+    "chat_message",
+    "chat_mention",
+    "qa_assigned",
+    "qa_answered",
+    "qa_escalated",
 ]
 
 

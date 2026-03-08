@@ -25,6 +25,7 @@ import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
+import { PartIdentity } from '../../../components/ui/PartIdentity';
 import { getMyVehicle } from '../../../api/vehicles';
 import { VehicleStatusBadge, VehicleTypeBadge } from '../components/VehicleStatusBadge';
 import type { VehicleType, MaintenanceAlert, VehicleDeliveryItem, MileageLog } from '../../../lib/types';
@@ -305,9 +306,12 @@ function DeliveryItemRow({ item }: { item: VehicleDeliveryItem }) {
   return (
     <div className="flex items-center justify-between py-1.5">
       <div className="min-w-0">
-        <p className="text-sm text-gray-900 dark:text-gray-100 truncate">
-          {item.part_description ?? item.part_number ?? `Part #${item.part_id}`}
-        </p>
+        <PartIdentity
+          compact
+          partName={item.part_description}
+          partNumber={item.part_number}
+          partId={item.part_id}
+        />
         <p className="text-xs text-gray-500 dark:text-gray-400">
           Job #{item.job_id} · Qty: {item.qty_assigned}
         </p>

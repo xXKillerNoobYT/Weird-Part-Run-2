@@ -46,7 +46,7 @@ const STATUS_TABS: { label: string; value: POViewFilter }[] = [
 const FILTER_STATUSES: Record<POViewFilter, string[] | null> = {
   all:       null,                                         // no filter
   drafts:    ['draft'],
-  submitted: ['submitted', 'acknowledged'],
+  submitted: ['submitted', 'acknowledged', 'confirmed'],
   receiving: ['partially_received'],
   complete:  ['received', 'closed', 'cancelled'],
 };

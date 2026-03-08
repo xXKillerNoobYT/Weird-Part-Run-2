@@ -1,7 +1,7 @@
 # Wired-Part: Full Implementation Plan
 
 > **Last updated:** 2026-03-07
-> **Status:** Phases 1–10 complete + V1.0 infra (A–D) + gap closure M1-M4 (44/44 done) + scheduling enhancements (035) + all 13 feature audits complete. V1.0 remaining: mobile builds (Tasks 16-18) + smoke test (22) + release packaging (23).
+> **Status:** Phases 1–10 complete + Phase 9 Chat & Q&A complete + V1.0 infra (A–D) + gap closure M1-M4 (44/44 done) + scheduling enhancements (035) + all 13 feature audits complete. V1.0.0 remaining: mobile builds (Tasks 16-18) + smoke test (22) + release packaging (23) + approved Phase 16 add-ons (UX/Admin Hub + Multi-Warehouse/Trailers).
 > **Full vision document:** `docs/The Full Plan.md`
 > **New phase numbering:** Starting 2026-03-07, future phases use new numbering (Phase 7-13). Old phase files keep their original names.
 > 100% local and offline first, no customer-facing billing, bookkeeper handles billouts via pre-billing export bundles.
@@ -17,21 +17,21 @@ Wired-Part is a field service management app for an electrical contracting compa
 
 | Metric | Count |
 |--------|-------|
-| Backend routers | 18 (all mounted in `main.py`) |
-| API endpoints | ~480 |
-| Backend services | 28 |
-| Repositories | 19 + base |
-| Model files | 17 |
-| Migrations | 35 (`001_foundation.sql` → `035_scheduling_enhancements.sql`) |
-| Frontend feature files | ~180 |
-| Frontend routes | 100 |
-| Functional pages | 86 |
+| Backend routers | 19 (all mounted in `main.py`) |
+| API endpoints | ~500 |
+| Backend services | 30 |
+| Repositories | 21 + base |
+| Model files | 18 |
+| Migrations | 38 (`001_foundation.sql` → `038_chat_system.sql`) |
+| Frontend feature files | ~200 |
+| Frontend routes | 104 |
+| Functional pages | 89 |
 | Stub pages | 2 (Settings × 2 — v2.0+ placeholders: AiConfigPage, DeviceManagementPage) |
-| API client files | 18 (~330 functions) |
+| API client files | 19 (~350 functions) |
 | Zustand stores | 4 (auth, clock, sidebar, theme) |
-| Backend tests | 10 files, 119 tests (critical paths covered) |
-| Total backend LOC | ~33,000 |
-| Total frontend files | ~220+ |
+| Backend tests | 10 files, 125 tests (critical paths covered) |
+| Total backend LOC | ~36,000 |
+| Total frontend files | ~240+ |
 | Gap closure | 44/44 items complete (M1-M4) |
 | Feature audits | 13/13 complete (`docs/plans/Audit/`) |
 | Post-audit enhancements | Scheduling lunch/supervisor/multi-job (Migration 035) |
@@ -1069,15 +1069,24 @@ The complete path from current state to customer-ready deployment:
 
 ---
 
-## Future Phases (V1.0.1+ — Planned & Outlined)
+## Future Phases (V1.x — Planned & Outlined)
 
-> **Numbering note:** Phases 1-8 (old 1-10 + reports) are all complete. Phase 7 (People) includes completed Delta addendum. Phases 9-13 are the forward-looking roadmap.
+> **Numbering note:** Phases 1-8 (old 1-10 + reports) are all complete. Phase 7 (People) includes completed Delta addendum. Phases 9-13 remain forward-looking roadmap items.
+
+### V1.0.0 in-scope queued phase plans
+
+| Track | Phase | Status | Plan File | Est. Days | Key Deliverables |
+|-------|-------|--------|-----------|-----------|------------------|
+| **16A** | UX Polish + Admin Hub Consolidation | 📋 Planned (V1.0.0) | `phase-16-ux-polish-and-admin-hub.md` | 8-14 | Navigation/admin consolidation, warehouse/report/scheduling enhancements, team assignment, device management |
+| **16B** | Multi-Warehouse + Job Trailers | 📋 Planned (V1.0.0) | `phase-16-multi-warehouse-trailers.md` | 10-16 | Multi-warehouse inventory routing, trailer inventory preload/consume lifecycle, trailer location tracking, warehouse network UI |
+
+### Post-V1.0.0 forward roadmap plans
 
 | New # | Phase | Status | Plan File | Est. Days | Key Deliverables |
 |-------|-------|--------|-----------|-----------|------------------|
 | **7** | People (Full) | ✅ Complete (incl. Delta) | `phase-7-people-delta.md` | < 1 | GC-aware PO naming, standardized report filenames |
 | **8** | Reports & Pre-Billing | ✅ Complete | `phase-11-reports-prebilling.md` | 5-6 | Pre-billing, timesheets, labor overview, profitability, period locking, bookkeeper exports |
-| **9** | Chat & Q&A | 📋 Planned | `phase-9-chat.md` | 10-14 | Per-job group chat, DMs, @mentions, voice messages, Q&A escalation chain, RFI bridge |
+| **9** | Chat & Q&A | ✅ Complete | `phase-9-chat.md` | 10-14 | Per-job group chat, DMs, @mentions, Q&A escalation chain, RFI bridge (voice deferred to 9.5) |
 | **10** | PWA & Desktop | 📋 Outline | `phase-12-pwa-desktop.md` | 5-8 | Service worker, offline caching, keyboard shortcuts, command palette, push notifications |
 | **11** | Sync & Bluetooth | 📋 Planned | `phase-13-sync-bluetooth.md` | 16-24 | BT mesh, gossip protocol, PGP encryption, device pairing, multi-PC shop cluster, device management console (primary user, storage, key visibility, error logs, manual overrides) |
 | **12** | AI Integration | 📋 Outline | `phase-14-ai-integration.md` | 8-12 | Local LLM (LM Studio), NL queries, smart scheduling, anomaly detection, predictive ordering |
@@ -1101,8 +1110,8 @@ The complete path from current state to customer-ready deployment:
 
 | File | Why |
 |------|-----|
-| `backend/app/main.py` | App entry point, dynamic router registration for all 17 routers |
-| `backend/app/database.py` | SQLite connection, runs all 27 migrations in order on startup |
+| `backend/app/main.py` | App entry point, dynamic router registration for all 19 routers |
+| `backend/app/database.py` | SQLite connection, runs all 38 migrations in order on startup |
 | `backend/app/middleware/auth.py` | Device auto-login + PIN + JWT + permission checking. Gates everything. |
 | `backend/app/scheduler.py` | APScheduler: midnight daily reports, PDF cleanup, notification purge |
 | `backend/app/routers/parts.py` | Largest router (2,224 lines, 61 endpoints) |
@@ -1110,7 +1119,7 @@ The complete path from current state to customer-ready deployment:
 | `backend/app/services/movement_service.py` | Core stock movement engine — atomic transfers (745 lines) |
 | `backend/app/services/notebook_service.py` | Largest service (989 lines) — templates + notebooks + entries |
 | `backend/app/services/cost_tracking_service.py` | FIFO consumption, LIFO returns, weighted avg cost |
-| `frontend/src/App.tsx` | All ~90 routes defined here |
+| `frontend/src/App.tsx` | All ~104 routes defined here |
 | `frontend/src/lib/types.ts` | Single source of truth for all TypeScript interfaces |
 | `frontend/src/lib/navigation.ts` | All modules, tabs, and permission requirements |
 | `frontend/src/features/jobs/pages/JobDetailPage.tsx` | Largest page (1,463 lines), 5+ sub-tabs |

@@ -533,13 +533,15 @@ Consider moving warehouse location management to the warehouse module, or at lea
 
 5. **Mileage rate from settings** — `MileageService` reads the reimbursement rate from `SettingsRepo`/`app_settings`. If the rate changes, historical reimbursements are unaffected (amount is stored at creation), which is correct behavior.
 However, there's no audit trail for rate changes. Consider adding a `MileageRateChangeLog` table to track when and how the rate changes over time for better transparency and historical analysis. This would allow us to see when the mileage reimbursement rate was changed, what the previous and new rates were, and who made the change. This audit trail would be valuable for understanding trends in reimbursement costs and for accountability in case of disputes or questions about past reimbursements.
-add a Gas Receipt fast capture for reimbursements. This would allow users to quickly capture a photo of their gas receipt when submitting a reimbursement request, providing additional documentation for the expense and potentially speeding up the approval process. The receipt image could be stored in the database and linked to the reimbursement record, making it easy for managers to review the expense with the supporting documentation. Make an Image mandatory for. Reimbursement.
 
-6. **No vehicle image/photo** — Vehicle records have no image field. VehicleCard shows a truck icon placeholder. 
-Add this, 
+**Gas Receipt Fast-Capture for Reimbursements:** Add a quick-capture photo flow when submitting a mileage reimbursement request. The user snaps a photo of their gas receipt, which is stored in the database and linked to the reimbursement record. Managers can then review the expense alongside supporting documentation during approval. Make an attached receipt image **mandatory** for all reimbursement submissions.
+
+6. **No vehicle image/photo** — Vehicle records have no image field. VehicleCard shows a truck icon placeholder.
+Add an optional `image_url` field to the `vehicles` table and expose it in the API. The VehicleCard and VehicleDetailPage should display the uploaded photo when available, falling back to the truck icon placeholder.
 
 7. **Route collision risk** — The `/{vehicle_id}` catch-all at the bottom means any future top-level path (e.g., `/fuel-logs`) must be added above it. A code comment warns about this, but it's an ongoing maintenance concern.
-we We kinda want this tract. Per vehicle and also. Uh, when getting uh fuel records, we also want the user to put in the current total mileage for the vehicle. Just in case the vehicle has been driven a bit more than what's necessarily on the records. And then we can have the different specially calibrated. If the records say it's been driven more than the vehicle says, we have informational notes on that. In the log. I want the maintenance to. Use the mainly input and mileage. For the vehicle as a soft. Reset for maintenance. The other one's good for guidance, but this one's good for accuracy.
+
+**Fuel Logging Enhancements:** Track fuel purchases per vehicle. When logging a fuel record, require the user to input the vehicle's current odometer reading — this serves as a soft mileage checkpoint that's more accurate than calculated estimates. If the recorded odometer reading exceeds the expected mileage (based on logged trips), surface an informational note in the log highlighting the discrepancy. Additionally, use the most recent manually-input mileage reading as a soft reset baseline for maintenance schedule calculations — the automated mileage tracking provides guidance, but the manual odometer input provides ground-truth accuracy.
 
 ### Feature Gaps
 
