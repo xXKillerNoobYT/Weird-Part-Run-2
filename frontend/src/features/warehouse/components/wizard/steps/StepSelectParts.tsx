@@ -145,7 +145,7 @@ export function StepSelectParts() {
                           {part.part_name}
                         </span>
                         {part.part_code && (
-                          <Badge variant="secondary" className="text-xs flex-shrink-0">
+                          <Badge variant="default" className="text-xs flex-shrink-0">
                             {part.part_code}
                           </Badge>
                         )}

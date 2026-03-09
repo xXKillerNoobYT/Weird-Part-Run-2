@@ -134,7 +134,7 @@ export async function runSync(deviceId: string): Promise<boolean> {
     });
 
     if (!pushResponse.ok) {
-      const err = await pushResponse.text();
+      await pushResponse.text();
       updateState({
         status: 'error',
         error: `Push failed: ${pushResponse.status}`,
@@ -342,7 +342,7 @@ function cancelRetry(): void {
 // ── Periodic Sync Timer ──────────────────────────────────────────
 
 let syncInterval: ReturnType<typeof setInterval> | null = null;
-let _deviceId: string | null = null;
+export let _deviceId: string | null = null;
 
 /** Start periodic sync (every 5 minutes) */
 export function startPeriodicSync(deviceId: string): void {

@@ -40,16 +40,15 @@ import {
   linkGCToJob, unlinkGCFromJob, searchCustomers, searchGCs,
 } from '../../../api/contacts';
 import type {
-  JobCustomerResponse, JobGCResponse, CustomerContactRole,
-  GCRelationship, CustomerListItem, GCListItem, JobTeamMember,
+  CustomerContactRole,
+  GCRelationship, CustomerListItem, GCListItem,
   EmployeeListItem,
 } from '../../../lib/types';
 import { ClockOutFlow } from '../components/ClockOutFlow';
 import {
   JOB_STATUS_LABELS,
   ON_CALL_TYPE_LABELS,
-  type JobResponse, type LaborEntryResponse, type JobPartResponse,
-  type OneTimeQuestionResponse, type JobStatus, type OnCallType,
+  type JobResponse, type JobStatus, type OnCallType,
   type EntryCreate, type SectionCreate, type TaskStatus, type SectionWithEntries,
 } from '../../../lib/types';
 import {
@@ -499,7 +498,6 @@ function OverviewTab({ job }: { job: JobResponse }) {
         <Card className="md:col-span-2">
           <CardHeader
             title="Warranty Coverage"
-            icon={<Shield className="h-5 w-5 text-sky-500" />}
           />
           <div className="px-4 pb-4">
             <div className="grid grid-cols-3 gap-4">
@@ -923,7 +921,7 @@ function ToolsTab({ jobId }: { jobId: number }) {
                 <Badge variant="primary" className="text-xs">
                   {tool.status.replace('_', ' ')}
                 </Badge>
-                {tool.has_kit === 1 && (
+                {tool.has_kit && (
                   <span className="inline-flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400">
                     <Shield size={10} /> Kit
                   </span>
@@ -961,14 +959,14 @@ function ToolsTab({ jobId }: { jobId: number }) {
  * Shows: parts cost, labor cost, combined total, budget status, and a
  * breakdown of cost sources.
  */
-function CostsTab({ jobId, jobName }: { jobId: number; jobName: string }) {
+function CostsTab({ jobId, jobName: _jobName }: { jobId: number; jobName: string }) {
   const { data: rollup, isLoading: loadingRollup } = useQuery({
     queryKey: ['job-cost-rollup', jobId],
     queryFn: () => getJobCostRollup(jobId),
     staleTime: 30_000,
   });
 
-  const { data: budget } = useQuery({
+  const { data: _budget } = useQuery({
     queryKey: ['job-budget-status', jobId],
     queryFn: () => getJobBudgetStatus(jobId),
     staleTime: 30_000,

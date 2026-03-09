@@ -11,7 +11,7 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Users, Briefcase, Plus, AlertTriangle, ChevronLeft, ChevronRight,
-  Clock, UserCheck, X, MapPin, Check, XCircle,
+  Clock, UserCheck, MapPin, Check, XCircle,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -31,8 +31,8 @@ import {
 } from '../../../api/scheduling';
 import { getActiveJobs } from '../../../api/jobs';
 import type {
-  DispatchResponse, DispatchCreate, ScheduleConflict,
-  DispatchRoleOnJob, DispatchStatus, JobListItem,
+  DispatchResponse, ScheduleConflict,
+  DispatchRoleOnJob, DispatchStatus,
 } from '../../../lib/types';
 
 
@@ -69,9 +69,6 @@ const STATUS_BADGE: Record<DispatchStatus, 'success' | 'warning' | 'danger' | 'i
   cancelled: 'danger',
 };
 
-const STATUS_OPTIONS: DispatchStatus[] = [
-  'scheduled', 'confirmed', 'on_site', 'completed', 'no_show', 'cancelled',
-];
 
 
 // ═══════════════════════════════════════════════════════════════════

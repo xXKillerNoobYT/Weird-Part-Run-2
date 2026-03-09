@@ -22,7 +22,6 @@ import { Card } from '../../../components/ui/Card';
 import { Spinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { getForecasting } from '../../../api/parts';
-import type { ForecastItem } from '../../../lib/types';
 
 
 export function ForecastingPage() {

@@ -9,7 +9,7 @@ import { useState } from 'react';
 import { Calendar, Edit2, Trash2, User, Package } from 'lucide-react';
 import { TaskStageSelector } from './TaskStageSelector';
 import type { EntryResponse, TaskStatus } from '../../../lib/types';
-import { TASK_STATUS_LABELS } from '../../../lib/types';
+
 
 interface TaskEntryCardProps {
   entry: EntryResponse;

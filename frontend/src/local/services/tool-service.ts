@@ -188,7 +188,6 @@ export async function checkoutTool(
   },
   userId: number,
 ): Promise<Tool> {
-  const db = await getDb();
   const now = new Date().toISOString();
   const tool = await getTool(toolId);
   if (!tool) throw new Error('Tool not found');
@@ -234,7 +233,6 @@ export async function returnTool(
   },
   userId: number,
 ): Promise<Tool> {
-  const db = await getDb();
   const now = new Date().toISOString();
   const tool = await getTool(toolId);
   if (!tool) throw new Error('Tool not found');
@@ -359,13 +357,12 @@ export async function startVerification(
 
 /** Complete a verification session */
 export async function completeVerification(
-  toolId: number,
+  _toolId: number,
   sessionId: number,
   items: VerificationItem[],
   notes?: string,
 ): Promise<void> {
   const db = await getDb();
-  const now = new Date().toISOString();
 
   let missingCount = 0;
 

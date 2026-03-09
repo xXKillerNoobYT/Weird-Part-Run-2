@@ -11,7 +11,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Mail, Phone, Building2, Edit2, UserCheck, UserX,
-  Plus, Trash2, X, Users, Briefcase, MapPin, Save,
+  Plus, Trash2, Users, Briefcase, MapPin, Save,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { Button } from '../../../components/ui/Button';
@@ -29,9 +29,8 @@ import {
   getCustomerJobs,
 } from '../../../api/contacts';
 import type {
-  CustomerDetail, CustomerUpdate, CustomerType,
+  CustomerDetail, CustomerUpdate, CustomerType, PaymentTerms,
   EntityContactResponse, EntityContactCreate, EntityContactUpdate,
-  CustomerJobLink,
 } from '../../../lib/types';
 
 
@@ -207,7 +206,7 @@ function OverviewTab({ customer, canManage }: { customer: CustomerDetail; canMan
   const [billingCity, setBillingCity] = useState(customer.billing_city ?? '');
   const [billingState, setBillingState] = useState(customer.billing_state ?? '');
   const [billingZip, setBillingZip] = useState(customer.billing_zip ?? '');
-  const [paymentTerms, setPaymentTerms] = useState(customer.payment_terms ?? 'net_30');
+  const [paymentTerms, setPaymentTerms] = useState<PaymentTerms>(customer.payment_terms ?? 'net_30');
   const [taxId, setTaxId] = useState(customer.tax_id ?? '');
   const [billingEmail, setBillingEmail] = useState(customer.billing_email ?? '');
 
@@ -349,7 +348,7 @@ function OverviewTab({ customer, canManage }: { customer: CustomerDetail; canMan
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Payment Terms</label>
                 <select
                   value={paymentTerms}
-                  onChange={(e) => setPaymentTerms(e.target.value)}
+                  onChange={(e) => setPaymentTerms(e.target.value as PaymentTerms)}
                   className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm min-h-[44px]"
                 >
                   <option value="due_on_receipt">Due on Receipt</option>
@@ -559,7 +558,7 @@ function ContactsTab({ customerId, canManage }: { customerId: number; canManage:
           title="Add Contact"
           isLoading={addMutation.isPending}
           error={addMutation.error?.message ?? null}
-          onSubmit={(data) => addMutation.mutate(data)}
+          onSubmit={(data) => addMutation.mutate(data as EntityContactCreate)}
           onClose={() => setShowAdd(false)}
         />
       )}
@@ -571,7 +570,7 @@ function ContactsTab({ customerId, canManage }: { customerId: number; canManage:
           initial={editingContact}
           isLoading={updateMutation.isPending}
           error={updateMutation.error?.message ?? null}
-          onSubmit={(data) => updateMutation.mutate({ id: editingContact.id, data })}
+          onSubmit={(data) => updateMutation.mutate({ id: editingContact.id, data: data as EntityContactUpdate })}
           onClose={() => setEditingContact(null)}
         />
       )}

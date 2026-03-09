@@ -45,7 +45,7 @@ export function SpecialItemPlacementModal({ item, onClose }: SpecialItemPlacemen
   // ── Hierarchy data ──────────────────────────────────────
   const { data: categories, isLoading: catLoading } = useQuery({
     queryKey: ['categories'],
-    queryFn: listCategories,
+    queryFn: () => listCategories(),
   });
 
   const { data: styles, isLoading: stylesLoading } = useQuery({

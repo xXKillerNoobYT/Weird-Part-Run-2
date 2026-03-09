@@ -17,7 +17,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  MessageSquare, Plus, GripVertical, ArrowUp, ArrowDown,
+  MessageSquare, Plus, ArrowUp, ArrowDown,
   Trash2, Edit2, Check, X, ToggleLeft, ToggleRight,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';

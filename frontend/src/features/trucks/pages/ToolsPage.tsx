@@ -10,7 +10,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Wrench, Search, X, ChevronRight, Truck, Warehouse,
   AlertTriangle, Star, Shield, ArrowDownToLine, ArrowUpFromLine,
-  CheckCircle, Clock, QrCode, Printer, Briefcase,
+  Clock, QrCode, Printer, Briefcase,
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { PageSpinner } from '../../../components/ui/Spinner';
@@ -30,7 +30,6 @@ import { listVehicles } from '../../../api/vehicles';
 import type {
   Tool, ToolStatus, ToolCategory, ToolMovement, ToolCheckoutRequest,
 } from '../../../lib/types';
-import type { VehicleListItem } from '../../../lib/types';
 import type { ToolListParams } from '../../../api/tools';
 
 
@@ -179,7 +178,7 @@ export function ToolsPage() {
   }, [movements, selectedVehicleId]);
 
   // Stats
-  const withKit = tools.filter((t) => t.has_kit === 1).length;
+  const withKit = tools.filter((t) => t.has_kit).length;
   const needsMaintenance = tools.filter((t) => t.overdue_maintenance_count > 0).length;
 
   if (vehiclesLoading) return <PageSpinner label="Loading vehicles..." />;
@@ -371,7 +370,7 @@ function TruckToolRow({ tool, canReturn, isReturning, onReturn, onClick }: {
             <Badge variant={STATUS_BADGE[tool.status as ToolStatus] ?? 'default'}>
               {tool.status.replace('_', ' ')}
             </Badge>
-            {tool.has_kit === 1 && (
+            {tool.has_kit && (
               <span className="hidden sm:inline-flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400">
                 <Shield size={12} /> Kit
               </span>
@@ -470,7 +469,7 @@ function MovementHistoryPanel({ movements }: { movements: ToolMovement[] }) {
                 </span>
               </div>
               <span className="text-gray-400 dark:text-gray-500 whitespace-nowrap ml-2">
-                {new Date(m.created_at).toLocaleDateString()}
+                {m.created_at ? new Date(m.created_at).toLocaleDateString() : '—'}
               </span>
             </div>
           ))}
@@ -596,7 +595,7 @@ function CheckoutModal({ vehicleId, vehicleName, onClose, onComplete }: {
                       <span className="font-medium text-gray-900 dark:text-gray-100 truncate text-sm">
                         {tool.name}
                       </span>
-                      {tool.has_kit === 1 && (
+                      {tool.has_kit && (
                         <span className="inline-flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400">
                           <Shield size={10} />
                         </span>
@@ -662,7 +661,7 @@ function ToolDetailPanel({ tool, onClose }: {
                 {tool.status.replace('_', ' ')}
               </Badge>
               <Badge>{categoryLabel(tool.category)}</Badge>
-              {tool.has_kit === 1 && <Badge variant="primary">Has Kit</Badge>}
+              {tool.has_kit && <Badge variant="primary">Has Kit</Badge>}
             </div>
           </div>
 

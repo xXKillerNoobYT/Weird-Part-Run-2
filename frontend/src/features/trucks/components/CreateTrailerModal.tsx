@@ -147,7 +147,7 @@ export function CreateTrailerModal({ isOpen, onClose }: CreateTrailerModalProps)
           >
             <option value="">— None —</option>
             {users?.map((u) => (
-              <option key={u.id} value={u.id}>{u.display_name || u.username}</option>
+              <option key={u.id} value={u.id}>{u.display_name}</option>
             ))}
           </select>
         </div>

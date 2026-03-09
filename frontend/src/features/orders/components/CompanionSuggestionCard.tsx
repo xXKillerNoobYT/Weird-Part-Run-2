@@ -175,7 +175,7 @@ export function CompanionSuggestionCard({
                         </p>
                         <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
                           {part.code && `${part.code} · `}
-                          {part.brand && `${part.brand} · `}
+                          {part.brand_name && `${part.brand_name} · `}
                           Stock: {part.total_stock}
                         </p>
                       </div>

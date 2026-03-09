@@ -13,7 +13,7 @@ import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { toast } from '../../../lib/toast';
 import { getProfitability, generateExport, downloadBlob } from '../../../api/reports';
-import type { JobProfitability, ProfitabilityReport } from '../../../api/reports';
+import type { JobProfitability } from '../../../api/reports';
 
 
 export function ProfitabilityPage() {

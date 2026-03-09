@@ -23,7 +23,7 @@ export function StepPreview() {
     fromLocationId,
     toLocationType,
     toLocationId,
-    selectedParts,
+    selectedParts: _selectedParts,
     reason,
     reasonDetail,
     notes,
@@ -203,7 +203,7 @@ export function StepPreview() {
                           variant={
                             line.supplier_source === 'preferred'
                               ? 'primary'
-                              : 'secondary'
+                              : 'default'
                           }
                           className="text-[10px]"
                         >

@@ -230,9 +230,6 @@ export function FastDriveCard() {
   const suggested = ctx.suggested ?? [];
   const allDest = ctx.all_destinations ?? [];
 
-  // Destinations to show: suggested (top 3) unless "All" is expanded
-  const visibleDests = showAll ? allDest : suggested;
-
   // Filter "All" to exclude those already in suggested (to avoid duplicates when expanded)
   const extraDests = showAll
     ? allDest.filter(d => !suggested.some(s => s.label === d.label && s.type === d.type))

@@ -122,7 +122,7 @@ export function SectionPanel({
                 <InfoFieldRenderer
                   key={entry.id}
                   entry={entry}
-                  onSave={onFieldSave ? (id, val) => onFieldSave(id, val) : undefined}
+                  onSave={onFieldSave ?? (() => {})}
                   saving={savingFieldId === entry.id}
                 />
               ))}

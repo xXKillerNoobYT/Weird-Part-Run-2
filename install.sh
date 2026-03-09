@@ -4,7 +4,7 @@
 # Installs backend (Python) and frontend (Node.js) dependencies.
 # Each step fails gracefully — if one part fails, the rest still attempt.
 # Safe to re-run to repair or update.
-#
+
 # Usage:
 #   chmod +x install.sh && ./install.sh
 

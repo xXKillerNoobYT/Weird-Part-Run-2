@@ -24,7 +24,6 @@ import {
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Card, CardHeader } from '../../../components/ui/Card';
-import { Badge } from '../../../components/ui/Badge';
 import { toast } from '../../../lib/toast';
 import {
   getBackupSettings,

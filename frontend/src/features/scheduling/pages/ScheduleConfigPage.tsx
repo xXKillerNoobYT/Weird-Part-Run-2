@@ -9,7 +9,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Settings, Clock, RotateCcw, Save, User, Check,
+  Settings, Clock, RotateCcw, Save, User,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -29,8 +29,7 @@ import {
 import { getEmployees } from '../../../api/people';
 import { toast } from '../../../lib/toast';
 import type {
-  DefaultScheduleResponse, DefaultScheduleDay, EmployeeListItem,
-  ShiftPatternResponse,
+  DefaultScheduleResponse, DefaultScheduleDay,
 } from '../../../lib/types';
 
 

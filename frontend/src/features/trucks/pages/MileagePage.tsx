@@ -9,22 +9,17 @@
  * Accessible via Trucks > Mileage tab.
  */
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
 import {
   Gauge,
-  Calendar,
   DollarSign,
   Plus,
   ChevronDown,
   ChevronRight,
-  Car,
-  Truck,
   Check,
   X,
   Clock,
-  MapPin,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -46,9 +41,6 @@ import {
 import type {
   MileageLog,
   TripLeg,
-  MileageSummary,
-  MileageReimbursement,
-  VehicleListItem,
 } from '../../../lib/types';
 
 type SubView = 'logs' | 'reimbursements';
@@ -103,8 +95,7 @@ export function MileagePage() {
 
 // ── Daily Logs View ───────────────────────────────────────────────────
 
-function DailyLogsView({ canManageFleet }: { canManageFleet: boolean }) {
-  const navigate = useNavigate();
+function DailyLogsView({ canManageFleet: _canManageFleet }: { canManageFleet: boolean }) {
   const [selectedVehicle, setSelectedVehicle] = useState<number | 'all'>('all');
   const [showLogMileage, setShowLogMileage] = useState(false);
 
@@ -525,7 +516,7 @@ function ReimbursementsView({
 
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold text-gray-900 dark:text-gray-100">
-                  ${r.total_amount.toFixed(2)}
+                  ${(r.total_amount ?? 0).toFixed(2)}
                 </span>
 
                 {canManageFleet && r.status === 'pending' && (
@@ -573,7 +564,7 @@ function ReimbursementStatusBadge({ status }: { status: string }) {
       : status === 'pending'
         ? 'warning'
         : status === 'rejected'
-          ? 'destructive'
+          ? 'danger'
           : 'default';
   return <Badge variant={variant}>{status}</Badge>;
 }

@@ -19,7 +19,6 @@ import {
   CheckCircle,
   XCircle,
   ChevronRight,
-  Users,
   Shield,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
@@ -29,7 +28,7 @@ import {
   getOverdueMaintenance,
   getUpcomingMaintenance,
 } from '../../../api/vehicles';
-import type { FleetDashboardStats, MaintenanceAlert } from '../../../lib/types';
+import type { MaintenanceAlert } from '../../../lib/types';
 
 export function FleetDashboardPage() {
   const navigate = useNavigate();
@@ -146,7 +145,7 @@ export function FleetDashboardPage() {
               <AlertTriangle className="h-4 w-4 text-red-500" />
               <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">Overdue Maintenance</h3>
               {stats.overdue_maintenance_count > 0 && (
-                <Badge variant="destructive">{stats.overdue_maintenance_count}</Badge>
+                <Badge variant="danger">{stats.overdue_maintenance_count}</Badge>
               )}
             </div>
             <button

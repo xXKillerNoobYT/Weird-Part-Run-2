@@ -9,7 +9,7 @@
 
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Shield, Check } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { Card, CardHeader } from '../../../components/ui/Card';
 import { Input } from '../../../components/ui/Input';
 import { Button } from '../../../components/ui/Button';
@@ -49,7 +49,6 @@ export function AppConfigPage() {
       <Card>
         <CardHeader
           title="Warranty Settings"
-          icon={<Shield className="h-5 w-5 text-sky-500" />}
         />
         <div className="px-4 pb-4 space-y-4">
           <p className="text-sm text-gray-500 dark:text-gray-400">

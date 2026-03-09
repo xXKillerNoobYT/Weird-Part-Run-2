@@ -448,9 +448,9 @@ function MaintenanceAlertsPanel({ alerts }: { alerts: { overdue: ToolMaintenance
             </h4>
             <div className="space-y-1.5">
               {alerts.overdue.map((a) => (
-                <div key={`${a.tool_id}-${a.maintenance_type}`} className="flex items-center justify-between text-xs bg-red-50 dark:bg-red-900/20 rounded-md px-3 py-2">
+                <div key={`${a.tool_id}-${a.maintenance_type_id}`} className="flex items-center justify-between text-xs bg-red-50 dark:bg-red-900/20 rounded-md px-3 py-2">
                   <span className="text-gray-900 dark:text-gray-100 font-medium">{a.tool_name}</span>
-                  <span className="text-red-600 dark:text-red-400">{a.maintenance_type} — {a.days_overdue}d overdue</span>
+                  <span className="text-red-600 dark:text-red-400">{a.maintenance_type_name} — {a.days_until_due != null ? `${Math.abs(a.days_until_due)}d overdue` : 'overdue'}</span>
                 </div>
               ))}
             </div>
@@ -463,9 +463,9 @@ function MaintenanceAlertsPanel({ alerts }: { alerts: { overdue: ToolMaintenance
             </h4>
             <div className="space-y-1.5">
               {alerts.upcoming.map((a) => (
-                <div key={`${a.tool_id}-${a.maintenance_type}`} className="flex items-center justify-between text-xs bg-amber-50 dark:bg-amber-900/20 rounded-md px-3 py-2">
+                <div key={`${a.tool_id}-${a.maintenance_type_id}`} className="flex items-center justify-between text-xs bg-amber-50 dark:bg-amber-900/20 rounded-md px-3 py-2">
                   <span className="text-gray-900 dark:text-gray-100 font-medium">{a.tool_name}</span>
-                  <span className="text-amber-600 dark:text-amber-400">{a.maintenance_type} — due {a.next_due_date}</span>
+                  <span className="text-amber-600 dark:text-amber-400">{a.maintenance_type_name} — due {a.next_due_date}</span>
                 </div>
               ))}
             </div>
@@ -502,7 +502,7 @@ function ToolRow({ tool, onClick }: { tool: Tool; onClick: () => void }) {
             <Badge variant={STATUS_BADGE[tool.status as ToolStatus] ?? 'default'}>
               {tool.status.replace('_', ' ')}
             </Badge>
-            {tool.has_kit === 1 && (
+            {tool.has_kit && (
               <span className="hidden sm:inline-flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400">
                 <Shield size={12} /> Kit
               </span>
@@ -591,7 +591,7 @@ function ToolDetailPanel({ tool, onClose }: {
                 {tool.status.replace('_', ' ')}
               </Badge>
               <Badge>{categoryLabel(tool.category)}</Badge>
-              {tool.has_kit === 1 && <Badge variant="primary">Has Kit</Badge>}
+              {tool.has_kit && <Badge variant="primary">Has Kit</Badge>}
             </div>
           </div>
 
@@ -681,6 +681,7 @@ interface CreateModalProps {
 
 function CreateToolModal({ isLoading, error, onSubmit, onClose }: CreateModalProps) {
   const [form, setForm] = useState<ToolCreate>({
+    tool_number: '',
     name: '',
     category: 'power_tool',
   });

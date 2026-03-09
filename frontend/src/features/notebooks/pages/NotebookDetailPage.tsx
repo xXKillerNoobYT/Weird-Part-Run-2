@@ -9,7 +9,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Plus, BookOpen, FolderPlus, Archive } from 'lucide-react';
+import { ArrowLeft, BookOpen, FolderPlus, Archive } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import {

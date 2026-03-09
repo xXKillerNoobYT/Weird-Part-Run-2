@@ -272,7 +272,7 @@ export function CustomersPage() {
       {showCreate && (
         <CreateCustomerModal
           isLoading={createMutation.isPending}
-          error={createMutation.error?.message ?? null}
+          error={(createMutation.error as Error | null)?.message ?? null}
           onSubmit={(data) => createMutation.mutate(data)}
           onClose={() => setShowCreate(false)}
         />
@@ -393,7 +393,7 @@ function CreateCustomerModal({
   };
 
   return (
-    <Modal title="New Customer" onClose={onClose} size="lg">
+    <Modal isOpen title="New Customer" onClose={onClose} size="lg">
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
           <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm">

@@ -17,9 +17,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  DollarSign, TrendingUp, ShoppingCart, Users, BarChart3,
-  AlertTriangle, Settings2, RotateCcw, PieChart, Briefcase,
-  Lock, Layers, ArrowUpDown,
+  DollarSign, TrendingUp, ShoppingCart, Users,
+  AlertTriangle, Settings2, RotateCcw,
+  Lock, ArrowUpDown,
 } from 'lucide-react';
 import { Card, CardHeader } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
@@ -38,7 +38,6 @@ import {
   getPriceVarianceReport,
   getBudgetAlerts,
   getCompanySettings,
-  updateCompanySetting,
   enforceDefaultMargin,
 } from '../../../api/costs';
 

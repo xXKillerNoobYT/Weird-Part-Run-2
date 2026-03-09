@@ -10,7 +10,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import {
-  ChevronDown, ChevronRight, Box, Package, Tag,
+  ChevronDown, ChevronRight, Box,
 } from 'lucide-react';
 import { Badge } from '../../../../components/ui/Badge';
 import { Spinner } from '../../../../components/ui/Spinner';

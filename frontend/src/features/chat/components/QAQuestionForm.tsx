@@ -12,7 +12,7 @@ import {
   X,
   Loader2,
 } from 'lucide-react';
-import type { AskQuestionRequest } from '../../../lib/types';
+import type { AskQuestionRequest, QAPriority } from '../../../lib/types';
 
 interface QAQuestionFormProps {
   /** Pre-selected job ID (if opened from a job context) */
@@ -65,7 +65,7 @@ export function QAQuestionForm({
       job_id: Number(jobId),
       subject: subject.trim(),
       body: body.trim(),
-      priority,
+      priority: priority as QAPriority,
       media_path: mediaPath?.startsWith('blob:') ? undefined : mediaPath ?? undefined,
     });
   };
