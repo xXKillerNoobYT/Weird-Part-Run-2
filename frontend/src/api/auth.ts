@@ -96,6 +96,10 @@ export async function pinLogin(
       const result = await authenticateByPin(userId, pin);
       if (!result.success || !result.token) {
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+>>>>>>> Stashed changes
 =======
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
 >>>>>>> Stashed changes
