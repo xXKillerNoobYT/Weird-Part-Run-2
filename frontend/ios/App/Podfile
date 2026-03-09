@@ -6,7 +6,7 @@ use_frameworks!
 # workaround to avoid Xcode caching of Pods that requires
 # Product -> Clean Build Folder after new Cordova plugins installed
 # Requires CocoaPods 1.6 or newer
-install! 'cocoapods', :disable_input_output_paths => true
+install! 'cocoapods'
 
 def capacitor_pods
   pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
@@ -29,4 +29,17 @@ end
 
 post_install do |installer|
   assertDeploymentTarget(installer)
+
+  # Suppress "Ambiguous expansion of macro 'MAX'" warning in SQLCipher
+  installer.pods_project.targets.each do |target|
+    if target.name == 'SQLCipher'
+      target.build_configurations.each do |config|
+        cflags = config.build_settings['OTHER_CFLAGS'] || ['$(inherited)']
+        unless cflags.include?('-Wno-ambiguous-macro')
+          cflags << '-Wno-ambiguous-macro'
+        end
+        config.build_settings['OTHER_CFLAGS'] = cflags
+      end
+    end
+  end
 end
