@@ -45,5 +45,15 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>This app uses the camera to scan QR codes and take photos of parts, tools, and job sites.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app accesses your photo library to attach images to jobs, parts, and reports.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>This app saves photos taken with the camera to your photo library.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app uses your location for clock-in/out GPS verification and delivery tracking.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>This app uses your location for clock-in/out GPS verification and delivery tracking.</string>
 </dict>
 </plist>

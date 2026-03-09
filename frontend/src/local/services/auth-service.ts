@@ -144,6 +144,83 @@ export async function hasPermission(userId: number, permissionKey: string): Prom
   return result.values.length > 0;
 }
 
+/** Get hat names for a user (for UserPicker display) */
+export async function getUserHatNames(userId: number): Promise<string[]> {
+  const db = await getDb();
+  const result = await db.query(
+    `SELECT h.name FROM user_hats uh
+     JOIN hats h ON h.id = uh.hat_id
+     WHERE uh.user_id = ? AND uh.is_active = 1
+     ORDER BY h.level DESC`,
+    [userId],
+  );
+  return result.values.map((r) => r.name as string);
+}
+
+/** Get hat summaries for a user (for UserProfile) */
+export async function getUserHats(userId: number): Promise<{ id: number; name: string; level: number }[]> {
+  const db = await getDb();
+  const result = await db.query(
+    `SELECT h.id, h.name, h.level FROM user_hats uh
+     JOIN hats h ON h.id = uh.hat_id
+     WHERE uh.user_id = ? AND uh.is_active = 1
+     ORDER BY h.level DESC`,
+    [userId],
+  );
+  return result.values as { id: number; name: string; level: number }[];
+}
+
+/**
+ * Build a full UserProfile from a local token.
+ *
+ * Decodes the base64 token to extract the user ID, then queries the
+ * local database for user details, hats, and permissions. This is the
+ * Capacitor equivalent of GET /auth/me.
+ *
+ * Throws if the token is expired or user not found.
+ */
+export async function getLocalUserProfile(token: string): Promise<{
+  id: number;
+  display_name: string;
+  email: string | null;
+  phone: string | null;
+  avatar_url: string | null;
+  certification: string | null;
+  hire_date: string | null;
+  is_active: boolean;
+  hats: { id: number; name: string; level: number }[];
+  permissions: string[];
+  created_at: string | null;
+}> {
+  const payload = parseLocalToken(token);
+  if (!payload) throw new Error('Invalid local token');
+
+  if (payload.exp < Date.now()) {
+    throw new Error('Token expired');
+  }
+
+  const userId = payload.sub;
+  const user = await getUser(userId);
+  if (!user) throw new Error('User not found');
+
+  const hats = await getUserHats(userId);
+  const permissions = await getUserPermissions(userId);
+
+  return {
+    id: user.id,
+    display_name: user.display_name,
+    email: user.email,
+    phone: user.phone,
+    avatar_url: user.avatar_url,
+    certification: user.certification,
+    hire_date: user.hire_date,
+    is_active: !!user.is_active,
+    hats,
+    permissions,
+    created_at: user.created_at,
+  };
+}
+
 // ── Internal Helpers ───────────────────────────────────────────────
 
 /**
@@ -190,4 +267,16 @@ function generateLocalToken(userId: number): string {
     type: 'local',
   };
   return btoa(JSON.stringify(payload));
+}
+
+/** Parse a local token (base64-encoded JSON). Returns null if invalid. */
+function parseLocalToken(token: string): { sub: number; iat: number; exp: number; type: string } | null {
+  try {
+    const json = atob(token);
+    const payload = JSON.parse(json);
+    if (payload.type !== 'local' || typeof payload.sub !== 'number') return null;
+    return payload;
+  } catch {
+    return null;
+  }
 }
