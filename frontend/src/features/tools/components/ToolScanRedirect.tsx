@@ -80,7 +80,7 @@ export function ToolScanRedirect() {
           was found. It may have been retired or the QR code may be outdated.
         </p>
         <div className="flex gap-3 mt-2">
-          <Button variant="outline" size="sm" onClick={() => navigate(-1)}>
+          <Button variant="secondary" size="sm" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-4 w-4 mr-1" /> Go Back
           </Button>
           <Button size="sm" onClick={() => navigate('/warehouse/tools')}>

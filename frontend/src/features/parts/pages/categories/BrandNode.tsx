@@ -27,7 +27,7 @@ export interface BrandNodeProps {
 }
 
 export function BrandNode({
-  link, typeId, styleId, categoryId, selected, onSelect, canEdit,
+  link, typeId, styleId, categoryId, selected, onSelect, canEdit: _canEdit,
 }: BrandNodeProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const isGeneral = link.brand_id === null;

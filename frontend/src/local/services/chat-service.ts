@@ -17,7 +17,6 @@ import { BaseRepo } from '../repos/base-repo';
 const channelRepo = new BaseRepo('chat_channels');
 const memberRepo = new BaseRepo('chat_channel_members');
 const messageRepo = new BaseRepo('chat_messages');
-const receiptRepo = new BaseRepo('chat_read_receipts');
 const mentionRepo = new BaseRepo('chat_mentions');
 const qaRepo = new BaseRepo('qa_threads');
 
@@ -336,7 +335,7 @@ export async function askQuestion(
   jobId: number,
   askedBy: number,
   subject: string,
-  body: string,
+  _body: string,
   priority: string = 'normal',
 ): Promise<number> {
   const id = await qaRepo.insert({

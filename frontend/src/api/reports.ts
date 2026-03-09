@@ -222,7 +222,7 @@ export async function getLaborOverview(params: {
 
 /** Generate and download a CSV export */
 export async function generateExport(params: {
-  report_type: 'pre-billing' | 'timesheet' | 'labor-overview';
+  report_type: 'pre-billing' | 'timesheet' | 'labor-overview' | 'profitability';
   format: 'csv' | 'pdf';
   job_id?: number;
   employee_id?: number;

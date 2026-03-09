@@ -33,7 +33,7 @@ export function AuthGate({ children }: AuthGateProps) {
   const [selectedUserName, setSelectedUserName] = useState<string>('');
   const [deviceFp, setDeviceFp] = useState('');
   const [deviceName, setDeviceName] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [_error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     initAuth();

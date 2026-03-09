@@ -165,9 +165,9 @@ export function NotificationBell() {
               </h3>
               {/* Sound indicator */}
               {anySoundEnabled ? (
-                <Volume2 className="h-3.5 w-3.5 text-green-500" title="Sound alerts on" />
+                <Volume2 className="h-3.5 w-3.5 text-green-500" />
               ) : (
-                <VolumeX className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" title="Sound alerts off" />
+                <VolumeX className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
               )}
             </div>
             {notifications.length > 0 && (

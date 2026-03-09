@@ -26,7 +26,7 @@ import {
   Building2, Plus, Search, Edit2, Trash2, Globe, Phone, Mail,
   AlertTriangle, ToggleLeft, ToggleRight, Truck, MapPin, Clock,
   ChevronDown, ChevronRight, User, UserCheck, Calendar, Tag, Star,
-  UserPlus, X,
+  UserPlus,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
@@ -282,7 +282,7 @@ function SupplierCard({
   onDelete,
   onToggleActive,
 }: SupplierCardProps) {
-  const DeliveryIcon = DELIVERY_ICONS[supplier.primary_delivery_method] ?? Truck;
+  const _deliveryIcon = DELIVERY_ICONS[supplier.primary_delivery_method] ?? Truck; void _deliveryIcon;
   const hasScheduledDelivery = supplier.delivery_methods?.includes('scheduled_delivery') ?? false;
   const deliveryDays = parseDeliveryDays(supplier.delivery_days);
 
@@ -518,7 +518,7 @@ function SupplierCard({
 
 function SupplierBrandsSection({
   supplierId,
-  supplierName,
+  supplierName: _supplierName,
 }: {
   supplierId: number;
   supplierName: string;
@@ -689,7 +689,7 @@ function SupplierContactsSection({
       {/* Add contact inline form */}
       {showAddForm && (
         <ContactInlineForm
-          onSubmit={(data) => addMutation.mutate(data)}
+          onSubmit={(data) => addMutation.mutate(data as EntityContactCreate)}
           onCancel={() => setShowAddForm(false)}
           isLoading={addMutation.isPending}
         />
@@ -726,7 +726,7 @@ function SupplierContactsSection({
                       <Badge variant="info" className="text-[10px] flex-shrink-0">
                         {contact.role}
                       </Badge>
-                      {contact.is_primary === 1 && (
+                      {contact.is_primary && (
                         <Badge variant="success" className="text-[10px] flex-shrink-0">
                           Primary
                         </Badge>
@@ -895,7 +895,7 @@ function ContactInlineForm({
     role: initial?.role ?? '',
     phone: initial?.phone ?? '',
     email: initial?.email ?? '',
-    is_primary: initial?.is_primary ?? 0,
+    is_primary: initial?.is_primary ?? false,
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -906,7 +906,7 @@ function ContactInlineForm({
       role: form.role,
       phone: form.phone,
       email: form.email || undefined,
-      is_primary: form.is_primary,
+      is_primary: !!form.is_primary,
     });
   };
 
@@ -957,8 +957,8 @@ function ContactInlineForm({
           <input
             type="checkbox"
             className="rounded"
-            checked={form.is_primary === 1}
-            onChange={(e) => setForm(f => ({ ...f, is_primary: e.target.checked ? 1 : 0 }))}
+            checked={!!form.is_primary}
+            onChange={(e) => setForm(f => ({ ...f, is_primary: e.target.checked }))}
           />
           Primary contact
         </label>

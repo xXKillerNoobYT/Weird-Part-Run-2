@@ -54,7 +54,7 @@ function formatTime(ts: string | null | undefined): string {
     ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export function EscalationTimeline({ timeline, currentLevel }: EscalationTimelineProps) {
+export function EscalationTimeline({ timeline, currentLevel: _currentLevel }: EscalationTimelineProps) {
   if (timeline.length === 0) return null;
 
   return (

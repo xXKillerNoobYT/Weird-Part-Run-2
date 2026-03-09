@@ -2,8 +2,6 @@
  * MovementFilters — date range, movement type, and search for the log.
  */
 
-import { Search } from 'lucide-react';
-import { Input } from '../../../../components/ui/Input';
 import { cn } from '../../../../lib/utils';
 
 const TYPE_OPTIONS = [

@@ -7,7 +7,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Settings2, Clock, ClipboardList, Package, Save } from 'lucide-react';
+import { Settings2, Save } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Card, CardHeader } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
@@ -180,7 +180,6 @@ export function WarehouseSettingsPage() {
         <CardHeader
           title="Staging Area Aging"
           subtitle="How long items can sit in staging before color-coding changes"
-          icon={<Clock size={18} className="text-amber-500" />}
         />
         <div className="px-4 pb-2">
           <NumberSetting
@@ -207,7 +206,6 @@ export function WarehouseSettingsPage() {
         <CardHeader
           title="Audit Defaults"
           subtitle="Control how rolling audits and spot checks are suggested"
-          icon={<ClipboardList size={18} className="text-blue-500" />}
         />
         <div className="px-4 pb-2">
           <NumberSetting
@@ -234,7 +232,6 @@ export function WarehouseSettingsPage() {
         <CardHeader
           title="Display Preferences"
           subtitle="Control what information is shown in inventory views"
-          icon={<Package size={18} className="text-green-500" />}
         />
         <div className="px-4 pb-2">
           <ToggleSetting

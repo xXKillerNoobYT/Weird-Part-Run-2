@@ -89,8 +89,8 @@ export function UnifiedPartSearch({
 
   // ── Apply local brand/color filters from preferences ────────────
   const results = rawResults.filter((part) => {
-    if (activeBrands.size > 0 && part.brand) {
-      if (!activeBrands.has(part.brand.toLowerCase())) return false;
+    if (activeBrands.size > 0 && part.brand_name) {
+      if (!activeBrands.has(part.brand_name.toLowerCase())) return false;
     }
     if (activeColors.size > 0 && part.color_name) {
       if (!activeColors.has(part.color_name.toLowerCase())) return false;
@@ -276,7 +276,7 @@ export function UnifiedPartSearch({
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                           {part.code && `${part.code} · `}
-                          {part.brand && `${part.brand} · `}
+                          {part.brand_name && `${part.brand_name} · `}
                           {part.color_name && `${part.color_name} · `}
                           Stock: {part.total_stock} {part.unit_of_measure}
                         </p>

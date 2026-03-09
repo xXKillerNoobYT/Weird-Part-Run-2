@@ -731,7 +731,7 @@ interface TableViewProps {
   canEdit: boolean;
   canSeePricing: boolean;
   handleSort: (column: string) => void;
-  SortIcon: (props: { column: string }) => JSX.Element | null;
+  SortIcon: (props: { column: string }) => React.ReactNode;
   formatDollars: (value: number | null) => string;
   onEdit: (part: PartListItem) => void;
   onDelete: (part: PartListItem) => void;
@@ -902,7 +902,7 @@ function PartEditModal({ part, onClose, onSave, isLoading, error, canEdit, canSe
       code: code || undefined,
       manufacturer_part_number: mpn || undefined,
       company_cost_price: costPrice ? parseFloat(costPrice) : undefined,
-      markup_percent: markupPercent ? parseFloat(markupPercent) : undefined,
+      company_markup_percent: markupPercent ? parseFloat(markupPercent) : undefined,
     });
   };
 

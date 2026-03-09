@@ -33,7 +33,6 @@ import {
   Lightbulb,
   ChevronDown,
   ChevronUp,
-  Plus,
   Sparkles,
 } from 'lucide-react';
 import { Input } from '../../../components/ui/Input';
@@ -50,7 +49,6 @@ import type {
   LinePriority,
   SpecialItemCreate,
   JobPreferenceResponse,
-  CompanionSuggestion,
   ManualTriggerItem,
 } from '../../../lib/types';
 
@@ -180,7 +178,7 @@ export function UnifiedOrderPage() {
           part_id: part.id,
           part_code: part.code,
           part_name: part.name,
-          brand: part.brand ?? null,
+          brand: part.brand_name ?? null,
           color_name: part.color_name ?? null,
           unit_of_measure: part.unit_of_measure,
           total_stock: part.total_stock,

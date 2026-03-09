@@ -10,12 +10,11 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  CalendarDays, ChevronLeft, ChevronRight, Briefcase, Clock,
-  HardHat, Sun, AlertTriangle, Filter,
+  CalendarDays, ChevronLeft, ChevronRight, Briefcase,
+  HardHat, Sun, Filter,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { PageSpinner } from '../../../components/ui/Spinner';
-import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { getCalendarData } from '../../../api/scheduling';

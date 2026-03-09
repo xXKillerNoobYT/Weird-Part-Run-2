@@ -13,18 +13,16 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Save, Search, ChevronDown, ChevronUp, Filter,
-  DollarSign, Target, Warehouse, Package, Check, X,
+  Search, ChevronDown, ChevronUp,
 } from 'lucide-react';
-import { Card, CardHeader } from '../../../components/ui/Card';
+import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
-import { Input } from '../../../components/ui/Input';
 import { Badge } from '../../../components/ui/Badge';
 import { Spinner } from '../../../components/ui/Spinner';
 import { listParts, updatePart, updatePartPricing } from '../../../api/parts';
 import { useAuthStore } from '../../../stores/auth-store';
 import { cn } from '../../../lib/utils';
-import type { PartListItem, PartSearchParams, PartUpdate, PartPricingUpdate } from '../../../lib/types';
+import type { PartSearchParams, PartUpdate, PartPricingUpdate } from '../../../lib/types';
 
 
 // ── Inline-editable cell ─────────────────────────────────────────
@@ -299,9 +297,6 @@ export function WarehouseExecPage() {
                 parts.map((part) => {
                   const computedSell = (part.company_cost_price ?? 0) *
                     (1 + (part.company_markup_percent ?? 0) / 100);
-                  const stockStatus = part.total_stock < part.min_stock_level
-                    ? 'low' : part.total_stock > part.max_stock_level
-                    ? 'over' : 'ok';
 
                   return (
                     <tr

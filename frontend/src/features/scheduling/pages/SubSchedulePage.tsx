@@ -9,8 +9,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  HardHat, Plus, Calendar, Clock, X, Check, AlertTriangle,
-  Briefcase, Search,
+  HardHat, Plus, Clock, X, Check, AlertTriangle,
+  Briefcase,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -30,8 +30,8 @@ import {
 import { getActiveJobs } from '../../../api/jobs';
 import { searchGCs } from '../../../api/contacts';
 import type {
-  SubScheduleResponse, SubScheduleCreate, SubScheduleUpdate,
-  SubScheduleStatus, JobListItem, GCListItem,
+  SubScheduleResponse, SubScheduleUpdate,
+  SubScheduleStatus,
 } from '../../../lib/types';
 
 
@@ -98,7 +98,6 @@ export function SubSchedulePage() {
   });
 
   const activeSchedules = (schedules ?? []).filter(s => s.status !== 'cancelled');
-  const selectedJob = jobs?.find(j => j.id === selectedJobId);
 
   return (
     <div className="space-y-4">

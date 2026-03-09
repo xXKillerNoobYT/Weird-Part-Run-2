@@ -5,7 +5,7 @@
  * If not clocked in: shows "Not clocked in" with a list of jobs to clock into.
  */
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Clock, Play, Square, MapPin, Navigation, Briefcase, Timer,

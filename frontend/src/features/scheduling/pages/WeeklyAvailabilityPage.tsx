@@ -18,7 +18,7 @@ import { EmptyState } from '../../../components/ui/EmptyState';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
 import { getWeeklyAvailability } from '../../../api/scheduling';
-import type { EmployeeAvailability } from '../../../lib/types';
+
 
 
 const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -191,7 +191,7 @@ export function WeeklyAvailabilityPage() {
                                min-w-[150px] sticky left-0 bg-white dark:bg-gray-900 z-10">
                   Employee
                 </th>
-                {dates.map((d, i) => (
+                {dates.map((d, _i) => (
                   <th
                     key={d}
                     className="text-center py-2 px-2 text-gray-500 dark:text-gray-400 font-medium min-w-[70px]"

@@ -19,7 +19,7 @@ import { Input } from '../../../components/ui/Input';
 import { updateJob, getBillRateTypes } from '../../../api/jobs';
 import { getUsers } from '../../../api/auth';
 import { getWarrantyLengthDays } from '../../../api/settings';
-import type { JobResponse, JobUpdate, OnCallType } from '../../../lib/types';
+import type { JobResponse, JobUpdate, JobStatus, OnCallType } from '../../../lib/types';
 
 interface EditJobModalProps {
   isOpen: boolean;
@@ -160,11 +160,11 @@ export function EditJobModal({ isOpen, onClose, job, onSaved }: EditJobModalProp
 
   // Handle status change — clear warranty fields when leaving on_call
   const handleStatusChange = (newStatus: string) => {
-    update('status', newStatus);
+    update('status', newStatus as JobStatus);
     if (newStatus !== 'on_call') {
       setForm((prev) => ({
         ...prev,
-        status: newStatus,
+        status: newStatus as JobStatus,
         on_call_type: undefined,
         warranty_start_date: '',
         warranty_end_date: '',

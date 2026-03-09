@@ -15,7 +15,7 @@ export function StepQuantities() {
   const { selectedParts, updatePartQty, getTotalQty } =
     useMovementWizardStore();
   const { hasPermission } = useAuthStore();
-  const showDollars = hasPermission(PERMISSIONS.SHOW_DOLLAR_VALUES);
+  void hasPermission(PERMISSIONS.SHOW_DOLLAR_VALUES);
   const totalQty = getTotalQty();
 
   return (

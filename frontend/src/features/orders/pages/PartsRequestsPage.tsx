@@ -24,7 +24,7 @@ import {
 } from '../components/BulkActionBar';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
-import type { JPOListItem } from '../../../lib/types';
+
 
 const STATUS_TABS: { label: string; value: string | undefined }[] = [
   { label: 'All', value: undefined },

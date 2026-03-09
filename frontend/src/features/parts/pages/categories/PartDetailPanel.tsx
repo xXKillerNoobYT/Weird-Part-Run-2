@@ -16,8 +16,8 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Box, Check, Trash2, AlertTriangle, DollarSign,
-  ToggleLeft, ToggleRight, Tag, Package, Warehouse, Target,
+  Check, Trash2, AlertTriangle, DollarSign,
+  ToggleLeft, ToggleRight, Warehouse, Target,
 } from 'lucide-react';
 import { Button } from '../../../../components/ui/Button';
 import { Input } from '../../../../components/ui/Input';

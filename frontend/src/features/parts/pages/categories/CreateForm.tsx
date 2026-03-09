@@ -33,7 +33,7 @@ export interface CreateFormProps {
   onCreated: (type: CategoryNodeType, id: number, parentId?: number) => void;
 }
 
-export function CreateForm({ target, allColors, onCancel, onCreated }: CreateFormProps) {
+export function CreateForm({ target, allColors: _allColors, onCancel, onCreated }: CreateFormProps) {
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');

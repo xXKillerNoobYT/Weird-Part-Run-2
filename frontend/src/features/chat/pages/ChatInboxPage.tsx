@@ -22,7 +22,7 @@ export default function ChatInboxPage() {
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
 
   // ── Inbox data (30s polling for badge/preview updates) ─────────
-  const { data: inbox, isLoading } = useQuery({
+  const { data: inbox } = useQuery({
     queryKey: ['chat-inbox'],
     queryFn: getInbox,
     refetchInterval: 30_000,
@@ -36,7 +36,7 @@ export default function ChatInboxPage() {
   const selectedChannelName = selectedChannel
     ? selectedChannel.channel_type === 'job' && selectedChannel.job_number
       ? `${selectedChannel.job_number} – ${selectedChannel.job_name || 'Job Chat'}`
-      : selectedChannel.display_name || selectedChannel.name || 'Chat'
+      : selectedChannel.name || 'Chat'
     : undefined;
 
   // ── Navigation ─────────────────────────────────────────────────
@@ -63,10 +63,10 @@ export default function ChatInboxPage() {
         >
           <ChatChannelList
             channels={channels}
-            selectedChannelId={selectedChannelId}
-            onSelectChannel={handleSelectChannel}
-            isLoading={isLoading}
-            currentUserId={user.id}
+            selectedId={selectedChannelId}
+            onSelect={handleSelectChannel}
+            totalUnread={inbox?.total_unread ?? 0}
+            unreadMentions={inbox?.unread_mentions ?? 0}
           />
         </div>
 
