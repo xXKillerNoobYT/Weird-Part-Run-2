@@ -23,6 +23,7 @@ import {
   listCategories, updateCategory,
   listStylesByCategory, createStyle, deleteStyle,
 } from '../../../../api/parts';
+import { toast } from '../../../../lib/toast';
 import type { PartCategoryUpdate, SelectedCategoryNode } from '../../../../lib/types';
 
 
@@ -68,12 +69,20 @@ export function EditCategoryPanel({ categoryId, canEdit, onDelete, onSelectChild
   // ── Mutations ───────────────────────────────────
   const updateMutation = useMutation({
     mutationFn: (data: PartCategoryUpdate) => updateCategory(categoryId, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['categories'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['categories'] });
+      toast.success('Category updated');
+    },
+    onError: () => toast.error('Failed to update category'),
   });
 
   const toggleMutation = useMutation({
     mutationFn: (is_active: boolean) => updateCategory(categoryId, { is_active }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['categories'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['categories'] });
+      toast.success('Category status updated');
+    },
+    onError: () => toast.error('Failed to update status'),
   });
 
   const createStyleMutation = useMutation({
@@ -83,9 +92,10 @@ export function EditCategoryPanel({ categoryId, canEdit, onDelete, onSelectChild
       queryClient.invalidateQueries({ queryKey: ['categories'] });
       setNewStyleName('');
       setShowAddStyle(false);
-      // Navigate to the newly created style
       onSelectChild({ type: 'style', id: created.id, categoryId });
+      toast.success('Style created');
     },
+    onError: () => toast.error('Failed to create style'),
   });
 
   const deleteStyleMutation = useMutation({
@@ -93,7 +103,9 @@ export function EditCategoryPanel({ categoryId, canEdit, onDelete, onSelectChild
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['styles', categoryId] });
       queryClient.invalidateQueries({ queryKey: ['categories'] });
+      toast.success('Style deleted');
     },
+    onError: () => toast.error('Failed to delete style'),
   });
 
   if (!category) {

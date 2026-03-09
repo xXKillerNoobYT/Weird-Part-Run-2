@@ -24,6 +24,7 @@ import {
   listTypeBrands, linkBrandToType, unlinkBrandFromType,
   listBrands,
 } from '../../../../api/parts';
+import { toast } from '../../../../lib/toast';
 import type { PartType, PartTypeUpdate } from '../../../../lib/types';
 
 
@@ -73,7 +74,9 @@ export function EditTypePanel({ typeId, canEdit, onDelete }: EditTypePanelProps)
       queryClient.invalidateQueries({ queryKey: ['type-brands', typeId] });
       queryClient.invalidateQueries({ queryKey: ['types'] });
       queryClient.invalidateQueries({ queryKey: ['type-detail', typeId] });
+      toast.success('Brand linked');
     },
+    onError: () => toast.error('Failed to link brand'),
   });
 
   const unlinkBrandMutation = useMutation({
@@ -82,7 +85,9 @@ export function EditTypePanel({ typeId, canEdit, onDelete }: EditTypePanelProps)
       queryClient.invalidateQueries({ queryKey: ['type-brands', typeId] });
       queryClient.invalidateQueries({ queryKey: ['types'] });
       queryClient.invalidateQueries({ queryKey: ['type-detail', typeId] });
+      toast.success('Brand unlinked');
     },
+    onError: () => toast.error('Failed to unlink brand'),
   });
 
   // ── Update mutations ──────────────────────────────────────
@@ -91,7 +96,9 @@ export function EditTypePanel({ typeId, canEdit, onDelete }: EditTypePanelProps)
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['types'] });
       queryClient.invalidateQueries({ queryKey: ['type-detail', typeId] });
+      toast.success('Type updated');
     },
+    onError: () => toast.error('Failed to update type'),
   });
 
   const toggleMutation = useMutation({
@@ -99,7 +106,9 @@ export function EditTypePanel({ typeId, canEdit, onDelete }: EditTypePanelProps)
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['types'] });
       queryClient.invalidateQueries({ queryKey: ['type-detail', typeId] });
+      toast.success('Type status updated');
     },
+    onError: () => toast.error('Failed to update status'),
   });
 
   // ── Derived data ──────────────────────────────────────────

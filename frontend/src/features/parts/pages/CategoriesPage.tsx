@@ -32,6 +32,7 @@ import {
   listCategories, listColors,
   deleteCategory, deleteStyle, deleteType,
 } from '../../../api/parts';
+import { toast } from '../../../lib/toast';
 import type { SelectedCategoryNode } from '../../../lib/types';
 
 // Tree components
@@ -140,7 +141,9 @@ export function CategoriesPage() {
       queryClient.invalidateQueries({ queryKey: ['categories'] });
       setSelected(null);
       setDeleteConfirm(null);
+      toast.success('Category deleted');
     },
+    onError: () => toast.error('Failed to delete category'),
   });
 
   const deleteStyleMutation = useMutation({
@@ -150,7 +153,9 @@ export function CategoriesPage() {
       queryClient.invalidateQueries({ queryKey: ['categories'] });
       setSelected(null);
       setDeleteConfirm(null);
+      toast.success('Style deleted');
     },
+    onError: () => toast.error('Failed to delete style'),
   });
 
   const deleteTypeMutation = useMutation({
@@ -160,7 +165,9 @@ export function CategoriesPage() {
       queryClient.invalidateQueries({ queryKey: ['styles'] });
       setSelected(null);
       setDeleteConfirm(null);
+      toast.success('Type deleted');
     },
+    onError: () => toast.error('Failed to delete type'),
   });
 
   const handleDelete = () => {

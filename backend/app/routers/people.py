@@ -31,12 +31,16 @@ from app.models.people import (
     EmployeeNoteCreate,
     EmployeeNoteResponse,
     EmployeeNoteUpdate,
+    EmployeeTeamCreate,
+    EmployeeTeamUpdate,
     EmployeeUpdate,
     HatCreate,
     HatDetailResponse,
     HatUpdate,
     JobLeadElevationCreate,
     PermissionAssignment,
+    TeamMemberAdd,
+    TeamMemberRoleUpdate,
     UserSkillCreate,
     UserSkillResponse,
     UserSkillUpdate,
@@ -686,3 +690,146 @@ async def import_employees_csv(
         data={"created": created, "skipped": skipped, "errors": errors},
         message=f"{created} employees imported, {skipped} skipped",
     )
+
+
+# ═════════════════════════════════════════════════════════════════
+# EMPLOYEE TEAMS
+# ═════════════════════════════════════════════════════════════════
+
+
+@router.get("/teams")
+async def list_teams(
+    active_only: bool = Query(True, description="Only return active teams"),
+    user: dict = Depends(require_permission("view_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List all employee teams with member counts."""
+    svc = PeopleService(db)
+    teams = await svc.list_teams(active_only=active_only)
+    return ApiResponse(data=teams, message=f"{len(teams)} teams")
+
+
+@router.get("/teams/{team_id}")
+async def get_team(
+    team_id: int,
+    user: dict = Depends(require_permission("view_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get a team with its full member list."""
+    svc = PeopleService(db)
+    team = await svc.get_team(team_id)
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return ApiResponse(data=team, message="Team loaded")
+
+
+@router.post("/teams", status_code=status.HTTP_201_CREATED)
+async def create_team(
+    data: EmployeeTeamCreate,
+    user: dict = Depends(require_permission("manage_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Create a new employee team."""
+    svc = PeopleService(db)
+    try:
+        team_id = await svc.create_team(data)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return ApiResponse(data={"id": team_id}, message="Team created")
+
+
+@router.patch("/teams/{team_id}")
+async def update_team(
+    team_id: int,
+    data: EmployeeTeamUpdate,
+    user: dict = Depends(require_permission("manage_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update a team's name, description, lead, or active status."""
+    svc = PeopleService(db)
+    try:
+        updated = await svc.update_team(team_id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Team not found or no changes")
+    return ApiResponse(data={"id": team_id}, message="Team updated")
+
+
+@router.delete("/teams/{team_id}")
+async def delete_team(
+    team_id: int,
+    user: dict = Depends(require_permission("manage_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Delete a team (cascade removes all members)."""
+    svc = PeopleService(db)
+    deleted = await svc.delete_team(team_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return ApiResponse(data={"id": team_id}, message="Team deleted")
+
+
+@router.post("/teams/{team_id}/members", status_code=status.HTTP_201_CREATED)
+async def add_team_member(
+    team_id: int,
+    data: TeamMemberAdd,
+    user: dict = Depends(require_permission("manage_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Add a member to a team."""
+    svc = PeopleService(db)
+    try:
+        member_id = await svc.add_team_member(team_id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return ApiResponse(data={"id": member_id}, message="Member added")
+
+
+@router.delete("/teams/{team_id}/members/{user_id}")
+async def remove_team_member(
+    team_id: int,
+    user_id: int,
+    user: dict = Depends(require_permission("manage_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Remove a member from a team."""
+    svc = PeopleService(db)
+    removed = await svc.remove_team_member(team_id, user_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Membership not found")
+    return ApiResponse(
+        data={"team_id": team_id, "user_id": user_id},
+        message="Member removed",
+    )
+
+
+@router.patch("/teams/{team_id}/members/{user_id}")
+async def update_team_member_role(
+    team_id: int,
+    user_id: int,
+    data: TeamMemberRoleUpdate,
+    user: dict = Depends(require_permission("manage_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Change a member's role within a team."""
+    svc = PeopleService(db)
+    updated = await svc.update_team_member_role(team_id, user_id, data.role)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Membership not found")
+    return ApiResponse(
+        data={"team_id": team_id, "user_id": user_id, "role": data.role},
+        message="Member role updated",
+    )
+
+
+@router.get("/employees/{user_id}/teams")
+async def get_employee_teams(
+    user_id: int,
+    user: dict = Depends(require_permission("view_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get all teams an employee belongs to."""
+    svc = PeopleService(db)
+    teams = await svc.get_user_teams(user_id)
+    return ApiResponse(data=teams, message=f"{len(teams)} teams")

@@ -51,6 +51,7 @@ import { WarehouseToolsPage } from './features/warehouse/pages/ToolsPage';
 import { ReceivingPage } from './features/warehouse/pages/ReceivingPage';
 import { ReturnSortingPage } from './features/warehouse/pages/ReturnSortingPage';
 import { WarehouseSettingsPage } from './features/warehouse/pages/WarehouseSettingsPage';
+import { WarehouseNetworkPage } from './features/warehouse/pages/WarehouseNetworkPage';
 
 // Pages — Trucks
 import { MyTruckPage } from './features/trucks/pages/MyTruckPage';
@@ -60,6 +61,9 @@ import { ToolsPage } from './features/trucks/pages/ToolsPage';
 import { MaintenancePage } from './features/trucks/pages/MaintenancePage';
 import { MileagePage } from './features/trucks/pages/MileagePage';
 import { FleetDashboardPage } from './features/trucks/pages/FleetDashboardPage';
+import { TrailersPage } from './features/trucks/pages/TrailersPage';
+import { TrailerDetailPage } from './features/trucks/pages/TrailerDetailPage';
+import { TrailerLocationsPage } from './features/trucks/pages/TrailerLocationsPage';
 
 // Pages — Jobs
 import { ActiveJobsPage } from './features/jobs/pages/ActiveJobsPage';
@@ -100,6 +104,7 @@ import { EmployeeListPage } from './features/people/pages/EmployeeListPage';
 import { EmployeeDetailPage } from './features/people/pages/EmployeeDetailPage';
 import { HatsPage } from './features/people/pages/HatsPage';
 import { PermissionsPage } from './features/people/pages/PermissionsPage';
+import { TeamsPage } from './features/people/pages/TeamsPage';
 import { CustomersPage } from './features/people/pages/CustomersPage';
 import { CustomerDetailPage } from './features/people/pages/CustomerDetailPage';
 import { ContractorsPage } from './features/people/pages/ContractorsPage';
@@ -195,6 +200,7 @@ export default function App() {
               <Route path="/warehouse/audit" element={<AuditPage />} />
               <Route path="/warehouse/movements" element={<MovementsLogPage />} />
               <Route path="/warehouse/tools" element={<WarehouseToolsPage />} />
+              <Route path="/warehouse/network" element={<WarehouseNetworkPage />} />
               <Route path="/warehouse/settings" element={<WarehouseSettingsPage />} />
 
               {/* Trucks */}
@@ -205,6 +211,9 @@ export default function App() {
               <Route path="/trucks/maintenance" element={<MaintenancePage />} />
               <Route path="/trucks/mileage" element={<MileagePage />} />
               <Route path="/trucks/fleet" element={<FleetDashboardPage />} />
+              <Route path="/trucks/trailers" element={<TrailersPage />} />
+              <Route path="/trucks/trailers/:trailer_id" element={<TrailerDetailPage />} />
+              <Route path="/trucks/trailer-locations" element={<TrailerLocationsPage />} />
               <Route path="/trucks/:id" element={<VehicleDetailPage />} />
 
               {/* Jobs */}
@@ -269,6 +278,7 @@ export default function App() {
               <Route path="/people/directory" element={<ContactDirectoryPage />} />
               <Route path="/people/hats" element={<HatsPage />} />
               <Route path="/people/permissions" element={<PermissionsPage />} />
+              <Route path="/people/teams" element={<TeamsPage />} />
 
               {/* Reports */}
               <Route path="/reports" element={<Navigate to="/reports/daily-reports" replace />} />

@@ -528,6 +528,9 @@ NOTE: Labor reports show HOURS ONLY — the bookkeeper handles actual bill-out r
 - [x] `lock_billing_periods` permission gates period locking
 - [ ] Reports load within 2 seconds for typical data volumes (50 employees, 200 jobs) — needs production testing
 - [ ] Export PDFs include company header, date range, and formatted tables — deferred, CSV sufficient for V1.0
+- [ ] Billing cicel 100% costimizalbe fast reporting genrations for bookkeeper export.
+- [ ] 100% costomizable paymint reporting with costimizable exporsts 
+- [ ] Options from weekly Yearly 100% customizable. sepritly for billing and paying.
 - [x] Locked periods show visual indicators and reject modifications
 
 ---

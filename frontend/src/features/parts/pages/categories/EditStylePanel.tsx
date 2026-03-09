@@ -23,6 +23,7 @@ import {
   listCategories, listStylesByCategory, updateStyle,
   listTypesByStyle, createType, deleteType,
 } from '../../../../api/parts';
+import { toast } from '../../../../lib/toast';
 import type { PartStyle, PartStyleUpdate, SelectedCategoryNode } from '../../../../lib/types';
 
 
@@ -103,7 +104,9 @@ export function EditStylePanel({ styleId, categoryId, canEdit, onDelete, onSelec
       queryClient.invalidateQueries({ queryKey: ['styles'] });
       queryClient.invalidateQueries({ queryKey: ['style-lookup-fallback', styleId] });
       queryClient.invalidateQueries({ queryKey: ['categories'] });
+      toast.success('Style updated');
     },
+    onError: () => toast.error('Failed to update style'),
   });
 
   const toggleMutation = useMutation({
@@ -111,7 +114,9 @@ export function EditStylePanel({ styleId, categoryId, canEdit, onDelete, onSelec
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['styles'] });
       queryClient.invalidateQueries({ queryKey: ['style-lookup-fallback', styleId] });
+      toast.success('Style status updated');
     },
+    onError: () => toast.error('Failed to update status'),
   });
 
   const createTypeMutation = useMutation({
@@ -123,14 +128,15 @@ export function EditStylePanel({ styleId, categoryId, canEdit, onDelete, onSelec
       queryClient.invalidateQueries({ queryKey: ['categories'] });
       setNewTypeName('');
       setShowAddType(false);
-      // Navigate to the newly created type
       onSelectChild({
         type: 'type',
         id: created.id,
         styleId,
         categoryId: style?.category_id,
       });
+      toast.success('Type created');
     },
+    onError: () => toast.error('Failed to create type'),
   });
 
   const deleteTypeMutation = useMutation({
@@ -140,7 +146,9 @@ export function EditStylePanel({ styleId, categoryId, canEdit, onDelete, onSelec
       queryClient.invalidateQueries({ queryKey: ['styles'] });
       queryClient.invalidateQueries({ queryKey: ['style-lookup-fallback', styleId] });
       queryClient.invalidateQueries({ queryKey: ['categories'] });
+      toast.success('Type deleted');
     },
+    onError: () => toast.error('Failed to delete type'),
   });
 
   if (!style) {

@@ -13,6 +13,7 @@ import { Input } from '../../../../components/ui/Input';
 import {
   createCategory, createStyle, createType, createColor,
 } from '../../../../api/parts';
+import { toast } from '../../../../lib/toast';
 import type {
   PartCategoryCreate, PartStyleCreate, PartTypeCreate, PartColorCreate,
   PartColor, CategoryNodeType,
@@ -49,7 +50,9 @@ export function CreateForm({ target, allColors, onCancel, onCreated }: CreateFor
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['categories'] });
       onCreated('category', data.id);
+      toast.success('Category created');
     },
+    onError: () => toast.error('Failed to create category'),
   });
 
   const createStyleMutation = useMutation({
@@ -58,7 +61,9 @@ export function CreateForm({ target, allColors, onCancel, onCreated }: CreateFor
       queryClient.invalidateQueries({ queryKey: ['styles', target.parentId] });
       queryClient.invalidateQueries({ queryKey: ['categories'] });
       onCreated('style', data.id, target.parentId);
+      toast.success('Style created');
     },
+    onError: () => toast.error('Failed to create style'),
   });
 
   const createTypeMutation = useMutation({
@@ -67,7 +72,9 @@ export function CreateForm({ target, allColors, onCancel, onCreated }: CreateFor
       queryClient.invalidateQueries({ queryKey: ['types', target.parentId] });
       queryClient.invalidateQueries({ queryKey: ['styles'] });
       onCreated('type', data.id, target.parentId);
+      toast.success('Type created');
     },
+    onError: () => toast.error('Failed to create type'),
   });
 
   const createColorMutation = useMutation({
@@ -75,7 +82,9 @@ export function CreateForm({ target, allColors, onCancel, onCreated }: CreateFor
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['colors'] });
       onCreated('color', data.id);
+      toast.success('Color created');
     },
+    onError: () => toast.error('Failed to create color'),
   });
 
   const isPending =

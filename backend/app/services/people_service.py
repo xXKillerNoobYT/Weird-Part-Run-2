@@ -19,9 +19,12 @@ from app.models.people import (
     EmployeeCreate,
     EmployeeNoteCreate,
     EmployeeNoteUpdate,
+    EmployeeTeamCreate,
+    EmployeeTeamUpdate,
     EmployeeUpdate,
     HatCreate,
     HatUpdate,
+    TeamMemberAdd,
     UserSkillCreate,
     UserSkillUpdate,
     WageHistoryCreate,
@@ -33,6 +36,7 @@ from app.repositories.people_repo import (
     WageHistoryRepo,
 )
 from app.repositories.scheduling_repo import DefaultScheduleRepo
+from app.repositories.team_repo import EmployeeTeamMemberRepo, EmployeeTeamRepo
 from app.repositories.user_repo import HatRepo, UserRepo
 from app.services.auth_service import hash_pin
 
@@ -95,6 +99,8 @@ class PeopleService:
         self.wage_repo = WageHistoryRepo(db)
         self.note_repo = EmployeeNoteRepo(db)
         self.skill_repo = UserSkillRepo(db)
+        self.team_repo = EmployeeTeamRepo(db)
+        self.team_member_repo = EmployeeTeamMemberRepo(db)
 
     # ── Employees ──────────────────────────────────────────────────
 
@@ -554,3 +560,100 @@ class PeopleService:
                 "severity": severity,
             })
         return alerts
+
+    # ── Employee Teams ─────────────────────────────────────────────
+
+    async def list_teams(self, *, active_only: bool = True) -> list[dict]:
+        """Get all teams with member counts."""
+        return await self.team_repo.get_all_with_counts(active_only=active_only)
+
+    async def get_team(self, team_id: int) -> dict | None:
+        """Get a team with its full member list."""
+        return await self.team_repo.get_with_members(team_id)
+
+    async def create_team(self, data: EmployeeTeamCreate) -> int:
+        """Create a new team. Returns the new team ID."""
+        # Check for duplicate name
+        existing = await self.team_repo.get_by_name(data.name)
+        if existing:
+            raise ValueError(f"A team named '{data.name}' already exists")
+
+        team_id = await self.team_repo.insert({
+            "name": data.name,
+            "description": data.description,
+            "lead_user_id": data.lead_user_id,
+        })
+
+        # If a lead was specified, also add them as a 'lead' member
+        if data.lead_user_id:
+            await self.team_member_repo.insert({
+                "team_id": team_id,
+                "user_id": data.lead_user_id,
+                "role": "lead",
+            })
+
+        return team_id
+
+    async def update_team(self, team_id: int, data: EmployeeTeamUpdate) -> bool:
+        """Update team details. Returns True if updated."""
+        updates: dict = {}
+        if data.name is not None:
+            # Check for duplicate name (excluding self)
+            existing = await self.team_repo.get_by_name(data.name)
+            if existing and existing["id"] != team_id:
+                raise ValueError(f"A team named '{data.name}' already exists")
+            updates["name"] = data.name
+        if data.description is not None:
+            updates["description"] = data.description
+        if data.lead_user_id is not None:
+            updates["lead_user_id"] = data.lead_user_id
+        if data.is_active is not None:
+            updates["is_active"] = 1 if data.is_active else 0
+
+        if not updates:
+            return False
+
+        return await self.team_repo.update(team_id, updates)
+
+    async def delete_team(self, team_id: int) -> bool:
+        """Delete a team (cascade deletes members). Returns True if deleted."""
+        return await self.team_repo.delete(team_id)
+
+    async def add_team_member(
+        self, team_id: int, data: TeamMemberAdd,
+    ) -> int:
+        """Add a member to a team. Returns the membership row ID."""
+        # Verify team exists
+        team = await self.team_repo.get_by_id(team_id)
+        if not team:
+            raise ValueError("Team not found")
+
+        # Verify user exists
+        user = await self.user_repo.get_by_id(data.user_id)
+        if not user:
+            raise ValueError("User not found")
+
+        # Check if already a member
+        existing = await self.team_member_repo.find_membership(team_id, data.user_id)
+        if existing:
+            raise ValueError(f"{user['display_name']} is already a member of this team")
+
+        return await self.team_member_repo.insert({
+            "team_id": team_id,
+            "user_id": data.user_id,
+            "role": data.role,
+        })
+
+    async def remove_team_member(self, team_id: int, user_id: int) -> bool:
+        """Remove a member from a team. Returns True if removed."""
+        return await self.team_member_repo.remove_member(team_id, user_id)
+
+    async def update_team_member_role(
+        self, team_id: int, user_id: int, role: str,
+    ) -> bool:
+        """Update a member's role within a team."""
+        return await self.team_member_repo.update_role(team_id, user_id, role)
+
+    async def get_user_teams(self, user_id: int) -> list[dict]:
+        """Get all teams a user belongs to."""
+        return await self.team_member_repo.get_teams_for_user(user_id)

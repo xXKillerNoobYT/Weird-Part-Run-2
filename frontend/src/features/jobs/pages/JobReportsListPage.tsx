@@ -20,6 +20,7 @@ import { PageSpinner } from '../../../components/ui/Spinner';
 import { Badge } from '../../../components/ui/Badge';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { getAllReports } from '../../../api/jobs';
+import { getSetting } from '../../../api/settings';
 import type { DailyReportResponse, ReportStatus } from '../../../lib/types';
 
 const STATUS_VARIANTS: Record<ReportStatus, 'default' | 'success' | 'warning'> = {
@@ -43,6 +44,20 @@ export function JobReportsListPage() {
   // Date range filters
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+
+  // Configurable drive ratio thresholds
+  const { data: driveRatioWarn } = useQuery({
+    queryKey: ['setting', 'max_drive_ratio'],
+    queryFn: () => getSetting('max_drive_ratio'),
+    staleTime: 300_000,
+  });
+  const { data: driveRatioCrit } = useQuery({
+    queryKey: ['setting', 'max_drive_ratio_critical'],
+    queryFn: () => getSetting('max_drive_ratio_critical'),
+    staleTime: 300_000,
+  });
+  const warnThreshold = driveRatioWarn ? parseFloat(driveRatioWarn) : 0.33;
+  const critThreshold = driveRatioCrit ? parseFloat(driveRatioCrit) : 0.50;
 
   const { data: reports, isLoading } = useQuery({
     queryKey: ['all-reports', dateFrom, dateTo],
@@ -173,14 +188,14 @@ export function JobReportsListPage() {
                           ${report.total_parts_cost.toFixed(0)}
                         </span>
                       )}
-                      {/* Drive time warning — shown when drive exceeds 33% of labor */}
+                      {/* Drive time warning — shown when drive exceeds threshold of labor */}
                       {(() => {
                         const driveMin = report.total_drive_time_minutes ?? 0;
                         const laborMin = report.total_labor_hours * 60;
                         if (driveMin === 0 || laborMin === 0) return null;
                         const ratio = driveMin / laborMin;
-                        if (ratio < 0.33) return null;
-                        const isDanger = ratio >= 0.5;
+                        if (ratio < warnThreshold) return null;
+                        const isDanger = ratio >= critThreshold;
                         const driveHrs = (driveMin / 60).toFixed(1);
                         return (
                           <span

@@ -16,6 +16,8 @@ from app.models.warehouse import (
     ActivitySummary,
     DashboardData,
     DashboardKPIs,
+    PendingPullGroup,
+    PendingPullItem,
     PendingTask,
     StagingGroup,
     StagingItem,
@@ -531,6 +533,101 @@ class WarehouseService:
                 groups[key].aging_status = aging
 
         return list(groups.values())
+
+    # ── Pending Pulls (JPO lines received but not yet pulled) ─────
+
+    async def get_pending_pulls(self) -> list[PendingPullGroup]:
+        """Get approved JPO line items that have been received into the warehouse
+        but not yet pulled to staging for their destination job.
+
+        Groups results by job so the staging page can show
+        "X parts pulled, Y still pending" per job.
+        """
+        cursor = await self.db.execute(
+            """SELECT
+                   li.id       AS jpo_line_id,
+                   li.jpo_id,
+                   jpo.order_number AS jpo_number,
+                   jpo.job_id,
+                   j.name      AS job_name,
+                   j.job_number,
+                   li.part_id,
+                   p.name      AS part_name,
+                   p.code      AS part_code,
+                   li.qty_received,
+                   li.priority,
+                   sup.name    AS supplier_name,
+                   u.display_name AS requested_by_name,
+                   COALESCE(wh.qty, 0) AS warehouse_qty,
+                   COALESCE(pulled.qty, 0) AS already_pulled
+               FROM jpo_line_items li
+               JOIN job_parts_orders jpo ON jpo.id = li.jpo_id
+               LEFT JOIN jobs j ON j.id = jpo.job_id
+               JOIN parts p ON p.id = li.part_id
+               LEFT JOIN users u ON u.id = jpo.requested_by
+               LEFT JOIN suppliers sup ON sup.id = li.suggested_supplier_id
+               LEFT JOIN (
+                   SELECT part_id, SUM(qty) AS qty
+                   FROM stock WHERE location_type = 'warehouse'
+                   GROUP BY part_id
+               ) wh ON wh.part_id = li.part_id
+               LEFT JOIN (
+                   SELECT part_id, SUM(qty) AS qty
+                   FROM stock WHERE location_type = 'pulled'
+                   GROUP BY part_id
+               ) pulled ON pulled.part_id = li.part_id
+               WHERE jpo.status IN ('approved', 'ordering', 'partially_ordered',
+                                     'ordered', 'partially_received', 'received')
+                 AND li.qty_received > 0
+                 AND li.qty_received > COALESCE(pulled.qty, 0)
+               ORDER BY
+                   CASE li.priority
+                       WHEN 'critical' THEN 0
+                       WHEN 'urgent'   THEN 1
+                       ELSE 2
+                   END,
+                   jpo.job_id, p.name"""
+        )
+        rows = await cursor.fetchall()
+
+        # Group by job
+        groups: dict[int | None, PendingPullGroup] = {}
+        for row in rows:
+            job_id = row["job_id"]
+            if job_id not in groups:
+                groups[job_id] = PendingPullGroup(
+                    job_id=job_id,
+                    job_name=row["job_name"],
+                    job_number=row["job_number"],
+                )
+
+            qty_pending = row["qty_received"] - row["already_pulled"]
+            if qty_pending <= 0:
+                continue
+
+            groups[job_id].items.append(PendingPullItem(
+                jpo_line_id=row["jpo_line_id"],
+                jpo_id=row["jpo_id"],
+                jpo_number=row["jpo_number"],
+                job_id=job_id,
+                job_name=row["job_name"],
+                job_number=row["job_number"],
+                part_id=row["part_id"],
+                part_name=row["part_name"],
+                part_code=row["part_code"],
+                qty_received=row["qty_received"],
+                qty_already_pulled=row["already_pulled"],
+                qty_pending=qty_pending,
+                warehouse_qty=row["warehouse_qty"],
+                priority=row["priority"] or "normal",
+                supplier_name=row["supplier_name"],
+                requested_by_name=row["requested_by_name"],
+            ))
+            groups[job_id].total_pending += qty_pending
+            groups[job_id].total_already_pulled += row["already_pulled"]
+
+        # Remove empty groups (all items were already pulled)
+        return [g for g in groups.values() if g.items]
 
     # ── Parts Search (Context-Aware) ──────────────────────────────
 

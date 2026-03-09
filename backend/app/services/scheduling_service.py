@@ -28,6 +28,7 @@ from app.models.scheduling import (
     ShiftPatternUpdate,
     SubScheduleCreate,
     SubScheduleUpdate,
+    TeamDispatchCreate,
 )
 from app.repositories.scheduling_repo import (
     DefaultScheduleRepo,
@@ -35,6 +36,7 @@ from app.repositories.scheduling_repo import (
     ScheduleExceptionRepo,
     SubcontractorScheduleRepo,
 )
+from app.repositories.team_repo import EmployeeTeamMemberRepo
 
 
 class SchedulingService:
@@ -215,6 +217,46 @@ class SchedulingService:
                 })
 
         return {"created": created, "failed": failed}
+
+    async def team_dispatch(
+        self,
+        data: TeamDispatchCreate,
+        *,
+        dispatched_by: int | None = None,
+    ) -> dict[str, Any]:
+        """Dispatch all members of an employee team to a job for a date.
+
+        Fetches team membership, then delegates to bulk_dispatch.
+        Returns { team_id, team_size, created: [...], failed: [...] }
+        """
+        member_repo = EmployeeTeamMemberRepo(self.db)
+        members = await member_repo.get_for_team(data.team_id)
+        if not members:
+            return {
+                "team_id": data.team_id,
+                "team_size": 0,
+                "created": [],
+                "failed": [],
+            }
+
+        user_ids = [m["user_id"] for m in members]
+        bulk = BulkDispatchCreate(
+            job_id=data.job_id,
+            dispatch_date=data.dispatch_date,
+            user_ids=user_ids,
+            shift_start=data.shift_start,
+            shift_end=data.shift_end,
+            lunch_start=data.lunch_start,
+            lunch_end=data.lunch_end,
+            role_on_job=data.role_on_job,
+            notes=data.notes,
+        )
+        result = await self.bulk_dispatch(bulk, dispatched_by=dispatched_by)
+        return {
+            "team_id": data.team_id,
+            "team_size": len(user_ids),
+            **result,
+        }
 
     async def update_dispatch(
         self, dispatch_id: int, data: DispatchUpdate,

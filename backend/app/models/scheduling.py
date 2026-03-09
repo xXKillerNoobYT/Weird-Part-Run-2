@@ -144,6 +144,19 @@ class BulkDispatchCreate(BaseModel):
     notes: str | None = None
 
 
+class TeamDispatchCreate(BaseModel):
+    """Dispatch an entire employee team to a job for a date."""
+    job_id: int
+    team_id: int
+    dispatch_date: str = Field(..., min_length=10, max_length=10)
+    shift_start: str | None = None
+    shift_end: str | None = None
+    lunch_start: str | None = None
+    lunch_end: str | None = None
+    role_on_job: DISPATCH_ROLES = "worker"
+    notes: str | None = None
+
+
 class DispatchUpdate(BaseModel):
     """Partial update for a dispatch assignment."""
     shift_start: str | None = None

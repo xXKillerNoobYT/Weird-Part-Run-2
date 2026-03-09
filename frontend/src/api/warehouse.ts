@@ -21,6 +21,7 @@ import type {
   ReceiveStockResult,
   // Staging
   StagingGroup,
+  PendingPullGroup,
   // Movements
   MovementRequest,
   ValidationResult,
@@ -131,6 +132,14 @@ export async function receiveStock(
 export async function getStagingGroups(): Promise<StagingGroup[]> {
   const { data } = await apiClient.get<ApiResponse<StagingGroup[]>>(
     '/warehouse/staging'
+  );
+  return data.data ?? [];
+}
+
+/** JPO line items received but not yet pulled from warehouse — grouped by job */
+export async function getPendingPulls(): Promise<PendingPullGroup[]> {
+  const { data } = await apiClient.get<ApiResponse<PendingPullGroup[]>>(
+    '/warehouse/staging/pending-pulls'
   );
   return data.data ?? [];
 }

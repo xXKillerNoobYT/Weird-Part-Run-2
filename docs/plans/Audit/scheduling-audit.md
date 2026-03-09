@@ -388,7 +388,7 @@ Zero TODO, FIXME, HACK, or TEMP comments in any scheduling file (backend or fron
 - ~~**No supervisor/floater role**~~ — ✅ **Closed (Migration 035):** 'supervisor' added to role_on_job CHECK constraint + types + UI with amber color styling on calendar and dispatch pages.
 - ~~**No multi-job dispatch UX**~~ — ✅ **Closed (Migration 035):** Enriched ScheduleConflict with shift_start/shift_end/role_on_job/related_job_name. "Today's Assignments" panel in DailyDispatchPage. Time overlap warning (non-blocking).
 
-#### Remaining (v2.0+ / intentional deferral)
+#### Remaining (v1.0+ / intentional deferral)
 
 - **No drag-and-drop calendar** — The calendar is view-only with click-to-detail. Users can't drag dispatches between days or employees. (Complexity: high, ROI: moderate — deferred to v2.0.)
 - **No notification integration** — Creating a dispatch doesn't notify the assigned employee. Time-off approval/denial doesn't send a notification. (Note: notification hooks exist for orders; dispatch notifications were added in V1.0 Hotfix Pack for in-app. Push notifications deferred to Phase 10/PWA.)

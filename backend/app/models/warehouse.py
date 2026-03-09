@@ -266,6 +266,39 @@ class StagingGroup(BaseModel):
     aging_status: str = "normal"
 
 
+# PENDING PULLS — JPO lines received but not yet pulled to staging
+# =================================================================
+
+class PendingPullItem(BaseModel):
+    """A JPO line item that has been received but not yet pulled from warehouse."""
+    jpo_line_id: int
+    jpo_id: int
+    jpo_number: str
+    job_id: int | None = None
+    job_name: str | None = None
+    job_number: str | None = None
+    part_id: int
+    part_name: str
+    part_code: str | None = None
+    qty_received: int              # total received from supplier
+    qty_already_pulled: int = 0    # already in pulled/staged location
+    qty_pending: int               # received - pulled = still in warehouse
+    warehouse_qty: int = 0         # current warehouse stock for this part
+    priority: str = "normal"
+    supplier_name: str | None = None
+    requested_by_name: str | None = None
+
+
+class PendingPullGroup(BaseModel):
+    """Pending pull items grouped by destination job."""
+    job_id: int | None = None
+    job_name: str | None = None
+    job_number: str | None = None
+    items: list[PendingPullItem] = Field(default_factory=list)
+    total_pending: int = 0
+    total_already_pulled: int = 0
+
+
 # =================================================================
 # AUDIT
 # =================================================================

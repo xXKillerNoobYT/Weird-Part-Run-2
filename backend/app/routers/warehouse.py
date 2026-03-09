@@ -206,6 +206,22 @@ async def staging_area(
     return ApiResponse(data=groups)
 
 
+@router.get("/staging/pending-pulls")
+async def pending_pulls(
+    user: dict = Depends(require_permission("view_warehouse")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """JPO line items received into warehouse but not yet pulled to staging.
+
+    Returns items grouped by destination job, showing how many units
+    still need to be pulled. Used by the staging page to display a
+    "Pending Pull" section alongside already-pulled items.
+    """
+    svc = WarehouseService(db)
+    groups = await svc.get_pending_pulls()
+    return ApiResponse(data=groups)
+
+
 # =================================================================
 # MOVEMENTS
 # =================================================================

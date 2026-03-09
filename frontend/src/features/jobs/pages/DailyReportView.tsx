@@ -16,13 +16,14 @@ import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft, Lock, Clock, Users, MapPin, Package,
   CheckCircle2, XCircle, MessageSquare, Camera,
-  Truck, Route, ArrowRight,
+  Truck, Route, ArrowRight, AlertTriangle,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { Badge } from '../../../components/ui/Badge';
 import { Card, CardHeader } from '../../../components/ui/Card';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { getReport } from '../../../api/jobs';
+import { getSetting } from '../../../api/settings';
 import type {
   ReportWorker, ReportPartConsumed, ReportStatus,
   ReportDelivery, ReportTripLeg,
@@ -361,6 +362,20 @@ export function DailyReportView() {
     enabled: !!jobId && !!date,
   });
 
+  // Configurable drive ratio thresholds
+  const { data: driveRatioWarn } = useQuery({
+    queryKey: ['setting', 'max_drive_ratio'],
+    queryFn: () => getSetting('max_drive_ratio'),
+    staleTime: 300_000,
+  });
+  const { data: driveRatioCrit } = useQuery({
+    queryKey: ['setting', 'max_drive_ratio_critical'],
+    queryFn: () => getSetting('max_drive_ratio_critical'),
+    staleTime: 300_000,
+  });
+  const warnThreshold = driveRatioWarn ? parseFloat(driveRatioWarn) : 0.33;
+  const critThreshold = driveRatioCrit ? parseFloat(driveRatioCrit) : 0.50;
+
   if (isLoading) return <PageSpinner label="Loading report..." />;
 
   if (error || !report) {
@@ -425,6 +440,41 @@ export function DailyReportView() {
           )}
         </div>
       )}
+
+      {/* Drive time warning banner */}
+      {data?.workers && (() => {
+        const totalDriveMin = data.workers.reduce((sum, w) => sum + (w.drive_time_minutes ?? 0), 0);
+        const totalLaborMin = (data.summary?.total_labor_hours ?? 0) * 60;
+        if (totalDriveMin === 0 || totalLaborMin === 0) return null;
+        const ratio = totalDriveMin / totalLaborMin;
+        if (ratio < warnThreshold) return null;
+        const isDanger = ratio >= critThreshold;
+        const driveHrs = (totalDriveMin / 60).toFixed(1);
+        const pct = Math.round(ratio * 100);
+        return (
+          <div className={`flex items-center gap-3 p-3 rounded-lg border ${
+            isDanger
+              ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800'
+              : 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800'
+          }`}>
+            <AlertTriangle className={`h-5 w-5 shrink-0 ${
+              isDanger ? 'text-red-500' : 'text-amber-500'
+            }`} />
+            <div>
+              <p className={`text-sm font-medium ${
+                isDanger ? 'text-red-800 dark:text-red-300' : 'text-amber-800 dark:text-amber-300'
+              }`}>
+                {isDanger ? 'Excessive Drive Time' : 'High Drive Ratio'}
+              </p>
+              <p className={`text-xs ${
+                isDanger ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'
+              }`}>
+                {driveHrs}h drive time ({pct}% of labor hours)
+              </p>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Workers Section */}
       {data?.workers && data.workers.length > 0 && (

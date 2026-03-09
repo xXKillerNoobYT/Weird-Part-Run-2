@@ -17,6 +17,7 @@ import { Spinner } from '../../../../components/ui/Spinner';
 import {
   listAudits, startAudit, getSuggestedRollingParts, getSuggestedSpotCheckParts,
 } from '../../../../api/warehouse';
+import { getSetting } from '../../../../api/settings';
 import { formatDateTime } from '../../../../lib/utils';
 import type { AuditType, AuditResponse } from '../../../../lib/types';
 
@@ -28,6 +29,17 @@ interface AuditSetupProps {
 export function AuditSetup({ onAuditStarted, onResumeAudit }: AuditSetupProps) {
   const queryClient = useQueryClient();
   const [selectedType, setSelectedType] = useState<AuditType | null>(null);
+
+  // Read configurable spot check count from warehouse settings (default 3)
+  const { data: spotCountRaw } = useQuery({
+    queryKey: ['settings', 'warehouse_spot_check_default_count'],
+    queryFn: () => getSetting('warehouse_spot_check_default_count'),
+    staleTime: 300_000,
+  });
+  const spotCheckCount = (() => {
+    const n = spotCountRaw ? Number(spotCountRaw) : 3;
+    return Number.isFinite(n) && n > 0 ? n : 3;
+  })();
 
   // Active/paused audits
   const { data: activeAudits } = useQuery({
@@ -44,10 +56,10 @@ export function AuditSetup({ onAuditStarted, onResumeAudit }: AuditSetupProps) {
     enabled: selectedType === 'rolling',
   });
 
-  // Suggested spot check parts — 3 most urgent (zero/low-stock, then oldest count)
+  // Suggested spot check parts — N most urgent (zero/low-stock, then oldest count)
   const { data: spotParts, isLoading: spotLoading } = useQuery({
-    queryKey: ['audit-spot-suggestions'],
-    queryFn: () => getSuggestedSpotCheckParts(3),
+    queryKey: ['audit-spot-suggestions', spotCheckCount],
+    queryFn: () => getSuggestedSpotCheckParts(spotCheckCount),
     staleTime: 60_000,
     enabled: selectedType === 'spot_check',
   });

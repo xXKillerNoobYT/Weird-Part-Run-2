@@ -21,6 +21,8 @@ import type {
   DispatchUpdate,
   BulkDispatchCreate,
   BulkDispatchResult,
+  TeamDispatchCreate,
+  TeamDispatchResult,
   ScheduleConflict,
   DailyDispatchView,
   // Subcontractor
@@ -243,6 +245,17 @@ export async function bulkDispatch(
 ): Promise<BulkDispatchResult> {
   const { data } = await apiClient.post<ApiResponse<BulkDispatchResult>>(
     '/scheduling/dispatch/bulk',
+    dispatch,
+  );
+  return data.data!;
+}
+
+/** Dispatch all members of an employee team to a job/date */
+export async function dispatchTeam(
+  dispatch: TeamDispatchCreate,
+): Promise<TeamDispatchResult> {
+  const { data } = await apiClient.post<ApiResponse<TeamDispatchResult>>(
+    '/scheduling/dispatch/team',
     dispatch,
   );
   return data.data!;

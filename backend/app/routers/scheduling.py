@@ -34,6 +34,7 @@ from app.models.scheduling import (
     ShiftPatternUpdate,
     SubScheduleCreate,
     SubScheduleUpdate,
+    TeamDispatchCreate,
 )
 from app.services.notification_service import NotificationService
 from app.services.scheduling_service import SchedulingService
@@ -352,6 +353,25 @@ async def bulk_dispatch(
     return ApiResponse(
         data=result,
         message=f"{len(result['created'])} dispatched, {len(result['failed'])} failed",
+    )
+
+
+@router.post("/dispatch/team", status_code=status.HTTP_201_CREATED)
+async def team_dispatch(
+    data: TeamDispatchCreate,
+    user: dict = Depends(require_permission("dispatch_employees")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Dispatch all members of an employee team to a job for a date.
+
+    Fetches team membership and creates individual dispatches for each member.
+    Returns { team_id, team_size, created: [...], failed: [...] }
+    """
+    svc = SchedulingService(db)
+    result = await svc.team_dispatch(data, dispatched_by=user.get("id"))
+    return ApiResponse(
+        data=result,
+        message=f"Team dispatched: {len(result['created'])} created, {len(result['failed'])} failed",
     )
 
 

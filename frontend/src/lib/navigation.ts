@@ -67,6 +67,7 @@ export const MODULES: NavModule[] = [
 
       // ── People / HR ─────────────────────────────────────────────────────
       { id: 'employees', label: 'Employee List', path: '/people/employees', permission: 'view_people', group: 'People' },
+      { id: 'teams', label: 'Teams', path: '/people/teams', permission: 'view_people', group: 'People' },
       { id: 'hats', label: 'Roles & Hats', path: '/people/hats', permission: 'manage_people', group: 'People' },
       { id: 'permissions', label: 'Permissions', path: '/people/permissions', permission: 'manage_people', group: 'People' },
 
@@ -103,6 +104,7 @@ export const MODULES: NavModule[] = [
       { id: 'audit', label: 'Audit', path: '/warehouse/audit', permission: 'perform_audit' },
       { id: 'movements', label: 'Movements Log', path: '/warehouse/movements' },
       { id: 'tools', label: 'Tools', path: '/warehouse/tools', permission: 'view_tools' },
+      { id: 'network', label: 'Network', path: '/warehouse/network', permission: 'manage_warehouse' },
       { id: 'wh-settings', label: 'Settings', path: '/warehouse/settings', permission: 'manage_warehouse' },
     ],
   },
@@ -121,6 +123,8 @@ export const MODULES: NavModule[] = [
       { id: 'maintenance', label: 'Maintenance', path: '/trucks/maintenance' },
       { id: 'mileage', label: 'Mileage', path: '/trucks/mileage' },
       { id: 'fleet', label: 'Fleet', path: '/trucks/fleet', permission: 'manage_fleet' },
+      { id: 'trailers', label: 'Trailers', path: '/trucks/trailers', permission: 'manage_fleet' },
+      { id: 'trailer-locations', label: 'Locations', path: '/trucks/trailer-locations', permission: 'manage_fleet' },
     ],
   },
 

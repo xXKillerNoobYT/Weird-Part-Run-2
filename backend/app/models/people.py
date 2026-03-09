@@ -313,3 +313,73 @@ class CertAlertItem(BaseModel):
     expiry_date: str
     days_until_expiry: int  # 0 = expires today, positive = days remaining
     severity: str  # 'red' (<30 days), 'amber' (<60 days)
+
+
+# ── Employee Teams ─────────────────────────────────────────────────
+
+TEAM_MEMBER_ROLE = Literal["lead", "member"]
+
+
+class EmployeeTeamCreate(BaseModel):
+    """Create a new employee team."""
+    name: str = Field(..., min_length=1, max_length=100)
+    description: str | None = None
+    lead_user_id: int | None = None
+
+
+class EmployeeTeamUpdate(BaseModel):
+    """Update an existing team."""
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    description: str | None = None
+    lead_user_id: int | None = None
+    is_active: bool | None = None
+
+
+class EmployeeTeamResponse(BaseModel):
+    """Team response for list views."""
+    id: int
+    name: str
+    description: str | None = None
+    lead_user_id: int | None = None
+    lead_name: str | None = None
+    is_active: bool = True
+    member_count: int = 0
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class TeamMemberResponse(BaseModel):
+    """A member within a team."""
+    id: int
+    team_id: int
+    user_id: int
+    display_name: str
+    avatar_url: str | None = None
+    role: str = "member"
+    user_is_active: bool = True
+    joined_at: datetime | None = None
+
+
+class EmployeeTeamDetailResponse(BaseModel):
+    """Full team detail with member list."""
+    id: int
+    name: str
+    description: str | None = None
+    lead_user_id: int | None = None
+    lead_name: str | None = None
+    is_active: bool = True
+    member_count: int = 0
+    members: list[TeamMemberResponse] = Field(default_factory=list)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class TeamMemberAdd(BaseModel):
+    """Add a member to a team."""
+    user_id: int
+    role: TEAM_MEMBER_ROLE = "member"
+
+
+class TeamMemberRoleUpdate(BaseModel):
+    """Update a member's role in a team."""
+    role: TEAM_MEMBER_ROLE

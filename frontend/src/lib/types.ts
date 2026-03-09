@@ -1029,6 +1029,36 @@ export interface StagingGroup {
   aging_status: AgingStatus;
 }
 
+// ── Pending Pulls (JPO lines received but not yet staged) ─────────
+
+export interface PendingPullItem {
+  jpo_line_id: number;
+  jpo_id: number;
+  jpo_number: string;
+  job_id: number | null;
+  job_name: string | null;
+  job_number: string | null;
+  part_id: number;
+  part_name: string;
+  part_code: string | null;
+  qty_received: number;
+  qty_already_pulled: number;
+  qty_pending: number;
+  warehouse_qty: number;
+  priority: string;
+  supplier_name: string | null;
+  requested_by_name: string | null;
+}
+
+export interface PendingPullGroup {
+  job_id: number | null;
+  job_name: string | null;
+  job_number: string | null;
+  items: PendingPullItem[];
+  total_pending: number;
+  total_already_pulled: number;
+}
+
 // ── Audit ─────────────────────────────────────────────────────────
 
 export type AuditType = 'spot_check' | 'category' | 'rolling';
@@ -3247,6 +3277,137 @@ export interface VehicleInventoryTransfer {
   notes?: string;
 }
 
+// ── Job Trailers ───────────────────────────────────────────────────
+
+export type TrailerStatus = 'active' | 'in_transit' | 'maintenance' | 'inactive';
+
+export interface JobTrailerCreate {
+  trailer_code: string;
+  name: string;
+  status?: TrailerStatus;
+  home_warehouse_id?: number | null;
+  current_job_id?: number | null;
+  assigned_driver_user_id?: number | null;
+  notes?: string | null;
+}
+
+export interface JobTrailerUpdate {
+  name?: string;
+  status?: TrailerStatus;
+  home_warehouse_id?: number | null;
+  current_job_id?: number | null;
+  assigned_driver_user_id?: number | null;
+  notes?: string | null;
+  is_active?: boolean;
+}
+
+export interface JobTrailer {
+  id: number;
+  trailer_code: string;
+  name: string;
+  status: TrailerStatus;
+  home_warehouse_id: number | null;
+  current_job_id: number | null;
+  assigned_driver_user_id: number | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+  // Joined fields
+  home_warehouse_name: string | null;
+  current_job_name: string | null;
+  assigned_driver_name: string | null;
+}
+
+export type TrailerLocationEventType = 'check_in' | 'departed' | 'arrived_job' | 'arrived_warehouse' | 'manual_update';
+export type TrailerLocationKind = 'warehouse' | 'job' | 'road' | 'other';
+
+export interface TrailerLocationEventCreate {
+  event_type?: TrailerLocationEventType;
+  location_kind?: TrailerLocationKind;
+  warehouse_id?: number | null;
+  job_id?: number | null;
+  lat?: number | null;
+  lng?: number | null;
+  notes?: string | null;
+}
+
+export interface TrailerLocationEvent {
+  id: number;
+  trailer_id: number;
+  event_type: TrailerLocationEventType;
+  location_kind: TrailerLocationKind;
+  warehouse_id: number | null;
+  job_id: number | null;
+  lat: number | null;
+  lng: number | null;
+  recorded_by: number;
+  recorded_at: string | null;
+  notes: string | null;
+  // Joined fields
+  recorded_by_name: string | null;
+  warehouse_name: string | null;
+  job_name: string | null;
+}
+
+export interface TrailerStockTemplate {
+  id: number;
+  trailer_id: number | null;
+  name: string;
+  is_default: boolean;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  lines?: TrailerStockTemplateLine[];
+}
+
+export interface TrailerStockTemplateLine {
+  id: number;
+  template_id: number;
+  part_id: number;
+  target_qty: number;
+  min_qty: number;
+  // Joined
+  part_number?: string | null;
+  part_description?: string | null;
+}
+
+export interface TrailerStockTemplateCreate {
+  name: string;
+  trailer_id?: number | null;
+  is_default?: boolean;
+  notes?: string | null;
+  lines: { part_id: number; target_qty: number; min_qty?: number }[];
+}
+
+export interface TrailerInventoryItem {
+  id: number;
+  part_id: number;
+  qty: number;
+  supplier_id: number | null;
+  part_number: string | null;
+  part_description: string | null;
+  category: string | null;
+  brand: string | null;
+  supplier_name: string | null;
+}
+
+export interface TrailerRestockGuidance {
+  trailer_id: number;
+  template_id: number | null;
+  template_name: string | null;
+  lines: {
+    part_id: number;
+    part_number: string | null;
+    part_description: string | null;
+    target_qty: number;
+    min_qty: number;
+    current_qty: number;
+    needed: number;
+    status: 'ok' | 'low' | 'out';
+  }[];
+}
+
 // ── Maintenance Cost Summary ───────────────────────────────────────
 
 export interface MaintenanceCostSummary {
@@ -4068,6 +4229,64 @@ export interface EmployeeUpdate {
   pay_rate?: number | null;
   emergency_contact_name?: string | null;
   emergency_contact_phone?: string | null;
+}
+
+// ── Employee Teams ─────────────────────────────────────────────────
+
+export type TeamMemberRole = 'lead' | 'member';
+
+export interface EmployeeTeamListItem {
+  id: number;
+  name: string;
+  description: string | null;
+  lead_user_id: number | null;
+  lead_name: string | null;
+  is_active: boolean;
+  member_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface TeamMemberItem {
+  id: number;
+  team_id: number;
+  user_id: number;
+  display_name: string;
+  avatar_url: string | null;
+  role: TeamMemberRole;
+  user_is_active: boolean;
+  joined_at: string | null;
+}
+
+export interface EmployeeTeamDetail {
+  id: number;
+  name: string;
+  description: string | null;
+  lead_user_id: number | null;
+  lead_name: string | null;
+  is_active: boolean;
+  member_count: number;
+  members: TeamMemberItem[];
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface EmployeeTeamCreate {
+  name: string;
+  description?: string | null;
+  lead_user_id?: number | null;
+}
+
+export interface EmployeeTeamUpdate {
+  name?: string | null;
+  description?: string | null;
+  lead_user_id?: number | null;
+  is_active?: boolean | null;
+}
+
+export interface TeamMemberAdd {
+  user_id: number;
+  role?: TeamMemberRole;
 }
 
 // ── Hats (Roles) Management ────────────────────────────────────────
@@ -4965,6 +5184,25 @@ export interface BulkDispatchCreate {
 }
 
 export interface BulkDispatchResult {
+  created: Array<{ id: number; user_id: number; conflicts: ScheduleConflict[] }>;
+  failed: Array<{ user_id: number; error: string }>;
+}
+
+export interface TeamDispatchCreate {
+  job_id: number;
+  team_id: number;
+  dispatch_date: string;
+  shift_start?: string | null;
+  shift_end?: string | null;
+  lunch_start?: string | null;
+  lunch_end?: string | null;
+  role_on_job?: DispatchRoleOnJob;
+  notes?: string | null;
+}
+
+export interface TeamDispatchResult {
+  team_id: number;
+  team_size: number;
   created: Array<{ id: number; user_id: number; conflicts: ScheduleConflict[] }>;
   failed: Array<{ user_id: number; error: string }>;
 }

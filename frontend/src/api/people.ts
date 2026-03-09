@@ -39,6 +39,12 @@ import type {
   // Elevations
   JobLeadElevationResponse,
   JobLeadElevationCreate,
+  // Teams
+  EmployeeTeamListItem,
+  EmployeeTeamDetail,
+  EmployeeTeamCreate,
+  EmployeeTeamUpdate,
+  TeamMemberAdd,
 } from '../lib/types';
 
 
@@ -452,6 +458,100 @@ export async function importEmployeesCSV(file: File): Promise<CSVImportResult> {
     '/people/employees/import',
     formData,
     { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data.data!;
+}
+
+
+// =================================================================
+// EMPLOYEE TEAMS
+// =================================================================
+
+/** List all teams with member counts */
+export async function getTeams(
+  activeOnly = true,
+): Promise<EmployeeTeamListItem[]> {
+  const { data } = await apiClient.get<ApiResponse<EmployeeTeamListItem[]>>(
+    '/people/teams',
+    { params: { active_only: activeOnly } },
+  );
+  return data.data!;
+}
+
+/** Get a single team with full member list */
+export async function getTeam(teamId: number): Promise<EmployeeTeamDetail> {
+  const { data } = await apiClient.get<ApiResponse<EmployeeTeamDetail>>(
+    `/people/teams/${teamId}`,
+  );
+  return data.data!;
+}
+
+/** Create a new team */
+export async function createTeam(
+  team: EmployeeTeamCreate,
+): Promise<{ id: number }> {
+  const { data } = await apiClient.post<ApiResponse<{ id: number }>>(
+    '/people/teams',
+    team,
+  );
+  return data.data!;
+}
+
+/** Update a team */
+export async function updateTeam(
+  teamId: number,
+  updates: EmployeeTeamUpdate,
+): Promise<{ id: number }> {
+  const { data } = await apiClient.patch<ApiResponse<{ id: number }>>(
+    `/people/teams/${teamId}`,
+    updates,
+  );
+  return data.data!;
+}
+
+/** Delete a team */
+export async function deleteTeam(teamId: number): Promise<{ id: number }> {
+  const { data } = await apiClient.delete<ApiResponse<{ id: number }>>(
+    `/people/teams/${teamId}`,
+  );
+  return data.data!;
+}
+
+/** Add a member to a team */
+export async function addTeamMember(
+  teamId: number,
+  member: TeamMemberAdd,
+): Promise<{ id: number }> {
+  const { data } = await apiClient.post<ApiResponse<{ id: number }>>(
+    `/people/teams/${teamId}/members`,
+    member,
+  );
+  return data.data!;
+}
+
+/** Remove a member from a team */
+export async function removeTeamMember(
+  teamId: number,
+  userId: number,
+): Promise<void> {
+  await apiClient.delete(`/people/teams/${teamId}/members/${userId}`);
+}
+
+/** Update a team member's role */
+export async function updateTeamMemberRole(
+  teamId: number,
+  userId: number,
+  role: 'lead' | 'member',
+): Promise<void> {
+  await apiClient.patch(`/people/teams/${teamId}/members/${userId}`, { role });
+}
+
+/** Get all teams an employee belongs to */
+export async function getEmployeeTeams(
+  userId: number,
+): Promise<{ id: number; name: string; role: string }[]> {
+  const { data } = await apiClient.get<ApiResponse<{ id: number; name: string; role: string }[]>>(
+    `/people/employees/${userId}/teams`,
   );
   return data.data!;
 }

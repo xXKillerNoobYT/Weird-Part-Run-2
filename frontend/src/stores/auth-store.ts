@@ -13,6 +13,8 @@
 import { create } from 'zustand';
 import type { UserProfile } from '../lib/types';
 import { getMe } from '../api/auth';
+import { getTheme } from '../api/settings';
+import { useThemeStore } from './theme-store';
 
 interface AuthState {
   /** Current authenticated user (null if not logged in) */
@@ -48,6 +50,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const user = await getMe();
       set({ user, isAuthenticated: true, isLoading: false });
+
+      // Load and apply user's saved theme settings
+      try {
+        const theme = await getTheme();
+        useThemeStore.getState().initialize(theme);
+      } catch {
+        // Theme fetch is non-critical — keep default on failure
+      }
     } catch {
       localStorage.removeItem('wiredpart_token');
       set({ user: null, isAuthenticated: false, isLoading: false });
@@ -70,6 +80,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const user = await getMe();
       set({ user, isAuthenticated: true, isLoading: false });
+
+      // Load and apply user's saved theme settings
+      try {
+        const theme = await getTheme();
+        useThemeStore.getState().initialize(theme);
+      } catch {
+        // Theme fetch is non-critical — keep default on failure
+      }
     } catch {
       localStorage.removeItem('wiredpart_token');
       set({ user: null, isAuthenticated: false, isLoading: false });

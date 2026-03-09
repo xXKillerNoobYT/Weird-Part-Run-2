@@ -23,12 +23,12 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Plus, Wrench, AlertTriangle, Truck, CheckCircle, ChevronRight, ClipboardList, RotateCcw, Clock } from 'lucide-react';
+import { Plus, Wrench, AlertTriangle, Truck, CheckCircle, ChevronRight, ClipboardList, RotateCcw, Clock, Container, MapPin } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { Card, CardHeader } from '../../../components/ui/Card';
-import { Button } from '../../../components/ui/Button';
 import { getDashboard, listAudits, getSuggestedRollingParts } from '../../../api/warehouse';
 import { getToolsDashboard } from '../../../api/tools';
+import { listTrailers } from '../../../api/vehicles';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import { useMovementWizardStore } from '../stores/movement-wizard-store';
@@ -87,6 +87,9 @@ export function WarehouseDashboardPage() {
 
             {/* Tools summary card */}
             <ToolsSummaryCard />
+
+            {/* Trailer summary card */}
+            <TrailerSummaryCard />
           </div>
         </div>
       </div>
@@ -239,6 +242,66 @@ function ToolsSummaryCard() {
         <div className="flex flex-col items-center py-6 gap-2">
           <Wrench className="h-6 w-6 text-gray-300 dark:text-gray-600" />
           <p className="text-xs text-gray-400 dark:text-gray-500">Loading tools data...</p>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+
+// ── Trailer Summary Card ─────────────────────────────────────────
+
+function TrailerSummaryCard() {
+  const { data: trailers } = useQuery({
+    queryKey: ['trailers'],
+    queryFn: () => listTrailers(),
+    staleTime: 30_000,
+  });
+
+  const active = trailers?.filter(t => t.is_active) ?? [];
+  const byStatus = {
+    active: active.filter(t => t.status === 'active').length,
+    in_transit: active.filter(t => t.status === 'in_transit').length,
+    maintenance: active.filter(t => t.status === 'maintenance').length,
+    inactive: active.filter(t => t.status === 'inactive').length,
+  };
+  const atJob = active.filter(t => t.current_job_id != null).length;
+
+  const items = [
+    { label: 'Active', value: byStatus.active, icon: <CheckCircle size={14} />, color: 'text-green-500' },
+    { label: 'In Transit', value: byStatus.in_transit, icon: <Truck size={14} />, color: 'text-amber-500' },
+    { label: 'At Job Site', value: atJob, icon: <MapPin size={14} />, color: 'text-blue-500' },
+    { label: 'Maintenance', value: byStatus.maintenance, icon: <Wrench size={14} />, color: byStatus.maintenance > 0 ? 'text-red-500' : 'text-gray-400 dark:text-gray-500' },
+  ];
+
+  return (
+    <Card>
+      <CardHeader
+        title="Trailers"
+        subtitle={`${active.length} active trailer${active.length !== 1 ? 's' : ''}`}
+        action={
+          <Link
+            to="/trucks/trailers"
+            className="text-xs text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1"
+          >
+            View All <ChevronRight size={12} />
+          </Link>
+        }
+      />
+      {trailers ? (
+        <div className="grid grid-cols-2 gap-3 p-4 pt-0">
+          {items.map((item) => (
+            <div key={item.label} className="flex items-center gap-2">
+              <span className={`flex-shrink-0 ${item.color}`}>{item.icon}</span>
+              <span className="text-sm text-gray-900 dark:text-gray-100 font-medium">{item.value}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">{item.label}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center py-6 gap-2">
+          <Container className="h-6 w-6 text-gray-300 dark:text-gray-600" />
+          <p className="text-xs text-gray-400 dark:text-gray-500">Loading trailer data...</p>
         </div>
       )}
     </Card>

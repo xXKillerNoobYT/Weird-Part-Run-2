@@ -10,7 +10,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Crown, Plus, Pencil, Trash2, ChevronDown, ChevronRight,
-  Users, Shield, Lock, Save, X,
+  Users, Shield, Lock, Save,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
@@ -314,7 +314,7 @@ function HatModal({ isOpen, onClose, hat, onSubmit, isLoading }: HatModalProps) 
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" loading={isLoading} disabled={!name.trim()}>
+          <Button type="submit" isLoading={isLoading} disabled={!name.trim()}>
             {isEdit ? 'Save Changes' : 'Create Hat'}
           </Button>
         </div>
@@ -524,7 +524,7 @@ export function HatsPage() {
               </Button>
               <Button
                 variant="danger"
-                loading={deleteMutation.isPending}
+                isLoading={deleteMutation.isPending}
                 onClick={() => deleteMutation.mutate(deletingHat.id)}
               >
                 Delete Hat
