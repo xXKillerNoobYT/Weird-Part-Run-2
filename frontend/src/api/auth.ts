@@ -97,6 +97,10 @@ export async function pinLogin(
       if (!result.success || !result.token) {
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+>>>>>>> Stashed changes
 =======
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
 >>>>>>> Stashed changes
