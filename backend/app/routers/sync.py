@@ -16,7 +16,7 @@ Endpoints:
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import aiosqlite
 from fastapi import APIRouter, Depends, Query
@@ -225,7 +225,7 @@ async def sync_push(
             "conflicts": conflicts,
             "shop_changes": shop_changes,
             "sync_batch_id": batch_id,
-            "server_time": datetime.now(UTC).isoformat(),
+            "server_time": datetime.now(timezone.utc).isoformat(),
         },
         message=f"Sync: {len(applied)} applied, {len(conflicts)} conflicts, {len(shop_changes)} to pull",
     )
@@ -282,7 +282,7 @@ async def sync_pull(
     return ApiResponse(
         data={
             "changes": changes,
-            "server_time": datetime.now(UTC).isoformat(),
+            "server_time": datetime.now(timezone.utc).isoformat(),
         },
         message=f"{len(changes)} changes since {since}",
     )
@@ -338,7 +338,7 @@ async def initial_sync(
     return ApiResponse(
         data={
             "tables": data,
-            "server_time": datetime.now(UTC).isoformat(),
+            "server_time": datetime.now(timezone.utc).isoformat(),
         },
         message=f"Initial sync: {total_rows} rows across {len(data)} tables",
     )

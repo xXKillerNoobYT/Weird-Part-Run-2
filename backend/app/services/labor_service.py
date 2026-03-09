@@ -11,7 +11,7 @@ Handles the full clock-in/clock-out lifecycle including:
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import aiosqlite
 
@@ -52,7 +52,7 @@ class LaborService:
                 "Clock out first before clocking into another job."
             )
 
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         cursor = await self.db.execute(
             """INSERT INTO labor_entries (
                 user_id, job_id, clock_in,
@@ -88,10 +88,10 @@ class LaborService:
 
         # Calculate hours
         clock_in = datetime.fromisoformat(entry["clock_in"])
-        clock_out = datetime.now(UTC)
+        clock_out = datetime.now(timezone.utc)
         # Ensure both are timezone-aware for safe subtraction
         if clock_in.tzinfo is None:
-            clock_in = clock_in.replace(tzinfo=UTC)
+            clock_in = clock_in.replace(tzinfo=timezone.utc)
         total_hours = (clock_out - clock_in).total_seconds() / 3600
 
         # Subtract drive time from work hours

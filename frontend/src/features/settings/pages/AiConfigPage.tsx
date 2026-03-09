@@ -221,7 +221,7 @@ export function AiConfigPage() {
             AI Assistant
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-            Local LLM integration via LM Studio. No cloud. No data leaves the network.
+            Local LLM via LM Studio — all processing stays on your network.
           </p>
         </div>
         <Badge variant={masterEnabled ? 'success' : 'default'}>
@@ -229,13 +229,22 @@ export function AiConfigPage() {
         </Badge>
       </div>
 
-      {/* Phase notice */}
-      <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700">
-        <Info className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-        <p className="text-sm text-amber-700 dark:text-amber-300">
-          <strong>Phase 12 feature.</strong> Configure now — settings are saved immediately and
-          the AI engine activates once LM Studio is installed and running on this computer.
-        </p>
+      {/* How it works — local vs field */}
+      <div className="space-y-2">
+        <div className="flex items-start gap-3 p-3 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700">
+          <Server className="h-4 w-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-green-700 dark:text-green-300">
+            <strong>At the shop:</strong> If LM Studio is running on this computer, AI queries
+            from any browser on the local network get results right away — fast and private.
+          </p>
+        </div>
+        <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700">
+          <Info className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-amber-700 dark:text-amber-300">
+            <strong>In the field:</strong> AI requests get queued on your device and process
+            when it syncs back at the shop. Results may take until the next device courier cycle.
+          </p>
+        </div>
       </div>
 
       {/* Master toggle */}

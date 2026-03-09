@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import aiosqlite
@@ -616,7 +616,7 @@ class POConversationService:
         Stamps confirmed_by and confirmed_at on any newly confirmed items.
         Stores the checklist as JSON in the purchase_orders row.
         """
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         # Process each item: stamp user/time on newly confirmed items
         stored_items = []

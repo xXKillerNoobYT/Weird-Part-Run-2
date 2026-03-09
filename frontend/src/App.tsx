@@ -136,6 +136,7 @@ import { CompanyProfilePage } from './features/settings/pages/CompanyProfilePage
 import { ThemesPage } from './features/settings/pages/ThemesPage';
 import { NotificationPrefsPage } from './features/settings/pages/NotificationPrefsPage';
 import { SyncPage } from './features/settings/pages/SyncPage';
+import { BackupsPage } from './features/settings/pages/BackupsPage';
 import { AiConfigPage } from './features/settings/pages/AiConfigPage';
 import { DeviceManagementPage } from './features/settings/pages/DeviceManagementPage';
 import { SecurityAdminPage } from './features/settings/pages/SecurityAdminPage';
@@ -301,6 +302,7 @@ export default function App() {
               <Route path="/settings/bootstrap" element={<BootstrapAdminPage />} />
               <Route path="/settings/supplier-bridge" element={<SupplierBridgePage />} />
               <Route path="/settings/updates" element={<UpdateProtocolPage />} />
+              <Route path="/settings/backups" element={<BackupsPage />} />
               <Route path="/settings/ai-config" element={<AiConfigPage />} />
               <Route path="/settings/devices" element={<DeviceManagementPage />} />
               <Route path="/settings/security" element={<SecurityAdminPage />} />
