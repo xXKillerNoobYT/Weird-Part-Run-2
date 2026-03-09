@@ -1,10 +1,10 @@
 # Deployment Master Plan — V1.0 Customer-Ready Release
 
-> **Date:** 2026-03-06 (revised 2026-03-06)
-> **Goal:** Package Wired-Part as a **fully offline-capable** application where every device (shop computers, iPads, iPhones, Android phones) runs the full program with its own local database and syncs with the shop when on the LAN.
-> **Scope:** Phases 1–10 (complete) + Phase 11 Reports (planned) + offline data layer + sync engine + packaging + sideloading
-> **Approach:** Full program on every device. Shop is the truth anchor. LAN sync for V1.0, Bluetooth mesh in V2.0.
-> **Related docs:** `Device Sync management.md`, `Mobile device bootstrap.md`, `Update protocol.md`
+> **Date:** 2026-03-06 (revised 2026-03-09)
+> **Goal:** Package Wired-Part as a **fully offline-capable** application where every device (shop computers, iPads, iPhones, Android phones) runs the full program with its own local database and syncs via Bluetooth.
+> **Scope:** Phases 1–10 (complete) + Phase 11 Reports (planned) + offline data layer + Bluetooth sync + packaging + sideloading
+> **Approach:** Full program on every device. 100% local-first. Bluetooth mesh sync between all devices. Shop computer is truth anchor but also a BT peer.
+> **Related docs:** `Device Sync management.md`, `Mobile device bootstrap.md`, `Update protocol.md`, `phase-13-sync-bluetooth.md`
 
 ---
 
@@ -99,22 +99,27 @@
 ### Why This Architecture
 
 - **Field workers aren't always on Wi-Fi.** They're on job sites, in trucks, underground. The app must work without any network.
-- **Full read AND write offline.** Workers can create orders, clock in/out, move stock, update notebooks — all offline. Everything syncs when they're back in range.
-- **Stepping stone to V2.0.** The local SQLite + sync engine is the same foundation needed for V2.0 Bluetooth mesh sync. No throwaway work.
-- **One shared UI codebase.** React frontend is identical everywhere. Only the data access layer switches between "local SQLite" (mobile) and "HTTP API" (desktop browser).
+- **Full read AND write offline.** Workers can create orders, clock in/out, move stock, update notebooks — all offline. Everything syncs when devices are in Bluetooth range.
+- **No network infrastructure needed.** Bluetooth sync means no Wi-Fi setup, no router config, no shop URL. Devices just find each other.
+- **Mesh propagation.** Data spreads naturally: Worker A syncs with Worker B on-site → Worker B returns to shop → shop gets everyone's data. Even if a worker hasn't been to the shop in a week, their data arrives via other workers.
+- **One shared UI codebase.** React frontend is identical everywhere. Only the data access layer switches between "local SQLite" (mobile/Capacitor) and "HTTP API" (desktop browser at shop).
 
-### V1.0 vs V2.0 Architecture
+### V1.0 Architecture (Revised 2026-03-09)
+
+**Key change:** Bluetooth sync is now V1.0, not V2.0. LAN/HTTP sync is deferred — devices talk to each other and to the shop computer via Bluetooth. This eliminates the need for shop URL configuration, CORS setup, and network infrastructure. Devices just need to be in BT range of each other or the shop.
 
 | Capability | V1.0 | V2.0 |
 |-----------|------|------|
 | Device has local database | ✅ | ✅ |
 | Full offline read/write | ✅ | ✅ |
-| Sync with shop over LAN | ✅ | ✅ |
-| Sync with shop over Bluetooth | ❌ | ✅ |
-| Device-to-device sync (mesh) | ❌ | ✅ |
+| Sync with shop over LAN | ❌ (deferred) | ✅ |
+| Sync via Bluetooth | ✅ | ✅ |
+| Device-to-device sync (mesh) | ✅ | ✅ |
+| Device pairing (QR code) | ✅ | ✅ |
+| Encrypted sync (PGP) | ✅ | ✅ |
 | Bootstrap app (App Store shell) | ❌ | ✅ |
 | Multi-PC shop cluster | ❌ | ✅ |
-| Encrypted sync (PGP) | ❌ | ✅ |
+| LAN sync (HTTP fallback) | ❌ | ✅ |
 | Auto-update via mesh | ❌ | ✅ |
 
 ---
@@ -131,19 +136,41 @@ Everything that must be done before the first customer deployment.
 | Phase 11: Reports & Pre-Billing | 📋 Planned | `phase-11-reports-prebilling.md` | 4 stub pages → real pages, 4 stub endpoints → real data |
 | Legacy Cleanup | 📋 Planned | `legacy-cleanup-plan.md` | Delete ~5 superseded pages, clean routes |
 
-### 2.2 Offline Architecture (NEW — the big work)
+### 2.2 Offline Architecture (Status as of 2026-03-09)
 
 | Item | Status | Notes |
 |------|--------|-------|
-| TypeScript data layer | ⬜ | Mirror all 28 Python services in TypeScript for mobile |
-| SQLite schema (TS migrations) | ⬜ | Port 27 SQL migrations to TS migration runner |
-| Capacitor SQLite plugin | ⬜ | `@capacitor-community/sqlite` for native SQLite on iOS/Android |
-| API adapter layer | ⬜ | Frontend detects environment: local TS layer (mobile) vs HTTP API (browser) |
-| Change tracking | ⬜ | Every write logs to `_change_log` table with device_id, timestamp, version |
-| Sync engine (device side) | ⬜ | Push local changes, pull remote changes, apply remote changes locally |
-| Sync API (shop side) | ⬜ | New endpoints on Python backend: receive changes, send changes since timestamp |
-| Conflict resolution | ⬜ | Last-writer-wins for most data, shop is tiebreaker |
-| Sync status UI | ⬜ | Banner showing "Synced" / "X changes pending" / "Syncing..." |
+| TypeScript data layer (12 services) | ✅ Done | Auth, jobs, labor, movement, notebooks, orders, parts, warehouse, fleet, scheduling, tools, chat — all fully implemented (~120KB of real SQL logic) |
+| SQLite schema (TS migrations) | ✅ Done | 7 migration files (~70KB SQL), covers all 70+ tables. Auto-runs on app init |
+| Capacitor SQLite plugin | ✅ Done | `@capacitor-community/sqlite` installed, `db.ts` wrapper, lazy singleton connection |
+| Base repository (generic CRUD) | ✅ Done | `base-repo.ts` — getById, findAll, count, insert, update, delete. All writes auto-track changes |
+| Change tracking (`_change_log`) | ✅ Done | `change-tracker.ts` — logs INSERT/UPDATE/DELETE per row, tracks old values, 30-day retention |
+| Environment detection | ✅ Done | `environment.ts` — `isCapacitor()`, `isBrowser()`, `getPlatform()`, `getApiBaseUrl()` |
+| API adapter pattern | ⚠️ Defined but not wired | `adapter.ts` exists with `adaptedRequest(httpFn, localFn?)`. **Only `auth.ts` uses it** (4 calls). The other ~300 API calls in 22 files still hardcode HTTP — this is the critical remaining work |
+| Auth flow (local) | ✅ Done | PIN login against local SQLite, user picker, device login fallback |
+| App initialization | ✅ Done | `init.ts` + `AuthGate.tsx` — inits DB, runs migrations, starts auth on Capacitor boot |
+| Capacitor iOS project | ✅ Done | Xcode builds clean, 9 plugins, Info.plist permissions, sandbox fixed |
+| Sync engine (HTTP — device side) | ✅ Done | `sync-engine.ts` — push/pull/ack over HTTP, exponential backoff, state management. **Will be replaced with BT transport** |
+| Sync API (shop side — HTTP) | ⬜ Deferred | Was for LAN sync. **Replaced by BT sync in V1.0** |
+| **Bluetooth sync engine** | ⬜ Not started | See `phase-13-sync-bluetooth.md`. Replaces HTTP sync. Needs: BLE plugin, handshake, gossip protocol, encrypted data exchange |
+| **BT device pairing** | ⬜ Not started | QR code pairing, certificate exchange, company verification |
+| **Crypto service** | ⬜ Not started | Key generation, certificate signing, AES-256-GCM session encryption |
+| Conflict resolution | ✅ Done (logic) | Last-writer-wins via timestamp comparison in change tracker |
+| Sync status UI | ⬜ Not started | Banner showing "Synced" / "X changes pending" / "Syncing..." |
+
+**Critical path to "works 100% local":**
+1. ⚠️ **Wire API adapter** — route ~300 API calls through `adaptedRequest()` in 22 files (mechanical but large — estimated 2-3 days)
+2. ⚠️ **Fix merge conflict** in `auth.ts` lines 98-109
+3. Then the app runs fully offline on any device with zero network dependency
+
+**Critical path to "syncs via Bluetooth":**
+4. Install `@capacitor-community/bluetooth-le` + `capacitor-secure-storage-plugin`
+5. Build `bt-service.ts` (BLE scanning, connection, handshake)
+6. Build `crypto-service.ts` (key generation, certificate verification, session encryption)
+7. Replace HTTP transport in sync-engine with BT transport
+8. Build pairing flow (QR code from shop → device scans → certificate exchange)
+9. Build gossip protocol (undelivered change propagation between peers)
+10. Build SyncStatusPage + SyncIndicator + BluetoothPage UI
 
 ### 2.3 Quality & Testing
 
@@ -174,8 +201,8 @@ Everything that must be done before the first customer deployment.
 |------|--------|-------|
 | Shop server startup script (Windows) | ⬜ | PowerShell script or Windows Service |
 | Shop server startup script (Mac) | ⬜ | Shell script or launchd plist |
-| Capacitor project initialized | ⬜ | `frontend/` — iOS + Android platforms |
-| iOS build → free sideloading | ⬜ | Sideloadly + AltServer (free). Mac needed for Xcode build. |
+| Capacitor project initialized | ✅ Done | iOS platform scaffolded, 9 plugins, Xcode builds clean (2026-03-09) |
+| iOS build → free sideloading | ⬜ | Sideloadly + AltServer (free). Mac + Xcode ready. |
 | Android build → APK | ⬜ | Can build from any OS with Android Studio |
 | Sideloading guide | ⬜ | `docs/plans/sideloading-guide.md` |
 | Customer setup guide | ⬜ | End-to-end install instructions for the shop owner |
