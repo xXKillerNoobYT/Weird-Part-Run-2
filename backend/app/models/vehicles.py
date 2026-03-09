@@ -676,3 +676,373 @@ class MileageSummary(BaseModel):
     total_billable_drive_minutes: int = 0
     avg_miles_per_day: float = 0
     total_take_home_days: int = 0
+
+
+# ═══════════════════════════════════════════════════════════════
+# Fuel Log Models
+# ═══════════════════════════════════════════════════════════════
+
+class FuelLogCreate(BaseModel):
+    """Log a fuel purchase for a vehicle."""
+    fill_date: str | None = None  # defaults to today
+    odometer_reading: int
+    gallons: float = Field(..., gt=0)
+    price_per_gallon: float = Field(..., gt=0)
+    fuel_type: str = "regular"  # regular|midgrade|premium|diesel|e85
+    station_name: str | None = None
+    receipt_photo: str | None = None  # base64 data URI
+    notes: str | None = None
+
+
+class FuelLogUpdate(BaseModel):
+    """Update an existing fuel log entry."""
+    fill_date: str | None = None
+    odometer_reading: int | None = None
+    gallons: float | None = None
+    price_per_gallon: float | None = None
+    fuel_type: str | None = None
+    station_name: str | None = None
+    receipt_photo: str | None = None
+    notes: str | None = None
+
+
+class FuelLogResponse(BaseModel):
+    """Fuel log in API responses."""
+    id: int
+    vehicle_id: int
+    driver_id: int
+    fill_date: str
+    odometer_reading: int
+    gallons: float
+    price_per_gallon: float
+    total_cost: float
+    fuel_type: str = "regular"
+    station_name: str | None = None
+    receipt_photo: str | None = None
+    notes: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    # Joined/calculated
+    driver_name: str | None = None
+    vehicle_name: str | None = None
+    vehicle_number: str | None = None
+    mpg: float | None = None  # calculated from previous fill
+
+
+class FuelSummary(BaseModel):
+    """Fuel cost + consumption summary for a vehicle or fleet."""
+    vehicle_id: int | None = None
+    vehicle_name: str | None = None
+    vehicle_number: str | None = None
+    period_start: str | None = None
+    period_end: str | None = None
+    total_gallons: float = 0
+    total_cost: float = 0
+    fill_count: int = 0
+    avg_price_per_gallon: float = 0
+    avg_mpg: float | None = None
+    total_miles_driven: int | None = None
+
+
+# ═══════════════════════════════════════════════════════════════
+# Telematics Models
+# ═══════════════════════════════════════════════════════════════
+
+class TelematicsDeviceCreate(BaseModel):
+    """Register a telematics device on a vehicle."""
+    vehicle_id: int
+    device_type: str = "gps_tracker"  # obd2|gps_tracker|dash_cam
+    device_serial: str
+    device_name: str | None = None
+
+
+class TelematicsDeviceResponse(BaseModel):
+    """Telematics device in API responses."""
+    id: int
+    vehicle_id: int
+    device_type: str
+    device_serial: str
+    device_name: str | None = None
+    auth_token: str
+    is_active: bool = True
+    last_seen_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    # Joined
+    vehicle_name: str | None = None
+    vehicle_number: str | None = None
+
+
+class TelematicsPositionIngest(BaseModel):
+    """Device-submitted position reading."""
+    lat: float
+    lng: float
+    speed_mph: float | None = None
+    heading: float | None = None
+    altitude_ft: float | None = None
+    odometer_reading: int | None = None
+    engine_on: bool = True
+    recorded_at: str
+
+
+class TelematicsPositionResponse(BaseModel):
+    """GPS position breadcrumb in API responses."""
+    id: int
+    device_id: int
+    vehicle_id: int
+    lat: float
+    lng: float
+    speed_mph: float | None = None
+    heading: float | None = None
+    altitude_ft: float | None = None
+    odometer_reading: int | None = None
+    engine_on: bool = True
+    recorded_at: datetime
+    received_at: datetime
+
+
+class TelematicsEventIngest(BaseModel):
+    """Device-submitted event."""
+    event_type: str
+    event_data: str | None = None  # JSON
+    lat: float | None = None
+    lng: float | None = None
+    recorded_at: str
+
+
+class TelematicsEventResponse(BaseModel):
+    """Telematics event in API responses."""
+    id: int
+    device_id: int
+    vehicle_id: int
+    event_type: str
+    event_data: str | None = None
+    lat: float | None = None
+    lng: float | None = None
+    recorded_at: datetime
+    received_at: datetime
+
+
+class VehicleLocationSummary(BaseModel):
+    """Last known position for a vehicle (fleet overview)."""
+    vehicle_id: int
+    vehicle_name: str
+    vehicle_number: str
+    device_id: int | None = None
+    lat: float | None = None
+    lng: float | None = None
+    speed_mph: float | None = None
+    engine_on: bool | None = None
+    recorded_at: datetime | None = None
+    status: str = "unknown"  # moving|idle|stopped|unknown
+
+
+# ═══════════════════════════════════════════════════════════════
+# Inspection Models
+# ═══════════════════════════════════════════════════════════════
+
+class InspectionTemplateItemCreate(BaseModel):
+    """An item definition within a template."""
+    sort_order: int = 0
+    category: str = "General"
+    item_name: str
+    description: str | None = None
+    severity: str = "warning"  # info|warning|critical
+    requires_photo: bool = False
+
+
+class InspectionTemplateCreate(BaseModel):
+    """Create an inspection template with items."""
+    name: str
+    description: str | None = None
+    vehicle_type: str | None = None
+    inspection_type: str = "pre_trip"  # pre_trip|post_trip|monthly|annual
+    items: list[InspectionTemplateItemCreate] = Field(default_factory=list)
+
+
+class InspectionTemplateUpdate(BaseModel):
+    """Update an inspection template."""
+    name: str | None = None
+    description: str | None = None
+    vehicle_type: str | None = None
+    inspection_type: str | None = None
+    is_active: bool | None = None
+    items: list[InspectionTemplateItemCreate] | None = None  # if provided, replaces all items
+
+
+class InspectionTemplateItemResponse(BaseModel):
+    """Template item in API responses."""
+    id: int
+    template_id: int
+    sort_order: int = 0
+    category: str = "General"
+    item_name: str
+    description: str | None = None
+    severity: str = "warning"
+    requires_photo: bool = False
+    is_active: bool = True
+
+
+class InspectionTemplateResponse(BaseModel):
+    """Inspection template in API responses."""
+    id: int
+    name: str
+    description: str | None = None
+    vehicle_type: str | None = None
+    inspection_type: str = "pre_trip"
+    is_active: bool = True
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    items: list[InspectionTemplateItemResponse] = Field(default_factory=list)
+
+
+class InspectionRecordItemCreate(BaseModel):
+    """Submit a single item result during inspection."""
+    template_item_id: int | None = None
+    item_name: str
+    category: str = "General"
+    status: str = "pass"  # pass|fail|na
+    severity: str = "warning"
+    photo: str | None = None  # base64
+    notes: str | None = None
+
+
+class InspectionRecordCreate(BaseModel):
+    """Start a new inspection for a vehicle."""
+    template_id: int
+    inspection_type: str | None = None
+    odometer_reading: int | None = None
+    notes: str | None = None
+
+
+class InspectionRecordItemResponse(BaseModel):
+    """Individual inspection check result."""
+    id: int
+    record_id: int
+    template_item_id: int | None = None
+    item_name: str
+    category: str = "General"
+    status: str = "pending"
+    severity: str = "warning"
+    photo: str | None = None
+    notes: str | None = None
+    created_at: datetime | None = None
+
+
+class InspectionRecordResponse(BaseModel):
+    """Inspection record in API responses."""
+    id: int
+    vehicle_id: int
+    template_id: int
+    inspector_id: int
+    inspection_type: str
+    inspection_date: str
+    odometer_reading: int | None = None
+    overall_result: str = "pending"
+    notes: str | None = None
+    completed_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    # Joined
+    vehicle_name: str | None = None
+    vehicle_number: str | None = None
+    inspector_name: str | None = None
+    template_name: str | None = None
+    items: list[InspectionRecordItemResponse] = Field(default_factory=list)
+
+
+class InspectionItemSubmit(BaseModel):
+    """Submit result for a single inspection item."""
+    status: str = "pass"  # pass|fail|na
+    photo: str | None = None
+    notes: str | None = None
+
+
+# ═══════════════════════════════════════════════════════════════
+# Vehicle Transfer Models
+# ═══════════════════════════════════════════════════════════════
+
+class VehicleTransferCreate(BaseModel):
+    """Request a vehicle transfer between locations."""
+    vehicle_id: int
+    from_location_id: int
+    to_location_id: int
+    transfer_date: str | None = None
+    estimated_arrival: str | None = None
+    require_post_inspection: bool = True
+    notes: str | None = None
+
+
+class VehicleTransferResponse(BaseModel):
+    """Vehicle transfer in API responses."""
+    id: int
+    vehicle_id: int
+    from_location_id: int
+    to_location_id: int
+    requested_by: int
+    approved_by: int | None = None
+    status: str = "requested"
+    transfer_date: str | None = None
+    estimated_arrival: str | None = None
+    actual_arrival: str | None = None
+    require_post_inspection: bool = True
+    post_inspection_id: int | None = None
+    notes: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    # Joined
+    vehicle_name: str | None = None
+    vehicle_number: str | None = None
+    from_location_name: str | None = None
+    to_location_name: str | None = None
+    requested_by_name: str | None = None
+    approved_by_name: str | None = None
+
+
+class TransferAction(BaseModel):
+    """Approve, complete, or cancel a transfer."""
+    action: str = Field(..., pattern="^(approve|complete|cancel)$")
+    actual_arrival: str | None = None
+    notes: str | None = None
+
+
+# ═══════════════════════════════════════════════════════════════
+# Document Alerts (Insurance / Registration Expiry)
+# ═══════════════════════════════════════════════════════════════
+
+class VehicleDocumentAlert(BaseModel):
+    """An insurance or registration expiry alert."""
+    vehicle_id: int
+    vehicle_name: str
+    vehicle_number: str
+    alert_type: str  # insurance | registration
+    expiry_date: str
+    days_until_expiry: int
+    policy_number: str | None = None
+
+
+# ═══════════════════════════════════════════════════════════════
+# Fleet Utilization Report
+# ═══════════════════════════════════════════════════════════════
+
+class VehicleUtilizationReport(BaseModel):
+    """Utilization stats for a single vehicle."""
+    vehicle_id: int
+    vehicle_name: str
+    vehicle_number: str
+    days_in_period: int = 0
+    days_active: int = 0
+    days_idle: int = 0
+    utilization_pct: float = 0
+    total_miles: int = 0
+    total_trips: int = 0
+
+
+class FleetUtilizationSummary(BaseModel):
+    """Fleet-wide utilization overview."""
+    period_start: str
+    period_end: str
+    vehicles: list[VehicleUtilizationReport] = Field(default_factory=list)
+    fleet_avg_utilization: float = 0
+    total_active_vehicle_days: int = 0
+    total_idle_vehicle_days: int = 0

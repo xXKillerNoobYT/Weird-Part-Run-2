@@ -8,14 +8,17 @@
 import { useState } from 'react';
 import { Calendar, Edit2, Trash2, User, Package } from 'lucide-react';
 import { TaskStageSelector } from './TaskStageSelector';
+import { AttachmentPanel } from './AttachmentPanel';
 import type { EntryResponse, TaskStatus } from '../../../lib/types';
-import { TASK_STATUS_LABELS } from '../../../lib/types';
 
 interface TaskEntryCardProps {
   entry: EntryResponse;
   onStatusChange?: (entryId: number, status: TaskStatus, partsNote?: string) => void;
   onUpdate?: (entryId: number, title: string, content: string) => void;
   onDelete?: (entryId: number) => void;
+  /** Bulk selection support */
+  isSelected?: boolean;
+  onToggle?: () => void;
 }
 
 export function TaskEntryCard({
@@ -23,6 +26,8 @@ export function TaskEntryCard({
   onStatusChange,
   onUpdate,
   onDelete,
+  isSelected,
+  onToggle,
 }: TaskEntryCardProps) {
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(entry.title);
@@ -74,15 +79,27 @@ export function TaskEntryCard({
 
   return (
     <div
-      className={`group p-3 bg-surface border border-border rounded-lg hover:border-gray-300 dark:hover:border-gray-600 transition-colors ${
-        isDone ? 'opacity-70' : ''
-      }`}
+      className={`group p-3 bg-surface border rounded-lg hover:border-gray-300 dark:hover:border-gray-600 transition-colors ${isDone ? 'opacity-70' : ''
+        } ${isSelected ? 'border-blue-400 dark:border-blue-500 ring-1 ring-blue-400/30' : 'border-border'}`}
     >
-      {/* Header — title + action buttons */}
+      {/* Header — checkbox + title + action buttons */}
       <div className="flex items-start justify-between gap-2 mb-2">
-        <h4 className={`text-sm font-medium ${isDone ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-gray-100'}`}>
-          {entry.title}
-        </h4>
+        <div className="flex items-start gap-2 flex-1 min-w-0">
+          {/* Bulk select checkbox */}
+          {onToggle && (
+            <label className="flex items-center justify-center min-w-[44px] min-h-[44px] -m-2 cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                checked={isSelected ?? false}
+                onChange={(e) => { e.stopPropagation(); onToggle(); }}
+                className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-primary focus:ring-primary cursor-pointer"
+              />
+            </label>
+          )}
+          <h4 className={`text-sm font-medium ${isDone ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-900 dark:text-gray-100'}`}>
+            {entry.title}
+          </h4>
+        </div>
 
         {entry.can_edit && (
           <div className="flex items-center gap-1 shrink-0">
@@ -148,6 +165,9 @@ export function TaskEntryCard({
           {entry.creator_name ?? 'Unknown'}
         </span>
       </div>
+
+      {/* Attachments */}
+      <AttachmentPanel entryId={entry.id} canEdit={entry.can_edit} />
     </div>
   );
 }

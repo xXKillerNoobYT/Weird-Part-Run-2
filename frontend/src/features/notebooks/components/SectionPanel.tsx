@@ -26,6 +26,9 @@ interface SectionPanelProps {
   savingFieldId?: number | null;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
+  /** Bulk task selection — passed through to TaskEntryCard */
+  isTaskSelected?: (entryId: number) => boolean;
+  onToggleTask?: (entryId: number) => void;
 }
 
 const SECTION_TYPE_ICONS = {
@@ -44,6 +47,8 @@ export function SectionPanel({
   savingFieldId,
   onMoveUp,
   onMoveDown,
+  isTaskSelected,
+  onToggleTask,
 }: SectionPanelProps) {
   const [expanded, setExpanded] = useState(true);
 
@@ -122,7 +127,7 @@ export function SectionPanel({
                 <InfoFieldRenderer
                   key={entry.id}
                   entry={entry}
-                  onSave={onFieldSave ? (id, val) => onFieldSave(id, val) : undefined}
+                  onSave={onFieldSave ? (id: number, val: string) => onFieldSave(id, val) : undefined!}
                   saving={savingFieldId === entry.id}
                 />
               ))}
@@ -170,6 +175,8 @@ export function SectionPanel({
                   onStatusChange={onTaskStatusChange}
                   onUpdate={onEntryUpdate}
                   onDelete={onEntryDelete}
+                  isSelected={isTaskSelected?.(entry.id)}
+                  onToggle={onToggleTask ? () => onToggleTask(entry.id) : undefined}
                 />
               ))}
               {activeEntries.length === 0 && (

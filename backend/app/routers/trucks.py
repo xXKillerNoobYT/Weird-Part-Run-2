@@ -13,10 +13,12 @@ will match those names as vehicle_id and return 422 validation errors.
 from __future__ import annotations
 
 import logging
+import uuid
+from pathlib import Path
 from typing import Any
 
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 from app.database import get_db
 from app.middleware.auth import require_permission, require_user
@@ -26,6 +28,16 @@ from app.models.vehicles import (
     DeliveryItemResponse,
     DeliveryItemUpdate,
     FleetDashboardStats,
+    FuelLogCreate,
+    FuelLogResponse,
+    FuelLogUpdate,
+    FuelSummary,
+    InspectionRecordCreate,
+    InspectionRecordResponse,
+    InspectionTemplateCreate,
+    InspectionTemplateResponse,
+    InspectionTemplateUpdate,
+    InspectionItemSubmit,
     JobTrailerCreate,
     JobTrailerResponse,
     JobTrailerUpdate,
@@ -45,6 +57,12 @@ from app.models.vehicles import (
     ReimbursementApproval,
     ReimbursementCreate,
     ReimbursementResponse,
+    TelematicsDeviceCreate,
+    TelematicsDeviceResponse,
+    TelematicsPositionIngest,
+    TelematicsPositionResponse,
+    TelematicsEventIngest,
+    TelematicsEventResponse,
     TripLegBulkCreate,
     TripLegResponse,
     TrailerLocationEventCreate,
@@ -52,20 +70,30 @@ from app.models.vehicles import (
     VehicleAssignmentCreate,
     VehicleAssignmentResponse,
     VehicleCreate,
+    VehicleDocumentAlert,
     VehicleListItem,
+    VehicleLocationSummary,
     VehicleResponse,
+    VehicleTransferCreate,
+    VehicleTransferResponse,
     VehicleUpdate,
+    VehicleUtilizationReport,
     WarehouseLocationCreate,
     WarehouseLocationResponse,
     WarehouseLocationUpdate,
 )
 from app.services.delivery_service import DeliveryService
+from app.services.fuel_service import FuelService
+from app.services.inspection_service import InspectionService
 from app.services.maintenance_service import MaintenanceService
 from app.services.mileage_service import MileageService
+from app.services.telematics_service import TelematicsService
 from app.services.vehicle_service import VehicleService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/trucks", tags=["Trucks"], redirect_slashes=False)
+
+UPLOAD_DIR = Path("uploads/vehicles")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1266,6 +1294,624 @@ async def fleet_dashboard(
     svc = VehicleService(db)
     stats = await svc.get_fleet_dashboard()
     return ApiResponse(data=stats)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# FUEL TRACKING
+# ═══════════════════════════════════════════════════════════════════════
+
+@router.post(
+    "/fuel/{vehicle_id}",
+    response_model=ApiResponse[FuelLogResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def log_fuel(
+    vehicle_id: int,
+    body: FuelLogCreate,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Log a fuel purchase for a vehicle."""
+    svc = FuelService(db)
+    try:
+        record = await svc.log_fuel(vehicle_id, user["id"], body.model_dump())
+        return ApiResponse(data=record, message="Fuel log recorded")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get(
+    "/fuel/{vehicle_id}",
+    response_model=ApiResponse[list[FuelLogResponse]],
+)
+async def get_vehicle_fuel_logs(
+    vehicle_id: int,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Fuel history for a vehicle."""
+    svc = FuelService(db)
+    logs = await svc.get_fuel_logs(vehicle_id, limit=limit, offset=offset)
+    return ApiResponse(data=logs)
+
+
+@router.put(
+    "/fuel/log/{log_id}",
+    response_model=ApiResponse[FuelLogResponse],
+)
+async def update_fuel_log(
+    log_id: int,
+    body: FuelLogUpdate,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update a fuel log entry."""
+    svc = FuelService(db)
+    result = await svc.update_fuel_log(log_id, body.model_dump(exclude_unset=True))
+    if not result:
+        raise HTTPException(status_code=404, detail="Fuel log not found")
+    return ApiResponse(data=result, message="Fuel log updated")
+
+
+@router.get(
+    "/fuel-summary/{vehicle_id}",
+    response_model=ApiResponse[FuelSummary],
+)
+async def get_fuel_summary(
+    vehicle_id: int,
+    period_start: str | None = None,
+    period_end: str | None = None,
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Fuel cost/consumption summary for a vehicle."""
+    svc = FuelService(db)
+    summary = await svc.get_fuel_summary(vehicle_id, period_start, period_end)
+    return ApiResponse(data=summary)
+
+
+@router.get(
+    "/fleet/fuel-summary",
+    response_model=ApiResponse[FuelSummary],
+)
+async def fleet_fuel_summary(
+    period_start: str | None = None,
+    period_end: str | None = None,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Fleet-wide fuel cost/consumption summary."""
+    svc = FuelService(db)
+    summary = await svc.get_fuel_summary(None, period_start, period_end)
+    return ApiResponse(data=summary)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TELEMATICS — Device Management & Data Ingestion
+# ═══════════════════════════════════════════════════════════════════════
+
+@router.get(
+    "/telematics/devices",
+    response_model=ApiResponse[list[TelematicsDeviceResponse]],
+)
+async def list_telematics_devices(
+    active_only: bool = True,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List all registered telematics devices."""
+    svc = TelematicsService(db)
+    devices = await svc.list_devices(active_only=active_only)
+    return ApiResponse(data=devices)
+
+
+@router.post(
+    "/telematics/devices",
+    response_model=ApiResponse[TelematicsDeviceResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def register_telematics_device(
+    body: TelematicsDeviceCreate,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Register a telematics device on a vehicle."""
+    svc = TelematicsService(db)
+    try:
+        device = await svc.register_device(body.model_dump())
+        return ApiResponse(data=device, message="Device registered")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete(
+    "/telematics/devices/{device_id}",
+    response_model=ApiResponse[dict],
+)
+async def deactivate_telematics_device(
+    device_id: int,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Deactivate a telematics device."""
+    svc = TelematicsService(db)
+    ok = await svc.deactivate_device(device_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Device not found")
+    return ApiResponse(data={"id": device_id}, message="Device deactivated")
+
+
+@router.post(
+    "/telematics/ingest/position",
+    response_model=ApiResponse[TelematicsPositionResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def ingest_position(
+    body: TelematicsPositionIngest,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Device pushes a GPS position reading. Auth via device token."""
+    svc = TelematicsService(db)
+    try:
+        pos = await svc.ingest_position(body.auth_token, body.model_dump())
+        return ApiResponse(data=pos)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+@router.post(
+    "/telematics/ingest/event",
+    response_model=ApiResponse[TelematicsEventResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def ingest_event(
+    body: TelematicsEventIngest,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Device pushes a telematics event. Auth via device token."""
+    svc = TelematicsService(db)
+    try:
+        event = await svc.ingest_event(body.auth_token, body.model_dump())
+        return ApiResponse(data=event)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+
+@router.get(
+    "/telematics/positions/{vehicle_id}",
+    response_model=ApiResponse[list[TelematicsPositionResponse]],
+)
+async def get_vehicle_positions(
+    vehicle_id: int,
+    since: str | None = None,
+    limit: int = Query(200, ge=1, le=1000),
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Recent GPS breadcrumbs for a vehicle."""
+    svc = TelematicsService(db)
+    positions = await svc.get_vehicle_positions(vehicle_id, since=since, limit=limit)
+    return ApiResponse(data=positions)
+
+
+@router.get(
+    "/telematics/events/{vehicle_id}",
+    response_model=ApiResponse[list[TelematicsEventResponse]],
+)
+async def get_vehicle_events(
+    vehicle_id: int,
+    since: str | None = None,
+    event_type: str | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Recent telematics events for a vehicle."""
+    svc = TelematicsService(db)
+    events = await svc.get_vehicle_events(
+        vehicle_id, since=since, event_type=event_type, limit=limit
+    )
+    return ApiResponse(data=events)
+
+
+@router.get(
+    "/fleet/positions",
+    response_model=ApiResponse[list[VehicleLocationSummary]],
+)
+async def fleet_positions(
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Last known location for every vehicle with a telematics device."""
+    svc = TelematicsService(db)
+    positions = await svc.get_fleet_positions()
+    return ApiResponse(data=positions)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# VEHICLE INSPECTIONS
+# ═══════════════════════════════════════════════════════════════════════
+
+@router.get(
+    "/inspections/templates",
+    response_model=ApiResponse[list[InspectionTemplateResponse]],
+)
+async def list_inspection_templates(
+    vehicle_type: str | None = None,
+    inspection_type: str | None = None,
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List all inspection templates."""
+    svc = InspectionService(db)
+    templates = await svc.get_templates(
+        vehicle_type=vehicle_type, inspection_type=inspection_type
+    )
+    return ApiResponse(data=templates)
+
+
+@router.post(
+    "/inspections/templates",
+    response_model=ApiResponse[InspectionTemplateResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_inspection_template(
+    body: InspectionTemplateCreate,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Create an inspection template with checklist items."""
+    svc = InspectionService(db)
+    template = await svc.create_template(body.model_dump())
+    return ApiResponse(data=template, message="Template created")
+
+
+@router.get(
+    "/inspections/templates/{template_id}",
+    response_model=ApiResponse[InspectionTemplateResponse],
+)
+async def get_inspection_template(
+    template_id: int,
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get an inspection template with items."""
+    svc = InspectionService(db)
+    template = await svc.get_template(template_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return ApiResponse(data=template)
+
+
+@router.put(
+    "/inspections/templates/{template_id}",
+    response_model=ApiResponse[InspectionTemplateResponse],
+)
+async def update_inspection_template(
+    template_id: int,
+    body: InspectionTemplateUpdate,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update an inspection template."""
+    svc = InspectionService(db)
+    result = await svc.update_template(template_id, body.model_dump(exclude_unset=True))
+    if not result:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return ApiResponse(data=result, message="Template updated")
+
+
+@router.post(
+    "/inspections/{vehicle_id}/start",
+    response_model=ApiResponse[InspectionRecordResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def start_inspection(
+    vehicle_id: int,
+    body: InspectionRecordCreate,
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Start a new inspection for a vehicle from a template."""
+    svc = InspectionService(db)
+    try:
+        record = await svc.start_inspection(vehicle_id, user["id"], body.model_dump())
+        return ApiResponse(data=record, message="Inspection started")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put(
+    "/inspections/records/{record_id}/items/{item_id}",
+    response_model=ApiResponse[InspectionRecordResponse],
+)
+async def submit_inspection_item(
+    record_id: int,
+    item_id: int,
+    body: InspectionItemSubmit,
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Submit pass/fail for a single inspection item."""
+    svc = InspectionService(db)
+    try:
+        record = await svc.submit_item(record_id, item_id, body.model_dump())
+        return ApiResponse(data=record, message="Item submitted")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post(
+    "/inspections/records/{record_id}/complete",
+    response_model=ApiResponse[InspectionRecordResponse],
+)
+async def complete_inspection(
+    record_id: int,
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Finalize an inspection — calculates overall result."""
+    svc = InspectionService(db)
+    try:
+        record = await svc.complete_inspection(record_id)
+        return ApiResponse(data=record, message="Inspection completed")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get(
+    "/inspections/{vehicle_id}/history",
+    response_model=ApiResponse[list[InspectionRecordResponse]],
+)
+async def get_vehicle_inspections(
+    vehicle_id: int,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user: dict = Depends(require_permission("view_trucks")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Inspection history for a vehicle."""
+    svc = InspectionService(db)
+    records = await svc.get_vehicle_inspections(vehicle_id, limit=limit, offset=offset)
+    return ApiResponse(data=records)
+
+
+@router.get(
+    "/fleet/inspections/pending",
+    response_model=ApiResponse[list[InspectionRecordResponse]],
+)
+async def fleet_pending_inspections(
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Fleet-wide incomplete inspections."""
+    svc = InspectionService(db)
+    records = await svc.get_pending_inspections()
+    return ApiResponse(data=records)
+
+
+@router.get(
+    "/fleet/inspections/failed",
+    response_model=ApiResponse[list[InspectionRecordResponse]],
+)
+async def fleet_failed_inspections(
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Failed / needs-attention inspections for manager review."""
+    svc = InspectionService(db)
+    records = await svc.get_failed_inspections()
+    return ApiResponse(data=records)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# VEHICLE TRANSFERS
+# ═══════════════════════════════════════════════════════════════════════
+
+@router.get(
+    "/fleet/transfers",
+    response_model=ApiResponse[list[VehicleTransferResponse]],
+)
+async def list_transfers(
+    transfer_status: str | None = None,
+    vehicle_id: int | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """List vehicle transfers."""
+    svc = VehicleService(db)
+    transfers = await svc.list_transfers(
+        status=transfer_status, vehicle_id=vehicle_id, limit=limit, offset=offset
+    )
+    return ApiResponse(data=transfers)
+
+
+@router.post(
+    "/fleet/transfers",
+    response_model=ApiResponse[VehicleTransferResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def request_transfer(
+    body: VehicleTransferCreate,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Request a vehicle transfer between warehouses."""
+    svc = VehicleService(db)
+    try:
+        transfer = await svc.request_transfer(body.model_dump(), user["id"])
+        return ApiResponse(data=transfer, message="Transfer requested")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post(
+    "/fleet/transfers/{transfer_id}/approve",
+    response_model=ApiResponse[VehicleTransferResponse],
+)
+async def approve_transfer(
+    transfer_id: int,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Approve a transfer request."""
+    svc = VehicleService(db)
+    try:
+        transfer = await svc.approve_transfer(transfer_id, user["id"])
+        return ApiResponse(data=transfer, message="Transfer approved")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post(
+    "/fleet/transfers/{transfer_id}/transit",
+    response_model=ApiResponse[VehicleTransferResponse],
+)
+async def start_transit(
+    transfer_id: int,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Mark a transfer as in-transit."""
+    svc = VehicleService(db)
+    try:
+        transfer = await svc.start_transit(transfer_id)
+        return ApiResponse(data=transfer, message="Transfer in transit")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post(
+    "/fleet/transfers/{transfer_id}/complete",
+    response_model=ApiResponse[VehicleTransferResponse],
+)
+async def complete_transfer(
+    transfer_id: int,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Mark a transfer as completed."""
+    svc = VehicleService(db)
+    try:
+        transfer = await svc.complete_transfer(transfer_id)
+        return ApiResponse(data=transfer, message="Transfer completed")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post(
+    "/fleet/transfers/{transfer_id}/cancel",
+    response_model=ApiResponse[VehicleTransferResponse],
+)
+async def cancel_transfer(
+    transfer_id: int,
+    reason: str | None = None,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Cancel a pending/approved transfer."""
+    svc = VehicleService(db)
+    try:
+        transfer = await svc.cancel_transfer(transfer_id, reason)
+        return ApiResponse(data=transfer, message="Transfer cancelled")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# DOCUMENT ALERTS & UTILIZATION
+# ═══════════════════════════════════════════════════════════════════════
+
+@router.get(
+    "/fleet/document-alerts",
+    response_model=ApiResponse[list[VehicleDocumentAlert]],
+)
+async def get_document_alerts(
+    days_ahead: int = Query(30, ge=1, le=365),
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Vehicles with insurance or registration expiring within N days."""
+    svc = VehicleService(db)
+    alerts = await svc.get_document_alerts(days_ahead)
+    return ApiResponse(data=alerts)
+
+
+@router.get(
+    "/fleet/utilization",
+    response_model=ApiResponse[VehicleUtilizationReport],
+)
+async def get_utilization_report(
+    period_start: str = Query(..., description="YYYY-MM-DD"),
+    period_end: str = Query(..., description="YYYY-MM-DD"),
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Fleet utilization report: miles, costs, MPG per vehicle."""
+    svc = VehicleService(db)
+    report = await svc.get_utilization_report(period_start, period_end)
+    return ApiResponse(data=report)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# VEHICLE PHOTO UPLOAD
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@router.post(
+    "/photo/{vehicle_id}",
+    response_model=ApiResponse[dict],
+    summary="Upload vehicle photo",
+)
+async def upload_vehicle_photo(
+    vehicle_id: int,
+    file: UploadFile = File(...),
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Upload or replace a vehicle's photo."""
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename or "photo.jpg").suffix
+    stored_name = f"vehicle_{vehicle_id}_{uuid.uuid4().hex}{ext}"
+    file_path = UPLOAD_DIR / stored_name
+
+    content = await file.read()
+    file_path.write_bytes(content)
+
+    # Update vehicle record with the new photo path
+    await db.execute(
+        "UPDATE vehicles SET photo_path = ?, updated_at = datetime('now') WHERE id = ?",
+        (f"/uploads/vehicles/{stored_name}", vehicle_id),
+    )
+    await db.commit()
+
+    return ApiResponse(
+        data={"photo_path": f"/uploads/vehicles/{stored_name}"},
+        message="Vehicle photo uploaded",
+    )
+
+
+@router.delete(
+    "/photo/{vehicle_id}",
+    response_model=ApiResponse[dict],
+    summary="Remove vehicle photo",
+)
+async def remove_vehicle_photo(
+    vehicle_id: int,
+    user: dict = Depends(require_permission("manage_fleet")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Remove a vehicle's photo."""
+    await db.execute(
+        "UPDATE vehicles SET photo_path = NULL, updated_at = datetime('now') WHERE id = ?",
+        (vehicle_id,),
+    )
+    await db.commit()
+    return ApiResponse(data={}, message="Vehicle photo removed")
 
 
 # ═══════════════════════════════════════════════════════════════════════

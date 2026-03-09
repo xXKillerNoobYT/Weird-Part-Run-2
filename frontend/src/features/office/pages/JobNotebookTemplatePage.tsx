@@ -33,6 +33,7 @@ import {
   deleteTemplateSection,
   addTemplateEntry,
   deleteTemplateEntry,
+  duplicateTemplate,
 } from '../../../api/notebooks';
 import type {
   TemplateResponse,
@@ -174,6 +175,15 @@ export function JobNotebookTemplatePage() {
     onSuccess: invalidateAll,
   });
 
+  const duplicateTemplateMut = useMutation({
+    mutationFn: () =>
+      duplicateTemplate(selectedId!, `${templateFull?.name ?? 'Template'} (Copy)`),
+    onSuccess: (newTemplate) => {
+      invalidateAll();
+      setSelectedId(newTemplate.id);
+    },
+  });
+
   // ── Helpers ─────────────────────────────────────────────────────
   const toggleSection = (id: number) => {
     setExpandedSections((prev) => {
@@ -239,11 +249,10 @@ export function JobNotebookTemplatePage() {
             <button
               key={t.id}
               onClick={() => setSelectedId(t.id)}
-              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                selectedId === t.id
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${selectedId === t.id
                   ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
                   : 'hover:bg-surface-secondary text-gray-700 dark:text-gray-300'
-              }`}
+                }`}
             >
               <div className="flex items-center gap-2">
                 <span className="font-medium truncate flex-1">{t.name}</span>
@@ -420,6 +429,15 @@ export function JobNotebookTemplatePage() {
 
               {/* Action buttons */}
               <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => duplicateTemplateMut.mutate()}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md border border-gray-200 dark:border-gray-600 transition-colors"
+                  title="Duplicate this template"
+                  disabled={duplicateTemplateMut.isPending}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  {duplicateTemplateMut.isPending ? 'Copying...' : 'Duplicate'}
+                </button>
                 {!templateFull.is_default && (
                   <button
                     onClick={() => updateTemplateMut.mutate({ is_default: true })}
@@ -471,8 +489,8 @@ export function JobNotebookTemplatePage() {
                     setAddingEntryToSection(section.id);
                     setNewEntryType(
                       section.section_type === 'info' ? 'field'
-                      : section.section_type === 'tasks' ? 'task'
-                      : 'note'
+                        : section.section_type === 'tasks' ? 'task'
+                          : 'note'
                     );
                     setNewEntryTitle('');
                   }}
@@ -518,11 +536,10 @@ export function JobNotebookTemplatePage() {
                         key={st}
                         type="button"
                         onClick={() => setNewSectionType(st)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border transition-colors ${
-                          newSectionType === st
+                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border transition-colors ${newSectionType === st
                             ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600 text-blue-700 dark:text-blue-300'
                             : 'border-border text-gray-500 hover:text-gray-700'
-                        }`}
+                          }`}
                       >
                         <StIcon className="h-3.5 w-3.5" />
                         {SECTION_TYPE_LABELS[st]}
@@ -735,11 +752,10 @@ function TemplateSectionCard({
                   <button
                     key={et}
                     onClick={() => entryForm.setType(et)}
-                    className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md border transition-colors ${
-                      entryForm.type === et
+                    className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md border transition-colors ${entryForm.type === et
                         ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-600 text-blue-700 dark:text-blue-300'
                         : 'border-border text-gray-500 hover:text-gray-700'
-                    }`}
+                      }`}
                   >
                     <EntryTypeIcon entryType={et} />
                     {et.charAt(0).toUpperCase() + et.slice(1)}

@@ -64,6 +64,9 @@ import { FleetDashboardPage } from './features/trucks/pages/FleetDashboardPage';
 import { TrailersPage } from './features/trucks/pages/TrailersPage';
 import { TrailerDetailPage } from './features/trucks/pages/TrailerDetailPage';
 import { TrailerLocationsPage } from './features/trucks/pages/TrailerLocationsPage';
+import { FuelPage } from './features/trucks/pages/FuelPage';
+import { TelematicsPage } from './features/trucks/pages/TelematicsPage';
+import { InspectionsPage } from './features/trucks/pages/InspectionsPage';
 
 // Pages — Jobs
 import { ActiveJobsPage } from './features/jobs/pages/ActiveJobsPage';
@@ -211,6 +214,9 @@ export default function App() {
               <Route path="/trucks/maintenance" element={<MaintenancePage />} />
               <Route path="/trucks/mileage" element={<MileagePage />} />
               <Route path="/trucks/fleet" element={<FleetDashboardPage />} />
+              <Route path="/trucks/fuel" element={<FuelPage />} />
+              <Route path="/trucks/telematics" element={<TelematicsPage />} />
+              <Route path="/trucks/inspections" element={<InspectionsPage />} />
               <Route path="/trucks/trailers" element={<TrailersPage />} />
               <Route path="/trucks/trailers/:trailer_id" element={<TrailerDetailPage />} />
               <Route path="/trucks/trailer-locations" element={<TrailerLocationsPage />} />

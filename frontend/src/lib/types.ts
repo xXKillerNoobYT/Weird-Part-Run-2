@@ -3408,6 +3408,317 @@ export interface TrailerRestockGuidance {
   }[];
 }
 
+// ── Fuel Tracking ──────────────────────────────────────────────────
+
+export interface FuelLogCreate {
+  fill_date?: string;
+  odometer_reading: number;
+  gallons: number;
+  price_per_gallon: number;
+  fuel_type?: 'regular' | 'premium' | 'diesel' | 'e85';
+  station_name?: string | null;
+  receipt_photo?: string | null;
+  notes?: string | null;
+}
+
+export interface FuelLogUpdate {
+  fill_date?: string;
+  odometer_reading?: number;
+  gallons?: number;
+  price_per_gallon?: number;
+  fuel_type?: string;
+  station_name?: string | null;
+  receipt_photo?: string | null;
+  notes?: string | null;
+}
+
+export interface FuelLog {
+  id: number;
+  vehicle_id: number;
+  driver_id: number;
+  fill_date: string;
+  odometer_reading: number;
+  gallons: number;
+  price_per_gallon: number;
+  total_cost: number;
+  fuel_type: string;
+  station_name: string | null;
+  receipt_photo: string | null;
+  notes: string | null;
+  mpg: number | null;
+  driver_name?: string | null;
+  created_at: string;
+}
+
+export interface FuelSummary {
+  fill_count: number;
+  total_gallons: number | null;
+  total_cost: number | null;
+  avg_price: number | null;
+  avg_mpg: number | null;
+  total_miles_driven: number | null;
+}
+
+// ── Telematics ─────────────────────────────────────────────────────
+
+export interface TelematicsDeviceCreate {
+  vehicle_id: number;
+  device_type?: string;
+  device_serial: string;
+  device_name?: string | null;
+}
+
+export interface TelematicsDevice {
+  id: number;
+  vehicle_id: number;
+  device_type: string;
+  device_serial: string;
+  device_name: string | null;
+  auth_token: string;
+  is_active: boolean;
+  last_seen_at: string | null;
+  vehicle_number?: string | null;
+  vehicle_make?: string | null;
+  vehicle_model?: string | null;
+  created_at: string;
+}
+
+export interface TelematicsPositionIngest {
+  auth_token: string;
+  lat: number;
+  lng: number;
+  speed_mph?: number | null;
+  heading?: number | null;
+  altitude_ft?: number | null;
+  odometer_reading?: number | null;
+  engine_on?: boolean;
+  recorded_at: string;
+}
+
+export interface TelematicsPosition {
+  id: number;
+  device_id: number;
+  vehicle_id: number;
+  lat: number;
+  lng: number;
+  speed_mph: number | null;
+  heading: number | null;
+  altitude_ft: number | null;
+  odometer_reading: number | null;
+  engine_on: boolean;
+  recorded_at: string;
+  created_at: string;
+}
+
+export interface TelematicsEventIngest {
+  auth_token: string;
+  event_type: string;
+  event_data?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  recorded_at: string;
+}
+
+export interface TelematicsEvent {
+  id: number;
+  device_id: number;
+  vehicle_id: number;
+  event_type: string;
+  event_data: string | null;
+  lat: number | null;
+  lng: number | null;
+  recorded_at: string;
+  created_at: string;
+}
+
+export interface VehicleLocationSummary {
+  vehicle_id: number;
+  vehicle_number: string;
+  vehicle_make: string | null;
+  vehicle_model: string | null;
+  lat: number;
+  lng: number;
+  speed_mph: number | null;
+  engine_on: boolean;
+  recorded_at: string;
+}
+
+// ── Vehicle Inspections ────────────────────────────────────────────
+
+export type InspectionItemSeverity = 'critical' | 'warning' | 'info';
+export type InspectionItemStatus = 'pending' | 'pass' | 'fail' | 'na';
+export type InspectionOverallResult = 'pass' | 'fail' | 'needs_attention';
+
+export interface InspectionTemplateItemCreate {
+  sort_order?: number;
+  category?: string;
+  item_name: string;
+  description?: string | null;
+  severity?: InspectionItemSeverity;
+  requires_photo?: boolean;
+}
+
+export interface InspectionTemplateCreate {
+  name: string;
+  description?: string | null;
+  vehicle_type?: string | null;
+  inspection_type?: string;
+  items: InspectionTemplateItemCreate[];
+}
+
+export interface InspectionTemplateUpdate {
+  name?: string;
+  description?: string | null;
+  vehicle_type?: string | null;
+  inspection_type?: string;
+  is_active?: boolean;
+  items?: InspectionTemplateItemCreate[];
+}
+
+export interface InspectionTemplateItem {
+  id: number;
+  template_id: number;
+  sort_order: number;
+  category: string;
+  item_name: string;
+  description: string | null;
+  severity: InspectionItemSeverity;
+  requires_photo: boolean;
+}
+
+export interface InspectionTemplate {
+  id: number;
+  name: string;
+  description: string | null;
+  vehicle_type: string | null;
+  inspection_type: string;
+  is_active: boolean;
+  items?: InspectionTemplateItem[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InspectionRecordCreate {
+  template_id: number;
+  inspection_type?: string;
+  odometer_reading?: number | null;
+  notes?: string | null;
+}
+
+export interface InspectionRecordItem {
+  id: number;
+  record_id: number;
+  template_item_id: number | null;
+  item_name: string;
+  category: string;
+  status: InspectionItemStatus;
+  severity: InspectionItemSeverity;
+  photo: string | null;
+  notes: string | null;
+}
+
+export interface InspectionRecord {
+  id: number;
+  vehicle_id: number;
+  template_id: number;
+  inspector_id: number;
+  inspection_type: string;
+  inspection_date: string;
+  odometer_reading: number | null;
+  overall_result: InspectionOverallResult | null;
+  notes: string | null;
+  completed_at: string | null;
+  inspector_name?: string | null;
+  vehicle_number?: string | null;
+  template_name?: string | null;
+  items?: InspectionRecordItem[];
+  created_at: string;
+}
+
+export interface InspectionItemSubmit {
+  status: InspectionItemStatus;
+  photo?: string | null;
+  notes?: string | null;
+}
+
+// ── Vehicle Transfers ──────────────────────────────────────────────
+
+export type TransferStatus = 'requested' | 'approved' | 'in_transit' | 'completed' | 'cancelled';
+
+export interface VehicleTransferCreate {
+  vehicle_id: number;
+  from_warehouse_id?: number | null;
+  to_warehouse_id: number;
+  reason?: string | null;
+  notes?: string | null;
+}
+
+export interface VehicleTransfer {
+  id: number;
+  vehicle_id: number;
+  from_warehouse_id: number | null;
+  to_warehouse_id: number;
+  requested_by: number;
+  approved_by: number | null;
+  status: TransferStatus;
+  reason: string | null;
+  notes: string | null;
+  approved_at: string | null;
+  completed_at: string | null;
+  vehicle_number?: string | null;
+  from_warehouse_name?: string | null;
+  to_warehouse_name?: string | null;
+  requested_by_name?: string | null;
+  approved_by_name?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── Document Alerts & Utilization ──────────────────────────────────
+
+export interface VehicleDocumentAlert {
+  vehicle_id: number;
+  vehicle_number: string;
+  vehicle_label: string;
+  alert_type: 'insurance' | 'registration';
+  expiry_date: string;
+  days_remaining: number | null;
+  is_expired: boolean;
+}
+
+export interface VehicleUtilizationEntry {
+  vehicle_id: number;
+  vehicle_number: string;
+  year: number | null;
+  make: string | null;
+  model: string | null;
+  status: string;
+  total_miles: number;
+  mileage_entries: number;
+  maintenance_cost: number;
+  fuel_cost: number;
+  total_gallons: number;
+  total_cost: number;
+  avg_mpg: number | null;
+  cost_per_mile: number | null;
+}
+
+export interface FleetUtilizationSummary {
+  total_vehicles: number;
+  fleet_total_miles: number;
+  fleet_maintenance_cost: number;
+  fleet_fuel_cost: number;
+  fleet_total_cost: number;
+  fleet_avg_cost_per_mile: number | null;
+}
+
+export interface VehicleUtilizationReport {
+  period_start: string;
+  period_end: string;
+  vehicles: VehicleUtilizationEntry[];
+  summary: FleetUtilizationSummary;
+}
+
 // ── Maintenance Cost Summary ───────────────────────────────────────
 
 export interface MaintenanceCostSummary {

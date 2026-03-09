@@ -30,6 +30,8 @@ import {
   Search,
   CheckCircle,
   RotateCcw,
+  Camera,
+  ImageOff,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -55,6 +57,8 @@ import {
   getMaintenanceCosts,
   getMileageLogs,
   listMaintenanceTypes,
+  uploadVehiclePhoto,
+  removeVehiclePhoto,
 } from '../../../api/vehicles';
 import { VehicleStatusBadge, VehicleTypeBadge, STATUS_LABELS, TYPE_LABELS } from '../components/VehicleStatusBadge';
 import { AssignDriverModal } from '../components/AssignDriverModal';
@@ -199,8 +203,8 @@ export function VehicleDetailPage() {
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === tab.id
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
               }`}
           >
             {tab.icon}
@@ -243,6 +247,105 @@ function InfoRow({ label, value, mono }: { label: string; value: string | null |
         {value}
       </span>
     </div>
+  );
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// VEHICLE PHOTO CARD
+// ══════════════════════════════════════════════════════════════════
+
+function VehiclePhotoCard({
+  vehicleId,
+  photoPath,
+  canManage,
+}: {
+  vehicleId: number;
+  photoPath: string | null;
+  canManage: boolean;
+}) {
+  const queryClient = useQueryClient();
+
+  const uploadMut = useMutation({
+    mutationFn: (file: File) => uploadVehiclePhoto(vehicleId, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vehicle', vehicleId] });
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+    },
+  });
+
+  const removeMut = useMutation({
+    mutationFn: () => removeVehiclePhoto(vehicleId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vehicle', vehicleId] });
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
+    },
+  });
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) uploadMut.mutate(file);
+    e.target.value = '';
+  };
+
+  return (
+    <Card noPadding className="lg:col-span-2">
+      <div className="p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Vehicle Photo</h3>
+          {canManage && (
+            <div className="flex items-center gap-2">
+              <label className="cursor-pointer">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors cursor-pointer">
+                  <Camera className="h-3.5 w-3.5" />
+                  {photoPath ? 'Change' : 'Upload'}
+                </span>
+              </label>
+              {photoPath && (
+                <button
+                  onClick={() => {
+                    if (window.confirm('Remove vehicle photo?')) removeMut.mutate();
+                  }}
+                  disabled={removeMut.isPending}
+                  className="p-1.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                  title="Remove photo"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {uploadMut.isPending && (
+          <div className="flex items-center gap-2 mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+            <span className="text-xs text-blue-600 dark:text-blue-400">Uploading photo...</span>
+          </div>
+        )}
+
+        {photoPath ? (
+          <div className="relative rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 max-h-64">
+            <img
+              src={`/api${photoPath}`}
+              alt="Vehicle"
+              className="w-full h-full object-contain max-h-64"
+            />
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-8 text-gray-400 dark:text-gray-500">
+            <ImageOff className="h-10 w-10 mb-2" />
+            <p className="text-sm">No photo uploaded</p>
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -355,6 +458,9 @@ function OverviewTab({ vehicle }: { vehicle: Vehicle }) {
           )}
         </div>
       </Card>
+
+      {/* Vehicle Photo */}
+      <VehiclePhotoCard vehicleId={vehicle.id} photoPath={vehicle.photo_path} canManage={canManage} />
 
       {/* Quick Summary Cards */}
       <Card noPadding>
@@ -968,6 +1074,7 @@ function ServiceRecordRow({ record: r }: { record: MaintenanceRecord }) {
         <p className="text-xs text-gray-500 dark:text-gray-400">
           {r.service_date}
           {r.vendor && ` · ${r.vendor}`}
+          {r.invoice_number && ` · #${r.invoice_number}`}
           {r.odometer_reading && ` · ${r.odometer_reading.toLocaleString()} mi`}
         </p>
       </div>
@@ -993,6 +1100,7 @@ function LogServiceForm({ vehicleId, onDone }: { vehicleId: number; onDone: () =
   const [odometer, setOdometer] = useState('');
   const [cost, setCost] = useState('');
   const [vendor, setVendor] = useState('');
+  const [invoiceNumber, setInvoiceNumber] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState('');
 
@@ -1011,6 +1119,7 @@ function LogServiceForm({ vehicleId, onDone }: { vehicleId: number; onDone: () =
       odometer_reading: odometer ? parseInt(odometer) : undefined,
       cost: cost ? parseFloat(cost) : undefined,
       vendor: vendor.trim() || undefined,
+      invoice_number: invoiceNumber.trim() || undefined,
       description: description.trim() || undefined,
     });
   }
@@ -1039,10 +1148,11 @@ function LogServiceForm({ vehicleId, onDone }: { vehicleId: number; onDone: () =
         </div>
         <Input label="Service Date" type="date" value={serviceDate} onChange={(e) => setServiceDate(e.target.value)} />
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <Input label="Odometer" type="number" placeholder="45000" value={odometer} onChange={(e) => setOdometer(e.target.value)} />
         <Input label="Cost ($)" type="number" placeholder="0.00" value={cost} onChange={(e) => setCost(e.target.value)} />
         <Input label="Vendor" placeholder="Shop name" value={vendor} onChange={(e) => setVendor(e.target.value)} />
+        <Input label="Invoice #" placeholder="INV-12345" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
       </div>
       <Input label="Description" placeholder="What was done..." value={description} onChange={(e) => setDescription(e.target.value)} />
 
