@@ -8,11 +8,10 @@
  * and viewing historical records.
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Sun, Clock, Check, X, Plus, AlertTriangle, Calendar, User,
-  Filter, ChevronDown,
+  Sun, Clock, Check, X, Plus, Calendar, User,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -32,7 +31,7 @@ import {
   deleteTimeOff,
 } from '../../../api/scheduling';
 import type {
-  ScheduleExceptionResponse, ScheduleExceptionCreate, ExceptionType,
+  ScheduleExceptionResponse, ExceptionType,
 } from '../../../lib/types';
 
 

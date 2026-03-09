@@ -6,7 +6,7 @@
  * Accessible via Trucks > Maintenance tab.
  */
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -18,9 +18,6 @@ import {
   ChevronUp,
   Plus,
   Settings,
-  DollarSign,
-  Filter,
-  X,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -39,13 +36,11 @@ import {
   logService,
   listVehicles,
 } from '../../../api/vehicles';
-import type { MaintenanceAlert, MaintenanceType, VehicleListItem } from '../../../lib/types';
+import type { MaintenanceAlert } from '../../../lib/types';
 
 type SubView = 'overview' | 'types';
 
 export function MaintenancePage() {
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const { hasPermission } = useAuthStore();
   const canManageFleet = hasPermission(PERMISSIONS.MANAGE_FLEET);
 
@@ -246,7 +241,7 @@ function AlertSection({
             <Clock className="h-4 w-4 text-amber-500" />
           )}
           <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{title}</span>
-          <Badge variant={variant === 'overdue' ? 'destructive' : 'warning'}>{alerts.length}</Badge>
+          <Badge variant={variant === 'overdue' ? 'danger' : 'warning'}>{alerts.length}</Badge>
         </div>
         {expanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
       </button>

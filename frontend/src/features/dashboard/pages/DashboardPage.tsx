@@ -21,7 +21,6 @@ import {
   ArrowRightLeft,
   Loader2,
   Activity,
-  ShieldAlert,
 } from 'lucide-react';
 
 import { Card, CardHeader } from '../../../components/ui/Card';
@@ -201,7 +200,6 @@ export function DashboardPage() {
               <CardHeader
                 title="Certification Alerts"
                 subtitle={`${certAlerts.length} certification${certAlerts.length === 1 ? '' : 's'} expiring soon`}
-                icon={<ShieldAlert className="h-5 w-5 text-amber-500" />}
               />
               <div className="space-y-2">
                 {certAlerts.slice(0, 5).map((alert, i) => (

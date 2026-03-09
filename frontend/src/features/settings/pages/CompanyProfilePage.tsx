@@ -16,7 +16,7 @@ import {
   deleteCompanyProfile,
 } from '../../../api/settings';
 import { EmptyState } from '../../../components/ui/EmptyState';
-import type { CompanyProfile, CompanyProfileCreate } from '../../../lib/types';
+import type { CompanyProfile, CompanyProfileCreate, CompanyProfileUpdate } from '../../../lib/types';
 
 export function CompanyProfilePage() {
   const queryClient = useQueryClient();
@@ -37,7 +37,7 @@ export function CompanyProfilePage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<CompanyProfile> }) =>
+    mutationFn: ({ id, data }: { id: number; data: CompanyProfileUpdate }) =>
       updateCompanyProfile(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['company-profiles'] });

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -294,7 +294,7 @@ class SyncService:
         summary = {
             "table_count": len(tables),
             "total_rows": total_rows,
-            "generated_at": datetime.now(UTC).isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
         cursor = await self.db.execute(
@@ -344,7 +344,7 @@ class SyncService:
             "table_count": len(tables),
             "total_rows": total_rows,
             "preserve_pending_data": preserve_pending_data,
-            "server_time": datetime.now(UTC).isoformat(),
+            "server_time": datetime.now(timezone.utc).isoformat(),
         }
 
     async def complete_hard_sync(
@@ -388,7 +388,7 @@ class SyncService:
             "applied_tables": applied_tables or [],
             "restored_pending_count": restored_pending_count,
             "completed_by": completed_by,
-            "completed_at": datetime.now(UTC).isoformat(),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
         }
 
     async def get_hard_sync_history(
@@ -715,7 +715,7 @@ class SyncService:
         self, device_id: str, batch_id: str,
     ) -> None:
         """Mark a device as synced after it confirms applying shop changes."""
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         await self.db.execute(
             """UPDATE _device_registry
                SET last_sync_at = ?, last_sync_batch_id = ?, pending_changes = 0

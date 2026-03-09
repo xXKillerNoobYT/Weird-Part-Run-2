@@ -38,7 +38,7 @@ export async function getInbox(): Promise<ChatInboxResponse> {
   const { data } = await apiClient.get<ApiResponse<ChatInboxResponse>>(
     '/chat/channels',
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Get channel detail with paginated messages and member list. */
@@ -51,7 +51,7 @@ export async function getChannelDetail(
     `/chat/channels/${channelId}`,
     { params: { before_id: beforeId, limit } },
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Create or find a DM channel between users. */
@@ -62,7 +62,7 @@ export async function createDMChannel(
     '/chat/channels/dm',
     { channel_type: 'dm', user_ids: userIds },
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Get or create a job channel with auto-enrollment. */
@@ -72,7 +72,7 @@ export async function getOrCreateJobChannel(
   const { data } = await apiClient.post<ApiResponse<ChatChannelResponse>>(
     `/chat/channels/job/${jobId}`,
   );
-  return data.data;
+  return data.data!;
 }
 
 
@@ -89,7 +89,7 @@ export async function sendMessage(
     `/chat/channels/${channelId}/messages`,
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Edit a message (only sender can edit). */
@@ -101,7 +101,7 @@ export async function editMessage(
     `/chat/messages/${messageId}`,
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Soft-delete a message (only sender can delete). */
@@ -111,7 +111,7 @@ export async function deleteMessage(
   const { data } = await apiClient.delete<ApiResponse<StatusMessage>>(
     `/chat/messages/${messageId}`,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Pin a message. */
@@ -121,7 +121,7 @@ export async function pinMessage(
   const { data } = await apiClient.post<ApiResponse<StatusMessage>>(
     `/chat/messages/${messageId}/pin`,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Unpin a message. */
@@ -131,7 +131,7 @@ export async function unpinMessage(
   const { data } = await apiClient.delete<ApiResponse<StatusMessage>>(
     `/chat/messages/${messageId}/pin`,
   );
-  return data.data;
+  return data.data!;
 }
 
 
@@ -148,7 +148,7 @@ export async function markChannelRead(
     `/chat/channels/${channelId}/read`,
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 
@@ -161,7 +161,7 @@ export async function getMentions(): Promise<ChatMentionResponse[]> {
   const { data } = await apiClient.get<ApiResponse<ChatMentionResponse[]>>(
     '/chat/mentions',
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Acknowledge a mention. */
@@ -171,7 +171,7 @@ export async function ackMention(
   const { data } = await apiClient.post<ApiResponse<StatusMessage>>(
     `/chat/mentions/${mentionId}/ack`,
   );
-  return data.data;
+  return data.data!;
 }
 
 
@@ -184,7 +184,7 @@ export async function getChatBadge(): Promise<ChatBadgeResponse> {
   const { data } = await apiClient.get<ApiResponse<ChatBadgeResponse>>(
     '/chat/badge',
   );
-  return data.data;
+  return data.data!;
 }
 
 
@@ -200,7 +200,7 @@ export async function askQuestion(
     '/chat/qa/ask',
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** List Q&A threads with optional filters. */
@@ -216,7 +216,7 @@ export async function getQAThreads(params: {
     '/chat/qa/threads',
     { params },
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Get thread detail with messages and escalation timeline. */
@@ -226,7 +226,7 @@ export async function getQAThreadDetail(
   const { data } = await apiClient.get<ApiResponse<QAThreadDetailResponse>>(
     `/chat/qa/threads/${threadId}`,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Escalate a Q&A thread to the next level. */
@@ -238,7 +238,7 @@ export async function escalateThread(
     `/chat/qa/threads/${threadId}/escalate`,
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Answer a Q&A thread. */
@@ -250,7 +250,7 @@ export async function answerThread(
     `/chat/qa/threads/${threadId}/answer`,
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Close a Q&A thread. */
@@ -260,7 +260,7 @@ export async function closeThread(
   const { data } = await apiClient.post<ApiResponse<StatusMessage>>(
     `/chat/qa/threads/${threadId}/close`,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Create RFI and prepare for GC communication. */
@@ -272,7 +272,7 @@ export async function sendToGC(
     `/chat/qa/threads/${threadId}/send-to-gc`,
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 
@@ -291,7 +291,7 @@ export async function getRFIs(params: {
     '/chat/rfis',
     { params },
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Update RFI status (e.g., mark as responded). */
@@ -303,5 +303,5 @@ export async function updateRFI(
     `/chat/rfis/${rfiId}`,
     body,
   );
-  return data.data;
+  return data.data!;
 }

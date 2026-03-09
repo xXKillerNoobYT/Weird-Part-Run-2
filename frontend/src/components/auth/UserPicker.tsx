@@ -7,11 +7,14 @@
  * - Hat/role badges
  *
  * Used on public devices and first-time setups.
+ * On Capacitor with an empty local DB, shows a setup prompt
+ * to connect to the shop server and sync users.
  */
 
 import { useEffect, useState } from 'react';
-import { Zap, UserCircle } from 'lucide-react';
+import { Zap, UserCircle, Wifi } from 'lucide-react';
 import { getUsers } from '../../api/auth';
+import { isCapacitor } from '../../lib/environment';
 import type { UserPickerItem } from '../../lib/types';
 import { Badge } from '../ui/Badge';
 import { Spinner } from '../ui/Spinner';
@@ -30,11 +33,13 @@ export function UserPicker({ onSelect }: UserPickerProps) {
   }, []);
 
   async function loadUsers() {
+    setLoading(true);
+    setError(null);
     try {
       const data = await getUsers();
       setUsers(data);
     } catch (err) {
-      setError('Unable to connect to server. Make sure the backend is running.');
+      setError('Unable to load users.');
       console.error('Failed to load users:', err);
     } finally {
       setLoading(false);
@@ -106,11 +111,102 @@ export function UserPicker({ onSelect }: UserPickerProps) {
         </div>
       )}
 
-      {/* No users */}
+      {/* No users — Capacitor: show setup prompt, Browser: show generic message */}
       {!loading && users.length === 0 && !error && (
-        <p className="text-gray-500 dark:text-gray-400">
-          No users found. The database may need to be initialized.
-        </p>
+        isCapacitor() ? (
+          <CapacitorSetupPrompt onSynced={() => loadUsers()} />
+        ) : (
+          <p className="text-gray-500 dark:text-gray-400">
+            No users found. The database may need to be initialized.
+          </p>
+        )
+      )}
+    </div>
+  );
+}
+
+// ── First-time setup for Capacitor devices ─────────────────────────
+
+function CapacitorSetupPrompt({ onSynced }: { onSynced: () => void }) {
+  const [url, setUrl] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [promptError, setPromptError] = useState<string | null>(null);
+
+  async function handleConnect() {
+    if (!url.trim()) return;
+    setChecking(true);
+    setPromptError(null);
+    setStatus(null);
+
+    try {
+      const { setShopUrl, isShopReachable } = await import('../../lib/shop-config');
+      const cleanUrl = url.trim().replace(/\/+$/, '');
+      await setShopUrl(cleanUrl);
+      const reachable = await isShopReachable();
+
+      if (!reachable) {
+        setPromptError('Cannot reach that server. Check the URL and try again.');
+        setChecking(false);
+        return;
+      }
+
+      setStatus('Connected! Syncing data...');
+      setChecking(false);
+      setSyncing(true);
+
+      const { runInitialSync } = await import('../../local/sync-engine');
+      const { getDeviceId } = await import('../../lib/device-identity');
+      const deviceId = await getDeviceId();
+      const success = await runInitialSync(deviceId);
+
+      if (success) {
+        setStatus('Sync complete!');
+        setSyncing(false);
+        onSynced();
+      } else {
+        setPromptError('Sync failed. Check connection and try again.');
+        setSyncing(false);
+      }
+    } catch (err) {
+      console.error('Setup connection failed:', err);
+      setPromptError('Connection failed. Please check the URL.');
+      setChecking(false);
+      setSyncing(false);
+    }
+  }
+
+  return (
+    <div className="max-w-sm w-full text-center space-y-4">
+      <div className="flex justify-center mb-2">
+        <div className="w-12 h-12 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
+          <Wifi className="w-6 h-6 text-blue-500" />
+        </div>
+      </div>
+      <p className="text-gray-600 dark:text-gray-400 text-sm">
+        No users on this device yet. Enter your shop server address to sync.
+      </p>
+      <input
+        type="url"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && handleConnect()}
+        placeholder="http://192.168.1.100:8000"
+        className="w-full px-3 py-2.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+      />
+      <button
+        onClick={handleConnect}
+        disabled={!url.trim() || checking || syncing}
+        className="w-full px-4 py-2.5 text-sm font-medium rounded-lg bg-primary-500 text-white hover:bg-primary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        {checking ? 'Connecting...' : syncing ? 'Syncing...' : 'Connect to Shop'}
+      </button>
+      {status && (
+        <p className="text-sm text-green-600 dark:text-green-400">{status}</p>
+      )}
+      {promptError && (
+        <p className="text-sm text-red-600 dark:text-red-400">{promptError}</p>
       )}
     </div>
   );

@@ -10,7 +10,6 @@
  */
 
 import { getDb } from '../db';
-import { trackChange } from '../change-tracker';
 import { BaseRepo } from '../repos/base-repo';
 
 // ── Types ──────────────────────────────────────────────────────────

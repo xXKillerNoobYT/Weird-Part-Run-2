@@ -16,7 +16,7 @@ import {
   Building2,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { MODULES, getDefaultTabPath } from '../../lib/navigation';
+import { MODULES, getDefaultTabPath, findModuleByPath } from '../../lib/navigation';
 import { useAuthStore } from '../../stores/auth-store';
 import { useSidebarStore } from '../../stores/sidebar-store';
 
@@ -54,9 +54,12 @@ export function Sidebar() {
     closeMobile();
   };
 
+  // Use findModuleByPath for active detection — this correctly handles
+  // cross-module tabs (e.g. Office tabs that point to /people/employees
+  // or /scheduling/dispatch keep the Office sidebar item highlighted).
+  const activeModule = findModuleByPath(location.pathname);
   const isActive = (modulePath: string) =>
-    location.pathname === modulePath ||
-    location.pathname.startsWith(modulePath + '/');
+    activeModule?.path === modulePath;
 
   const sidebarContent = (
     <>

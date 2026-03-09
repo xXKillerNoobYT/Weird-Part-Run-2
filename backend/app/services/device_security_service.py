@@ -20,7 +20,7 @@ import json
 import logging
 import os
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import aiosqlite
@@ -153,8 +153,8 @@ class DeviceSecurityService:
             (device_id, company_id),
         )
 
-        expires_at = (datetime.now(UTC) + timedelta(days=validity_days)).isoformat()
-        issued_at = datetime.now(UTC).isoformat()
+        expires_at = (datetime.now(timezone.utc) + timedelta(days=validity_days)).isoformat()
+        issued_at = datetime.now(timezone.utc).isoformat()
 
         cert_payload = json.dumps({
             "device_id": device_id,
@@ -224,7 +224,7 @@ class DeviceSecurityService:
 
         # 3. Expiry check
         expires = payload.get("expires_at", "")
-        if expires and expires < datetime.now(UTC).isoformat():
+        if expires and expires < datetime.now(timezone.utc).isoformat():
             await self._audit("cert_expired", device_id=device_id, company_id=company_id)
             return {"valid": False, "reason": "expired"}
 

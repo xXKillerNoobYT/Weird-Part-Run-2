@@ -13,7 +13,7 @@ import { TriggerItemRow } from './TriggerItemRow';
 import { SuggestionCard } from './SuggestionCard';
 import { Button } from '../../../../components/ui/Button';
 import { EmptyState } from '../../../../components/ui/EmptyState';
-import type { CompanionSuggestion, ManualTriggerItem } from '../../../../lib/types';
+import type { CompanionSuggestion, ManualTriggerItem, PartCategory } from '../../../../lib/types';
 
 interface TriggerRow {
   category_id: number | '';
@@ -108,8 +108,8 @@ export function ManualTriggerPanel() {
               categoryId={row.category_id}
               styleId={row.style_id}
               qty={row.qty}
-              categories={categories}
-              styles={getStylesForCategory(row.category_id)}
+              categories={categories as unknown as PartCategory[]}
+              styles={getStylesForCategory(row.category_id) as unknown as any[]}
               canRemove={rows.length > 1}
               onChange={handleChange}
               onRemove={handleRemove}

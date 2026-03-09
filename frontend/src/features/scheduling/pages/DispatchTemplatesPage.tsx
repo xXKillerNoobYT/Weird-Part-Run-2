@@ -38,10 +38,6 @@ import type {
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-function bitmaskToDays(mask: number): string[] {
-  return DAY_LABELS.filter((_, i) => mask & (1 << i));
-}
-
 function daysToBitmask(selectedDays: boolean[]): number {
   return selectedDays.reduce((acc, on, i) => acc | (on ? 1 << i : 0), 0);
 }
@@ -61,7 +57,7 @@ export function DispatchTemplatesPage() {
 
   const { data: jobsData } = useQuery({
     queryKey: ['active-jobs'],
-    queryFn: getActiveJobs,
+    queryFn: () => getActiveJobs(),
     staleTime: 60_000,
   });
   const jobs = jobsData ?? [];
@@ -343,7 +339,7 @@ export function DispatchTemplatesPage() {
 
       {/* ── Create/Edit Modal ──────────────────────────────────── */}
       <Modal
-        open={showModal}
+        isOpen={showModal}
         onClose={() => setShowModal(false)}
         title={editingId ? 'Edit Template' : 'New Dispatch Template'}
       >
@@ -367,7 +363,7 @@ export function DispatchTemplatesPage() {
             >
               <option value={0}>Select a job...</option>
               {jobs.map(j => (
-                <option key={j.id} value={j.id}>{j.name}</option>
+                <option key={j.id} value={j.id}>{j.job_name}</option>
               ))}
             </select>
           </div>
@@ -469,7 +465,7 @@ export function DispatchTemplatesPage() {
 
       {/* ── Apply Modal ────────────────────────────────────────── */}
       <Modal
-        open={applyTemplateId !== null}
+        isOpen={applyTemplateId !== null}
         onClose={() => setApplyTemplateId(null)}
         title="Apply Template"
       >

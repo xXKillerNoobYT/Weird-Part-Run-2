@@ -77,7 +77,7 @@ export function ThemesPage() {
   const saveMut = useMutation({
     mutationFn: (params: { color?: string; font?: string; themeMode?: string }) =>
       updateTheme({
-        theme_mode:    params.themeMode ?? mode,
+        theme_mode:    (params.themeMode as 'light' | 'dark' | 'system') ?? mode,
         primary_color: params.color     ?? currentColor,
         font_family:   params.font      ?? currentFont,
       }),

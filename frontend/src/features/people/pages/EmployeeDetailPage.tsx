@@ -11,8 +11,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Mail, Phone, AlertTriangle, Calendar, DollarSign,
-  Shield, Award, FileText, Wrench, Edit2, UserCheck, UserX,
-  Plus, Trash2, X, Clock, ChevronRight, Camera,
+  Shield, Award, FileText, Wrench, UserCheck, UserX,
+  Plus, Trash2, Clock, Camera,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { Button } from '../../../components/ui/Button';
@@ -23,19 +23,19 @@ import { Input } from '../../../components/ui/Input';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import {
-  getEmployee, updateEmployee, toggleEmployeeActive,
+  getEmployee, toggleEmployeeActive,
   uploadEmployeeAvatar,
-  createCertification, updateCertification, deleteCertification,
+  createCertification, deleteCertification,
   createWageEntry,
-  createEmployeeNote, updateEmployeeNote, deleteEmployeeNote,
-  createSkill, updateSkill, deleteSkill,
+  createEmployeeNote, deleteEmployeeNote,
+  createSkill, deleteSkill,
 } from '../../../api/people';
 import type {
-  EmployeeDetail, EmployeeUpdate,
-  CertificationCreate, CertificationResponse,
-  WageHistoryCreate, WageHistoryResponse,
-  EmployeeNoteCreate, EmployeeNoteResponse, NoteType,
-  UserSkillCreate, UserSkillResponse, Proficiency,
+  EmployeeDetail,
+  CertificationCreate,
+  WageHistoryCreate,
+  EmployeeNoteCreate, NoteType,
+  UserSkillCreate, Proficiency,
 } from '../../../lib/types';
 
 // ── Sub-tab IDs ───────────────────────────────────────────────────
@@ -254,7 +254,7 @@ export function EmployeeDetailPage() {
 // OVERVIEW TAB
 // ═════════════════════════════════════════════════════════════════
 
-function OverviewTab({ emp, canManage, canSeeDollars }: { emp: EmployeeDetail; canManage: boolean; canSeeDollars: boolean }) {
+function OverviewTab({ emp, canSeeDollars }: { emp: EmployeeDetail; canManage: boolean; canSeeDollars: boolean }) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {/* Contact Info Card — primary contact reference */}

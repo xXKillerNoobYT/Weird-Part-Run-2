@@ -3,7 +3,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { Info, Server, Database, Monitor, Smartphone } from 'lucide-react';
+import { Info, Server, Database, Monitor } from 'lucide-react';
 import apiClient from '../../../api/client';
 import type { ApiResponse } from '../../../lib/types';
 import { isCapacitor } from '../../../lib/environment';

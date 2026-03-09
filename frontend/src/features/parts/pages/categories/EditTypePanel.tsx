@@ -25,7 +25,7 @@ import {
   listBrands,
 } from '../../../../api/parts';
 import { toast } from '../../../../lib/toast';
-import type { PartType, PartTypeUpdate } from '../../../../lib/types';
+import type { PartTypeUpdate } from '../../../../lib/types';
 
 
 export interface EditTypePanelProps {

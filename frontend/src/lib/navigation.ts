@@ -239,6 +239,7 @@ export const MODULES: NavModule[] = [
       { id: 'bootstrap', label: 'Bootstrap', path: '/settings/bootstrap', permission: 'manage_people' },
       { id: 'supplier-bridge', label: 'Supplier Bridge', path: '/settings/supplier-bridge', permission: 'manage_people' },
       { id: 'updates', label: 'Update Protocol', path: '/settings/updates', permission: 'manage_people' },
+      { id: 'backups', label: 'Backups', path: '/settings/backups', permission: 'manage_settings' },
       { id: 'ai-config', label: 'AI Config', path: '/settings/ai-config', permission: 'manage_settings' },
       { id: 'devices', label: 'Device Management', path: '/settings/devices', permission: 'manage_devices' },
       { id: 'security', label: 'Security', path: '/settings/security', permission: 'manage_people' },
@@ -262,8 +263,29 @@ export function getDefaultTabPath(module: NavModule, permissions: string[]): str
 
 /**
  * Find which module a given path belongs to.
+ *
+ * Uses a two-pass strategy:
+ *  1. First, check if the path matches any tab in any module (exact or prefix).
+ *     This handles cross-module tabs — e.g. the Office module referencing
+ *     /people/employees or /scheduling/dispatch. Tab matches are precise and
+ *     take priority.
+ *  2. Fallback: match by module base-path prefix (e.g. /people → People module).
+ *
+ * This ensures that navigating to /scheduling/dispatch from the Office tab bar
+ * keeps the user in the Office context, while /scheduling/calendar (a tab
+ * belonging to the Scheduling module) stays in Scheduling.
  */
 export function findModuleByPath(path: string): NavModule | undefined {
+  // Pass 1: exact tab-path match across all modules (first match wins)
+  for (const m of MODULES) {
+    for (const tab of m.tabs) {
+      if (path === tab.path || path.startsWith(tab.path + '/')) {
+        return m;
+      }
+    }
+  }
+
+  // Pass 2: module base-path prefix match
   return MODULES.find(
     (m) => path === m.path || path.startsWith(m.path + '/')
   );

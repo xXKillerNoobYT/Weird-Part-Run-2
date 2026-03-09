@@ -246,7 +246,7 @@ export function ApprovalsTab() {
 
   const { data: flaggedItems = [] } = useQuery({
     queryKey: ['flagged-special-items'],
-    queryFn: listFlaggedSpecialItems,
+    queryFn: () => listFlaggedSpecialItems(),
     staleTime: 30_000,
   });
 
@@ -496,10 +496,10 @@ export function ApprovalsTab() {
                     {flagged.part_number && (
                       <span className="font-mono">MPN: {flagged.part_number}</span>
                     )}
-                    {flagged.requested_by_name && (
+                    {flagged.requester_name && (
                       <span className="inline-flex items-center gap-1">
                         <User className="h-3 w-3" />
-                        {flagged.requested_by_name}
+                        {flagged.requester_name}
                       </span>
                     )}
                     {flagged.job_name && (

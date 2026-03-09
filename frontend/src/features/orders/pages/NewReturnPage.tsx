@@ -21,7 +21,6 @@ import {
   RotateCcw,
   Package,
 } from 'lucide-react';
-import { Input } from '../../../components/ui/Input';
 import { PartSearchModal } from '../components/PartSearchModal';
 import { createReturn } from '../../../api/orders';
 import { listPOs } from '../../../api/orders';
@@ -137,7 +136,7 @@ export function NewReturnPage() {
       ...prev,
       {
         part_id: part.id,
-        part_code: part.code,
+        part_code: part.code ?? '',
         part_name: part.name,
         qty: 1,
         condition: 'new',
@@ -440,6 +439,7 @@ export function NewReturnPage() {
       {/* ── Part Search Modal ──────────────────────────────────── */}
       {showPartSearch && (
         <PartSearchModal
+          isOpen={showPartSearch}
           onSelect={handleAddPart}
           onClose={() => setShowPartSearch(false)}
           excludePartIds={lines.map((l) => l.part_id)}
@@ -462,7 +462,7 @@ interface ReturnLineCardProps {
   onRemove: (idx: number) => void;
 }
 
-function ReturnLineCard({ line, index, returnType, onUpdate, onRemove }: ReturnLineCardProps) {
+function ReturnLineCard({ line, index, returnType: _returnType, onUpdate, onRemove }: ReturnLineCardProps) {
   return (
     <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 p-4 space-y-3">
       {/* Header: part info + remove */}

@@ -32,7 +32,6 @@ import {
 } from '../../../api/parts';
 import type {
   Brand, BrandCreate, BrandUpdate,
-  BrandSupplierLink, Supplier,
 } from '../../../lib/types';
 
 

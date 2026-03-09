@@ -15,7 +15,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
-  ClipboardList, Truck, AlertTriangle, Activity,
+  Truck, AlertTriangle, Activity,
   DollarSign, ArrowRight, Package, RotateCcw, ShoppingCart,
 } from 'lucide-react';
 import { Card, CardHeader } from '../../../components/ui/Card';
@@ -23,7 +23,7 @@ import { Badge } from '../../../components/ui/Badge';
 import { Spinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { getDailyReport } from '../../../api/costs';
-import type { DailyReportData, DailyReportDelivery, BudgetAlert } from '../../../lib/types';
+import type { DailyReportDelivery, BudgetAlert } from '../../../lib/types';
 
 
 export function DailyReportTab() {
@@ -82,7 +82,6 @@ export function DailyReportTab() {
       <Card>
         <CardHeader
           title="Pending Actions"
-          icon={<ClipboardList className="h-5 w-5 text-amber-500" />}
           action={
             totalPending > 0 ? (
               <Badge variant="warning">{totalPending}</Badge>
@@ -124,7 +123,6 @@ export function DailyReportTab() {
       <Card>
         <CardHeader
           title="Today's Activity"
-          icon={<Activity className="h-5 w-5 text-blue-500" />}
         />
         <div className="px-4 pb-4">
           <div className="grid grid-cols-3 gap-3">
@@ -139,7 +137,6 @@ export function DailyReportTab() {
       <Card>
         <CardHeader
           title="Expected Deliveries This Week"
-          icon={<Truck className="h-5 w-5 text-green-500" />}
           action={
             expected_deliveries.length > 0 ? (
               <Badge variant="default">{expected_deliveries.length}</Badge>
@@ -166,7 +163,6 @@ export function DailyReportTab() {
         <Card>
           <CardHeader
             title="Overdue Deliveries"
-            icon={<AlertTriangle className="h-5 w-5 text-red-500" />}
           />
           <div className="px-4 pb-4 space-y-2">
             {overdue_items.map((d) => (
@@ -181,7 +177,6 @@ export function DailyReportTab() {
         <Card>
           <CardHeader
             title="Budget Alerts"
-            icon={<DollarSign className="h-5 w-5 text-amber-500" />}
           />
           <div className="px-4 pb-4 space-y-2">
             {budget_alerts.map((alert) => (

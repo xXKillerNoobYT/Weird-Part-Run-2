@@ -80,14 +80,19 @@ async def lifespan(app: FastAPI):
     # 2. Seed the admin user's PIN hash (if still placeholder)
     await _seed_admin_pin()
 
-    # 3. Start the background scheduler (midnight report generation)
-    from app.scheduler import start_scheduler, catch_up_missed_reports
+    # 3. Start the background scheduler (midnight report generation + backups)
+    from app.scheduler import (
+        start_scheduler, catch_up_missed_reports, schedule_backup_jobs_from_settings,
+    )
     start_scheduler()
 
     # 4. Catch up any missed daily reports (server may have been down at midnight)
     await catch_up_missed_reports()
 
-    # 5. Log LAN access info for field device setup
+    # 5. Reschedule backup jobs from saved settings (enables/disables + custom times)
+    await schedule_backup_jobs_from_settings()
+
+    # 6. Log LAN access info for field device setup
     try:
         hostname = socket.gethostname()
         lan_ip = socket.gethostbyname(hostname)
@@ -189,6 +194,7 @@ ROUTER_MODULES = [
     "app.routers.security",
     "app.routers.updates",
     "app.routers.sync",
+    "app.routers.backups",
 ]
 
 for _module_path in ROUTER_MODULES:

@@ -57,7 +57,7 @@ export default function RFIListPage() {
 
   // ── Update mutation ──────────────────────────────────────────────
   const updateMutation = useMutation({
-    mutationFn: ({ id, status, response_text }: { id: number; status?: string; response_text?: string }) =>
+    mutationFn: ({ id, status, response_text }: { id: number; status?: RFIStatus; response_text?: string }) =>
       updateRFI(id, { status, response_text }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rfis'] });
@@ -70,7 +70,7 @@ export default function RFIListPage() {
     if (!phone) return;
     const body = encodeURIComponent(`RFI: ${rfi.subject}\n\n${rfi.body}`);
     window.open(`sms:${phone}?body=${body}`, '_self');
-    updateMutation.mutate({ id: rfi.id, status: 'sent' });
+    updateMutation.mutate({ id: rfi.id, status: 'sent_text' });
   };
 
   const handleSendEmail = (rfi: RFIResponse) => {
@@ -79,7 +79,7 @@ export default function RFIListPage() {
     const subject = encodeURIComponent(`RFI: ${rfi.subject}`);
     const body = encodeURIComponent(rfi.body);
     window.open(`mailto:${email}?subject=${subject}&body=${body}`, '_self');
-    updateMutation.mutate({ id: rfi.id, status: 'sent' });
+    updateMutation.mutate({ id: rfi.id, status: 'sent_email' });
   };
 
   const handleCopyToClipboard = async (rfi: RFIResponse) => {
@@ -324,7 +324,7 @@ function RFICard({
             )}
 
             {/* Mark responded */}
-            {rfi.status === 'sent' && (
+            {(['sent_text', 'sent_email', 'sent_app'] as RFIStatus[]).includes(rfi.status) && (
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <input
                   type="text"

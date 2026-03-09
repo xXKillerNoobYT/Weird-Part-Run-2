@@ -6,7 +6,7 @@
  * Google Maps directions.
  */
 
-import { MapPin, Navigation, Users, Clock, ChevronRight, ListTodo, CheckCircle2, Package } from 'lucide-react';
+import { MapPin, Navigation, Users, Clock, ChevronRight, ListTodo } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '../../../components/ui/Badge';
 import { JOB_STATUS_LABELS, ON_CALL_TYPE_LABELS } from '../../../lib/types';
@@ -58,7 +58,7 @@ function openGoogleMaps(job: JobListItem) {
   }
 }
 
-export function JobCard({ job, onClockIn }: JobCardProps) {
+export function JobCard({ job, onClockIn: _onClockIn }: JobCardProps) {
   const navigate = useNavigate();
   const address = formatAddress(job);
   const hasLocation = !!(job.gps_lat || address);

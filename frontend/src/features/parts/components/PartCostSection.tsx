@@ -20,7 +20,7 @@ import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Spinner } from '../../../components/ui/Spinner';
 import { getPartCostSummary, getCostHistory, getCostLayers, setCustomMargin, clearCustomMargin } from '../../../api/costs';
-import type { CostLayer, CostHistoryPoint, PartCostSummary } from '../../../lib/types';
+import type { CostHistoryPoint } from '../../../lib/types';
 
 
 interface PartCostSectionProps {

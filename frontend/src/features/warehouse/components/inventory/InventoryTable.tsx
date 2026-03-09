@@ -118,7 +118,7 @@ export function InventoryTable({
                     {item.part_name}
                   </span>
                   {item.is_qr_tagged && (
-                    <QrCode className="h-3.5 w-3.5 text-green-500 flex-shrink-0" title="QR Tagged" />
+                    <QrCode className="h-3.5 w-3.5 text-green-500 flex-shrink-0" />
                   )}
                 </div>
                 {item.part_code && (

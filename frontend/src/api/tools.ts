@@ -10,7 +10,6 @@ import type {
   ApiResponse,
   // Tools
   Tool,
-  ToolListItem,
   ToolCreate,
   ToolUpdate,
   // Kit Templates
@@ -61,37 +60,37 @@ export async function getTools(
     '/tools/',
     { params },
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Get a single tool with full details */
 export async function getTool(toolId: number): Promise<Tool> {
   const { data } = await apiClient.get<ApiResponse<Tool>>(`/tools/${toolId}`);
-  return data.data;
+  return data.data!;
 }
 
 /** Register a new tool */
 export async function createTool(body: ToolCreate): Promise<Tool> {
   const { data } = await apiClient.post<ApiResponse<Tool>>('/tools/', body);
-  return data.data;
+  return data.data!;
 }
 
 /** Update tool fields */
 export async function updateTool(toolId: number, body: ToolUpdate): Promise<Tool> {
   const { data } = await apiClient.put<ApiResponse<Tool>>(`/tools/${toolId}`, body);
-  return data.data;
+  return data.data!;
 }
 
 /** Retire (soft-delete) a tool */
 export async function retireTool(toolId: number): Promise<Tool> {
   const { data } = await apiClient.delete<ApiResponse<Tool>>(`/tools/${toolId}`);
-  return data.data;
+  return data.data!;
 }
 
 /** Look up a tool by tool_number (QR scan) */
 export async function scanTool(toolNumber: string): Promise<Tool> {
   const { data } = await apiClient.get<ApiResponse<Tool>>(`/tools/scan/${toolNumber}`);
-  return data.data;
+  return data.data!;
 }
 
 
@@ -102,7 +101,7 @@ export async function scanTool(toolNumber: string): Promise<Tool> {
 /** Aggregate dashboard stats for all active tools */
 export async function getToolsDashboard(): Promise<ToolsDashboardStats> {
   const { data } = await apiClient.get<ApiResponse<ToolsDashboardStats>>('/tools/dashboard');
-  return data.data;
+  return data.data!;
 }
 
 /** Get tools at a specific location */
@@ -113,7 +112,7 @@ export async function getToolsAtLocation(
   const { data } = await apiClient.get<ApiResponse<Tool[]>>('/tools/by-location', {
     params: { location_type: locationType, location_id: locationId },
   });
-  return data.data;
+  return data.data!;
 }
 
 /** Get most recent tool movements */
@@ -122,7 +121,7 @@ export async function getRecentMovements(limit = 20): Promise<ToolMovement[]> {
     '/tools/recent-movements',
     { params: { limit } },
   );
-  return data.data;
+  return data.data!;
 }
 
 
@@ -139,7 +138,7 @@ export async function checkoutTool(
     `/tools/${toolId}/checkout`,
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Return a tool (typically to warehouse) */
@@ -151,7 +150,7 @@ export async function returnTool(
     `/tools/${toolId}/return`,
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 
@@ -168,7 +167,7 @@ export async function getToolMovements(
     `/tools/${toolId}/movements`,
     { params },
   );
-  return data.data;
+  return data.data!;
 }
 
 
@@ -181,7 +180,7 @@ export async function getKitTemplate(toolId: number): Promise<KitTemplateItem[]>
   const { data } = await apiClient.get<ApiResponse<KitTemplateItem[]>>(
     `/tools/${toolId}/kit`,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Add a required component to a tool's kit */
@@ -193,7 +192,7 @@ export async function addKitComponent(
     `/tools/${toolId}/kit`,
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Update a kit template component */
@@ -206,7 +205,7 @@ export async function updateKitComponent(
     `/tools/${toolId}/kit/${itemId}`,
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Remove a component from a tool's kit */
@@ -231,7 +230,7 @@ export async function startVerification(
     `/tools/${toolId}/verify`,
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Complete a verification session with all item updates */
@@ -244,7 +243,7 @@ export async function completeVerification(
     `/tools/${toolId}/verify/${sessionId}`,
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Get kit verification history for a tool */
@@ -256,7 +255,7 @@ export async function getVerificationHistory(
     `/tools/${toolId}/verify/history`,
     { params: { limit } },
   );
-  return data.data;
+  return data.data!;
 }
 
 
@@ -269,7 +268,7 @@ export async function getMaintenanceTypes(): Promise<ToolMaintenanceType[]> {
   const { data } = await apiClient.get<ApiResponse<ToolMaintenanceType[]>>(
     '/tools/maintenance-types',
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Create a new maintenance type */
@@ -280,7 +279,7 @@ export async function createMaintenanceType(
     '/tools/maintenance-types',
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Update a maintenance type */
@@ -292,7 +291,7 @@ export async function updateMaintenanceType(
     `/tools/maintenance-types/${typeId}`,
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Delete (deactivate) a maintenance type */
@@ -312,7 +311,7 @@ export async function getToolSchedule(
   const { data } = await apiClient.get<ApiResponse<ToolMaintenanceSchedule[]>>(
     `/tools/${toolId}/maintenance/schedule`,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Create or update a maintenance schedule for a tool */
@@ -324,7 +323,7 @@ export async function setToolSchedule(
     `/tools/${toolId}/maintenance/schedule`,
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Log a maintenance service */
@@ -336,7 +335,7 @@ export async function logService(
     `/tools/${toolId}/maintenance/log`,
     body,
   );
-  return data.data;
+  return data.data!;
 }
 
 /** Get maintenance service history for a tool */
@@ -348,7 +347,7 @@ export async function getServiceHistory(
     `/tools/${toolId}/maintenance/history`,
     { params },
   );
-  return data.data;
+  return data.data!;
 }
 
 
@@ -363,7 +362,7 @@ export async function getMaintenanceAlerts(
   const { data } = await apiClient.get<
     ApiResponse<{ overdue: ToolMaintenanceAlert[]; upcoming: ToolMaintenanceAlert[] }>
   >('/tools/maintenance-alerts', { params: { days_ahead: daysAhead } });
-  return data.data;
+  return data.data!;
 }
 
 

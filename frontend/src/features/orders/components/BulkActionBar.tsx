@@ -30,7 +30,7 @@
  * Phase 7E
  */
 
-import { useState, useCallback, useMemo, type ReactNode } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { X, type LucideIcon } from 'lucide-react';
 
 

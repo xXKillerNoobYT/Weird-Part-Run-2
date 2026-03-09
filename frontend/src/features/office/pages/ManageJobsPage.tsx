@@ -15,9 +15,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Plus, Search, Briefcase, X, ChevronRight, Settings,
-  Pause, CheckCircle, XCircle, RotateCcw, Edit2,
-  MapPin, Users, Clock,
+  Plus, Search, Briefcase, X, Settings,
+  Pause, CheckCircle, RotateCcw, Edit2,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { PageSpinner } from '../../../components/ui/Spinner';
@@ -30,18 +29,9 @@ import { getActiveJobs, createJob, updateJobStatus } from '../../../api/jobs';
 import { EditJobModal } from '../../jobs/components/EditJobModal';
 import { ManageBillRateTypesModal } from '../components/ManageBillRateTypesModal';
 import { JOB_STATUS_LABELS, ON_CALL_TYPE_LABELS } from '../../../lib/types';
-import type { JobCreate, JobListItem, JobResponse, JobStatus, JobPriority, JobType, OnCallType } from '../../../lib/types';
+import type { JobCreate, JobListItem, JobStatus, JobPriority, JobType, OnCallType } from '../../../lib/types';
 
-const STATUS_OPTIONS: { label: string; value: JobStatus | 'all' }[] = [
-  { label: 'All', value: 'all' },
-  { label: 'Pending', value: 'pending' },
-  { label: 'Active', value: 'active' },
-  { label: 'On Hold', value: 'on_hold' },
-  { label: 'Completed', value: 'completed' },
-  { label: 'Cancelled', value: 'cancelled' },
-  { label: 'Continuous Maint.', value: 'continuous_maintenance' },
-  { label: 'On Call / Warranty', value: 'on_call' },
-];
+
 
 const TYPE_OPTIONS: { label: string; value: JobType | 'all' }[] = [
   { label: 'All Types', value: 'all' },

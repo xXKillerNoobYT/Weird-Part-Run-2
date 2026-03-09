@@ -16,14 +16,13 @@ import {
   Clock, CheckCircle, AlertCircle, FileText,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
-import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import { listJPOs, listReturns, countPendingApprovals } from '../../../api/orders';
-import type { JPOListItem, ReturnListItem } from '../../../lib/types';
+
 
 
 const STATUS_COLORS: Record<string, string> = {
@@ -81,13 +80,13 @@ export function MyOrdersPage() {
       draft: myJPOs.filter(j => j.status === 'draft').length,
       pending: myJPOs.filter(j => j.status === 'pending_approval').length,
       approved: myJPOs.filter(j => j.status === 'approved').length,
-      inProgress: myJPOs.filter(j => j.status === 'in_progress').length,
-      completed: myJPOs.filter(j => j.status === 'completed').length,
+      inProgress: myJPOs.filter(j => j.status === 'ordering').length,
+      completed: myJPOs.filter(j => j.status === 'closed').length,
     };
   }, [myJPOs]);
 
   const activeJPOs = useMemo(
-    () => (myJPOs ?? []).filter(j => j.status !== 'completed' && j.status !== 'cancelled'),
+    () => (myJPOs ?? []).filter(j => j.status !== 'closed'),
     [myJPOs],
   );
 

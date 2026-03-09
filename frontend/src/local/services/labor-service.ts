@@ -82,8 +82,6 @@ export async function clockIn(
   userId: number,
   data: ClockInRequest,
 ): Promise<LaborEntry> {
-  const db = await getDb();
-
   // Prevent double clock-in
   const active = await getActiveClock(userId);
   if (active) {

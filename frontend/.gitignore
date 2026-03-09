@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Capacitor native platforms
+ios/App/Pods/
+ios/App/public/
+ios/capacitor-cordova-ios-plugins/

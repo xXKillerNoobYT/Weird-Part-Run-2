@@ -32,7 +32,6 @@ import {
 import type {
   GCDetail, GCUpdate, GCTradeType,
   EntityContactResponse, EntityContactCreate, EntityContactUpdate,
-  GCJobLink,
 } from '../../../lib/types';
 
 
@@ -604,7 +603,7 @@ function ContactsTab({ gcId, canManage }: { gcId: number; canManage: boolean }) 
           title="Add Contact"
           isLoading={addMutation.isPending}
           error={addMutation.error?.message ?? null}
-          onSubmit={(data) => addMutation.mutate(data)}
+          onSubmit={(data) => addMutation.mutate(data as EntityContactCreate)}
           onClose={() => setShowAdd(false)}
         />
       )}
@@ -616,7 +615,7 @@ function ContactsTab({ gcId, canManage }: { gcId: number; canManage: boolean }) 
           initial={editingContact}
           isLoading={updateMutation.isPending}
           error={updateMutation.error?.message ?? null}
-          onSubmit={(data) => updateMutation.mutate({ id: editingContact.id, data })}
+          onSubmit={(data) => updateMutation.mutate({ id: editingContact.id, data: data as EntityContactUpdate })}
           onClose={() => setEditingContact(null)}
         />
       )}

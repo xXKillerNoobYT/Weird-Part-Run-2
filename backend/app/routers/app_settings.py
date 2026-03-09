@@ -302,6 +302,7 @@ async def system_info(
 # ═══════════════════════════════════════════════════════════════
 
 
+@router.get("", response_model=ApiResponse[dict])
 @router.get("/", response_model=ApiResponse[dict])
 async def get_all_settings(
     user: dict = Depends(require_permission("manage_settings")),

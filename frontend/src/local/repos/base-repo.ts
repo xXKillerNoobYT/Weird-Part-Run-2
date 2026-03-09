@@ -5,14 +5,17 @@
  * All writes go through trackChange() for sync logging.
  */
 
-import { getDb, type QueryResult, type RunResult } from '../db';
+import { getDb, type RunResult } from '../db';
 import { trackChange } from '../change-tracker';
 
 export class BaseRepo {
-  constructor(
-    protected tableName: string,
-    protected primaryKey: string = 'id',
-  ) {}
+  protected tableName: string;
+  protected primaryKey: string;
+
+  constructor(tableName: string, primaryKey: string = 'id') {
+    this.tableName = tableName;
+    this.primaryKey = primaryKey;
+  }
 
   /** Get a single record by primary key */
   async getById(id: number): Promise<Record<string, any> | null> {

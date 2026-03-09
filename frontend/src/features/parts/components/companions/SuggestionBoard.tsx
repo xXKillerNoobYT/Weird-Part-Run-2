@@ -12,7 +12,6 @@ import { listCompanionSuggestions, decideCompanionSuggestion } from '../../../..
 import { SuggestionCard } from './SuggestionCard';
 import { Spinner } from '../../../../components/ui/Spinner';
 import { EmptyState } from '../../../../components/ui/EmptyState';
-import type { CompanionSuggestion } from '../../../../lib/types';
 
 export function SuggestionBoard() {
   const queryClient = useQueryClient();

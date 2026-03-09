@@ -19,7 +19,7 @@ import { PageSpinner } from '../../../components/ui/Spinner';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import { getPermissionMatrix, setHatPermissions, getHats } from '../../../api/people';
-import type { PermissionMatrixData, HatDetailResponse } from '../../../lib/types';
+
 
 
 // ── Display helpers ──────────────────────────────────────────────

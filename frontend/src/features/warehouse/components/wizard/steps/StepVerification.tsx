@@ -7,7 +7,6 @@
 
 import { useRef } from 'react';
 import { Camera, ScanLine, CheckSquare, Square, Image } from 'lucide-react';
-import { Button } from '../../../../../components/ui/Button';
 import { cn } from '../../../../../lib/utils';
 import { uploadPhoto } from '../../../../../api/warehouse';
 import { useMovementWizardStore } from '../../../stores/movement-wizard-store';
@@ -15,7 +14,7 @@ import { useMovementWizardStore } from '../../../stores/movement-wizard-store';
 export function StepVerification() {
   const {
     photoPath,
-    scanConfirmed,
+    scanConfirmed: _scanConfirmed,
     qtyConfirmed,
     setPhoto,
     setScanConfirmed,

@@ -18,7 +18,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Trash2, Star, ChevronDown, ChevronRight,
   GripVertical, FileText, ListTodo, Info, BookOpen,
-  Pencil, Check, X, Copy,
+  Pencil, Check, X,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -37,7 +37,6 @@ import {
 } from '../../../api/notebooks';
 import type {
   TemplateResponse,
-  TemplateFull,
   TemplateSectionWithEntries,
   TemplateEntryResponse,
   SectionType,

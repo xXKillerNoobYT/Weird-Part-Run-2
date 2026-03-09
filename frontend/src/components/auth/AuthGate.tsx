@@ -2,10 +2,11 @@
  * AuthGate — orchestrates the entire authentication flow.
  *
  * Flow:
- * 1. Generate device fingerprint
- * 2. POST /auth/device-login → check if auto-login possible
- * 3. If auto-login → store token, fetch user profile, render children
- * 4. If not → show UserPicker → PinLoginForm → store token, render children
+ * 1. On Capacitor: initialize local SQLite database
+ * 2. Generate device fingerprint
+ * 3. POST /auth/device-login → check if auto-login possible (or local fallback)
+ * 4. If auto-login → store token, fetch user profile, render children
+ * 5. If not → show UserPicker → PinLoginForm → store token, render children
  *
  * This component wraps the entire app. While auth is pending, it shows
  * a loading screen. Once authenticated, it renders the main app.
@@ -16,6 +17,7 @@ import { Zap } from 'lucide-react';
 import { useAuthStore } from '../../stores/auth-store';
 import { deviceLogin } from '../../api/auth';
 import { generateDeviceFingerprint, getDeviceName } from '../../lib/utils';
+import { isCapacitor } from '../../lib/environment';
 import { UserPicker } from './UserPicker';
 import { PinLoginForm } from './PinLoginForm';
 import { PageSpinner } from '../ui/Spinner';
@@ -33,13 +35,25 @@ export function AuthGate({ children }: AuthGateProps) {
   const [selectedUserName, setSelectedUserName] = useState<string>('');
   const [deviceFp, setDeviceFp] = useState('');
   const [deviceName, setDeviceName] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [_error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     initAuth();
   }, []);
 
   async function initAuth() {
+    // On Capacitor, initialize the local SQLite database before any auth calls
+    if (isCapacitor()) {
+      try {
+        const { initLocalSystem } = await import('../../local/init');
+        await initLocalSystem();
+      } catch (err) {
+        console.error('Failed to initialize local system:', err);
+        setStep('user-picker');
+        return;
+      }
+    }
+
     // First, check if we already have a valid token in localStorage
     const existingToken = localStorage.getItem('wiredpart_token');
     if (existingToken) {
