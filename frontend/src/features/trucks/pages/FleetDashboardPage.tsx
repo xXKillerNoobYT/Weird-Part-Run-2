@@ -434,8 +434,8 @@ function MetricCard({
   return (
     <div
       className={`bg-surface border rounded-xl p-3 ${highlight
-          ? 'border-amber-300 dark:border-amber-700'
-          : 'border-border'
+        ? 'border-amber-300 dark:border-amber-700'
+        : 'border-border'
         } ${onClick ? 'cursor-pointer hover:border-blue-300 dark:hover:border-blue-600 transition-colors' : ''}`}
       onClick={onClick}
     >

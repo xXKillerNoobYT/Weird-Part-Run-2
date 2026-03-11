@@ -1,8 +1,8 @@
 # Settings Audit
 
 > **Date:** 2026-03-06
-> **Status:** ✅ Updated (2026-03-07) — 7/8 tabs functional. AiConfigPage (LM Studio config + feature toggles) and DeviceManagementPage (devices/history/conflicts tabs using live sync API) fully implemented. 1 remaining stub: SyncPage (future Bluetooth mesh phase). AboutPage added via M4 gap closure (GAP-043).
-> **Scope:** Full audit of the Settings module — theme, app config, company profiles, staging zones, notifications, sync, AI, devices
+> **Status:** ✅ Updated (2026-03-09) — 8/8 tabs fully functional. All former stubs (SyncPage, AiConfigPage, DeviceManagementPage) are now production-ready implementations. Additionally, SupplierBridgePage (token management + roadmap) and SupplierPortalPage (public PO portal) are fully implemented.
+> **Scope:** Full audit of the Settings module — theme, app config, company profiles, staging zones, notifications, sync, AI, devices, supplier portal
 
 ---
 
@@ -101,11 +101,13 @@ Settings are stored as JSON key-value pairs in the `settings` table with categor
 | `pages/CompanyProfilePage.tsx` | ~411 | Company profile CRUD | ✅ Functional |
 | `pages/NotificationPrefsPage.tsx` | ~230 | Notification preferences | ✅ Functional |
 | `pages/ClockOutQuestionsPage.tsx` | ~321 | Clock-out question management | ✅ Functional (but lives in Office nav) |
-| `pages/SyncPage.tsx` | ~18 | Sync settings | ❌ Stub |
-| `pages/AiConfigPage.tsx` | ~18 | AI configuration | ❌ Stub |
-| `pages/DeviceManagementPage.tsx` | ~18 | Device management | ❌ Stub |
+| `pages/SyncPage.tsx` | ~452 | Sync management (shop connection, device registry, sync/conflict history, hard recovery) | ✅ Functional |
+| `pages/AiConfigPage.tsx` | ~491 | AI config (LM Studio connection, master toggle, 5 feature toggles, capability examples) | ✅ Functional |
+| `pages/DeviceManagementPage.tsx` | ~906 | Device management (4 tabs: devices, sync history, conflicts, setup guides for iOS/iPad/Android) | ✅ Functional |
+| `pages/SupplierBridgePage.tsx` | ~352 | Portal access token management, phase roadmap, design guardrails | ✅ Functional |
+| `pages/SupplierPortalPage.tsx` | ~697 | Public supplier PO portal with token validation, PO list, acknowledgment flow | ✅ Functional |
 
-**Total: 8 files, ~1,241 lines**
+**Total: 12 files, ~4,085 lines**
 
 ### Supporting: `frontend/src/stores/theme-store.ts` (~95 lines)
 
@@ -207,17 +209,39 @@ Open tabs (no permission): Themes, Notifications.
 - Sort order with up/down arrow buttons
 - Deactivated questions section (collapsed)
 
-#### SyncPage (❌ Stub — ~18 lines)
-- Shows `<EmptyState>` with "Coming soon" message
-- Will handle: sync status, conflict resolution, offline storage
+#### SyncPage (✅ Functional — ~452 lines)
+- **Shop Connection Card** — Capacitor-only config for shop server URL with reachability test
+- **Device Registry** — Lists all registered sync devices with platform icons, last sync time, pending changes badges
+- **Hard Sync Recovery** — "Break glass" recovery for stale/corrupt devices with reason codes and confirmation
+- **Sync History** — Table of recent sync batches (push/pull/full) with changes sent/received and conflict counts
+- **Hard Sync History** — Historical hard sync events with request time, device, reason, status, completion time
+- **Conflict Log** — Detailed conflict records showing which side won (device/shop/merged) with JSON value diffs
 
-#### AiConfigPage (❌ Stub — ~18 lines)
-- Shows `<EmptyState>` with "Coming soon" message
-- Will handle: AI model selection, prompt tuning, automation rules
+#### AiConfigPage (✅ Functional — ~491 lines)
+- **Master Toggle** — Enable/disable AI assistant system-wide
+- **LM Studio Connection** — URL config + connection test with status pill
+- **Feature Toggles** — 5 independently toggleable AI capabilities: NL Queries, Report Summaries, Anomaly Detection, Predictive Ordering, Scheduling Suggestions
+- **How It Works** — Shop vs. field behavior explanation
+- **Capability Examples** — Collapsible section with real examples for each feature
+- Persists all config to backend via settings API
 
-#### DeviceManagementPage (❌ Stub — ~18 lines)
-- Shows `<EmptyState>` with "Coming soon" message
-- Will handle: registered devices, session management, remote wipe
+#### DeviceManagementPage (✅ Functional — ~906 lines)
+- **Devices Tab** — Device registry with platform icons, active/idle status, revoke with confirmation
+- **Sync History Tab** — Grouped by date, shows device ID, sync type, changes, conflicts with status icons
+- **Conflicts Tab** — Expandable conflict cards with JSON diff views for device vs. shop values
+- **Setup Helper Tab** — 3 platform-specific guides (iOS, iPad, Android) with: prerequisites checklist, install + pair steps, update instructions, troubleshooting tips
+
+#### SupplierBridgePage (✅ Functional — ~352 lines)
+- **Portal Access Tokens** — List active tokens with supplier name, status (Active/Expired/Revoked), expiry, last used, copy link, revoke
+- **Create Token Modal** — Select supplier, set expiry days, add note
+- **Phase Roadmap** — 4 planned phases (S1–S4) with status and feature items
+- **Design Guardrails** — Communication-first design principles
+
+#### SupplierPortalPage (✅ Functional — ~697 lines)
+- **Token Validation** — Token entry form with invalid/expired messaging
+- **Supplier Info Card** — Supplier name, PO count, pending acknowledgments, token expiry
+- **PO List** — All POs with status badges, line count, total cost, expected delivery
+- **PO Detail (Expandable)** — Line items table, notes, acknowledgment form with estimated delivery date + supplier notes
 
 ---
 
@@ -230,15 +254,17 @@ Open tabs (no permission): Themes, Notifications.
 | Themes | ✅ Functional | ✅ Functional | Light/Dark/System, persists to backend + localStorage |
 | Notifications | ✅ Functional | ✅ Functional | 13 types across 4 categories |
 | Clock-Out Questions | ✅ Functional | ✅ Functional | In settings dir but navigated from Office |
-| Sync | ❌ Stub | ❌ No backend | Planned for future (offline-first mesh networking) |
-| AI Config | ❌ Stub | ❌ No backend | Planned for future (LM Studio local LLM) |
-| Device Management | ❌ Stub | ❌ No backend | Planned for future (device policies, remote wipe) |
+| Sync | ✅ Functional | ✅ Functional | Full sync dashboard: device registry, sync/conflict history, hard recovery |
+| AI Config | ✅ Functional | ✅ Functional | LM Studio connection, master toggle, 5 feature toggles, capability examples |
+| Device Management | ✅ Functional | ✅ Functional | 4-tab dashboard: devices, sync history, conflicts, setup guides |
 | Staging Zones | ✅ Backend only | ✅ Functional | Backend in settings router, no dedicated settings UI (managed elsewhere) |
+| Supplier Bridge | ✅ Functional | ✅ Functional | Portal access token CRUD, phase roadmap |
+| Supplier Portal | ✅ Functional | ✅ Functional | Public PO portal with token auth, acknowledgment flow |
 
-**Functional: 5/8 tabs (62.5%)**
-**Stubs: 3/8 tabs (37.5%)**
+**Functional: 10/10 tabs (100%)**
+**Stubs: 0**
 
-The 3 stubs (Sync, AI Config, Devices) are all Future Phase features — not part of the current development roadmap.
+All settings pages are fully implemented and production-ready.
 
 ---
 
@@ -294,22 +320,22 @@ Zero TODO, FIXME, HACK, or TEMP comments in any settings file.
 
 5. **Bulk settings update is wired but unused** — The `PUT /api/settings/bulk` endpoint exists and the repo supports it, but no frontend page uses bulk update. Individual settings are updated one at a time.
 
-### Stub Analysis
+### ~~Stub Analysis~~ — All Former Stubs Now Implemented
 
-| Stub Page | Backend Exists? | Planned Phase | Complexity |
-|-----------|----------------|---------------|------------|
-| SyncPage | ❌ No | Sync & Bluetooth (Future) | High — offline-first mesh networking |
-| AiConfigPage | ❌ No | AI Integration (Future) | Medium — LM Studio config |
-| DeviceManagementPage | ❌ No | Deployment/Security (Future) | Medium — device registry, session mgmt |
+| Page | Lines | Status | Notes |
+|------|-------|--------|-------|
+| SyncPage | ~452 | ✅ Implemented | Full sync dashboard with device registry, history, conflicts, hard recovery |
+| AiConfigPage | ~491 | ✅ Implemented | LM Studio config, 5 AI feature toggles, capability examples |
+| DeviceManagementPage | ~906 | ✅ Implemented | 4-tab page with setup guides for iOS/iPad/Android |
 
-All three stubs are **intentionally deferred** to future phases and are not blocking V1.0 deployment. They serve as navigation placeholders so the tab structure is ready when the features are built.
+All three former stubs have been **fully implemented** as V1.0 features. No remaining placeholder pages in the settings module.
 
-### Missing Features
+### Missing Features (Minor)
 
-- **No user profile/account page** — There's no page for the logged-in user to see/edit their own profile (name, password, etc.). This might be expected to live in Settings but doesn't exist. *(Self-service profile page added in V1.0 Hotfix Pack — `/settings/profile`)*
+- ~~**No user profile/account page**~~ — ✅ **RESOLVED**: Self-service profile page added in V1.0 Hotfix Pack — `/settings/profile`.
 - ~~**No about/version page**~~ — ✅ **RESOLVED**: AboutPage added via M4 gap closure (GAP-043). Shows app version, build info, tech stack, and system status.
-- **No backup/restore settings** — No mechanism to export/import settings configuration.
-- **Primary color and font family** — The `ThemeSettings` model supports `primary_color` and `font_family`, but the ThemesPage UI only exposes mode (light/dark/system). Color and font customization are not surfaced.
+- **No backup/restore settings** — No mechanism to export/import settings configuration. Low priority for V1.0.
+- **Primary color and font family** — The `ThemeSettings` model supports `primary_color` and `font_family`, but the ThemesPage UI only exposes mode (light/dark/system). Color and font customization are not surfaced. Could be a V1.1 enhancement.
 
 ---
 
@@ -343,6 +369,12 @@ All three stubs are **intentionally deferred** to future phases and are not bloc
 | pytest (119 tests) | All pass |
 
 
-This page here needs to be completed properly and intelligently.
+---
 
-A note on the page that says devices. I want that to be a version one. This whole thing, everything in the plans, all that, that's all version one as far as I'm concerned, despite what other papers may say.
+## 7. Update Log
+
+| Date | Change |
+|------|--------|
+| 2026-03-06 | Initial audit — 5/8 functional, 3 stubs |
+| 2026-03-07 | AiConfigPage + DeviceManagementPage fully implemented, SyncPage still stub |
+| 2026-03-09 | All 3 former stubs now fully implemented. SyncPage (452 lines), AiConfigPage (491 lines), DeviceManagementPage (906 lines). SupplierBridgePage + SupplierPortalPage added to inventory. Settings module is 100% functional — no stubs remain. |

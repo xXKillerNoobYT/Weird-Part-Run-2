@@ -6,6 +6,7 @@
  */
 
 import apiClient from './client';
+import { adaptedRequest } from './adapter';
 import type {
   ApiResponse,
   ChatChannelResponse,
@@ -35,10 +36,19 @@ import type {
 
 /** Get user's inbox — all channels with unread counts. */
 export async function getInbox(): Promise<ChatInboxResponse> {
-  const { data } = await apiClient.get<ApiResponse<ChatInboxResponse>>(
-    '/chat/channels',
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<ChatInboxResponse>>(
+        '/chat/channels',
+      );
+      return data.data!;
+    },
+    async () => {
+      const { getInbox: local } = await import('../local/services/chat-service');
+      const channels = await local(0); // userId from local auth
+      return { channels } as unknown as ChatInboxResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Get channel detail with paginated messages and member list. */
@@ -47,11 +57,29 @@ export async function getChannelDetail(
   beforeId?: number,
   limit = 50,
 ): Promise<ChatChannelDetailResponse> {
-  const { data } = await apiClient.get<ApiResponse<ChatChannelDetailResponse>>(
-    `/chat/channels/${channelId}`,
-    { params: { before_id: beforeId, limit } },
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<ChatChannelDetailResponse>>(
+        `/chat/channels/${channelId}`,
+        { params: { before_id: beforeId, limit } },
+      );
+      return data.data!;
+    },
+    async () => {
+      const { getChannelMessages, getChannelMembers, getPinnedMessages } = await import('../local/services/chat-service');
+      const [msgData, members, pinned] = await Promise.all([
+        getChannelMessages(channelId, { before_id: beforeId, limit }),
+        getChannelMembers(channelId),
+        getPinnedMessages(channelId),
+      ]);
+      return {
+        messages: msgData.messages,
+        has_more: msgData.has_more,
+        members,
+        pinned_messages: pinned,
+      } as unknown as ChatChannelDetailResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Create or find a DM channel between users. */
@@ -69,10 +97,19 @@ export async function createDMChannel(
 export async function getOrCreateJobChannel(
   jobId: number,
 ): Promise<ChatChannelResponse> {
-  const { data } = await apiClient.post<ApiResponse<ChatChannelResponse>>(
-    `/chat/channels/job/${jobId}`,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<ChatChannelResponse>>(
+        `/chat/channels/job/${jobId}`,
+      );
+      return data.data!;
+    },
+    async () => {
+      const { getOrCreateJobChannel: local } = await import('../local/services/chat-service');
+      const channelId = await local(jobId, 0); // createdBy from local auth
+      return { id: channelId, channel_type: 'job', job_id: jobId } as unknown as ChatChannelResponse;
+    },
   );
-  return data.data!;
 }
 
 
@@ -85,11 +122,26 @@ export async function sendMessage(
   channelId: number,
   body: SendMessageRequest,
 ): Promise<ChatMessageResponse> {
-  const { data } = await apiClient.post<ApiResponse<ChatMessageResponse>>(
-    `/chat/channels/${channelId}/messages`,
-    body,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<ChatMessageResponse>>(
+        `/chat/channels/${channelId}/messages`,
+        body,
+      );
+      return data.data!;
+    },
+    async () => {
+      const { sendMessage: local } = await import('../local/services/chat-service');
+      const id = await local(channelId, 0, {
+        content: body.content ?? undefined,
+        message_type: body.message_type ?? undefined,
+        media_path: body.media_path ?? undefined,
+        reply_to_id: body.reply_to_id ?? undefined,
+        mention_ids: body.mention_ids,
+      }); // senderId from local auth
+      return { id, channel_id: channelId, ...body } as unknown as ChatMessageResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Edit a message (only sender can edit). */
@@ -97,41 +149,77 @@ export async function editMessage(
   messageId: number,
   body: EditMessageRequest,
 ): Promise<StatusMessage> {
-  const { data } = await apiClient.patch<ApiResponse<StatusMessage>>(
-    `/chat/messages/${messageId}`,
-    body,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.patch<ApiResponse<StatusMessage>>(
+        `/chat/messages/${messageId}`,
+        body,
+      );
+      return data.data!;
+    },
+    async () => {
+      const { editMessage: local } = await import('../local/services/chat-service');
+      await local(messageId, body.content);
+      return { status: 'ok', message: 'Message updated' } as StatusMessage;
+    },
   );
-  return data.data!;
 }
 
 /** Soft-delete a message (only sender can delete). */
 export async function deleteMessage(
   messageId: number,
 ): Promise<StatusMessage> {
-  const { data } = await apiClient.delete<ApiResponse<StatusMessage>>(
-    `/chat/messages/${messageId}`,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.delete<ApiResponse<StatusMessage>>(
+        `/chat/messages/${messageId}`,
+      );
+      return data.data!;
+    },
+    async () => {
+      const { deleteMessage: local } = await import('../local/services/chat-service');
+      await local(messageId);
+      return { status: 'ok', message: 'Message deleted' } as StatusMessage;
+    },
   );
-  return data.data!;
 }
 
 /** Pin a message. */
 export async function pinMessage(
   messageId: number,
 ): Promise<StatusMessage> {
-  const { data } = await apiClient.post<ApiResponse<StatusMessage>>(
-    `/chat/messages/${messageId}/pin`,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<StatusMessage>>(
+        `/chat/messages/${messageId}/pin`,
+      );
+      return data.data!;
+    },
+    async () => {
+      const { pinMessage: local } = await import('../local/services/chat-service');
+      await local(messageId, 0); // userId from local auth
+      return { status: 'ok', message: 'Message pinned' } as StatusMessage;
+    },
   );
-  return data.data!;
 }
 
 /** Unpin a message. */
 export async function unpinMessage(
   messageId: number,
 ): Promise<StatusMessage> {
-  const { data } = await apiClient.delete<ApiResponse<StatusMessage>>(
-    `/chat/messages/${messageId}/pin`,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.delete<ApiResponse<StatusMessage>>(
+        `/chat/messages/${messageId}/pin`,
+      );
+      return data.data!;
+    },
+    async () => {
+      const { unpinMessage: local } = await import('../local/services/chat-service');
+      await local(messageId);
+      return { status: 'ok', message: 'Message unpinned' } as StatusMessage;
+    },
   );
-  return data.data!;
 }
 
 
@@ -144,11 +232,20 @@ export async function markChannelRead(
   channelId: number,
   body: MarkReadRequest,
 ): Promise<StatusMessage> {
-  const { data } = await apiClient.post<ApiResponse<StatusMessage>>(
-    `/chat/channels/${channelId}/read`,
-    body,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<StatusMessage>>(
+        `/chat/channels/${channelId}/read`,
+        body,
+      );
+      return data.data!;
+    },
+    async () => {
+      const { markChannelRead: local } = await import('../local/services/chat-service');
+      await local(channelId, 0, body.last_read_message_id); // userId from local auth
+      return { status: 'ok', message: 'Channel marked as read' } as StatusMessage;
+    },
   );
-  return data.data!;
 }
 
 
@@ -196,11 +293,20 @@ export async function getChatBadge(): Promise<ChatBadgeResponse> {
 export async function askQuestion(
   body: AskQuestionRequest,
 ): Promise<QAThreadResponse> {
-  const { data } = await apiClient.post<ApiResponse<QAThreadResponse>>(
-    '/chat/qa/ask',
-    body,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<QAThreadResponse>>(
+        '/chat/qa/ask',
+        body,
+      );
+      return data.data!;
+    },
+    async () => {
+      const { askQuestion: local } = await import('../local/services/chat-service');
+      const id = await local(body.job_id, 0, body.subject, body.body ?? '', body.priority);
+      return { id, ...body, status: 'open' } as unknown as QAThreadResponse;
+    },
   );
-  return data.data!;
 }
 
 /** List Q&A threads with optional filters. */
@@ -212,11 +318,19 @@ export async function getQAThreads(params: {
   limit?: number;
   offset?: number;
 } = {}): Promise<QAThreadResponse[]> {
-  const { data } = await apiClient.get<ApiResponse<QAThreadResponse[]>>(
-    '/chat/qa/threads',
-    { params },
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<QAThreadResponse[]>>(
+        '/chat/qa/threads',
+        { params },
+      );
+      return data.data!;
+    },
+    async () => {
+      const { listQAThreads } = await import('../local/services/chat-service');
+      return await listQAThreads(params) as unknown as QAThreadResponse[];
+    },
   );
-  return data.data!;
 }
 
 /** Get thread detail with messages and escalation timeline. */
@@ -246,11 +360,20 @@ export async function answerThread(
   threadId: number,
   body: AnswerRequest,
 ): Promise<QAThreadResponse> {
-  const { data } = await apiClient.post<ApiResponse<QAThreadResponse>>(
-    `/chat/qa/threads/${threadId}/answer`,
-    body,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<QAThreadResponse>>(
+        `/chat/qa/threads/${threadId}/answer`,
+        body,
+      );
+      return data.data!;
+    },
+    async () => {
+      const { answerQuestion } = await import('../local/services/chat-service');
+      await answerQuestion(threadId, 0, body.answer); // answeredBy from local auth
+      return { id: threadId, status: 'answered' } as unknown as QAThreadResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Close a Q&A thread. */

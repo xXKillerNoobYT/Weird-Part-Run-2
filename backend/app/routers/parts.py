@@ -2039,8 +2039,44 @@ async def delete_supplier(
 
 
 # ═══════════════════════════════════════════════════════════════
-# FORECASTING (read-only for now — full algorithms in Phase 3+)
+# FORECASTING
 # ═══════════════════════════════════════════════════════════════
+
+@router.post("/forecasting/recalculate")
+async def recalculate_forecasts(
+    user: dict = Depends(require_permission("edit_parts_catalog")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Recalculate forecast data for ALL active parts.
+
+    Runs the same ADU/days-until-low/suggested-order algorithm that normally
+    fires on each stock movement, but across every non-deprecated part in bulk.
+    """
+    from app.services.movement_service import MovementService
+
+    svc = MovementService(db)
+
+    # Get all non-deprecated part IDs
+    cursor = await db.execute(
+        "SELECT id FROM parts WHERE is_deprecated = 0 OR is_deprecated IS NULL"
+    )
+    rows = await cursor.fetchall()
+    part_ids = [r["id"] for r in rows]
+
+    recalculated = 0
+    errors = 0
+    for pid in part_ids:
+        try:
+            await svc._update_forecast(pid)
+            recalculated += 1
+        except Exception:
+            errors += 1
+
+    return ApiResponse(
+        data={"recalculated": recalculated, "errors": errors, "total_parts": len(part_ids)},
+        message=f"Recalculated forecasts for {recalculated} parts ({errors} errors).",
+    )
+
 
 @router.get("/forecasting")
 async def get_forecasting(
@@ -2165,7 +2201,12 @@ async def import_parts_csv(
 ):
     """Import parts from a CSV file.
 
-    CSV must have at minimum: name, category_id (or category_name for lookup)
+    CSV must have at minimum: name, and either category_id or category_name.
+    Hierarchy can be specified by ID (category_id, style_id, type_id, color_id,
+    brand_id) OR by name (category_name, style_name, type_name, color_name,
+    brand_name). Names are resolved via case-insensitive lookup. If both ID and
+    name are provided for the same field, ID takes precedence.
+
     Optional columns: code, description, part_type, unit_of_measure,
                       company_cost_price, company_markup_percent,
                       min_stock_level, max_stock_level, target_stock_level, notes
@@ -2182,6 +2223,31 @@ async def import_parts_csv(
     updated = 0
     errors: list[str] = []
 
+    # ── Pre-build name→ID lookup caches for hierarchy resolution ──
+    async def _build_cache(table: str, key_col: str = "name") -> dict[str, int]:
+        """Build a lowercase-name → id dict for a hierarchy table."""
+        cursor = await db.execute(f"SELECT id, {key_col} FROM {table}")
+        rows = await cursor.fetchall()
+        return {r[key_col].strip().lower(): r["id"] for r in rows if r[key_col]}
+
+    category_cache = await _build_cache("part_categories")
+    style_cache: dict[str, dict[str, int]] = {}  # keyed by category_id → {lc_name: id}
+    type_cache: dict[str, dict[str, int]] = {}   # keyed by style_id → {lc_name: id}
+    color_cache = await _build_cache("part_colors")
+    brand_cache = await _build_cache("brands")
+
+    # Styles are scoped to category — build nested cache
+    cursor = await db.execute("SELECT id, category_id, name FROM part_styles")
+    for r in await cursor.fetchall():
+        cat_key = str(r["category_id"])
+        style_cache.setdefault(cat_key, {})[r["name"].strip().lower()] = r["id"]
+
+    # Types are scoped to style — build nested cache
+    cursor = await db.execute("SELECT id, style_id, name FROM part_types")
+    for r in await cursor.fetchall():
+        sty_key = str(r["style_id"])
+        type_cache.setdefault(sty_key, {})[r["name"].strip().lower()] = r["id"]
+
     for i, row in enumerate(reader, start=2):  # Row 2 (after header)
         name = (row.get("name") or "").strip()
         code = (row.get("code") or "").strip() or None
@@ -2190,16 +2256,24 @@ async def import_parts_csv(
             errors.append(f"Row {i}: missing required 'name'")
             continue
 
-        # Category is required — try by ID first, then by name lookup
+        # ── Resolve category: ID takes precedence, then name lookup ──
+        category_id: int | None = None
         category_id_str = (row.get("category_id") or "").strip()
-        if not category_id_str:
-            errors.append(f"Row {i}: missing required 'category_id'")
-            continue
+        category_name_str = (row.get("category_name") or "").strip()
 
-        try:
-            category_id = int(category_id_str)
-        except ValueError:
-            errors.append(f"Row {i}: invalid category_id '{category_id_str}'")
+        if category_id_str:
+            try:
+                category_id = int(category_id_str)
+            except ValueError:
+                errors.append(f"Row {i}: invalid category_id '{category_id_str}'")
+                continue
+        elif category_name_str:
+            category_id = category_cache.get(category_name_str.lower())
+            if category_id is None:
+                errors.append(f"Row {i}: category_name '{category_name_str}' not found")
+                continue
+        else:
+            errors.append(f"Row {i}: missing required 'category_id' or 'category_name'")
             continue
 
         # Build part data from CSV columns
@@ -2213,14 +2287,68 @@ async def import_parts_csv(
             "notes": row.get("notes", "").strip() or None,
         }
 
-        # Optional hierarchy IDs
-        for fk_field in ["style_id", "type_id", "color_id", "brand_id"]:
-            val = (row.get(fk_field) or "").strip()
-            if val:
-                try:
-                    data[fk_field] = int(val)
-                except ValueError:
-                    errors.append(f"Row {i}: invalid {fk_field} '{val}'")
+        # ── Resolve optional hierarchy: ID first, then name lookup ──
+        # Style (scoped by category)
+        style_id_str = (row.get("style_id") or "").strip()
+        style_name_str = (row.get("style_name") or "").strip()
+        if style_id_str:
+            try:
+                data["style_id"] = int(style_id_str)
+            except ValueError:
+                errors.append(f"Row {i}: invalid style_id '{style_id_str}'")
+        elif style_name_str:
+            styles_for_cat = style_cache.get(str(category_id), {})
+            sid = styles_for_cat.get(style_name_str.lower())
+            if sid is not None:
+                data["style_id"] = sid
+            else:
+                errors.append(f"Row {i}: style_name '{style_name_str}' not found in category")
+
+        # Type (scoped by style)
+        type_id_str = (row.get("type_id") or "").strip()
+        type_name_str = (row.get("type_name") or "").strip()
+        if type_id_str:
+            try:
+                data["type_id"] = int(type_id_str)
+            except ValueError:
+                errors.append(f"Row {i}: invalid type_id '{type_id_str}'")
+        elif type_name_str and data.get("style_id"):
+            types_for_style = type_cache.get(str(data["style_id"]), {})
+            tid = types_for_style.get(type_name_str.lower())
+            if tid is not None:
+                data["type_id"] = tid
+            else:
+                errors.append(f"Row {i}: type_name '{type_name_str}' not found in style")
+
+        # Color (global)
+        color_id_str = (row.get("color_id") or "").strip()
+        color_name_str = (row.get("color_name") or "").strip()
+        if color_id_str:
+            try:
+                data["color_id"] = int(color_id_str)
+            except ValueError:
+                errors.append(f"Row {i}: invalid color_id '{color_id_str}'")
+        elif color_name_str:
+            cid = color_cache.get(color_name_str.lower())
+            if cid is not None:
+                data["color_id"] = cid
+            else:
+                errors.append(f"Row {i}: color_name '{color_name_str}' not found")
+
+        # Brand (global)
+        brand_id_str = (row.get("brand_id") or "").strip()
+        brand_name_str = (row.get("brand_name") or "").strip()
+        if brand_id_str:
+            try:
+                data["brand_id"] = int(brand_id_str)
+            except ValueError:
+                errors.append(f"Row {i}: invalid brand_id '{brand_id_str}'")
+        elif brand_name_str:
+            bid = brand_cache.get(brand_name_str.lower())
+            if bid is not None:
+                data["brand_id"] = bid
+            else:
+                errors.append(f"Row {i}: brand_name '{brand_name_str}' not found")
 
         # Numeric fields (with safe parsing)
         for field in ["company_cost_price", "company_markup_percent",

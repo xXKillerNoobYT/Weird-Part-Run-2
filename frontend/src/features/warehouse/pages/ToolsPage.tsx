@@ -6,15 +6,17 @@
  * Also surfaces maintenance alerts for overdue/upcoming service.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Search, Wrench, X, Filter, ChevronRight,
   AlertTriangle, Truck, Briefcase, Warehouse,
   Star, CheckCircle, QrCode, Printer, Clock, Shield,
-  ChevronLeft,
+  ChevronLeft, Download, Camera, ArrowRightLeft, DollarSign,
+  Calendar, TrendingDown,
 } from 'lucide-react';
 import QRCode from 'qrcode';
+import JsBarcode from 'jsbarcode';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Button } from '../../../components/ui/Button';
@@ -26,10 +28,12 @@ import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import {
   getTools, createTool, getToolsDashboard, getMaintenanceAlerts,
+  uploadToolPhoto, transferTool, getToolDepreciation,
+  exportToolsCsv,
 } from '../../../api/tools';
 import type {
   Tool, ToolCreate, ToolCategory, ToolStatus, ToolsDashboardStats,
-  ToolMaintenanceAlert,
+  ToolMaintenanceAlert, DepreciationMethod,
 } from '../../../lib/types';
 import type { ToolListParams } from '../../../api/tools';
 
@@ -76,9 +80,26 @@ function locationIcon(type: string | null) {
   return <Warehouse size={14} className="text-gray-400 dark:text-gray-500" />;
 }
 
-/** Open a print window with QR label using safe DOM manipulation. */
+/** Generate Code128 barcode as data URL for a given text. */
+function generateBarcodeDataUrl(text: string): string | null {
+  try {
+    const canvas = document.createElement('canvas');
+    JsBarcode(canvas, text, {
+      format: 'CODE128',
+      width: 2,
+      height: 50,
+      displayValue: false,
+      margin: 4,
+    });
+    return canvas.toDataURL('image/png');
+  } catch {
+    return null;
+  }
+}
+
+/** Open a print window with QR label + Code128 barcode using safe DOM manipulation. */
 function printQrLabel(qrDataUrl: string, tool: Tool) {
-  const win = window.open('', '_blank', 'width=400,height=500');
+  const win = window.open('', '_blank', 'width=400,height=600');
   if (!win) return;
 
   const doc = win.document;
@@ -89,12 +110,14 @@ function printQrLabel(qrDataUrl: string, tool: Tool) {
   body.style.textAlign = 'center';
   body.style.padding = '24px';
 
-  const img = doc.createElement('img');
-  img.src = qrDataUrl;
-  img.width = 200;
-  img.height = 200;
-  body.appendChild(img);
+  // QR Code
+  const qrImg = doc.createElement('img');
+  qrImg.src = qrDataUrl;
+  qrImg.width = 180;
+  qrImg.height = 180;
+  body.appendChild(qrImg);
 
+  // Tool number heading
   const h2 = doc.createElement('h2');
   h2.style.margin = '8px 0 4px';
   h2.textContent = tool.tool_number;
@@ -106,9 +129,27 @@ function printQrLabel(qrDataUrl: string, tool: Tool) {
   body.appendChild(pName);
 
   const pCat = doc.createElement('p');
-  pCat.style.cssText = 'margin:4px 0;font-size:12px;color:#999;';
+  pCat.style.cssText = 'margin:4px 0 12px;font-size:12px;color:#999;';
   pCat.textContent = categoryLabel(tool.category);
   body.appendChild(pCat);
+
+  // Code128 Barcode
+  const barcodeUrl = generateBarcodeDataUrl(tool.tool_number);
+  if (barcodeUrl) {
+    const hr = doc.createElement('hr');
+    hr.style.cssText = 'border:none;border-top:1px solid #ddd;margin:8px 0;';
+    body.appendChild(hr);
+
+    const barcodeImg = doc.createElement('img');
+    barcodeImg.src = barcodeUrl;
+    barcodeImg.style.cssText = 'max-width:280px;height:60px;';
+    body.appendChild(barcodeImg);
+
+    const pBarcode = doc.createElement('p');
+    pBarcode.style.cssText = 'margin:2px 0 0;font-size:11px;color:#999;font-family:monospace;';
+    pBarcode.textContent = tool.tool_number;
+    body.appendChild(pBarcode);
+  }
 
   win.print();
 }
@@ -187,6 +228,31 @@ export function WarehouseToolsPage() {
     },
   });
 
+  // ── Export CSV handler ────────────────────────────────────────────
+  const [exporting, setExporting] = useState(false);
+  const handleExportCsv = async () => {
+    try {
+      setExporting(true);
+      const blob = await exportToolsCsv({
+        category: categoryFilter || undefined,
+        status: statusFilter || undefined,
+        location_type: locationFilter || undefined,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `tools-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      // silent fail — user sees no file download
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const hasActiveFilters = categoryFilter !== '' || statusFilter !== '' || locationFilter !== '';
 
   const clearFilters = useCallback(() => {
@@ -248,6 +314,16 @@ export function WarehouseToolsPage() {
             onClick={() => setShowFilters(!showFilters)}
           >
             <span className="hidden sm:inline">Filters</span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<Download size={16} />}
+            onClick={handleExportCsv}
+            disabled={exporting}
+          >
+            <span className="hidden sm:inline">{exporting ? 'Exporting…' : 'Export CSV'}</span>
           </Button>
 
           {canManage && (
@@ -559,7 +635,15 @@ function ToolDetailPanel({ tool, onClose }: {
   tool: Tool;
   onClose: () => void;
 }) {
+  const queryClient = useQueryClient();
+  const { hasPermission } = useAuthStore();
+  const canManage = hasPermission(PERMISSIONS.MANAGE_TOOLS);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(tool.photo_path ?? null);
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [showDepreciation, setShowDepreciation] = useState(false);
 
   // Generate QR code on mount
   useEffect(() => {
@@ -569,18 +653,66 @@ function ToolDetailPanel({ tool, onClose }: {
       .catch(() => setQrDataUrl(null));
   }, [tool.tool_number]);
 
+  // Photo upload handler
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploading(true);
+      const result = await uploadToolPhoto(tool.id, file);
+      setPhotoUrl(result.photo_path);
+      queryClient.invalidateQueries({ queryKey: ['tools'] });
+    } catch {
+      // silent — user can try again
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // Depreciation query (only fetch when panel expanded)
+  const { data: depreciation } = useQuery({
+    queryKey: ['tool-depreciation', tool.id],
+    queryFn: () => getToolDepreciation(tool.id),
+    enabled: showDepreciation && !!tool.depreciation_method,
+    staleTime: 30_000,
+  });
+
   return (
     <Modal isOpen onClose={onClose} title="Tool Details" size="lg">
       <div className="space-y-5">
         {/* Header info */}
         <div className="flex items-start gap-4">
-          {/* QR Code */}
-          <div className="flex-shrink-0 w-24 h-24 bg-white border border-gray-200 dark:border-gray-700 rounded-lg flex items-center justify-center">
-            {qrDataUrl ? (
+          {/* Photo / QR Code */}
+          <div className="flex-shrink-0 w-24 h-24 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg flex items-center justify-center relative overflow-hidden group">
+            {photoUrl ? (
+              <img src={photoUrl} alt={tool.name} className="w-full h-full object-cover rounded-lg" />
+            ) : qrDataUrl ? (
               <img src={qrDataUrl} alt="QR Code" className="w-20 h-20" />
             ) : (
               <QrCode size={40} className="text-gray-300 dark:text-gray-600" />
             )}
+            {/* Photo upload overlay */}
+            {canManage && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg"
+                title={photoUrl ? 'Change photo' : 'Upload photo'}
+              >
+                {uploading ? (
+                  <div className="w-5 h-5 border-2 border-white/50 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <Camera size={20} className="text-white" />
+                )}
+              </button>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handlePhotoUpload}
+            />
           </div>
 
           <div className="flex-1 min-w-0">
@@ -595,12 +727,19 @@ function ToolDetailPanel({ tool, onClose }: {
             </div>
           </div>
 
-          {/* Print QR */}
-          {qrDataUrl && (
-            <Button variant="ghost" size="sm" icon={<Printer size={16} />} onClick={() => printQrLabel(qrDataUrl, tool)}>
-              <span className="hidden sm:inline">Print Label</span>
-            </Button>
-          )}
+          {/* Action buttons */}
+          <div className="flex flex-col gap-1 flex-shrink-0">
+            {qrDataUrl && (
+              <Button variant="ghost" size="sm" icon={<Printer size={16} />} onClick={() => printQrLabel(qrDataUrl, tool)}>
+                <span className="hidden sm:inline">Print</span>
+              </Button>
+            )}
+            {canManage && (
+              <Button variant="ghost" size="sm" icon={<ArrowRightLeft size={16} />} onClick={() => setShowTransfer(true)}>
+                <span className="hidden sm:inline">Transfer</span>
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Details grid */}
@@ -631,7 +770,96 @@ function ToolDetailPanel({ tool, onClose }: {
           {tool.purchase_date && <DetailField label="Purchase Date" value={tool.purchase_date} />}
           {tool.purchase_cost != null && <DetailField label="Purchase Cost" value={`$${tool.purchase_cost.toFixed(2)}`} />}
           {tool.warranty_expiry && <DetailField label="Warranty Expires" value={tool.warranty_expiry} />}
+          {tool.current_book_value != null && (
+            <DetailField label="Book Value" value={
+              <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                <DollarSign size={14} />
+                {tool.current_book_value.toFixed(2)}
+              </span>
+            } />
+          )}
+          {tool.calibration_due_date && (
+            <DetailField label="Calibration Due" value={
+              <span className={`flex items-center gap-1 ${new Date(tool.calibration_due_date) < new Date() ? 'text-red-500' : 'text-gray-900 dark:text-gray-100'}`}>
+                <Calendar size={14} />
+                {tool.calibration_due_date}
+              </span>
+            } />
+          )}
         </div>
+
+        {/* Depreciation section */}
+        {tool.depreciation_method && (
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+            <button
+              onClick={() => setShowDepreciation(!showDepreciation)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            >
+              <span className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                <TrendingDown size={16} className="text-blue-500" />
+                Depreciation — {tool.depreciation_method.replace('_', ' ')}
+              </span>
+              <ChevronRight size={16} className={`text-gray-400 transition-transform ${showDepreciation ? 'rotate-90' : ''}`} />
+            </button>
+
+            {showDepreciation && depreciation && (
+              <div className="p-4 space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Original Cost</p>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      ${(depreciation.purchase_cost ?? 0).toFixed(2)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Book Value</p>
+                    <p className="text-sm font-semibold text-green-600 dark:text-green-400">
+                      ${(depreciation.current_book_value ?? 0).toFixed(2)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Depreciated</p>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      ${depreciation.total_depreciated.toFixed(2)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Years Left</p>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                      {depreciation.years_remaining ?? '—'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Schedule table */}
+                {depreciation.schedule.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                          <th className="py-1.5 pr-3">Year</th>
+                          <th className="py-1.5 pr-3 text-right">Begin</th>
+                          <th className="py-1.5 pr-3 text-right">Deprec.</th>
+                          <th className="py-1.5 text-right">End</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {depreciation.schedule.map((entry) => (
+                          <tr key={entry.year_number} className="border-b border-gray-100 dark:border-gray-800">
+                            <td className="py-1.5 pr-3 text-gray-600 dark:text-gray-400">{entry.fiscal_year}</td>
+                            <td className="py-1.5 pr-3 text-right">${entry.beginning_value.toFixed(2)}</td>
+                            <td className="py-1.5 pr-3 text-right text-red-500">${entry.depreciation_amount.toFixed(2)}</td>
+                            <td className="py-1.5 text-right font-medium">${entry.ending_value.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Maintenance info */}
         {tool.next_maintenance_due && (
@@ -654,6 +882,20 @@ function ToolDetailPanel({ tool, onClose }: {
           </div>
         )}
       </div>
+
+      {/* Transfer modal */}
+      {showTransfer && (
+        <ToolTransferModal
+          tool={tool}
+          onClose={() => setShowTransfer(false)}
+          onSuccess={() => {
+            setShowTransfer(false);
+            queryClient.invalidateQueries({ queryKey: ['tools'] });
+            queryClient.invalidateQueries({ queryKey: ['tools-dashboard'] });
+            onClose();
+          }}
+        />
+      )}
     </Modal>
   );
 }
@@ -791,6 +1033,46 @@ function CreateToolModal({ isLoading, error, onSubmit, onClose }: CreateModalPro
           />
         </div>
 
+        {/* Depreciation settings (optional) */}
+        <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-1.5">
+            <TrendingDown size={14} /> Depreciation (optional)
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Method</label>
+              <select
+                value={form.depreciation_method ?? ''}
+                onChange={(e) => setForm({ ...form, depreciation_method: (e.target.value || undefined) as DepreciationMethod | undefined })}
+                className="block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm"
+              >
+                <option value="">None</option>
+                <option value="straight_line">Straight Line</option>
+                <option value="declining_balance">Declining Balance</option>
+                <option value="sum_of_years">Sum of Years' Digits</option>
+              </select>
+            </div>
+            <Input
+              label="Salvage Value"
+              type="number"
+              step="0.01"
+              min="0"
+              value={form.salvage_value ?? ''}
+              onChange={(e) => setForm({ ...form, salvage_value: e.target.value ? Number(e.target.value) : undefined })}
+              placeholder="0.00"
+            />
+            <Input
+              label="Useful Life (years)"
+              type="number"
+              min="1"
+              max="50"
+              value={form.useful_life_years ?? ''}
+              onChange={(e) => setForm({ ...form, useful_life_years: e.target.value ? Number(e.target.value) : undefined })}
+              placeholder="5"
+            />
+          </div>
+        </div>
+
         <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
           <Button variant="ghost" type="button" onClick={onClose}>Cancel</Button>
           <Button type="submit" isLoading={isLoading} disabled={!form.name}>
@@ -798,6 +1080,118 @@ function CreateToolModal({ isLoading, error, onSubmit, onClose }: CreateModalPro
           </Button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Tool Transfer Modal
+// ═══════════════════════════════════════════════════════════════════
+
+const LOCATION_TYPES = [
+  { value: 'warehouse', label: 'Warehouse' },
+  { value: 'truck', label: 'Truck' },
+  { value: 'job', label: 'Job' },
+];
+
+function ToolTransferModal({ tool, onClose, onSuccess }: {
+  tool: Tool;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [locationType, setLocationType] = useState<string>('warehouse');
+  const [locationId, setLocationId] = useState<string>('');
+  const [reason, setReason] = useState('');
+  const [condition, setCondition] = useState<string>(String(tool.condition_rating ?? ''));
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => transferTool(tool.id, {
+      to_location_type: locationType as 'warehouse' | 'truck' | 'job',
+      to_location_id: locationId ? Number(locationId) : 0,
+      condition_at_move: condition ? Number(condition) : undefined,
+      reason: reason || undefined,
+    }),
+    onSuccess,
+    onError: (err: Error) => setError(err.message),
+  });
+
+  return (
+    <Modal isOpen onClose={onClose} title={`Transfer: ${tool.tool_number}`} size="md">
+      <div className="space-y-4">
+        {error && (
+          <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
+            {error}
+          </div>
+        )}
+
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Currently at: <span className="font-medium">{tool.location_name ?? tool.location_type}</span>
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Destination Type *</label>
+            <select
+              value={locationType}
+              onChange={(e) => { setLocationType(e.target.value); setLocationId(''); }}
+              className="block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm"
+            >
+              {LOCATION_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {locationType !== 'warehouse' && (
+            <Input
+              label={`${locationType === 'truck' ? 'Truck' : 'Job'} ID *`}
+              type="number"
+              min="1"
+              value={locationId}
+              onChange={(e) => setLocationId(e.target.value)}
+              placeholder={`Enter ${locationType} ID`}
+              required
+            />
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Condition at Move</label>
+            <select
+              value={condition}
+              onChange={(e) => setCondition(e.target.value)}
+              className="block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm"
+            >
+              <option value="">No change</option>
+              <option value="5">5 — Excellent</option>
+              <option value="4">4 — Good</option>
+              <option value="3">3 — Fair</option>
+              <option value="2">2 — Poor</option>
+              <option value="1">1 — Critical</option>
+            </select>
+          </div>
+          <Input
+            label="Reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Optional reason for transfer"
+          />
+        </div>
+
+        <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+          <Button variant="ghost" type="button" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            isLoading={mutation.isPending}
+            icon={<ArrowRightLeft size={16} />}
+          >
+            Transfer Tool
+          </Button>
+        </div>
+      </div>
     </Modal>
   );
 }

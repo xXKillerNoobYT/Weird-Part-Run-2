@@ -416,7 +416,7 @@ function DashboardContent() {
 
           {enforceMutation.isSuccess && (
             <div className="p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded text-sm text-green-700 dark:text-green-400">
-              Done! {(enforceMutation.data as any)?.cleared_count ?? 0} custom margins cleared.
+              Done! {enforceMutation.data?.cleared_count ?? 0} custom margins cleared.
             </div>
           )}
         </div>

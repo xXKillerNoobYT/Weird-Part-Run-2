@@ -8,16 +8,28 @@
  */
 
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarDays, ChevronLeft, ChevronRight, Briefcase,
-  HardHat, Sun, Filter,
+  HardHat, Sun, Filter, GripVertical,
 } from 'lucide-react';
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { useNavigate } from 'react-router-dom';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { getCalendarData } from '../../../api/scheduling';
+import { updateDispatch } from '../../../api/scheduling';
+import { toast } from '../../../lib/toast';
 import type { CalendarEntry, CalendarEntryType } from '../../../lib/types';
 
 
@@ -110,7 +122,7 @@ const ROLE_OVERRIDES: Record<string, { bg: string; text: string }> = {
   },
 };
 
-function EntryCard({ entry }: { entry: CalendarEntry }) {
+function EntryCard({ entry, isDragging }: { entry: CalendarEntry; isDragging?: boolean }) {
   const navigate = useNavigate();
   const baseConfig = ENTRY_TYPE_CONFIG[entry.entry_type];
   const Icon = baseConfig.icon;
@@ -136,10 +148,14 @@ function EntryCard({ entry }: { entry: CalendarEntry }) {
         w-full text-left p-2 rounded-lg border text-xs
         ${bg}
         ${entry.entry_type === 'dispatch' ? 'cursor-pointer hover:shadow-sm' : 'cursor-default'}
+        ${isDragging ? 'opacity-50' : ''}
         transition-shadow
       `}
     >
       <div className="flex items-center gap-1.5 mb-0.5">
+        {entry.entry_type === 'dispatch' && (
+          <GripVertical size={10} className="text-gray-400 flex-shrink-0 cursor-grab" />
+        )}
         <Icon size={12} className={text} />
         <span className={`font-medium truncate ${text}`}>
           {entry.label}
@@ -178,6 +194,83 @@ function EntryCard({ entry }: { entry: CalendarEntry }) {
 }
 
 
+// ── Draggable wrapper for dispatch entries ─────────────────────────
+
+function DraggableEntry({ entry, idx }: { entry: CalendarEntry; idx: number }) {
+  const isDraggable = entry.entry_type === 'dispatch' && !!entry.reference_id;
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `entry-${entry.entry_type}-${entry.reference_id ?? idx}-${entry.date}`,
+    data: { entry },
+    disabled: !isDraggable,
+  });
+
+  return (
+    <div ref={setNodeRef} {...(isDraggable ? { ...listeners, ...attributes } : {})}>
+      <EntryCard entry={entry} isDragging={isDragging} />
+    </div>
+  );
+}
+
+
+// ── Droppable day cell ─────────────────────────────────────────────
+
+function DroppableDayCell({
+  dateStr,
+  isToday: today,
+  dayLabel,
+  dayNumber,
+  entries,
+}: {
+  dateStr: string;
+  isToday: boolean;
+  dayLabel: string;
+  dayNumber: number;
+  entries: CalendarEntry[];
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `day-${dateStr}` });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`
+        bg-white dark:bg-gray-900 min-h-[150px] p-2 flex flex-col
+        ${today ? 'ring-2 ring-inset ring-blue-500' : ''}
+        ${isOver ? 'bg-blue-50 dark:bg-blue-900/20 ring-2 ring-inset ring-blue-400' : ''}
+        transition-colors
+      `}
+    >
+      {/* Day header */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+          {dayLabel}
+        </span>
+        <span className={`
+          text-sm font-semibold
+          ${today
+            ? 'bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center'
+            : 'text-gray-700 dark:text-gray-300'
+          }
+        `}>
+          {dayNumber}
+        </span>
+      </div>
+
+      {/* Entries */}
+      <div className="flex-1 space-y-1 overflow-y-auto max-h-[200px]">
+        {entries.length === 0 && (
+          <div className="text-[10px] text-gray-400 dark:text-gray-600 text-center pt-4">
+            No entries
+          </div>
+        )}
+        {entries.map((entry, j) => (
+          <DraggableEntry key={`${entry.entry_type}-${entry.reference_id ?? j}-${j}`} entry={entry} idx={j} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
 // ═══════════════════════════════════════════════════════════════════
 // MAIN PAGE
 // ═══════════════════════════════════════════════════════════════════
@@ -186,6 +279,9 @@ export function ScheduleCalendarPage() {
   // ── State ────────────────────────────────────────────────────────
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
   const [typeFilter, setTypeFilter] = useState<CalendarEntryType | 'all'>('all');
+  const [activeDragEntry, setActiveDragEntry] = useState<CalendarEntry | null>(null);
+
+  const queryClient = useQueryClient();
 
   // 3-week span: 21 days total
   const spanEnd = addDays(weekStart, 20);
@@ -224,6 +320,43 @@ export function ScheduleCalendarPage() {
     return map;
   }, [calendar, weekDates, typeFilter]);
 
+  // ── DnD: Reschedule mutation ─────────────────────────────────────
+  const reschedule = useMutation({
+    mutationFn: ({ dispatchId, newDate }: { dispatchId: number; newDate: string }) =>
+      updateDispatch(dispatchId, { dispatch_date: newDate }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendar'] });
+      toast.success('Dispatch rescheduled');
+    },
+    onError: () => toast.error('Failed to reschedule dispatch'),
+  });
+
+  // DnD sensors — require a minimum drag distance to distinguish from clicks
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+  );
+
+  function handleDragStart(event: DragStartEvent) {
+    const entry = event.active.data.current?.entry as CalendarEntry | undefined;
+    setActiveDragEntry(entry ?? null);
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    setActiveDragEntry(null);
+
+    const { active, over } = event;
+    if (!over) return;
+
+    const entry = active.data.current?.entry as CalendarEntry | undefined;
+    if (!entry || entry.entry_type !== 'dispatch' || !entry.reference_id) return;
+
+    // Extract target date from droppable id (format: "day-YYYY-MM-DD")
+    const targetDate = (over.id as string).replace('day-', '');
+    if (targetDate === entry.date) return; // dropped on same day — no-op
+
+    reschedule.mutate({ dispatchId: entry.reference_id, newDate: targetDate });
+  }
+
   // ── Week nav ─────────────────────────────────────────────────────
   function prevWeek() { setWeekStart(addDays(weekStart, -7)); }
   function nextWeek() { setWeekStart(addDays(weekStart, 7)); }
@@ -236,6 +369,7 @@ export function ScheduleCalendarPage() {
   const weekLabel = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${spanEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} (3 weeks)`;
 
   return (
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
     <div className="space-y-4">
       {/* ── Header ──────────────────────────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -247,6 +381,7 @@ export function ScheduleCalendarPage() {
             </h1>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               {weekLabel} &middot; {totalEntries} entries
+              {' · '}<span className="text-blue-500">drag dispatches to reschedule</span>
             </p>
           </div>
         </div>
@@ -285,7 +420,7 @@ export function ScheduleCalendarPage() {
         ))}
       </div>
 
-      {/* ── Desktop: 3-week stacked grid ──────────────────────── */}
+      {/* ── Desktop: 3-week stacked grid (droppable cells) ─────── */}
       <div className="hidden md:flex flex-col gap-2">
         {weeks.map((weekGroup, weekIdx) => (
           <div key={weekIdx} className="rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
@@ -299,44 +434,15 @@ export function ScheduleCalendarPage() {
               {weekGroup.map((d, i) => {
                 const dateStr = isoDate(d);
                 const entries = entriesByDate.get(dateStr) ?? [];
-                const today = isToday(d);
-
                 return (
-                  <div
+                  <DroppableDayCell
                     key={dateStr}
-                    className={`
-                      bg-white dark:bg-gray-900 min-h-[150px] p-2 flex flex-col
-                      ${today ? 'ring-2 ring-inset ring-blue-500' : ''}
-                    `}
-                  >
-                    {/* Day header */}
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                        {DAY_NAMES[i]}
-                      </span>
-                      <span className={`
-                        text-sm font-semibold
-                        ${today
-                          ? 'bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center'
-                          : 'text-gray-700 dark:text-gray-300'
-                        }
-                      `}>
-                        {d.getDate()}
-                      </span>
-                    </div>
-
-                    {/* Entries */}
-                    <div className="flex-1 space-y-1 overflow-y-auto max-h-[200px]">
-                      {entries.length === 0 && (
-                        <div className="text-[10px] text-gray-400 dark:text-gray-600 text-center pt-4">
-                          No entries
-                        </div>
-                      )}
-                      {entries.map((entry, j) => (
-                        <EntryCard key={`${entry.entry_type}-${entry.user_id ?? entry.gc_id}-${j}`} entry={entry} />
-                      ))}
-                    </div>
-                  </div>
+                    dateStr={dateStr}
+                    isToday={isToday(d)}
+                    dayLabel={DAY_NAMES[i]}
+                    dayNumber={d.getDate()}
+                    entries={entries}
+                  />
                 );
               })}
             </div>
@@ -344,7 +450,7 @@ export function ScheduleCalendarPage() {
         ))}
       </div>
 
-      {/* ── Mobile: daily list ─────────────────────────────────── */}
+      {/* ── Mobile: daily list (draggable entries) ──────────── */}
       <div className="md:hidden space-y-4">
         {weekDates.map((d, i) => {
           const isWeekStart = i % 7 === 0;
@@ -387,7 +493,11 @@ export function ScheduleCalendarPage() {
               ) : (
                 <div className="space-y-1.5 px-1">
                   {entries.map((entry, j) => (
-                    <EntryCard key={`${entry.entry_type}-${entry.user_id ?? entry.gc_id}-${j}`} entry={entry} />
+                    <DraggableEntry
+                      key={`${entry.entry_type}-${entry.user_id ?? entry.gc_id}-${j}`}
+                      entry={entry}
+                      idx={j}
+                    />
                   ))}
                 </div>
               )}
@@ -397,7 +507,7 @@ export function ScheduleCalendarPage() {
       </div>
 
       {/* ── Legend ──────────────────────────────────────────────── */}
-      <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 pt-2">
+      <div className="flex items-center gap-4 flex-wrap text-xs text-gray-500 dark:text-gray-400 pt-2">
         {Object.entries(ENTRY_TYPE_CONFIG).map(([key, cfg]) => {
           const Icon = cfg.icon;
           return (
@@ -409,6 +519,12 @@ export function ScheduleCalendarPage() {
           );
         })}
       </div>
+
+      {/* ── Drag overlay — floats with cursor while dragging ──── */}
+      <DragOverlay dropAnimation={null}>
+        {activeDragEntry ? <EntryCard entry={activeDragEntry} isDragging /> : null}
+      </DragOverlay>
     </div>
+    </DndContext>
   );
 }

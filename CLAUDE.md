@@ -172,6 +172,7 @@ Plans are living documents that build our project's institutional memory. Treat 
 - Gap Closure — M1-M4, 44/44 items (✅ complete — see `docs/plans/full-program-gap-closure-plan.md`)
 - Scheduling Enhancements — lunch breaks, supervisor role, multi-job dispatch UX (✅ complete — see `docs/plans/scheduling-enhancements.md`)
 - V1.0 Deployment — 19 of 23 tasks complete. Remaining 5 tasks need Mac + physical devices (see `docs/plans/deployment-master-plan.md`)
+- Phase 17: Orders Audit Closure — all 5 gaps: category supplier prefs, supplier portal notes, PDF templates, cross-job summary, explicit preferred suppliers (✅ complete — see `docs/plans/phase-17-orders-audit-closure.md`)
 
 **Architecture (V1.0):**
 
@@ -189,6 +190,7 @@ Every device runs the full frontend with its own local database. Mobile gets a *
 - Phase 11: Sync & Bluetooth — BT mesh, gossip protocol, PGP encryption, device pairing, shop cluster (see `docs/plans/phase-13-sync-bluetooth.md`)
 - Phase 12: AI Integration — LM Studio local LLM, NL queries, anomaly detection, predictive ordering (see `docs/plans/phase-14-ai-integration.md`)
 - Phase 13: Remote Sync — ON HOLD — internet sync, shop↔shop, shared channels (see `docs/plans/phase-15-remote-sync.md`)
+- Phase 16: UX Polish & Admin Hub — nav restructure, warehouse enhancements, report filters, teams, device mgmt (see `docs/plans/phase-16-ux-polish-and-admin-hub.md`)
 - Bootstrap App — App Store shell that downloads real program from shop (see `docs/plans/Mobile device bootstrap.md`)
 
 **Codebase stats (as of 2026-03-07):**

@@ -144,14 +144,11 @@ class SpendingService:
         self, date_from: str, date_to: str, group_by: str = "month"
     ) -> list[dict]:
         """Spending trend over time, grouped by month or week."""
+        # Use separate SQL strings instead of f-string interpolation
+        # for defense-in-depth (no user input touches SQL structure).
         if group_by == "week":
-            date_fmt = "strftime('%Y-W%W', po.created_at)"
-        else:
-            date_fmt = "strftime('%Y-%m', po.created_at)"
-
-        cursor = await self.db.execute(
-            f"""
-            SELECT {date_fmt} AS period_label,
+            sql = """
+            SELECT strftime('%Y-W%W', po.created_at) AS period_label,
                    COALESCE(SUM(po.total_cost), 0) AS total_spend,
                    COUNT(DISTINCT po.id) AS order_count
             FROM purchase_orders po
@@ -159,9 +156,20 @@ class SpendingService:
               AND po.created_at >= ? AND po.created_at < ?
             GROUP BY period_label
             ORDER BY period_label ASC
-            """,
-            (date_from, date_to),
-        )
+            """
+        else:
+            sql = """
+            SELECT strftime('%Y-%m', po.created_at) AS period_label,
+                   COALESCE(SUM(po.total_cost), 0) AS total_spend,
+                   COUNT(DISTINCT po.id) AS order_count
+            FROM purchase_orders po
+            WHERE po.status NOT IN ('draft', 'cancelled')
+              AND po.created_at >= ? AND po.created_at < ?
+            GROUP BY period_label
+            ORDER BY period_label ASC
+            """
+
+        cursor = await self.db.execute(sql, (date_from, date_to))
         return [dict(r) for r in await cursor.fetchall()]
 
     # ═══════════════════════════════════════════════════════════════
@@ -200,10 +208,12 @@ class SpendingService:
         # (PO cost is committed spend, consumed cost is actual usage)
         total_parts = max(parts_cost, consumed_cost)
 
-        # Labor cost estimate: total hours × billing rate
+        # Labor cost estimate: total hours × hourly rate from company settings
+        # (billing_rate was dropped from jobs in migration 011; now uses
+        #  company_cost_settings['default_hourly_rate'] as a company-wide rate)
         cursor = await self.db.execute(
             """
-            SELECT j.job_name, j.billing_rate, j.budget_limit, j.budget_alert_percent,
+            SELECT j.job_name, j.budget_limit, j.budget_alert_percent,
                    COALESCE(SUM(
                        (julianday(COALESCE(le.clock_out, datetime('now'))) -
                         julianday(le.clock_in)) * 24
@@ -220,7 +230,9 @@ class SpendingService:
             raise ValueError(f"Job {job_id} not found")
 
         total_hours = round(job_row["total_hours"] or 0, 2)
-        billing_rate = job_row["billing_rate"] or 0
+
+        # Read hourly rate from company settings
+        billing_rate = await self._get_hourly_rate()
         total_labor = round(total_hours * billing_rate, 2)
         combined = round(total_parts + total_labor, 2)
 
@@ -468,14 +480,36 @@ class SpendingService:
         }
 
     async def _count(self, sql: str) -> int:
-        """Run a scalar count/sum query with error handling."""
+        """Run a scalar count/sum query with error handling.
+
+        The dict_row_factory returns dicts, so we grab the first value
+        using list(row.values())[0] rather than positional row[0].
+        """
         try:
             cursor = await self.db.execute(sql)
             row = await cursor.fetchone()
-            return row[0] if row else 0
+            if not row:
+                return 0
+            # row is a dict — get the first (and only) value
+            return list(row.values())[0] or 0
         except Exception as exc:
             logger.debug("Spending count query failed: %s — %s", sql[:80], exc)
             return 0
+
+    async def _get_hourly_rate(self) -> float:
+        """Read the company default hourly rate from settings.
+
+        Used for labor cost estimates in job cost rollups.
+        Returns 0 if not configured (labor cost won't be included).
+        """
+        try:
+            cursor = await self.db.execute(
+                "SELECT setting_value FROM company_cost_settings WHERE setting_key = 'default_hourly_rate'"
+            )
+            row = await cursor.fetchone()
+            return float(row["setting_value"]) if row else 0.0
+        except (ValueError, TypeError):
+            return 0.0
 
     async def _safe_budget_alerts(self) -> list[dict]:
         """Budget alerts with graceful error handling."""

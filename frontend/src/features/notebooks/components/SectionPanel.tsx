@@ -26,6 +26,8 @@ interface SectionPanelProps {
   savingFieldId?: number | null;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
+  /** Entry reorder — receives the full new ordered ID array */
+  onEntryReorder?: (sectionId: number, orderedIds: number[]) => void;
   /** Bulk task selection — passed through to TaskEntryCard */
   isTaskSelected?: (entryId: number) => boolean;
   onToggleTask?: (entryId: number) => void;
@@ -47,6 +49,7 @@ export function SectionPanel({
   savingFieldId,
   onMoveUp,
   onMoveDown,
+  onEntryReorder,
   isTaskSelected,
   onToggleTask,
 }: SectionPanelProps) {
@@ -59,6 +62,18 @@ export function SectionPanel({
   const openTaskCount = activeEntries.filter(
     (e: EntryResponse) => e.entry_type === 'task' && e.task_status !== 'done'
   ).length;
+
+  // ── Entry reorder helper ─────────────────────────────────────
+  const handleEntryMove = (entryId: number, direction: 'up' | 'down') => {
+    if (!onEntryReorder) return;
+    const ids = activeEntries.map((e: EntryResponse) => e.id);
+    const idx = ids.indexOf(entryId);
+    if (idx < 0) return;
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= ids.length) return;
+    [ids[idx], ids[targetIdx]] = [ids[targetIdx], ids[idx]];
+    onEntryReorder(section.id, ids);
+  };
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">
@@ -127,7 +142,7 @@ export function SectionPanel({
                 <InfoFieldRenderer
                   key={entry.id}
                   entry={entry}
-                  onSave={onFieldSave ?? (() => {})}
+                  onSave={onFieldSave ?? (() => { })}
                   saving={savingFieldId === entry.id}
                 />
               ))}
@@ -141,13 +156,37 @@ export function SectionPanel({
 
           {section.section_type === 'notes' && (
             <div className="space-y-2">
-              {activeEntries.map((entry: EntryResponse) => (
-                <NoteEntryCard
-                  key={entry.id}
-                  entry={entry}
-                  onUpdate={onEntryUpdate}
-                  onDelete={onEntryDelete}
-                />
+              {activeEntries.map((entry: EntryResponse, idx: number) => (
+                <div key={entry.id} className="flex gap-1.5 items-start">
+                  {/* Entry reorder buttons */}
+                  {onEntryReorder && activeEntries.length > 1 && (
+                    <div className="flex flex-col gap-0.5 pt-2.5 shrink-0">
+                      <button
+                        onClick={() => handleEntryMove(entry.id, 'up')}
+                        disabled={idx === 0}
+                        className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                        title="Move up"
+                      >
+                        <ArrowUp className="h-3 w-3 text-gray-400" />
+                      </button>
+                      <button
+                        onClick={() => handleEntryMove(entry.id, 'down')}
+                        disabled={idx === activeEntries.length - 1}
+                        className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                        title="Move down"
+                      >
+                        <ArrowDown className="h-3 w-3 text-gray-400" />
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <NoteEntryCard
+                      entry={entry}
+                      onUpdate={onEntryUpdate}
+                      onDelete={onEntryDelete}
+                    />
+                  </div>
+                </div>
               ))}
               {activeEntries.length === 0 && (
                 <p className="text-xs text-gray-400 dark:text-gray-500 italic py-2">
@@ -168,16 +207,40 @@ export function SectionPanel({
 
           {section.section_type === 'tasks' && (
             <div className="space-y-2">
-              {activeEntries.map((entry: EntryResponse) => (
-                <TaskEntryCard
-                  key={entry.id}
-                  entry={entry}
-                  onStatusChange={onTaskStatusChange}
-                  onUpdate={onEntryUpdate}
-                  onDelete={onEntryDelete}
-                  isSelected={isTaskSelected?.(entry.id)}
-                  onToggle={onToggleTask ? () => onToggleTask(entry.id) : undefined}
-                />
+              {activeEntries.map((entry: EntryResponse, idx: number) => (
+                <div key={entry.id} className="flex gap-1.5 items-start">
+                  {/* Entry reorder buttons */}
+                  {onEntryReorder && activeEntries.length > 1 && (
+                    <div className="flex flex-col gap-0.5 pt-2.5 shrink-0">
+                      <button
+                        onClick={() => handleEntryMove(entry.id, 'up')}
+                        disabled={idx === 0}
+                        className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                        title="Move up"
+                      >
+                        <ArrowUp className="h-3 w-3 text-gray-400" />
+                      </button>
+                      <button
+                        onClick={() => handleEntryMove(entry.id, 'down')}
+                        disabled={idx === activeEntries.length - 1}
+                        className="p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                        title="Move down"
+                      >
+                        <ArrowDown className="h-3 w-3 text-gray-400" />
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <TaskEntryCard
+                      entry={entry}
+                      onStatusChange={onTaskStatusChange}
+                      onUpdate={onEntryUpdate}
+                      onDelete={onEntryDelete}
+                      isSelected={isTaskSelected?.(entry.id)}
+                      onToggle={onToggleTask ? () => onToggleTask(entry.id) : undefined}
+                    />
+                  </div>
+                </div>
               ))}
               {activeEntries.length === 0 && (
                 <p className="text-xs text-gray-400 dark:text-gray-500 italic py-2">

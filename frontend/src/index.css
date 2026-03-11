@@ -97,3 +97,81 @@
     transform: translate(-50%, 0);
   }
 }
+
+/* ── Print Stylesheet ────────────────────────────────────────────── */
+@media print {
+  /* Hide navigation, chrome, and action elements */
+  .no-print,
+  nav,
+  aside,
+  [data-no-print] {
+    display: none !important;
+  }
+
+  /* Force clean background */
+  html, body {
+    background: white !important;
+    color: black !important;
+    font-size: 12px !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Remove shadows, borders, and rounded corners on cards */
+  .shadow, .shadow-sm, .shadow-md, .shadow-lg {
+    box-shadow: none !important;
+  }
+
+  /* Tables: clean borders */
+  table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+
+  th, td {
+    border: 1px solid #d1d5db !important;
+    padding: 4px 8px !important;
+    font-size: 11px !important;
+  }
+
+  th {
+    background: #f3f4f6 !important;
+    font-weight: 600 !important;
+  }
+
+  /* Page break utilities */
+  .print-break-before {
+    page-break-before: always !important;
+  }
+
+  .print-break-after {
+    page-break-after: always !important;
+  }
+
+  .print-avoid-break {
+    page-break-inside: avoid !important;
+  }
+
+  /* Full-width content (no padding from AppShell) */
+  main {
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Badges: force visible background colors */
+  [class*="badge"], [class*="Badge"] {
+    border: 1px solid #9ca3af !important;
+    padding: 1px 6px !important;
+  }
+
+  /* Links: don't underline or show URL */
+  a {
+    color: black !important;
+    text-decoration: none !important;
+  }
+
+  /* Cards: minimal styling */
+  [class*="rounded"] {
+    border-radius: 2px !important;
+  }
+}

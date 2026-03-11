@@ -36,6 +36,20 @@ apiClient.interceptors.response.use(
       // The auth store will detect this and show the login screen
       window.dispatchEvent(new CustomEvent('auth:expired'));
     }
+
+    // ── Device Override Enforcement (403 / 423) ──
+    // The backend sets X-Device-Override header when a device has a pending
+    // override action (force_logout, force_wipe) or has been disabled.
+    const overrideHeader = error.response?.headers?.['x-device-override'];
+    if (overrideHeader) {
+      const reason = error.response?.headers?.['x-override-reason'] ?? '';
+      window.dispatchEvent(
+        new CustomEvent('device:override', {
+          detail: { action: overrideHeader, reason },
+        }),
+      );
+    }
+
     return Promise.reject(error);
   },
 );

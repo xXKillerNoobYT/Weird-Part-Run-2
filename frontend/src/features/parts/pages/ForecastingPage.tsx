@@ -10,10 +10,10 @@
  */
 
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   TrendingUp, Search, AlertTriangle, ChevronLeft,
-  ChevronRight, ShoppingCart, Clock, Activity,
+  ChevronRight, ShoppingCart, Clock, Activity, RefreshCw,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
@@ -21,18 +21,32 @@ import { Badge } from '../../../components/ui/Badge';
 import { Card } from '../../../components/ui/Card';
 import { Spinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
-import { getForecasting } from '../../../api/parts';
+import { getForecasting, recalculateForecasts } from '../../../api/parts';
+import { toast } from '../../../lib/toast';
 
 
 export function ForecastingPage() {
   const [searchText, setSearchText] = useState('');
   const [page, setPage] = useState(1);
   const pageSize = 25;
+  const queryClient = useQueryClient();
 
   // ── Query ────────────────────────────────────────
   const { data: forecastData, isLoading, error } = useQuery({
     queryKey: ['forecasting', { page, page_size: pageSize }],
     queryFn: () => getForecasting({ page, page_size: pageSize }),
+  });
+
+  // ── Recalculate mutation ─────────────────────────
+  const recalcMutation = useMutation({
+    mutationFn: recalculateForecasts,
+    onSuccess: (result) => {
+      toast.success(`Recalculated ${result.recalculated} parts` + (result.errors > 0 ? ` (${result.errors} errors)` : ''));
+      queryClient.invalidateQueries({ queryKey: ['forecasting'] });
+    },
+    onError: () => {
+      toast.error('Failed to recalculate forecasts');
+    },
   });
 
   // ── Client-side search filter (API already sorted by urgency) ──
@@ -104,8 +118,8 @@ export function ForecastingPage() {
         </Card>
       </div>
 
-      {/* ── Search ──────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+      {/* ── Search + Recalculate ──────────────────── */}
+      <div className="flex flex-wrap gap-3 items-start sm:items-center justify-between">
         <div className="flex-1 w-full sm:max-w-md">
           <Input
             placeholder="Search by code or name..."
@@ -114,9 +128,20 @@ export function ForecastingPage() {
             onChange={(e) => setSearchText(e.target.value)}
           />
         </div>
-        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-          <Clock className="h-4 w-4" />
-          Sorted by urgency (most critical first)
+        <div className="flex items-center gap-3">
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={<RefreshCw className={`h-4 w-4 ${recalcMutation.isPending ? 'animate-spin' : ''}`} />}
+            onClick={() => recalcMutation.mutate()}
+            isLoading={recalcMutation.isPending}
+          >
+            <span className="hidden sm:inline">Recalculate All</span>
+          </Button>
+          <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+            <Clock className="h-4 w-4" />
+            <span className="hidden md:inline">Sorted by urgency</span>
+          </div>
         </div>
       </div>
 
@@ -160,11 +185,10 @@ export function ForecastingPage() {
               {items.map((item) => (
                 <tr
                   key={item.id}
-                  className={`border-b border-gray-100 dark:border-gray-700/50 transition-colors ${
-                    item.forecast_days_until_low < 7
+                  className={`border-b border-gray-100 dark:border-gray-700/50 transition-colors ${item.forecast_days_until_low < 7
                       ? 'bg-red-50/50 dark:bg-red-900/10'
                       : 'hover:bg-gray-50 dark:hover:bg-gray-800/30'
-                  }`}
+                    }`}
                 >
                   <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                     {item.category_name ?? '—'}

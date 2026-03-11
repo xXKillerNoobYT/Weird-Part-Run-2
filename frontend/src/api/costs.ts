@@ -206,7 +206,13 @@ export async function getJobBudgetStatus(
   budget_pct: number | null;
   alert_level: string | null;
 }> {
-  const { data } = await apiClient.get<ApiResponse<any>>(
+  const { data } = await apiClient.get<ApiResponse<{
+    job_id: number;
+    budget_limit: number | null;
+    current_spend: number;
+    budget_pct: number | null;
+    alert_level: string | null;
+  }>>(
     `/costs/job/${jobId}/budget-status`,
   );
   return data.data!;

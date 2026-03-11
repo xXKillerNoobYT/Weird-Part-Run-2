@@ -10,6 +10,7 @@ import type {
   FastDriveStartRequest,
   FastDriveResult,
   CertAlertItem,
+  VehicleExpiryAlert,
 } from '../lib/types';
 
 
@@ -44,6 +45,15 @@ export async function startDrive(
 export async function getCertAlerts(): Promise<CertAlertItem[]> {
   const { data } = await apiClient.get<ApiResponse<CertAlertItem[]>>(
     '/dashboard/cert-alerts',
+  );
+  return data.data!;
+}
+
+/** Fetch vehicle insurance/registration expiry alerts. */
+export async function getVehicleExpiryAlerts(days = 60): Promise<VehicleExpiryAlert[]> {
+  const { data } = await apiClient.get<ApiResponse<VehicleExpiryAlert[]>>(
+    '/dashboard/vehicle-alerts',
+    { params: { days } },
   );
   return data.data!;
 }

@@ -12,7 +12,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft, Mail, Phone, AlertTriangle, Calendar, DollarSign,
   Shield, Award, FileText, Wrench, UserCheck, UserX,
-  Plus, Trash2, Clock, Camera,
+  Plus, Trash2, Clock, Camera, Upload, ExternalLink,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { Button } from '../../../components/ui/Button';
@@ -24,7 +24,7 @@ import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import {
   getEmployee, toggleEmployeeActive,
-  uploadEmployeeAvatar,
+  uploadEmployeeAvatar, uploadCertificationDocument,
   createCertification, deleteCertification,
   createWageEntry,
   createEmployeeNote, deleteEmployeeNote,
@@ -225,11 +225,10 @@ export function EmployeeDetailPage() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                  isActive
+                className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${isActive
                     ? 'border-primary-500 text-primary-600 dark:text-primary-400'
                     : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                }`}
+                  }`}
               >
                 <Icon size={14} />
                 <span className="hidden sm:inline">{tab.label}</span>
@@ -368,6 +367,8 @@ function StatBox({ label, value }: { label: string; value: number }) {
 function CertificationsTab({ emp, canManage }: { emp: EmployeeDetail; canManage: boolean }) {
   const queryClient = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const [uploadCertId, setUploadCertId] = useState<number | null>(null);
 
   const addMut = useMutation({
     mutationFn: (data: CertificationCreate) => createCertification(emp.id, data),
@@ -379,8 +380,39 @@ function CertificationsTab({ emp, canManage }: { emp: EmployeeDetail; canManage:
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['employee-detail', emp.id] }),
   });
 
+  const docUploadMut = useMutation({
+    mutationFn: ({ certId, file }: { certId: number; file: File }) => uploadCertificationDocument(certId, file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['employee-detail', emp.id] });
+      setUploadCertId(null);
+    },
+  });
+
+  const handleDocUpload = (certId: number) => {
+    setUploadCertId(certId);
+    // Slight delay to ensure ref state updated before click
+    setTimeout(() => uploadRef.current?.click(), 0);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && uploadCertId !== null) {
+      docUploadMut.mutate({ certId: uploadCertId, file });
+    }
+    e.target.value = '';
+  };
+
   return (
     <div className="space-y-3">
+      {/* Hidden file input for document uploads */}
+      <input
+        ref={uploadRef}
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png,.webp"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
       {canManage && (
         <div className="flex justify-end">
           <Button size="sm" icon={<Plus size={16} />} onClick={() => setShowAdd(true)}>
@@ -416,15 +448,38 @@ function CertificationsTab({ emp, canManage }: { emp: EmployeeDetail; canManage:
                       </span>
                     )}
                   </div>
+                  {/* Document link */}
+                  {cert.document_path && (
+                    <a
+                      href={cert.document_path.startsWith('http') ? cert.document_path : `/api/${cert.document_path}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 mt-1 text-xs text-primary-600 dark:text-primary-400 hover:underline"
+                    >
+                      <ExternalLink size={12} /> View Document
+                    </a>
+                  )}
                 </div>
-                {canManage && (
-                  <button
-                    onClick={() => deleteMut.mutate(cert.id)}
-                    className="p-1.5 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                )}
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {canManage && (
+                    <button
+                      onClick={() => handleDocUpload(cert.id)}
+                      disabled={docUploadMut.isPending && uploadCertId === cert.id}
+                      className="p-1.5 text-gray-400 hover:text-primary-500 transition-colors"
+                      title={cert.document_path ? 'Replace document' : 'Upload document'}
+                    >
+                      <Upload size={14} />
+                    </button>
+                  )}
+                  {canManage && (
+                    <button
+                      onClick={() => deleteMut.mutate(cert.id)}
+                      className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
               </div>
             </Card>
           );
@@ -457,8 +512,8 @@ function AddCertModal({ isLoading, error, onSubmit, onClose }: {
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Type *</label>
             <select value={form.cert_type} onChange={(e) => setForm({ ...form, cert_type: e.target.value as any })}
               className="block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm">
-              {['journeyman','apprentice','master','osha_10','osha_30','first_aid','cpr','forklift','confined_space','custom'].map((t) => (
-                <option key={t} value={t}>{t.replace('_',' ')}</option>
+              {['journeyman', 'apprentice', 'master', 'osha_10', 'osha_30', 'first_aid', 'cpr', 'forklift', 'confined_space', 'custom'].map((t) => (
+                <option key={t} value={t}>{t.replace('_', ' ')}</option>
               ))}
             </select>
           </div>
@@ -560,7 +615,7 @@ function AddWageForm({ isLoading, error, onSubmit, onClose }: {
         <select value={form.reason ?? ''} onChange={(e) => setForm({ ...form, reason: (e.target.value || null) as any })}
           className="block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm">
           <option value="">Select reason...</option>
-          {['hire','raise','promotion','demotion','adjustment','correction'].map((r) => (
+          {['hire', 'raise', 'promotion', 'demotion', 'adjustment', 'correction'].map((r) => (
             <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>
           ))}
         </select>
@@ -665,7 +720,7 @@ function AddNoteForm({ isLoading, error, onSubmit, onClose }: {
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
           <select value={form.note_type ?? 'general'} onChange={(e) => setForm({ ...form, note_type: e.target.value as any })}
             className="block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm">
-            {['general','performance','incident','commendation','training','disciplinary'].map((t) => (
+            {['general', 'performance', 'incident', 'commendation', 'training', 'disciplinary'].map((t) => (
               <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
             ))}
           </select>
@@ -780,7 +835,7 @@ function AddSkillForm({ isLoading, error, onSubmit, onClose }: {
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Proficiency</label>
         <select value={form.proficiency ?? 'intermediate'} onChange={(e) => setForm({ ...form, proficiency: e.target.value as any })}
           className="block w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3 py-2 text-sm">
-          {['beginner','intermediate','advanced','expert'].map((p) => (
+          {['beginner', 'intermediate', 'advanced', 'expert'].map((p) => (
             <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
           ))}
         </select>

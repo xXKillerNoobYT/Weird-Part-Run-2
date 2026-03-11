@@ -24,11 +24,13 @@ from app.repositories.tools_repo import (
     KitTemplateRepo,
     KitVerificationItemRepo,
     KitVerificationSessionRepo,
+    ToolDepreciationRepo,
     ToolMaintenanceRecordRepo,
     ToolMaintenanceScheduleRepo,
     ToolMaintenanceTypeRepo,
     ToolMovementRepo,
     ToolRepo,
+    NotebookEntryToolRepo,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,6 +49,8 @@ class ToolsService:
         self.maint_type_repo = ToolMaintenanceTypeRepo(db)
         self.maint_schedule_repo = ToolMaintenanceScheduleRepo(db)
         self.maint_record_repo = ToolMaintenanceRecordRepo(db)
+        self.depreciation_repo = ToolDepreciationRepo(db)
+        self.entry_tool_repo = NotebookEntryToolRepo(db)
         self.settings_repo = SettingsRepo(db)
 
     # ═══════════════════════════════════════════════════════════════
@@ -840,3 +844,437 @@ class ToolsService:
         """
         rows = await self.tool_repo.get_at_location(location_type, location_id)
         return [dict(r) for r in rows]
+
+    # ═══════════════════════════════════════════════════════════════
+    # TOOL TRANSFER (atomic location-to-location)
+    # ═══════════════════════════════════════════════════════════════
+
+    async def transfer_tool(
+        self,
+        tool_id: int,
+        to_location_type: str,
+        to_location_id: int,
+        moved_by: int,
+        *,
+        job_id: int | None = None,
+        condition_at_move: int | None = None,
+        reason: str | None = None,
+    ) -> int:
+        """Transfer a tool directly between locations in one transaction.
+
+        This performs a return + checkout atomically:
+        1. Read current location as 'from'
+        2. Update tool to new location
+        3. Log a single 'transfer' movement
+        4. Auto-trigger kit verification if required
+
+        Returns the movement ID.
+        """
+        tool = await self.tool_repo.get(tool_id)
+        if not tool:
+            raise ValueError(f"Tool {tool_id} not found")
+        tool = dict(tool)
+
+        if tool["status"] not in ("available", "checked_out"):
+            raise ValueError(
+                f"Tool is '{tool['status']}' — cannot transfer. "
+                "Return from maintenance/lost status first."
+            )
+
+        # Same location check
+        if (
+            tool["location_type"] == to_location_type
+            and tool["location_id"] == to_location_id
+        ):
+            raise ValueError("Tool is already at that location")
+
+        from_type = tool["location_type"]
+        from_id = tool["location_id"]
+
+        # Update tool location
+        new_status = "available" if to_location_type == "warehouse" else "checked_out"
+        assigned_to = moved_by if to_location_type != "warehouse" else None
+        await self.tool_repo.update_location(
+            tool_id,
+            location_type=to_location_type,
+            location_id=to_location_id,
+            status=new_status,
+            assigned_to=assigned_to,
+        )
+
+        # Update condition if provided
+        if condition_at_move is not None:
+            await self.tool_repo.update(tool_id, {"condition_rating": condition_at_move})
+
+        # Log transfer movement
+        movement_id = await self.movement_repo.insert({
+            "tool_id": tool_id,
+            "from_location_type": from_type,
+            "from_location_id": from_id,
+            "to_location_type": to_location_type,
+            "to_location_id": to_location_id,
+            "movement_type": "transfer",
+            "reason": reason,
+            "job_id": job_id,
+            "performed_by": moved_by,
+            "condition_at_move": condition_at_move,
+        })
+
+        # Auto-trigger kit verification (treat like a checkout)
+        await self._auto_verify_if_required(tool_id, movement_id, moved_by, "checkout")
+
+        return movement_id
+
+    # ═══════════════════════════════════════════════════════════════
+    # DEPRECIATION — Full module with 3 methods
+    # ═══════════════════════════════════════════════════════════════
+
+    async def configure_depreciation(
+        self,
+        tool_id: int,
+        method: str,
+        salvage_value: float,
+        useful_life_years: int,
+    ) -> dict:
+        """Set depreciation config on a tool and recalculate schedule.
+
+        Stores the method/salvage/life on the tool row, then regenerates
+        the full depreciation schedule.
+        """
+        tool = await self.tool_repo.get(tool_id)
+        if not tool:
+            raise ValueError(f"Tool {tool_id} not found")
+        tool = dict(tool)
+
+        if not tool.get("purchase_cost") or tool["purchase_cost"] <= 0:
+            raise ValueError("Tool must have a positive purchase_cost for depreciation")
+        if salvage_value >= tool["purchase_cost"]:
+            raise ValueError("Salvage value must be less than purchase cost")
+
+        # Update tool with depreciation config
+        await self.tool_repo.update(tool_id, {
+            "depreciation_method": method,
+            "salvage_value": salvage_value,
+            "useful_life_years": useful_life_years,
+        })
+
+        # Regenerate schedule
+        return await self._generate_depreciation_schedule(
+            tool_id, tool["purchase_cost"], method, salvage_value, useful_life_years,
+            tool.get("purchase_date"),
+        )
+
+    async def get_depreciation_summary(self, tool_id: int) -> dict:
+        """Get full depreciation summary for a tool."""
+        tool = await self.tool_repo.get(tool_id)
+        if not tool:
+            raise ValueError(f"Tool {tool_id} not found")
+        tool = dict(tool)
+
+        schedule = await self.depreciation_repo.get_for_tool(tool_id)
+        schedule = [dict(r) for r in schedule]
+
+        current_book_value = tool.get("purchase_cost", 0)
+        total_depreciated = 0.0
+        years_remaining = tool.get("useful_life_years")
+
+        if schedule:
+            last_entry = schedule[-1]
+            current_book_value = last_entry["ending_value"]
+            total_depreciated = last_entry["accumulated"]
+            if years_remaining:
+                years_remaining = max(0, years_remaining - len(schedule))
+
+        return {
+            "tool_id": tool_id,
+            "tool_name": tool["name"],
+            "purchase_cost": tool.get("purchase_cost"),
+            "depreciation_method": tool.get("depreciation_method"),
+            "salvage_value": tool.get("salvage_value", 0),
+            "useful_life_years": tool.get("useful_life_years"),
+            "current_book_value": current_book_value,
+            "total_depreciated": total_depreciated,
+            "years_remaining": years_remaining,
+            "schedule": schedule,
+        }
+
+    async def get_depreciation_report(self) -> list[dict]:
+        """Get depreciation summary across ALL tools that have depreciation configured."""
+        cursor = await self.db.execute("""
+            SELECT t.id, t.tool_number, t.name, t.category, t.purchase_cost,
+                   t.depreciation_method, t.salvage_value, t.useful_life_years,
+                   (SELECT de.ending_value
+                    FROM tool_depreciation_entries de
+                    WHERE de.tool_id = t.id
+                    ORDER BY de.year_number DESC LIMIT 1
+                   ) AS current_book_value,
+                   (SELECT de.accumulated
+                    FROM tool_depreciation_entries de
+                    WHERE de.tool_id = t.id
+                    ORDER BY de.year_number DESC LIMIT 1
+                   ) AS total_depreciated
+            FROM tools t
+            WHERE t.depreciation_method IS NOT NULL
+              AND t.is_active = 1
+            ORDER BY t.name ASC
+        """)
+        return [dict(r) for r in await cursor.fetchall()]
+
+    async def _generate_depreciation_schedule(
+        self,
+        tool_id: int,
+        purchase_cost: float,
+        method: str,
+        salvage_value: float,
+        useful_life: int,
+        purchase_date: str | None,
+    ) -> dict:
+        """Generate (or regenerate) the full depreciation schedule.
+
+        Supports three methods:
+        - straight_line: equal annual depreciation
+        - declining_balance: 2x rate on remaining book value
+        - sum_of_years: accelerated based on remaining life
+        """
+        # Delete existing entries
+        await self.depreciation_repo.delete_for_tool(tool_id)
+
+        depreciable_amount = purchase_cost - salvage_value
+        if depreciable_amount <= 0:
+            return {"schedule": [], "message": "Nothing to depreciate"}
+
+        # Determine starting fiscal year
+        start_year = date.today().year
+        if purchase_date:
+            try:
+                start_year = int(purchase_date[:4])
+            except (ValueError, IndexError):
+                pass
+
+        entries = []
+        book_value = purchase_cost
+        accumulated = 0.0
+
+        if method == "straight_line":
+            annual_amount = round(depreciable_amount / useful_life, 2)
+            for yr in range(1, useful_life + 1):
+                depr = min(annual_amount, book_value - salvage_value)
+                depr = max(0, depr)
+                accumulated += depr
+                ending = book_value - depr
+                entries.append({
+                    "tool_id": tool_id,
+                    "year_number": yr,
+                    "fiscal_year": str(start_year + yr - 1),
+                    "beginning_value": round(book_value, 2),
+                    "depreciation_amount": round(depr, 2),
+                    "accumulated": round(accumulated, 2),
+                    "ending_value": round(ending, 2),
+                })
+                book_value = ending
+
+        elif method == "declining_balance":
+            rate = 2.0 / useful_life  # Double declining balance
+            for yr in range(1, useful_life + 1):
+                depr = round(book_value * rate, 2)
+                # Don't depreciate below salvage value
+                if book_value - depr < salvage_value:
+                    depr = max(0, book_value - salvage_value)
+                accumulated += depr
+                ending = book_value - depr
+                entries.append({
+                    "tool_id": tool_id,
+                    "year_number": yr,
+                    "fiscal_year": str(start_year + yr - 1),
+                    "beginning_value": round(book_value, 2),
+                    "depreciation_amount": round(depr, 2),
+                    "accumulated": round(accumulated, 2),
+                    "ending_value": round(ending, 2),
+                })
+                book_value = ending
+                if book_value <= salvage_value:
+                    break
+
+        elif method == "sum_of_years":
+            soy = sum(range(1, useful_life + 1))
+            for yr in range(1, useful_life + 1):
+                remaining_life = useful_life - yr + 1
+                depr = round(depreciable_amount * (remaining_life / soy), 2)
+                depr = min(depr, book_value - salvage_value)
+                depr = max(0, depr)
+                accumulated += depr
+                ending = book_value - depr
+                entries.append({
+                    "tool_id": tool_id,
+                    "year_number": yr,
+                    "fiscal_year": str(start_year + yr - 1),
+                    "beginning_value": round(book_value, 2),
+                    "depreciation_amount": round(depr, 2),
+                    "accumulated": round(accumulated, 2),
+                    "ending_value": round(ending, 2),
+                })
+                book_value = ending
+
+        else:
+            raise ValueError(f"Unknown depreciation method: {method}")
+
+        # Bulk insert
+        await self.depreciation_repo.bulk_insert(entries)
+
+        return {"schedule": entries, "message": f"Generated {len(entries)} entries"}
+
+    # ═══════════════════════════════════════════════════════════════
+    # CALIBRATION (enhanced maintenance logging)
+    # ═══════════════════════════════════════════════════════════════
+
+    async def log_calibration(
+        self,
+        tool_id: int,
+        performed_by: int,
+        *,
+        service_date: str | None = None,
+        cost: float = 0,
+        vendor: str | None = None,
+        description: str | None = None,
+        notes: str | None = None,
+        calibration_certificate: str | None = None,
+        calibration_provider: str | None = None,
+        calibration_standard: str | None = None,
+        calibration_result: str | None = None,
+    ) -> int:
+        """Log a calibration service with certificate details.
+
+        Finds the 'Calibration' maintenance type, logs the record
+        with extra calibration fields, and updates calibration_due_date
+        on the tool.
+        """
+        # Find the Calibration maintenance type
+        cal_type = await self.maint_type_repo.get_by_name("Calibration")
+        if not cal_type:
+            raise ValueError("Calibration maintenance type not found")
+
+        cal_type_id = cal_type["id"]
+        actual_date = service_date or str(date.today())
+
+        # Insert maintenance record with calibration fields
+        record_id = await self.maint_record_repo.insert({
+            "tool_id": tool_id,
+            "maintenance_type_id": cal_type_id,
+            "service_date": actual_date,
+            "cost": cost,
+            "vendor": vendor,
+            "description": description,
+            "performed_by": performed_by,
+            "notes": notes,
+            "calibration_certificate": calibration_certificate,
+            "calibration_provider": calibration_provider,
+            "calibration_standard": calibration_standard,
+            "calibration_result": calibration_result,
+        })
+
+        # Cascade schedule update
+        await self._cascade_schedule_update(tool_id, cal_type_id, actual_date)
+
+        # Update calibration_due_date on tool
+        schedule = await self.maint_schedule_repo.get_for_tool(tool_id)
+        for s in schedule:
+            s = dict(s)
+            if s["maintenance_type_id"] == cal_type_id and s.get("next_due_date"):
+                await self.tool_repo.update(
+                    tool_id, {"calibration_due_date": s["next_due_date"]}
+                )
+                break
+
+        return record_id
+
+    # ═══════════════════════════════════════════════════════════════
+    # TODO-TOOL LINKING
+    # ═══════════════════════════════════════════════════════════════
+
+    async def link_tool_to_entry(
+        self, entry_id: int, tool_id: int, notes: str | None, user_id: int
+    ) -> dict:
+        """Link a tool to a notebook task entry."""
+        # Verify tool exists
+        tool = await self.tool_repo.get(tool_id)
+        if not tool:
+            raise ValueError(f"Tool {tool_id} not found")
+
+        link_id = await self.entry_tool_repo.link_tool(
+            entry_id, tool_id, notes, user_id
+        )
+        # Return the linked tool details
+        links = await self.entry_tool_repo.get_for_entry(entry_id)
+        for link in links:
+            if dict(link)["id"] == link_id:
+                return dict(link)
+        return {"id": link_id, "entry_id": entry_id, "tool_id": tool_id}
+
+    async def unlink_tool_from_entry(
+        self, entry_id: int, tool_id: int
+    ) -> bool:
+        """Remove a tool link from a notebook entry."""
+        return await self.entry_tool_repo.unlink_tool(entry_id, tool_id)
+
+    async def get_entry_tools(self, entry_id: int) -> list[dict]:
+        """Get all tools linked to a notebook entry."""
+        rows = await self.entry_tool_repo.get_for_entry(entry_id)
+        return [dict(r) for r in rows]
+
+    async def get_tools_referencing(self, tool_id: int) -> list[dict]:
+        """Get all notebook entries that reference a tool."""
+        rows = await self.entry_tool_repo.get_tools_for_tool(tool_id)
+        return [dict(r) for r in rows]
+
+    # ═══════════════════════════════════════════════════════════════
+    # EXPORT — CSV-ready rows
+    # ═══════════════════════════════════════════════════════════════
+
+    async def export_tools(
+        self,
+        *,
+        category: str | None = None,
+        status: str | None = None,
+        location_type: str | None = None,
+        include_retired: bool = False,
+    ) -> list[dict]:
+        """Generate CSV-ready export rows for all matching tools.
+
+        Includes depreciation info and current book value.
+        Returns flat dicts suitable for CSV writing.
+        """
+        is_active = None if include_retired else True
+        items = await self.tool_repo.list_with_details(
+            category=category,
+            status=status,
+            location_type=location_type,
+            is_active=is_active,
+            limit=10000,  # Export all
+            offset=0,
+        )
+        result = []
+        for row in items:
+            r = dict(row)
+            # Get current book value from depreciation schedule
+            book_value = await self.depreciation_repo.get_current_book_value(r["id"])
+            result.append({
+                "tool_number": r["tool_number"],
+                "name": r["name"],
+                "category": r.get("category", ""),
+                "brand": r.get("brand"),
+                "model_number": r.get("model_number"),
+                "serial_number": r.get("serial_number"),
+                "status": r.get("status", ""),
+                "condition_rating": r.get("condition_rating", 0),
+                "location_type": r.get("location_type", ""),
+                "location_name": r.get("location_name"),
+                "assigned_to_name": r.get("assigned_to_name"),
+                "purchase_date": r.get("purchase_date"),
+                "purchase_cost": r.get("purchase_cost"),
+                "warranty_expiry": r.get("warranty_expiry"),
+                "current_book_value": book_value,
+                "depreciation_method": r.get("depreciation_method"),
+                "calibration_due_date": r.get("calibration_due_date"),
+                "notes": r.get("notes"),
+            })
+        return result

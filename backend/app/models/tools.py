@@ -47,6 +47,11 @@ KitVerificationTrigger = Literal["checkout", "return", "audit", "manual"]
 # TOOLS — Core entity
 # =================================================================
 
+DepreciationMethod = Literal["straight_line", "declining_balance", "sum_of_years"]
+
+CalibrationResult = Literal["pass", "fail", "adjusted", "out_of_tolerance"]
+
+
 class ToolCreate(BaseModel):
     """Request body for registering a new tool."""
     tool_number: str = Field(..., min_length=1, max_length=30)
@@ -64,6 +69,10 @@ class ToolCreate(BaseModel):
     condition_rating: int = Field(5, ge=1, le=5)
     notes: str | None = None
     photo_path: str | None = None
+    # Depreciation fields
+    depreciation_method: DepreciationMethod | None = None
+    salvage_value: float = 0
+    useful_life_years: int | None = None
 
 
 class ToolUpdate(BaseModel):
@@ -80,6 +89,10 @@ class ToolUpdate(BaseModel):
     notes: str | None = None
     photo_path: str | None = None
     is_active: bool | None = None
+    # Depreciation fields
+    depreciation_method: DepreciationMethod | None = None
+    salvage_value: float | None = None
+    useful_life_years: int | None = None
 
 
 class ToolResponse(BaseModel):
@@ -107,12 +120,19 @@ class ToolResponse(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
+    # Depreciation fields
+    depreciation_method: DepreciationMethod | None = None
+    salvage_value: float = 0
+    useful_life_years: int | None = None
+    calibration_due_date: str | None = None
+
     # Joined / computed fields
     assigned_to_name: str | None = None
     location_name: str | None = None
     kit_component_count: int = 0
     next_maintenance_due: str | None = None
     overdue_maintenance_count: int = 0
+    current_book_value: float | None = None
 
 
 class ToolListItem(BaseModel):
@@ -346,6 +366,11 @@ class ToolMaintenanceRecordCreate(BaseModel):
     vendor: str | None = None
     description: str | None = None
     notes: str | None = None
+    # Calibration-specific fields (only for calibration-type maintenance)
+    calibration_certificate: str | None = None
+    calibration_provider: str | None = None
+    calibration_standard: str | None = None
+    calibration_result: CalibrationResult | None = None
 
 
 class ToolMaintenanceRecordResponse(BaseModel):
@@ -360,6 +385,11 @@ class ToolMaintenanceRecordResponse(BaseModel):
     performed_by: int | None = None
     notes: str | None = None
     created_at: datetime | None = None
+    # Calibration-specific fields
+    calibration_certificate: str | None = None
+    calibration_provider: str | None = None
+    calibration_standard: str | None = None
+    calibration_result: CalibrationResult | None = None
 
     # Joined
     maintenance_type_name: str | None = None
@@ -394,3 +424,106 @@ class ToolMaintenanceAlert(BaseModel):
     next_due_date: str | None = None
     days_until_due: int | None = None
     is_overdue: bool = False
+
+
+# =================================================================
+# TOOL TRANSFER — Atomic truck-to-truck or location-to-location
+# =================================================================
+
+class ToolTransfer(BaseModel):
+    """Transfer a tool directly between locations (atomic return+checkout)."""
+    to_location_type: ToolLocationType
+    to_location_id: int
+    job_id: int | None = None
+    condition_at_move: int | None = Field(None, ge=1, le=5)
+    reason: str | None = None
+
+
+# =================================================================
+# DEPRECIATION — Full module with multiple methods
+# =================================================================
+
+class DepreciationConfig(BaseModel):
+    """Set depreciation config for a tool."""
+    depreciation_method: DepreciationMethod
+    salvage_value: float = Field(0, ge=0)
+    useful_life_years: int = Field(..., ge=1, le=50)
+
+
+class DepreciationEntryResponse(BaseModel):
+    """A single year in the depreciation schedule."""
+    id: int
+    tool_id: int
+    year_number: int
+    fiscal_year: str
+    beginning_value: float
+    depreciation_amount: float
+    accumulated: float
+    ending_value: float
+    created_at: str | None = None
+
+
+class DepreciationSummary(BaseModel):
+    """Quick depreciation overview for a tool."""
+    tool_id: int
+    tool_name: str
+    purchase_cost: float | None = None
+    depreciation_method: DepreciationMethod | None = None
+    salvage_value: float = 0
+    useful_life_years: int | None = None
+    current_book_value: float | None = None
+    total_depreciated: float = 0
+    years_remaining: int | None = None
+    schedule: list[DepreciationEntryResponse] = Field(default_factory=list)
+
+
+# =================================================================
+# TODO–TOOL LINKING — Link tools to notebook task entries
+# =================================================================
+
+class EntryToolLink(BaseModel):
+    """Link a tool to a notebook task entry."""
+    tool_id: int
+    notes: str | None = None
+
+
+class EntryToolLinkResponse(BaseModel):
+    """A tool linked to a notebook entry."""
+    id: int
+    entry_id: int
+    tool_id: int
+    notes: str | None = None
+    created_by: int
+    created_at: str | None = None
+    # Joined
+    tool_number: str | None = None
+    tool_name: str | None = None
+    tool_status: str | None = None
+    tool_location_type: str | None = None
+    tool_location_name: str | None = None
+
+
+# =================================================================
+# EXPORT
+# =================================================================
+
+class ToolExportRow(BaseModel):
+    """Flattened row for CSV export."""
+    tool_number: str
+    name: str
+    category: str
+    brand: str | None = None
+    model_number: str | None = None
+    serial_number: str | None = None
+    status: str
+    condition_rating: int
+    location_type: str
+    location_name: str | None = None
+    assigned_to_name: str | None = None
+    purchase_date: str | None = None
+    purchase_cost: float | None = None
+    warranty_expiry: str | None = None
+    current_book_value: float | None = None
+    depreciation_method: str | None = None
+    calibration_due_date: str | None = None
+    notes: str | None = None

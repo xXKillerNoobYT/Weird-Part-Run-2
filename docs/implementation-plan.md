@@ -1,7 +1,7 @@
 # Wired-Part: Full Implementation Plan
 
-> **Last updated:** 2026-03-07
-> **Status:** Phases 1–10 complete + Phase 9 Chat & Q&A complete + V1.0 infra (A–D) + gap closure M1-M4 (44/44 done) + scheduling enhancements (035) + all 13 feature audits complete. V1.0.0 remaining: mobile builds (Tasks 16-18) + smoke test (22) + release packaging (23) + approved Phase 16 add-ons (UX/Admin Hub + Multi-Warehouse/Trailers).
+> **Last updated:** 2026-03-11
+> **Status:** Phases 1–10 complete + Phase 9 Chat & Q&A complete + V1.0 infra (A–D) + gap closure M1-M4 (44/44 done) + scheduling enhancements (035) + all 13 feature audits complete + **Phase 17 orders audit closure complete (5/5 gaps)**. V1.0.0 remaining: mobile builds (Tasks 16-18) + smoke test (22) + release packaging (23) + approved Phase 16 add-ons (UX/Admin Hub + Multi-Warehouse/Trailers).
 > **Full vision document:** `docs/The Full Plan.md`
 > **New phase numbering:** Starting 2026-03-07, future phases use new numbering (Phase 7-13). Old phase files keep their original names.
 > 100% local and offline first, no customer-facing billing, bookkeeper handles billouts via pre-billing export bundles.

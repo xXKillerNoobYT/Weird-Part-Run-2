@@ -45,6 +45,7 @@ import type {
   EmployeeListItem,
 } from '../../../lib/types';
 import { ClockOutFlow } from '../components/ClockOutFlow';
+import { PreferredSuppliersSection } from '../components/PreferredSuppliersSection';
 import {
   JOB_STATUS_LABELS,
   ON_CALL_TYPE_LABELS,
@@ -604,6 +605,9 @@ function OverviewTab({ job }: { job: JobResponse }) {
           </div>
         </div>
       </Card>
+
+      {/* Preferred Suppliers */}
+      <PreferredSuppliersSection jobId={job.id} className="md:col-span-2" />
     </div>
   );
 }

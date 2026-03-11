@@ -1,7 +1,7 @@
 # Phase 16 — UX Polish, Admin Hub Consolidation & Feature Completion
 
 > **Created:** 2026-03-07
-> **Status:** 🟡 In Progress
+> **Status:** ✅ Complete
 > **Scope:** Navigation restructure, accent-color bug fix, People/Reports/Scheduling consolidation into Office, report enhancements, warehouse improvements, team assignment, special-items wizard, Device Management v1.0, AI/Device plans.
 
 ---
@@ -249,23 +249,23 @@ Fix any issues found and verify through all levels of the hierarchy.
 
 ## Completion Gates
 
-- [ ] Accent color CSS variable applying across all components
-- [ ] Customer/Contractor create mutations show success/error feedback
-- [ ] Office module contains all management tabs (employees, reports, scheduling admin)
-- [ ] People shows only contacts (customers, contractors, directory)
-- [ ] Scheduling shows only calendar (3-week default) + time off
-- [ ] Reports module removed from sidebar (tabs in Office)
-- [ ] Warehouse dashboard shows audit health card
-- [ ] Spot check pulls 3 oldest with low-stock prioritization
-- [ ] Staging page shows per-job pull counts and pending items
-- [ ] Warehouse settings tab functional
-- [ ] Pre-Billing has billing cycle fast filters + all-jobs view
-- [ ] Timesheets has pay period fast filters
-- [ ] Daily Reports show drive time warning badges
-- [ ] Device Management page shows registered devices (real data)
-- [ ] Team assignment works (create team, assign to job, bulk dispatch)
-- [ ] Special items placement wizard opens from approvals
-- [ ] AI Assistant plan document created
-- [ ] Parts hierarchy fully functional at all levels
-- [ ] `npm run build` passes
-- [ ] `pytest tests/ -v` all pass
+- [x] Accent color CSS variable applying across all components
+- [x] Customer/Contractor create mutations show success/error feedback
+- [x] Office module contains all management tabs (employees, reports, scheduling admin)
+- [x] People shows only contacts (customers, contractors, directory)
+- [x] Scheduling shows only calendar (3-week default) + time off
+- [x] Reports module removed from sidebar (tabs in Office)
+- [x] Warehouse dashboard shows audit health card
+- [x] Spot check pulls 3 oldest with low-stock prioritization
+- [x] Staging page shows per-job pull counts and pending items
+- [x] Warehouse settings tab functional
+- [x] Pre-Billing has billing cycle fast filters + all-jobs view
+- [x] Timesheets has pay period fast filters
+- [x] Daily Reports show drive time warning badges
+- [x] Device Management page shows registered devices (real data)
+- [x] Team assignment works (create team, assign to job, bulk dispatch)
+- [x] Special items placement wizard opens from approvals
+- [x] AI Assistant plan document created
+- [x] Parts hierarchy fully functional at all levels
+- [x] `npm run build` passes
+- [x] `pytest tests/ -v` all pass

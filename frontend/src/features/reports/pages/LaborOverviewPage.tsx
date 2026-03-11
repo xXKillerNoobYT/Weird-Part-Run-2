@@ -17,6 +17,8 @@ import { toast } from '../../../lib/toast';
 import {
   getLaborOverview, generateExport, downloadBlob,
 } from '../../../api/reports';
+import ReportPageToolbar from '../components/ReportPageToolbar';
+import ReportAnnotations from '../components/ReportAnnotations';
 
 
 type TabKey = 'employee' | 'job' | 'rate';
@@ -80,16 +82,29 @@ export function LaborOverviewPage() {
             Labor Overview
           </h2>
           {data && (
-            <button
-              onClick={handleExport}
-              disabled={exporting}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium
-                         bg-primary-600 text-white rounded-lg hover:bg-primary-700
-                         disabled:opacity-50 min-h-[44px]"
-            >
-              <Download className="h-4 w-4" />
-              <span className="hidden sm:inline">{exporting ? 'Exporting...' : 'Export CSV'}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExport}
+                disabled={exporting}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium
+                           bg-primary-600 text-white rounded-lg hover:bg-primary-700
+                           disabled:opacity-50 min-h-[44px]"
+              >
+                <Download className="h-4 w-4" />
+                <span className="hidden sm:inline">{exporting ? 'Exporting...' : 'Export CSV'}</span>
+              </button>
+              <ReportPageToolbar
+                reportType="labor_overview"
+                currentConfig={{ start_date: startDate, end_date: endDate }}
+                onLoadTemplate={(cfg) => {
+                  if (cfg.start_date) setStartDate(cfg.start_date as string);
+                  if (cfg.end_date) setEndDate(cfg.end_date as string);
+                  setSubmitted(true);
+                }}
+                shareContextParams={{ start_date: startDate, end_date: endDate }}
+                shareLabel={`Labor Overview: ${startDate} to ${endDate}`}
+              />
+            </div>
           )}
         </div>
 
@@ -191,6 +206,14 @@ export function LaborOverviewPage() {
             </div>
           </Card>
         </>
+      )}
+
+      {/* Annotations */}
+      {data && (
+        <ReportAnnotations
+          reportType="labor_overview"
+          contextKey={`${startDate}:${endDate}`}
+        />
       )}
     </div>
   );

@@ -28,6 +28,12 @@ from app.models.scheduling import (
     DispatchTemplateCreate,
     DispatchTemplateUpdate,
     DispatchUpdate,
+    PtoBalanceResponse,
+    PtoPolicyCreate,
+    PtoPolicyResponse,
+    PtoPolicyUpdate,
+    PtoTransactionCreate,
+    PtoTransactionResponse,
     ScheduleExceptionCreate,
     ScheduleExceptionUpdate,
     ShiftPatternCreate,
@@ -471,6 +477,18 @@ async def schedule_subcontractor(
     """Schedule a subcontractor visit on a job."""
     svc = SchedulingService(db)
     schedule_id = await svc.schedule_subcontractor(data)
+
+    # Notify about the new subcontractor schedule
+    notif = NotificationService(db)
+    await notif.notify(
+        "sub_schedule_created",
+        f"Subcontractor scheduled for {data.scheduled_date}",
+        message=f"GC #{data.gc_id} scheduled on job #{data.job_id} for {data.scheduled_date}.",
+        link="/scheduling/calendar",
+        entity_type="sub_schedule",
+        entity_id=schedule_id,
+    )
+
     return ApiResponse(data={"id": schedule_id}, message="Subcontractor scheduled")
 
 
@@ -497,9 +515,29 @@ async def cancel_sub_schedule(
 ):
     """Cancel a subcontractor schedule entry."""
     svc = SchedulingService(db)
+
+    # Fetch schedule before cancelling for notification context
+    existing = await db.execute_fetchone(
+        "SELECT gc_id, scheduled_date, job_id FROM sub_schedules WHERE id = ?",
+        (schedule_id,),
+    )
+
     cancelled = await svc.cancel_sub_schedule(schedule_id)
     if not cancelled:
         raise HTTPException(status_code=404, detail="Sub schedule not found")
+
+    # Notify about the cancellation
+    if existing:
+        notif = NotificationService(db)
+        await notif.notify(
+            "sub_schedule_cancelled",
+            f"Subcontractor schedule cancelled for {existing['scheduled_date']}",
+            message=f"GC #{existing['gc_id']} removed from job #{existing['job_id']} on {existing['scheduled_date']}.",
+            link="/scheduling/calendar",
+            entity_type="sub_schedule",
+            entity_id=schedule_id,
+        )
+
     return ApiResponse(data={"id": schedule_id}, message="Sub schedule cancelled")
 
 
@@ -706,6 +744,23 @@ async def apply_shift_pattern_to_user(
         await svc.apply_shift_pattern_to_user(user_id, pattern_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    # Notify the employee about their new shift pattern
+    pattern = await db.execute_fetchone(
+        "SELECT name FROM shift_patterns WHERE id = ?", (pattern_id,),
+    )
+    pattern_name = pattern["name"] if pattern else f"Pattern #{pattern_id}"
+    notif = NotificationService(db)
+    await notif.notify(
+        "shift_pattern_assigned",
+        f"Shift pattern '{pattern_name}' assigned to you",
+        message=f"Your default schedule has been updated to the '{pattern_name}' shift pattern.",
+        link="/scheduling/calendar",
+        entity_type="shift_pattern",
+        entity_id=pattern_id,
+        target_user_ids=[user_id],
+    )
+
     return ApiResponse(
         data={"user_id": user_id, "pattern_id": pattern_id},
         message="Shift pattern applied to user's default schedule",
@@ -730,4 +785,384 @@ async def get_weekly_availability(
     return ApiResponse(
         data=result,
         message=f"{len(result)} employees",
+    )
+
+
+# ═════════════════════════════════════════════════════════════════
+# PTO POLICIES & BALANCES
+# ═════════════════════════════════════════════════════════════════
+
+
+@router.get("/pto/balance/{user_id}")
+async def get_pto_balance(
+    user_id: int,
+    user: dict = Depends(require_permission("view_schedule")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get PTO balance for a specific user."""
+    import json
+    from datetime import datetime
+
+    # Get active policy
+    policy_row = await db.execute_fetchone(
+        "SELECT * FROM pto_policies WHERE user_id = ? AND is_active = 1",
+        (user_id,),
+    )
+
+    # Get user name
+    user_row = await db.execute_fetchone(
+        "SELECT display_name FROM users WHERE id = ?", (user_id,)
+    )
+    user_name = user_row["display_name"] if user_row else "Unknown"
+
+    # Current balance = last transaction's balance_after, or 0
+    bal_row = await db.execute_fetchone(
+        """
+        SELECT balance_after FROM pto_transactions
+        WHERE user_id = ? ORDER BY effective_date DESC, id DESC LIMIT 1
+        """,
+        (user_id,),
+    )
+    current_balance = float(bal_row["balance_after"]) if bal_row else 0.0
+
+    # YTD stats
+    year_start = f"{datetime.utcnow().year}-01-01"
+    ytd_rows = await db.execute_fetchall(
+        """
+        SELECT transaction_type, SUM(hours) AS total
+        FROM pto_transactions
+        WHERE user_id = ? AND effective_date >= ?
+        GROUP BY transaction_type
+        """,
+        (user_id, year_start),
+    )
+    accrued_ytd = 0.0
+    used_ytd = 0.0
+    for r in ytd_rows:
+        if r["transaction_type"] == "accrual":
+            accrued_ytd = float(r["total"] or 0)
+        elif r["transaction_type"] == "usage":
+            used_ytd = abs(float(r["total"] or 0))
+
+    # Recent transactions (last 20)
+    tx_rows = await db.execute_fetchall(
+        """
+        SELECT * FROM pto_transactions
+        WHERE user_id = ? ORDER BY effective_date DESC, id DESC LIMIT 20
+        """,
+        (user_id,),
+    )
+    transactions = [
+        PtoTransactionResponse(
+            id=t["id"],
+            user_id=t["user_id"],
+            transaction_type=t["transaction_type"],
+            hours=float(t["hours"]),
+            balance_after=float(t["balance_after"]),
+            reference_id=t["reference_id"],
+            reference_type=t["reference_type"],
+            note=t["note"],
+            effective_date=t["effective_date"],
+            created_by=t["created_by"],
+            created_at=t["created_at"],
+        )
+        for t in tx_rows
+    ]
+
+    policy = None
+    if policy_row:
+        policy = PtoPolicyResponse(
+            id=policy_row["id"],
+            user_id=policy_row["user_id"],
+            policy_name=policy_row["policy_name"],
+            accrual_rate=float(policy_row["accrual_rate"]),
+            accrual_period=policy_row["accrual_period"],
+            max_balance=float(policy_row["max_balance"]) if policy_row["max_balance"] is not None else None,
+            carryover_limit=float(policy_row["carryover_limit"]) if policy_row["carryover_limit"] is not None else None,
+            start_date=policy_row["start_date"],
+            is_active=bool(policy_row["is_active"]),
+        )
+
+    return ApiResponse(
+        data=PtoBalanceResponse(
+            user_id=user_id,
+            user_name=user_name,
+            current_balance=current_balance,
+            accrued_ytd=accrued_ytd,
+            used_ytd=used_ytd,
+            policy=policy,
+            recent_transactions=transactions,
+        )
+    )
+
+
+@router.get("/pto/balances")
+async def get_all_pto_balances(
+    user: dict = Depends(require_permission("approve_time_off")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get PTO balances for all users with active policies."""
+    from datetime import datetime
+
+    rows = await db.execute_fetchall(
+        """
+        SELECT p.*, u.display_name AS user_name,
+               (SELECT balance_after FROM pto_transactions
+                WHERE user_id = p.user_id ORDER BY effective_date DESC, id DESC LIMIT 1) AS current_balance
+        FROM pto_policies p
+        JOIN users u ON u.id = p.user_id
+        WHERE p.is_active = 1
+        ORDER BY u.display_name
+        """
+    )
+    balances = []
+    for r in rows:
+        balances.append({
+            "user_id": r["user_id"],
+            "user_name": r["user_name"],
+            "current_balance": float(r["current_balance"]) if r["current_balance"] is not None else 0.0,
+            "policy_name": r["policy_name"],
+            "accrual_rate": float(r["accrual_rate"]),
+            "accrual_period": r["accrual_period"],
+            "max_balance": float(r["max_balance"]) if r["max_balance"] is not None else None,
+        })
+    return ApiResponse(data=balances, message=f"{len(balances)} users with PTO policies")
+
+
+@router.post("/pto/policies", status_code=201)
+async def create_pto_policy(
+    body: PtoPolicyCreate,
+    user: dict = Depends(require_permission("approve_time_off")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Create a PTO accrual policy for a user."""
+    from datetime import datetime
+
+    # Deactivate existing policy
+    await db.execute(
+        "UPDATE pto_policies SET is_active = 0 WHERE user_id = ? AND is_active = 1",
+        (body.user_id,),
+    )
+    now = datetime.utcnow().isoformat()
+    cursor = await db.execute(
+        """
+        INSERT INTO pto_policies (user_id, policy_name, accrual_rate, accrual_period,
+                                  max_balance, carryover_limit, start_date, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+        """,
+        (body.user_id, body.policy_name, body.accrual_rate, body.accrual_period,
+         body.max_balance, body.carryover_limit, body.start_date),
+    )
+    await db.commit()
+    return ApiResponse(
+        data=PtoPolicyResponse(
+            id=cursor.lastrowid,
+            user_id=body.user_id,
+            policy_name=body.policy_name,
+            accrual_rate=body.accrual_rate,
+            accrual_period=body.accrual_period,
+            max_balance=body.max_balance,
+            carryover_limit=body.carryover_limit,
+            start_date=body.start_date,
+            is_active=True,
+        ),
+        message="PTO policy created",
+    )
+
+
+@router.put("/pto/policies/{policy_id}")
+async def update_pto_policy(
+    policy_id: int,
+    body: PtoPolicyUpdate,
+    user: dict = Depends(require_permission("approve_time_off")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update a PTO policy."""
+    row = await db.execute_fetchone("SELECT * FROM pto_policies WHERE id = ?", (policy_id,))
+    if not row:
+        raise HTTPException(404, "PTO policy not found")
+
+    updates = {}
+    if body.policy_name is not None:
+        updates["policy_name"] = body.policy_name
+    if body.accrual_rate is not None:
+        updates["accrual_rate"] = body.accrual_rate
+    if body.accrual_period is not None:
+        updates["accrual_period"] = body.accrual_period
+    if body.max_balance is not None:
+        updates["max_balance"] = body.max_balance
+    if body.carryover_limit is not None:
+        updates["carryover_limit"] = body.carryover_limit
+    if body.is_active is not None:
+        updates["is_active"] = int(body.is_active)
+
+    if updates:
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        await db.execute(
+            f"UPDATE pto_policies SET {set_clause} WHERE id = ?",
+            (*updates.values(), policy_id),
+        )
+        await db.commit()
+
+    updated = await db.execute_fetchone("SELECT * FROM pto_policies WHERE id = ?", (policy_id,))
+    return ApiResponse(
+        data=PtoPolicyResponse(
+            id=updated["id"],
+            user_id=updated["user_id"],
+            policy_name=updated["policy_name"],
+            accrual_rate=float(updated["accrual_rate"]),
+            accrual_period=updated["accrual_period"],
+            max_balance=float(updated["max_balance"]) if updated["max_balance"] is not None else None,
+            carryover_limit=float(updated["carryover_limit"]) if updated["carryover_limit"] is not None else None,
+            start_date=updated["start_date"],
+            is_active=bool(updated["is_active"]),
+        )
+    )
+
+
+@router.post("/pto/transactions", status_code=201)
+async def create_pto_transaction(
+    body: PtoTransactionCreate,
+    user: dict = Depends(require_permission("approve_time_off")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Record a PTO transaction (accrual, usage, adjustment, etc.)."""
+    from datetime import datetime
+
+    # Get current balance
+    bal_row = await db.execute_fetchone(
+        """
+        SELECT balance_after FROM pto_transactions
+        WHERE user_id = ? ORDER BY effective_date DESC, id DESC LIMIT 1
+        """,
+        (body.user_id,),
+    )
+    current = float(bal_row["balance_after"]) if bal_row else 0.0
+
+    # Check max balance for accruals
+    if body.transaction_type == "accrual":
+        policy = await db.execute_fetchone(
+            "SELECT max_balance FROM pto_policies WHERE user_id = ? AND is_active = 1",
+            (body.user_id,),
+        )
+        if policy and policy["max_balance"] is not None:
+            max_bal = float(policy["max_balance"])
+            if current + body.hours > max_bal:
+                body.hours = max(0, max_bal - current)
+
+    new_balance = current + body.hours
+    # Don't go negative for usage
+    if body.transaction_type == "usage" and new_balance < 0:
+        raise HTTPException(422, f"Insufficient PTO balance. Current: {current}h, Requested: {abs(body.hours)}h")
+
+    now = datetime.utcnow().isoformat()
+    cursor = await db.execute(
+        """
+        INSERT INTO pto_transactions
+            (user_id, transaction_type, hours, balance_after, reference_id, reference_type,
+             note, effective_date, created_by, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (body.user_id, body.transaction_type, body.hours, new_balance,
+         body.reference_id, body.reference_type, body.note, body.effective_date,
+         user["user_id"], now),
+    )
+    await db.commit()
+    return ApiResponse(
+        data=PtoTransactionResponse(
+            id=cursor.lastrowid,
+            user_id=body.user_id,
+            transaction_type=body.transaction_type,
+            hours=body.hours,
+            balance_after=new_balance,
+            reference_id=body.reference_id,
+            reference_type=body.reference_type,
+            note=body.note,
+            effective_date=body.effective_date,
+            created_by=user["user_id"],
+            created_at=now,
+        ),
+        message=f"PTO transaction recorded. New balance: {new_balance}h",
+    )
+
+
+@router.post("/pto/run-accruals")
+async def run_pto_accruals(
+    user: dict = Depends(require_permission("approve_time_off")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """
+    Run PTO accruals for all active policies.
+    Call this on a schedule (weekly/monthly) or manually.
+    """
+    from datetime import datetime
+
+    today = datetime.utcnow().date().isoformat()
+    policies = await db.execute_fetchall(
+        "SELECT * FROM pto_policies WHERE is_active = 1"
+    )
+
+    processed = 0
+    skipped = 0
+    for p in policies:
+        # Check if already accrued today
+        existing = await db.execute_fetchone(
+            """
+            SELECT id FROM pto_transactions
+            WHERE user_id = ? AND transaction_type = 'accrual' AND effective_date = ?
+            """,
+            (p["user_id"], today),
+        )
+        if existing:
+            skipped += 1
+            continue
+
+        # Calculate accrual
+        hours = float(p["accrual_rate"])
+        bal_row = await db.execute_fetchone(
+            """
+            SELECT balance_after FROM pto_transactions
+            WHERE user_id = ? ORDER BY effective_date DESC, id DESC LIMIT 1
+            """,
+            (p["user_id"],),
+        )
+        current = float(bal_row["balance_after"]) if bal_row else 0.0
+
+        # Cap at max balance
+        if p["max_balance"] is not None:
+            max_bal = float(p["max_balance"])
+            if current + hours > max_bal:
+                hours = max(0, max_bal - current)
+
+        if hours <= 0:
+            skipped += 1
+            continue
+
+        new_balance = current + hours
+        now = datetime.utcnow().isoformat()
+        await db.execute(
+            """
+            INSERT INTO pto_transactions
+                (user_id, transaction_type, hours, balance_after, note, effective_date, created_by, created_at)
+            VALUES (?, 'accrual', ?, ?, 'Auto-accrual', ?, ?, ?)
+            """,
+            (p["user_id"], hours, new_balance, today, user["user_id"], now),
+        )
+        processed += 1
+
+        # Notify the employee about their accrual
+        notif = NotificationService(db)
+        await notif.notify(
+            "pto_accrual_posted",
+            f"PTO accrual: +{hours:.1f} hrs (balance: {new_balance:.1f} hrs)",
+            message=f"Automatic PTO accrual of {hours:.1f} hours posted for {today}. New balance: {new_balance:.1f} hours.",
+            link="/scheduling/time-off",
+            entity_type="pto_transaction",
+            target_user_ids=[p["user_id"]],
+        )
+
+    await db.commit()
+    return ApiResponse(
+        data={"processed": processed, "skipped": skipped, "total_policies": len(policies)},
+        message=f"Accrual run complete — {processed} processed, {skipped} skipped",
     )

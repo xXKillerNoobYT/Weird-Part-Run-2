@@ -17,6 +17,9 @@ aiosqlite>=0.20.0
 python-jose[cryptography]>=3.3.0
 bcrypt>=4.0.0
 
+# Cryptography (Ed25519 device security)
+cryptography>=44.0.0
+
 # Environment
 python-dotenv>=1.0.0
 
@@ -30,3 +33,6 @@ apscheduler>=3.10.0
 
 # Utilities
 python-multipart>=0.0.20
+
+# PDF generation
+fpdf2>=2.7.0

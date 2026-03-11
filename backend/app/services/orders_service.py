@@ -105,6 +105,32 @@ class OrdersService:
         if lines:
             await self.jpo_line_repo.bulk_insert(jpo_id, lines)
 
+        # ── Auto-populate suggested_supplier_id from job prefs ────
+        # For job orders, look up preferred suppliers per-part (using
+        # category-specific preferences) and stamp each line.  This
+        # feeds the "→ SupplierName (Category)" display on the frontend
+        # and enables accurate PO auto-generation later.
+        if order_type == "job" and job_id and lines:
+            try:
+                inserted_lines = await self.jpo_line_repo.get_lines_for_jpo(jpo_id)
+                for jpo_line in inserted_lines:
+                    # Skip if the frontend already sent a suggestion
+                    if jpo_line.get("suggested_supplier_id"):
+                        continue
+                    pref = await self.prefs_service.get_preferred_supplier(
+                        job_id, jpo_line["part_id"]
+                    )
+                    if pref:
+                        await self.db.execute(
+                            "UPDATE jpo_line_items SET suggested_supplier_id = ? WHERE id = ?",
+                            (pref["supplier_id"], jpo_line["id"]),
+                        )
+            except Exception:
+                # Best-effort — never block order creation
+                logger.exception(
+                    "Failed to auto-populate suppliers for JPO %d", jpo_id
+                )
+
         # ── Insert special (non-catalog) items ────────────────────
         if special_items:
             for item in special_items:
@@ -323,17 +349,48 @@ class OrdersService:
         return await self.po_repo.get_with_details(po_id)
 
     async def auto_generate_pos(self, jpo_id: int, created_by: int) -> list[dict]:
-        """Auto-split approved JPO lines by preferred supplier into draft POs."""
+        """Auto-split approved JPO lines by preferred supplier into draft POs.
+
+        Supplier resolution order per line:
+          1. suggested_supplier_id already set on the JPO line
+          2. Job's explicit preferred suppliers (primary first, then backups)
+          3. Catalog-level preferred supplier from part_supplier_links
+          4. Line skipped (no PO created — office handles manually)
+        """
         unordered = await self.jpo_line_repo.get_unordered_lines(jpo_id)
         if not unordered:
             return []
 
-        # Group lines by suggested/preferred supplier
+        # Get the JPO's job_id for explicit supplier lookup
+        jpo = await self.jpo_repo.get_by_id(jpo_id)
+        job_id = jpo["job_id"] if jpo else None
+
+        # Pre-fetch explicit preferred suppliers for this job (if it's a job order)
+        explicit_suppliers: list[dict] = []
+        if job_id:
+            try:
+                explicit_suppliers = await self.prefs_service.get_explicit_suppliers(
+                    job_id
+                )
+            except Exception:
+                logger.exception("Failed to fetch explicit suppliers for job %d", job_id)
+
+        # Primary explicit supplier (highest confidence, first in list)
+        primary_explicit_id = (
+            explicit_suppliers[0]["supplier_id"] if explicit_suppliers else None
+        )
+
+        # Group lines by supplier
         supplier_groups: dict[int, list[dict]] = {}
         for line in unordered:
             supplier_id = line.get("suggested_supplier_id")
+
+            # Fallback 1: Job's explicit preferred suppliers
+            if not supplier_id and primary_explicit_id:
+                supplier_id = primary_explicit_id
+
+            # Fallback 2: Catalog-level preferred supplier
             if not supplier_id:
-                # Try to find preferred supplier from part_supplier_links
                 cursor = await self.db.execute(
                     """
                     SELECT supplier_id FROM part_supplier_links
@@ -415,6 +472,87 @@ class OrdersService:
             (part_id,),
         )
         return await cursor.fetchall()
+
+    # ── Cross-Job Summary ───────────────────────────────────
+
+    async def get_order_summary(self) -> dict:
+        """
+        Cross-job aggregate summary of all approved JPO lines that still
+        need ordering (qty_requested > qty_ordered).
+
+        Returns part-level aggregation: total qty needed, number of distinct
+        jobs, job names, and suggested supplier.  Phase 17 Gap 4.
+        """
+        cursor = await self.db.execute(
+            """
+            SELECT
+                p.id                          AS part_id,
+                p.name                        AS part_name,
+                pc.name                       AS category_name,
+                SUM(li.qty_requested - li.qty_ordered) AS total_qty_needed,
+                COUNT(DISTINCT jpo.job_id)    AS job_count,
+                GROUP_CONCAT(DISTINCT j.job_name) AS job_names,
+                li.suggested_supplier_id,
+                s.name                        AS supplier_name
+            FROM jpo_line_items li
+            JOIN job_parts_orders jpo ON li.jpo_id = jpo.id
+            JOIN parts p              ON li.part_id = p.id
+            LEFT JOIN part_categories pc ON p.category_id = pc.id
+            LEFT JOIN suppliers s     ON li.suggested_supplier_id = s.id
+            LEFT JOIN jobs j          ON jpo.job_id = j.id
+            WHERE jpo.status = 'approved'
+              AND li.qty_requested > li.qty_ordered
+            GROUP BY p.id
+            ORDER BY total_qty_needed DESC
+            """
+        )
+        rows = await cursor.fetchall()
+
+        lines = []
+        supplier_ids: set[int] = set()
+        total_qty = 0
+        job_ids_all: set[str] = set()
+
+        for r in rows:
+            job_name_str = r["job_names"] or ""
+            job_list = [n.strip() for n in job_name_str.split(",") if n.strip()]
+            job_ids_all.update(job_list)
+            total_qty += r["total_qty_needed"]
+            if r["suggested_supplier_id"]:
+                supplier_ids.add(r["suggested_supplier_id"])
+
+            lines.append({
+                "part_id": r["part_id"],
+                "part_name": r["part_name"],
+                "category_name": r["category_name"],
+                "total_qty_needed": r["total_qty_needed"],
+                "job_count": r["job_count"],
+                "job_names": job_list,
+                "suggested_supplier_id": r["suggested_supplier_id"],
+                "supplier_name": r["supplier_name"],
+            })
+
+        total_parts = len(lines)
+        total_jobs = len(job_ids_all)
+        total_suppliers = len(supplier_ids)
+
+        # Build human-readable summary text
+        parts_word = "part" if total_parts == 1 else "parts"
+        jobs_word = "job" if total_jobs == 1 else "jobs"
+        suppliers_word = "supplier" if total_suppliers == 1 else "suppliers"
+        summary_text = (
+            f"{total_qty} units of {total_parts} {parts_word} needed "
+            f"across {total_jobs} {jobs_word} from {total_suppliers} {suppliers_word}"
+        )
+
+        return {
+            "total_parts": total_parts,
+            "total_qty": total_qty,
+            "total_jobs": total_jobs,
+            "total_suppliers": total_suppliers,
+            "lines": lines,
+            "summary_text": summary_text,
+        }
 
     # ── Internal Helpers ──────────────────────────────────────
 

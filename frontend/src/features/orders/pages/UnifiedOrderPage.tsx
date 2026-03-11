@@ -34,6 +34,7 @@ import {
   ChevronDown,
   ChevronUp,
   Sparkles,
+  Truck,
 } from 'lucide-react';
 import { Input } from '../../../components/ui/Input';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -68,6 +69,11 @@ interface OrderFormLine {
   // Hierarchy IDs — needed to feed the companion suggestion engine
   category_id: number | null;
   style_id: number | null;
+  // Supplier suggestion — auto-matched from job preferences
+  category_name: string | null;
+  suggested_supplier_id: number | null;
+  suggested_supplier_name: string | null;
+  suggested_supplier_category: string | null;
 }
 
 
@@ -105,7 +111,7 @@ export function UnifiedOrderPage() {
     staleTime: 30_000,
   });
 
-  // Derive brand/color prefs from suggestions for the part search
+  // Derive brand/color/supplier prefs from suggestions for the part search
   const brandPrefs: JobPreferenceResponse[] = useMemo(
     () => (suggestionsEnabled && suggestions?.brands) || [],
     [suggestionsEnabled, suggestions?.brands],
@@ -113,6 +119,10 @@ export function UnifiedOrderPage() {
   const colorPrefs: JobPreferenceResponse[] = useMemo(
     () => (suggestionsEnabled && suggestions?.colors) || [],
     [suggestionsEnabled, suggestions?.colors],
+  );
+  const supplierPrefs: JobPreferenceResponse[] = useMemo(
+    () => (suggestionsEnabled && suggestions?.suppliers) || [],
+    [suggestionsEnabled, suggestions?.suppliers],
   );
 
   // ── Companion suggestions — build trigger items from cart ──────
@@ -166,11 +176,39 @@ export function UnifiedOrderPage() {
     },
   });
 
+  // ── Match a part's category to the best supplier preference ─────
+  const matchSupplierForPart = useCallback(
+    (categoryName: string | null): { id: number | null; name: string | null; category: string | null } => {
+      if (!categoryName || supplierPrefs.length === 0) {
+        // No category or no supplier prefs — use highest-confidence supplier
+        const best = supplierPrefs[0];
+        return best
+          ? { id: best.entity_id, name: best.entity_name, category: best.category }
+          : { id: null, name: null, category: null };
+      }
+      // Look for a category-specific match first
+      const catMatch = supplierPrefs.find(
+        (s) => s.category?.toLowerCase() === categoryName.toLowerCase(),
+      );
+      if (catMatch) {
+        return { id: catMatch.entity_id, name: catMatch.entity_name, category: catMatch.category };
+      }
+      // Fallback: highest-confidence supplier (any category)
+      const best = supplierPrefs[0];
+      return best
+        ? { id: best.entity_id, name: best.entity_name, category: best.category }
+        : { id: null, name: null, category: null };
+    },
+    [supplierPrefs],
+  );
+
   // ── Add a part from UnifiedPartSearch ───────────────────────────
   const handleAddPart = useCallback((part: PartListItem) => {
     setLines((prev) => {
       // Prevent duplicates
       if (prev.some((l) => l.part_id === part.id)) return prev;
+
+      const supplier = matchSupplierForPart(part.category_name ?? null);
 
       return [
         ...prev,
@@ -187,10 +225,14 @@ export function UnifiedOrderPage() {
           notes: '',
           category_id: part.category_id ?? null,
           style_id: part.style_id ?? null,
+          category_name: part.category_name ?? null,
+          suggested_supplier_id: supplier.id,
+          suggested_supplier_name: supplier.name,
+          suggested_supplier_category: supplier.category,
         },
       ];
     });
-  }, []);
+  }, [matchSupplierForPart]);
 
   // ── Update a field on a specific line ───────────────────────────
   const updateLine = <K extends keyof OrderFormLine>(
@@ -239,6 +281,7 @@ export function UnifiedOrderPage() {
         qty_requested: l.qty_requested,
         priority: l.priority,
         notes: l.notes.trim() || undefined,
+        suggested_supplier_id: l.suggested_supplier_id ?? undefined,
       })),
       special_items: specialItems.length > 0 ? specialItems : undefined,
     });
@@ -538,13 +581,25 @@ export function UnifiedOrderPage() {
             </div>
           </div>
 
-          {/* Brand/Color Preferences chip strip (compact, secondary) */}
-          {isJobOrder && hasJob && suggestionsEnabled && (brandPrefs.length > 0 || colorPrefs.length > 0) && (
+          {/* Brand/Color/Supplier Preferences chip strip (compact, secondary) */}
+          {isJobOrder && hasJob && suggestionsEnabled && (brandPrefs.length > 0 || colorPrefs.length > 0 || supplierPrefs.length > 0) && (
             <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm p-3">
               <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
                 Job Preferences
               </p>
               <div className="flex flex-wrap gap-1.5">
+                {supplierPrefs.map((pref) => (
+                  <span
+                    key={pref.id}
+                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                  >
+                    <Truck className="h-2.5 w-2.5" />
+                    {pref.entity_name}
+                    {pref.category && (
+                      <span className="text-emerald-500/70 dark:text-emerald-500/50"> ({pref.category})</span>
+                    )}
+                  </span>
+                ))}
                 {brandPrefs.map((pref) => (
                   <span
                     key={pref.id}
@@ -626,6 +681,20 @@ function LineItemCard({ line, index, onUpdate, onRemove }: LineItemCardProps) {
               {line.total_stock} in stock
             </span>
           </div>
+          {/* Supplier suggestion badge */}
+          {line.suggested_supplier_name && (
+            <div className="flex items-center gap-1 mt-1">
+              <Truck className="h-3 w-3 text-emerald-500 flex-shrink-0" />
+              <span className="text-xs text-emerald-700 dark:text-emerald-400">
+                {line.suggested_supplier_name}
+                {line.suggested_supplier_category && (
+                  <span className="text-emerald-500/70 dark:text-emerald-500/50">
+                    {' '}(for {line.suggested_supplier_category})
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
         </div>
         <button
           type="button"

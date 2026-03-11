@@ -73,6 +73,9 @@ async def lifespan(app: FastAPI):
     logger.info("  %s v%s — Starting up", settings.APP_NAME, settings.APP_VERSION)
     logger.info("=" * 60)
 
+    # 0. Auto-generate SECRET_KEY if still using the dev default
+    _ensure_secret_key()
+
     # 1. Run all pending database migrations
     await init_db()
     logger.info("Database initialized at: %s", settings.db_path)
@@ -113,6 +116,56 @@ async def lifespan(app: FastAPI):
     from app.scheduler import stop_scheduler
     stop_scheduler()
     logger.info("Shutdown complete.")
+
+
+_DEV_SECRET = "dev-secret-change-in-production-abc123xyz"
+
+
+def _ensure_secret_key():
+    """Auto-generate a production SECRET_KEY if still using the dev default.
+
+    On first startup, detects the placeholder dev key and replaces it with
+    a cryptographically random 64-char hex token. The new key is:
+    1. Written into .env so it persists across restarts
+    2. Hot-patched onto the running settings instance
+
+    This runs once, ever. After that, .env has a real key and this is a no-op.
+    """
+    import secrets
+    from app.config import _PROJECT_ROOT
+
+    if settings.SECRET_KEY != _DEV_SECRET:
+        return  # Already has a real key — nothing to do
+
+    new_key = secrets.token_hex(32)  # 64 chars, 256-bit entropy
+    env_path = _PROJECT_ROOT / ".env"
+
+    # Update .env file (create if missing, replace if present)
+    if env_path.exists():
+        content = env_path.read_text(encoding="utf-8")
+        if f"SECRET_KEY={_DEV_SECRET}" in content:
+            content = content.replace(
+                f"SECRET_KEY={_DEV_SECRET}",
+                f"SECRET_KEY={new_key}",
+            )
+        elif "SECRET_KEY=" in content:
+            # Key exists but with different formatting — replace the line
+            import re
+            content = re.sub(
+                r"^SECRET_KEY=.*$", f"SECRET_KEY={new_key}", content, flags=re.MULTILINE
+            )
+        else:
+            # SECRET_KEY not in .env at all — append it
+            content = content.rstrip("\n") + f"\nSECRET_KEY={new_key}\n"
+        env_path.write_text(content, encoding="utf-8")
+    else:
+        # No .env file — create one with just the key
+        env_path.write_text(f"SECRET_KEY={new_key}\n", encoding="utf-8")
+
+    # Hot-patch the running settings so this process uses the new key immediately
+    object.__setattr__(settings, "SECRET_KEY", new_key)
+
+    logger.info("Generated production SECRET_KEY (written to .env)")
 
 
 async def _seed_admin_pin():
@@ -194,7 +247,13 @@ ROUTER_MODULES = [
     "app.routers.security",
     "app.routers.updates",
     "app.routers.sync",
+    "app.routers.devices",
     "app.routers.backups",
+    "app.routers.ai",
+    "app.routers.remote_sync",
+    "app.routers.supplier_portal",
+    "app.routers.public",
+    "app.routers.bluetooth",
 ]
 
 for _module_path in ROUTER_MODULES:

@@ -61,6 +61,8 @@ import { getEmployees } from '../../../api/people';
 import {
   getTimesheets, generateExport, downloadBlob,
 } from '../../../api/reports';
+import ReportPageToolbar from '../components/ReportPageToolbar';
+import ReportAnnotations from '../components/ReportAnnotations';
 
 
 export function TimesheetsPage() {
@@ -134,16 +136,30 @@ export function TimesheetsPage() {
             Timesheets
           </h2>
           {data && (
-            <button
-              onClick={handleExport}
-              disabled={exporting}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium
-                         bg-primary-600 text-white rounded-lg hover:bg-primary-700
-                         disabled:opacity-50 min-h-[44px]"
-            >
-              <Download className="h-4 w-4" />
-              <span className="hidden sm:inline">{exporting ? 'Exporting...' : 'Export CSV'}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExport}
+                disabled={exporting}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium
+                           bg-primary-600 text-white rounded-lg hover:bg-primary-700
+                           disabled:opacity-50 min-h-[44px]"
+              >
+                <Download className="h-4 w-4" />
+                <span className="hidden sm:inline">{exporting ? 'Exporting...' : 'Export CSV'}</span>
+              </button>
+              <ReportPageToolbar
+                reportType="timesheet"
+                currentConfig={{ employee_id: employeeId, start_date: startDate, end_date: endDate, pay_period: payPeriod }}
+                onLoadTemplate={(cfg) => {
+                  if (cfg.employee_id !== undefined) setEmployeeId(cfg.employee_id as number | undefined);
+                  if (cfg.start_date) setStartDate(cfg.start_date as string);
+                  if (cfg.end_date) setEndDate(cfg.end_date as string);
+                  if (cfg.pay_period) setPayPeriod(cfg.pay_period as PayPeriod);
+                }}
+                shareContextParams={{ employee_id: employeeId, start_date: startDate, end_date: endDate }}
+                shareLabel={`Timesheet: ${startDate} to ${endDate}`}
+              />
+            </div>
           )}
         </div>
 
@@ -369,6 +385,14 @@ export function TimesheetsPage() {
             ))
           )}
         </>
+      )}
+
+      {/* Annotations */}
+      {data && (
+        <ReportAnnotations
+          reportType="timesheet"
+          contextKey={`emp_${employeeId || 'all'}:${startDate}:${endDate}`}
+        />
       )}
     </div>
   );

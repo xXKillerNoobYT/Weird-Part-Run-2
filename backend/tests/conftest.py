@@ -223,18 +223,25 @@ async def seed_stock(
 
 
 async def seed_job(db: aiosqlite.Connection, **overrides) -> int:
-    """Insert a test job and return its ID."""
+    """Insert a test job and return its ID.
+
+    Supports optional fields: budget_limit, budget_alert_percent, status, etc.
+    """
     n = _next_id("job")
     defaults = {
         "job_name": f"Test Job {n}",
         "job_number": f"TJ-{n:03d}",
         "customer_name": "Test Customer",
         "status": "active",
+        "budget_limit": None,
+        "budget_alert_percent": None,
     }
     defaults.update(overrides)
     cursor = await db.execute(
-        """INSERT INTO jobs (job_name, job_number, customer_name, status)
-           VALUES (:job_name, :job_number, :customer_name, :status)""",
+        """INSERT INTO jobs (job_name, job_number, customer_name, status,
+                            budget_limit, budget_alert_percent)
+           VALUES (:job_name, :job_number, :customer_name, :status,
+                   :budget_limit, :budget_alert_percent)""",
         defaults,
     )
     await db.commit()

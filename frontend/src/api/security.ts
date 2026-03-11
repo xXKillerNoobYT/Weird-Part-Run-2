@@ -205,6 +205,88 @@ export async function listSharedChannels(companyId?: string): Promise<SharedChan
     return data.data ?? [];
 }
 
+/** Deactivate (soft-delete) a shared channel. */
+export async function deactivateSharedChannel(channelId: number): Promise<{ deactivated: boolean }> {
+    const { data } = await apiClient.post<ApiResponse<{ deactivated: boolean }>>(
+        `/security/channels/${channelId}/deactivate`,
+    );
+    return data.data!;
+}
+
+/** Accept a pending shared channel invitation. */
+export async function acceptChannelInvitation(channelId: number, companyId: string): Promise<{ accepted: boolean }> {
+    const { data } = await apiClient.post<ApiResponse<{ accepted: boolean }>>(
+        `/security/channels/${channelId}/accept`,
+        null,
+        { params: { company_id: companyId } },
+    );
+    return data.data!;
+}
+
+
+// ── Bluetooth Handshake ─────────────────────────────────────────
+
+export interface BtHelloPayload {
+    type: 'BT_HELLO';
+    device_id: string;
+    company_id: string;
+    certificate_data: string;
+    signature: string;
+    nonce: string;
+    timestamp: string;
+}
+
+export interface BtHelloAckPayload {
+    type: 'BT_HELLO_ACK';
+    device_id: string;
+    company_id: string;
+    certificate_data: string;
+    signature: string;
+    nonce_response: string;
+    timestamp: string;
+}
+
+/** Create a BT_HELLO payload for initiating a Bluetooth handshake. */
+export async function btCreateHello(deviceId: string, companyId: string): Promise<BtHelloPayload | null> {
+    const { data } = await apiClient.post<ApiResponse<BtHelloPayload | null>>(
+        '/security/bt/hello',
+        { device_id: deviceId, company_id: companyId },
+    );
+    return data.data ?? null;
+}
+
+/** Verify an incoming BT_HELLO and get a BT_HELLO_ACK to send back. */
+export async function btVerifyHello(
+    hello: Record<string, unknown>,
+    responderDeviceId: string,
+    responderCompanyId: string,
+): Promise<BtHelloAckPayload | { valid: false; reason: string }> {
+    const { data } = await apiClient.post<ApiResponse<BtHelloAckPayload | { valid: false; reason: string }>>(
+        '/security/bt/verify-hello',
+        { hello, responder_device_id: responderDeviceId, responder_company_id: responderCompanyId },
+    );
+    return data.data!;
+}
+
+/** Verify a BT_HELLO_ACK — completing mutual authentication. */
+export async function btVerifyAck(
+    ack: Record<string, unknown>,
+    initiatorDeviceId: string,
+    initiatorCompanyId: string,
+    originalNonce: string,
+): Promise<{ valid: boolean; reason?: string; peer_device_id?: string }> {
+    const { data } = await apiClient.post<ApiResponse<{ valid: boolean; reason?: string; peer_device_id?: string }>>(
+        '/security/bt/verify-ack',
+        {
+            ack,
+            initiator_device_id: initiatorDeviceId,
+            initiator_company_id: initiatorCompanyId,
+            original_nonce: originalNonce,
+        },
+    );
+    return data.data!;
+}
+
 
 // ── Security Audit ──────────────────────────────────────────────
 

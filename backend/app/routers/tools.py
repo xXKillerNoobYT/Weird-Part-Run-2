@@ -12,11 +12,14 @@ Permission gates:
 
 from __future__ import annotations
 
+import csv
+import io
 import uuid
 from pathlib import Path
 
 import aiosqlite
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 
 from app.database import get_db
 from app.middleware.auth import require_permission, require_user
@@ -34,6 +37,7 @@ from app.models.tools import (
     # Movements
     ToolCheckout,
     ToolReturn,
+    ToolTransfer,
     ToolMovementResponse,
     # Kit Verification
     KitVerificationStart,
@@ -50,6 +54,13 @@ from app.models.tools import (
     # Dashboard
     ToolsDashboardStats,
     ToolMaintenanceAlert,
+    # Depreciation
+    DepreciationConfig,
+    DepreciationEntryResponse,
+    DepreciationSummary,
+    # Todo-Tool linking
+    EntryToolLink,
+    EntryToolLinkResponse,
 )
 from app.services.tools_service import ToolsService
 
@@ -195,6 +206,127 @@ async def scan_tool(
     if not tool:
         raise HTTPException(status_code=404, detail=f"Tool '{tool_number}' not found")
     return ApiResponse(data=tool, message=f"Tool {tool_number} found")
+
+
+# ═══════════════════════════════════════════════════════════════
+# DEPRECIATION REPORT (static path — before /{tool_id})
+# ═══════════════════════════════════════════════════════════════
+
+
+@router.get("/depreciation/report")
+async def depreciation_report(
+    user: dict = Depends(require_permission("manage_tools")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get depreciation summary across all configured tools."""
+    svc = ToolsService(db)
+    report = await svc.get_depreciation_report()
+    return ApiResponse(data=report)
+
+
+# ═══════════════════════════════════════════════════════════════
+# TODO—TOOL LINKING (static paths — before /{tool_id})
+# ═══════════════════════════════════════════════════════════════
+
+
+@router.get("/entry-tools/{entry_id}")
+async def get_entry_tools(
+    entry_id: int,
+    user: dict = Depends(require_permission("view_tools")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get all tools linked to a notebook entry."""
+    svc = ToolsService(db)
+    links = await svc.get_entry_tools(entry_id)
+    return ApiResponse(data=links)
+
+
+@router.post("/entry-tools/{entry_id}")
+async def link_tool_to_entry(
+    entry_id: int,
+    body: EntryToolLink,
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Link a tool to a notebook task entry."""
+    svc = ToolsService(db)
+    try:
+        link = await svc.link_tool_to_entry(
+            entry_id=entry_id,
+            tool_id=body.tool_id,
+            notes=body.notes,
+            user_id=user["id"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        if "UNIQUE constraint" in str(exc):
+            raise HTTPException(status_code=409, detail="Tool already linked to this entry")
+        raise
+    return ApiResponse(data=link, message="Tool linked")
+
+
+@router.delete("/entry-tools/{entry_id}/{tool_id}")
+async def unlink_tool_from_entry(
+    entry_id: int,
+    tool_id: int,
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Remove a tool link from a notebook entry."""
+    svc = ToolsService(db)
+    removed = await svc.unlink_tool_from_entry(entry_id, tool_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Link not found")
+    return ApiResponse(data=None, message="Tool unlinked")
+
+
+# ═══════════════════════════════════════════════════════════════
+# EXPORT CSV (static path — before /{tool_id})
+# ═══════════════════════════════════════════════════════════════
+
+
+@router.get("/export/csv")
+async def export_tools_csv(
+    category: str | None = Query(None),
+    status: str | None = Query(None),
+    location_type: str | None = Query(None),
+    include_retired: bool = Query(False),
+    user: dict = Depends(require_permission("manage_tools")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Export tools as CSV file download."""
+    svc = ToolsService(db)
+    rows = await svc.export_tools(
+        category=category,
+        status=status,
+        location_type=location_type,
+        include_retired=include_retired,
+    )
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="No tools match the filters")
+
+    # Build CSV in memory
+    output = io.StringIO()
+    fieldnames = [
+        "tool_number", "name", "category", "brand", "model_number",
+        "serial_number", "status", "condition_rating", "location_type",
+        "location_name", "assigned_to_name", "purchase_date", "purchase_cost",
+        "warranty_expiry", "current_book_value", "depreciation_method",
+        "calibration_due_date", "notes",
+    ]
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(row)
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=tools_export.csv"},
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -687,3 +819,129 @@ async def bulk_log_maintenance(
         data={"serviced": results, "errors": errors},
         message=f"{len(results)} serviced, {len(errors)} errors",
     )
+
+
+# ═════════════════════════════════════════════════════════════════
+# TOOL TRANSFER — Atomic location-to-location
+# ═════════════════════════════════════════════════════════════════
+
+
+@router.post("/{tool_id}/transfer")
+async def transfer_tool(
+    tool_id: int,
+    body: ToolTransfer,
+    user: dict = Depends(require_permission("checkout_tools")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Transfer a tool directly between locations (atomic)."""
+    svc = ToolsService(db)
+    try:
+        movement_id = await svc.transfer_tool(
+            tool_id=tool_id,
+            to_location_type=body.to_location_type,
+            to_location_id=body.to_location_id,
+            moved_by=user["id"],
+            job_id=body.job_id,
+            condition_at_move=body.condition_at_move,
+            reason=body.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    tool = await svc.get_tool(tool_id)
+    return ApiResponse(
+        data={**tool, "movement_id": movement_id},
+        message="Tool transferred",
+    )
+
+
+@router.get("/{tool_id}/depreciation")
+async def get_depreciation(
+    tool_id: int,
+    user: dict = Depends(require_permission("view_tools")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get full depreciation summary for a tool."""
+    svc = ToolsService(db)
+    try:
+        summary = await svc.get_depreciation_summary(tool_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return ApiResponse(data=summary)
+
+
+@router.post("/{tool_id}/depreciation")
+async def configure_depreciation(
+    tool_id: int,
+    body: DepreciationConfig,
+    user: dict = Depends(require_permission("manage_tools")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Configure depreciation for a tool and generate schedule."""
+    svc = ToolsService(db)
+    try:
+        result = await svc.configure_depreciation(
+            tool_id=tool_id,
+            method=body.depreciation_method,
+            salvage_value=body.salvage_value,
+            useful_life_years=body.useful_life_years,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ApiResponse(data=result, message="Depreciation configured")
+
+
+# ═════════════════════════════════════════════════════════════════
+# CALIBRATION (enhanced maintenance logging)
+# ═════════════════════════════════════════════════════════════════
+
+
+@router.post("/{tool_id}/calibration")
+async def log_calibration(
+    tool_id: int,
+    service_date: str | None = Body(None, embed=True),
+    cost: float = Body(0, embed=True),
+    vendor: str | None = Body(None, embed=True),
+    description: str | None = Body(None, embed=True),
+    notes: str | None = Body(None, embed=True),
+    calibration_certificate: str | None = Body(None, embed=True),
+    calibration_provider: str | None = Body(None, embed=True),
+    calibration_standard: str | None = Body(None, embed=True),
+    calibration_result: str | None = Body(None, embed=True),
+    user: dict = Depends(require_permission("manage_tools")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Log a calibration with certificate details."""
+    svc = ToolsService(db)
+    try:
+        record_id = await svc.log_calibration(
+            tool_id=tool_id,
+            performed_by=user["id"],
+            service_date=service_date,
+            cost=cost,
+            vendor=vendor,
+            description=description,
+            notes=notes,
+            calibration_certificate=calibration_certificate,
+            calibration_provider=calibration_provider,
+            calibration_standard=calibration_standard,
+            calibration_result=calibration_result,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return ApiResponse(
+        data={"record_id": record_id},
+        message="Calibration logged",
+    )
+
+
+@router.get("/{tool_id}/references")
+async def get_tool_references(
+    tool_id: int,
+    user: dict = Depends(require_permission("view_tools")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get all notebook entries that reference a specific tool."""
+    svc = ToolsService(db)
+    refs = await svc.get_tools_referencing(tool_id)
+    return ApiResponse(data=refs)

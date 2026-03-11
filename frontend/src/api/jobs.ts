@@ -3,9 +3,12 @@
  * parts consumption, and daily reports.
  *
  * All functions follow the pattern: call apiClient → unwrap ApiResponse → return typed data.
+ * Functions with local service equivalents are wrapped with adaptedRequest()
+ * so Capacitor builds use SQLite, while browser builds use HTTP.
  */
 
 import apiClient from './client';
+import { adaptedRequest } from './adapter';
 import type { ApiResponse } from '../lib/types';
 import type {
   // Jobs
@@ -39,6 +42,9 @@ import type {
   JobPreferenceResponse,
   JobPreferenceToggle,
   JobPreferencesSummary,
+  // Phase 17: Explicit Preferred Suppliers
+  ExplicitSupplierResponse,
+  JobPreferredSuppliersUpdate,
   // Team
   JobTeamMember,
 } from '../lib/types';
@@ -103,28 +109,55 @@ export async function getActiveJobs(params?: {
   sort?: string;
   order?: string;
 }): Promise<JobListItem[]> {
-  const { data } = await apiClient.get<ApiResponse<JobListItem[]>>(
-    '/jobs/active',
-    { params }
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<JobListItem[]>>(
+        '/jobs/active',
+        { params }
+      );
+      return data.data ?? [];
+    },
+    async () => {
+      const { getActiveJobs: local } = await import('../local/services/job-service');
+      const result = await local(params);
+      return result.items as unknown as JobListItem[];
+    },
   );
-  return data.data ?? [];
 }
 
 /** Create a new job */
 export async function createJob(job: JobCreate): Promise<JobResponse> {
-  const { data } = await apiClient.post<ApiResponse<JobResponse>>(
-    '/jobs',
-    job
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<JobResponse>>(
+        '/jobs',
+        job
+      );
+      return data.data!;
+    },
+    async () => {
+      const { createJob: local } = await import('../local/services/job-service');
+      return await local(job, 0) as unknown as JobResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Get full job detail */
 export async function getJob(jobId: number): Promise<JobResponse> {
-  const { data } = await apiClient.get<ApiResponse<JobResponse>>(
-    `/jobs/${jobId}`
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<JobResponse>>(
+        `/jobs/${jobId}`
+      );
+      return data.data!;
+    },
+    async () => {
+      const { getJob: local } = await import('../local/services/job-service');
+      const job = await local(jobId);
+      if (!job) throw new Error('Job not found');
+      return job as unknown as JobResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Update job information */
@@ -132,11 +165,21 @@ export async function updateJob(
   jobId: number,
   updates: JobUpdate
 ): Promise<JobResponse> {
-  const { data } = await apiClient.put<ApiResponse<JobResponse>>(
-    `/jobs/${jobId}`,
-    updates
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.put<ApiResponse<JobResponse>>(
+        `/jobs/${jobId}`,
+        updates
+      );
+      return data.data!;
+    },
+    async () => {
+      const { updateJob: local } = await import('../local/services/job-service');
+      const job = await local(jobId, updates);
+      if (!job) throw new Error('Job not found');
+      return job as unknown as JobResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Change job status */
@@ -144,11 +187,21 @@ export async function updateJobStatus(
   jobId: number,
   status: string
 ): Promise<JobResponse> {
-  const { data } = await apiClient.patch<ApiResponse<JobResponse>>(
-    `/jobs/${jobId}/status`,
-    { status }
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.patch<ApiResponse<JobResponse>>(
+        `/jobs/${jobId}/status`,
+        { status }
+      );
+      return data.data!;
+    },
+    async () => {
+      const { updateJobStatus: local } = await import('../local/services/job-service');
+      const job = await local(jobId, status);
+      if (!job) throw new Error('Job not found');
+      return job as unknown as JobResponse;
+    },
   );
-  return data.data!;
 }
 
 
@@ -161,30 +214,55 @@ export async function clockIn(
   jobId: number,
   request: ClockInRequest
 ): Promise<LaborEntryResponse> {
-  const { data } = await apiClient.post<ApiResponse<LaborEntryResponse>>(
-    `/jobs/${jobId}/clock-in`,
-    request
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<LaborEntryResponse>>(
+        `/jobs/${jobId}/clock-in`,
+        request
+      );
+      return data.data!;
+    },
+    async () => {
+      const { clockIn: local } = await import('../local/services/labor-service');
+      return await local(0, { ...request, job_id: jobId }) as unknown as LaborEntryResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Clock out from current job */
 export async function clockOut(
   request: ClockOutRequest
 ): Promise<LaborEntryResponse> {
-  const { data } = await apiClient.post<ApiResponse<LaborEntryResponse>>(
-    '/jobs/clock-out',
-    request
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<LaborEntryResponse>>(
+        '/jobs/clock-out',
+        request
+      );
+      return data.data!;
+    },
+    async () => {
+      const { clockOut: local } = await import('../local/services/labor-service');
+      return await local(0, request as any) as unknown as LaborEntryResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Get current user's active clock entry */
 export async function getMyClock(): Promise<ActiveClockResponse> {
-  const { data } = await apiClient.get<ApiResponse<ActiveClockResponse>>(
-    '/jobs/my-clock'
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<ActiveClockResponse>>(
+        '/jobs/my-clock'
+      );
+      return data.data!;
+    },
+    async () => {
+      const { getActiveClock } = await import('../local/services/labor-service');
+      const clock = await getActiveClock(0);
+      return (clock ?? { is_clocked_in: false }) as unknown as ActiveClockResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Get labor entries for a specific job */
@@ -192,22 +270,38 @@ export async function getJobLabor(
   jobId: number,
   params?: { date_from?: string; date_to?: string }
 ): Promise<LaborEntryResponse[]> {
-  const { data } = await apiClient.get<ApiResponse<LaborEntryResponse[]>>(
-    `/jobs/${jobId}/labor`,
-    { params }
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<LaborEntryResponse[]>>(
+        `/jobs/${jobId}/labor`,
+        { params }
+      );
+      return data.data ?? [];
+    },
+    async () => {
+      const { getLaborForJob } = await import('../local/services/labor-service');
+      return await getLaborForJob(jobId, params?.date_from, params?.date_to) as unknown as LaborEntryResponse[];
+    },
   );
-  return data.data ?? [];
 }
 
 /** Get current user's labor history */
 export async function getMyLabor(
   params?: { date_from?: string; date_to?: string }
 ): Promise<LaborEntryResponse[]> {
-  const { data } = await apiClient.get<ApiResponse<LaborEntryResponse[]>>(
-    '/jobs/my-labor',
-    { params }
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<LaborEntryResponse[]>>(
+        '/jobs/my-labor',
+        { params }
+      );
+      return data.data ?? [];
+    },
+    async () => {
+      const { getLaborForUser } = await import('../local/services/labor-service');
+      return await getLaborForUser(0, params?.date_from, params?.date_to) as unknown as LaborEntryResponse[];
+    },
   );
-  return data.data ?? [];
 }
 
 
@@ -441,6 +535,33 @@ export async function toggleJobPreference(
   const { data } = await apiClient.put<ApiResponse<JobPreferenceResponse>>(
     `/jobs/${jobId}/preferences/${prefId}`,
     toggle
+  );
+  return data.data!;
+}
+
+
+// =================================================================
+// EXPLICIT PREFERRED SUPPLIERS
+// =================================================================
+
+/** Get manually set preferred suppliers for a job (primary first, then backups). */
+export async function getJobPreferredSuppliers(
+  jobId: number
+): Promise<ExplicitSupplierResponse[]> {
+  const { data } = await apiClient.get<ApiResponse<ExplicitSupplierResponse[]>>(
+    `/jobs/${jobId}/preferred-suppliers`
+  );
+  return data.data ?? [];
+}
+
+/** Set explicit preferred suppliers for a job. First = primary, rest = backups. */
+export async function setJobPreferredSuppliers(
+  jobId: number,
+  suppliers: JobPreferredSuppliersUpdate
+): Promise<{ id: number; supplier_id: number; rank: number }[]> {
+  const { data } = await apiClient.put<ApiResponse<{ id: number; supplier_id: number; rank: number }[]>>(
+    `/jobs/${jobId}/preferred-suppliers`,
+    suppliers
   );
   return data.data!;
 }

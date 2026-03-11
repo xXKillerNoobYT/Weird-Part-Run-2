@@ -126,3 +126,21 @@ export {
   getMyTimeOff,
   getDispatchForDate,
 } from './services/scheduling-service';
+
+// ── Chat ───────────────────────────────────────────────────────────
+export {
+  getInbox,
+  getChannelMessages,
+  getChannelMembers,
+  getPinnedMessages,
+  sendMessage,
+  editMessage,
+  deleteMessage,
+  pinMessage,
+  unpinMessage,
+  markChannelRead,
+  listQAThreads,
+  askQuestion,
+  answerQuestion,
+  getOrCreateJobChannel,
+} from './services/chat-service';

@@ -265,3 +265,109 @@ class BookkeeperExportRequest(BaseModel):
     period_end: str
     include_labor: bool = True
     include_parts: bool = True
+
+
+# ── Report Annotations ─────────────────────────────────────────────
+
+class ReportAnnotationCreate(BaseModel):
+    """Create a note on a report."""
+    report_type: str = Field(..., pattern="^(daily_report|pre_billing|timesheet|labor_overview|profitability)$")
+    context_key: str = Field(..., min_length=1, max_length=200)
+    content: str = Field(..., min_length=1, max_length=5000)
+
+
+class ReportAnnotationUpdate(BaseModel):
+    """Update an existing annotation's content."""
+    content: str = Field(..., min_length=1, max_length=5000)
+
+
+class ReportAnnotationResponse(BaseModel):
+    """Annotation on a report with author info."""
+    id: int
+    report_type: str
+    context_key: str
+    content: str
+    author_id: int
+    author_name: str = ""
+    created_at: str
+    updated_at: str
+
+
+# ── Report Share Tokens ────────────────────────────────────────────
+
+class ReportShareTokenCreate(BaseModel):
+    """Create a shareable link for a report."""
+    report_type: str = Field(..., pattern="^(daily_report|pre_billing|timesheet|labor_overview|profitability)$")
+    context_params: dict = Field(default_factory=dict)
+    label: str | None = None
+    expires_in_days: int | None = Field(None, ge=1, le=365)
+
+
+class ReportShareTokenResponse(BaseModel):
+    """A shareable report link with metadata."""
+    id: int
+    token: str
+    report_type: str
+    context_params: dict = Field(default_factory=dict)
+    label: str | None = None
+    created_by: int
+    expires_at: str | None = None
+    last_accessed_at: str | None = None
+    is_active: bool = True
+    created_at: str
+    share_url: str = ""
+
+
+# ── Report Templates ──────────────────────────────────────────────
+
+class ReportTemplateCreate(BaseModel):
+    """Save a filter preset for a report type."""
+    name: str = Field(..., min_length=1, max_length=100)
+    report_type: str = Field(..., pattern="^(pre_billing|timesheet|labor_overview|profitability)$")
+    config_json: dict = Field(default_factory=dict)
+
+
+class ReportTemplateUpdate(BaseModel):
+    """Update an existing template."""
+    name: str | None = Field(None, min_length=1, max_length=100)
+    config_json: dict | None = None
+
+
+class ReportTemplateResponse(BaseModel):
+    """A saved report filter preset."""
+    id: int
+    name: str
+    report_type: str
+    config_json: dict = Field(default_factory=dict)
+    created_by: int
+    created_at: str
+    updated_at: str
+
+
+# ── Export Bundle ──────────────────────────────────────────────────
+
+class ExportBundleItem(BaseModel):
+    """A single export in a bundle request."""
+    report_type: str
+    format: str = "csv"
+    job_id: int | None = None
+    employee_id: int | None = None
+    start_date: str
+    end_date: str
+
+
+class ExportBundleRequest(BaseModel):
+    """Request a ZIP bundle of multiple exports."""
+    exports: list[ExportBundleItem] = Field(..., min_length=1, max_length=20)
+
+
+# ── Public Report ──────────────────────────────────────────────────
+
+class PublicReportData(BaseModel):
+    """Report data returned via a share token (public, no auth)."""
+    report_type: str
+    label: str | None = None
+    generated_at: str = ""
+    context_params: dict = Field(default_factory=dict)
+    data: dict = Field(default_factory=dict)
+    annotations: list[ReportAnnotationResponse] = Field(default_factory=list)

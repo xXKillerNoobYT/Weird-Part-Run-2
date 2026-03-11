@@ -6,6 +6,7 @@
  */
 
 import apiClient from './client';
+import { adaptedRequest } from './adapter';
 import type {
   ApiResponse,
   StatusMessage,
@@ -101,11 +102,19 @@ export async function listVehicles(params?: {
   search?: string;
   include_inactive?: boolean;
 }): Promise<VehicleListItem[]> {
-  // Backend returns PaginatedData: { items, total, page, page_size, total_pages }
-  const { data } = await apiClient.get<
-    ApiResponse<{ items: VehicleListItem[]; total: number }>
-  >('/trucks', { params });
-  return data.data?.items ?? [];
+  return adaptedRequest(
+    async () => {
+      // Backend returns PaginatedData: { items, total, page, page_size, total_pages }
+      const { data } = await apiClient.get<
+        ApiResponse<{ items: VehicleListItem[]; total: number }>
+      >('/trucks', { params });
+      return data.data?.items ?? [];
+    },
+    async () => {
+      const { listVehicles: local } = await import('../local/services/fleet-service');
+      return await local() as unknown as VehicleListItem[];
+    },
+  );
 }
 
 /** Create a new vehicle. */
@@ -121,18 +130,37 @@ export async function createVehicle(
 
 /** Get current user's assigned vehicle dashboard. */
 export async function getMyVehicle(): Promise<MyVehicleDashboard> {
-  const { data } = await apiClient.get<ApiResponse<MyVehicleDashboard>>(
-    '/trucks/my-vehicle',
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<MyVehicleDashboard>>(
+        '/trucks/my-vehicle',
+      );
+      return data.data!;
+    },
+    async () => {
+      const { getMyVehicle: local } = await import('../local/services/fleet-service');
+      const vehicle = await local(0); // userId from local auth
+      return (vehicle ?? {}) as unknown as MyVehicleDashboard;
+    },
   );
-  return data.data!;
 }
 
 /** Get full vehicle detail. */
 export async function getVehicle(vehicleId: number): Promise<Vehicle> {
-  const { data } = await apiClient.get<ApiResponse<Vehicle>>(
-    `/trucks/${vehicleId}`,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<Vehicle>>(
+        `/trucks/${vehicleId}`,
+      );
+      return data.data!;
+    },
+    async () => {
+      const { getVehicle: local } = await import('../local/services/fleet-service');
+      const vehicle = await local(vehicleId);
+      if (!vehicle) throw new Error('Vehicle not found');
+      return vehicle as unknown as Vehicle;
+    },
   );
-  return data.data!;
 }
 
 /** Update a vehicle. */
@@ -166,10 +194,18 @@ export async function deactivateVehicle(
 export async function listAssignments(
   vehicleId: number,
 ): Promise<VehicleAssignment[]> {
-  const { data } = await apiClient.get<ApiResponse<VehicleAssignment[]>>(
-    `/trucks/${vehicleId}/assignments`,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<VehicleAssignment[]>>(
+        `/trucks/${vehicleId}/assignments`,
+      );
+      return data.data ?? [];
+    },
+    async () => {
+      const { getVehicleAssignments } = await import('../local/services/fleet-service');
+      return await getVehicleAssignments(vehicleId) as unknown as VehicleAssignment[];
+    },
   );
-  return data.data ?? [];
 }
 
 /** Assign a driver to a vehicle. */
@@ -217,11 +253,19 @@ export async function getVehicleInventory(
   vehicleId: number,
   params?: { search?: string },
 ): Promise<VehicleInventoryItem[]> {
-  const { data } = await apiClient.get<ApiResponse<VehicleInventoryItem[]>>(
-    `/trucks/${vehicleId}/inventory`,
-    { params },
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<VehicleInventoryItem[]>>(
+        `/trucks/${vehicleId}/inventory`,
+        { params },
+      );
+      return data.data ?? [];
+    },
+    async () => {
+      const { getTruckInventory } = await import('../local/services/fleet-service');
+      return await getTruckInventory(vehicleId) as unknown as VehicleInventoryItem[];
+    },
   );
-  return data.data ?? [];
 }
 
 /** Add parts to a vehicle (stock transfer). */

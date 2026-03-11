@@ -12,6 +12,11 @@ Endpoints:
   POST /api/security/certs/revoke       → Revoke a device certificate (admin)
   POST /api/security/channels           → Create a shared channel (admin)
   GET  /api/security/channels           → List shared channels (admin)
+  POST /api/security/channels/:id/deactivate → Deactivate a channel (admin)
+  POST /api/security/channels/:id/accept     → Accept a channel invite (admin)
+  POST /api/security/bt/hello           → Create BT handshake hello (device)
+  POST /api/security/bt/verify-hello    → Verify incoming BT hello (device)
+  POST /api/security/bt/verify-ack      → Verify BT ACK (device)
   GET  /api/security/audit              → Security audit log (admin)
 """
 
@@ -69,6 +74,26 @@ class SharedChannelCreatePayload(BaseModel):
     scope: dict = Field(default_factory=dict)
     permissions: dict = Field(default_factory=dict)
     expires_at: str | None = None
+
+
+class BtHelloPayload(BaseModel):
+    device_id: str
+    company_id: str
+
+
+class BtVerifyHelloPayload(BaseModel):
+    """Incoming BT_HELLO from a peer device."""
+    hello: dict
+    responder_device_id: str
+    responder_company_id: str
+
+
+class BtVerifyAckPayload(BaseModel):
+    """Incoming BT_HELLO_ACK from the responder."""
+    ack: dict
+    initiator_device_id: str
+    initiator_company_id: str
+    original_nonce: str
 
 
 # ── Endpoints ────────────────────────────────────────────────────
@@ -247,6 +272,103 @@ async def list_shared_channels(
     svc = DeviceSecurityService(db)
     channels = await svc.list_shared_channels(company_id)
     return ApiResponse(data=channels, message=f"{len(channels)} shared channels")
+
+
+@router.post("/channels/{channel_id}/deactivate")
+async def deactivate_shared_channel(
+    channel_id: int,
+    user: dict = Depends(require_permission("manage_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Deactivate (soft-delete) a shared channel."""
+    svc = DeviceSecurityService(db)
+    deactivated = await svc.deactivate_shared_channel(channel_id, actor_user_id=user.get("id"))
+    msg = "Channel deactivated" if deactivated else "Channel not found or already inactive"
+    return ApiResponse(data={"deactivated": deactivated}, message=msg)
+
+
+@router.post("/channels/{channel_id}/accept")
+async def accept_channel_invitation(
+    channel_id: int,
+    company_id: str = Query(...),
+    user: dict = Depends(require_permission("manage_people")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Accept a pending channel invitation for a company."""
+    svc = DeviceSecurityService(db)
+    accepted = await svc.accept_channel_invitation(channel_id, company_id)
+    msg = "Invitation accepted" if accepted else "No pending invitation found"
+    return ApiResponse(data={"accepted": accepted}, message=msg)
+
+
+# ── Bluetooth Handshake ──────────────────────────────────────────
+
+
+@router.post("/bt/hello")
+async def bt_create_hello(
+    payload: BtHelloPayload,
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Create a BT_HELLO payload for initiating a Bluetooth handshake.
+
+    The device calls this before starting a BT sync session with a peer.
+    Returns the hello payload to send to the other device.
+    """
+    svc = DeviceSecurityService(db)
+    hello = await svc.bt_create_hello(
+        device_id=payload.device_id,
+        company_id=payload.company_id,
+    )
+    if not hello:
+        return ApiResponse(data=None, message="No active certificate — device must pair first")
+    return ApiResponse(data=hello, message="BT hello created")
+
+
+@router.post("/bt/verify-hello")
+async def bt_verify_hello(
+    payload: BtVerifyHelloPayload,
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Verify an incoming BT_HELLO from a peer and return a BT_HELLO_ACK.
+
+    Called by the responder device when it receives a handshake initiation.
+    """
+    svc = DeviceSecurityService(db)
+    result = await svc.bt_verify_hello(
+        hello=payload.hello,
+        responder_device_id=payload.responder_device_id,
+        responder_company_id=payload.responder_company_id,
+    )
+    if result["valid"]:
+        return ApiResponse(data=result["ack"], message="Handshake accepted — send ACK to peer")
+    return ApiResponse(data={"valid": False, "reason": result.get("reason")},
+                       message=f"Handshake rejected: {result.get('reason')}")
+
+
+@router.post("/bt/verify-ack")
+async def bt_verify_ack(
+    payload: BtVerifyAckPayload,
+    user: dict = Depends(require_user),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Verify a BT_HELLO_ACK from the responder — completing mutual authentication.
+
+    Called by the initiator after receiving the responder's ACK.
+    If valid, both devices have verified each other's certificates.
+    """
+    svc = DeviceSecurityService(db)
+    result = await svc.bt_verify_ack(
+        ack=payload.ack,
+        initiator_device_id=payload.initiator_device_id,
+        initiator_company_id=payload.initiator_company_id,
+        original_nonce=payload.original_nonce,
+    )
+    if result["valid"]:
+        return ApiResponse(data=result, message="Mutual trust established — sync can proceed")
+    return ApiResponse(data={"valid": False, "reason": result.get("reason")},
+                       message=f"ACK verification failed: {result.get('reason')}")
 
 
 # ── Audit ────────────────────────────────────────────────────────

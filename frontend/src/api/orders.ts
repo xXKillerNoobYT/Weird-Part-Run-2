@@ -9,6 +9,7 @@
  */
 
 import apiClient from './client';
+import { adaptedRequest } from './adapter';
 import type { ApiResponse, StatusMessage } from '../lib/types';
 import type {
   // JPOs
@@ -73,6 +74,8 @@ import type {
   BulkPOStatusUpdate,
   BulkReturnApprove,
   BulkActionResult,
+  // Phase 17: Cross-Job Summary
+  OrderSummary,
 } from '../lib/types';
 
 
@@ -97,28 +100,56 @@ export async function listJPOs(params?: {
   order_type?: 'job' | 'warehouse';
   requested_by?: number;
 }): Promise<JPOListItem[]> {
-  const { data } = await apiClient.get<ApiResponse<unknown>>(
-    '/orders/jpos',
-    { params }
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<unknown>>(
+        '/orders/jpos',
+        { params }
+      );
+      return unwrapPaginated<JPOListItem>(data.data);
+    },
+    async () => {
+      const { listJPOs: local } = await import('../local/services/order-service');
+      const result = await local(params);
+      return result.items as unknown as JPOListItem[];
+    },
   );
-  return unwrapPaginated<JPOListItem>(data.data);
 }
 
 /** Get full JPO with line items */
 export async function getJPO(jpoId: number): Promise<JPOResponse> {
-  const { data } = await apiClient.get<ApiResponse<JPOResponse>>(
-    `/orders/jpos/${jpoId}`
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<JPOResponse>>(
+        `/orders/jpos/${jpoId}`
+      );
+      return data.data!;
+    },
+    async () => {
+      const { getJPO: local, getJPOLines } = await import('../local/services/order-service');
+      const jpo = await local(jpoId);
+      if (!jpo) throw new Error('JPO not found');
+      const lines = await getJPOLines(jpoId);
+      return { ...jpo, lines } as unknown as JPOResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Create a new JPO */
 export async function createJPO(jpo: JPOCreate): Promise<JPOResponse> {
-  const { data } = await apiClient.post<ApiResponse<JPOResponse>>(
-    '/orders/jpos',
-    jpo
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<JPOResponse>>(
+        '/orders/jpos',
+        jpo
+      );
+      return data.data!;
+    },
+    async () => {
+      const { createJPO: local } = await import('../local/services/order-service');
+      return await local(jpo as any, 0) as unknown as JPOResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Update a JPO (draft only) */
@@ -135,10 +166,20 @@ export async function updateJPO(
 
 /** Submit a JPO for approval */
 export async function submitJPO(jpoId: number): Promise<JPOResponse> {
-  const { data } = await apiClient.post<ApiResponse<JPOResponse>>(
-    `/orders/jpos/${jpoId}/submit`
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<JPOResponse>>(
+        `/orders/jpos/${jpoId}/submit`
+      );
+      return data.data!;
+    },
+    async () => {
+      const { submitJPO: local } = await import('../local/services/order-service');
+      const jpo = await local(jpoId, 0);
+      if (!jpo) throw new Error('JPO not found or not in draft status');
+      return jpo as unknown as JPOResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Approve or reject a JPO */
@@ -683,6 +724,26 @@ export async function listPOGroupsForSupplier(
   return data.data ?? [];
 }
 
+/** Generate a bundled PDF for a PO group */
+export async function generatePOGroupPdf(
+  groupId: number
+): Promise<{ pdf_path: string; individual_pdfs: string[]; po_count: number }> {
+  const { data } = await apiClient.post<
+    ApiResponse<{ pdf_path: string; individual_pdfs: string[]; po_count: number }>
+  >(`/orders/pos/group/${groupId}/pdf`);
+  return data.data!;
+}
+
+/** Get combined clipboard text for all POs in a group */
+export async function getPOGroupClipboardText(
+  groupId: number
+): Promise<{ text: string }> {
+  const { data } = await apiClient.get<ApiResponse<{ text: string }>>(
+    `/orders/pos/group/${groupId}/clipboard`
+  );
+  return data.data!;
+}
+
 
 // =================================================================
 // OFFICE APPROVALS QUEUE (Phase 7B)
@@ -716,6 +777,14 @@ export async function bulkApproveOrReject(
     body
   );
   return data.data ?? [];
+}
+
+/** Cross-job aggregate summary of approved JPO lines still needing POs (Phase 17 Gap 4) */
+export async function getOrderSummary(): Promise<OrderSummary> {
+  const { data } = await apiClient.get<ApiResponse<OrderSummary>>(
+    '/orders/office/order-summary'
+  );
+  return data.data!;
 }
 
 
@@ -1045,6 +1114,123 @@ export async function getPriceHistory(
   const { data } = await apiClient.get<ApiResponse<PriceHistoryResponse>>(
     `/orders/price-history/${partId}/${supplierId}`,
     { params: { limit } },
+  );
+  return data.data!;
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// Email Sending
+// ═══════════════════════════════════════════════════════════════
+
+/** Check email configuration status (no secrets exposed) */
+export async function getEmailConfig(): Promise<{
+  enabled: boolean;
+  configured: boolean;
+  smtp_host: string;
+  from_email: string;
+  from_name: string;
+}> {
+  const { data } = await apiClient.get<ApiResponse<{
+    enabled: boolean;
+    configured: boolean;
+    smtp_host: string;
+    from_email: string;
+    from_name: string;
+  }>>('/orders/email/config');
+  return data.data!;
+}
+
+/** Send a single PO via email (with optional PDF attachment) */
+export async function sendPOEmail(
+  poId: number,
+  body: {
+    to_email: string;
+    to_name?: string | null;
+    subject?: string | null;
+    body_text?: string | null;
+    cc?: string[] | null;
+    attach_pdf?: boolean;
+  },
+): Promise<{ message: string; to_email: string; subject: string; pdf_attached: boolean }> {
+  const { data } = await apiClient.post<ApiResponse<{
+    message: string; to_email: string; subject: string; pdf_attached: boolean;
+  }>>(`/orders/pos/${poId}/send-email`, body);
+  return data.data!;
+}
+
+/** Send a PO group bundle via email */
+export async function sendGroupEmail(
+  groupId: number,
+  body: {
+    to_email: string;
+    to_name?: string | null;
+    subject?: string | null;
+    body_text?: string | null;
+    cc?: string[] | null;
+  },
+): Promise<{ message: string; to_email: string; subject: string; pdf_attached: boolean }> {
+  const { data } = await apiClient.post<ApiResponse<{
+    message: string; to_email: string; subject: string; pdf_attached: boolean;
+  }>>(`/orders/pos/group/${groupId}/send-email`, body);
+  return data.data!;
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// Supplier Portal Tokens (Internal Management)
+// ═══════════════════════════════════════════════════════════════
+
+/** Create a new portal access token for a supplier */
+export async function createPortalToken(body: {
+  supplier_id: number;
+  expires_in_days?: number;
+  note?: string | null;
+}): Promise<{
+  id: number;
+  supplier_id: number;
+  supplier_name?: string | null;
+  token: string;
+  is_active: boolean;
+  expires_at: string | null;
+  last_used_at: string | null;
+  note: string | null;
+  created_by: number | null;
+  created_at: string | null;
+}> {
+  const { data } = await apiClient.post<ApiResponse<{
+    id: number; supplier_id: number; supplier_name?: string | null;
+    token: string; is_active: boolean; expires_at: string | null;
+    last_used_at: string | null; note: string | null;
+    created_by: number | null; created_at: string | null;
+  }>>('/supplier-portal/tokens', body);
+  return data.data!;
+}
+
+/** List portal tokens (optionally filter by supplier) */
+export async function listPortalTokens(
+  supplierId?: number,
+): Promise<{
+  id: number; supplier_id: number; supplier_name?: string | null;
+  token: string; is_active: boolean; expires_at: string | null;
+  last_used_at: string | null; note: string | null;
+  created_by: number | null; created_at: string | null;
+}[]> {
+  const { data } = await apiClient.get<ApiResponse<{
+    id: number; supplier_id: number; supplier_name?: string | null;
+    token: string; is_active: boolean; expires_at: string | null;
+    last_used_at: string | null; note: string | null;
+    created_by: number | null; created_at: string | null;
+  }[]>>('/supplier-portal/tokens', {
+    params: supplierId ? { supplier_id: supplierId } : undefined,
+  });
+  return data.data!;
+}
+
+/** Revoke a portal access token */
+export async function revokePortalToken(tokenId: number): Promise<{ id: number }> {
+  const { data } = await apiClient.delete<ApiResponse<{ id: number }>>(
+    `/supplier-portal/tokens/${tokenId}`,
   );
   return data.data!;
 }

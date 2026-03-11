@@ -18,6 +18,8 @@ import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
 import { toast } from '../../../lib/toast';
 import { useAuthStore } from '../../../stores/auth-store';
+import ReportPageToolbar from '../components/ReportPageToolbar';
+import ReportAnnotations from '../components/ReportAnnotations';
 import { getActiveJobs } from '../../../api/jobs';
 import {
   getPreBilling, getPreBillingAllJobs, generateExport, downloadBlob,
@@ -334,6 +336,19 @@ export function PreBillingPage() {
                   <Download className="h-4 w-4" />
                   <span className="hidden sm:inline">{exporting ? 'Exporting...' : 'Export CSV'}</span>
                 </button>
+                <ReportPageToolbar
+                  reportType="pre_billing"
+                  hidePrint
+                  currentConfig={{ job_id: jobId, start_date: startDate, end_date: endDate, cycle: cycleFilter }}
+                  onLoadTemplate={(cfg) => {
+                    if (cfg.job_id) setJobId(cfg.job_id as number);
+                    if (cfg.start_date) setStartDate(cfg.start_date as string);
+                    if (cfg.end_date) setEndDate(cfg.end_date as string);
+                    if (cfg.cycle) setCycleFilter(cfg.cycle as CycleFilter);
+                  }}
+                  shareContextParams={{ job_id: jobId, start_date: startDate, end_date: endDate }}
+                  shareLabel={data ? `Pre-Billing: ${data.job_name}` : undefined}
+                />
               </>
             )}
           </div>
@@ -752,6 +767,14 @@ export function PreBillingPage() {
                 )}
               </CollapsibleSection>
             </>
+          )}
+
+          {/* Annotations */}
+          {data && (
+            <ReportAnnotations
+              reportType="pre_billing"
+              contextKey={`job_${jobId}:${startDate}:${endDate}`}
+            />
           )}
         </>
       )}

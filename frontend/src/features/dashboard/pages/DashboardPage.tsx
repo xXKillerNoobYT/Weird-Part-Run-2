@@ -21,13 +21,15 @@ import {
   ArrowRightLeft,
   Loader2,
   Activity,
+  Truck,
 } from 'lucide-react';
 
 import { Card, CardHeader } from '../../../components/ui/Card';
 import { Badge } from '../../../components/ui/Badge';
 import { FastDriveCard } from '../components/FastDriveCard';
 import { DailyReportTab } from '../components/DailyReportTab';
-import { getDashboard, getCertAlerts } from '../../../api/dashboard';
+import { SchedulingWidget } from '../components/SchedulingWidget';
+import { getDashboard, getCertAlerts, getVehicleExpiryAlerts } from '../../../api/dashboard';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 
@@ -35,11 +37,11 @@ import { PERMISSIONS } from '../../../lib/constants';
 // ── Icon lookup for quick actions (backend sends icon name strings) ──
 
 const ICON_MAP: Record<string, React.ReactNode> = {
-  'briefcase':       <Briefcase className="h-5 w-5" />,
-  'shopping-cart':   <ShoppingCart className="h-5 w-5" />,
-  'search':          <Search className="h-5 w-5" />,
+  'briefcase': <Briefcase className="h-5 w-5" />,
+  'shopping-cart': <ShoppingCart className="h-5 w-5" />,
+  'search': <Search className="h-5 w-5" />,
   'arrow-right-left': <ArrowRightLeft className="h-5 w-5" />,
-  'package':         <Package className="h-5 w-5" />,
+  'package': <Package className="h-5 w-5" />,
 };
 
 
@@ -85,11 +87,10 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-        active
+      className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${active
           ? 'border-blue-500 text-blue-600 dark:text-blue-400'
           : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-      }`}
+        }`}
     >
       {icon}
       {label}
@@ -117,6 +118,15 @@ export function DashboardPage() {
     queryKey: ['cert-alerts'],
     queryFn: getCertAlerts,
     enabled: canViewPeople,
+    staleTime: 60_000,
+  });
+
+  const canViewFleet = hasPermission(PERMISSIONS.VIEW_TRUCKS);
+
+  const { data: vehicleAlerts = [] } = useQuery({
+    queryKey: ['vehicle-expiry-alerts'],
+    queryFn: () => getVehicleExpiryAlerts(60),
+    enabled: canViewFleet,
     staleTime: 60_000,
   });
 
@@ -194,6 +204,9 @@ export function DashboardPage() {
             ))}
           </div>
 
+          {/* ── Scheduling Widget ──────────────────────── */}
+          <SchedulingWidget />
+
           {/* ── Cert Expiry Alerts ────────────────────── */}
           {canViewPeople && certAlerts.length > 0 && (
             <Card>
@@ -229,6 +242,51 @@ export function DashboardPage() {
                 {certAlerts.length > 5 && (
                   <p className="text-xs text-center text-gray-400 dark:text-gray-500 pt-1">
                     +{certAlerts.length - 5} more
+                  </p>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {/* ── Vehicle Expiry Alerts ─────────────────── */}
+          {canViewFleet && vehicleAlerts.length > 0 && (
+            <Card>
+              <CardHeader
+                title="Vehicle Alerts"
+                subtitle={`${vehicleAlerts.length} vehicle${vehicleAlerts.length === 1 ? '' : 's'} with expiring documents`}
+              />
+              <div className="space-y-2">
+                {vehicleAlerts.slice(0, 6).map((alert, i) => (
+                  <button
+                    key={`${alert.vehicle_id}-${alert.alert_type}-${i}`}
+                    onClick={() => navigate(`/trucks/${alert.vehicle_id}`)}
+                    className="w-full flex items-center justify-between p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <Truck className="h-4 w-4 flex-shrink-0 text-gray-400" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                          {alert.vehicle_name}
+                          {alert.vehicle_number ? ` (${alert.vehicle_number})` : ''}
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                          {alert.alert_type === 'insurance' ? 'Insurance' : 'Registration'} · Expires {alert.expiry_date}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge
+                      variant={alert.days_until_expiry <= 0 ? 'danger' : alert.days_until_expiry <= 14 ? 'danger' : 'warning'}
+                      className="text-xs ml-2 flex-shrink-0"
+                    >
+                      {alert.days_until_expiry <= 0
+                        ? 'Expired'
+                        : `${alert.days_until_expiry}d`}
+                    </Badge>
+                  </button>
+                ))}
+                {vehicleAlerts.length > 6 && (
+                  <p className="text-xs text-center text-gray-400 dark:text-gray-500 pt-1">
+                    +{vehicleAlerts.length - 6} more
                   </p>
                 )}
               </div>

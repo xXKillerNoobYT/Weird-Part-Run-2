@@ -22,6 +22,7 @@ import {
   createSection,
   archiveNotebook,
   reorderSections,
+  reorderEntries,
   bulkUpdateTasks,
 } from '../../../api/notebooks';
 import { toast } from '../../../lib/toast';
@@ -122,6 +123,13 @@ export function NotebookDetailPage() {
     onError: () => toast.error('Failed to reorder sections'),
   });
 
+  const reorderEntriesMut = useMutation({
+    mutationFn: ({ sectionId, orderedIds }: { sectionId: number; orderedIds: number[] }) =>
+      reorderEntries(sectionId, orderedIds),
+    onSuccess: invalidate,
+    onError: () => toast.error('Failed to reorder entries'),
+  });
+
   const bulkTaskMut = useMutation({
     mutationFn: ({ entryIds, taskStatus, taskAssignedTo }: {
       entryIds: number[];
@@ -173,6 +181,10 @@ export function NotebookDetailPage() {
     if (targetIdx < 0 || targetIdx >= ids.length) return;
     [ids[idx], ids[targetIdx]] = [ids[targetIdx], ids[idx]];
     reorderMut.mutate(ids);
+  };
+
+  const handleEntryReorder = (sectionId: number, orderedIds: number[]) => {
+    reorderEntriesMut.mutate({ sectionId, orderedIds });
   };
 
   // ── Render ──────────────────────────────────────────────────────
@@ -251,6 +263,7 @@ export function NotebookDetailPage() {
               savingFieldId={savingFieldId}
               onMoveUp={idx > 0 ? () => handleSectionMove(section.id, 'up') : undefined}
               onMoveDown={idx < sections.length - 1 ? () => handleSectionMove(section.id, 'down') : undefined}
+              onEntryReorder={handleEntryReorder}
               isTaskSelected={bulkSelection.isSelected}
               onToggleTask={bulkSelection.toggle}
             />

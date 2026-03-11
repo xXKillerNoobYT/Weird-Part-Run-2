@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { Calendar, Edit2, Trash2, User, Package } from 'lucide-react';
 import { TaskStageSelector } from './TaskStageSelector';
 import { AttachmentPanel } from './AttachmentPanel';
+import { ToolLinksPanel } from './ToolLinksPanel';
 import type { EntryResponse, TaskStatus } from '../../../lib/types';
 
 interface TaskEntryCardProps {
@@ -144,6 +145,9 @@ export function TaskEntryCard({
           <p className="text-xs text-amber-700 dark:text-amber-300">{entry.task_parts_note}</p>
         </div>
       )}
+
+      {/* Linked tools (self-contained panel with search picker) */}
+      <ToolLinksPanel entryId={entry.id} canEdit={entry.can_edit} />
 
       {/* Footer — assigned user, due date, creator */}
       <div className="flex items-center gap-3 mt-2 pt-2 border-t border-border text-[11px]">

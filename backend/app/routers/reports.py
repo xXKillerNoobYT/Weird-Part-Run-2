@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import logging
+import secrets
+import zipfile
 from datetime import date, datetime, timedelta
 
 import aiosqlite
@@ -24,6 +27,7 @@ from app.models.reports import (
     BillingPeriodCreate,
     BookkeeperExportRequest,
     CompanyProfitabilityTotals,
+    ExportBundleRequest,
     ExportRequest,
     JobProfitability,
     LaborByBillRate,
@@ -37,6 +41,14 @@ from app.models.reports import (
     PreBillingPartItem,
     PreBillingSummary,
     ProfitabilityReport,
+    ReportAnnotationCreate,
+    ReportAnnotationResponse,
+    ReportAnnotationUpdate,
+    ReportShareTokenCreate,
+    ReportShareTokenResponse,
+    ReportTemplateCreate,
+    ReportTemplateResponse,
+    ReportTemplateUpdate,
     TimesheetDayGroup,
     TimesheetEntry,
     TimesheetReport,
@@ -1593,3 +1605,451 @@ def _format_location(loc_type: str | None, loc_id: int | None) -> str | None:
     }
     prefix = labels.get(loc_type, loc_type.title())
     return f"{prefix} #{loc_id}" if loc_id else prefix
+
+
+# ══════════════════════════════════════════════════════════════════
+# REPORT ANNOTATIONS
+# ══════════════════════════════════════════════════════════════════
+
+@router.get("/annotations")
+async def list_annotations(
+    report_type: str = Query(...),
+    context_key: str = Query(...),
+    db: aiosqlite.Connection = Depends(get_db),
+    _user: dict = Depends(require_permission("view_reports")),
+) -> ApiResponse[list[ReportAnnotationResponse]]:
+    """List all annotations for a specific report instance."""
+    rows = await db.execute_fetchall(
+        """
+        SELECT a.*, u.display_name AS author_name
+        FROM report_annotations a
+        JOIN users u ON u.id = a.author_id
+        WHERE a.report_type = ? AND a.context_key = ?
+        ORDER BY a.created_at ASC
+        """,
+        (report_type, context_key),
+    )
+    items = [
+        ReportAnnotationResponse(
+            id=r["id"],
+            report_type=r["report_type"],
+            context_key=r["context_key"],
+            content=r["content"],
+            author_id=r["author_id"],
+            author_name=r["author_name"] or "Unknown",
+            created_at=r["created_at"],
+            updated_at=r["updated_at"],
+        )
+        for r in rows
+    ]
+    return ApiResponse(data=items)
+
+
+@router.post("/annotations", status_code=201)
+async def create_annotation(
+    body: ReportAnnotationCreate,
+    db: aiosqlite.Connection = Depends(get_db),
+    user: dict = Depends(require_permission("view_reports")),
+) -> ApiResponse[ReportAnnotationResponse]:
+    """Add a note to a report."""
+    now = datetime.utcnow().isoformat()
+    cursor = await db.execute(
+        """
+        INSERT INTO report_annotations (report_type, context_key, content, author_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (body.report_type, body.context_key, body.content, user["user_id"], now, now),
+    )
+    await db.commit()
+    row_id = cursor.lastrowid
+    display_name = user.get("display_name", "Unknown")
+    return ApiResponse(
+        data=ReportAnnotationResponse(
+            id=row_id,
+            report_type=body.report_type,
+            context_key=body.context_key,
+            content=body.content,
+            author_id=user["user_id"],
+            author_name=display_name,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+
+@router.put("/annotations/{annotation_id}")
+async def update_annotation(
+    annotation_id: int,
+    body: ReportAnnotationUpdate,
+    db: aiosqlite.Connection = Depends(get_db),
+    user: dict = Depends(require_permission("view_reports")),
+) -> ApiResponse[ReportAnnotationResponse]:
+    """Edit an annotation (author-only)."""
+    row = await db.execute_fetchone(
+        "SELECT * FROM report_annotations WHERE id = ?", (annotation_id,)
+    )
+    if not row:
+        raise HTTPException(404, "Annotation not found")
+    if row["author_id"] != user["user_id"]:
+        raise HTTPException(403, "Only the author can edit this annotation")
+    now = datetime.utcnow().isoformat()
+    await db.execute(
+        "UPDATE report_annotations SET content = ?, updated_at = ? WHERE id = ?",
+        (body.content, now, annotation_id),
+    )
+    await db.commit()
+    return ApiResponse(
+        data=ReportAnnotationResponse(
+            id=annotation_id,
+            report_type=row["report_type"],
+            context_key=row["context_key"],
+            content=body.content,
+            author_id=row["author_id"],
+            author_name=user.get("display_name", "Unknown"),
+            created_at=row["created_at"],
+            updated_at=now,
+        )
+    )
+
+
+@router.delete("/annotations/{annotation_id}", status_code=204)
+async def delete_annotation(
+    annotation_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+    user: dict = Depends(require_permission("view_reports")),
+) -> None:
+    """Delete an annotation (author-only or admin)."""
+    row = await db.execute_fetchone(
+        "SELECT author_id FROM report_annotations WHERE id = ?", (annotation_id,)
+    )
+    if not row:
+        raise HTTPException(404, "Annotation not found")
+    is_admin = "admin" in (user.get("hats") or [])
+    if row["author_id"] != user["user_id"] and not is_admin:
+        raise HTTPException(403, "Only the author or an admin can delete this")
+    await db.execute("DELETE FROM report_annotations WHERE id = ?", (annotation_id,))
+    await db.commit()
+
+
+# ══════════════════════════════════════════════════════════════════
+# REPORT TEMPLATES
+# ══════════════════════════════════════════════════════════════════
+
+@router.get("/templates")
+async def list_templates(
+    report_type: str | None = Query(None),
+    db: aiosqlite.Connection = Depends(get_db),
+    _user: dict = Depends(require_permission("view_reports")),
+) -> ApiResponse[list[ReportTemplateResponse]]:
+    """List all saved report templates, optionally filtered by type."""
+    if report_type:
+        rows = await db.execute_fetchall(
+            "SELECT * FROM report_templates WHERE report_type = ? ORDER BY name",
+            (report_type,),
+        )
+    else:
+        rows = await db.execute_fetchall(
+            "SELECT * FROM report_templates ORDER BY report_type, name"
+        )
+    items = [
+        ReportTemplateResponse(
+            id=r["id"],
+            name=r["name"],
+            report_type=r["report_type"],
+            config_json=json.loads(r["config_json"]) if r["config_json"] else {},
+            created_by=r["created_by"],
+            created_at=r["created_at"],
+            updated_at=r["updated_at"],
+        )
+        for r in rows
+    ]
+    return ApiResponse(data=items)
+
+
+@router.post("/templates", status_code=201)
+async def create_template(
+    body: ReportTemplateCreate,
+    db: aiosqlite.Connection = Depends(get_db),
+    user: dict = Depends(require_permission("view_reports")),
+) -> ApiResponse[ReportTemplateResponse]:
+    """Save current filters as a named template."""
+    now = datetime.utcnow().isoformat()
+    cursor = await db.execute(
+        """
+        INSERT INTO report_templates (name, report_type, config_json, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (body.name, body.report_type, json.dumps(body.config_json), user["user_id"], now, now),
+    )
+    await db.commit()
+    return ApiResponse(
+        data=ReportTemplateResponse(
+            id=cursor.lastrowid,
+            name=body.name,
+            report_type=body.report_type,
+            config_json=body.config_json,
+            created_by=user["user_id"],
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+
+@router.put("/templates/{template_id}")
+async def update_template(
+    template_id: int,
+    body: ReportTemplateUpdate,
+    db: aiosqlite.Connection = Depends(get_db),
+    user: dict = Depends(require_permission("view_reports")),
+) -> ApiResponse[ReportTemplateResponse]:
+    """Update a template (creator-only)."""
+    row = await db.execute_fetchone(
+        "SELECT * FROM report_templates WHERE id = ?", (template_id,)
+    )
+    if not row:
+        raise HTTPException(404, "Template not found")
+    if row["created_by"] != user["user_id"]:
+        raise HTTPException(403, "Only the creator can edit this template")
+    now = datetime.utcnow().isoformat()
+    new_name = body.name or row["name"]
+    new_config = json.dumps(body.config_json) if body.config_json is not None else row["config_json"]
+    await db.execute(
+        "UPDATE report_templates SET name = ?, config_json = ?, updated_at = ? WHERE id = ?",
+        (new_name, new_config, now, template_id),
+    )
+    await db.commit()
+    return ApiResponse(
+        data=ReportTemplateResponse(
+            id=template_id,
+            name=new_name,
+            report_type=row["report_type"],
+            config_json=json.loads(new_config) if isinstance(new_config, str) else new_config,
+            created_by=row["created_by"],
+            created_at=row["created_at"],
+            updated_at=now,
+        )
+    )
+
+
+@router.delete("/templates/{template_id}", status_code=204)
+async def delete_template(
+    template_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+    user: dict = Depends(require_permission("view_reports")),
+) -> None:
+    """Delete a template (creator-only)."""
+    row = await db.execute_fetchone(
+        "SELECT created_by FROM report_templates WHERE id = ?", (template_id,)
+    )
+    if not row:
+        raise HTTPException(404, "Template not found")
+    if row["created_by"] != user["user_id"]:
+        raise HTTPException(403, "Only the creator can delete this template")
+    await db.execute("DELETE FROM report_templates WHERE id = ?", (template_id,))
+    await db.commit()
+
+
+# ══════════════════════════════════════════════════════════════════
+# REPORT SHARE TOKENS
+# ══════════════════════════════════════════════════════════════════
+
+@router.post("/share-tokens", status_code=201)
+async def create_share_token(
+    body: ReportShareTokenCreate,
+    db: aiosqlite.Connection = Depends(get_db),
+    user: dict = Depends(require_permission("view_reports")),
+) -> ApiResponse[ReportShareTokenResponse]:
+    """Generate a shareable link for a report."""
+    token = secrets.token_urlsafe(24)
+    now = datetime.utcnow().isoformat()
+    expires_at = None
+    if body.expires_in_days:
+        expires_at = (datetime.utcnow() + timedelta(days=body.expires_in_days)).isoformat()
+
+    cursor = await db.execute(
+        """
+        INSERT INTO report_share_tokens
+            (token, report_type, context_params, label, created_by, expires_at, is_active, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+        """,
+        (token, body.report_type, json.dumps(body.context_params), body.label,
+         user["user_id"], expires_at, now),
+    )
+    await db.commit()
+    return ApiResponse(
+        data=ReportShareTokenResponse(
+            id=cursor.lastrowid,
+            token=token,
+            report_type=body.report_type,
+            context_params=body.context_params,
+            label=body.label,
+            created_by=user["user_id"],
+            expires_at=expires_at,
+            is_active=True,
+            created_at=now,
+            share_url=f"/public/reports/{token}",
+        )
+    )
+
+
+@router.get("/share-tokens")
+async def list_share_tokens(
+    db: aiosqlite.Connection = Depends(get_db),
+    _user: dict = Depends(require_permission("view_reports")),
+) -> ApiResponse[list[ReportShareTokenResponse]]:
+    """List all active share tokens."""
+    rows = await db.execute_fetchall(
+        "SELECT * FROM report_share_tokens WHERE is_active = 1 ORDER BY created_at DESC"
+    )
+    items = [
+        ReportShareTokenResponse(
+            id=r["id"],
+            token=r["token"],
+            report_type=r["report_type"],
+            context_params=json.loads(r["context_params"]) if r["context_params"] else {},
+            label=r["label"],
+            created_by=r["created_by"],
+            expires_at=r["expires_at"],
+            last_accessed_at=r["last_accessed_at"],
+            is_active=bool(r["is_active"]),
+            created_at=r["created_at"],
+            share_url=f"/public/reports/{r['token']}",
+        )
+        for r in rows
+    ]
+    return ApiResponse(data=items)
+
+
+@router.delete("/share-tokens/{token_id}", status_code=204)
+async def revoke_share_token(
+    token_id: int,
+    db: aiosqlite.Connection = Depends(get_db),
+    _user: dict = Depends(require_permission("view_reports")),
+) -> None:
+    """Revoke a share token (deactivate without deleting)."""
+    result = await db.execute(
+        "UPDATE report_share_tokens SET is_active = 0 WHERE id = ?", (token_id,)
+    )
+    await db.commit()
+    if result.rowcount == 0:
+        raise HTTPException(404, "Share token not found")
+
+
+# ══════════════════════════════════════════════════════════════════
+# EXPORT BUNDLE (ZIP)
+# ══════════════════════════════════════════════════════════════════
+
+@router.post("/exports/bundle")
+async def generate_export_bundle(
+    body: ExportBundleRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+    _user: dict = Depends(require_permission("export_reports")),
+) -> StreamingResponse:
+    """Generate a ZIP bundle containing multiple CSV exports."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for idx, item in enumerate(body.exports):
+            csv_content = await _generate_csv_for_bundle(db, item)
+            import re as _re
+            safe_type = _re.sub(r'[^\w\-]', '-', item.report_type)
+            filename = f"{idx+1:02d}-{safe_type}"
+            if item.job_id:
+                filename += f"-job{item.job_id}"
+            filename += f"-{item.start_date}-to-{item.end_date}.csv"
+            zf.writestr(filename, csv_content)
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.read()]),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="report-bundle.zip"'},
+    )
+
+
+async def _generate_csv_for_bundle(
+    db: aiosqlite.Connection, item
+) -> str:
+    """Generate CSV content for a single export bundle item."""
+    output = io.StringIO()
+    writer = csv.writer(output)
+    rt = item.report_type.replace("-", "_")
+
+    if rt == "pre_billing":
+        writer.writerow(["Employee", "Date", "Regular Hours", "OT Hours", "Total Hours", "Bill Rate Type"])
+        rows = await db.execute_fetchall(
+            """
+            SELECT u.display_name, le.work_date, le.regular_hours, le.overtime_hours,
+                   (le.regular_hours + le.overtime_hours) AS total, brt.name AS rate_type
+            FROM labor_entries le
+            JOIN users u ON u.id = le.user_id
+            LEFT JOIN bill_rate_types brt ON brt.id = le.bill_rate_type_id
+            WHERE le.job_id = ? AND le.work_date BETWEEN ? AND ?
+            ORDER BY le.work_date, u.display_name
+            """,
+            (item.job_id, item.start_date, item.end_date),
+        )
+        for r in rows:
+            writer.writerow([r[0], r[1], r[2], r[3], r[4], r[5] or "Standard"])
+
+    elif rt == "timesheet":
+        writer.writerow(["Employee", "Date", "Clock In", "Clock Out", "Regular", "OT", "Total"])
+        params = [item.start_date, item.end_date]
+        emp_clause = ""
+        if item.employee_id:
+            emp_clause = "AND le.user_id = ?"
+            params.append(item.employee_id)
+        rows = await db.execute_fetchall(
+            f"""
+            SELECT u.display_name, le.work_date, le.clock_in, le.clock_out,
+                   le.regular_hours, le.overtime_hours, (le.regular_hours + le.overtime_hours)
+            FROM labor_entries le
+            JOIN users u ON u.id = le.user_id
+            WHERE le.work_date BETWEEN ? AND ? {emp_clause}
+            ORDER BY le.work_date, u.display_name
+            """,
+            params,
+        )
+        for r in rows:
+            writer.writerow(list(r))
+
+    elif rt == "labor_overview":
+        writer.writerow(["Employee", "Job", "Total Hours", "Regular", "OT", "Bill Rate Type"])
+        rows = await db.execute_fetchall(
+            """
+            SELECT u.display_name, j.name, SUM(le.regular_hours + le.overtime_hours),
+                   SUM(le.regular_hours), SUM(le.overtime_hours), brt.name
+            FROM labor_entries le
+            JOIN users u ON u.id = le.user_id
+            JOIN jobs j ON j.id = le.job_id
+            LEFT JOIN bill_rate_types brt ON brt.id = le.bill_rate_type_id
+            WHERE le.work_date BETWEEN ? AND ?
+            GROUP BY u.display_name, j.name, brt.name
+            ORDER BY u.display_name, j.name
+            """,
+            (item.start_date, item.end_date),
+        )
+        for r in rows:
+            writer.writerow(list(r))
+
+    elif rt == "profitability":
+        writer.writerow(["Job", "Total Hours", "Labor Cost", "Parts Cost", "Total Cost"])
+        rows = await db.execute_fetchall(
+            """
+            SELECT j.name,
+                   COALESCE(SUM(le.regular_hours + le.overtime_hours), 0) AS hours,
+                   0.0 AS labor_cost, 0.0 AS parts_cost, 0.0 AS total_cost
+            FROM jobs j
+            LEFT JOIN labor_entries le ON le.job_id = j.id AND le.work_date BETWEEN ? AND ?
+            WHERE j.status = 'active'
+            GROUP BY j.id
+            ORDER BY j.name
+            """,
+            (item.start_date, item.end_date),
+        )
+        for r in rows:
+            writer.writerow(list(r))
+
+    else:
+        writer.writerow(["Info"])
+        writer.writerow([f"Report type '{item.report_type}' — export not yet implemented"])
+
+    return output.getvalue()

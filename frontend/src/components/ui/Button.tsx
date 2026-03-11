@@ -21,6 +21,8 @@ const variants = {
     'bg-red-500 text-white hover:bg-red-600 active:bg-red-700 shadow-sm',
   success:
     'bg-green-600 text-white hover:bg-green-700 active:bg-green-800 shadow-sm',
+  warning:
+    'bg-amber-500 text-white hover:bg-amber-600 active:bg-amber-700 shadow-sm',
 };
 
 const sizes = {

@@ -1,7 +1,7 @@
 # Device Sync Management (V1.0.0 Detailed Plan + Implementation)
 
 > **Date:** 2026-03-07  
-> **Status:** Planned + Partially Implemented (backend core)  
+> **Status:** ✅ Complete (all V1 deliverables implemented)  
 > **Version target:** V1.0.0  
 > **Primary roadmap reference:** `docs/plans/phase-13-sync-bluetooth.md` (Phase 11 forward roadmap)  
 > **Scope here:** Deliver V1.0-compatible sync management foundation that honors mesh principles and device ownership rules.
@@ -220,10 +220,19 @@ for each media_blob:
 - Settings UI for device sync profile management.
 - Device admin dashboard card for mesh relay health.
 
-### Step C (phase 11)
-- Real device-to-device transport over Bluetooth.
+### Step C (V1 — pulled forward from phase 11)
+- Real peer-to-peer relay transport with manifests, packages, delivery receipts, and purge lifecycle.
+- Relay manifest upsert/list (devices advertise what undelivered data they carry).
+- Relay package audit trail (sender→receiver→origin, status lifecycle: created→transferred→confirmed/failed).
+- Delivery receipt flow: shop issues receipt → origin acknowledges → safe to purge.
+- Relayed data delivery endpoint reuses existing `apply_device_changes()` for LWW conflict resolution.
+- Relay stats aggregate dashboard (events by type, packages by status, receipt pending/ack counts, active manifests).
+- Capacitor local relay service: relay queue, manifest refresh, package prep/acceptance, SHA-256 hash dedup.
+
+### Still future (phase 11)
+- Real device-to-device transport over Bluetooth (physical transport layer).
 - Shop-cluster replication protocol and conflict replay.
-- Media relay receipts and purge confirmations.
+- Gossip protocol mesh networking.
 
 ---
 
@@ -233,18 +242,23 @@ for each media_blob:
 - [x] Mesh relay events auditable via API.
 - [x] Initial sync supports active-jobs-only scope.
 - [x] Tests added for new behavior.
-- [ ] UI for profile management.
-- [ ] Real peer-to-peer relay transport and receipts.
+- [x] UI for profile management — DeviceSyncProfilesCard with expandable per-device profile editor (storage_policy, media_policy, retention, toggles).
+- [x] Real peer-to-peer relay transport and receipts — migration 044, 10 new API endpoints, local relay service, MeshRelayHealthCard with 5-tab dashboard (overview, events, manifests, packages, receipts). 10 tests in `test_relay_transport.py`.
 
 ---
 
 ## 13) File reference index
 
 ### Implemented code
-- `backend/app/migrations/041_device_sync_management.sql`
-- `backend/app/services/sync_service.py`
-- `backend/app/routers/sync.py`
-- `backend/tests/test_sync_device_management.py`
+- `backend/app/migrations/041_device_sync_management.sql` — sync profiles + mesh relay events tables
+- `backend/app/migrations/044_relay_transport.sql` — relay manifests, delivery receipts, relay packages tables
+- `backend/app/services/sync_service.py` — all sync/relay service methods
+- `backend/app/routers/sync.py` — all sync/relay API endpoints
+- `backend/tests/test_sync_device_management.py` — profile + relay event tests
+- `backend/tests/test_relay_transport.py` — 10 tests: manifests, packages, delivery receipts, relay delivery, stats
+- `frontend/src/api/sync.ts` — API client: profiles, relay manifests, packages, receipts, stats
+- `frontend/src/local/services/relay-service.ts` — Capacitor relay queue, manifest, package prep/acceptance
+- `frontend/src/features/settings/pages/SyncPage.tsx` — DeviceSyncProfilesCard + MeshRelayHealthCard (5-tab dashboard)
 
 ### Related docs
 - `docs/plans/phase-13-sync-bluetooth.md`

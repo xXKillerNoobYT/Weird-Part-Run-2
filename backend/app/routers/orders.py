@@ -68,6 +68,12 @@ from app.models.orders import (
     ReturnSortingRequest,
     ReturnStatusUpdateBody,
     ReturnUpdate,
+    # Email sending models
+    SendPOEmailRequest,
+    SendGroupEmailRequest,
+    # Supplier portal models
+    SupplierPortalTokenCreate,
+    SupplierPortalAcknowledge,
     SpecialItemCreate,
     SpecialItemPlaceInCatalog,
     SpecialItemResolve,
@@ -740,6 +746,87 @@ async def get_po_clipboard_text(
 
 
 # ═══════════════════════════════════════════════════════════════
+# Email Sending (PO delivery to suppliers)
+# ═══════════════════════════════════════════════════════════════
+
+
+@router.get("/email/config", response_model=ApiResponse)
+async def get_email_config(
+    user: dict = Depends(require_permission("manage_orders")),
+):
+    """Check email configuration status. Returns config state (no passwords)."""
+    from app.services.email_service import EmailService
+    return ApiResponse(data=EmailService.get_config_status())
+
+
+@router.post("/pos/{po_id}/send-email", response_model=ApiResponse)
+async def send_po_email(
+    po_id: int,
+    body: SendPOEmailRequest,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Send a PO to a supplier via email with optional PDF attachment.
+
+    If body.subject or body.body_text are not provided, they're auto-generated
+    from the PO data. The to_email is required — the system won't guess.
+    """
+    from app.services.email_service import EmailService
+    svc = EmailService(db)
+    result = await svc.send_po_email(
+        po_id=po_id,
+        to_email=body.to_email,
+        to_name=body.to_name,
+        subject=body.subject,
+        body_text=body.body_text,
+        cc=body.cc,
+        attach_pdf=body.attach_pdf,
+    )
+
+    if not result["success"]:
+        raise HTTPException(400, result["message"])
+
+    # Log as conversation entry (email_summary type)
+    conv_svc = POConversationService(db)
+    await conv_svc.add_entry(
+        po_id=po_id,
+        entry_type="email_summary",
+        message=f"PO emailed to {body.to_email}" + (f" (cc: {', '.join(body.cc)})" if body.cc else ""),
+        user_id=user["id"],
+    )
+
+    return ApiResponse(data=result, message=result["message"])
+
+
+@router.post("/pos/group/{group_id}/send-email", response_model=ApiResponse)
+async def send_group_email(
+    group_id: int,
+    body: SendGroupEmailRequest,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Send a bundled PO group to a supplier via email.
+
+    Generates a combined PDF and attaches it to the email.
+    """
+    from app.services.email_service import EmailService
+    svc = EmailService(db)
+    result = await svc.send_group_email(
+        group_id=group_id,
+        to_email=body.to_email,
+        to_name=body.to_name,
+        subject=body.subject,
+        body_text=body.body_text,
+        cc=body.cc,
+    )
+
+    if not result["success"]:
+        raise HTTPException(400, result["message"])
+
+    return ApiResponse(data=result, message=result["message"])
+
+
+# ═══════════════════════════════════════════════════════════════
 # PO Conversation Threads (Phase 7B)
 # ═══════════════════════════════════════════════════════════════
 
@@ -912,6 +999,41 @@ async def list_po_groups_for_supplier(
     return ApiResponse(data=groups)
 
 
+@router.post("/pos/group/{group_id}/pdf", response_model=ApiResponse)
+async def generate_group_pdf(
+    group_id: int,
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Generate a bundled PDF for a PO group.
+
+    Creates a combined PDF with a cover sheet and individual PO sections.
+    Also generates separate PDFs for each PO in the group.
+    Returns the bundled PDF path plus individual PDF paths.
+    """
+    svc = PDFService(db)
+    result = await svc.generate_group_pdf(group_id)
+    if not result:
+        raise HTTPException(404, "PO group not found or has no POs")
+
+    return ApiResponse(data=result, message=f"Bundled PDF generated for {result['po_count']} POs.")
+
+
+@router.get("/pos/group/{group_id}/clipboard", response_model=ApiResponse)
+async def get_group_clipboard_text(
+    group_id: int,
+    user: dict = Depends(require_permission("view_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get combined clipboard text for all POs in a group."""
+    svc = PDFService(db)
+    text = await svc.get_group_clipboard_text(group_id)
+    if not text:
+        raise HTTPException(404, "PO group not found or has no POs")
+
+    return ApiResponse(data={"text": text})
+
+
 # ═══════════════════════════════════════════════════════════════
 # Office Approvals Queue (Phase 7B)
 # ═══════════════════════════════════════════════════════════════
@@ -1035,6 +1157,21 @@ async def bulk_approve_or_reject(
         msg += f", {failed} failed"
 
     return ApiResponse(data={"results": results}, message=msg)
+
+
+@router.get("/office/order-summary", response_model=ApiResponse)
+async def get_order_summary(
+    user: dict = Depends(require_permission("manage_orders")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Cross-job aggregate summary of approved JPO lines that still need ordering.
+
+    Groups by part and returns total qty needed, number of distinct jobs,
+    job names, and suggested supplier.  Phase 17 Gap 4.
+    """
+    svc = OrdersService(db)
+    summary = await svc.get_order_summary()
+    return ApiResponse(data=summary)
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -7,6 +7,7 @@ import type {
   ApiResponse,
   StatusMessage,
   ThemeSettings,
+  PDFSettings,
   CompanyProfile,
   CompanyProfileCreate,
   CompanyProfileUpdate,
@@ -122,6 +123,48 @@ export async function updateCompanyProfile(
 export async function deleteCompanyProfile(id: number): Promise<StatusMessage> {
   const { data } = await apiClient.delete<ApiResponse<StatusMessage>>(
     `/settings/company-profiles/${id}`,
+  );
+  return data.data!;
+}
+
+
+// ── PDF Settings ────────────────────────────────────────────
+
+/** Get PDF template/document settings (accent color, columns, footer, etc.). */
+export async function getPDFSettings(): Promise<PDFSettings> {
+  const { data } = await apiClient.get<ApiResponse<PDFSettings>>(
+    '/settings/pdf',
+  );
+  return data.data!;
+}
+
+/** Update PDF template/document settings. */
+export async function updatePDFSettings(
+  settings: PDFSettings,
+): Promise<PDFSettings> {
+  const { data } = await apiClient.put<ApiResponse<PDFSettings>>(
+    '/settings/pdf',
+    settings,
+  );
+  return data.data!;
+}
+
+
+// ── Company Logo Upload ─────────────────────────────────────
+
+/** Upload or replace the primary company logo. Returns the new logo path. */
+export async function uploadCompanyLogo(
+  file: File,
+): Promise<{ logo_path: string; filename: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const { data } = await apiClient.post<
+    ApiResponse<{ logo_path: string; filename: string }>
+  >(
+    '/settings/company-logo',
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
   );
   return data.data!;
 }

@@ -373,3 +373,155 @@ export async function generateBookkeeperExport(params: {
   });
   return data;
 }
+
+
+// ── Report Annotations ────────────────────────────────────────────
+
+export interface ReportAnnotation {
+  id: number;
+  report_type: string;
+  context_key: string;
+  content: string;
+  author_id: number;
+  author_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getAnnotations(reportType: string, contextKey: string): Promise<ReportAnnotation[]> {
+  const { data } = await apiClient.get<ApiResponse<ReportAnnotation[]>>('/reports/annotations', {
+    params: { report_type: reportType, context_key: contextKey },
+  });
+  return data.data!;
+}
+
+export async function createAnnotation(body: {
+  report_type: string;
+  context_key: string;
+  content: string;
+}): Promise<ReportAnnotation> {
+  const { data } = await apiClient.post<ApiResponse<ReportAnnotation>>('/reports/annotations', body);
+  return data.data!;
+}
+
+export async function updateAnnotation(id: number, content: string): Promise<ReportAnnotation> {
+  const { data } = await apiClient.put<ApiResponse<ReportAnnotation>>(`/reports/annotations/${id}`, { content });
+  return data.data!;
+}
+
+export async function deleteAnnotation(id: number): Promise<void> {
+  await apiClient.delete(`/reports/annotations/${id}`);
+}
+
+
+// ── Report Templates ──────────────────────────────────────────────
+
+export interface ReportTemplate {
+  id: number;
+  name: string;
+  report_type: string;
+  config_json: Record<string, unknown>;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getTemplates(reportType?: string): Promise<ReportTemplate[]> {
+  const { data } = await apiClient.get<ApiResponse<ReportTemplate[]>>('/reports/templates', {
+    params: reportType ? { report_type: reportType } : {},
+  });
+  return data.data!;
+}
+
+export async function createTemplate(body: {
+  name: string;
+  report_type: string;
+  config_json: Record<string, unknown>;
+}): Promise<ReportTemplate> {
+  const { data } = await apiClient.post<ApiResponse<ReportTemplate>>('/reports/templates', body);
+  return data.data!;
+}
+
+export async function updateTemplate(id: number, body: {
+  name?: string;
+  config_json?: Record<string, unknown>;
+}): Promise<ReportTemplate> {
+  const { data } = await apiClient.put<ApiResponse<ReportTemplate>>(`/reports/templates/${id}`, body);
+  return data.data!;
+}
+
+export async function deleteTemplate(id: number): Promise<void> {
+  await apiClient.delete(`/reports/templates/${id}`);
+}
+
+
+// ── Report Share Tokens ───────────────────────────────────────────
+
+export interface ReportShareToken {
+  id: number;
+  token: string;
+  report_type: string;
+  context_params: Record<string, unknown>;
+  label: string | null;
+  created_by: number;
+  expires_at: string | null;
+  last_accessed_at: string | null;
+  is_active: boolean;
+  created_at: string;
+  share_url: string;
+}
+
+export async function createShareToken(body: {
+  report_type: string;
+  context_params: Record<string, unknown>;
+  label?: string;
+  expires_in_days?: number;
+}): Promise<ReportShareToken> {
+  const { data } = await apiClient.post<ApiResponse<ReportShareToken>>('/reports/share-tokens', body);
+  return data.data!;
+}
+
+export async function getShareTokens(): Promise<ReportShareToken[]> {
+  const { data } = await apiClient.get<ApiResponse<ReportShareToken[]>>('/reports/share-tokens');
+  return data.data!;
+}
+
+export async function revokeShareToken(id: number): Promise<void> {
+  await apiClient.delete(`/reports/share-tokens/${id}`);
+}
+
+
+// ── Export Bundle ─────────────────────────────────────────────────
+
+export interface ExportBundleItem {
+  report_type: string;
+  format?: string;
+  job_id?: number;
+  employee_id?: number;
+  start_date: string;
+  end_date: string;
+}
+
+export async function generateExportBundle(exports: ExportBundleItem[]): Promise<Blob> {
+  const { data } = await apiClient.post('/reports/exports/bundle', { exports }, {
+    responseType: 'blob',
+  });
+  return data;
+}
+
+
+// ── Public Report ─────────────────────────────────────────────────
+
+export interface PublicReportData {
+  report_type: string;
+  label: string | null;
+  generated_at: string;
+  context_params: Record<string, unknown>;
+  data: Record<string, unknown>;
+  annotations: ReportAnnotation[];
+}
+
+export async function getPublicReport(token: string): Promise<PublicReportData> {
+  const { data } = await apiClient.get<ApiResponse<PublicReportData>>(`/public/reports/${token}`);
+  return data.data!;
+}

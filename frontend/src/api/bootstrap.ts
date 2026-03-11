@@ -7,7 +7,10 @@ import apiClient from './client';
 import type { ApiResponse } from '../lib/types';
 
 export type BootstrapPlatform = 'ios' | 'android' | 'windows' | 'macos';
-export type InstallStatus = 'requested' | 'downloaded' | 'installed' | 'failed';
+export type InstallStatus =
+  | 'requested' | 'downloading' | 'downloaded'
+  | 'verifying' | 'verified' | 'installing'
+  | 'installed' | 'failed';
 
 export interface PairingCodeRecord {
   code: string;
@@ -62,6 +65,12 @@ export interface BootstrapInstallEvent {
   error_message: string | null;
   metadata_json: string | null;
   metadata: Record<string, any>;
+  progress_pct: number;
+  bytes_downloaded: number;
+  bytes_total: number;
+  checksum_computed: string | null;
+  checksum_verified: number;
+  signature_verified: number | null;
   created_at: string;
 }
 
@@ -73,6 +82,26 @@ export interface BootstrapInstallEventPayload {
   status: InstallStatus;
   error_message?: string;
   metadata?: Record<string, any>;
+  progress_pct?: number;
+  bytes_downloaded?: number;
+  bytes_total?: number;
+  checksum_computed?: string;
+  checksum_verified?: boolean;
+  signature_verified?: boolean | null;
+}
+
+export interface ArtifactVerifyPayload {
+  artifact_id: number;
+  client_checksum_sha256: string;
+}
+
+export interface ArtifactVerifyResult {
+  valid: boolean;
+  checksum_match: boolean;
+  signature_valid: boolean | null;
+  artifact_id: number;
+  version: string | null;
+  detail: string;
 }
 
 export interface BootstrapHandshakePayload {
@@ -132,4 +161,31 @@ export async function listBootstrapInstallEvents(deviceId?: string, limit = 100)
     params: { device_id: deviceId || undefined, limit },
   });
   return data.data ?? [];
+}
+
+// ── Artifact Verification & Active Lookup ───────────────────────
+
+/** Get the currently active artifact for a given platform (no auth required). */
+export async function getActiveArtifact(platform: BootstrapPlatform): Promise<BootstrapArtifact> {
+  const { data } = await apiClient.get<ApiResponse<BootstrapArtifact>>(
+    `/bootstrap/artifacts/active/${platform}`,
+  );
+  return data.data as BootstrapArtifact;
+}
+
+/** Verify a downloaded artifact's checksum against the server record (no auth required). */
+export async function verifyArtifact(payload: ArtifactVerifyPayload): Promise<ArtifactVerifyResult> {
+  const { data } = await apiClient.post<ApiResponse<ArtifactVerifyResult>>(
+    '/bootstrap/artifacts/verify',
+    payload,
+  );
+  return data.data as ArtifactVerifyResult;
+}
+
+/** Sign an artifact with the shop's Ed25519 key (admin only). */
+export async function signArtifact(artifactId: number): Promise<BootstrapArtifact> {
+  const { data } = await apiClient.post<ApiResponse<BootstrapArtifact>>(
+    `/bootstrap/artifacts/${artifactId}/sign`,
+  );
+  return data.data as BootstrapArtifact;
 }

@@ -28,6 +28,20 @@ class ThemeSettings(BaseModel):
     font_family: str = "Inter"
 
 
+class PDFSettings(BaseModel):
+    """PDF template configuration — maps to settings with category='pdf'.
+
+    Controls the formatting and display preferences for PO PDF generation.
+    Company info (name, address, logo) comes from company_profiles, not here.
+    """
+    accent_color: str = "#3B82F6"         # Hex color for header accent bar
+    show_unit_prices: bool = True         # Show unit price column in line items
+    show_extended: bool = True            # Show extended/total column in line items
+    footer_text: str = ""                 # Custom footer text (e.g. "Thank you for your business!")
+    payment_terms: str = "Net 30"         # Default payment terms
+    delivery_notes: str = ""              # Default delivery instructions
+
+
 class SettingsBulkUpdate(BaseModel):
     """Bulk update multiple settings at once."""
     settings: dict[str, str] = Field(default_factory=dict)  # key → JSON value

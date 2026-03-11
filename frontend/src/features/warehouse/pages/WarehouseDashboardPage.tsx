@@ -2,23 +2,14 @@
  * WarehouseDashboardPage — warehouse overview and status at a glance.
  *
  * Shows KPI cards, quick action buttons, recent activity feed,
- * and pending tasks (staged items, audits, spot-checks).
+ * pending tasks (staged items, audits, spot-checks), audit health,
+ * tools registry summary, and trailer status.
  *
  * The FAB (floating action button) opens the movement wizard
  * and is visible on all warehouse pages for users with permission.
  *
- * ── DEV NOTE: Tools at Warehouse ──────────────────────────────
- * The Warehouse Dashboard should include a "Tools" section/panel that:
- *  1. Shows all tools currently stored at the warehouse
- *  2. Provides the ability to add NEW tools to the system (tool registration)
- *  3. Shows a summary of where all company tools currently are
- *     (which trucks have which tools, which jobs, which are at warehouse)
- *  4. Acts as the "master tools registry" — the primary place to manage
- *     the full tool inventory across the entire company
- *
- * The Trucks > Tools tab manages tools assigned per-truck.
- * The Jobs dashboard should show tools checked out to that job.
- * But the Warehouse Dashboard is the global view / tool admin center.
+ * Tools: ToolsSummaryCard pulls live stats from getToolsDashboard.
+ * Full tool CRUD/registry lives in ToolsPage (/warehouse/tools).
  */
 
 import { useQuery } from '@tanstack/react-query';
@@ -208,11 +199,11 @@ function ToolsSummaryCard() {
 
   const items = stats
     ? [
-        { label: 'At Warehouse', value: stats.available ?? 0, icon: <CheckCircle size={14} />, color: 'text-green-500' },
-        { label: 'Checked Out', value: stats.checked_out ?? 0, icon: <Truck size={14} />, color: 'text-blue-500' },
-        { label: 'Maintenance', value: stats.in_maintenance ?? 0, icon: <Wrench size={14} />, color: 'text-amber-500' },
-        { label: 'Lost/Damaged', value: stats.lost_or_damaged ?? 0, icon: <AlertTriangle size={14} />, color: (stats.lost_or_damaged ?? 0) > 0 ? 'text-red-500' : 'text-gray-400 dark:text-gray-500' },
-      ]
+      { label: 'At Warehouse', value: stats.available ?? 0, icon: <CheckCircle size={14} />, color: 'text-green-500' },
+      { label: 'Checked Out', value: stats.checked_out ?? 0, icon: <Truck size={14} />, color: 'text-blue-500' },
+      { label: 'Maintenance', value: stats.in_maintenance ?? 0, icon: <Wrench size={14} />, color: 'text-amber-500' },
+      { label: 'Lost/Damaged', value: stats.lost_or_damaged ?? 0, icon: <AlertTriangle size={14} />, color: (stats.lost_or_damaged ?? 0) > 0 ? 'text-red-500' : 'text-gray-400 dark:text-gray-500' },
+    ]
     : [];
 
   return (

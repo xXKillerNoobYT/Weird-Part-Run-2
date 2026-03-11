@@ -18,7 +18,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Trash2, Star, ChevronDown, ChevronRight,
   GripVertical, FileText, ListTodo, Info, BookOpen,
-  Pencil, Check, X,
+  Pencil, Check, X, Copy,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -249,8 +249,8 @@ export function JobNotebookTemplatePage() {
               key={t.id}
               onClick={() => setSelectedId(t.id)}
               className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors ${selectedId === t.id
-                  ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
-                  : 'hover:bg-surface-secondary text-gray-700 dark:text-gray-300'
+                ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                : 'hover:bg-surface-secondary text-gray-700 dark:text-gray-300'
                 }`}
             >
               <div className="flex items-center gap-2">
@@ -536,8 +536,8 @@ export function JobNotebookTemplatePage() {
                         type="button"
                         onClick={() => setNewSectionType(st)}
                         className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border transition-colors ${newSectionType === st
-                            ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600 text-blue-700 dark:text-blue-300'
-                            : 'border-border text-gray-500 hover:text-gray-700'
+                          ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-600 text-blue-700 dark:text-blue-300'
+                          : 'border-border text-gray-500 hover:text-gray-700'
                           }`}
                       >
                         <StIcon className="h-3.5 w-3.5" />
@@ -752,8 +752,8 @@ function TemplateSectionCard({
                     key={et}
                     onClick={() => entryForm.setType(et)}
                     className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md border transition-colors ${entryForm.type === et
-                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-600 text-blue-700 dark:text-blue-300'
-                        : 'border-border text-gray-500 hover:text-gray-700'
+                      ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-600 text-blue-700 dark:text-blue-300'
+                      : 'border-border text-gray-500 hover:text-gray-700'
                       }`}
                   >
                     <EntryTypeIcon entryType={et} />
