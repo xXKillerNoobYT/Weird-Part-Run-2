@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "cap:ios": "cap sync ios && cap open ios",
-    "cap:build": "npm run build && cap sync ios"
+    "cap:build": "npm run build && cap sync ios",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@capacitor-community/sqlite": "^6.0.0",
@@ -48,6 +49,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
+    "patch-package": "^8.0.1",
     "tailwindcss": "^4.2.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.48.0",
