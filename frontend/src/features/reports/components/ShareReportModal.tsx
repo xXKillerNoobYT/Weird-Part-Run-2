@@ -9,6 +9,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { X } from 'lucide-react';
 import {
   createShareToken,
   getShareTokens,
@@ -87,9 +88,9 @@ export default function ShareReportModal({
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Share Report</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-xl"
+            className="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
           >
-            ✕
+            <X className="h-5 w-5" />
           </button>
         </div>
 

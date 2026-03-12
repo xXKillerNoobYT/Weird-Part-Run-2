@@ -24,6 +24,7 @@ import {
     Eye,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
@@ -77,13 +78,13 @@ export function InspectionsPage() {
         queryFn: () => listInspectionTemplates(),
     });
 
-    const { data: pendingRecords, isLoading: loadingPending } = useQuery({
+    const { data: pendingRecords, isLoading: loadingPending, isError: pendingError, refetch: refetchPending } = useQuery({
         queryKey: ['inspections-pending'],
         queryFn: getPendingInspections,
         enabled: subView === 'active',
     });
 
-    const { data: failedRecords, isLoading: loadingFailed } = useQuery({
+    const { data: failedRecords, isLoading: loadingFailed, isError: failedError, refetch: refetchFailed } = useQuery({
         queryKey: ['inspections-failed'],
         queryFn: getFailedInspections,
         enabled: subView === 'active',
@@ -148,8 +149,8 @@ export function InspectionsPage() {
         <button
             onClick={() => setSubView(value)}
             className={`px-3 py-1.5 text-sm rounded-lg transition-colors min-h-[36px] flex items-center gap-1.5 ${subView === value
-                    ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-medium'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+                ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-medium'
+                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
                 }`}
         >
             <Icon className="h-4 w-4" />
@@ -197,7 +198,9 @@ export function InspectionsPage() {
                 <div className="space-y-4">
                     {/* Pending */}
                     <Section title="Pending Inspections" icon={Clock} loading={loadingPending}>
-                        {pendingRecords && pendingRecords.length > 0 ? (
+                        {pendingError ? (
+                            <ErrorFallback compact onRetry={refetchPending} />
+                        ) : pendingRecords && pendingRecords.length > 0 ? (
                             <InspectionTable
                                 records={pendingRecords}
                                 onView={(r) => setActiveRecord(r)}
@@ -211,7 +214,9 @@ export function InspectionsPage() {
                     {/* Failed */}
                     {canManage && (
                         <Section title="Failed / Needs Attention" icon={AlertTriangle} loading={loadingFailed}>
-                            {failedRecords && failedRecords.length > 0 ? (
+                            {failedError ? (
+                                <ErrorFallback compact onRetry={refetchFailed} />
+                            ) : failedRecords && failedRecords.length > 0 ? (
                                 <InspectionTable
                                     records={failedRecords}
                                     onView={(r) => setActiveRecord(r)}

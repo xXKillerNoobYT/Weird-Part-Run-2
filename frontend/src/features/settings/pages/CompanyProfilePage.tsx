@@ -16,6 +16,7 @@ import {
   deleteCompanyProfile,
 } from '../../../api/settings';
 import { EmptyState } from '../../../components/ui/EmptyState';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import type { CompanyProfile, CompanyProfileCreate, CompanyProfileUpdate } from '../../../lib/types';
 
 export function CompanyProfilePage() {
@@ -23,7 +24,7 @@ export function CompanyProfilePage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showAdd, setShowAdd] = useState(false);
 
-  const { data: profiles = [], isLoading } = useQuery({
+  const { data: profiles = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['company-profiles'],
     queryFn: listCompanyProfiles,
   });
@@ -82,7 +83,9 @@ export function CompanyProfilePage() {
       )}
 
       {/* Profiles list */}
-      {isLoading ? (
+      {isError ? (
+        <ErrorFallback onRetry={refetch} />
+      ) : isLoading ? (
         <div className="flex justify-center py-12">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
         </div>

@@ -13,13 +13,14 @@ import { Check } from 'lucide-react';
 import { Card, CardHeader } from '../../../components/ui/Card';
 import { Input } from '../../../components/ui/Input';
 import { Button } from '../../../components/ui/Button';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { getWarrantyLengthDays, updateWarrantyLengthDays } from '../../../api/settings';
 
 export function AppConfigPage() {
   const queryClient = useQueryClient();
 
   // ── Warranty Settings ──────────────────────────────────────────
-  const { data: warrantyDays, isLoading } = useQuery({
+  const { data: warrantyDays, isLoading, isError, refetch } = useQuery({
     queryKey: ['warranty-length-days'],
     queryFn: getWarrantyLengthDays,
     staleTime: 30_000,
@@ -42,6 +43,8 @@ export function AppConfigPage() {
   });
 
   const hasChanges = warrantyDays != null && localDays !== warrantyDays;
+
+  if (isError) return <ErrorFallback onRetry={refetch} />;
 
   return (
     <div className="space-y-6">
@@ -97,11 +100,10 @@ export function AppConfigPage() {
                 key={preset.value}
                 type="button"
                 onClick={() => setLocalDays(preset.value)}
-                className={`px-2 py-1 rounded border text-xs transition-colors ${
-                  localDays === preset.value
+                className={`px-2 py-1 rounded border text-xs transition-colors ${localDays === preset.value
                     ? 'border-sky-300 bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300'
                     : 'border-border bg-surface hover:bg-surface-secondary'
-                }`}
+                  }`}
               >
                 {preset.label}
               </button>

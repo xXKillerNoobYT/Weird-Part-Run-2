@@ -208,9 +208,9 @@ export function NotebookDetailPage() {
       <div className="flex items-center gap-3">
         <button
           onClick={() => navigate(-1)}
-          className="p-1.5 rounded-lg hover:bg-surface-secondary transition-colors"
+          className="p-2 rounded-lg hover:bg-surface-secondary transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
         >
-          <ArrowLeft className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+          <ArrowLeft className="h-5 w-5 text-gray-500 dark:text-gray-400" />
         </button>
         <div className="flex-1 min-w-0">
           <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100 truncate">
@@ -225,7 +225,7 @@ export function NotebookDetailPage() {
         <div className="flex items-center gap-1.5">
           <button
             onClick={() => setShowAddSection(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors min-h-[44px]"
           >
             <FolderPlus className="h-4 w-4" />
             <span className="hidden sm:inline">Add Section</span>
@@ -233,7 +233,7 @@ export function NotebookDetailPage() {
           <button
             onClick={handleArchive}
             disabled={archiveMut.isPending}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors min-h-[44px]"
             title="Archive notebook"
           >
             <Archive className="h-4 w-4" />

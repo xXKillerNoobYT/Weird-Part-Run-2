@@ -22,6 +22,7 @@ import { Badge } from '../../../components/ui/Badge';
 import { Input } from '../../../components/ui/Input';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { PageSpinner } from '../../../components/ui/Spinner';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import { toast } from '../../../lib/toast';
@@ -57,7 +58,7 @@ export function TeamsPage() {
   const [search, setSearch] = useState('');
 
   // ── Queries ────────────────────────────────────────────────────
-  const { data: teams, isLoading } = useQuery({
+  const { data: teams, isLoading, isError, refetch } = useQuery({
     queryKey: ['teams'],
     queryFn: () => getTeams(false), // show all, including inactive
   });
@@ -148,6 +149,7 @@ export function TeamsPage() {
 
   // ── Loading ────────────────────────────────────────────────────
   if (isLoading) return <PageSpinner label="Loading teams..." />;
+  if (isError) return <ErrorFallback onRetry={refetch} />;
 
   return (
     <>
@@ -275,9 +277,8 @@ function TeamCard({
   onToggleRole: (userId: number, currentRole: string) => void;
 }) {
   return (
-    <Card className={`overflow-hidden transition-shadow ${
-      !team.is_active ? 'opacity-60' : ''
-    }`}>
+    <Card className={`overflow-hidden transition-shadow ${!team.is_active ? 'opacity-60' : ''
+      }`}>
       {/* Header Row */}
       <button
         onClick={onToggle}
@@ -392,11 +393,10 @@ function MemberRow({
           )}
         </div>
         <div className="min-w-0">
-          <p className={`text-sm font-medium truncate ${
-            member.user_is_active
+          <p className={`text-sm font-medium truncate ${member.user_is_active
               ? 'text-gray-900 dark:text-gray-100'
               : 'text-gray-400 dark:text-gray-500 line-through'
-          }`}>
+            }`}>
             {member.display_name}
           </p>
           <div className="flex items-center gap-1.5">
@@ -550,21 +550,19 @@ function AddMemberModal({
           <span>Add as:</span>
           <button
             onClick={() => setSelectedRole('member')}
-            className={`px-2 py-1 rounded ${
-              selectedRole === 'member'
+            className={`px-2 py-1 rounded ${selectedRole === 'member'
                 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
                 : 'bg-gray-100 dark:bg-gray-700'
-            }`}
+              }`}
           >
             Member
           </button>
           <button
             onClick={() => setSelectedRole('lead')}
-            className={`px-2 py-1 rounded ${
-              selectedRole === 'lead'
+            className={`px-2 py-1 rounded ${selectedRole === 'lead'
                 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300'
                 : 'bg-gray-100 dark:bg-gray-700'
-            }`}
+              }`}
           >
             Lead
           </button>

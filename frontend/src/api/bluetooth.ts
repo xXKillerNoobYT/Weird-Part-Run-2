@@ -98,7 +98,7 @@ export interface BtConnectionLog {
 
 export async function checkBtAvailability(): Promise<BtAvailability> {
     const { data } = await apiClient.get<ApiResponse<BtAvailability>>(
-        '/api/bluetooth/availability',
+        '/bluetooth/availability',
     );
     return data.data!;
 }
@@ -109,7 +109,7 @@ export async function scanBtDevices(
     duration: number = 10,
 ): Promise<BtScanResponse> {
     const { data } = await apiClient.get<ApiResponse<BtScanResponse>>(
-        '/api/bluetooth/scan',
+        '/bluetooth/scan',
         { params: { duration } },
     );
     return data.data!;
@@ -119,7 +119,7 @@ export async function scanBtDevices(
 
 export async function listPairedDevices(): Promise<BtPairedDevice[]> {
     const { data } = await apiClient.get<ApiResponse<BtPairedDevice[]>>(
-        '/api/bluetooth/paired',
+        '/bluetooth/paired',
     );
     return data.data ?? [];
 }
@@ -130,14 +130,14 @@ export async function pairDevice(payload: {
     role?: string;
 }): Promise<BtPairedDevice> {
     const { data } = await apiClient.post<ApiResponse<BtPairedDevice>>(
-        '/api/bluetooth/pair',
+        '/bluetooth/pair',
         payload,
     );
     return data.data!;
 }
 
 export async function unpairDevice(deviceId: number): Promise<void> {
-    await apiClient.delete(`/api/bluetooth/pair/${deviceId}`);
+    await apiClient.delete(`/bluetooth/pair/${deviceId}`);
 }
 
 // ── Tunnel Control ───────────────────────────────────────────────
@@ -147,7 +147,7 @@ export async function connectBt(payload: {
     role?: string;
 }): Promise<{ success: boolean; error?: string }> {
     const { data } = await apiClient.post<ApiResponse>(
-        '/api/bluetooth/connect',
+        '/bluetooth/connect',
         payload,
     );
     return { success: data.success, error: data.error ?? undefined };
@@ -157,7 +157,7 @@ export async function disconnectBt(
     reason: string = 'manual',
 ): Promise<{ success: boolean; error?: string }> {
     const { data } = await apiClient.post<ApiResponse>(
-        '/api/bluetooth/disconnect',
+        '/bluetooth/disconnect',
         { reason },
     );
     return { success: data.success, error: data.error ?? undefined };
@@ -165,7 +165,7 @@ export async function disconnectBt(
 
 export async function getBtTunnelStatus(): Promise<BtTunnelStatus> {
     const { data } = await apiClient.get<ApiResponse<BtTunnelStatus>>(
-        '/api/bluetooth/status',
+        '/bluetooth/status',
     );
     return data.data!;
 }
@@ -178,7 +178,7 @@ export async function getBtConnectionLog(params?: {
     bt_address?: string;
 }): Promise<BtConnectionLog> {
     const { data } = await apiClient.get<ApiResponse<BtConnectionLog>>(
-        '/api/bluetooth/log',
+        '/bluetooth/log',
         { params },
     );
     return data.data ?? { entries: [], total: 0 };
@@ -188,7 +188,7 @@ export async function getBtConnectionLog(params?: {
 
 export async function getBtConfig(): Promise<BtSyncConfig> {
     const { data } = await apiClient.get<ApiResponse<BtSyncConfig>>(
-        '/api/bluetooth/config',
+        '/bluetooth/config',
     );
     return data.data!;
 }
@@ -197,7 +197,7 @@ export async function updateBtConfig(
     updates: Partial<BtSyncConfig>,
 ): Promise<BtSyncConfig> {
     const { data } = await apiClient.put<ApiResponse<BtSyncConfig>>(
-        '/api/bluetooth/config',
+        '/bluetooth/config',
         updates,
     );
     return data.data!;

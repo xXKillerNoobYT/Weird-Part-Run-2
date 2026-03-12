@@ -294,7 +294,7 @@ function PendingPullCard({
 
       {/* Expanded line items */}
       {expanded && (
-        <div className="border-t border-gray-200 dark:border-gray-700">
+        <div className="border-t border-gray-200 dark:border-gray-700 overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-800/30 text-gray-500 dark:text-gray-400">
@@ -343,11 +343,10 @@ function PendingPullRow({ item }: { item: PendingPullItem }) {
           </div>
         )}
       </td>
-      <td className={`text-right px-4 py-2 font-mono ${
-        canFulfill
+      <td className={`text-right px-4 py-2 font-mono ${canFulfill
           ? 'text-green-600 dark:text-green-400'
           : 'text-red-500 dark:text-red-400'
-      }`}>
+        }`}>
         {item.warehouse_qty}
       </td>
       <td className="text-right px-4 py-2 font-mono text-gray-600 dark:text-gray-400">

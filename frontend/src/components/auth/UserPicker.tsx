@@ -15,6 +15,8 @@ import { useEffect, useState } from 'react';
 import { Zap, UserCircle, Wifi } from 'lucide-react';
 import { getUsers } from '../../api/auth';
 import { isCapacitor } from '../../lib/environment';
+import { runInitialSync } from '../../local/sync-engine';
+import { getDeviceId } from '../../lib/device-identity';
 import type { UserPickerItem } from '../../lib/types';
 import { Badge } from '../ui/Badge';
 import { Spinner } from '../ui/Spinner';
@@ -156,8 +158,6 @@ function CapacitorSetupPrompt({ onSynced }: { onSynced: () => void }) {
       setChecking(false);
       setSyncing(true);
 
-      const { runInitialSync } = await import('../../local/sync-engine');
-      const { getDeviceId } = await import('../../lib/device-identity');
       const deviceId = await getDeviceId();
       const success = await runInitialSync(deviceId);
 

@@ -200,7 +200,7 @@ export default function QABoardPage() {
           {selectedThreadId != null && (
             <button
               onClick={() => setSelectedThreadId(null)}
-              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 lg:hidden"
+              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 lg:hidden min-h-[44px] min-w-[44px] flex items-center justify-center"
             >
               <ChevronLeft className="h-5 w-5 text-gray-500" />
             </button>

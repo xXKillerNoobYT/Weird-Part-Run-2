@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { BarChart3, Package, AlertTriangle, ArrowDownRight } from 'lucide-react';
 import { Card, CardHeader } from '../../../components/ui/Card';
 import { PageSpinner } from '../../../components/ui/Spinner';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
 import { getReturnAnalytics } from '../../../api/orders';
@@ -52,7 +53,7 @@ export function ReturnAnalyticsPage() {
   );
   const [hasGenerated, setHasGenerated] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['return-analytics', startDate, endDate],
     queryFn: () => getReturnAnalytics({ start_date: startDate, end_date: endDate }),
     enabled: hasGenerated,
@@ -98,7 +99,8 @@ export function ReturnAnalyticsPage() {
       </Card>
 
       {isLoading && <PageSpinner label="Analyzing returns..." />}
-      {hasGenerated && !isLoading && !data && (
+      {isError && <ErrorFallback onRetry={refetch} />}
+      {hasGenerated && !isLoading && !isError && !data && (
         <EmptyState
           icon={<BarChart3 className="h-12 w-12" />}
           title="No Return Data"

@@ -35,20 +35,20 @@ import type { POListItem } from '../../../lib/types';
 type POViewFilter = 'all' | 'drafts' | 'submitted' | 'receiving' | 'complete';
 
 const STATUS_TABS: { label: string; value: POViewFilter }[] = [
-  { label: 'All',       value: 'all' },
-  { label: 'Drafts',    value: 'drafts' },
+  { label: 'All', value: 'all' },
+  { label: 'Drafts', value: 'drafts' },
   { label: 'Submitted', value: 'submitted' },
   { label: 'Receiving', value: 'receiving' },
-  { label: 'Complete',  value: 'complete' },
+  { label: 'Complete', value: 'complete' },
 ];
 
 /** Map each filter tab to the PO statuses it includes */
 const FILTER_STATUSES: Record<POViewFilter, string[] | null> = {
-  all:       null,                                         // no filter
-  drafts:    ['draft'],
+  all: null,                                         // no filter
+  drafts: ['draft'],
   submitted: ['submitted', 'acknowledged', 'confirmed'],
   receiving: ['partially_received'],
-  complete:  ['received', 'closed', 'cancelled'],
+  complete: ['received', 'closed', 'cancelled'],
 };
 
 export function PurchaseOrdersPage() {
@@ -71,10 +71,10 @@ export function PurchaseOrdersPage() {
   // Apply search filter
   const filtered = search
     ? tabFiltered.filter(
-        (po) =>
-          po.po_number.toLowerCase().includes(search.toLowerCase()) ||
-          po.supplier_name?.toLowerCase().includes(search.toLowerCase())
-      )
+      (po) =>
+        po.po_number.toLowerCase().includes(search.toLowerCase()) ||
+        po.supplier_name?.toLowerCase().includes(search.toLowerCase())
+    )
     : tabFiltered;
 
   // Bulk selection
@@ -150,20 +150,18 @@ export function PurchaseOrdersPage() {
                 setActiveTab(tab.value);
                 bulk.clear();
               }}
-              className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap min-h-[44px] ${
-                activeTab === tab.value
+              className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap min-h-[44px] ${activeTab === tab.value
                   ? 'border-primary text-primary'
                   : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
+                }`}
             >
               {tab.label}
               {count > 0 && (
                 <span
-                  className={`text-xs rounded-full px-1.5 py-0.5 tabular-nums ${
-                    activeTab === tab.value
+                  className={`text-xs rounded-full px-1.5 py-0.5 tabular-nums ${activeTab === tab.value
                       ? 'bg-primary/10 text-primary'
                       : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
-                  }`}
+                    }`}
                 >
                   {count}
                 </span>
@@ -201,7 +199,7 @@ export function PurchaseOrdersPage() {
           description={getEmptyDescription(activeTab, !!search)}
         />
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border bg-surface">
+        <div className="overflow-x-auto overflow-hidden rounded-lg border border-border bg-surface">
           <table className="min-w-full divide-y divide-border">
             <thead className="bg-surface-secondary">
               <tr>
@@ -258,9 +256,8 @@ function PORow({
   onToggle: () => void;
 }) {
   return (
-    <tr className={`hover:bg-surface-secondary/50 transition-colors cursor-pointer ${
-      selected ? 'bg-primary/5 dark:bg-primary/10' : ''
-    }`}>
+    <tr className={`hover:bg-surface-secondary/50 transition-colors cursor-pointer ${selected ? 'bg-primary/5 dark:bg-primary/10' : ''
+      }`}>
       <BulkCheckbox checked={selected} onChange={onToggle} />
       <td className="px-4 py-3">
         <Link
@@ -303,21 +300,21 @@ function PORow({
 
 function getEmptyTitle(tab: POViewFilter): string {
   switch (tab) {
-    case 'drafts':    return 'No draft POs';
+    case 'drafts': return 'No draft POs';
     case 'submitted': return 'No submitted POs';
     case 'receiving': return 'Nothing to receive';
-    case 'complete':  return 'No completed POs';
-    default:          return 'No purchase orders';
+    case 'complete': return 'No completed POs';
+    default: return 'No purchase orders';
   }
 }
 
 function getEmptyDescription(tab: POViewFilter, hasSearch: boolean): string {
   if (hasSearch) return 'No POs match your search.';
   switch (tab) {
-    case 'drafts':    return 'Create a new PO or auto-generate from approved parts requests.';
+    case 'drafts': return 'Create a new PO or auto-generate from approved parts requests.';
     case 'submitted': return 'No POs are currently awaiting delivery.';
     case 'receiving': return 'All deliveries are fully received. Nice work!';
-    case 'complete':  return 'No POs have been completed yet.';
-    default:          return 'Create your first purchase order to get started.';
+    case 'complete': return 'No POs have been completed yet.';
+    default: return 'Create your first purchase order to get started.';
   }
 }

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { PageSpinner } from '../../../components/ui/Spinner';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Input } from '../../../components/ui/Input';
 import { Badge } from '../../../components/ui/Badge';
@@ -70,7 +71,7 @@ export function ContactDirectoryPage() {
   }, [search]);
 
   // ── Query ──────────────────────────────────────────────────────
-  const { data: contacts, isLoading } = useQuery({
+  const { data: contacts, isLoading, isError, refetch } = useQuery({
     queryKey: ['directory', debouncedSearch],
     queryFn: () => searchDirectory(debouncedSearch),
     enabled: debouncedSearch.length >= 2,
@@ -110,6 +111,8 @@ export function ContactDirectoryPage() {
           title="Type to search"
           description="Enter at least 2 characters to search all contacts across customers, contractors, and suppliers."
         />
+      ) : isError ? (
+        <ErrorFallback onRetry={refetch} />
       ) : isLoading ? (
         <PageSpinner label="Searching..." />
       ) : !contacts || contacts.length === 0 ? (

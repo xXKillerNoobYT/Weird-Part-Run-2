@@ -12,6 +12,7 @@ import {
   Settings, Clock, RotateCcw, Save, User,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
@@ -84,7 +85,7 @@ export function ScheduleConfigPage() {
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
 
-  const { data: employeesData } = useQuery({
+  const { data: employeesData, isError: employeesError, refetch: refetchEmployees } = useQuery({
     queryKey: ['employees', 'schedule-config', search],
     queryFn: () => getEmployees({ search, is_active: true, page: 1, page_size: 200 }),
     staleTime: 60_000,
@@ -93,7 +94,7 @@ export function ScheduleConfigPage() {
   const employees = employeesData?.items ?? [];
 
   // ── Schedule data ────────────────────────────────────────────────
-  const { data: scheduleData, isLoading: scheduleLoading } = useQuery({
+  const { data: scheduleData, isLoading: scheduleLoading, isError: scheduleError, refetch: refetchSchedule } = useQuery({
     queryKey: ['default-schedule', selectedUserId],
     queryFn: () => getDefaultSchedule(selectedUserId!),
     enabled: !!selectedUserId,
@@ -266,7 +267,9 @@ export function ScheduleConfigPage() {
 
         {/* ─── Schedule grid ─────────────────────────────────── */}
         <Card className="lg:col-span-3 p-4">
-          {!selectedUserId ? (
+          {employeesError || scheduleError ? (
+            <ErrorFallback onRetry={() => { refetchEmployees(); refetchSchedule(); }} />
+          ) : !selectedUserId ? (
             <EmptyState
               icon={User}
               title="Select an employee"
@@ -287,7 +290,7 @@ export function ScheduleConfigPage() {
               </div>
 
               {/* Desktop: table layout */}
-              <div className="hidden md:block">
+              <div className="hidden md:block overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-200 dark:border-gray-700">

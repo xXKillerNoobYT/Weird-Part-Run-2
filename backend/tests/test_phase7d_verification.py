@@ -365,8 +365,8 @@ class TestChecklist4CustomMargin:
         assert margin["custom_margin_percent"] is None
         assert margin["default_margin_percent"] == 25.0
         assert margin["effective_margin_percent"] == 25.0
-        # Sell price: $100 × 1.25 = $125
-        assert margin["calculated_sell_price"] == pytest.approx(125.00)
+        # Sell price: $100 / (1 - 0.25) = $133.33 (margin formula)
+        assert margin["calculated_sell_price"] == pytest.approx(133.33, abs=0.01)
 
     @pytest.mark.asyncio
     async def test_set_custom_margin_changes_sell_price(self, db: aiosqlite.Connection):
@@ -380,8 +380,8 @@ class TestChecklist4CustomMargin:
         margin = await svc.get_margin(part_id)
         assert margin["custom_margin_percent"] == 40.0
         assert margin["effective_margin_percent"] == 40.0
-        # Sell price: $100 × 1.40 = $140
-        assert margin["calculated_sell_price"] == pytest.approx(140.00)
+        # Sell price: $100 / (1 - 0.40) = $166.67 (margin formula)
+        assert margin["calculated_sell_price"] == pytest.approx(166.67, abs=0.01)
 
     @pytest.mark.asyncio
     async def test_clear_custom_margin_reverts_to_default(self, db: aiosqlite.Connection):

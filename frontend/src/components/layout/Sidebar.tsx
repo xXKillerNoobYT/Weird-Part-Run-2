@@ -13,8 +13,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, Package, Warehouse, Truck, Briefcase, BookOpen,
-  ShoppingCart, Users, BarChart3, Settings, ChevronLeft, X, Zap,
-  Building2, MessageSquare,
+  ShoppingCart, Users, Settings, ChevronLeft, X, Zap,
+  Building2, MessageSquare, CalendarDays,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { MODULES, getDefaultTabPath, findModuleByPath } from '../../lib/navigation';
@@ -33,7 +33,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   BookOpen,
   ShoppingCart,
   Users,
-  BarChart3,
+  CalendarDays,
   Settings,
   MessageSquare,
 };

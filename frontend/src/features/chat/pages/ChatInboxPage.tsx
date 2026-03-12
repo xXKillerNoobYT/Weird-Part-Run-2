@@ -12,6 +12,7 @@
 import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { MessageSquare } from 'lucide-react';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { useAuthStore } from '../../../stores/auth-store';
 import { getInbox } from '../../../api/chat';
 import { ChatChannelList } from '../components/ChatChannelList';
@@ -22,7 +23,7 @@ export default function ChatInboxPage() {
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
 
   // ── Inbox data (30s polling for badge/preview updates) ─────────
-  const { data: inbox } = useQuery({
+  const { data: inbox, isError, refetch } = useQuery({
     queryKey: ['chat-inbox'],
     queryFn: getInbox,
     refetchInterval: 30_000,
@@ -49,6 +50,7 @@ export default function ChatInboxPage() {
   }, []);
 
   if (!user) return null;
+  if (isError) return <ErrorFallback message="Failed to load chat inbox" onRetry={refetch} />;
 
   // ── Render ─────────────────────────────────────────────────────
   return (
@@ -57,9 +59,8 @@ export default function ChatInboxPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Channel list — always visible on lg+, hidden on mobile when a channel is selected */}
         <div
-          className={`w-full lg:w-[300px] xl:w-[340px] lg:flex-shrink-0 border-r border-border ${
-            selectedChannelId != null ? 'hidden lg:flex lg:flex-col' : 'flex flex-col'
-          }`}
+          className={`w-full lg:w-[300px] xl:w-[340px] lg:flex-shrink-0 border-r border-border ${selectedChannelId != null ? 'hidden lg:flex lg:flex-col' : 'flex flex-col'
+            }`}
         >
           <ChatChannelList
             channels={channels}
@@ -72,9 +73,8 @@ export default function ChatInboxPage() {
 
         {/* Message view — always visible on lg+ when selected, full-screen on mobile */}
         <div
-          className={`flex-1 min-w-0 ${
-            selectedChannelId != null ? 'flex flex-col' : 'hidden lg:flex lg:flex-col'
-          }`}
+          className={`flex-1 min-w-0 ${selectedChannelId != null ? 'flex flex-col' : 'hidden lg:flex lg:flex-col'
+            }`}
         >
           {selectedChannelId != null ? (
             <ChatMessageView

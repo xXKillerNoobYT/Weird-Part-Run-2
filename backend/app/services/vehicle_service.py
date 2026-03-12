@@ -1058,12 +1058,11 @@ class VehicleService:
         await transfer_repo.update(transfer_id, {
             "status": "approved",
             "approved_by": approved_by,
-            "approved_at": "datetime('now')",
         })
-        # Use raw SQL for datetime function
+        # approved_at requires a SQL expression (not a parameterized string literal)
         await self.db.execute(
-            "UPDATE vehicle_transfers SET approved_by = ?, approved_at = datetime('now') WHERE id = ?",
-            (approved_by, transfer_id),
+            "UPDATE vehicle_transfers SET approved_at = datetime('now') WHERE id = ?",
+            (transfer_id,),
         )
         await self.db.commit()
         return await transfer_repo.get_with_details(transfer_id)

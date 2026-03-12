@@ -235,7 +235,7 @@ TOOL_DEFINITIONS = [
 def _build_labor_query(params: dict) -> tuple[str, list]:
     """Build SELECT query for labor entries."""
     sql = """
-        SELECT le.id, u.display_name AS employee, j.name AS job_name, j.job_number,
+        SELECT le.id, u.display_name AS employee, j.job_name AS job_name, j.job_number,
                le.clock_in, le.clock_out, le.regular_hours, le.overtime_hours, le.status
         FROM labor_entries le
         JOIN users u ON u.id = le.user_id
@@ -265,7 +265,7 @@ def _build_labor_query(params: dict) -> tuple[str, list]:
 def _build_jobs_query(params: dict) -> tuple[str, list]:
     """Build SELECT query for jobs."""
     sql = """
-        SELECT j.id, j.job_number, j.name, j.status, j.address,
+        SELECT j.id, j.job_number, j.job_name, j.status, j.address_line1 AS address,
                j.budget_labor, j.budget_materials, j.created_at
         FROM jobs j
         WHERE 1=1
@@ -278,7 +278,7 @@ def _build_jobs_query(params: dict) -> tuple[str, list]:
         sql += " AND j.status = ?"
         args.append(params["status"])
     if params.get("search"):
-        sql += " AND (j.name LIKE ? OR j.job_number LIKE ?)"
+        sql += " AND (j.job_name LIKE ? OR j.job_number LIKE ?)"
         args.extend([f"%{params['search']}%", f"%{params['search']}%"])
     sql += " ORDER BY j.created_at DESC LIMIT 50"
     return sql, args
@@ -319,7 +319,7 @@ def _build_usage_query(params: dict) -> tuple[str, list]:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     sql = """
-        SELECT sm.id, p.description AS part_name, j.name AS job_name,
+        SELECT sm.id, p.description AS part_name, j.job_name AS job_name,
                sm.quantity, sm.movement_type, sm.created_at,
                u.display_name AS moved_by
         FROM stock_movements sm
@@ -376,7 +376,7 @@ def _build_schedule_query(params: dict) -> tuple[str, list]:
     """Build SELECT query for scheduling (daily dispatch)."""
     sql = """
         SELECT s.id, s.scheduled_date, u.display_name AS employee,
-               j.name AS job_name, j.job_number, s.start_time, s.end_time,
+               j.job_name AS job_name, j.job_number, s.start_time, s.end_time,
                s.status, s.notes
         FROM scheduling s
         JOIN users u ON u.id = s.user_id
@@ -421,7 +421,7 @@ def _build_costs_query(params: dict) -> tuple[str, list]:
 
     if params.get("job_id"):
         sql = """
-            SELECT j.name AS job_name, j.job_number,
+            SELECT j.job_name AS job_name, j.job_number,
                    j.budget_labor, j.budget_materials,
                    COALESCE(SUM(le.regular_hours), 0) AS total_regular_hours,
                    COALESCE(SUM(le.overtime_hours), 0) AS total_overtime_hours,
@@ -434,7 +434,7 @@ def _build_costs_query(params: dict) -> tuple[str, list]:
         args = [start, params["job_id"]]
     else:
         sql = """
-            SELECT j.name AS job_name, j.job_number,
+            SELECT j.job_name AS job_name, j.job_number,
                    j.budget_labor, j.budget_materials,
                    COALESCE(SUM(le.regular_hours), 0) AS total_regular_hours,
                    COALESCE(SUM(le.overtime_hours), 0) AS total_overtime_hours,
@@ -880,7 +880,7 @@ Provide a concise, readable summary suitable for a manager or bookkeeper."""
         # 3) Job budget anomalies
         try:
             cursor = await self.db.execute("""
-                SELECT j.name, j.job_number, j.budget_labor, j.budget_materials,
+                SELECT j.job_name, j.job_number, j.budget_labor, j.budget_materials,
                        COALESCE(SUM(le.regular_hours + le.overtime_hours), 0) AS total_hours
                 FROM jobs j
                 LEFT JOIN labor_entries le ON le.job_id = j.id

@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { Input } from '../../../components/ui/Input';
 import { EmptyState } from '../../../components/ui/EmptyState';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { listPOs, getPO, receiveByPO, listStagingZones } from '../../../api/orders';
 import type {
   POListItem,
@@ -71,7 +72,7 @@ export function ReceiveShipmentPage() {
   const [validationError, setValidationError] = useState('');
 
   // ── Fetch receivable POs (submitted, acknowledged, partially_received)
-  const { data: poList = [], isLoading: posLoading } = useQuery({
+  const { data: poList = [], isLoading: posLoading, isError: posError, refetch: refetchPOs } = useQuery({
     queryKey: ['pos-receivable'],
     queryFn: () => listPOs({ status: 'submitted,acknowledged,partially_received' }),
   });
@@ -224,13 +225,12 @@ export function ReceiveShipmentPage() {
         {steps.map((s, idx) => (
           <div key={s.num} className="flex items-center gap-2">
             <div
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                step === s.num
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${step === s.num
                   ? 'bg-primary text-white'
                   : step > s.num
                     ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
                     : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
-              }`}
+                }`}
             >
               {step > s.num ? (
                 <CheckCircle2 className="h-3.5 w-3.5" />
@@ -278,7 +278,9 @@ export function ReceiveShipmentPage() {
             </div>
 
             {/* PO List */}
-            {posLoading ? (
+            {posError ? (
+              <ErrorFallback onRetry={refetchPOs} />
+            ) : posLoading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-6 w-6 text-primary animate-spin" />
               </div>
@@ -303,11 +305,10 @@ export function ReceiveShipmentPage() {
                       setSelectedPOId(po.id);
                       setValidationError('');
                     }}
-                    className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
-                      selectedPOId === po.id
+                    className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${selectedPOId === po.id
                         ? 'border-primary bg-primary/5 dark:bg-primary/10 ring-2 ring-primary/30'
                         : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex-1 min-w-0">
@@ -670,13 +671,12 @@ function ReceiveLineRow({ line, index, onUpdate }: ReceiveLineRowProps) {
             onChange={(e) =>
               onUpdate(index, 'qty_receiving_now', Math.max(0, Number(e.target.value) || 0))
             }
-            className={`w-full rounded-lg border px-3 py-1.5 text-sm text-center tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300 transition-colors ${
-              line.qty_receiving_now > line.qty_remaining
+            className={`w-full rounded-lg border px-3 py-1.5 text-sm text-center tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-300 transition-colors ${line.qty_receiving_now > line.qty_remaining
                 ? 'border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20'
                 : line.qty_receiving_now > 0
                   ? 'border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20'
                   : 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800'
-            }`}
+              }`}
           />
           {line.qty_receiving_now > line.qty_remaining && (
             <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 text-center">
@@ -767,9 +767,8 @@ function StatusChip({ status }: { status: string }) {
 
   return (
     <span
-      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-        colors[status] ?? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
-      }`}
+      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${colors[status] ?? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+        }`}
     >
       {status.replace(/_/g, ' ')}
     </span>

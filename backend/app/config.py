@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 # Resolve once at import time: config.py → app/ → backend/ → project root
@@ -24,6 +25,12 @@ _PROJECT_ROOT = _BACKEND_DIR.parent               # project root (contains .env)
 
 class Settings(BaseSettings):
     """Global application settings. Loaded from .env file and environment variables."""
+
+    model_config = ConfigDict(
+        env_file=str(_PROJECT_ROOT / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     # ── App Identity ──────────────────────────────────────────────
     APP_NAME: str = "Wired-Part"
@@ -89,12 +96,6 @@ class Settings(BaseSettings):
     def migrations_dir(self) -> Path:
         """Directory containing SQL migration files."""
         return Path(__file__).parent / "migrations"
-
-    class Config:
-        # Absolute path to .env at project root — CWD-independent
-        env_file = str(_PROJECT_ROOT / ".env")
-        env_file_encoding = "utf-8"
-        extra = "ignore"
 
 
 # Singleton instance — import this everywhere

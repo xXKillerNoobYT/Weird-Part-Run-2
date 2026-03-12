@@ -288,7 +288,14 @@ class JobService:
         try:
             margin_info = await cost_svc.get_margin(data.part_id)
             margin_pct = margin_info["effective_margin_percent"]
-            unit_sell = unit_cost / (1 - margin_pct / 100) if margin_pct < 100 else unit_cost
+            # Margin formula: sell = cost / (1 - margin/100)
+            # Guard against margin >= 100% (would cause zero or negative divisor)
+            if margin_pct >= 100:
+                unit_sell = unit_cost * (1 + margin_pct / 100)  # Treat as markup at extreme values
+            elif margin_pct > 0:
+                unit_sell = unit_cost / (1 - margin_pct / 100)
+            else:
+                unit_sell = unit_cost  # Zero margin → sell at cost
         except Exception:
             cursor = await self.db.execute(
                 "SELECT company_sell_price FROM parts WHERE id = ?",

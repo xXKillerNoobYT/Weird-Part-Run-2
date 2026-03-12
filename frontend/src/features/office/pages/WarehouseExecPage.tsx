@@ -19,6 +19,7 @@ import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Spinner } from '../../../components/ui/Spinner';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { listParts, updatePart, updatePartPricing } from '../../../api/parts';
 import { useAuthStore } from '../../../stores/auth-store';
 import { cn } from '../../../lib/utils';
@@ -143,7 +144,7 @@ export function WarehouseExecPage() {
     page_size: pageSize,
   };
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['office-exec-parts', params],
     queryFn: () => listParts(params),
     staleTime: 10_000,
@@ -281,7 +282,13 @@ export function WarehouseExecPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-              {isLoading ? (
+              {isError ? (
+                <tr>
+                  <td colSpan={showDollars ? 10 : 7} className="text-center py-12">
+                    <ErrorFallback onRetry={refetch} />
+                  </td>
+                </tr>
+              ) : isLoading ? (
                 <tr>
                   <td colSpan={showDollars ? 10 : 7} className="text-center py-12">
                     <Spinner label="Loading parts..." />

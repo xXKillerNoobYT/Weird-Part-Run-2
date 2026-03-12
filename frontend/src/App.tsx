@@ -15,7 +15,8 @@
  */
 
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query';
+import { toast } from './lib/toast';
 
 // Auth
 import { AuthGate } from './components/auth/AuthGate';
@@ -23,6 +24,7 @@ import { DeviceOverrideHandler } from './components/DeviceOverrideHandler';
 
 // Layout
 import { AppShell } from './components/layout/AppShell';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
 // Pages — Dashboard
 import { DashboardPage } from './features/dashboard/pages/DashboardPage';
@@ -163,11 +165,27 @@ import { AiAssistantPanel } from './components/AiAssistantPanel';
 
 // ── React Query Client ─────────────────────────────────────────────
 const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error: Error, query) => {
+      // Only toast for queries that already have data (background refetch failures).
+      // Initial load errors are handled by each page's isError check.
+      if (query.state.data !== undefined) {
+        toast.error(error?.message || 'Failed to refresh data');
+      }
+    },
+  }),
   defaultOptions: {
     queries: {
       retry: 1,
       staleTime: 30_000,  // 30 seconds before refetch
       refetchOnWindowFocus: false,
+    },
+    mutations: {
+      onError: (error: Error) => {
+        // Global fallback — fires only when the individual mutation has no onError
+        const msg = error?.message || 'Something went wrong';
+        toast.error(msg);
+      },
     },
   },
 });
@@ -186,168 +204,170 @@ export default function App() {
             <AuthGate>
               <DeviceOverrideHandler />
               <AiAssistantPanel />
-              <Routes>
-                {/* Main app routes — all inside AppShell */}
-                <Route element={<AppShell />}>
-                  {/* Root redirect */}
-                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <ErrorBoundary label="application">
+                <Routes>
+                  {/* Main app routes — all inside AppShell */}
+                  <Route element={<AppShell />}>
+                    {/* Root redirect */}
+                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-                  {/* Dashboard */}
-                  <Route path="/dashboard" element={<DashboardPage />} />
+                    {/* Dashboard */}
+                    <Route path="/dashboard" element={<DashboardPage />} />
 
-                  {/* Parts */}
-                  <Route path="/parts" element={<Navigate to="/parts/catalog" replace />} />
-                  <Route path="/parts/categories" element={<CategoriesPage />} />
-                  <Route path="/parts/catalog" element={<CatalogPage />} />
-                  <Route path="/parts/brands" element={<BrandsPage />} />
-                  <Route path="/parts/suppliers" element={<SuppliersPage />} />
-                  <Route path="/parts/pricing" element={<PricingPage />} />
-                  <Route path="/parts/forecasting" element={<ForecastingPage />} />
-                  <Route path="/parts/companions" element={<CompanionsPage />} />
-                  <Route path="/parts/import-export" element={<ImportExportPage />} />
+                    {/* Parts */}
+                    <Route path="/parts" element={<Navigate to="/parts/catalog" replace />} />
+                    <Route path="/parts/categories" element={<CategoriesPage />} />
+                    <Route path="/parts/catalog" element={<CatalogPage />} />
+                    <Route path="/parts/brands" element={<BrandsPage />} />
+                    <Route path="/parts/suppliers" element={<SuppliersPage />} />
+                    <Route path="/parts/pricing" element={<PricingPage />} />
+                    <Route path="/parts/forecasting" element={<ForecastingPage />} />
+                    <Route path="/parts/companions" element={<CompanionsPage />} />
+                    <Route path="/parts/import-export" element={<ImportExportPage />} />
 
-                  {/* Office */}
-                  <Route path="/office" element={<Navigate to="/office/warehouse-exec" replace />} />
-                  <Route path="/office/warehouse-exec" element={<WarehouseExecPage />} />
-                  <Route path="/office/manage-jobs" element={<ManageJobsPage />} />
-                  <Route path="/office/notebook-templates" element={<JobNotebookTemplatePage />} />
-                  <Route path="/office/clock-out-questions" element={<ClockOutQuestionsPage />} />
-                  <Route path="/office/warehouse-locations" element={<WarehouseLocationsPage />} />
-                  <Route path="/office/spending" element={<SpendingDashboardPage />} />
+                    {/* Office */}
+                    <Route path="/office" element={<Navigate to="/office/warehouse-exec" replace />} />
+                    <Route path="/office/warehouse-exec" element={<WarehouseExecPage />} />
+                    <Route path="/office/manage-jobs" element={<ManageJobsPage />} />
+                    <Route path="/office/notebook-templates" element={<JobNotebookTemplatePage />} />
+                    <Route path="/office/clock-out-questions" element={<ClockOutQuestionsPage />} />
+                    <Route path="/office/warehouse-locations" element={<WarehouseLocationsPage />} />
+                    <Route path="/office/spending" element={<SpendingDashboardPage />} />
 
-                  {/* Warehouse */}
-                  <Route path="/warehouse" element={<Navigate to="/warehouse/dashboard" replace />} />
-                  <Route path="/warehouse/dashboard" element={<WarehouseDashboardPage />} />
-                  <Route path="/warehouse/inventory" element={<InventoryGridPage />} />
-                  <Route path="/warehouse/receiving" element={<ReceivingPage />} />
-                  <Route path="/warehouse/return-sorting" element={<ReturnSortingPage />} />
-                  <Route path="/warehouse/staging" element={<StagingPage />} />
-                  <Route path="/warehouse/audit" element={<AuditPage />} />
-                  <Route path="/warehouse/movements" element={<MovementsLogPage />} />
-                  <Route path="/warehouse/tools" element={<WarehouseToolsPage />} />
-                  <Route path="/warehouse/network" element={<WarehouseNetworkPage />} />
-                  <Route path="/warehouse/settings" element={<WarehouseSettingsPage />} />
+                    {/* Warehouse */}
+                    <Route path="/warehouse" element={<Navigate to="/warehouse/dashboard" replace />} />
+                    <Route path="/warehouse/dashboard" element={<WarehouseDashboardPage />} />
+                    <Route path="/warehouse/inventory" element={<InventoryGridPage />} />
+                    <Route path="/warehouse/receiving" element={<ReceivingPage />} />
+                    <Route path="/warehouse/return-sorting" element={<ReturnSortingPage />} />
+                    <Route path="/warehouse/staging" element={<StagingPage />} />
+                    <Route path="/warehouse/audit" element={<AuditPage />} />
+                    <Route path="/warehouse/movements" element={<MovementsLogPage />} />
+                    <Route path="/warehouse/tools" element={<WarehouseToolsPage />} />
+                    <Route path="/warehouse/network" element={<WarehouseNetworkPage />} />
+                    <Route path="/warehouse/settings" element={<WarehouseSettingsPage />} />
 
-                  {/* Trucks */}
-                  <Route path="/trucks" element={<Navigate to="/trucks/my-truck" replace />} />
-                  <Route path="/trucks/my-truck" element={<MyTruckPage />} />
-                  <Route path="/trucks/all" element={<AllTrucksPage />} />
-                  <Route path="/trucks/tools" element={<ToolsPage />} />
-                  <Route path="/trucks/maintenance" element={<MaintenancePage />} />
-                  <Route path="/trucks/mileage" element={<MileagePage />} />
-                  <Route path="/trucks/fleet" element={<FleetDashboardPage />} />
-                  <Route path="/trucks/fuel" element={<FuelPage />} />
-                  <Route path="/trucks/telematics" element={<TelematicsPage />} />
-                  <Route path="/trucks/inspections" element={<InspectionsPage />} />
-                  <Route path="/trucks/trailers" element={<TrailersPage />} />
-                  <Route path="/trucks/trailers/:trailer_id" element={<TrailerDetailPage />} />
-                  <Route path="/trucks/trailer-locations" element={<TrailerLocationsPage />} />
-                  <Route path="/trucks/:id" element={<VehicleDetailPage />} />
+                    {/* Trucks */}
+                    <Route path="/trucks" element={<Navigate to="/trucks/my-truck" replace />} />
+                    <Route path="/trucks/my-truck" element={<MyTruckPage />} />
+                    <Route path="/trucks/all" element={<AllTrucksPage />} />
+                    <Route path="/trucks/tools" element={<ToolsPage />} />
+                    <Route path="/trucks/maintenance" element={<MaintenancePage />} />
+                    <Route path="/trucks/mileage" element={<MileagePage />} />
+                    <Route path="/trucks/fleet" element={<FleetDashboardPage />} />
+                    <Route path="/trucks/fuel" element={<FuelPage />} />
+                    <Route path="/trucks/telematics" element={<TelematicsPage />} />
+                    <Route path="/trucks/inspections" element={<InspectionsPage />} />
+                    <Route path="/trucks/trailers" element={<TrailersPage />} />
+                    <Route path="/trucks/trailers/:trailer_id" element={<TrailerDetailPage />} />
+                    <Route path="/trucks/trailer-locations" element={<TrailerLocationsPage />} />
+                    <Route path="/trucks/:id" element={<VehicleDetailPage />} />
 
-                  {/* Jobs */}
-                  <Route path="/jobs" element={<Navigate to="/jobs/active" replace />} />
-                  <Route path="/jobs/active" element={<ActiveJobsPage />} />
-                  <Route path="/jobs/my-clock" element={<MyClockPage />} />
-                  <Route path="/jobs/:id" element={<JobDetailPage />} />
+                    {/* Jobs */}
+                    <Route path="/jobs" element={<Navigate to="/jobs/active" replace />} />
+                    <Route path="/jobs/active" element={<ActiveJobsPage />} />
+                    <Route path="/jobs/my-clock" element={<MyClockPage />} />
+                    <Route path="/jobs/:id" element={<JobDetailPage />} />
 
-                  {/* Notebooks */}
-                  <Route path="/notebooks" element={<Navigate to="/notebooks/all" replace />} />
-                  <Route path="/notebooks/all" element={<NotebooksPage />} />
-                  <Route path="/notebooks/job-notebooks" element={<NotebooksPage />} />
-                  <Route path="/notebooks/general" element={<NotebooksPage />} />
-                  <Route path="/notebooks/:notebookId" element={<NotebookDetailPage />} />
+                    {/* Notebooks */}
+                    <Route path="/notebooks" element={<Navigate to="/notebooks/all" replace />} />
+                    <Route path="/notebooks/all" element={<NotebooksPage />} />
+                    <Route path="/notebooks/job-notebooks" element={<NotebooksPage />} />
+                    <Route path="/notebooks/general" element={<NotebooksPage />} />
+                    <Route path="/notebooks/:notebookId" element={<NotebookDetailPage />} />
 
-                  {/* Chat & Q&A */}
-                  <Route path="/chat" element={<Navigate to="/chat/inbox" replace />} />
-                  <Route path="/chat/inbox" element={<ChatInboxPage />} />
-                  <Route path="/chat/qa-board" element={<QABoardPage />} />
-                  <Route path="/chat/rfis" element={<RFIListPage />} />
+                    {/* Chat & Q&A */}
+                    <Route path="/chat" element={<Navigate to="/chat/inbox" replace />} />
+                    <Route path="/chat/inbox" element={<ChatInboxPage />} />
+                    <Route path="/chat/qa-board" element={<QABoardPage />} />
+                    <Route path="/chat/rfis" element={<RFIListPage />} />
 
-                  {/* Orders — Phase 7A: Field-worker tabs + Office tabs */}
-                  <Route path="/orders" element={<Navigate to="/orders/my-orders" replace />} />
-                  {/* Field worker tabs */}
-                  <Route path="/orders/my-orders" element={<MyOrdersPage />} />
-                  <Route path="/orders/new-order" element={<UnifiedOrderPage />} />
-                  <Route path="/orders/returns" element={<ReturnsPage />} />
-                  <Route path="/orders/returns/new" element={<NewReturnPage />} />
-                  <Route path="/orders/returns/:id" element={<ReturnDetailPage />} />
-                  {/* Office tabs */}
-                  <Route path="/orders/approvals" element={<ApprovalsTab />} />
-                  <Route path="/orders/all-requests" element={<PartsRequestsPage />} />
-                  <Route path="/orders/purchase-orders" element={<POManagementTab />} />
-                  <Route path="/orders/purchase-orders/new" element={<Navigate to="/orders/new-order" replace />} />
-                  <Route path="/orders/purchase-orders/receive" element={<ReceiveShipmentPage />} />
-                  <Route path="/orders/review-and-send" element={<ReviewAndSendPage />} />
-                  <Route path="/orders/procurement" element={<ProcurementPage />} />
-                  <Route path="/orders/return-analytics" element={<ReturnAnalyticsPage />} />
-                  {/* Detail pages (shared between field + office) */}
-                  <Route path="/orders/parts-requests/:id" element={<JPODetailPage />} />
-                  <Route path="/orders/pos/:id" element={<PODetailPage />} />
-                  <Route path="/orders/parts-requests/:id/generate-pos" element={<Navigate to="/orders/review-and-send" replace />} />
+                    {/* Orders — Phase 7A: Field-worker tabs + Office tabs */}
+                    <Route path="/orders" element={<Navigate to="/orders/my-orders" replace />} />
+                    {/* Field worker tabs */}
+                    <Route path="/orders/my-orders" element={<MyOrdersPage />} />
+                    <Route path="/orders/new-order" element={<UnifiedOrderPage />} />
+                    <Route path="/orders/returns" element={<ReturnsPage />} />
+                    <Route path="/orders/returns/new" element={<NewReturnPage />} />
+                    <Route path="/orders/returns/:id" element={<ReturnDetailPage />} />
+                    {/* Office tabs */}
+                    <Route path="/orders/approvals" element={<ApprovalsTab />} />
+                    <Route path="/orders/all-requests" element={<PartsRequestsPage />} />
+                    <Route path="/orders/purchase-orders" element={<POManagementTab />} />
+                    <Route path="/orders/purchase-orders/new" element={<Navigate to="/orders/new-order" replace />} />
+                    <Route path="/orders/purchase-orders/receive" element={<ReceiveShipmentPage />} />
+                    <Route path="/orders/review-and-send" element={<ReviewAndSendPage />} />
+                    <Route path="/orders/procurement" element={<ProcurementPage />} />
+                    <Route path="/orders/return-analytics" element={<ReturnAnalyticsPage />} />
+                    {/* Detail pages (shared between field + office) */}
+                    <Route path="/orders/parts-requests/:id" element={<JPODetailPage />} />
+                    <Route path="/orders/pos/:id" element={<PODetailPage />} />
+                    <Route path="/orders/parts-requests/:id/generate-pos" element={<Navigate to="/orders/review-and-send" replace />} />
 
-                  {/* Scheduling */}
-                  <Route path="/scheduling" element={<Navigate to="/scheduling/calendar" replace />} />
-                  <Route path="/scheduling/calendar" element={<ScheduleCalendarPage />} />
-                  <Route path="/scheduling/dispatch" element={<DailyDispatchPage />} />
-                  <Route path="/scheduling/availability" element={<WeeklyAvailabilityPage />} />
-                  <Route path="/scheduling/time-off" element={<TimeOffPage />} />
-                  <Route path="/scheduling/templates" element={<DispatchTemplatesPage />} />
-                  <Route path="/scheduling/schedules" element={<ScheduleConfigPage />} />
-                  <Route path="/scheduling/subcontractors" element={<SubSchedulePage />} />
+                    {/* Scheduling */}
+                    <Route path="/scheduling" element={<Navigate to="/scheduling/calendar" replace />} />
+                    <Route path="/scheduling/calendar" element={<ScheduleCalendarPage />} />
+                    <Route path="/scheduling/dispatch" element={<DailyDispatchPage />} />
+                    <Route path="/scheduling/availability" element={<WeeklyAvailabilityPage />} />
+                    <Route path="/scheduling/time-off" element={<TimeOffPage />} />
+                    <Route path="/scheduling/templates" element={<DispatchTemplatesPage />} />
+                    <Route path="/scheduling/schedules" element={<ScheduleConfigPage />} />
+                    <Route path="/scheduling/subcontractors" element={<SubSchedulePage />} />
 
-                  {/* People */}
-                  <Route path="/people" element={<Navigate to="/people/employees" replace />} />
-                  <Route path="/people/employees" element={<EmployeeListPage />} />
-                  <Route path="/people/employees/:id" element={<EmployeeDetailPage />} />
-                  <Route path="/people/customers" element={<CustomersPage />} />
-                  <Route path="/people/customers/:id" element={<CustomerDetailPage />} />
-                  <Route path="/people/contractors" element={<ContractorsPage />} />
-                  <Route path="/people/contractors/:id" element={<ContractorDetailPage />} />
-                  <Route path="/people/directory" element={<ContactDirectoryPage />} />
-                  <Route path="/people/hats" element={<HatsPage />} />
-                  <Route path="/people/permissions" element={<PermissionsPage />} />
-                  <Route path="/people/teams" element={<TeamsPage />} />
+                    {/* People */}
+                    <Route path="/people" element={<Navigate to="/people/customers" replace />} />
+                    <Route path="/people/employees" element={<EmployeeListPage />} />
+                    <Route path="/people/employees/:id" element={<EmployeeDetailPage />} />
+                    <Route path="/people/customers" element={<CustomersPage />} />
+                    <Route path="/people/customers/:id" element={<CustomerDetailPage />} />
+                    <Route path="/people/contractors" element={<ContractorsPage />} />
+                    <Route path="/people/contractors/:id" element={<ContractorDetailPage />} />
+                    <Route path="/people/directory" element={<ContactDirectoryPage />} />
+                    <Route path="/people/hats" element={<HatsPage />} />
+                    <Route path="/people/permissions" element={<PermissionsPage />} />
+                    <Route path="/people/teams" element={<TeamsPage />} />
 
-                  {/* Reports */}
-                  <Route path="/reports" element={<Navigate to="/reports/daily-reports" replace />} />
-                  <Route path="/reports/daily-reports" element={<JobReportsListPage />} />
-                  <Route path="/reports/daily-reports/:jobId/:date" element={<DailyReportView />} />
-                  <Route path="/reports/pre-billing" element={<PreBillingPage />} />
-                  <Route path="/reports/timesheets" element={<TimesheetsPage />} />
-                  <Route path="/reports/labor-overview" element={<LaborOverviewPage />} />
-                  <Route path="/reports/profitability" element={<ProfitabilityPage />} />
-                  <Route path="/reports/exports" element={<ExportsPage />} />
+                    {/* Reports */}
+                    <Route path="/reports" element={<Navigate to="/reports/daily-reports" replace />} />
+                    <Route path="/reports/daily-reports" element={<JobReportsListPage />} />
+                    <Route path="/reports/daily-reports/:jobId/:date" element={<DailyReportView />} />
+                    <Route path="/reports/pre-billing" element={<PreBillingPage />} />
+                    <Route path="/reports/timesheets" element={<TimesheetsPage />} />
+                    <Route path="/reports/labor-overview" element={<LaborOverviewPage />} />
+                    <Route path="/reports/profitability" element={<ProfitabilityPage />} />
+                    <Route path="/reports/exports" element={<ExportsPage />} />
 
-                  {/* Settings */}
-                  <Route path="/settings" element={<Navigate to="/settings/themes" replace />} />
-                  <Route path="/settings/app-config" element={<AppConfigPage />} />
-                  <Route path="/settings/company-profile" element={<CompanyProfilePage />} />
-                  <Route path="/settings/pdf" element={<PDFSettingsPage />} />
-                  <Route path="/settings/billing-pay" element={<BillingPaySettingsPage />} />
-                  <Route path="/settings/themes" element={<ThemesPage />} />
-                  <Route path="/settings/notifications" element={<NotificationPrefsPage />} />
-                  <Route path="/settings/questions" element={<Navigate to="/office/clock-out-questions" replace />} />
-                  <Route path="/settings/sync" element={<SyncPage />} />
-                  <Route path="/settings/bootstrap" element={<BootstrapAdminPage />} />
-                  <Route path="/settings/supplier-bridge" element={<SupplierBridgePage />} />
-                  <Route path="/settings/updates" element={<UpdateProtocolPage />} />
-                  <Route path="/settings/backups" element={<BackupsPage />} />
-                  <Route path="/settings/ai-config" element={<AiConfigPage />} />
-                  <Route path="/settings/devices" element={<DeviceManagementPage />} />
-                  <Route path="/settings/keys" element={<KeyManagementPage />} />
-                  <Route path="/settings/bluetooth" element={<BluetoothPage />} />
-                  <Route path="/settings/security" element={<SecurityAdminPage />} />
-                  <Route path="/settings/remote-sync" element={<RemoteSyncPage />} />
-                  <Route path="/settings/shared-channels" element={<SharedChannelsPage />} />
-                  <Route path="/settings/about" element={<AboutPage />} />
+                    {/* Settings */}
+                    <Route path="/settings" element={<Navigate to="/settings/themes" replace />} />
+                    <Route path="/settings/app-config" element={<AppConfigPage />} />
+                    <Route path="/settings/company-profile" element={<CompanyProfilePage />} />
+                    <Route path="/settings/pdf" element={<PDFSettingsPage />} />
+                    <Route path="/settings/billing-pay" element={<BillingPaySettingsPage />} />
+                    <Route path="/settings/themes" element={<ThemesPage />} />
+                    <Route path="/settings/notifications" element={<NotificationPrefsPage />} />
+                    <Route path="/settings/questions" element={<Navigate to="/office/clock-out-questions" replace />} />
+                    <Route path="/settings/sync" element={<SyncPage />} />
+                    <Route path="/settings/bootstrap" element={<BootstrapAdminPage />} />
+                    <Route path="/settings/supplier-bridge" element={<SupplierBridgePage />} />
+                    <Route path="/settings/updates" element={<UpdateProtocolPage />} />
+                    <Route path="/settings/backups" element={<BackupsPage />} />
+                    <Route path="/settings/ai-config" element={<AiConfigPage />} />
+                    <Route path="/settings/devices" element={<DeviceManagementPage />} />
+                    <Route path="/settings/keys" element={<KeyManagementPage />} />
+                    <Route path="/settings/bluetooth" element={<BluetoothPage />} />
+                    <Route path="/settings/security" element={<SecurityAdminPage />} />
+                    <Route path="/settings/remote-sync" element={<RemoteSyncPage />} />
+                    <Route path="/settings/shared-channels" element={<SharedChannelsPage />} />
+                    <Route path="/settings/about" element={<AboutPage />} />
 
-                  {/* Tools — QR scan redirect (cross-module) */}
-                  <Route path="/tools/scan/:toolNumber" element={<ToolScanRedirect />} />
+                    {/* Tools — QR scan redirect (cross-module) */}
+                    <Route path="/tools/scan/:toolNumber" element={<ToolScanRedirect />} />
 
-                  {/* Catch-all → Dashboard */}
-                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                </Route>
-              </Routes>
+                    {/* Catch-all → Dashboard */}
+                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                  </Route>
+                </Routes>
+              </ErrorBoundary>
             </AuthGate>
           } />
         </Routes>

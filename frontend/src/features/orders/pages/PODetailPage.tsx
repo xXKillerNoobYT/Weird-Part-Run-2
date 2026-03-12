@@ -112,8 +112,8 @@ export function PODetailPage() {
         title="PO not found"
         description="This purchase order may have been deleted or you don't have access."
         action={
-          <Link to="/orders/drafts" className="text-sm text-primary hover:underline">
-            ← Back to Draft POs
+          <Link to="/orders/purchase-orders" className="text-sm text-primary hover:underline">
+            ← Back to Purchase Orders
           </Link>
         }
       />
@@ -130,7 +130,7 @@ export function PODetailPage() {
       {/* Back + header */}
       <div>
         <Link
-          to={po.status === 'draft' ? '/orders/drafts' : '/orders/active'}
+          to="/orders/purchase-orders"
           className="inline-flex items-center gap-1 text-sm text-gray-500 dark:text-gray-400 hover:text-primary mb-3"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -266,54 +266,54 @@ export function PODetailPage() {
           </h2>
         </div>
         {po.lines && po.lines.length > 0 ? (
-          <table className="min-w-full divide-y divide-border">
-            <thead className="bg-surface-secondary/50">
-              <tr>
-                <th className="px-4 py-2.5 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Part</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Ordered</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Received</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Unit Cost</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Line Total</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {po.lines.map((line) => (
-                <tr key={line.id} className="hover:bg-surface-secondary/30 transition-colors">
-                  <td className="px-4 py-3">
-                    <PartIdentity
-                      compact
-                      partName={line.part_name}
-                      partDescription={line.part_description}
-                      partNumber={line.part_number}
-                      partId={line.part_id}
-                      brandName={line.brand_name}
-                      colorName={line.color_name}
-                      colorHex={line.color_hex}
-                      categoryName={line.category_name}
-                      typeName={line.type_name}
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-900 dark:text-gray-100">
-                    {line.qty_ordered}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-500 dark:text-gray-400">
-                    {line.qty_received}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-700 dark:text-gray-300">
-                    {line.unit_cost != null
-                      ? `$${line.unit_cost.toFixed(2)}`
-                      : '—'}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right tabular-nums font-medium text-gray-900 dark:text-gray-100">
-                    {line.unit_cost != null
-                      ? `$${(line.qty_ordered * line.unit_cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                      : '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                        line.status === 'received'
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-surface-secondary/50">
+                <tr>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Part</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Ordered</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Received</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Unit Cost</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Line Total</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {po.lines.map((line) => (
+                  <tr key={line.id} className="hover:bg-surface-secondary/30 transition-colors">
+                    <td className="px-4 py-3">
+                      <PartIdentity
+                        compact
+                        partName={line.part_name}
+                        partDescription={line.part_description}
+                        partNumber={line.part_number}
+                        partId={line.part_id}
+                        brandName={line.brand_name}
+                        colorName={line.color_name}
+                        colorHex={line.color_hex}
+                        categoryName={line.category_name}
+                        typeName={line.type_name}
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-900 dark:text-gray-100">
+                      {line.qty_ordered}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-500 dark:text-gray-400">
+                      {line.qty_received}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-700 dark:text-gray-300">
+                      {line.unit_cost != null
+                        ? `$${line.unit_cost.toFixed(2)}`
+                        : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right tabular-nums font-medium text-gray-900 dark:text-gray-100">
+                      {line.unit_cost != null
+                        ? `$${(line.qty_ordered * line.unit_cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${line.status === 'received'
                           ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
                           : line.status === 'partial'
                             ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
@@ -322,15 +322,16 @@ export function PODetailPage() {
                               : line.status === 'cancelled'
                                 ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
                                 : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                      }`}
-                    >
-                      {line.status ?? 'pending'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                          }`}
+                      >
+                        {line.status ?? 'pending'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
             No line items yet.

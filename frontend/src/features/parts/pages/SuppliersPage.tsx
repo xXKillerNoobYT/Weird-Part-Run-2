@@ -343,7 +343,7 @@ function SupplierCard({
 
         {/* Delivery badges */}
         <div className="flex items-center gap-1">
-          {(supplier.delivery_methods ?? [supplier.primary_delivery_method]).map((method) => {
+          {(supplier.delivery_methods ?? (supplier.primary_delivery_method ? [supplier.primary_delivery_method] : [])).map((method) => {
             const Icon = DELIVERY_ICONS[method] ?? Truck;
             const isPrimary = method === supplier.primary_delivery_method;
             return (
@@ -423,7 +423,7 @@ function SupplierCard({
               </h4>
               <div className="space-y-1.5 text-sm">
                 <div className="flex flex-wrap gap-1">
-                  {(supplier.delivery_methods ?? [supplier.primary_delivery_method]).map((method) => {
+                  {(supplier.delivery_methods ?? (supplier.primary_delivery_method ? [supplier.primary_delivery_method] : [])).map((method) => {
                     const isPrimary = method === supplier.primary_delivery_method;
                     return (
                       <Badge key={method} variant={DELIVERY_BADGE_VARIANT[method]}>
@@ -586,13 +586,13 @@ function ReliabilityBadge({
     const pct = Math.round(value * 100);
     display = `${pct}%`;
     color = pct >= 90 ? 'text-green-600 dark:text-green-400'
-          : pct >= 75 ? 'text-amber-600 dark:text-amber-400'
-          : 'text-red-600 dark:text-red-400';
+      : pct >= 75 ? 'text-amber-600 dark:text-amber-400'
+        : 'text-red-600 dark:text-red-400';
   } else {
     display = `${value}d`;
     color = value <= 3 ? 'text-green-600 dark:text-green-400'
-          : value <= 7 ? 'text-amber-600 dark:text-amber-400'
-          : 'text-red-600 dark:text-red-400';
+      : value <= 7 ? 'text-amber-600 dark:text-amber-400'
+        : 'text-red-600 dark:text-red-400';
   }
 
   return (
@@ -1210,11 +1210,10 @@ function SupplierFormModal({
                     <button
                       key={method}
                       type="button"
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border transition-colors ${
-                        isSelected
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border transition-colors ${isSelected
                           ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
                           : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
-                      }`}
+                        }`}
                       onClick={() => toggleDeliveryMethod(method)}
                     >
                       <Icon className="h-3.5 w-3.5" />
@@ -1293,11 +1292,10 @@ function SupplierFormModal({
                   <button
                     key={value}
                     type="button"
-                    className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                      form.delivery_days.includes(value)
+                    className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${form.delivery_days.includes(value)
                         ? 'border-green-500 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
                         : 'border-gray-200 dark:border-gray-600 text-gray-500 hover:border-gray-300'
-                    }`}
+                      }`}
                     onClick={() => toggleDeliveryDay(value)}
                   >
                     {label}

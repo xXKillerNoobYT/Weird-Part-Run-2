@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { PageSpinner } from '../../../components/ui/Spinner';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { Button } from '../../../components/ui/Button';
 import { Card, CardHeader } from '../../../components/ui/Card';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -46,7 +47,7 @@ export function MyClockPage() {
   }, [fetchClockState]);
 
   // Load active jobs for the "clock into" list
-  const { data: jobs, isLoading: jobsLoading } = useQuery({
+  const { data: jobs, isLoading: jobsLoading, isError: jobsError, refetch: refetchJobs } = useQuery({
     queryKey: ['jobs-active-for-clock'],
     queryFn: () => getActiveJobs({ status: 'active' }),
     enabled: !isClockedIn,
@@ -166,7 +167,9 @@ export function MyClockPage() {
       </div>
 
       {/* Job list for clocking in */}
-      {jobsLoading ? (
+      {jobsError ? (
+        <ErrorFallback onRetry={refetchJobs} />
+      ) : jobsLoading ? (
         <PageSpinner label="Loading jobs..." />
       ) : !jobs || jobs.length === 0 ? (
         <EmptyState

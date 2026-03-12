@@ -48,11 +48,11 @@ export function PartsRequestsPage() {
 
   const filteredJPOs = search
     ? jpos.filter(
-        (j) =>
-          j.order_number.toLowerCase().includes(search.toLowerCase()) ||
-          j.job_name?.toLowerCase().includes(search.toLowerCase()) ||
-          j.requester_name?.toLowerCase().includes(search.toLowerCase())
-      )
+      (j) =>
+        j.order_number.toLowerCase().includes(search.toLowerCase()) ||
+        j.job_name?.toLowerCase().includes(search.toLowerCase()) ||
+        j.requester_name?.toLowerCase().includes(search.toLowerCase())
+    )
     : jpos;
 
   // Bulk selection — operates on the currently filtered list
@@ -132,11 +132,10 @@ export function PartsRequestsPage() {
               setStatusFilter(tab.value);
               bulk.clear(); // clear selection on filter change
             }}
-            className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap min-h-[44px] ${
-              statusFilter === tab.value
+            className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap min-h-[44px] ${statusFilter === tab.value
                 ? 'border-primary text-primary'
                 : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-            }`}
+              }`}
           >
             {tab.label}
           </button>
@@ -171,7 +170,7 @@ export function PartsRequestsPage() {
           description={statusFilter ? 'No requests match this filter.' : 'Create your first parts request to get started.'}
         />
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border bg-surface">
+        <div className="overflow-x-auto overflow-hidden rounded-lg border border-border bg-surface">
           <table className="min-w-full divide-y divide-border">
             <thead className="bg-surface-secondary">
               <tr>
@@ -195,9 +194,8 @@ export function PartsRequestsPage() {
               {filteredJPOs.map((jpo) => (
                 <tr
                   key={jpo.id}
-                  className={`hover:bg-surface-secondary/50 transition-colors cursor-pointer ${
-                    bulk.isSelected(jpo.id) ? 'bg-primary/5 dark:bg-primary/10' : ''
-                  }`}
+                  className={`hover:bg-surface-secondary/50 transition-colors cursor-pointer ${bulk.isSelected(jpo.id) ? 'bg-primary/5 dark:bg-primary/10' : ''
+                    }`}
                 >
                   {canManage && (
                     <BulkCheckbox

@@ -23,6 +23,7 @@ import {
 import { Button } from '../../../components/ui/Button';
 import { Card, CardHeader } from '../../../components/ui/Card';
 import { Badge } from '../../../components/ui/Badge';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { getAllSettings, updateSetting } from '../../../api/settings';
 import { toast } from '../../../lib/toast';
 
@@ -92,14 +93,12 @@ function Toggle({
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
-        checked ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-700'
-      }`}
+      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${checked ? 'bg-green-500' : 'bg-gray-200 dark:bg-gray-700'
+        }`}
     >
       <span
-        className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-          checked ? 'translate-x-5' : 'translate-x-0'
-        }`}
+        className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${checked ? 'translate-x-5' : 'translate-x-0'
+          }`}
       />
     </button>
   );
@@ -143,7 +142,7 @@ function ConnectionPill({ status }: { status: ConnStatus }) {
 // ── Main Page ────────────────────────────────────────────────────
 
 export function AiConfigPage() {
-  const { data: allSettings, isLoading } = useQuery({
+  const { data: allSettings, isLoading, isError, refetch } = useQuery({
     queryKey: ['all-settings'],
     queryFn: getAllSettings,
     staleTime: 60_000,
@@ -211,6 +210,8 @@ export function AiConfigPage() {
       </div>
     );
   }
+
+  if (isError) return <ErrorFallback onRetry={refetch} />;
 
   return (
     <div className="space-y-5 max-w-2xl">
@@ -314,9 +315,8 @@ export function AiConfigPage() {
             return (
               <div
                 key={feature.key}
-                className={`flex items-center gap-3 px-4 py-3.5 ${
-                  !masterEnabled ? 'opacity-50' : ''
-                }`}
+                className={`flex items-center gap-3 px-4 py-3.5 ${!masterEnabled ? 'opacity-50' : ''
+                  }`}
               >
                 <Icon className="h-4 w-4 text-gray-400 dark:text-gray-500 flex-shrink-0" />
                 <div className="flex-1 min-w-0">

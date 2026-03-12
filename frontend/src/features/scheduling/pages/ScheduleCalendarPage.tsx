@@ -25,6 +25,7 @@ import {
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { useNavigate } from 'react-router-dom';
 import { PageSpinner } from '../../../components/ui/Spinner';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { getCalendarData } from '../../../api/scheduling';
@@ -300,7 +301,7 @@ export function ScheduleCalendarPage() {
   ], [weekDates]);
 
   // ── Data ─────────────────────────────────────────────────────────
-  const { data: calendar, isLoading } = useQuery({
+  const { data: calendar, isLoading, isError, refetch } = useQuery({
     queryKey: ['calendar', isoDate(weekStart), isoDate(spanEnd)],
     queryFn: () => getCalendarData(isoDate(weekStart), isoDate(spanEnd)),
     staleTime: 30_000,
@@ -362,169 +363,170 @@ export function ScheduleCalendarPage() {
   function nextWeek() { setWeekStart(addDays(weekStart, 7)); }
   function goToday() { setWeekStart(getMonday(new Date())); }
 
-  // ── Loading ──────────────────────────────────────────────────────
+  // ── Loading / Error ──────────────────────────────────────────────
   if (isLoading) return <PageSpinner />;
+  if (isError) return <ErrorFallback onRetry={refetch} />;
 
   const totalEntries = calendar?.entries?.length ?? 0;
   const weekLabel = `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${spanEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} (3 weeks)`;
 
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-    <div className="space-y-4">
-      {/* ── Header ──────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <CalendarDays size={24} className="text-blue-600 dark:text-blue-400" />
-          <div>
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-              Schedule Calendar
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              {weekLabel} &middot; {totalEntries} entries
-              {' · '}<span className="text-blue-500">drag dispatches to reschedule</span>
-            </p>
+      <div className="space-y-4">
+        {/* ── Header ──────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <CalendarDays size={24} className="text-blue-600 dark:text-blue-400" />
+            <div>
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white">
+                Schedule Calendar
+              </h1>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {weekLabel} &middot; {totalEntries} entries
+                {' · '}<span className="text-blue-500">drag dispatches to reschedule</span>
+              </p>
+            </div>
+          </div>
+
+          {/* Week navigation */}
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={prevWeek}>
+              <ChevronLeft size={16} />
+            </Button>
+            <Button size="sm" variant="secondary" onClick={goToday}>
+              Today
+            </Button>
+            <Button size="sm" variant="secondary" onClick={nextWeek}>
+              <ChevronRight size={16} />
+            </Button>
           </div>
         </div>
 
-        {/* Week navigation */}
-        <div className="flex items-center gap-2">
-          <Button size="sm" variant="secondary" onClick={prevWeek}>
-            <ChevronLeft size={16} />
-          </Button>
-          <Button size="sm" variant="secondary" onClick={goToday}>
-            Today
-          </Button>
-          <Button size="sm" variant="secondary" onClick={nextWeek}>
-            <ChevronRight size={16} />
-          </Button>
-        </div>
-      </div>
-
-      {/* ── Type filter pills ────────────────────────────────────── */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        <Filter size={14} className="text-gray-400 dark:text-gray-500 flex-shrink-0" />
-        {(['all', 'dispatch', 'time_off', 'sub_schedule'] as const).map(t => (
-          <button
-            key={t}
-            onClick={() => setTypeFilter(t)}
-            className={`
+        {/* ── Type filter pills ────────────────────────────────────── */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <Filter size={14} className="text-gray-400 dark:text-gray-500 flex-shrink-0" />
+          {(['all', 'dispatch', 'time_off', 'sub_schedule'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setTypeFilter(t)}
+              className={`
               px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors
               ${typeFilter === t
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-              }
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                }
             `}
-          >
-            {t === 'all' ? 'All' : ENTRY_TYPE_CONFIG[t].label}
-          </button>
-        ))}
-      </div>
+            >
+              {t === 'all' ? 'All' : ENTRY_TYPE_CONFIG[t].label}
+            </button>
+          ))}
+        </div>
 
-      {/* ── Desktop: 3-week stacked grid (droppable cells) ─────── */}
-      <div className="hidden md:flex flex-col gap-2">
-        {weeks.map((weekGroup, weekIdx) => (
-          <div key={weekIdx} className="rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-            {/* Week label bar */}
-            <div className="px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                Week {weekIdx + 1} &middot; {weekGroup[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {weekGroup[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-              </span>
+        {/* ── Desktop: 3-week stacked grid (droppable cells) ─────── */}
+        <div className="hidden md:flex flex-col gap-2">
+          {weeks.map((weekGroup, weekIdx) => (
+            <div key={weekIdx} className="rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+              {/* Week label bar */}
+              <div className="px-3 py-1.5 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Week {weekIdx + 1} &middot; {weekGroup[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {weekGroup[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                </span>
+              </div>
+              <div className="grid grid-cols-7 gap-px bg-gray-200 dark:bg-gray-700">
+                {weekGroup.map((d, i) => {
+                  const dateStr = isoDate(d);
+                  const entries = entriesByDate.get(dateStr) ?? [];
+                  return (
+                    <DroppableDayCell
+                      key={dateStr}
+                      dateStr={dateStr}
+                      isToday={isToday(d)}
+                      dayLabel={DAY_NAMES[i]}
+                      dayNumber={d.getDate()}
+                      entries={entries}
+                    />
+                  );
+                })}
+              </div>
             </div>
-            <div className="grid grid-cols-7 gap-px bg-gray-200 dark:bg-gray-700">
-              {weekGroup.map((d, i) => {
-                const dateStr = isoDate(d);
-                const entries = entriesByDate.get(dateStr) ?? [];
-                return (
-                  <DroppableDayCell
-                    key={dateStr}
-                    dateStr={dateStr}
-                    isToday={isToday(d)}
-                    dayLabel={DAY_NAMES[i]}
-                    dayNumber={d.getDate()}
-                    entries={entries}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
-      {/* ── Mobile: daily list (draggable entries) ──────────── */}
-      <div className="md:hidden space-y-4">
-        {weekDates.map((d, i) => {
-          const isWeekStart = i % 7 === 0;
-          const dateStr = isoDate(d);
-          const entries = entriesByDate.get(dateStr) ?? [];
-          const today = isToday(d);
+        {/* ── Mobile: daily list (draggable entries) ──────────── */}
+        <div className="md:hidden space-y-4">
+          {weekDates.map((d, i) => {
+            const isWeekStart = i % 7 === 0;
+            const dateStr = isoDate(d);
+            const entries = entriesByDate.get(dateStr) ?? [];
+            const today = isToday(d);
 
-          return (
-            <div key={dateStr}>
-              {/* Week separator on mobile */}
-              {isWeekStart && (
-                <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide px-2 pb-1 pt-1 border-b border-gray-100 dark:border-gray-800 mb-2">
-                  Week {Math.floor(i / 7) + 1}
-                </div>
-              )}
-              <div className={`
+            return (
+              <div key={dateStr}>
+                {/* Week separator on mobile */}
+                {isWeekStart && (
+                  <div className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide px-2 pb-1 pt-1 border-b border-gray-100 dark:border-gray-800 mb-2">
+                    Week {Math.floor(i / 7) + 1}
+                  </div>
+                )}
+                <div className={`
                 flex items-center gap-2 mb-2 px-2 py-1 rounded-lg
                 ${today ? 'bg-blue-50 dark:bg-blue-900/20' : ''}
               `}>
-                <span className={`
+                  <span className={`
                   text-sm font-bold
                   ${today ? 'text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}
                 `}>
-                  {DAY_NAMES_FULL[i]}
-                </span>
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </span>
-                {entries.length > 0 && (
-                  <Badge variant="neutral" className="text-[10px]">
-                    {entries.length}
-                  </Badge>
+                    {DAY_NAMES_FULL[i]}
+                  </span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400">
+                    {d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </span>
+                  {entries.length > 0 && (
+                    <Badge variant="neutral" className="text-[10px]">
+                      {entries.length}
+                    </Badge>
+                  )}
+                </div>
+
+                {entries.length === 0 ? (
+                  <div className="text-xs text-gray-400 dark:text-gray-600 px-2 py-3 text-center border border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
+                    No entries
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 px-1">
+                    {entries.map((entry, j) => (
+                      <DraggableEntry
+                        key={`${entry.entry_type}-${entry.user_id ?? entry.gc_id}-${j}`}
+                        entry={entry}
+                        idx={j}
+                      />
+                    ))}
+                  </div>
                 )}
               </div>
+            );
+          })}
+        </div>
 
-              {entries.length === 0 ? (
-                <div className="text-xs text-gray-400 dark:text-gray-600 px-2 py-3 text-center border border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
-                  No entries
-                </div>
-              ) : (
-                <div className="space-y-1.5 px-1">
-                  {entries.map((entry, j) => (
-                    <DraggableEntry
-                      key={`${entry.entry_type}-${entry.user_id ?? entry.gc_id}-${j}`}
-                      entry={entry}
-                      idx={j}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {/* ── Legend ──────────────────────────────────────────────── */}
+        <div className="flex items-center gap-4 flex-wrap text-xs text-gray-500 dark:text-gray-400 pt-2">
+          {Object.entries(ENTRY_TYPE_CONFIG).map(([key, cfg]) => {
+            const Icon = cfg.icon;
+            return (
+              <div key={key} className="flex items-center gap-1.5">
+                <div className={`w-3 h-3 rounded border ${cfg.bg}`} />
+                <Icon size={12} className={cfg.text} />
+                <span>{cfg.label}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ── Drag overlay — floats with cursor while dragging ──── */}
+        <DragOverlay dropAnimation={null}>
+          {activeDragEntry ? <EntryCard entry={activeDragEntry} isDragging /> : null}
+        </DragOverlay>
       </div>
-
-      {/* ── Legend ──────────────────────────────────────────────── */}
-      <div className="flex items-center gap-4 flex-wrap text-xs text-gray-500 dark:text-gray-400 pt-2">
-        {Object.entries(ENTRY_TYPE_CONFIG).map(([key, cfg]) => {
-          const Icon = cfg.icon;
-          return (
-            <div key={key} className="flex items-center gap-1.5">
-              <div className={`w-3 h-3 rounded border ${cfg.bg}`} />
-              <Icon size={12} className={cfg.text} />
-              <span>{cfg.label}</span>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ── Drag overlay — floats with cursor while dragging ──── */}
-      <DragOverlay dropAnimation={null}>
-        {activeDragEntry ? <EntryCard entry={activeDragEntry} isDragging /> : null}
-      </DragOverlay>
-    </div>
     </DndContext>
   );
 }

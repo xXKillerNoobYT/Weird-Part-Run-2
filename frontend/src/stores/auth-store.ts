@@ -16,6 +16,8 @@ import { getMe } from '../api/auth';
 import { getTheme } from '../api/settings';
 import { useThemeStore } from './theme-store';
 import { isCapacitor } from '../lib/environment';
+import { initSync, stopPeriodicSync } from '../local/sync-engine';
+import { getDeviceId } from '../lib/device-identity';
 
 interface AuthState {
   /** Current authenticated user (null if not logged in) */
@@ -68,11 +70,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       // Start sync engine on Capacitor after successful auth
       if (isCapacitor()) {
-        import('../local/sync-engine').then(async (mod) => {
-          const { getDeviceId } = await import('../lib/device-identity');
-          const deviceId = await getDeviceId();
-          mod.initSync(deviceId);
-        }).catch(console.error);
+        getDeviceId().then((deviceId) => initSync(deviceId)).catch(console.error);
       }
     } catch {
       localStorage.removeItem('wiredpart_token');
@@ -86,9 +84,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     // Stop sync engine on Capacitor
     if (isCapacitor()) {
-      import('../local/sync-engine').then((mod) => {
-        mod.stopPeriodicSync();
-      }).catch(console.error);
+      try { stopPeriodicSync(); } catch { /* non-critical */ }
     }
   },
 

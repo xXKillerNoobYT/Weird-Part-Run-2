@@ -14,6 +14,7 @@ import {
   Calendar, ChevronLeft, ChevronRight, Users,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Button } from '../../../components/ui/Button';
 import { Card } from '../../../components/ui/Card';
@@ -51,7 +52,7 @@ export function WeeklyAvailabilityPage() {
   const dateFrom = fmt(weekStart);
   const dateTo = fmt(addDays(weekStart, 6));
 
-  const { data: availability, isLoading } = useQuery({
+  const { data: availability, isLoading, isError, refetch } = useQuery({
     queryKey: ['weekly-availability', dateFrom, dateTo],
     queryFn: () => getWeeklyAvailability(dateFrom, dateTo),
     staleTime: 30_000,
@@ -82,6 +83,7 @@ export function WeeklyAvailabilityPage() {
   }, [availability]);
 
   if (isLoading) return <PageSpinner />;
+  if (isError) return <ErrorFallback onRetry={refetch} />;
 
   return (
     <div className="space-y-4">

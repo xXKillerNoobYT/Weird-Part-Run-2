@@ -51,7 +51,7 @@ export function CreateEntryModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-surface border border-border rounded-xl shadow-xl w-full max-w-md mx-4">
+      <div className="bg-surface border border-border rounded-xl shadow-xl w-full max-w-md mx-4 max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
@@ -59,23 +59,22 @@ export function CreateEntryModal({
           </h2>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-surface-secondary transition-colors"
+            className="p-2 rounded-lg hover:bg-surface-secondary transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
           >
             <X className="h-4 w-4 text-gray-400" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto">
           {/* Type tabs */}
           <div className="flex gap-1 p-1 bg-surface-secondary rounded-lg">
             <button
               type="button"
               onClick={() => setType('note')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                type === 'note'
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-md transition-colors ${type === 'note'
                   ? 'bg-surface text-gray-900 dark:text-gray-100 shadow-sm'
                   : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
+                }`}
             >
               <FileText className="h-3.5 w-3.5" />
               Note
@@ -83,11 +82,10 @@ export function CreateEntryModal({
             <button
               type="button"
               onClick={() => setType('task')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                type === 'task'
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-md transition-colors ${type === 'task'
                   ? 'bg-surface text-gray-900 dark:text-gray-100 shadow-sm'
                   : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-              }`}
+                }`}
             >
               <ListTodo className="h-3.5 w-3.5" />
               Task

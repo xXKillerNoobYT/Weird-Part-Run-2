@@ -33,9 +33,10 @@ async def get_shared_report(
     Returns the report data with any annotations, or 404/410 if the
     token is invalid, expired, or revoked.
     """
-    row = await db.execute_fetchone(
+    cursor = await db.execute(
         "SELECT * FROM report_share_tokens WHERE token = ?", (token,)
     )
+    row = await cursor.fetchone()
     if not row:
         raise HTTPException(404, "Share link not found")
     if not row["is_active"]:
@@ -160,7 +161,7 @@ async def _generate_report_data(
     elif report_type == "labor_overview":
         rows = await db.execute_fetchall(
             """
-            SELECT u.display_name AS employee, j.name AS job_name,
+            SELECT u.display_name AS employee, j.job_name AS job_name,
                    SUM(le.regular_hours) AS regular,
                    SUM(le.overtime_hours) AS overtime,
                    SUM(le.regular_hours + le.overtime_hours) AS total
@@ -169,7 +170,7 @@ async def _generate_report_data(
             JOIN jobs j ON j.id = le.job_id
             WHERE le.work_date BETWEEN ? AND ?
             GROUP BY u.id, j.id
-            ORDER BY u.display_name, j.name
+            ORDER BY u.display_name, j.job_name
             """,
             (start, end),
         )
@@ -178,13 +179,13 @@ async def _generate_report_data(
     elif report_type == "profitability":
         rows = await db.execute_fetchall(
             """
-            SELECT j.name AS job_name,
+            SELECT j.job_name AS job_name,
                    COALESCE(SUM(le.regular_hours + le.overtime_hours), 0) AS total_hours
             FROM jobs j
             LEFT JOIN labor_entries le ON le.job_id = j.id AND le.work_date BETWEEN ? AND ?
             WHERE j.status = 'active'
             GROUP BY j.id
-            ORDER BY j.name
+            ORDER BY j.job_name
             """,
             (start, end),
         )
@@ -195,15 +196,16 @@ async def _generate_report_data(
         report_date = params.get("date", start)
         if not job_id:
             return {"error": "Missing job_id in share context"}
-        row = await db.execute_fetchone(
+        cursor = await db.execute(
             """
-            SELECT dr.*, j.name AS job_name
+            SELECT dr.*, j.job_name AS job_name
             FROM daily_reports dr
             JOIN jobs j ON j.id = dr.job_id
             WHERE dr.job_id = ? AND dr.report_date = ?
             """,
             (job_id, report_date),
         )
+        row = await cursor.fetchone()
         if not row:
             return {"error": "Daily report not found"}
         return dict(row)

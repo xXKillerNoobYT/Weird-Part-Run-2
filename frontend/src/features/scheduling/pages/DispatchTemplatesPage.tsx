@@ -12,6 +12,7 @@ import {
   Repeat, Plus, Play, Trash2, Edit2, Users, Briefcase,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
@@ -49,7 +50,7 @@ export function DispatchTemplatesPage() {
   const canManage = hasPermission(PERMISSIONS.DISPATCH_EMPLOYEES);
 
   // ── Data queries ──────────────────────────────────────────────
-  const { data: templates, isLoading } = useQuery({
+  const { data: templates, isLoading, isError, refetch } = useQuery({
     queryKey: ['dispatch-templates'],
     queryFn: () => listDispatchTemplates(),
     staleTime: 30_000,
@@ -206,6 +207,7 @@ export function DispatchTemplatesPage() {
 
   // ── Render ────────────────────────────────────────────────────
   if (isLoading) return <PageSpinner />;
+  if (isError) return <ErrorFallback onRetry={refetch} />;
 
   return (
     <div className="space-y-4">

@@ -60,6 +60,7 @@ import { SectionPanel } from '../../notebooks/components/SectionPanel';
 import { CreateEntryModal } from '../../notebooks/components/CreateEntryModal';
 import { AddSectionModal } from '../../notebooks/components/AddSectionModal';
 import { ChatMessageView } from '../../chat/components/ChatMessageView';
+import { getInbox } from '../../../api/chat';
 
 type SubTab = 'notebook' | 'overview' | 'people' | 'labor' | 'parts' | 'tools' | 'chat' | 'questions' | 'costs';
 
@@ -238,8 +239,8 @@ export function JobDetailPage() {
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === tab.id
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
               }`}
           >
             {tab.icon}
@@ -529,30 +530,30 @@ function OverviewTab({ job }: { job: JobResponse }) {
 
               {/* Days Remaining — color-coded */}
               <div className={`text-center p-3 rounded-lg ${job.warranty_days_remaining == null
-                  ? 'bg-surface-secondary'
-                  : job.warranty_days_remaining <= 0
-                    ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-                    : job.warranty_days_remaining <= 30
-                      ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800'
-                      : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+                ? 'bg-surface-secondary'
+                : job.warranty_days_remaining <= 0
+                  ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+                  : job.warranty_days_remaining <= 30
+                    ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800'
+                    : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
                 }`}>
                 <div className={`flex justify-center mb-1 ${job.warranty_days_remaining == null
-                    ? 'text-gray-400'
-                    : job.warranty_days_remaining <= 0
-                      ? 'text-red-500'
-                      : job.warranty_days_remaining <= 30
-                        ? 'text-amber-500'
-                        : 'text-green-500'
+                  ? 'text-gray-400'
+                  : job.warranty_days_remaining <= 0
+                    ? 'text-red-500'
+                    : job.warranty_days_remaining <= 30
+                      ? 'text-amber-500'
+                      : 'text-green-500'
                   }`}>
                   <Shield className="h-4 w-4" />
                 </div>
                 <p className={`text-lg font-bold ${job.warranty_days_remaining == null
-                    ? 'text-gray-900 dark:text-gray-100'
-                    : job.warranty_days_remaining <= 0
-                      ? 'text-red-600 dark:text-red-400'
-                      : job.warranty_days_remaining <= 30
-                        ? 'text-amber-600 dark:text-amber-400'
-                        : 'text-green-600 dark:text-green-400'
+                  ? 'text-gray-900 dark:text-gray-100'
+                  : job.warranty_days_remaining <= 0
+                    ? 'text-red-600 dark:text-red-400'
+                    : job.warranty_days_remaining <= 30
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-green-600 dark:text-green-400'
                   }`}>
                   {job.warranty_days_remaining != null
                     ? (job.warranty_days_remaining <= 0 ? 'Expired' : `${job.warranty_days_remaining}d`)
@@ -836,7 +837,7 @@ function ChatTab({ jobId, jobNumber }: { jobId: number; jobNumber: string }) {
   // Find the job's channel from the inbox
   const { data: inbox, isLoading } = useQuery({
     queryKey: ['chat-inbox'],
-    queryFn: () => import('../../../api/chat').then(m => m.getInbox()),
+    queryFn: () => getInbox(),
   });
 
   const jobChannel = inbox?.channels?.find(
@@ -1142,8 +1143,8 @@ function CostKPIBox({
         <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>
       </div>
       <p className={`text-lg font-bold ${highlight
-          ? 'text-primary-600 dark:text-primary-400'
-          : 'text-gray-900 dark:text-gray-100'
+        ? 'text-primary-600 dark:text-primary-400'
+        : 'text-gray-900 dark:text-gray-100'
         }`}>
         {value}
       </p>
@@ -1334,8 +1335,8 @@ function PeopleTab({ jobId }: { jobId: number }) {
               <button
                 onClick={() => setTeamRole('member')}
                 className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${teamRole === 'member'
-                    ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
-                    : 'text-gray-500 dark:text-gray-400 hover:bg-surface'
+                  ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
+                  : 'text-gray-500 dark:text-gray-400 hover:bg-surface'
                   }`}
               >
                 Member
@@ -1343,8 +1344,8 @@ function PeopleTab({ jobId }: { jobId: number }) {
               <button
                 onClick={() => setTeamRole('lead')}
                 className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${teamRole === 'lead'
-                    ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
-                    : 'text-gray-500 dark:text-gray-400 hover:bg-surface'
+                  ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
+                  : 'text-gray-500 dark:text-gray-400 hover:bg-surface'
                   }`}
               >
                 <Crown size={11} />
@@ -1409,8 +1410,8 @@ function PeopleTab({ jobId }: { jobId: number }) {
                 className="flex items-center gap-3 p-2.5 rounded-lg bg-surface-secondary border border-border"
               >
                 <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${member.role === 'lead'
-                    ? 'bg-amber-100 dark:bg-amber-900/40'
-                    : 'bg-blue-100 dark:bg-blue-900/40'
+                  ? 'bg-amber-100 dark:bg-amber-900/40'
+                  : 'bg-blue-100 dark:bg-blue-900/40'
                   }`}>
                   {member.role === 'lead'
                     ? <Crown size={13} className="text-amber-600 dark:text-amber-400" />

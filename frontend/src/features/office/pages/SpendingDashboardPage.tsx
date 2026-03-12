@@ -25,6 +25,7 @@ import { Card, CardHeader } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
 import { Spinner } from '../../../components/ui/Spinner';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Modal } from '../../../components/ui/Modal';
 import { useAuthStore } from '../../../stores/auth-store';
@@ -73,7 +74,7 @@ function DashboardContent() {
   const [showEnforceModal, setShowEnforceModal] = useState(false);
 
   // ── Queries ────────────────────────────────────
-  const { data: summary, isLoading: loadingSummary } = useQuery({
+  const { data: summary, isLoading: loadingSummary, isError: summaryError, refetch: refetchSummary } = useQuery({
     queryKey: ['spending-summary'],
     queryFn: () => getSpendingSummary(),
     staleTime: 60_000,
@@ -149,6 +150,8 @@ function DashboardContent() {
       </div>
     );
   }
+
+  if (summaryError) return <ErrorFallback message="Failed to load spending data" onRetry={refetchSummary} />;
 
   return (
     <div className="space-y-6">

@@ -191,9 +191,8 @@ class OrdersService:
         await self.jpo_repo.update(jpo_id, {
             "status": "approved",
             "approved_by": approved_by,
-            "approved_at": "datetime('now')",
         })
-        # Fix: approved_at needs SQL expression
+        # approved_at requires a SQL expression (not a parameterized string literal)
         await self.db.execute(
             "UPDATE job_parts_orders SET approved_at = datetime('now') WHERE id = ?",
             (jpo_id,),

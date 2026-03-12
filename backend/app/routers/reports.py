@@ -1756,7 +1756,7 @@ async def create_annotation(
         INSERT INTO report_annotations (report_type, context_key, content, author_id, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (body.report_type, body.context_key, body.content, user["user_id"], now, now),
+        (body.report_type, body.context_key, body.content, user["id"], now, now),
     )
     await db.commit()
     row_id = cursor.lastrowid
@@ -1767,7 +1767,7 @@ async def create_annotation(
             report_type=body.report_type,
             context_key=body.context_key,
             content=body.content,
-            author_id=user["user_id"],
+            author_id=user["id"],
             author_name=display_name,
             created_at=now,
             updated_at=now,
@@ -1783,12 +1783,13 @@ async def update_annotation(
     user: dict = Depends(require_permission("view_reports")),
 ) -> ApiResponse[ReportAnnotationResponse]:
     """Edit an annotation (author-only)."""
-    row = await db.execute_fetchone(
+    cursor = await db.execute(
         "SELECT * FROM report_annotations WHERE id = ?", (annotation_id,)
     )
+    row = await cursor.fetchone()
     if not row:
         raise HTTPException(404, "Annotation not found")
-    if row["author_id"] != user["user_id"]:
+    if row["author_id"] != user["id"]:
         raise HTTPException(403, "Only the author can edit this annotation")
     now = datetime.utcnow().isoformat()
     await db.execute(
@@ -1817,13 +1818,14 @@ async def delete_annotation(
     user: dict = Depends(require_permission("view_reports")),
 ) -> None:
     """Delete an annotation (author-only or admin)."""
-    row = await db.execute_fetchone(
+    cursor = await db.execute(
         "SELECT author_id FROM report_annotations WHERE id = ?", (annotation_id,)
     )
+    row = await cursor.fetchone()
     if not row:
         raise HTTPException(404, "Annotation not found")
     is_admin = "admin" in (user.get("hats") or [])
-    if row["author_id"] != user["user_id"] and not is_admin:
+    if row["author_id"] != user["id"] and not is_admin:
         raise HTTPException(403, "Only the author or an admin can delete this")
     await db.execute("DELETE FROM report_annotations WHERE id = ?", (annotation_id,))
     await db.commit()
@@ -1877,7 +1879,7 @@ async def create_template(
         INSERT INTO report_templates (name, report_type, config_json, created_by, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (body.name, body.report_type, json.dumps(body.config_json), user["user_id"], now, now),
+        (body.name, body.report_type, json.dumps(body.config_json), user["id"], now, now),
     )
     await db.commit()
     return ApiResponse(
@@ -1886,7 +1888,7 @@ async def create_template(
             name=body.name,
             report_type=body.report_type,
             config_json=body.config_json,
-            created_by=user["user_id"],
+            created_by=user["id"],
             created_at=now,
             updated_at=now,
         )
@@ -1901,12 +1903,13 @@ async def update_template(
     user: dict = Depends(require_permission("view_reports")),
 ) -> ApiResponse[ReportTemplateResponse]:
     """Update a template (creator-only)."""
-    row = await db.execute_fetchone(
+    cursor = await db.execute(
         "SELECT * FROM report_templates WHERE id = ?", (template_id,)
     )
+    row = await cursor.fetchone()
     if not row:
         raise HTTPException(404, "Template not found")
-    if row["created_by"] != user["user_id"]:
+    if row["created_by"] != user["id"]:
         raise HTTPException(403, "Only the creator can edit this template")
     now = datetime.utcnow().isoformat()
     new_name = body.name or row["name"]
@@ -1936,12 +1939,13 @@ async def delete_template(
     user: dict = Depends(require_permission("view_reports")),
 ) -> None:
     """Delete a template (creator-only)."""
-    row = await db.execute_fetchone(
+    cursor = await db.execute(
         "SELECT created_by FROM report_templates WHERE id = ?", (template_id,)
     )
+    row = await cursor.fetchone()
     if not row:
         raise HTTPException(404, "Template not found")
-    if row["created_by"] != user["user_id"]:
+    if row["created_by"] != user["id"]:
         raise HTTPException(403, "Only the creator can delete this template")
     await db.execute("DELETE FROM report_templates WHERE id = ?", (template_id,))
     await db.commit()
@@ -1971,7 +1975,7 @@ async def create_share_token(
         VALUES (?, ?, ?, ?, ?, ?, 1, ?)
         """,
         (token, body.report_type, json.dumps(body.context_params), body.label,
-         user["user_id"], expires_at, now),
+         user["id"], expires_at, now),
     )
     await db.commit()
     return ApiResponse(
@@ -1981,7 +1985,7 @@ async def create_share_token(
             report_type=body.report_type,
             context_params=body.context_params,
             label=body.label,
-            created_by=user["user_id"],
+            created_by=user["id"],
             expires_at=expires_at,
             is_active=True,
             created_at=now,
@@ -2113,15 +2117,15 @@ async def _generate_csv_for_bundle(
         writer.writerow(["Employee", "Job", "Total Hours", "Regular", "OT", "Bill Rate Type"])
         rows = await db.execute_fetchall(
             """
-            SELECT u.display_name, j.name, SUM(le.regular_hours + le.overtime_hours),
+            SELECT u.display_name, j.job_name, SUM(le.regular_hours + le.overtime_hours),
                    SUM(le.regular_hours), SUM(le.overtime_hours), brt.name
             FROM labor_entries le
             JOIN users u ON u.id = le.user_id
             JOIN jobs j ON j.id = le.job_id
             LEFT JOIN bill_rate_types brt ON brt.id = le.bill_rate_type_id
             WHERE le.work_date BETWEEN ? AND ?
-            GROUP BY u.display_name, j.name, brt.name
-            ORDER BY u.display_name, j.name
+            GROUP BY u.display_name, j.job_name, brt.name
+            ORDER BY u.display_name, j.job_name
             """,
             (item.start_date, item.end_date),
         )
@@ -2132,14 +2136,14 @@ async def _generate_csv_for_bundle(
         writer.writerow(["Job", "Total Hours", "Labor Cost", "Parts Cost", "Total Cost"])
         rows = await db.execute_fetchall(
             """
-            SELECT j.name,
+            SELECT j.job_name,
                    COALESCE(SUM(le.regular_hours + le.overtime_hours), 0) AS hours,
                    0.0 AS labor_cost, 0.0 AS parts_cost, 0.0 AS total_cost
             FROM jobs j
             LEFT JOIN labor_entries le ON le.job_id = j.id AND le.work_date BETWEEN ? AND ?
             WHERE j.status = 'active'
             GROUP BY j.id
-            ORDER BY j.name
+            ORDER BY j.job_name
             """,
             (item.start_date, item.end_date),
         )

@@ -517,10 +517,11 @@ async def cancel_sub_schedule(
     svc = SchedulingService(db)
 
     # Fetch schedule before cancelling for notification context
-    existing = await db.execute_fetchone(
+    _cursor = await db.execute(
         "SELECT gc_id, scheduled_date, job_id FROM sub_schedules WHERE id = ?",
         (schedule_id,),
     )
+    existing = await _cursor.fetchone()
 
     cancelled = await svc.cancel_sub_schedule(schedule_id)
     if not cancelled:
@@ -746,9 +747,10 @@ async def apply_shift_pattern_to_user(
         raise HTTPException(status_code=422, detail=str(e))
 
     # Notify the employee about their new shift pattern
-    pattern = await db.execute_fetchone(
+    _cursor = await db.execute(
         "SELECT name FROM shift_patterns WHERE id = ?", (pattern_id,),
     )
+    pattern = await _cursor.fetchone()
     pattern_name = pattern["name"] if pattern else f"Pattern #{pattern_id}"
     notif = NotificationService(db)
     await notif.notify(
@@ -804,25 +806,28 @@ async def get_pto_balance(
     from datetime import datetime
 
     # Get active policy
-    policy_row = await db.execute_fetchone(
+    _cursor = await db.execute(
         "SELECT * FROM pto_policies WHERE user_id = ? AND is_active = 1",
         (user_id,),
     )
+    policy_row = await _cursor.fetchone()
 
     # Get user name
-    user_row = await db.execute_fetchone(
+    _cursor = await db.execute(
         "SELECT display_name FROM users WHERE id = ?", (user_id,)
     )
+    user_row = await _cursor.fetchone()
     user_name = user_row["display_name"] if user_row else "Unknown"
 
     # Current balance = last transaction's balance_after, or 0
-    bal_row = await db.execute_fetchone(
+    _cursor = await db.execute(
         """
         SELECT balance_after FROM pto_transactions
         WHERE user_id = ? ORDER BY effective_date DESC, id DESC LIMIT 1
         """,
         (user_id,),
     )
+    bal_row = await _cursor.fetchone()
     current_balance = float(bal_row["balance_after"]) if bal_row else 0.0
 
     # YTD stats
@@ -978,7 +983,8 @@ async def update_pto_policy(
     db: aiosqlite.Connection = Depends(get_db),
 ):
     """Update a PTO policy."""
-    row = await db.execute_fetchone("SELECT * FROM pto_policies WHERE id = ?", (policy_id,))
+    _cursor = await db.execute("SELECT * FROM pto_policies WHERE id = ?", (policy_id,))
+    row = await _cursor.fetchone()
     if not row:
         raise HTTPException(404, "PTO policy not found")
 
@@ -1004,7 +1010,8 @@ async def update_pto_policy(
         )
         await db.commit()
 
-    updated = await db.execute_fetchone("SELECT * FROM pto_policies WHERE id = ?", (policy_id,))
+    _cursor = await db.execute("SELECT * FROM pto_policies WHERE id = ?", (policy_id,))
+    updated = await _cursor.fetchone()
     return ApiResponse(
         data=PtoPolicyResponse(
             id=updated["id"],
@@ -1030,21 +1037,23 @@ async def create_pto_transaction(
     from datetime import datetime
 
     # Get current balance
-    bal_row = await db.execute_fetchone(
+    _cursor = await db.execute(
         """
         SELECT balance_after FROM pto_transactions
         WHERE user_id = ? ORDER BY effective_date DESC, id DESC LIMIT 1
         """,
         (body.user_id,),
     )
+    bal_row = await _cursor.fetchone()
     current = float(bal_row["balance_after"]) if bal_row else 0.0
 
     # Check max balance for accruals
     if body.transaction_type == "accrual":
-        policy = await db.execute_fetchone(
+        _cursor = await db.execute(
             "SELECT max_balance FROM pto_policies WHERE user_id = ? AND is_active = 1",
             (body.user_id,),
         )
+        policy = await _cursor.fetchone()
         if policy and policy["max_balance"] is not None:
             max_bal = float(policy["max_balance"])
             if current + body.hours > max_bal:
@@ -1065,7 +1074,7 @@ async def create_pto_transaction(
         """,
         (body.user_id, body.transaction_type, body.hours, new_balance,
          body.reference_id, body.reference_type, body.note, body.effective_date,
-         user["user_id"], now),
+         user["id"], now),
     )
     await db.commit()
     return ApiResponse(
@@ -1079,7 +1088,7 @@ async def create_pto_transaction(
             reference_type=body.reference_type,
             note=body.note,
             effective_date=body.effective_date,
-            created_by=user["user_id"],
+            created_by=user["id"],
             created_at=now,
         ),
         message=f"PTO transaction recorded. New balance: {new_balance}h",
@@ -1106,26 +1115,28 @@ async def run_pto_accruals(
     skipped = 0
     for p in policies:
         # Check if already accrued today
-        existing = await db.execute_fetchone(
+        _cursor = await db.execute(
             """
             SELECT id FROM pto_transactions
             WHERE user_id = ? AND transaction_type = 'accrual' AND effective_date = ?
             """,
             (p["user_id"], today),
         )
+        existing = await _cursor.fetchone()
         if existing:
             skipped += 1
             continue
 
         # Calculate accrual
         hours = float(p["accrual_rate"])
-        bal_row = await db.execute_fetchone(
+        _cursor = await db.execute(
             """
             SELECT balance_after FROM pto_transactions
             WHERE user_id = ? ORDER BY effective_date DESC, id DESC LIMIT 1
             """,
             (p["user_id"],),
         )
+        bal_row = await _cursor.fetchone()
         current = float(bal_row["balance_after"]) if bal_row else 0.0
 
         # Cap at max balance
@@ -1146,7 +1157,7 @@ async def run_pto_accruals(
                 (user_id, transaction_type, hours, balance_after, note, effective_date, created_by, created_at)
             VALUES (?, 'accrual', ?, ?, 'Auto-accrual', ?, ?, ?)
             """,
-            (p["user_id"], hours, new_balance, today, user["user_id"], now),
+            (p["user_id"], hours, new_balance, today, user["id"], now),
         )
         processed += 1
 

@@ -24,24 +24,26 @@ import { EmptyState } from '../../../components/ui/EmptyState';
 import { Card } from '../../../components/ui/Card';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { listWarehouseLocations, listTrailers } from '../../../api/vehicles';
 import type { WarehouseLocation, JobTrailer } from '../../../lib/types';
 
 
 export function WarehouseNetworkPage() {
-  const { data: warehouses, isLoading: loadingWarehouses } = useQuery({
+  const { data: warehouses, isLoading: loadingWarehouses, isError: warehousesError, refetch: refetchWarehouses } = useQuery({
     queryKey: ['warehouse-locations'],
     queryFn: () => listWarehouseLocations({ include_inactive: false }),
     staleTime: 30_000,
   });
 
-  const { data: trailers } = useQuery({
+  const { data: trailers, isError: trailersError, refetch: refetchTrailers } = useQuery({
     queryKey: ['trailers'],
     queryFn: () => listTrailers(),
     staleTime: 30_000,
   });
 
   if (loadingWarehouses) return <PageSpinner label="Loading warehouse network..." />;
+  if (warehousesError || trailersError) return <ErrorFallback onRetry={() => { refetchWarehouses(); refetchTrailers(); }} />;
 
   const activeWarehouses = warehouses?.filter(w => w.is_active) ?? [];
   const activeTrailers = trailers?.filter(t => t.is_active) ?? [];

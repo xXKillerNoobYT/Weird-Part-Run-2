@@ -14,6 +14,7 @@ import {
   Clock, UserCheck, MapPin, Check, XCircle,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
@@ -88,7 +89,7 @@ export function DailyDispatchPage() {
   const dateStr = isoDate(selectedDate);
 
   // ── Data ─────────────────────────────────────────────────────────
-  const { data: daily, isLoading } = useQuery({
+  const { data: daily, isLoading, isError, refetch } = useQuery({
     queryKey: ['daily-dispatch', dateStr],
     queryFn: () => getDailyDispatch(dateStr),
     staleTime: 15_000,
@@ -132,6 +133,7 @@ export function DailyDispatchPage() {
   }
 
   if (isLoading) return <PageSpinner />;
+  if (isError) return <ErrorFallback onRetry={refetch} />;
 
   return (
     <div className="space-y-4">

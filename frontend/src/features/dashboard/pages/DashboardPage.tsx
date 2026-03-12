@@ -26,6 +26,7 @@ import {
 
 import { Card, CardHeader } from '../../../components/ui/Card';
 import { Badge } from '../../../components/ui/Badge';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { FastDriveCard } from '../components/FastDriveCard';
 import { DailyReportTab } from '../components/DailyReportTab';
 import { SchedulingWidget } from '../components/SchedulingWidget';
@@ -88,8 +89,8 @@ function TabButton({
     <button
       onClick={onClick}
       className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${active
-          ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-          : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+        ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+        : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
         }`}
     >
       {icon}
@@ -108,7 +109,7 @@ export function DashboardPage() {
 
   const canViewPeople = hasPermission(PERMISSIONS.VIEW_PEOPLE);
 
-  const { data: dashboard, isLoading } = useQuery({
+  const { data: dashboard, isLoading, isError, refetch } = useQuery({
     queryKey: ['dashboard'],
     queryFn: getDashboard,
     staleTime: 30_000,  // refresh every 30s
@@ -131,6 +132,8 @@ export function DashboardPage() {
   });
 
   const kpis = dashboard?.kpis;
+
+  if (isError) return <ErrorFallback message="Failed to load dashboard" onRetry={refetch} />;
 
   return (
     <div className="space-y-6">

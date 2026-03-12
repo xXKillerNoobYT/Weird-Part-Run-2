@@ -213,63 +213,64 @@ export function JPODetailPage() {
           </h2>
         </div>
         {jpo.lines && jpo.lines.length > 0 ? (
-          <table className="min-w-full divide-y divide-border">
-            <thead className="bg-surface-secondary/50">
-              <tr>
-                <th className="px-4 py-2.5 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Part</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Requested</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Ordered</th>
-                <th className="px-4 py-2.5 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Received</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Priority</th>
-                <th className="px-4 py-2.5 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Notes</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {jpo.lines.map((line) => (
-                <tr key={line.id} className="hover:bg-surface-secondary/30 transition-colors">
-                  <td className="px-4 py-3">
-                    <PartIdentity
-                      compact
-                      partName={line.part_name}
-                      partDescription={line.part_description}
-                      partNumber={line.part_number}
-                      partId={line.part_id}
-                      brandName={line.brand_name}
-                      colorName={line.color_name}
-                      colorHex={line.color_hex}
-                      categoryName={line.category_name}
-                      typeName={line.type_name}
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-900 dark:text-gray-100">
-                    {line.qty_requested}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-500 dark:text-gray-400">
-                    {line.qty_ordered}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-500 dark:text-gray-400">
-                    {line.qty_received}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                        line.priority === 'critical'
-                          ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                          : line.priority === 'urgent'
-                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                            : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
-                      }`}
-                    >
-                      {line.priority ?? 'normal'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 truncate max-w-[150px]">
-                    {line.notes || '—'}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-border">
+              <thead className="bg-surface-secondary/50">
+                <tr>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Part</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Requested</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Ordered</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Received</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Priority</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-medium uppercase text-gray-500 dark:text-gray-400">Notes</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {jpo.lines.map((line) => (
+                  <tr key={line.id} className="hover:bg-surface-secondary/30 transition-colors">
+                    <td className="px-4 py-3">
+                      <PartIdentity
+                        compact
+                        partName={line.part_name}
+                        partDescription={line.part_description}
+                        partNumber={line.part_number}
+                        partId={line.part_id}
+                        brandName={line.brand_name}
+                        colorName={line.color_name}
+                        colorHex={line.color_hex}
+                        categoryName={line.category_name}
+                        typeName={line.type_name}
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-900 dark:text-gray-100">
+                      {line.qty_requested}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-500 dark:text-gray-400">
+                      {line.qty_ordered}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-right tabular-nums text-gray-500 dark:text-gray-400">
+                      {line.qty_received}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${line.priority === 'critical'
+                            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                            : line.priority === 'urgent'
+                              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                          }`}
+                      >
+                        {line.priority ?? 'normal'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 truncate max-w-[150px]">
+                      {line.notes || '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
           <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
             No line items yet.

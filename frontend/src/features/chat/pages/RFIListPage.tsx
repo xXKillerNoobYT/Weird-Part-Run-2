@@ -28,13 +28,14 @@ import {
   Check,
 } from 'lucide-react';
 import { getRFIs, updateRFI } from '../../../api/chat';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import type { RFIResponse, RFIStatus } from '../../../lib/types';
 
 const STATUS_CONFIG: Record<string, { label: string; icon: typeof Clock; className: string }> = {
-  draft:     { label: 'Draft',     icon: Clock,        className: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400' },
-  sent:      { label: 'Sent',      icon: Send,         className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
+  draft: { label: 'Draft', icon: Clock, className: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400' },
+  sent: { label: 'Sent', icon: Send, className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
   responded: { label: 'Responded', icon: CheckCircle2, className: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
-  closed:    { label: 'Closed',    icon: XCircle,      className: 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-500' },
+  closed: { label: 'Closed', icon: XCircle, className: 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-500' },
 };
 
 export default function RFIListPage() {
@@ -45,7 +46,7 @@ export default function RFIListPage() {
   const [copiedId, setCopiedId] = useState<number | null>(null);
 
   // ── Data fetching ────────────────────────────────────────────────
-  const { data: rfis = [], isLoading } = useQuery({
+  const { data: rfis = [], isLoading, isError, refetch } = useQuery({
     queryKey: ['rfis', filterStatus],
     queryFn: () =>
       getRFIs({
@@ -143,7 +144,9 @@ export default function RFIListPage() {
 
       {/* RFI list */}
       <div className="flex-1 overflow-y-auto">
-        {isLoading ? (
+        {isError ? (
+          <ErrorFallback onRetry={refetch} />
+        ) : isLoading ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
           </div>

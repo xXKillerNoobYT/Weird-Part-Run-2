@@ -13,6 +13,7 @@ import {
   Briefcase,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
@@ -71,14 +72,14 @@ export function SubSchedulePage() {
   const [editingEntry, setEditingEntry] = useState<SubScheduleResponse | null>(null);
 
   // ── Jobs list ────────────────────────────────────────────────────
-  const { data: jobs } = useQuery({
+  const { data: jobs, isError: jobsError, refetch: refetchJobs } = useQuery({
     queryKey: ['active-jobs', 'sub-schedule'],
     queryFn: () => getActiveJobs(),
     staleTime: 60_000,
   });
 
   // ── Sub schedules for selected job ───────────────────────────────
-  const { data: schedules, isLoading: schedulesLoading } = useQuery({
+  const { data: schedules, isLoading: schedulesLoading, isError: schedulesError, refetch: refetchSchedules } = useQuery({
     queryKey: ['sub-schedules', selectedJobId],
     queryFn: () => getJobSubSchedules(selectedJobId!),
     enabled: !!selectedJobId,
@@ -143,7 +144,9 @@ export function SubSchedulePage() {
       </Card>
 
       {/* ── Schedule list ───────────────────────────────────────── */}
-      {!selectedJobId ? (
+      {jobsError || schedulesError ? (
+        <ErrorFallback onRetry={() => { refetchJobs(); refetchSchedules(); }} />
+      ) : !selectedJobId ? (
         <EmptyState
           icon={Briefcase}
           title="Select a job"

@@ -274,7 +274,12 @@ class ChatMessageRepo(BaseRepo):
 
     async def soft_delete(self, message_id: int) -> bool:
         """Soft-delete a message."""
-        return await self.update(message_id, {"deleted_at": "datetime('now')"})
+        cursor = await self.db.execute(
+            "UPDATE chat_messages SET deleted_at = datetime('now') WHERE id = ?",
+            (message_id,),
+        )
+        await self.db.commit()
+        return cursor.rowcount > 0
 
     async def edit_content(self, message_id: int, content: str) -> bool:
         """Edit message content."""

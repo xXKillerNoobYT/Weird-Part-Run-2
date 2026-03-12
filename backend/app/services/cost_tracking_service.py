@@ -366,7 +366,15 @@ class CostTrackingService:
         effective = custom if custom is not None else default_margin
         avg_cost = part["weighted_avg_cost"] or 0
 
-        sell_price = round(avg_cost * (1 + effective / 100), 2) if avg_cost > 0 else 0
+        # Margin formula: sell = cost / (1 - margin/100)
+        # Must match job_service.py consume_part() calculation
+        if avg_cost > 0 and effective > 0:
+            if effective >= 100:
+                sell_price = round(avg_cost * (1 + effective / 100), 2)  # Treat as markup at extreme values
+            else:
+                sell_price = round(avg_cost / (1 - effective / 100), 2)
+        else:
+            sell_price = round(avg_cost, 2) if avg_cost > 0 else 0
 
         return {
             "part_id": part_id,

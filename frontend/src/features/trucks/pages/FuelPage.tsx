@@ -19,6 +19,7 @@ import {
     Edit2,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
@@ -51,7 +52,7 @@ export function FuelPage() {
         queryFn: () => listVehicles(),
     });
 
-    const { data: fleetSummary, isLoading: loadingFleetSummary } = useQuery({
+    const { data: fleetSummary, isLoading: loadingFleetSummary, isError: fleetError, refetch: refetchFleet } = useQuery({
         queryKey: ['fleet-fuel-summary'],
         queryFn: () => getFleetFuelSummary(),
     });
@@ -141,7 +142,7 @@ export function FuelPage() {
                 <h3 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-3">
                     Fleet Fuel Summary
                 </h3>
-                {loadingFleetSummary ? <PageSpinner /> : <SummaryCards data={fleetSummary} />}
+                {fleetError ? <ErrorFallback compact onRetry={refetchFleet} /> : loadingFleetSummary ? <PageSpinner /> : <SummaryCards data={fleetSummary} />}
             </div>
 
             {/* Vehicle Selector */}

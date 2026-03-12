@@ -19,6 +19,7 @@ import {
     Trash2,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
+import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
@@ -56,7 +57,7 @@ export function TelematicsPage() {
         queryFn: () => listVehicles(),
     });
 
-    const { data: fleetPositions, isLoading: loadingPositions } = useQuery({
+    const { data: fleetPositions, isLoading: loadingPositions, isError: positionsError, refetch: refetchPositions } = useQuery({
         queryKey: ['fleet-positions'],
         queryFn: getFleetPositions,
         refetchInterval: 30_000, // Refresh every 30s
@@ -102,8 +103,8 @@ export function TelematicsPage() {
         <button
             onClick={() => setSubView(value)}
             className={`px-3 py-1.5 text-sm rounded-lg transition-colors min-h-[36px] flex items-center gap-1.5 ${subView === value
-                    ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-medium'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+                ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-medium'
+                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
                 }`}
         >
             <Icon className="h-4 w-4" />
@@ -131,7 +132,9 @@ export function TelematicsPage() {
             {/* Fleet Positions View */}
             {subView === 'positions' && (
                 <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 overflow-hidden">
-                    {loadingPositions ? (
+                    {positionsError ? (
+                        <ErrorFallback onRetry={refetchPositions} />
+                    ) : loadingPositions ? (
                         <PageSpinner />
                     ) : !fleetPositions || fleetPositions.length === 0 ? (
                         <EmptyState

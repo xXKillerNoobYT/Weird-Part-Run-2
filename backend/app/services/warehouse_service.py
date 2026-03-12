@@ -549,7 +549,7 @@ class WarehouseService:
                    li.jpo_id,
                    jpo.order_number AS jpo_number,
                    jpo.job_id,
-                   j.name      AS job_name,
+                   j.job_name      AS job_name,
                    j.job_number,
                    li.part_id,
                    p.name      AS part_name,

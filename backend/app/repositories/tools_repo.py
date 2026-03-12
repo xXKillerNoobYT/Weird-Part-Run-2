@@ -607,7 +607,7 @@ class NotebookEntryToolRepo(BaseRepo):
                       CASE t.location_type
                           WHEN 'warehouse' THEN wl.name
                           WHEN 'truck' THEN v.unit_number
-                          WHEN 'job' THEN j.name
+                          WHEN 'job' THEN j.job_name
                       END AS tool_location_name
                FROM notebook_entry_tools net
                JOIN tools t ON t.id = net.tool_id

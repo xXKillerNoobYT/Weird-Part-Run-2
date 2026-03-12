@@ -164,8 +164,8 @@ export function CustomerDetailPage() {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${isActive
-                    ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                   }`}
               >
                 <Icon size={14} />
@@ -273,7 +273,7 @@ function OverviewTab({ customer, canManage }: { customer: CustomerDetail; canMan
 
   return (
     <Card>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
         <CardHeader title="Customer Information" />
         {canManage && !editing && (
           <Button variant="ghost" size="sm" icon={<Edit2 size={14} />} onClick={() => setEditing(true)}>
@@ -621,7 +621,7 @@ function JobsTab({ customerId }: { customerId: number }) {
       {links.map((link) => (
         <Card key={link.id} noPadding>
           <button
-            onClick={() => navigate(`/jobs/active/${link.job_id}`)}
+            onClick={() => navigate(`/jobs/${link.job_id}`)}
             className="w-full flex items-center gap-3 p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors rounded-lg"
           >
             <Briefcase size={16} className="text-gray-400 dark:text-gray-500 flex-shrink-0" />
