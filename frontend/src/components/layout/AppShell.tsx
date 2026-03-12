@@ -14,8 +14,14 @@ import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { TabBar } from './TabBar';
+import { OfflineBanner } from '../ui/OfflineBanner';
+import { CommandPalette } from '../ui/CommandPalette';
+import { InstallPrompt } from '../ui/InstallPrompt';
+import { useKeyboardShortcuts } from '../../lib/useKeyboardShortcuts';
 
 export function AppShell() {
+  const { isPaletteOpen, setIsPaletteOpen } = useKeyboardShortcuts();
+
   return (
     <div className="flex h-screen overflow-hidden bg-surface-secondary">
       {/* Sidebar — hidden when printing */}
@@ -30,11 +36,20 @@ export function AppShell() {
           <TabBar />
         </div>
 
+        {/* Offline indicator — above content, below nav */}
+        <OfflineBanner />
+
         {/* Page content — scrollable */}
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
           <Outlet />
         </main>
       </div>
+
+      {/* Command palette (Ctrl+K) */}
+      <CommandPalette open={isPaletteOpen} onOpenChange={setIsPaletteOpen} />
+
+      {/* PWA install prompt */}
+      <InstallPrompt />
     </div>
   );
 }

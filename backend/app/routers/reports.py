@@ -401,18 +401,53 @@ async def timesheets(
             gps_out=gps_out,
         ))
 
-    # Group entries by day
-    day_map: dict[str, list[TimesheetEntry]] = {}
-    for entry in entries:
-        day_map.setdefault(entry.date, []).append(entry)
+    # Group entries dynamically based on group_by parameter
+    group_map: dict[str, list[TimesheetEntry]] = {}
+
+    if group_by == "week":
+        # ISO week grouping
+        for entry in entries:
+            from datetime import datetime as DT
+            d = DT.strptime(entry.date, "%Y-%m-%d").date()
+            iso_year, iso_week, _ = d.isocalendar()
+            key = f"{iso_year}-W{iso_week:02d}"
+            group_map.setdefault(key, []).append(entry)
+    elif group_by == "month":
+        for entry in entries:
+            key = entry.date[:7]  # YYYY-MM
+            group_map.setdefault(key, []).append(entry)
+    elif group_by in ("pay_period", "billing_period"):
+        from app.services.period_helper import PeriodHelper
+        helper = PeriodHelper(db)
+        if group_by == "pay_period":
+            periods = await helper.get_pay_periods(start_date, end_date)
+        else:
+            periods = await helper.get_billing_periods(start_date, end_date)
+        # Build a lookup from each period's range to its label
+        for entry in entries:
+            placed = False
+            for p in periods:
+                if p["start"] <= entry.date <= p["end"]:
+                    key = f"{p['start']}|{p['label']}"
+                    group_map.setdefault(key, []).append(entry)
+                    placed = True
+                    break
+            if not placed:
+                group_map.setdefault(entry.date, []).append(entry)
+    else:
+        # Default: group by day
+        for entry in entries:
+            group_map.setdefault(entry.date, []).append(entry)
 
     day_groups = []
-    for d in sorted(day_map.keys()):
-        grp_entries = day_map[d]
+    for key in sorted(group_map.keys()):
+        grp_entries = group_map[key]
         grp_reg = sum(e.regular_hours for e in grp_entries)
         grp_ot = sum(e.overtime_hours for e in grp_entries)
+        # Use the label from period-based grouping, or the key itself
+        label = key.split("|")[1] if "|" in key else key
         day_groups.append(TimesheetDayGroup(
-            date=d,
+            date=label,
             entries=grp_entries,
             total_hours=round(grp_reg + grp_ot, 2),
             regular_hours=round(grp_reg, 2),
@@ -591,19 +626,46 @@ async def exports(
     user: dict = Depends(require_permission("export_reports")),
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    """Generate a downloadable CSV or PDF export of a report.
-
-    Currently supports CSV export. PDF support requires reportlab
-    and will be added in a follow-up.
-    """
-    if req.format == "pdf":
-        raise HTTPException(
-            status_code=501,
-            detail="PDF export coming soon. Use CSV for now.",
-        )
+    """Generate a downloadable CSV or PDF export of a report."""
+    from pathlib import Path
 
     start = req.start_date or (date.today() - timedelta(days=30)).isoformat()
     end = req.end_date or date.today().isoformat()
+
+    if req.format == "pdf":
+        from app.services.report_pdf_service import ReportPDFService
+        pdf_svc = ReportPDFService(db)
+
+        filepath: str | None = None
+        if req.report_type == "timesheet":
+            filepath = await pdf_svc.generate_timesheet_pdf(
+                req.employee_id, start, end, req.group_by
+            )
+        elif req.report_type == "labor-overview":
+            filepath = await pdf_svc.generate_labor_overview_pdf(start, end)
+        elif req.report_type == "pre-billing":
+            if not req.job_id:
+                raise HTTPException(status_code=400, detail="job_id required for pre-billing export")
+            filepath = await pdf_svc.generate_pre_billing_pdf(req.job_id, start, end)
+        elif req.report_type == "profitability":
+            filepath = await pdf_svc.generate_profitability_pdf(start, end, req.job_id)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown report type: {req.report_type}")
+
+        if not filepath or not Path(filepath).exists():
+            raise HTTPException(status_code=500, detail="PDF generation failed")
+
+        # Stream the file and delete after sending
+        def _pdf_iter():
+            with open(filepath, "rb") as f:
+                yield from iter(lambda: f.read(65536), b"")
+
+        fname = Path(filepath).name
+        return StreamingResponse(
+            _pdf_iter(),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        )
 
     if req.report_type == "pre-billing":
         if not req.job_id:
@@ -1500,13 +1562,35 @@ async def _export_general_ledger_csv(
 async def _export_payroll_csv(
     db: aiosqlite.Connection, req: BookkeeperExportRequest
 ) -> StreamingResponse:
-    """Generate Payroll CSV for ADP/Gusto — employee hours + pay rate."""
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
+    """Generate Payroll CSV for ADP/Gusto — employee hours + pay rate.
+
+    Columns are customizable via the payroll_columns setting.
+    Available columns: Employee ID, Employee Name, Period Start, Period End,
+    Regular Hours, Overtime Hours, Total Hours, Pay Rate, Gross Pay,
+    Job Name, Job Number, Bill Rate Type.
+    """
+    import json as _json
+
+    # Load customizable columns from settings
+    default_cols = [
         "Employee ID", "Employee Name", "Period Start", "Period End",
         "Regular Hours", "Overtime Hours", "Total Hours", "Pay Rate",
-    ])
+    ]
+    cursor = await db.execute(
+        "SELECT value FROM settings WHERE key = 'payroll_columns'"
+    )
+    col_row = await cursor.fetchone()
+    if col_row and col_row["value"]:
+        try:
+            cols = _json.loads(col_row["value"])
+            if isinstance(cols, list) and len(cols) > 0:
+                default_cols = cols
+        except (ValueError, TypeError):
+            pass
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(default_cols)
 
     cursor = await db.execute(
         """SELECT le.user_id, u.display_name,
@@ -1531,12 +1615,26 @@ async def _export_payroll_csv(
     for row in await cursor.fetchall():
         reg = round(row["reg_hours"], 2)
         ot = round(row["ot_hours"], 2)
-        writer.writerow([
-            row["user_id"], row["display_name"],
-            req.period_start, req.period_end,
-            reg, ot, round(reg + ot, 2),
-            round(row["pay_rate"] or 0, 2),
-        ])
+        rate = round(row["pay_rate"] or 0, 2)
+        gross = round((reg * rate) + (ot * rate * 1.5), 2)
+
+        # Build row based on requested columns
+        col_map = {
+            "Employee ID": row["user_id"],
+            "Employee Name": row["display_name"],
+            "Period Start": req.period_start,
+            "Period End": req.period_end,
+            "Regular Hours": reg,
+            "Overtime Hours": ot,
+            "Total Hours": round(reg + ot, 2),
+            "Pay Rate": rate,
+            "Gross Pay": gross,
+            "Job Name": "",  # Not available in group-by query
+            "Job Number": "",
+            "Bill Rate Type": "",
+        }
+        csv_row = [col_map.get(c, "") for c in default_cols]
+        writer.writerow(csv_row)
 
     output.seek(0)
     filename = format_report_filename("payroll", req.period_start, req.period_end)

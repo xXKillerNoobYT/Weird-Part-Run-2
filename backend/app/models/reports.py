@@ -181,13 +181,14 @@ class LaborOverviewReport(BaseModel):
 
 class ExportRequest(BaseModel):
     """Request to generate a downloadable export."""
-    report_type: str = Field(..., pattern="^(pre-billing|timesheet|labor-overview)$")
+    report_type: str = Field(..., pattern="^(pre-billing|timesheet|labor-overview|profitability)$")
     format: str = Field(..., pattern="^(csv|pdf)$")
     job_id: int | None = None
     employee_id: int | None = None
     start_date: str | None = None
     end_date: str | None = None
     group_by: str = "day"
+    columns: list[str] | None = None  # For customizable payroll column export
 
 
 # ── Billing Periods (Period Locking) ───────────────────────────────

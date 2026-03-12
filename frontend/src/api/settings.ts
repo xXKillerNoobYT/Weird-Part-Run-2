@@ -168,3 +168,77 @@ export async function uploadCompanyLogo(
   );
   return data.data!;
 }
+
+
+// ── Billing Cycle & Pay Period Settings ─────────────────────────
+
+export interface BillingCycleSettings {
+  cycle_type: string;
+  start_day: number;
+}
+
+export interface PayPeriodSettings {
+  period_type: string;
+  start_day: number;
+}
+
+export interface PayrollColumnConfig {
+  columns: string[];
+}
+
+/** Get billing cycle configuration. */
+export async function getBillingCycle(): Promise<BillingCycleSettings> {
+  const { data } = await apiClient.get<ApiResponse<BillingCycleSettings>>(
+    '/settings/billing-cycle',
+  );
+  return data.data!;
+}
+
+/** Update billing cycle configuration. */
+export async function updateBillingCycle(
+  settings: BillingCycleSettings,
+): Promise<BillingCycleSettings> {
+  const { data } = await apiClient.put<ApiResponse<BillingCycleSettings>>(
+    '/settings/billing-cycle',
+    settings,
+  );
+  return data.data!;
+}
+
+/** Get pay period configuration. */
+export async function getPayPeriod(): Promise<PayPeriodSettings> {
+  const { data } = await apiClient.get<ApiResponse<PayPeriodSettings>>(
+    '/settings/pay-period',
+  );
+  return data.data!;
+}
+
+/** Update pay period configuration. */
+export async function updatePayPeriod(
+  settings: PayPeriodSettings,
+): Promise<PayPeriodSettings> {
+  const { data } = await apiClient.put<ApiResponse<PayPeriodSettings>>(
+    '/settings/pay-period',
+    settings,
+  );
+  return data.data!;
+}
+
+/** Get customizable payroll export columns. */
+export async function getPayrollColumns(): Promise<PayrollColumnConfig> {
+  const { data } = await apiClient.get<ApiResponse<PayrollColumnConfig>>(
+    '/settings/payroll-columns',
+  );
+  return data.data!;
+}
+
+/** Update customizable payroll export columns. */
+export async function updatePayrollColumns(
+  config: PayrollColumnConfig,
+): Promise<PayrollColumnConfig> {
+  const { data } = await apiClient.put<ApiResponse<PayrollColumnConfig>>(
+    '/settings/payroll-columns',
+    config,
+  );
+  return data.data!;
+}

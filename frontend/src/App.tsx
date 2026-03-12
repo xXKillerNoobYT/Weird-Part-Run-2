@@ -139,6 +139,7 @@ import { ToolScanRedirect } from './features/tools/components/ToolScanRedirect';
 import { AppConfigPage } from './features/settings/pages/AppConfigPage';
 import { CompanyProfilePage } from './features/settings/pages/CompanyProfilePage';
 import { PDFSettingsPage } from './features/settings/pages/PDFSettingsPage';
+import { BillingPaySettingsPage } from './features/settings/pages/BillingPaySettingsPage';
 import { ThemesPage } from './features/settings/pages/ThemesPage';
 import { NotificationPrefsPage } from './features/settings/pages/NotificationPrefsPage';
 import { SyncPage } from './features/settings/pages/SyncPage';
@@ -322,6 +323,7 @@ export default function App() {
                   <Route path="/settings/app-config" element={<AppConfigPage />} />
                   <Route path="/settings/company-profile" element={<CompanyProfilePage />} />
                   <Route path="/settings/pdf" element={<PDFSettingsPage />} />
+                  <Route path="/settings/billing-pay" element={<BillingPaySettingsPage />} />
                   <Route path="/settings/themes" element={<ThemesPage />} />
                   <Route path="/settings/notifications" element={<NotificationPrefsPage />} />
                   <Route path="/settings/questions" element={<Navigate to="/office/clock-out-questions" replace />} />

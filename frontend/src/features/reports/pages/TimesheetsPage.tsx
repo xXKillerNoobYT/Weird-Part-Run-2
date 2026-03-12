@@ -69,6 +69,7 @@ export function TimesheetsPage() {
   // ── Controls ──────────────────────────────────────────────
   const [employeeId, setEmployeeId] = useState<number | undefined>(undefined);
   const [payPeriod, setPayPeriod] = useState<PayPeriod>('this_week');
+  const [groupBy, setGroupBy] = useState<'day' | 'week' | 'month' | 'pay_period' | 'billing_period'>('day');
   const [startDate, setStartDate] = useState(() => {
     const range = getPayPeriodRange('this_week');
     return range?.start ?? new Date().toISOString().split('T')[0];
@@ -93,12 +94,12 @@ export function TimesheetsPage() {
   });
 
   const reportQuery = useQuery({
-    queryKey: ['reports', 'timesheets', employeeId, startDate, endDate],
+    queryKey: ['reports', 'timesheets', employeeId, startDate, endDate, groupBy],
     queryFn: () => getTimesheets({
       start_date: startDate,
       end_date: endDate,
       employee_id: employeeId,
-      group_by: 'day',
+      group_by: groupBy,
     }),
     enabled: submitted,
     staleTime: 30_000,
@@ -239,6 +240,26 @@ export function TimesheetsPage() {
           >
             Generate
           </button>
+
+          {/* Group By */}
+          <div className="min-w-[150px]">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Group By
+            </label>
+            <select
+              value={groupBy}
+              onChange={(e) => setGroupBy(e.target.value as 'day' | 'week' | 'month' | 'pay_period' | 'billing_period')}
+              className="w-full rounded-lg border border-gray-300 dark:border-gray-600
+                         bg-white dark:bg-gray-700 px-3 py-2 text-sm
+                         text-gray-900 dark:text-gray-100 min-h-[44px]"
+            >
+              <option value="day">Day</option>
+              <option value="week">Week</option>
+              <option value="month">Month</option>
+              <option value="pay_period">Pay Period</option>
+              <option value="billing_period">Billing Period</option>
+            </select>
+          </div>
         </div>
       </Card>
 

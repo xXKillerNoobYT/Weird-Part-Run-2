@@ -25,16 +25,7 @@ import {
 } from '../../api/notifications';
 import type { NotificationResponse } from '../../lib/types';
 
-/** Singleton audio element for notification chime */
-let chimeAudio: HTMLAudioElement | null = null;
-
-function getChimeAudio(): HTMLAudioElement {
-  if (!chimeAudio) {
-    chimeAudio = new Audio('/sounds/chime.mp3');
-    chimeAudio.volume = 0.5;
-  }
-  return chimeAudio;
-}
+import { playChime as playChimeSound } from '../../lib/chime';
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
@@ -81,15 +72,9 @@ export function NotificationBell() {
   // Play chime when new notifications arrive
   const playChime = useCallback(() => {
     if (!userInteracted || !anySoundEnabled) return;
-    try {
-      const audio = getChimeAudio();
-      audio.currentTime = 0;
-      audio.play().catch(() => {
-        // Browser blocked autoplay — silently ignore
-      });
-    } catch {
-      // Audio not supported — silently ignore
-    }
+    playChimeSound(0.5).catch(() => {
+      // Browser blocked autoplay — silently ignore
+    });
   }, [userInteracted, anySoundEnabled]);
 
   // Detect unread count increase → play sound

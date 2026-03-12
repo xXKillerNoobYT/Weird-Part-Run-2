@@ -198,7 +198,7 @@ export async function getTimesheets(params: {
   start_date: string;
   end_date: string;
   employee_id?: number;
-  group_by?: 'day' | 'week' | 'pay_period';
+  group_by?: 'day' | 'week' | 'month' | 'pay_period' | 'billing_period';
 }): Promise<TimesheetReport> {
   const { data } = await apiClient.get<ApiResponse<TimesheetReport>>(
     '/reports/timesheets',

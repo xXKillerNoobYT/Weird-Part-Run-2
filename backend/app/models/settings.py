@@ -45,3 +45,40 @@ class PDFSettings(BaseModel):
 class SettingsBulkUpdate(BaseModel):
     """Bulk update multiple settings at once."""
     settings: dict[str, str] = Field(default_factory=dict)  # key → JSON value
+
+
+class BillingCycleSettings(BaseModel):
+    """Billing cycle configuration.
+
+    Controls how billing periods are computed for job cost rollups,
+    profitability reports, and bookkeeper exports.
+    """
+    cycle_type: str = "monthly"  # weekly | biweekly | semi_monthly | monthly | quarterly | yearly
+    start_day: int = 1           # day-of-week (1=Mon) or day-of-month (1-28)
+
+
+class PayPeriodSettings(BaseModel):
+    """Pay period configuration.
+
+    Controls how pay periods are computed for timesheets,
+    labor reports, and payroll exports.
+    """
+    period_type: str = "weekly"  # weekly | biweekly | semi_monthly | monthly
+    start_day: int = 1           # day-of-week (1=Mon) or day-of-month (1-28)
+
+
+class PayrollColumnConfig(BaseModel):
+    """Customizable payroll export columns.
+
+    Allows admins to pick which columns appear in payroll CSV exports.
+    """
+    columns: list[str] = Field(default_factory=lambda: [
+        "Employee ID",
+        "Employee Name",
+        "Period Start",
+        "Period End",
+        "Regular Hours",
+        "Overtime Hours",
+        "Total Hours",
+        "Pay Rate",
+    ])

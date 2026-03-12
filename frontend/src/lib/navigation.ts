@@ -234,6 +234,7 @@ export const MODULES: NavModule[] = [
       { id: 'app-config', label: 'App Config', path: '/settings/app-config', permission: 'manage_settings' },
       { id: 'company-profile', label: 'Company', path: '/settings/company-profile', permission: 'manage_settings' },
       { id: 'pdf', label: 'PDF & Docs', path: '/settings/pdf', permission: 'manage_settings' },
+      { id: 'billing-pay', label: 'Billing & Pay', path: '/settings/billing-pay', permission: 'manage_settings' },
       { id: 'themes', label: 'Themes', path: '/settings/themes' },
       { id: 'notifications', label: 'Notifications', path: '/settings/notifications' },
       { id: 'sync', label: 'Sync', path: '/settings/sync', permission: 'manage_settings' },

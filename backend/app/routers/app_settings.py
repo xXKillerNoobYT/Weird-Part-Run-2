@@ -30,6 +30,9 @@ from app.middleware.auth import require_permission, require_user
 from app.models.common import ApiResponse
 from app.models.company import CompanyProfileCreate, CompanyProfileUpdate
 from app.models.settings import (
+    BillingCycleSettings,
+    PayPeriodSettings,
+    PayrollColumnConfig,
     PDFSettings,
     SettingItem,
     SettingsBulkUpdate,
@@ -445,6 +448,103 @@ async def bulk_update_settings(
         data={"updated_count": count},
         message=f"{count} settings updated.",
     )
+
+
+# ═══════════════════════════════════════════════════════════════
+# Billing Cycle & Pay Period Configuration
+# ═══════════════════════════════════════════════════════════════
+# BEFORE the /{key} catch-all — specific path routes.
+
+
+@router.get("/billing-cycle", response_model=ApiResponse[BillingCycleSettings])
+async def get_billing_cycle(
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get billing cycle settings (cycle type + start day)."""
+    from app.services.period_helper import PeriodHelper
+    helper = PeriodHelper(db)
+    config = await helper.get_billing_config()
+    return ApiResponse(
+        data=BillingCycleSettings(
+            cycle_type=config["cycle_type"],
+            start_day=config["start_day"],
+        ),
+    )
+
+
+@router.put("/billing-cycle", response_model=ApiResponse[BillingCycleSettings])
+async def update_billing_cycle(
+    body: BillingCycleSettings,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update billing cycle settings."""
+    from app.services.period_helper import PeriodHelper
+    helper = PeriodHelper(db)
+    await helper.update_billing_config(body.cycle_type, body.start_day)
+    return ApiResponse(data=body, message="Billing cycle updated.")
+
+
+@router.get("/pay-period", response_model=ApiResponse[PayPeriodSettings])
+async def get_pay_period(
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get pay period settings (period type + start day)."""
+    from app.services.period_helper import PeriodHelper
+    helper = PeriodHelper(db)
+    config = await helper.get_pay_config()
+    return ApiResponse(
+        data=PayPeriodSettings(
+            period_type=config["period_type"],
+            start_day=config["start_day"],
+        ),
+    )
+
+
+@router.put("/pay-period", response_model=ApiResponse[PayPeriodSettings])
+async def update_pay_period(
+    body: PayPeriodSettings,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update pay period settings."""
+    from app.services.period_helper import PeriodHelper
+    helper = PeriodHelper(db)
+    await helper.update_pay_config(body.period_type, body.start_day)
+    return ApiResponse(data=body, message="Pay period updated.")
+
+
+@router.get("/payroll-columns", response_model=ApiResponse[PayrollColumnConfig])
+async def get_payroll_columns(
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get customizable payroll export columns."""
+    import json
+    repo = SettingsRepo(db)
+    raw = await repo.get_by_key("payroll_columns")
+    if raw and isinstance(raw, str):
+        try:
+            cols = json.loads(raw)
+            return ApiResponse(data=PayrollColumnConfig(columns=cols))
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return ApiResponse(data=PayrollColumnConfig())
+
+
+@router.put("/payroll-columns", response_model=ApiResponse[PayrollColumnConfig])
+async def update_payroll_columns(
+    body: PayrollColumnConfig,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update customizable payroll export columns."""
+    import json
+    repo = SettingsRepo(db)
+    await repo.set_value("payroll_columns", json.dumps(body.columns), "payroll")
+    return ApiResponse(data=body, message="Payroll columns updated.")
 
 
 # ── Single key CRUD (catch-all — MUST be last!) ─────────────────────
