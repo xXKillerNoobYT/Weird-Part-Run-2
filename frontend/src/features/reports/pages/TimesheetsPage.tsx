@@ -46,12 +46,12 @@ function getPayPeriodRange(p: PayPeriod): { start: string; end: string } | null 
 }
 
 const PAY_PERIOD_LABELS: Record<PayPeriod, string> = {
-  this_week:   'This Week',
-  last_week:   'Last Week',
+  this_week: 'This Week',
+  last_week: 'Last Week',
   this_2weeks: 'This Fortnight',
   last_2weeks: 'Last Fortnight',
-  this_month:  'This Month',
-  custom:      'Custom',
+  this_month: 'This Month',
+  custom: 'Custom',
 };
 import { Card } from '../../../components/ui/Card';
 import { PageSpinner } from '../../../components/ui/Spinner';
@@ -170,11 +170,10 @@ export function TimesheetsPage() {
             <button
               key={p}
               onClick={() => handlePayPeriodChange(p)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
-                payPeriod === p
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${payPeriod === p
                   ? 'bg-primary-600 text-white'
                   : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-              }`}
+                }`}
             >
               {PAY_PERIOD_LABELS[p]}
             </button>
@@ -435,11 +434,10 @@ function SummaryCard({ icon, label, value, highlight }: {
         <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
           {label}
         </p>
-        <p className={`text-lg font-bold truncate ${
-          highlight
+        <p className={`text-lg font-bold truncate ${highlight
             ? 'text-amber-600 dark:text-amber-400'
             : 'text-gray-900 dark:text-gray-100'
-        }`}>
+          }`}>
           {value}
         </p>
       </div>

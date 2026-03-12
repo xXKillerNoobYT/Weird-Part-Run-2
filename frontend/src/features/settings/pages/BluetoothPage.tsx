@@ -79,13 +79,13 @@ function formatDuration(seconds: number | null | undefined): string {
 }
 
 const TUNNEL_STATE_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-    stopped:       { label: 'Stopped',       color: 'text-gray-400',  bg: 'bg-gray-100 dark:bg-gray-800' },
-    starting:      { label: 'Starting…',     color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-900/20' },
-    listening:     { label: 'Listening',      color: 'text-blue-500',  bg: 'bg-blue-50 dark:bg-blue-900/20' },
-    connecting:    { label: 'Connecting…',    color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-900/20' },
-    connected:     { label: 'Connected',      color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-900/20' },
-    reconnecting:  { label: 'Reconnecting…', color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-900/20' },
-    error:         { label: 'Error',          color: 'text-red-500',   bg: 'bg-red-50 dark:bg-red-900/20' },
+    stopped: { label: 'Stopped', color: 'text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800' },
+    starting: { label: 'Starting…', color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-900/20' },
+    listening: { label: 'Listening', color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20' },
+    connecting: { label: 'Connecting…', color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-900/20' },
+    connected: { label: 'Connected', color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-900/20' },
+    reconnecting: { label: 'Reconnecting…', color: 'text-amber-500', bg: 'bg-amber-50 dark:bg-amber-900/20' },
+    error: { label: 'Error', color: 'text-red-500', bg: 'bg-red-50 dark:bg-red-900/20' },
 };
 
 
@@ -643,11 +643,10 @@ function ConfigTab() {
                     {(['auto', 'primary', 'secondary'] as const).map((role) => (
                         <button key={role}
                             onClick={() => handleChange('bt_device_role', role)}
-                            className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-                                merged.bt_device_role === role
+                            className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${merged.bt_device_role === role
                                     ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium'
                                     : 'border-border text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
-                            }`}>
+                                }`}>
                             {role.charAt(0).toUpperCase() + role.slice(1)}
                         </button>
                     ))}
@@ -716,11 +715,11 @@ function ConfigTab() {
 type Tab = 'status' | 'paired' | 'scan' | 'history' | 'config';
 
 const TABS: { id: Tab; label: string; shortLabel?: string; icon: React.FC<{ className?: string }> }[] = [
-    { id: 'status',  label: 'Status',  icon: Bluetooth },
-    { id: 'paired',  label: 'Paired',  icon: Link },
-    { id: 'scan',    label: 'Scan',    icon: Radio },
+    { id: 'status', label: 'Status', icon: Bluetooth },
+    { id: 'paired', label: 'Paired', icon: Link },
+    { id: 'scan', label: 'Scan', icon: Radio },
     { id: 'history', label: 'History', icon: Clock },
-    { id: 'config',  label: 'Config',  icon: Settings2 },
+    { id: 'config', label: 'Config', icon: Settings2 },
 ];
 
 export function BluetoothPage() {
@@ -742,8 +741,8 @@ export function BluetoothPage() {
                 {TABS.map(({ id, label, icon: Icon }) => (
                     <button key={id} onClick={() => setTab(id)}
                         className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap flex-1 justify-center ${tab === id
-                                ? 'bg-surface text-gray-900 dark:text-gray-100 shadow-sm'
-                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                            ? 'bg-surface text-gray-900 dark:text-gray-100 shadow-sm'
+                            : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
                             }`}>
                         <Icon className="h-4 w-4" />
                         <span className="hidden sm:inline">{label}</span>

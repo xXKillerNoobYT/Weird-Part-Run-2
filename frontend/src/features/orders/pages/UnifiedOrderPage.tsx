@@ -351,11 +351,10 @@ export function UnifiedOrderPage() {
               <button
                 type="button"
                 onClick={() => { setOrderType('job'); setValidationError(''); }}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium transition-colors min-h-[36px] ${
-                  isJobOrder
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium transition-colors min-h-[36px] ${isJobOrder
                     ? 'bg-primary text-white'
                     : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-                }`}
+                  }`}
               >
                 <Briefcase className="h-3.5 w-3.5" />
                 <span className="hidden lg:inline">Job Order</span>
@@ -364,11 +363,10 @@ export function UnifiedOrderPage() {
               <button
                 type="button"
                 onClick={() => { setOrderType('warehouse'); setValidationError(''); }}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium transition-colors min-h-[36px] ${
-                  !isJobOrder
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium transition-colors min-h-[36px] ${!isJobOrder
                     ? 'bg-primary text-white'
                     : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-                }`}
+                  }`}
               >
                 <Building2 className="h-3.5 w-3.5" />
                 <span className="hidden lg:inline">Warehouse</span>

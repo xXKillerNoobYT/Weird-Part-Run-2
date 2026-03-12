@@ -77,8 +77,8 @@ export function ChatMessageComposer({
 
   const filteredMentions = mentionSearch !== null
     ? mentionCandidates.filter((m) =>
-        m.display_name?.toLowerCase().includes(mentionSearch.toLowerCase()),
-      )
+      m.display_name?.toLowerCase().includes(mentionSearch.toLowerCase()),
+    )
     : [];
 
   const handleTextChange = useCallback((value: string) => {
@@ -180,7 +180,7 @@ export function ChatMessageComposer({
     } else {
       const audio = new Audio(voiceUrl);
       audio.onended = () => setIsPlayingPreview(false);
-      audio.play().catch(() => {});
+      audio.play().catch(() => { });
       previewAudioRef.current = audio;
       setIsPlayingPreview(true);
     }

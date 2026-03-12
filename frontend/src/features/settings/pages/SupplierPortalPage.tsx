@@ -501,76 +501,76 @@ function PortalPOCard({
                             {/* Acknowledgment info or form */}
                             {detail.acknowledgment ? (
                                 <>
-                                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 space-y-2">
-                                    <div className="flex items-center gap-2">
-                                        <CheckCircle2 className="h-5 w-5 text-green-600" />
-                                        <span className="font-semibold text-sm text-green-800 dark:text-green-300">
-                                            Acknowledged
-                                        </span>
-                                        <span className="text-xs text-green-600 dark:text-green-400">
-                                            {fmtDate(detail.acknowledgment.acknowledged_at)}
-                                        </span>
-                                    </div>
-                                    {detail.acknowledgment.estimated_delivery && (
-                                        <p className="text-sm text-green-700 dark:text-green-400 pl-7">
-                                            <strong>Estimated Delivery:</strong>{' '}
-                                            {fmtDate(detail.acknowledgment.estimated_delivery)}
-                                        </p>
-                                    )}
-                                    {detail.acknowledgment.supplier_notes && (
-                                        <p className="text-sm text-green-700 dark:text-green-400 pl-7">
-                                            <strong>Notes:</strong> {detail.acknowledgment.supplier_notes}
-                                        </p>
-                                    )}
-                                </div>
-
-                                {/* Supplier Note Form (Phase 17 Gap 2) */}
-                                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3">
-                                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
-                                        <MessageSquare className="h-4 w-4" />
-                                        Add a Note
-                                    </h4>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                                        Questions, delays, partial availability? Add a note and we&apos;ll see it right away.
-                                    </p>
-
-                                    {noteSuccess && (
-                                        <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-                                            <CheckCircle2 className="h-4 w-4 text-green-500" />
-                                            <p className="text-xs text-green-600 dark:text-green-400">{noteSuccess}</p>
+                                    <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 space-y-2">
+                                        <div className="flex items-center gap-2">
+                                            <CheckCircle2 className="h-5 w-5 text-green-600" />
+                                            <span className="font-semibold text-sm text-green-800 dark:text-green-300">
+                                                Acknowledged
+                                            </span>
+                                            <span className="text-xs text-green-600 dark:text-green-400">
+                                                {fmtDate(detail.acknowledgment.acknowledged_at)}
+                                            </span>
                                         </div>
-                                    )}
-                                    {noteMut.error && (
-                                        <div className="flex items-start gap-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                                            <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
-                                            <p className="text-xs text-red-600 dark:text-red-400">
-                                                {(noteMut.error as Error).message || 'Failed to send note'}
+                                        {detail.acknowledgment.estimated_delivery && (
+                                            <p className="text-sm text-green-700 dark:text-green-400 pl-7">
+                                                <strong>Estimated Delivery:</strong>{' '}
+                                                {fmtDate(detail.acknowledgment.estimated_delivery)}
                                             </p>
-                                        </div>
-                                    )}
-
-                                    <div className="flex gap-2">
-                                        <textarea
-                                            value={noteText}
-                                            onChange={(e) => setNoteText(e.target.value)}
-                                            rows={2}
-                                            placeholder="Type your note here…"
-                                            className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                                        />
-                                        <button
-                                            onClick={() => noteMut.mutate()}
-                                            disabled={!noteText.trim() || noteMut.isPending}
-                                            className="self-end px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5"
-                                        >
-                                            {noteMut.isPending ? (
-                                                <Loader2 className="h-4 w-4 animate-spin" />
-                                            ) : (
-                                                <Send className="h-4 w-4" />
-                                            )}
-                                            <span className="hidden sm:inline">Send</span>
-                                        </button>
+                                        )}
+                                        {detail.acknowledgment.supplier_notes && (
+                                            <p className="text-sm text-green-700 dark:text-green-400 pl-7">
+                                                <strong>Notes:</strong> {detail.acknowledgment.supplier_notes}
+                                            </p>
+                                        )}
                                     </div>
-                                </div>
+
+                                    {/* Supplier Note Form (Phase 17 Gap 2) */}
+                                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3">
+                                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                            <MessageSquare className="h-4 w-4" />
+                                            Add a Note
+                                        </h4>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                                            Questions, delays, partial availability? Add a note and we&apos;ll see it right away.
+                                        </p>
+
+                                        {noteSuccess && (
+                                            <div className="flex items-center gap-2 p-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                                                <CheckCircle2 className="h-4 w-4 text-green-500" />
+                                                <p className="text-xs text-green-600 dark:text-green-400">{noteSuccess}</p>
+                                            </div>
+                                        )}
+                                        {noteMut.error && (
+                                            <div className="flex items-start gap-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                                                <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
+                                                <p className="text-xs text-red-600 dark:text-red-400">
+                                                    {(noteMut.error as Error).message || 'Failed to send note'}
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        <div className="flex gap-2">
+                                            <textarea
+                                                value={noteText}
+                                                onChange={(e) => setNoteText(e.target.value)}
+                                                rows={2}
+                                                placeholder="Type your note here…"
+                                                className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm resize-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                            />
+                                            <button
+                                                onClick={() => noteMut.mutate()}
+                                                disabled={!noteText.trim() || noteMut.isPending}
+                                                className="self-end px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5"
+                                            >
+                                                {noteMut.isPending ? (
+                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                ) : (
+                                                    <Send className="h-4 w-4" />
+                                                )}
+                                                <span className="hidden sm:inline">Send</span>
+                                            </button>
+                                        </div>
+                                    </div>
                                 </>
                             ) : !showAckForm ? (
                                 <button

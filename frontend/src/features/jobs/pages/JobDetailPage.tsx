@@ -237,11 +237,10 @@ export function JobDetailPage() {
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-              activeTab === tab.id
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${activeTab === tab.id
                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-            }`}
+              }`}
           >
             {tab.icon}
             {tab.label}
@@ -529,35 +528,32 @@ function OverviewTab({ job }: { job: JobResponse }) {
               </div>
 
               {/* Days Remaining — color-coded */}
-              <div className={`text-center p-3 rounded-lg ${
-                job.warranty_days_remaining == null
+              <div className={`text-center p-3 rounded-lg ${job.warranty_days_remaining == null
                   ? 'bg-surface-secondary'
                   : job.warranty_days_remaining <= 0
                     ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
                     : job.warranty_days_remaining <= 30
                       ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800'
                       : 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-              }`}>
-                <div className={`flex justify-center mb-1 ${
-                  job.warranty_days_remaining == null
+                }`}>
+                <div className={`flex justify-center mb-1 ${job.warranty_days_remaining == null
                     ? 'text-gray-400'
                     : job.warranty_days_remaining <= 0
                       ? 'text-red-500'
                       : job.warranty_days_remaining <= 30
                         ? 'text-amber-500'
                         : 'text-green-500'
-                }`}>
+                  }`}>
                   <Shield className="h-4 w-4" />
                 </div>
-                <p className={`text-lg font-bold ${
-                  job.warranty_days_remaining == null
+                <p className={`text-lg font-bold ${job.warranty_days_remaining == null
                     ? 'text-gray-900 dark:text-gray-100'
                     : job.warranty_days_remaining <= 0
                       ? 'text-red-600 dark:text-red-400'
                       : job.warranty_days_remaining <= 30
                         ? 'text-amber-600 dark:text-amber-400'
                         : 'text-green-600 dark:text-green-400'
-                }`}>
+                  }`}>
                   {job.warranty_days_remaining != null
                     ? (job.warranty_days_remaining <= 0 ? 'Expired' : `${job.warranty_days_remaining}d`)
                     : '—'}
@@ -1024,9 +1020,8 @@ function CostsTab({ jobId, jobName: _jobName }: { jobId: number; jobName: string
       {/* Budget Alert Banner — only if budget is set and approaching/over limit */}
       {hasBudget && budgetPct >= (rollup.budget_alert_percent ?? 80) && (
         <div className={`flex items-center gap-3 p-3 rounded-lg border ${bgColorClass}`}>
-          <AlertTriangle className={`h-5 w-5 flex-shrink-0 ${
-            budgetColor === 'red' ? 'text-red-500' : 'text-amber-500'
-          }`} />
+          <AlertTriangle className={`h-5 w-5 flex-shrink-0 ${budgetColor === 'red' ? 'text-red-500' : 'text-amber-500'
+            }`} />
           <div className="flex-1 min-w-0">
             <p className={`text-sm font-medium ${textColorClass}`}>
               {budgetPct >= 100
@@ -1146,11 +1141,10 @@ function CostKPIBox({
         <span className="text-gray-400 dark:text-gray-500">{icon}</span>
         <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>
       </div>
-      <p className={`text-lg font-bold ${
-        highlight
+      <p className={`text-lg font-bold ${highlight
           ? 'text-primary-600 dark:text-primary-400'
           : 'text-gray-900 dark:text-gray-100'
-      }`}>
+        }`}>
         {value}
       </p>
       {sub && (
@@ -1339,21 +1333,19 @@ function PeopleTab({ jobId }: { jobId: number }) {
               <span className="text-xs text-gray-500 dark:text-gray-400">Role:</span>
               <button
                 onClick={() => setTeamRole('member')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                  teamRole === 'member'
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${teamRole === 'member'
                     ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
                     : 'text-gray-500 dark:text-gray-400 hover:bg-surface'
-                }`}
+                  }`}
               >
                 Member
               </button>
               <button
                 onClick={() => setTeamRole('lead')}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                  teamRole === 'lead'
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${teamRole === 'lead'
                     ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
                     : 'text-gray-500 dark:text-gray-400 hover:bg-surface'
-                }`}
+                  }`}
               >
                 <Crown size={11} />
                 Lead
@@ -1416,11 +1408,10 @@ function PeopleTab({ jobId }: { jobId: number }) {
                 key={member.id}
                 className="flex items-center gap-3 p-2.5 rounded-lg bg-surface-secondary border border-border"
               >
-                <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
-                  member.role === 'lead'
+                <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${member.role === 'lead'
                     ? 'bg-amber-100 dark:bg-amber-900/40'
                     : 'bg-blue-100 dark:bg-blue-900/40'
-                }`}>
+                  }`}>
                   {member.role === 'lead'
                     ? <Crown size={13} className="text-amber-600 dark:text-amber-400" />
                     : <Users size={13} className="text-blue-600 dark:text-blue-400" />
