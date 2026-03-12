@@ -1,6 +1,6 @@
 # Wired-Part — Development Handoff / Implementation Guide
 
-> Last updated: 2026-03-06
+> Last updated: 2026-03-10
 > Audience: Any coding agent or developer picking up work from current state.
 
 ---
@@ -84,14 +84,14 @@ A task is complete only when all are true:
 
 ## 5) Minimal Validation Checklist Before Shipping
 
-- [ ] Supplier deletion with references returns controlled 409
-- [ ] Clock-out photo questions accept camera/file input
-- [ ] Users can update own profile + own PIN securely
-- [ ] Dispatch/time-off changes generate notifications
-- [ ] New employees get default weekday schedule automatically
-- [ ] Dashboard surfaces upcoming vehicle expiry alerts
-- [ ] Sync architecture includes binary media/photo handling
-- [ ] Mobile build can run offline and re-sync over LAN
+- [x] Supplier deletion with references returns controlled 409 — DELETE /suppliers/{id} checks 6 FK tables, returns 409 with details
+- [x] Clock-out photo questions accept camera/file input — PhotoCaptureInput component with auto-resize, data URL storage
+- [x] Users can update own profile + own PIN securely — PATCH /me + POST /change-pin endpoints
+- [x] Dispatch/time-off changes generate notifications — NotificationService triggered on approve/deny/dispatch
+- [x] New employees get default weekday schedule automatically — create_employee() calls DefaultScheduleRepo.init_defaults()
+- [x] Dashboard surfaces upcoming vehicle expiry alerts — GET /dashboard/vehicle-alerts + VehicleExpiryAlert card on DashboardPage
+- [x] Sync architecture includes binary media/photo handling — photos stored as data URLs in SQLite, sync as part of record changes
+- [x] Mobile build can run offline and re-sync over LAN — Capacitor local-first, change-tracker, exponential backoff sync engine
 
 ---
 

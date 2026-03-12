@@ -6,6 +6,7 @@
  */
 
 import apiClient from './client';
+import { adaptedRequest } from './adapter';
 import type {
   ApiResponse,
   // Default Schedules
@@ -103,11 +104,19 @@ export async function getUserTimeOff(
   dateFrom?: string,
   dateTo?: string,
 ): Promise<ScheduleExceptionResponse[]> {
-  const { data } = await apiClient.get<ApiResponse<ScheduleExceptionResponse[]>>(
-    `/scheduling/time-off/user/${userId}`,
-    { params: { date_from: dateFrom, date_to: dateTo } },
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<ScheduleExceptionResponse[]>>(
+        `/scheduling/time-off/user/${userId}`,
+        { params: { date_from: dateFrom, date_to: dateTo } },
+      );
+      return data.data!;
+    },
+    async () => {
+      const { getMyTimeOff } = await import('../local/services/scheduling-service');
+      return await getMyTimeOff(userId) as unknown as ScheduleExceptionResponse[];
+    },
   );
-  return data.data!;
 }
 
 /** Submit a time-off request for the current user */
@@ -184,11 +193,21 @@ export async function deleteTimeOff(
 export async function getDailyDispatch(
   date: string,
 ): Promise<DailyDispatchView> {
-  const { data } = await apiClient.get<ApiResponse<DailyDispatchView>>(
-    '/scheduling/dispatch/daily',
-    { params: { date } },
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<DailyDispatchView>>(
+        '/scheduling/dispatch/daily',
+        { params: { date } },
+      );
+      return data.data!;
+    },
+    async () => {
+      const { getDispatchForDate } = await import('../local/services/scheduling-service');
+      const assignments = await getDispatchForDate(date);
+      // Local returns flat assignments; wrap in DailyDispatchView shape
+      return { date, dispatches: assignments, available_employees: [] } as unknown as DailyDispatchView;
+    },
   );
-  return data.data!;
 }
 
 /** Check for scheduling conflicts without creating a dispatch */
@@ -209,11 +228,19 @@ export async function getUserDispatches(
   dateFrom: string,
   dateTo: string,
 ): Promise<DispatchResponse[]> {
-  const { data } = await apiClient.get<ApiResponse<DispatchResponse[]>>(
-    `/scheduling/dispatch/user/${userId}`,
-    { params: { date_from: dateFrom, date_to: dateTo } },
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<DispatchResponse[]>>(
+        `/scheduling/dispatch/user/${userId}`,
+        { params: { date_from: dateFrom, date_to: dateTo } },
+      );
+      return data.data!;
+    },
+    async () => {
+      const { getMyDispatch } = await import('../local/services/scheduling-service');
+      return await getMyDispatch(userId, dateFrom, dateTo) as unknown as DispatchResponse[];
+    },
   );
-  return data.data!;
 }
 
 /** Get dispatches for a job, optionally within a date range */
@@ -518,5 +545,137 @@ export async function getWeeklyAvailability(
     '/scheduling/availability/weekly',
     { params: { date_from: dateFrom, date_to: dateTo } },
   );
+  return data.data!;
+}
+
+
+// =================================================================
+// PTO POLICIES & BALANCES
+// =================================================================
+
+export interface PtoPolicy {
+  id: number;
+  user_id: number;
+  policy_name: string;
+  accrual_rate: number;
+  accrual_period: 'weekly' | 'biweekly' | 'monthly';
+  max_balance: number | null;
+  carryover_limit: number | null;
+  start_date: string;
+  is_active: boolean;
+}
+
+export interface PtoTransaction {
+  id: number;
+  user_id: number;
+  transaction_type: 'accrual' | 'usage' | 'adjustment' | 'carryover' | 'forfeit';
+  hours: number;
+  balance_after: number;
+  reference_id: number | null;
+  reference_type: string | null;
+  note: string | null;
+  effective_date: string;
+  created_by: number | null;
+  created_at: string;
+}
+
+export interface PtoBalance {
+  user_id: number;
+  user_name: string;
+  current_balance: number;
+  accrued_ytd: number;
+  used_ytd: number;
+  policy: PtoPolicy | null;
+  recent_transactions: PtoTransaction[];
+}
+
+export interface PtoBalanceSummary {
+  user_id: number;
+  user_name: string;
+  current_balance: number;
+  policy_name: string;
+  accrual_rate: number;
+  accrual_period: string;
+  max_balance: number | null;
+}
+
+/** Get PTO balance + transactions for a specific user */
+export async function getPtoBalance(userId: number): Promise<PtoBalance> {
+  const { data } = await apiClient.get<ApiResponse<PtoBalance>>(
+    `/scheduling/pto/balance/${userId}`,
+  );
+  return data.data!;
+}
+
+/** Get all PTO balances (manager view) */
+export async function getAllPtoBalances(): Promise<PtoBalanceSummary[]> {
+  const { data } = await apiClient.get<ApiResponse<PtoBalanceSummary[]>>(
+    '/scheduling/pto/balances',
+  );
+  return data.data!;
+}
+
+/** Create a PTO policy for a user */
+export async function createPtoPolicy(body: {
+  user_id: number;
+  policy_name?: string;
+  accrual_rate?: number;
+  accrual_period?: 'weekly' | 'biweekly' | 'monthly';
+  max_balance?: number | null;
+  carryover_limit?: number | null;
+  start_date: string;
+}): Promise<PtoPolicy> {
+  const { data } = await apiClient.post<ApiResponse<PtoPolicy>>(
+    '/scheduling/pto/policies',
+    body,
+  );
+  return data.data!;
+}
+
+/** Update an existing PTO policy */
+export async function updatePtoPolicy(
+  policyId: number,
+  body: Partial<{
+    policy_name: string;
+    accrual_rate: number;
+    accrual_period: 'weekly' | 'biweekly' | 'monthly';
+    max_balance: number | null;
+    carryover_limit: number | null;
+    is_active: boolean;
+  }>,
+): Promise<PtoPolicy> {
+  const { data } = await apiClient.put<ApiResponse<PtoPolicy>>(
+    `/scheduling/pto/policies/${policyId}`,
+    body,
+  );
+  return data.data!;
+}
+
+/** Record a PTO transaction (adjustment, usage, etc.) */
+export async function createPtoTransaction(body: {
+  user_id: number;
+  transaction_type: 'accrual' | 'usage' | 'adjustment' | 'carryover' | 'forfeit';
+  hours: number;
+  note?: string;
+  effective_date: string;
+  reference_id?: number;
+  reference_type?: string;
+}): Promise<PtoTransaction> {
+  const { data } = await apiClient.post<ApiResponse<PtoTransaction>>(
+    '/scheduling/pto/transactions',
+    body,
+  );
+  return data.data!;
+}
+
+/** Run PTO accruals for all active policies */
+export async function runPtoAccruals(): Promise<{
+  processed: number;
+  skipped: number;
+  total_policies: number;
+}> {
+  const { data } = await apiClient.post<
+    ApiResponse<{ processed: number; skipped: number; total_policies: number }>
+  >('/scheduling/pto/run-accruals');
   return data.data!;
 }

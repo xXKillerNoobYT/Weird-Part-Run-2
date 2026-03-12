@@ -39,6 +39,10 @@ NOTIFICATION_TYPES = [
     "dispatch_cancelled",
     "time_off_approved",
     "time_off_denied",
+    "sub_schedule_created",
+    "sub_schedule_cancelled",
+    "shift_pattern_assigned",
+    "pto_accrual_posted",
     "vehicle_expiry",
     # Phase 9: Chat & Q&A
     "chat_message",

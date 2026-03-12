@@ -20,6 +20,7 @@ import { Card, CardHeader } from '../../../components/ui/Card';
 import { Modal } from '../../../components/ui/Modal';
 import { Input } from '../../../components/ui/Input';
 import { EmptyState } from '../../../components/ui/EmptyState';
+import { toast } from '../../../lib/toast';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import {
@@ -76,7 +77,11 @@ export function CustomerDetailPage() {
 
   const toggleMutation = useMutation({
     mutationFn: (isActive: boolean) => toggleCustomerActive(customerId, isActive),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['customer-detail', customerId] }),
+    onSuccess: (_data, isActive) => {
+      queryClient.invalidateQueries({ queryKey: ['customer-detail', customerId] });
+      toast.success(isActive ? 'Customer activated' : 'Customer deactivated');
+    },
+    onError: () => toast.error('Failed to update customer status'),
   });
 
   if (isLoading) return <PageSpinner label="Loading customer..." />;
@@ -158,11 +163,10 @@ export function CustomerDetailPage() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                  isActive
+                className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${isActive
                     ? 'border-primary-500 text-primary-600 dark:text-primary-400'
                     : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                }`}
+                  }`}
               >
                 <Icon size={14} />
                 <span className="hidden sm:inline">{tab.label}</span>
@@ -215,7 +219,9 @@ function OverviewTab({ customer, canManage }: { customer: CustomerDetail; canMan
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customer-detail', customer.id] });
       setEditing(false);
+      toast.success('Customer information saved');
     },
+    onError: () => toast.error('Failed to save customer information'),
   });
 
   const handleSave = () => {
@@ -468,7 +474,9 @@ function ContactsTab({ customerId, canManage }: { customerId: number; canManage:
       queryClient.invalidateQueries({ queryKey: ['customer-contacts', customerId] });
       queryClient.invalidateQueries({ queryKey: ['customer-detail', customerId] });
       setShowAdd(false);
+      toast.success('Contact added');
     },
+    onError: () => toast.error('Failed to add contact'),
   });
 
   const updateMutation = useMutation({
@@ -476,7 +484,9 @@ function ContactsTab({ customerId, canManage }: { customerId: number; canManage:
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customer-contacts', customerId] });
       setEditingContact(null);
+      toast.success('Contact updated');
     },
+    onError: () => toast.error('Failed to update contact'),
   });
 
   const deleteMutation = useMutation({
@@ -484,7 +494,9 @@ function ContactsTab({ customerId, canManage }: { customerId: number; canManage:
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customer-contacts', customerId] });
       queryClient.invalidateQueries({ queryKey: ['customer-detail', customerId] });
+      toast.success('Contact deleted');
     },
+    onError: () => toast.error('Failed to delete contact'),
   });
 
   if (isLoading) return <PageSpinner label="Loading contacts..." />;

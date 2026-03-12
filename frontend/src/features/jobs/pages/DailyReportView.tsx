@@ -28,6 +28,8 @@ import type {
   ReportWorker, ReportPartConsumed, ReportStatus,
   ReportDelivery, ReportTripLeg,
 } from '../../../lib/types';
+import ReportPageToolbar from '../../reports/components/ReportPageToolbar';
+import ReportAnnotations from '../../reports/components/ReportAnnotations';
 
 const STATUS_LABELS: Record<ReportStatus, { label: string; variant: 'default' | 'success' | 'warning' }> = {
   generated: { label: 'Generated', variant: 'default' },
@@ -420,6 +422,13 @@ export function DailyReportView() {
               {data?.job_name ?? report.job_name}
             </p>
           </div>
+          <ReportPageToolbar
+            reportType="daily_report"
+            currentConfig={{ job_id: Number(jobId), date }}
+            onLoadTemplate={() => { /* Daily reports are immutable — template loading navigates */ }}
+            shareContextParams={{ job_id: Number(jobId), date }}
+            shareLabel={`Daily Report: ${data?.job_name ?? report.job_name} — ${report.report_date}`}
+          />
         </div>
       </div>
 
@@ -502,6 +511,12 @@ export function DailyReportView() {
       {data?.trip_legs && data.trip_legs.length > 0 && (
         <TripLegsSection tripLegs={data.trip_legs} />
       )}
+
+      {/* Annotations */}
+      <ReportAnnotations
+        reportType="daily_report"
+        contextKey={`job_${jobId}:${date}`}
+      />
 
       {/* Footer — generation info */}
       <div className="text-center text-xs text-gray-400 dark:text-gray-500 py-4 border-t border-border">

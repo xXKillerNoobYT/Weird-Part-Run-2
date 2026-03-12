@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Search, Users, Phone, Mail, ChevronLeft, ChevronRight,
-  Award, X, Filter,
+  Award, X, Filter, Upload,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { PageSpinner } from '../../../components/ui/Spinner';
@@ -20,9 +20,10 @@ import { Input } from '../../../components/ui/Input';
 import { Modal } from '../../../components/ui/Modal';
 import { Badge } from '../../../components/ui/Badge';
 import { Card } from '../../../components/ui/Card';
+import { CSVImportModal } from '../../../components/ui/CSVImportModal';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
-import { getEmployees, createEmployee, getHats } from '../../../api/people';
+import { getEmployees, createEmployee, getHats, importEmployeesCSV } from '../../../api/people';
 import type {
   EmployeeCreate, EmployeeListItem, HatDetailResponse,
 } from '../../../lib/types';
@@ -55,6 +56,7 @@ export function EmployeeListPage() {
   const [pageSize, setPageSize] = useState(50);
   const [showFilters, setShowFilters] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   // Debounce search
   useEffect(() => {
@@ -142,6 +144,17 @@ export function EmployeeListPage() {
 
           {canManage && (
             <Button
+              variant="ghost"
+              size="sm"
+              icon={<Upload size={16} />}
+              onClick={() => setShowImport(true)}
+            >
+              <span className="hidden sm:inline">Import</span>
+            </Button>
+          )}
+
+          {canManage && (
+            <Button
               size="sm"
               icon={<Plus size={16} />}
               onClick={() => setShowCreate(true)}
@@ -179,11 +192,10 @@ export function EmployeeListPage() {
                 <button
                   key={String(opt.value)}
                   onClick={() => setIsActiveFilter(opt.value as boolean | undefined)}
-                  className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
-                    isActiveFilter === opt.value
+                  className={`px-2.5 py-1 text-xs rounded-full transition-colors ${isActiveFilter === opt.value
                       ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-medium'
                       : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
+                    }`}
                 >
                   {opt.label}
                 </button>
@@ -269,6 +281,17 @@ export function EmployeeListPage() {
           onClose={() => setShowCreate(false)}
         />
       )}
+
+      {/* CSV Import modal */}
+      <CSVImportModal
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        title="Import Employees"
+        description="Upload a CSV file to bulk-create employees. Existing employees (matched by name) are skipped."
+        expectedColumns="display_name, email, phone, pin, certification, hire_date, pay_rate, emergency_contact_name, emergency_contact_phone"
+        importFn={importEmployeesCSV}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ['employees'] })}
+      />
     </div>
   );
 }
@@ -413,11 +436,10 @@ function CreateEmployeeModal({ hats, isLoading, error, onSubmit, onClose }: Crea
                   key={h.id}
                   type="button"
                   onClick={() => toggleHat(h.id)}
-                  className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-                    selectedHatIds.includes(h.id)
+                  className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${selectedHatIds.includes(h.id)
                       ? 'bg-primary-50 dark:bg-primary-900/30 border-primary-300 dark:border-primary-700 text-primary-700 dark:text-primary-300'
                       : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-gray-400'
-                  }`}
+                    }`}
                 >
                   {h.name}
                 </button>

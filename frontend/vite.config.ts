@@ -19,6 +19,7 @@ const CAPACITOR_PACKAGES = [
   '@capacitor/core',
   '@capacitor/app',
   '@capacitor/camera',
+  '@capacitor/filesystem',
   '@capacitor/geolocation',
   '@capacitor/haptics',
   '@capacitor/network',
@@ -26,6 +27,7 @@ const CAPACITOR_PACKAGES = [
   '@capacitor/splash-screen',
   '@capacitor/status-bar',
   '@capacitor-community/sqlite',
+  '@capacitor-community/bluetooth-le',
 ];
 
 const stubFile = path.resolve(__dirname, 'src/lib/capacitor-stubs.ts');
@@ -37,16 +39,17 @@ export default defineConfig(({ command }) => ({
   ],
   resolve: command === 'serve'
     ? {
-        alias: Object.fromEntries(
-          CAPACITOR_PACKAGES.map((pkg) => [pkg, stubFile]),
-        ),
-      }
+      alias: Object.fromEntries(
+        CAPACITOR_PACKAGES.map((pkg) => [pkg, stubFile]),
+      ),
+    }
     : {},
   build: {
     rollupOptions: {
       // Capacitor plugins are only available at runtime on native devices.
       // Externalize them so the browser/PWA build succeeds without them installed.
-      external: CAPACITOR_PACKAGES,
+      // bcryptjs is used only by local (Capacitor) auth service.
+      external: [...CAPACITOR_PACKAGES, 'bcryptjs'],
     },
   },
   server: {

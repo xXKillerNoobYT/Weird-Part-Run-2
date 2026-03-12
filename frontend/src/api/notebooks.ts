@@ -5,6 +5,7 @@
  */
 
 import apiClient from './client';
+import { adaptedRequest } from './adapter';
 import type { ApiResponse, StatusMessage } from '../lib/types';
 import type {
   // Templates
@@ -147,30 +148,57 @@ export async function listNotebooks(params?: {
   filter?: 'all' | 'job' | 'general';
   search?: string;
 }): Promise<NotebookListItem[]> {
-  const { data } = await apiClient.get<ApiResponse<NotebookListItem[]>>(
-    '/notebooks',
-    { params }
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<NotebookListItem[]>>(
+        '/notebooks',
+        { params }
+      );
+      return data.data ?? [];
+    },
+    async () => {
+      const { listNotebooks: local } = await import('../local/services/notebook-service');
+      const opts = params?.filter === 'job' ? { job_id: -1 } : undefined;
+      return await local(opts) as unknown as NotebookListItem[];
+    },
   );
-  return data.data ?? [];
 }
 
 /** Create a general (standalone) notebook */
 export async function createNotebook(
   notebook: NotebookCreate
 ): Promise<NotebookResponse> {
-  const { data } = await apiClient.post<ApiResponse<NotebookResponse>>(
-    '/notebooks',
-    notebook
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<NotebookResponse>>(
+        '/notebooks',
+        notebook
+      );
+      return data.data!;
+    },
+    async () => {
+      const { createNotebook: local } = await import('../local/services/notebook-service');
+      return await local(notebook as any, 0) as unknown as NotebookResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Get full notebook (sections + entries, with can_edit computed) */
 export async function getNotebookFull(notebookId: number): Promise<NotebookFull> {
-  const { data } = await apiClient.get<ApiResponse<NotebookFull>>(
-    `/notebooks/${notebookId}/full`
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<NotebookFull>>(
+        `/notebooks/${notebookId}/full`
+      );
+      return data.data!;
+    },
+    async () => {
+      const { getNotebook } = await import('../local/services/notebook-service');
+      const result = await getNotebook(notebookId);
+      if (!result) throw new Error('Notebook not found');
+      return result as unknown as NotebookFull;
+    },
   );
-  return data.data!;
 }
 
 /** Get or create a job's notebook (lazy creation) */
@@ -210,11 +238,19 @@ export async function createSection(
   notebookId: number,
   section: SectionCreate
 ): Promise<SectionResponse> {
-  const { data } = await apiClient.post<ApiResponse<SectionResponse>>(
-    `/notebooks/${notebookId}/sections`,
-    section
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<SectionResponse>>(
+        `/notebooks/${notebookId}/sections`,
+        section
+      );
+      return data.data!;
+    },
+    async () => {
+      const { createSection: local } = await import('../local/services/notebook-service');
+      return await local(notebookId, section as any) as unknown as SectionResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Update a section */
@@ -257,11 +293,19 @@ export async function createEntry(
   sectionId: number,
   entry: EntryCreate
 ): Promise<EntryResponse> {
-  const { data } = await apiClient.post<ApiResponse<EntryResponse>>(
-    `/notebooks/sections/${sectionId}/entries`,
-    entry
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<EntryResponse>>(
+        `/notebooks/sections/${sectionId}/entries`,
+        entry
+      );
+      return data.data!;
+    },
+    async () => {
+      const { createEntry: local } = await import('../local/services/notebook-service');
+      return await local(sectionId, entry as any, 0) as unknown as EntryResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Update an entry */
@@ -269,11 +313,21 @@ export async function updateEntry(
   entryId: number,
   updates: EntryUpdate
 ): Promise<EntryResponse> {
-  const { data } = await apiClient.put<ApiResponse<EntryResponse>>(
-    `/notebooks/entries/${entryId}`,
-    updates
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.put<ApiResponse<EntryResponse>>(
+        `/notebooks/entries/${entryId}`,
+        updates
+      );
+      return data.data!;
+    },
+    async () => {
+      const { updateEntry: local } = await import('../local/services/notebook-service');
+      const result = await local(entryId, updates as any, 0);
+      if (!result) throw new Error('Entry not found');
+      return result as unknown as EntryResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Update task status (stage transition) */
@@ -281,11 +335,21 @@ export async function updateTaskStatus(
   entryId: number,
   statusUpdate: TaskStatusUpdate
 ): Promise<EntryResponse> {
-  const { data } = await apiClient.patch<ApiResponse<EntryResponse>>(
-    `/notebooks/entries/${entryId}/status`,
-    statusUpdate
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.patch<ApiResponse<EntryResponse>>(
+        `/notebooks/entries/${entryId}/status`,
+        statusUpdate
+      );
+      return data.data!;
+    },
+    async () => {
+      const { updateTaskStatus: local } = await import('../local/services/notebook-service');
+      const result = await local(entryId, (statusUpdate as any).status ?? (statusUpdate as any).task_status);
+      if (!result) throw new Error('Entry not found');
+      return result as unknown as EntryResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Update field value (first-fill logic) */
@@ -302,8 +366,16 @@ export async function updateFieldValue(
 
 /** Delete an entry (soft or hard based on permissions) */
 export async function deleteEntry(entryId: number): Promise<void> {
-  await apiClient.delete<ApiResponse<StatusMessage>>(
-    `/notebooks/entries/${entryId}`
+  return adaptedRequest(
+    async () => {
+      await apiClient.delete<ApiResponse<StatusMessage>>(
+        `/notebooks/entries/${entryId}`
+      );
+    },
+    async () => {
+      const { deleteEntry: local } = await import('../local/services/notebook-service');
+      await local(entryId, 0);
+    },
   );
 }
 

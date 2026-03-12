@@ -401,6 +401,7 @@ class SchedulingService:
         for d in dispatches:
             role = d.get("role_on_job", "worker")
             entries.append({
+                "reference_id": d["id"],
                 "date": d["dispatch_date"],
                 "entry_type": "dispatch",
                 "user_id": d["user_id"],
@@ -418,6 +419,7 @@ class SchedulingService:
         for e in exceptions:
             etype = e.get("exception_type", "time_off")
             entries.append({
+                "reference_id": e["id"],
                 "date": e["exception_date"],
                 "entry_type": "time_off",
                 "user_id": e["user_id"],
@@ -433,6 +435,7 @@ class SchedulingService:
         # Sub schedules → calendar entries
         for s in sub_schedules:
             entries.append({
+                "reference_id": s["id"],
                 "date": s["scheduled_date"],
                 "entry_type": "sub_schedule",
                 "user_id": None,

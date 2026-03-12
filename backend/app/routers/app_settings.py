@@ -19,15 +19,21 @@ from __future__ import annotations
 
 import os
 import time
+import uuid
+from pathlib import Path
 
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from app.database import get_db
 from app.middleware.auth import require_permission, require_user
 from app.models.common import ApiResponse
 from app.models.company import CompanyProfileCreate, CompanyProfileUpdate
 from app.models.settings import (
+    BillingCycleSettings,
+    PayPeriodSettings,
+    PayrollColumnConfig,
+    PDFSettings,
     SettingItem,
     SettingsBulkUpdate,
     SettingUpdate,
@@ -36,6 +42,8 @@ from app.models.settings import (
 from app.models.orders import StagingZoneCreate, StagingZoneUpdate
 from app.repositories.settings_repo import SettingsRepo
 from app.repositories.staging_repo import StagingZoneRepo
+
+UPLOAD_DIR = Path("uploads")
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"], redirect_slashes=False)
 
@@ -200,6 +208,114 @@ async def delete_company_profile(
 
 
 # ═══════════════════════════════════════════════════════════════
+# Company Logo Upload
+# ═══════════════════════════════════════════════════════════════
+
+
+@router.post("/company-logo", response_model=ApiResponse)
+async def upload_company_logo(
+    file: UploadFile = File(...),
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Upload or replace the primary company logo.
+
+    Stores the file in uploads/logos/ and updates the primary
+    company profile's logo_path field. Returns the new path.
+    """
+    logo_dir = UPLOAD_DIR / "logos"
+    logo_dir.mkdir(parents=True, exist_ok=True)
+
+    ext = Path(file.filename or "logo.png").suffix or ".png"
+    if ext.lower() not in (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"):
+        raise HTTPException(400, f"Unsupported image format: {ext}")
+
+    unique_name = f"company_logo_{uuid.uuid4().hex[:8]}{ext}"
+    file_path = logo_dir / unique_name
+
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:  # 5 MB max
+        raise HTTPException(400, "Logo file too large (max 5 MB)")
+
+    file_path.write_bytes(contents)
+
+    # Update primary company profile
+    cursor = await db.execute(
+        "SELECT id FROM company_profiles WHERE is_primary = 1 ORDER BY id LIMIT 1"
+    )
+    row = await cursor.fetchone()
+    if row:
+        await db.execute(
+            "UPDATE company_profiles SET logo_path = ?, updated_at = datetime('now') WHERE id = ?",
+            (str(file_path), row["id"]),
+        )
+    else:
+        # No primary profile yet — create a minimal one
+        await db.execute(
+            "INSERT INTO company_profiles (name, logo_path, is_primary) VALUES (?, ?, 1)",
+            ("My Company", str(file_path)),
+        )
+    await db.commit()
+
+    return ApiResponse(
+        data={"logo_path": str(file_path), "filename": unique_name},
+        message="Company logo uploaded.",
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# PDF Settings (document template configuration)
+# ═══════════════════════════════════════════════════════════════
+
+
+@router.get("/pdf", response_model=ApiResponse[PDFSettings])
+async def get_pdf_settings(
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get PDF template settings.
+
+    Returns the current PDF formatting preferences used when
+    generating PO PDFs. Company info comes from company_profiles.
+    """
+    repo = SettingsRepo(db)
+    pdf_data = await repo.get_by_category("pdf")
+
+    return ApiResponse(
+        data=PDFSettings(
+            accent_color=pdf_data.get("pdf_accent_color", "#3B82F6"),
+            show_unit_prices=pdf_data.get("pdf_show_unit_prices", True),
+            show_extended=pdf_data.get("pdf_show_extended", True),
+            footer_text=pdf_data.get("pdf_footer_text", ""),
+            payment_terms=pdf_data.get("pdf_payment_terms", "Net 30"),
+            delivery_notes=pdf_data.get("pdf_delivery_notes", ""),
+        ),
+    )
+
+
+@router.put("/pdf", response_model=ApiResponse[PDFSettings])
+async def update_pdf_settings(
+    body: PDFSettings,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update PDF template settings.
+
+    All fields are optional — omitted fields keep their current values.
+    """
+    repo = SettingsRepo(db)
+
+    await repo.set_value("pdf_accent_color", body.accent_color, "pdf")
+    await repo.set_value("pdf_show_unit_prices", body.show_unit_prices, "pdf")
+    await repo.set_value("pdf_show_extended", body.show_extended, "pdf")
+    await repo.set_value("pdf_footer_text", body.footer_text, "pdf")
+    await repo.set_value("pdf_payment_terms", body.payment_terms, "pdf")
+    await repo.set_value("pdf_delivery_notes", body.delivery_notes, "pdf")
+
+    return ApiResponse(data=body, message="PDF settings updated.")
+
+
+# ═══════════════════════════════════════════════════════════════
 # Staging Zones (physical warehouse zones)
 # ═══════════════════════════════════════════════════════════════
 # Also before /{key} — same reason as company profiles.
@@ -332,6 +448,103 @@ async def bulk_update_settings(
         data={"updated_count": count},
         message=f"{count} settings updated.",
     )
+
+
+# ═══════════════════════════════════════════════════════════════
+# Billing Cycle & Pay Period Configuration
+# ═══════════════════════════════════════════════════════════════
+# BEFORE the /{key} catch-all — specific path routes.
+
+
+@router.get("/billing-cycle", response_model=ApiResponse[BillingCycleSettings])
+async def get_billing_cycle(
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get billing cycle settings (cycle type + start day)."""
+    from app.services.period_helper import PeriodHelper
+    helper = PeriodHelper(db)
+    config = await helper.get_billing_config()
+    return ApiResponse(
+        data=BillingCycleSettings(
+            cycle_type=config["cycle_type"],
+            start_day=config["start_day"],
+        ),
+    )
+
+
+@router.put("/billing-cycle", response_model=ApiResponse[BillingCycleSettings])
+async def update_billing_cycle(
+    body: BillingCycleSettings,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update billing cycle settings."""
+    from app.services.period_helper import PeriodHelper
+    helper = PeriodHelper(db)
+    await helper.update_billing_config(body.cycle_type, body.start_day)
+    return ApiResponse(data=body, message="Billing cycle updated.")
+
+
+@router.get("/pay-period", response_model=ApiResponse[PayPeriodSettings])
+async def get_pay_period(
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get pay period settings (period type + start day)."""
+    from app.services.period_helper import PeriodHelper
+    helper = PeriodHelper(db)
+    config = await helper.get_pay_config()
+    return ApiResponse(
+        data=PayPeriodSettings(
+            period_type=config["period_type"],
+            start_day=config["start_day"],
+        ),
+    )
+
+
+@router.put("/pay-period", response_model=ApiResponse[PayPeriodSettings])
+async def update_pay_period(
+    body: PayPeriodSettings,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update pay period settings."""
+    from app.services.period_helper import PeriodHelper
+    helper = PeriodHelper(db)
+    await helper.update_pay_config(body.period_type, body.start_day)
+    return ApiResponse(data=body, message="Pay period updated.")
+
+
+@router.get("/payroll-columns", response_model=ApiResponse[PayrollColumnConfig])
+async def get_payroll_columns(
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Get customizable payroll export columns."""
+    import json
+    repo = SettingsRepo(db)
+    raw = await repo.get_by_key("payroll_columns")
+    if raw and isinstance(raw, str):
+        try:
+            cols = json.loads(raw)
+            return ApiResponse(data=PayrollColumnConfig(columns=cols))
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return ApiResponse(data=PayrollColumnConfig())
+
+
+@router.put("/payroll-columns", response_model=ApiResponse[PayrollColumnConfig])
+async def update_payroll_columns(
+    body: PayrollColumnConfig,
+    user: dict = Depends(require_permission("manage_settings")),
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Update customizable payroll export columns."""
+    import json
+    repo = SettingsRepo(db)
+    await repo.set_value("payroll_columns", json.dumps(body.columns), "payroll")
+    return ApiResponse(data=body, message="Payroll columns updated.")
 
 
 # ── Single key CRUD (catch-all — MUST be last!) ─────────────────────

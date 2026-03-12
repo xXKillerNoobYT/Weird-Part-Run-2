@@ -23,7 +23,7 @@ Covers:
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -570,13 +570,20 @@ class ProcurementDashboard(BaseModel):
 
 class POStatusUpdateBody(BaseModel):
     """Body for POST /pos/{id}/status — update PO status."""
-    status: str
+    status: Literal[
+        'draft', 'submitted', 'acknowledged', 'processing',
+        'shipped', 'delivered', 'partially_received', 'received',
+        'closed', 'cancelled',
+    ]
     notes: str | None = None
 
 
 class ReturnStatusUpdateBody(BaseModel):
     """Body for POST /returns/{id}/status — update return status."""
-    status: str
+    status: Literal[
+        'draft', 'pending_approval', 'approved', 'shipped',
+        'received_by_supplier', 'credited', 'closed', 'cancelled',
+    ]
     tracking_number: str | None = None
     rma_number: str | None = None
     credit_amount: float | None = None
@@ -622,6 +629,25 @@ class JobPreferencesSummary(BaseModel):
     colors: list[dict] = Field(default_factory=list)
     suppliers: list[dict] = Field(default_factory=list)
     parts: list[dict] = Field(default_factory=list)
+
+
+class PreferredSupplierEntry(BaseModel):
+    """A single preferred supplier entry (for set operation)."""
+    supplier_id: int
+    category: str | None = None
+
+
+class JobPreferredSuppliersUpdate(BaseModel):
+    """Set explicit preferred suppliers for a job.
+
+    The first entry is the primary supplier, subsequent ones are backups.
+    """
+    suppliers: list[PreferredSupplierEntry] = Field(
+        ...,
+        min_length=0,
+        max_length=10,
+        description="Ordered list of preferred suppliers (primary first)",
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -760,6 +786,65 @@ class POGroupListItem(BaseModel):
     total_value: float = 0
     has_pdf: bool = False
     created_at: datetime | None = None
+
+
+# ═══════════════════════════════════════════════════════════════
+# Email Sending Models
+# ═══════════════════════════════════════════════════════════════
+
+class SendPOEmailRequest(BaseModel):
+    """Request body for sending a PO via email."""
+    to_email: str
+    to_name: str | None = None
+    subject: str | None = None       # auto-generated if omitted
+    body_text: str | None = None     # defaults to clipboard text format
+    cc: list[str] | None = None
+    attach_pdf: bool = True          # attach the PO PDF
+
+
+class SendGroupEmailRequest(BaseModel):
+    """Request body for sending a PO group (bundle) via email."""
+    to_email: str
+    to_name: str | None = None
+    subject: str | None = None
+    body_text: str | None = None
+    cc: list[str] | None = None
+
+
+# ═══════════════════════════════════════════════════════════════
+# Supplier Portal Models
+# ═══════════════════════════════════════════════════════════════
+
+class SupplierPortalTokenCreate(BaseModel):
+    """Generate a new supplier portal access token."""
+    supplier_id: int
+    expires_in_days: int = Field(30, ge=1, le=365)
+    note: str | None = None
+
+
+class SupplierPortalTokenResponse(BaseModel):
+    """A supplier portal access token."""
+    id: int
+    supplier_id: int
+    supplier_name: str | None = None
+    token: str
+    note: str | None = None
+    is_active: bool = True
+    expires_at: datetime | None = None
+    last_used_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+class SupplierPortalAcknowledge(BaseModel):
+    """Supplier acknowledges receipt of a PO."""
+    po_id: int
+    estimated_delivery: str | None = None
+    supplier_notes: str | None = None
+
+
+class SupplierPortalNote(BaseModel):
+    """Supplier adds a follow-up note to a PO (post-acknowledgment)."""
+    message: str = Field(..., min_length=1, max_length=2000)
 
 
 # ═══════════════════════════════════════════════════════════════

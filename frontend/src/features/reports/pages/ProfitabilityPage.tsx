@@ -14,6 +14,8 @@ import { EmptyState } from '../../../components/ui/EmptyState';
 import { toast } from '../../../lib/toast';
 import { getProfitability, generateExport, downloadBlob } from '../../../api/reports';
 import type { JobProfitability } from '../../../api/reports';
+import ReportPageToolbar from '../components/ReportPageToolbar';
+import ReportAnnotations from '../components/ReportAnnotations';
 
 
 export function ProfitabilityPage() {
@@ -93,17 +95,30 @@ export function ProfitabilityPage() {
             Generate
           </button>
           {report && (
-            <button
-              onClick={handleExportCSV}
-              disabled={exporting}
-              className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium
-                         border border-gray-300 dark:border-gray-600 rounded-lg
-                         text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700
-                         disabled:opacity-50 min-h-[44px]"
-            >
-              <Download className="h-4 w-4" />
-              <span className="hidden sm:inline">Export CSV</span>
-            </button>
+            <>
+              <button
+                onClick={handleExportCSV}
+                disabled={exporting}
+                className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium
+                           border border-gray-300 dark:border-gray-600 rounded-lg
+                           text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700
+                           disabled:opacity-50 min-h-[44px]"
+              >
+                <Download className="h-4 w-4" />
+                <span className="hidden sm:inline">Export CSV</span>
+              </button>
+              <ReportPageToolbar
+                reportType="profitability"
+                currentConfig={{ start_date: startDate, end_date: endDate }}
+                onLoadTemplate={(cfg) => {
+                  if (cfg.start_date) setStartDate(cfg.start_date as string);
+                  if (cfg.end_date) setEndDate(cfg.end_date as string);
+                  setHasGenerated(true);
+                }}
+                shareContextParams={{ start_date: startDate, end_date: endDate }}
+                shareLabel={`Profitability: ${startDate} to ${endDate}`}
+              />
+            </>
           )}
         </div>
       </Card>
@@ -195,6 +210,14 @@ export function ProfitabilityPage() {
             </div>
           </Card>
         </>
+      )}
+
+      {/* Annotations */}
+      {report && (
+        <ReportAnnotations
+          reportType="profitability"
+          contextKey={`${startDate}:${endDate}`}
+        />
       )}
     </div>
   );

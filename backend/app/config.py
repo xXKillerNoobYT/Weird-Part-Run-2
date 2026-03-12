@@ -58,6 +58,19 @@ class Settings(BaseSettings):
     BACKEND_HOST: str = "0.0.0.0"
     BACKEND_PORT: int = 8000
 
+    # ── Email / SMTP ──────────────────────────────────────────────
+    # Set EMAIL_ENABLED=true and configure SMTP_* to enable email sending.
+    # When disabled, "Send Email" buttons show but prompt to configure first.
+    EMAIL_ENABLED: bool = False
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_USE_TLS: bool = True
+    EMAIL_FROM: str = ""           # e.g. "orders@mycompany.com"
+    EMAIL_FROM_NAME: str = ""      # e.g. "Wired-Part Orders"
+    EMAIL_REPLY_TO: str = ""       # optional, defaults to EMAIL_FROM
+
     # ── Derived Paths ─────────────────────────────────────────────
     @property
     def db_path(self) -> Path:

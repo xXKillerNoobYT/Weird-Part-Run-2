@@ -1,7 +1,7 @@
 # Warehouse & Movements Audit
 
-> **Date:** 2026-03-06
-> **Status:** ✅ Complete — E2E responsive validated at mobile/tablet/desktop (2026-03-07).
+> **Date:** 2026-03-06 (updated 2026-03-09)
+> **Status:** ✅ Complete — All issues resolved. E2E responsive validated at mobile/tablet/desktop.
 > **Scope:** Full audit of Warehouse module (Movements, Inventory, Staging, Audit, Receiving, Return Sorting, Tools tab)
 > **Phases:** Phase 3 (core movements + dashboard), Phase 3.5 (QR scanner, bin locations), Phase 7C (receiving sessions, return sorting), Phase 9 (tools tab)
 
@@ -159,12 +159,12 @@ Zero stub pages — every page is fully functional.
 
 Address each issue below according to its severity. Low-severity items are cleanup tasks that can be batched; Info items are architectural observations worth tracking but not blocking.
 
-| # | Issue | Severity | Notes |
-|---|-------|----------|-------|
-| 1 | `InventoryGridPage.tsx:93` — "Check" row action commented out with TODO: "Navigate to audit page with spot-check for this part" | Low | Minor UX gap |
-| 2 | `warehouse.py:526,546` — Locations endpoint has try/except fallbacks with `placeholder` trucks/jobs when tables don't exist | Low | Legacy defensive code — both tables exist now; safe to clean up |
-| 3 | `WarehouseDashboardPage.tsx:22` — Comment says "Stubbed for Phase 6" re: tools section | Low | Phase 9 tools exist now but dashboard doesn't inline tool summaries |
-| 4 | **No undo/reverse movement** — once executed, corrections require a new opposite movement | Info | By design, but worth noting |
+| # | Issue | Severity | Status |
+|---|-------|----------|--------|
+| 1 | `InventoryGridPage.tsx:93` — "Check" row action for spot-check | ~~Low~~ | ✅ Resolved — `handleSpotCheck` navigates to AuditPage with `{ spotCheck, partId }` state; AuditPage auto-creates a spot-check session on arrival. Button renders in InventoryTable gated by `canAudit` permission. |
+| 2 | `warehouse.py` — Locations endpoint legacy try/except fallbacks | ~~Low~~ | ✅ Resolved — Cleaned up; endpoint queries `vehicles` and `jobs` tables directly with no fallback code. |
+| 3 | `WarehouseDashboardPage.tsx` — "Stubbed for Phase 6" dev note | ~~Low~~ | ✅ Resolved — Stale comment replaced. Dashboard renders `ToolsSummaryCard` pulling live stats (available, checked out, maintenance, lost/damaged) from `getToolsDashboard`. |
+| 4 | **No undo/reverse movement** — once executed, corrections require a new opposite movement | Info | By design — worth noting but not a gap |
 | 5 | **Zero TODO/FIXME comments** in core warehouse files | ✅ | Code is clean |
 
 ---

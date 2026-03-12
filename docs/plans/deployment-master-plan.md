@@ -2,7 +2,7 @@
 
 > **Date:** 2026-03-06 (revised 2026-03-09)
 > **Goal:** Package Wired-Part as a **fully offline-capable** application where every device (shop computers, iPads, iPhones, Android phones) runs the full program with its own local database and syncs via Bluetooth.
-> **Scope:** Phases 1–10 (complete) + Phase 11 Reports (planned) + offline data layer + Bluetooth sync + packaging + sideloading
+> **Scope:** Phases 1–10 (complete) + Phase 11 Reports (complete) + offline data layer (complete) + Bluetooth sync (not started) + packaging + sideloading
 > **Approach:** Full program on every device. 100% local-first. Bluetooth mesh sync between all devices. Shop computer is truth anchor but also a BT peer.
 > **Related docs:** `Device Sync management.md`, `Mobile device bootstrap.md`, `Update protocol.md`, `phase-13-sync-bluetooth.md`
 
@@ -133,79 +133,126 @@ Everything that must be done before the first customer deployment.
 | Item | Status | Plan File | Notes |
 |------|--------|-----------|-------|
 | Phases 1–10 | ✅ Complete | Various | Core app fully built (Python backend) |
-| Phase 11: Reports & Pre-Billing | 📋 Planned | `phase-11-reports-prebilling.md` | 4 stub pages → real pages, 4 stub endpoints → real data |
-| Legacy Cleanup | 📋 Planned | `legacy-cleanup-plan.md` | Delete ~5 superseded pages, clean routes |
+| Phase 11: Reports & Pre-Billing | ✅ Complete | `phase-11-reports-prebilling.md` | 6 pages (PreBilling, Timesheets, LaborOverview, Profitability, Exports, DailyReports), 13 endpoints, period locking, bookkeeper exports (QB IIF, GL CSV, Payroll) |
+| Legacy Cleanup | ✅ Complete | `legacy-cleanup-plan.md` | 4 superseded pages deleted (NewPartsRequest, DraftOrders, ActiveOrders, IncomingOrders), routes cleaned, zero dead code |
+| Feature Audits (13 areas) | ✅ Complete | `docs/plans/Audit/` | All audit gaps closed across all modules |
+| Gap Closure (M1–M4, 44 items) | ✅ Complete | `full-program-gap-closure-plan.md` | All 44 items resolved |
 
-### 2.2 Offline Architecture (Status as of 2026-03-09)
+### 2.2 Offline Architecture (Verified 2026-03-09)
+
+**28 files, 5,440 lines** in `frontend/src/local/` — real production code, not stubs.
 
 | Item | Status | Notes |
 |------|--------|-------|
-| TypeScript data layer (12 services) | ✅ Done | Auth, jobs, labor, movement, notebooks, orders, parts, warehouse, fleet, scheduling, tools, chat — all fully implemented (~120KB of real SQL logic) |
-| SQLite schema (TS migrations) | ✅ Done | 7 migration files (~70KB SQL), covers all 70+ tables. Auto-runs on app init |
-| Capacitor SQLite plugin | ✅ Done | `@capacitor-community/sqlite` installed, `db.ts` wrapper, lazy singleton connection |
-| Base repository (generic CRUD) | ✅ Done | `base-repo.ts` — getById, findAll, count, insert, update, delete. All writes auto-track changes |
-| Change tracking (`_change_log`) | ✅ Done | `change-tracker.ts` — logs INSERT/UPDATE/DELETE per row, tracks old values, 30-day retention |
-| Environment detection | ✅ Done | `environment.ts` — `isCapacitor()`, `isBrowser()`, `getPlatform()`, `getApiBaseUrl()` |
-| API adapter pattern | ⚠️ Defined but not wired | `adapter.ts` exists with `adaptedRequest(httpFn, localFn?)`. **Only `auth.ts` uses it** (4 calls). The other ~300 API calls in 22 files still hardcode HTTP — this is the critical remaining work |
-| Auth flow (local) | ✅ Done | PIN login against local SQLite, user picker, device login fallback |
-| App initialization | ✅ Done | `init.ts` + `AuthGate.tsx` — inits DB, runs migrations, starts auth on Capacitor boot |
-| Capacitor iOS project | ✅ Done | Xcode builds clean, 9 plugins, Info.plist permissions, sandbox fixed |
-| Sync engine (HTTP — device side) | ✅ Done | `sync-engine.ts` — push/pull/ack over HTTP, exponential backoff, state management. **Will be replaced with BT transport** |
+| TypeScript data layer (12 services) | ✅ Done | `local/services/` — auth (252), jobs (245), labor (270), movement (394), notebooks (402), orders (239), parts (186), warehouse (249), fleet (112), scheduling (124), tools (365), chat (359) — 3,197 lines of real SQL logic |
+| SQLite schema (TS migrations) | ✅ Done | 7 numbered migrations + index (1,300 lines): foundation (132), parts/inventory (230), jobs/labor (154), notebooks (112), orders (193), fleet/tools/scheduling (297), chat (122). Creates 70+ tables. Auto-runs on app init |
+| Capacitor SQLite plugin | ✅ Done | `@capacitor-community/sqlite@6.0.0` in package.json. `db.ts` (113 lines) — lazy singleton connection, web fallback, CapacitorSQLite integration |
+| Base repository (generic CRUD) | ✅ Done | `repos/base-repo.ts` (128 lines) — getById, findAll, count, insert, update, delete. All writes auto-track changes via `trackChange()` with old value capture |
+| Change tracking (`_change_log`) | ✅ Done | `change-tracker.ts` (92 lines) — logs INSERT/UPDATE/DELETE per row with device_id, timestamp, old_values JSON. Supports sync batch tracking |
+| Environment detection | ✅ Done | `lib/environment.ts` — `isCapacitor()`, `isBrowser()`, `getPlatform()`, `getApiBaseUrl()`. Smart routing: Capacitor → null (local), browser → VITE_API_URL |
+| API adapter pattern | ✅ Done (framework) | `api/adapter.ts` (83 lines) — `adaptedRequest(httpFn, localFn?)` + `isFeatureAvailableLocally()` + `SHOP_ONLY_FEATURES` list. `auth.ts` fully wired (4 calls). Other 22 API files remain HTTP-only — **adapter wiring is the main remaining integration work** |
+| Auth flow (local) | ✅ Done | `auth-service.ts` (252 lines) — PIN verification against local users table, user picker (`getActiveUsers()`), JWT token generation (24h), device fingerprint tracking |
+| App initialization | ✅ Done | `init.ts` (46 lines) — inits DB, runs migrations, restores sync state from Capacitor Preferences. Safe to call multiple times (memoized). No-op on browser |
+| Capacitor iOS project | ✅ Done | `frontend/ios/` — full Xcode workspace, CocoaPods, 9 plugins configured. `capacitor.config.ts` — appId `com.wiredpart.app`, SQLite location configured |
+| Sync engine (device side) | ✅ Done | `sync-engine.ts` (404 lines) — push/pull/ack cycle, reachability check, exponential backoff (30s→5min), max 10 retries, observer pattern for UI updates. **Transport is HTTP — will swap to BT** |
 | Sync API (shop side — HTTP) | ⬜ Deferred | Was for LAN sync. **Replaced by BT sync in V1.0** |
-| **Bluetooth sync engine** | ⬜ Not started | See `phase-13-sync-bluetooth.md`. Replaces HTTP sync. Needs: BLE plugin, handshake, gossip protocol, encrypted data exchange |
+| **Bluetooth sync engine** | ⬜ Not started | See `phase-13-sync-bluetooth.md`. Replaces HTTP transport. Needs: BLE plugin, handshake, gossip protocol, encrypted data exchange |
 | **BT device pairing** | ⬜ Not started | QR code pairing, certificate exchange, company verification |
 | **Crypto service** | ⬜ Not started | Key generation, certificate signing, AES-256-GCM session encryption |
-| Conflict resolution | ✅ Done (logic) | Last-writer-wins via timestamp comparison in change tracker |
-| Sync status UI | ⬜ Not started | Banner showing "Synced" / "X changes pending" / "Syncing..." |
+| Conflict resolution | ✅ Done | Last-writer-wins via timestamp + device_id. `change-tracker.ts` stores old_values for every UPDATE. Shop server is tiebreaker |
+| Sync status UI | ✅ Done | `SyncStatusIndicator.tsx` (80+ lines) — subscribes to sync engine state, shows green/yellow/red/gray dot + pending count. Integrated in TopBar. Manual "Sync Now" button. Only renders in Capacitor mode |
+| Local client | ✅ Done | `local-client.ts` (117 lines) — platform-aware client wrapper |
+
+**Integration summary:**
+- ✅ **13/17 items fully implemented** (all local-device pieces)
+- ⬜ **3 items deferred** (BT sync, pairing, crypto — Phase 13 scope)
+- ⬜ **1 item deferred** (shop-side sync API — replaced by BT)
 
 **Critical path to "works 100% local":**
-1. ⚠️ **Wire API adapter** — route ~300 API calls through `adaptedRequest()` in 22 files (mechanical but large — estimated 2-3 days)
-2. ⚠️ **Fix merge conflict** in `auth.ts` lines 98-109
-3. Then the app runs fully offline on any device with zero network dependency
+1. ⚠️ **Wire API adapter** — route remaining ~300 API calls in 22 files through `adaptedRequest()`. Mechanical work: each file needs HTTP fn + local fn wrapper for each exported function. Auth.ts is the reference pattern. Estimated: 2-3 sessions.
+2. Then the app runs fully offline on any device with zero network dependency.
 
 **Critical path to "syncs via Bluetooth":**
-4. Install `@capacitor-community/bluetooth-le` + `capacitor-secure-storage-plugin`
-5. Build `bt-service.ts` (BLE scanning, connection, handshake)
-6. Build `crypto-service.ts` (key generation, certificate verification, session encryption)
-7. Replace HTTP transport in sync-engine with BT transport
-8. Build pairing flow (QR code from shop → device scans → certificate exchange)
-9. Build gossip protocol (undelivered change propagation between peers)
-10. Build SyncStatusPage + SyncIndicator + BluetoothPage UI
+3. Install `@capacitor-community/bluetooth-le` + `capacitor-secure-storage-plugin`
+4. Build `bt-service.ts` (BLE scanning, connection, handshake)
+5. Build `crypto-service.ts` (key generation, certificate verification, session encryption)
+6. Replace HTTP transport in sync-engine with BT transport
+7. Build pairing flow (QR code from shop → device scans → certificate exchange)
+8. Build gossip protocol (undelivered change propagation between peers)
+9. Build BluetoothPage UI (pairing, device list, sync controls)
 
-### 2.3 Quality & Testing
+### 2.3 Quality & Testing (Verified 2026-03-09)
 
-| Item | Status | Plan File | Notes |
+**Backend test suite: 147+ test functions across 19 files, all passing (~2.5s runtime)**
+
+| Item | Status | Reference | Notes |
 |------|--------|-----------|-------|
-| Critical path tests | 📋 Planned | `testing-strategy.md` | Auth, orders, clock, receiving, movements |
-| Offline mode tests | ⬜ | | Verify all CRUD works with no network |
-| Sync round-trip tests | ⬜ | | Create on device → sync → verify on shop → sync back |
-| Conflict resolution tests | ⬜ | | Same record edited on 2 devices → shop resolves |
-| Cross-browser testing | ⬜ | This plan | Safari + Chrome on all platforms |
-| Responsive audit | ⬜ | Feature audit files | All 60+ pages at 4 breakpoints |
+| **Backend unit & integration tests** | ✅ Done | `docs/plans/testing-strategy.md` | 147+ functions across 19 files. 4 tiers: P1 Data Integrity (27: movements, cost FIFO/LIFO, labor, orders), P2 Auth (57: JWT, PIN, device certs, permissions), P3 Core Routers (16: parts, jobs, trailers, bootstrap), P4 Integration (51+: order pipeline, sync, multi-warehouse, security, updates). Runtime: ~2.5s (target <30s) |
+| **Test infrastructure** | ✅ Done | `backend/tests/conftest.py` | 420-line conftest: in-memory SQLite, all 35+ migrations run per test, 5 fixtures (event_loop, db, db_with_admin, client, auth_client), 5 seed helpers, dependency injection overrides |
+| **Feature audits** | ✅ Done | `docs/plans/Audit/` | 13 feature areas audited: dashboard, fleet, jobs/labor, notebooks, office, orders, parts/inventory, people, reports, scheduling, settings, tools/kits, warehouse. All gaps identified and closed |
+| **Responsive audit** | ✅ Done | `docs/plans/Audit/` | All 13 areas verified at 375px / 768px / 1280px breakpoints. Tailwind responsive prefixes throughout. No horizontal overflow issues remaining |
+| **E2E testing procedures** | ✅ Documented | `directives/v1-real-world-e2e-testing-prompt.md` | 10 manual scenario packs (A–J): Auth, Dispatch, Jobs/Labor, Warehouse, Orders, Tools, People, Fleet, Reports, Settings. 3 viewport sizes. Comprehensive step-by-step checklists — manual execution for V1.0, Playwright conversion planned V2.0 |
+| **TypeScript compilation** | ✅ Done | `npm run build` → `tsc -b && vite build` | 2294 modules compiled, zero TS errors. Catches type regressions on every build |
+| **ESLint** | ✅ Done | `npm run lint` | Frontend linting runs clean |
+| Frontend component tests | ⬜ Accepted risk | — | No vitest/jest installed. Per testing-strategy.md: frontend components rated "Low" risk — visual bugs caught by manual testing. V2.0 target: add vitest + @testing-library/react for ~30 critical component tests |
+| Automated E2E (Playwright) | ⬜ V2.0 | — | No playwright installed. Manual scenario packs (above) cover V1.0. V2.0 target: convert packs A/C/E to Playwright at 3 viewports |
+| Offline mode tests | ⬜ Blocked | — | Requires API adapter wiring in 22 remaining files. Cannot test until offline CRUD flows end-to-end |
+| Sync round-trip tests | ⬜ Blocked | — | Requires BT sync (Phase 11). Create → sync → verify → sync back |
+| Conflict resolution tests | ⬜ Blocked | — | Requires BT sync (Phase 11). Same record edited on 2 devices → shop resolves |
+| Cross-browser testing | ⬜ Manual | This plan | Safari + Chrome on Mac/iOS required. Needs Mac + physical devices (in 2.5) |
 
-### 2.4 Production Hardening
+**V1.0 deployment confidence:**
+- 🟢 **HIGH** — Critical data paths, auth/security, API stability (100 tests combined)
+- 🟡 **MEDIUM-HIGH** — Integration flows (order pipeline, labor cycle tested; offline not yet)
+- 🟡 **MEDIUM** — User workflows (backend ✅, frontend manual-only)
 
-| Item | Status | Notes |
-|------|--------|-------|
-| Static file serving from FastAPI | ⬜ | Mount `frontend/dist` at `/` for desktop browsers |
-| Production CORS config | ⬜ | Allow `<shop-ip>:8000` + Capacitor origins |
-| Secret key management | ⬜ | Generate random SECRET_KEY at install |
-| Error handling & logging | ⬜ | Structured logging to file, graceful error pages |
-| Database backup script | ⬜ | Scheduled SQLite backup to `backups/` folder |
-| App icons & splash screens | ⬜ | Real logo for Capacitor builds |
-| PWA manifest (browser fallback) | ⬜ | For desktop "Add to Home Screen" |
+### 2.4 Production Hardening (Verified 2026-03-09)
 
-### 2.5 Packaging & Distribution
+**6/7 items already fully implemented. Secret key auto-generation added this session.**
 
-| Item | Status | Notes |
-|------|--------|-------|
-| Shop server startup script (Windows) | ⬜ | PowerShell script or Windows Service |
-| Shop server startup script (Mac) | ⬜ | Shell script or launchd plist |
-| Capacitor project initialized | ✅ Done | iOS platform scaffolded, 9 plugins, Xcode builds clean (2026-03-09) |
-| iOS build → free sideloading | ⬜ | Sideloadly + AltServer (free). Mac + Xcode ready. |
-| Android build → APK | ⬜ | Can build from any OS with Android Studio |
-| Sideloading guide | ⬜ | `docs/plans/sideloading-guide.md` |
-| Customer setup guide | ⬜ | End-to-end install instructions for the shop owner |
+| Item | Status | Reference | Notes |
+|------|--------|-----------|-------|
+| **Static file serving from FastAPI** | ✅ Done | `backend/app/main.py` (lines 246–305) | Frontend detection (`frontend/dist/` exists?), `/assets` mount with Vite hashed filenames, SPA catch-all (`/{full_path:path}` → index.html), path traversal protection (`..` check), `/manifest.json` + `/favicon.ico` routes, API-only fallback mode when dist missing |
+| **Production CORS config** | ✅ Done | `config.py` + `.env` | Env-var driven: `CORS_ORIGINS` JSON list in `.env`. Already includes `capacitor://localhost`, `https://localhost`, `http://localhost:8000`. Parsed via `cors_origins_list` property with safe fallback. Deploy action: add shop LAN IP to `.env` |
+| **Secret key management** | ✅ Done | `main.py` `_ensure_secret_key()` | **Auto-generates on first startup.** Detects dev default (`dev-secret-change-in-production-abc123xyz`), generates 256-bit random key via `secrets.token_hex(32)`, writes to `.env`, hot-patches running settings. Runs once ever — after that, `.env` has a real key and function is a no-op |
+| **Error handling & logging** | ✅ Done | `main.py` (lines 41–61) | `RotatingFileHandler` → `backend/logs/wiredpart.log` (10MB/file, 5 backups). Structured format: `timestamp │ level │ name │ message`. Graceful router loading (missing routers logged as warnings, don't crash). All scheduler jobs wrapped in try/except with `logger.exception()`. Auth errors return proper HTTP status codes (401/403) with descriptive messages |
+| **Database backup script** | ✅ Done | `services/backup_service.py` (~400 lines) + `scheduler.py` | Enterprise-grade: automated DB backup at 02:00 daily via APScheduler, `sqlite3.backup()` hot-copy (WAL-safe), 7-day retention with auto-cleanup. Optional app backup at 03:00 (ZIP, disabled by default). API endpoints: GET/PUT settings, list backups, manual trigger, restore (creates safety backup first), delete. All configurable via Settings page |
+| **App icons & splash screens** | ✅ Done | `frontend/public/icons/` + `ios/App/Assets.xcassets/` | Custom "WP" SVG icons (192×192 + 512×512) on blue (#3B82F6) background. iOS `AppIcon.appiconset/` with `AppIcon-512@2x.png`. Capacitor splash: 2s dark slate (#1e293b) + blue spinner. HTML meta tags: apple-touch-icon, theme-color, apple-mobile-web-app-capable |
+| **PWA manifest** | ✅ Done | `frontend/public/manifest.json` (13 lines) | Valid manifest: name "Wired-Part", standalone display, dark slate background, blue theme color, both icon sizes. Linked in `index.html`. FastAPI serves it at `/manifest.json`. **Installable as web app** (Add to Home Screen works). Service worker deferred to Phase 12 (V2.0) — not needed for V1.0 since desktop browsers are always on LAN |
+
+**Deploy-time actions (customer setup, not code changes):**
+1. Update `CORS_ORIGINS` in `.env` with shop's LAN IP (e.g. `http://192.168.1.100:8000`)
+2. SECRET_KEY auto-generates on first startup — no manual action needed
+3. Run `npm run build` to create `frontend/dist/` before starting server
+4. Verify `backend/logs/` directory is writable
+5. Test manual backup: `POST /api/backups/run/db`
+
+### 2.5 Packaging & Distribution (Verified 2026-03-09)
+
+**6/7 items fully implemented. Android platform is on-demand (created by `npx cap sync android`).**
+
+| Item | Status | Reference | Notes |
+|------|--------|-----------|-------|
+| **Shop server startup (Windows)** | ✅ Done | `scripts/start-server.ps1` (73 lines) | Checks Python 3.12+, creates venv, installs deps from `requirements.txt`, builds frontend if missing, detects LAN IP, starts uvicorn with 2 workers on port 8000. Also: `launch.bat` (116 lines, dev launcher — both services) + `install.bat` (197 lines, graceful installer) |
+| **Shop server startup (Mac)** | ✅ Done | `scripts/start-server.sh` (62 lines) | Same flow as Windows: venv creation, auto-build, LAN IP detection via `ifconfig`/`hostname -I`, uvicorn startup. Cleanup handler for Ctrl+C. Also: `launch.sh` (104 lines, dev launcher) + `install.sh` (180 lines, installer with Homebrew/apt hints). Auto-start docs: Task Scheduler (Windows) + launchd plist (Mac) in `docs/SETUP.md` |
+| **Capacitor project initialized** | ✅ Done (iOS) | `frontend/capacitor.config.ts` (24 lines) + `frontend/ios/` | appId: `com.wiredpart.app`, 11 Capacitor plugins (SQLite, camera, geolocation, haptics, network, preferences, splash-screen, status-bar, app, core, ios). Full Xcode workspace with CocoaPods. Build scripts: `cap:ios`, `cap:android`, `cap:build`, `cap:build:android`. Android dir created on-demand via `npx cap sync android` |
+| **iOS build → free sideloading** | ✅ Done | `frontend/ios/` + `docs/plans/sideloading-guide.md` Part 1 | Complete Xcode project (`.xcworkspace`, `.xcodeproj`, `Podfile`, `Podfile.lock`). Bundle ID `com.wiredpart.app`. Build: `npm run build → cap sync ios → cap open ios → Archive → Export`. Sideload: Sideloadly (free, Mac/Windows). Auto-refresh: AltServer re-signs every 7 days over Wi-Fi. Cost: **$0** |
+| Android build → APK | ⬜ On-demand | `docs/plans/sideloading-guide.md` Part 2 | Platform not yet created (directory generated by `npx cap sync android`). `@capacitor/android` not yet in package.json — install when ready: `npm i @capacitor/android && npx cap add android`. Full build process documented: Android Studio → Generate Signed APK → share via server/email/USB. No developer account needed. Cost: **$0** |
+| **Sideloading guide** | ✅ Done | `docs/plans/sideloading-guide.md` (408 lines) | 5 parts: Quick Summary, Part 1 iOS (Sideloadly + AltServer, 172 lines), Part 2 Android (APK, 100 lines), Part 3 iPad (universal app), Part 4 Troubleshooting (19 common issues + solutions), Part 5 Quick Reference (build commands, version bumping). All platforms, both Mac and Windows host |
+| **Customer setup guide** | ✅ Done | `docs/SETUP.md` (180+ lines) | End-to-end: What You Need → Install (Win/Mac scripts) → First Login (default PIN 1234) → Create Employees → Connect Mobile Devices → Daily Operations → Auto-Start on Boot (Task Scheduler + launchd) → Backups (automated + cron) → Troubleshooting (10+ issues). Links to sideloading guide for mobile setup |
+
+**What's ready to ship today:**
+- ✅ Server startup scripts (Windows + Mac) with venv, auto-build, LAN detection
+- ✅ iOS: Xcode project, full build pipeline, free sideloading method documented
+- ✅ Complete sideloading guide (all platforms, troubleshooting, cost: $0)
+- ✅ Customer setup guide (install → production in 5 steps)
+- ✅ Auto-start on boot documented (both platforms)
+
+**When Android is needed:**
+1. `npm i @capacitor/android` (add Android runtime)
+2. `npx cap add android` (scaffold `frontend/android/`)
+3. `npm run cap:build:android` (build + sync)
+4. Open Android Studio → Generate Signed APK → distribute
 
 ---
 

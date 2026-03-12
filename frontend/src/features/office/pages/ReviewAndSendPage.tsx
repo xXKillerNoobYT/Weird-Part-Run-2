@@ -24,8 +24,7 @@ import {
   Building2,
   ChevronDown,
   ChevronRight,
-  Loader2,
-  Package,
+  Loader2, Mail, Package,
   ShoppingCart,
   Sparkles,
   Zap,
@@ -42,8 +41,10 @@ import {
   listJPOs,
   getJPO,
   createPOFromJPO,
+  getOrderSummary,
 } from '../../../api/orders';
 import { formatRelativeTime } from '../../../lib/utils';
+import { OrderSummaryCard } from '../components/OrderSummaryCard';
 import type {
   JPOListItem,
   JPOResponse,
@@ -92,6 +93,13 @@ export function ReviewAndSendPage() {
     refetchInterval: 30_000,
   });
 
+  // Cross-job aggregate summary (Phase 17 Gap 4)
+  const summaryQ = useQuery({
+    queryKey: ['order-summary'],
+    queryFn: () => getOrderSummary(),
+    refetchInterval: 30_000,
+  });
+
   // Fetch detail for expanded JPO (to see line items)
   const jpoDetailQ = useQuery({
     queryKey: ['jpo-detail', expandedJpoId],
@@ -104,13 +112,14 @@ export function ReviewAndSendPage() {
     mutationFn: createPOFromJPO,
     onSuccess: (pos, _variables) => {
       setSuccess(
-        `Created ${pos.length} PO${pos.length !== 1 ? 's' : ''} from order — POs are now in Draft status`
+        `Created ${pos.length} PO${pos.length !== 1 ? 's' : ''} from order — POs are now in Draft status. Head to PO Management to email them to suppliers.`
       );
       setGeneratingJpoId(null);
       setExpandedJpoId(null);
       // Refresh queries
       queryClient.invalidateQueries({ queryKey: ['jpos'] });
       queryClient.invalidateQueries({ queryKey: ['pos'] });
+      queryClient.invalidateQueries({ queryKey: ['order-summary'] });
     },
     onError: (err: Error) => {
       setError(err.message || 'Failed to generate purchase orders');
@@ -233,9 +242,22 @@ export function ReviewAndSendPage() {
       {success && (
         <div className="flex items-start gap-3 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
           <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
-          <p className="text-sm text-green-600 dark:text-green-400">{success}</p>
+          <div className="space-y-1.5">
+            <p className="text-sm text-green-600 dark:text-green-400">{success}</p>
+            <Link
+              to="/orders/purchase-orders"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700 dark:text-green-300 hover:underline"
+            >
+              <Mail className="h-3.5 w-3.5" />
+              Go to PO Management to email & send
+              <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
         </div>
       )}
+
+      {/* Cross-job summary (Phase 17 Gap 4) */}
+      {summaryQ.data && <OrderSummaryCard data={summaryQ.data} />}
 
       {/* Empty state */}
       {approvedJPOs.length === 0 ? (
@@ -264,7 +286,7 @@ export function ReviewAndSendPage() {
       )}
 
       {/* Footer info */}
-      <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/10 px-4 py-3">
+      <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/10 px-4 py-3 space-y-1">
         <p className="text-xs text-blue-700 dark:text-blue-400">
           <strong>Tip:</strong> Use <strong>Auto-Generate</strong> to let the system assign
           suppliers based on the ranking algorithm, or <strong>Manual</strong> to choose
@@ -273,6 +295,11 @@ export function ReviewAndSendPage() {
             PO Management
           </Link>
           .
+        </p>
+        <p className="text-xs text-blue-700 dark:text-blue-400 flex items-center gap-1">
+          <Mail className="h-3 w-3 flex-shrink-0" />
+          Once POs are generated, you can <strong>email them directly to suppliers</strong> or
+          generate bundled PDFs from PO Management.
         </p>
       </div>
     </div>

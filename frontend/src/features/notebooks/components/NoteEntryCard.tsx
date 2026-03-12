@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { Edit2, Trash2, User } from 'lucide-react';
 import type { EntryResponse } from '../../../lib/types';
+import { AttachmentPanel } from './AttachmentPanel';
 
 interface NoteEntryCardProps {
   entry: EntryResponse;
@@ -110,6 +111,9 @@ export function NoteEntryCard({ entry, onUpdate, onDelete }: NoteEntryCardProps)
           </span>
         )}
       </div>
+
+      {/* Attachments */}
+      <AttachmentPanel entryId={entry.id} canEdit={entry.can_edit} />
     </div>
   );
 }

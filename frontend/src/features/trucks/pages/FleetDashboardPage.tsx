@@ -20,6 +20,9 @@ import {
   XCircle,
   ChevronRight,
   Shield,
+  FileWarning,
+  ArrowLeftRight,
+  BarChart3,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { Badge } from '../../../components/ui/Badge';
@@ -27,8 +30,14 @@ import {
   getFleetDashboard,
   getOverdueMaintenance,
   getUpcomingMaintenance,
+  getDocumentAlerts,
+  getUtilizationReport,
+  listTransfers,
 } from '../../../api/vehicles';
-import type { MaintenanceAlert } from '../../../lib/types';
+import type {
+  MaintenanceAlert,
+  VehicleUtilizationReport,
+} from '../../../lib/types';
 
 export function FleetDashboardPage() {
   const navigate = useNavigate();
@@ -48,6 +57,28 @@ export function FleetDashboardPage() {
   const { data: upcoming } = useQuery({
     queryKey: ['maintenance-upcoming', 14],
     queryFn: () => getUpcomingMaintenance({ days_ahead: 14 }),
+    staleTime: 30_000,
+  });
+
+  const { data: docAlerts } = useQuery({
+    queryKey: ['fleet-document-alerts'],
+    queryFn: () => getDocumentAlerts(60),
+    staleTime: 60_000,
+  });
+
+  const { data: utilization } = useQuery<VehicleUtilizationReport>({
+    queryKey: ['fleet-utilization'],
+    queryFn: () => {
+      const end = new Date().toISOString().split('T')[0];
+      const start = new Date(Date.now() - 30 * 86400_000).toISOString().split('T')[0];
+      return getUtilizationReport(start, end);
+    },
+    staleTime: 60_000,
+  });
+
+  const { data: transfers } = useQuery({
+    queryKey: ['fleet-transfers'],
+    queryFn: () => listTransfers({ transfer_status: 'pending' }),
     staleTime: 30_000,
   });
 
@@ -206,6 +237,146 @@ export function FleetDashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Document Expiry Alerts ── */}
+      {docAlerts && docAlerts.length > 0 && (
+        <div className="bg-surface border border-border rounded-xl">
+          <div className="flex items-center gap-2 p-4 border-b border-border">
+            <FileWarning className="h-4 w-4 text-amber-500" />
+            <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+              Document Expiry Alerts
+            </h3>
+            <Badge variant="warning">{docAlerts.length}</Badge>
+          </div>
+          <div className="divide-y divide-border max-h-48 overflow-y-auto">
+            {docAlerts.map((alert, idx) => (
+              <div
+                key={idx}
+                className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer transition-colors"
+                onClick={() => navigate(`/trucks/${alert.vehicle_id}`)}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono text-gray-500">{alert.vehicle_number}</span>
+                  <span className="text-sm capitalize">
+                    {alert.alert_type.replace('_', ' ')}
+                  </span>
+                </div>
+                <div className="text-xs shrink-0 ml-2">
+                  {alert.days_remaining != null && alert.days_remaining <= 0 ? (
+                    <span className="text-red-600 dark:text-red-400 font-medium">Expired</span>
+                  ) : (
+                    <span className="text-amber-600 dark:text-amber-400">
+                      {alert.days_remaining}d left
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Active Transfers ── */}
+      {transfers && transfers.length > 0 && (
+        <div className="bg-surface border border-border rounded-xl">
+          <div className="flex items-center gap-2 p-4 border-b border-border">
+            <ArrowLeftRight className="h-4 w-4 text-blue-500" />
+            <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+              Pending Transfers
+            </h3>
+            <Badge variant="info">{transfers.length}</Badge>
+          </div>
+          <div className="divide-y divide-border max-h-48 overflow-y-auto">
+            {transfers.map((t) => (
+              <div key={t.id} className="flex items-center justify-between px-4 py-2.5">
+                <div className="min-w-0">
+                  <span className="text-sm font-medium">{t.vehicle_number ?? `Vehicle #${t.vehicle_id}`}</span>
+                  <span className="text-xs text-gray-500 ml-2">
+                    {t.from_warehouse_name ?? 'Shop'} → {t.to_warehouse_name ?? 'Shop'}
+                  </span>
+                </div>
+                <Badge
+                  variant={
+                    t.status === 'in_transit' ? 'info' : t.status === 'approved' ? 'success' : 'warning'
+                  }
+                >
+                  {t.status.replace('_', ' ')}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Fleet Utilization ── */}
+      {utilization && utilization.vehicles && utilization.vehicles.length > 0 && (
+        <div className="bg-surface border border-border rounded-xl">
+          <div className="flex items-center justify-between p-4 border-b border-border">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-indigo-500" />
+              <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                Fleet Utilization
+              </h3>
+            </div>
+            {utilization.summary && (
+              <div className="text-xs text-gray-500 flex items-center gap-3">
+                <span>
+                  Fleet Miles:{' '}
+                  <strong className="text-gray-900 dark:text-gray-100">
+                    {utilization.summary.fleet_total_miles?.toLocaleString() ?? 0}
+                  </strong>
+                </span>
+                <span>
+                  Total Cost:{' '}
+                  <strong className="text-gray-900 dark:text-gray-100">
+                    ${utilization.summary.fleet_total_cost?.toLocaleString(undefined, { minimumFractionDigits: 2 }) ?? '0.00'}
+                  </strong>
+                </span>
+                <span>
+                  $/mile:{' '}
+                  <strong className="text-gray-900 dark:text-gray-100">
+                    {utilization.summary.fleet_avg_cost_per_mile?.toFixed(2) ?? '—'}
+                  </strong>
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 dark:bg-gray-800 border-b border-border">
+                <tr>
+                  <th className="text-left p-3 font-medium text-xs">Vehicle</th>
+                  <th className="text-right p-3 font-medium text-xs">Miles</th>
+                  <th className="text-right p-3 font-medium text-xs">Maint $</th>
+                  <th className="text-right p-3 font-medium text-xs">Fuel $</th>
+                  <th className="text-right p-3 font-medium text-xs">MPG</th>
+                  <th className="text-right p-3 font-medium text-xs">$/mile</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                {utilization.vehicles.slice(0, 10).map((v) => (
+                  <tr
+                    key={v.vehicle_id}
+                    className="hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer"
+                    onClick={() => navigate(`/trucks/${v.vehicle_id}`)}
+                  >
+                    <td className="p-3 font-medium text-xs">
+                      {v.vehicle_number}
+                    </td>
+                    <td className="p-3 text-right tabular-nums">{v.total_miles?.toLocaleString() ?? 0}</td>
+                    <td className="p-3 text-right tabular-nums">${v.maintenance_cost?.toFixed(0) ?? '0'}</td>
+                    <td className="p-3 text-right tabular-nums">${v.fuel_cost?.toFixed(0) ?? '0'}</td>
+                    <td className="p-3 text-right tabular-nums">{v.avg_mpg?.toFixed(1) ?? '—'}</td>
+                    <td className="p-3 text-right tabular-nums font-medium">
+                      {v.cost_per_mile != null ? `$${v.cost_per_mile.toFixed(2)}` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -262,11 +433,10 @@ function MetricCard({
 }) {
   return (
     <div
-      className={`bg-surface border rounded-xl p-3 ${
-        highlight
-          ? 'border-amber-300 dark:border-amber-700'
-          : 'border-border'
-      } ${onClick ? 'cursor-pointer hover:border-blue-300 dark:hover:border-blue-600 transition-colors' : ''}`}
+      className={`bg-surface border rounded-xl p-3 ${highlight
+        ? 'border-amber-300 dark:border-amber-700'
+        : 'border-border'
+        } ${onClick ? 'cursor-pointer hover:border-blue-300 dark:hover:border-blue-600 transition-colors' : ''}`}
       onClick={onClick}
     >
       <div className="flex items-center gap-1.5 mb-1.5">

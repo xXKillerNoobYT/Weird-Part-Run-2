@@ -40,6 +40,12 @@ interface InventoryTableProps {
   onMove: (item: WarehouseInventoryItem) => void;
   onSpotCheck: (item: WarehouseInventoryItem) => void;
   onQRLabel: (item: WarehouseInventoryItem) => void;
+  /** Currently selected part IDs for bulk actions. */
+  selectedIds?: Set<number>;
+  /** Toggle selection of a single part. */
+  onToggleSelect?: (partId: number) => void;
+  /** Toggle select all visible items. */
+  onToggleSelectAll?: () => void;
 }
 
 function SortIcon({ column, sortBy, sortDir }: { column: string; sortBy: string; sortDir: string }) {
@@ -51,11 +57,14 @@ function SortIcon({ column, sortBy, sortDir }: { column: string; sortBy: string;
 
 export function InventoryTable({
   items, sortBy, sortDir, onSort, onMove, onSpotCheck, onQRLabel,
+  selectedIds, onToggleSelect, onToggleSelectAll,
 }: InventoryTableProps) {
   const { hasPermission } = useAuthStore();
   const showDollars = hasPermission(PERMISSIONS.SHOW_DOLLAR_VALUES);
   const canMove = hasPermission(PERMISSIONS.MOVE_STOCK_WAREHOUSE);
   const canAudit = hasPermission(PERMISSIONS.PERFORM_AUDIT);
+  const showCheckbox = selectedIds !== undefined && onToggleSelect && onToggleSelectAll;
+  const allChecked = showCheckbox && items.length > 0 && items.every(i => selectedIds.has(i.part_id));
 
   if (items.length === 0) {
     return (
@@ -73,6 +82,17 @@ export function InventoryTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-gray-200 dark:border-gray-700">
+            {showCheckbox && (
+              <th className="py-2 px-2 w-8">
+                <input
+                  type="checkbox"
+                  checked={allChecked}
+                  onChange={onToggleSelectAll}
+                  className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+                  aria-label="Select all"
+                />
+              </th>
+            )}
             {[
               { key: 'part_name', label: 'Part', align: 'text-left' },
               { key: 'category_name', label: 'Category', align: 'text-left' },
@@ -111,6 +131,17 @@ export function InventoryTable({
               key={item.part_id}
               className="border-b border-gray-100 dark:border-gray-800 last:border-0 hover:bg-gray-50 dark:hover:bg-gray-700/30"
             >
+              {showCheckbox && (
+                <td className="py-2.5 px-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(item.part_id)}
+                    onChange={() => onToggleSelect(item.part_id)}
+                    className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+                    aria-label={`Select ${item.part_name}`}
+                  />
+                </td>
+              )}
               {/* Part */}
               <td className="py-2.5 px-3">
                 <div className="flex items-center gap-1.5">

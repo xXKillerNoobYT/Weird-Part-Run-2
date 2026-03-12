@@ -802,3 +802,418 @@ class SyncService:
             "change_log_entries_deleted": changes_deleted,
             "conflicts_deleted": conflicts_deleted,
         }
+
+    # ── Peer-to-Peer Relay Transport ─────────────────────────────
+
+    async def upsert_relay_manifest(
+        self,
+        *,
+        device_id: str,
+        pending_change_count: int = 0,
+        pending_media_count: int = 0,
+        change_hashes: list[str] | None = None,
+        media_hashes: list[str] | None = None,
+        origin_device_ids: list[str] | None = None,
+    ) -> dict:
+        """Create or update a device's relay manifest.
+
+        A relay manifest advertises what undelivered data a device is
+        carrying so peers can decide what to accept during BT handshakes.
+        """
+        await self.db.execute(
+            """
+            INSERT INTO _relay_manifests (
+                device_id, pending_change_count, pending_media_count,
+                change_hashes_json, media_hashes_json, origin_device_ids_json,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(device_id) DO UPDATE SET
+                pending_change_count = excluded.pending_change_count,
+                pending_media_count  = excluded.pending_media_count,
+                change_hashes_json   = excluded.change_hashes_json,
+                media_hashes_json    = excluded.media_hashes_json,
+                origin_device_ids_json = excluded.origin_device_ids_json,
+                updated_at           = datetime('now')
+            """,
+            (
+                device_id,
+                pending_change_count,
+                pending_media_count,
+                json.dumps(change_hashes or []),
+                json.dumps(media_hashes or []),
+                json.dumps(origin_device_ids or []),
+            ),
+        )
+        await self.db.commit()
+
+        cursor = await self.db.execute(
+            "SELECT * FROM _relay_manifests WHERE device_id = ?", (device_id,)
+        )
+        row = await cursor.fetchone()
+        return self._manifest_to_dict(row)
+
+    async def get_relay_manifest(self, device_id: str) -> dict | None:
+        """Get a device's current relay manifest."""
+        cursor = await self.db.execute(
+            "SELECT * FROM _relay_manifests WHERE device_id = ?", (device_id,)
+        )
+        row = await cursor.fetchone()
+        return self._manifest_to_dict(row) if row else None
+
+    async def list_relay_manifests(self) -> list[dict]:
+        """List all relay manifests (admin oversight)."""
+        cursor = await self.db.execute(
+            "SELECT * FROM _relay_manifests ORDER BY updated_at DESC"
+        )
+        return [self._manifest_to_dict(r) for r in await cursor.fetchall()]
+
+    @staticmethod
+    def _manifest_to_dict(row: Any) -> dict:
+        d = dict(row)
+        d["change_hashes"] = json.loads(d.pop("change_hashes_json", "[]") or "[]")
+        d["media_hashes"] = json.loads(d.pop("media_hashes_json", "[]") or "[]")
+        d["origin_device_ids"] = json.loads(d.pop("origin_device_ids_json", "[]") or "[]")
+        return d
+
+    # ── Relay Packages (P2P data transfer audit) ─────────────────
+
+    async def create_relay_package(
+        self,
+        *,
+        sender_device_id: str,
+        receiver_device_id: str,
+        origin_device_id: str,
+        change_count: int = 0,
+        media_count: int = 0,
+        package_hash: str | None = None,
+    ) -> dict:
+        """Record a relay package as it's created for peer transfer.
+
+        Called when one device prepares a data bundle to hand off to
+        another device via BT or LAN.
+        """
+        cursor = await self.db.execute(
+            """
+            INSERT INTO _relay_packages (
+                sender_device_id, receiver_device_id, origin_device_id,
+                change_count, media_count, package_hash
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                sender_device_id,
+                receiver_device_id,
+                origin_device_id,
+                change_count,
+                media_count,
+                package_hash,
+            ),
+        )
+        pkg_id = cursor.lastrowid
+        await self.db.commit()
+
+        cursor = await self.db.execute(
+            "SELECT * FROM _relay_packages WHERE id = ?", (pkg_id,)
+        )
+        return dict(await cursor.fetchone())
+
+    async def update_relay_package_status(
+        self,
+        package_id: int,
+        status: str,
+        failure_reason: str | None = None,
+    ) -> dict | None:
+        """Update status of a relay package.
+
+        status: 'transferred' | 'confirmed' | 'failed'
+        """
+        ts_col = {
+            "transferred": "transferred_at",
+            "confirmed": "confirmed_at",
+        }.get(status)
+
+        sql_parts = ["status = ?"]
+        params: list[Any] = [status]
+
+        if ts_col:
+            sql_parts.append(f"{ts_col} = datetime('now')")
+        if failure_reason:
+            sql_parts.append("failure_reason = ?")
+            params.append(failure_reason)
+
+        params.append(package_id)
+        await self.db.execute(
+            f"UPDATE _relay_packages SET {', '.join(sql_parts)} WHERE id = ?",
+            params,
+        )
+        await self.db.commit()
+
+        cursor = await self.db.execute(
+            "SELECT * FROM _relay_packages WHERE id = ?", (package_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def list_relay_packages(
+        self,
+        *,
+        device_id: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        """List relay packages, optionally filtered by device or status."""
+        sql = "SELECT * FROM _relay_packages"
+        conditions: list[str] = []
+        params: list[Any] = []
+
+        if device_id:
+            conditions.append(
+                "(sender_device_id = ? OR receiver_device_id = ? OR origin_device_id = ?)"
+            )
+            params.extend([device_id, device_id, device_id])
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+
+        cursor = await self.db.execute(sql, tuple(params))
+        return [dict(r) for r in await cursor.fetchall()]
+
+    # ── Delivery Receipts ────────────────────────────────────────
+
+    async def issue_delivery_receipt(
+        self,
+        *,
+        origin_device_id: str,
+        delivered_by_device_id: str,
+        receipt_type: str = "changes",
+        change_count: int = 0,
+        media_count: int = 0,
+        delivered_hashes: list[str] | None = None,
+        relay_chain: list[str] | None = None,
+    ) -> dict:
+        """Issue a delivery receipt when relayed data reaches the shop.
+
+        The receipt confirms that data originally from `origin_device_id`
+        was delivered to the shop by `delivered_by_device_id`.  The receipt
+        must flow back to the origin device so it can safely purge its
+        local copies of the relayed data.
+        """
+        cursor = await self.db.execute(
+            """
+            INSERT INTO _delivery_receipts (
+                origin_device_id, delivered_by_device_id, receipt_type,
+                change_count, media_count, delivered_hashes_json,
+                relay_chain_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                origin_device_id,
+                delivered_by_device_id,
+                receipt_type,
+                change_count,
+                media_count,
+                json.dumps(delivered_hashes or []),
+                json.dumps(relay_chain or []),
+            ),
+        )
+        receipt_id = cursor.lastrowid
+        await self.db.commit()
+
+        cursor = await self.db.execute(
+            "SELECT * FROM _delivery_receipts WHERE id = ?", (receipt_id,)
+        )
+        row = await cursor.fetchone()
+        return self._receipt_to_dict(row)
+
+    async def get_pending_receipts(
+        self,
+        origin_device_id: str,
+        limit: int = 100,
+    ) -> list[dict]:
+        """Get unacknowledged delivery receipts destined for a device.
+
+        Called when a device syncs and asks "what receipts do I need to
+        acknowledge?" — this allows the device to purge relayed data.
+        """
+        cursor = await self.db.execute(
+            """
+            SELECT * FROM _delivery_receipts
+            WHERE origin_device_id = ? AND acknowledged_by_origin = 0
+            ORDER BY issued_at DESC LIMIT ?
+            """,
+            (origin_device_id, limit),
+        )
+        return [self._receipt_to_dict(r) for r in await cursor.fetchall()]
+
+    async def acknowledge_receipt(self, receipt_id: int) -> dict | None:
+        """Acknowledge a delivery receipt — origin device confirms it
+        can safely purge the delivered data."""
+        cursor = await self.db.execute(
+            "SELECT * FROM _delivery_receipts WHERE id = ?", (receipt_id,)
+        )
+        existing = await cursor.fetchone()
+        if not existing:
+            return None
+
+        await self.db.execute(
+            """
+            UPDATE _delivery_receipts
+            SET acknowledged_by_origin = 1, acknowledged_at = datetime('now')
+            WHERE id = ?
+            """,
+            (receipt_id,),
+        )
+        await self.db.commit()
+
+        cursor = await self.db.execute(
+            "SELECT * FROM _delivery_receipts WHERE id = ?", (receipt_id,)
+        )
+        row = await cursor.fetchone()
+        return self._receipt_to_dict(row) if row else None
+
+    async def acknowledge_receipts_bulk(
+        self,
+        receipt_ids: list[int],
+    ) -> int:
+        """Acknowledge multiple delivery receipts at once.
+
+        Returns count of receipts acknowledged.
+        """
+        if not receipt_ids:
+            return 0
+        placeholders = ",".join("?" for _ in receipt_ids)
+        cursor = await self.db.execute(
+            f"""
+            UPDATE _delivery_receipts
+            SET acknowledged_by_origin = 1, acknowledged_at = datetime('now')
+            WHERE id IN ({placeholders}) AND acknowledged_by_origin = 0
+            """,
+            tuple(receipt_ids),
+        )
+        count = cursor.rowcount or 0
+        await self.db.commit()
+        return count
+
+    async def list_delivery_receipts(
+        self,
+        *,
+        device_id: str | None = None,
+        acknowledged: bool | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        """List delivery receipts for admin review."""
+        sql = "SELECT * FROM _delivery_receipts"
+        conditions: list[str] = []
+        params: list[Any] = []
+
+        if device_id:
+            conditions.append(
+                "(origin_device_id = ? OR delivered_by_device_id = ?)"
+            )
+            params.extend([device_id, device_id])
+        if acknowledged is not None:
+            conditions.append("acknowledged_by_origin = ?")
+            params.append(1 if acknowledged else 0)
+
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+        sql += " ORDER BY issued_at DESC LIMIT ?"
+        params.append(limit)
+
+        cursor = await self.db.execute(sql, tuple(params))
+        return [self._receipt_to_dict(r) for r in await cursor.fetchall()]
+
+    async def get_relay_stats(self, device_id: str | None = None) -> dict:
+        """Get aggregate relay statistics for the dashboard.
+
+        Returns counts of relay events, packages, and receipts grouped
+        by type and status.
+        """
+        stats: dict[str, Any] = {}
+
+        # Relay events by type
+        if device_id:
+            cursor = await self.db.execute(
+                """
+                SELECT relay_type, COUNT(*) as cnt,
+                       SUM(carried_change_count) as total_changes,
+                       SUM(carried_media_count) as total_media
+                FROM _mesh_relay_events
+                WHERE source_device_id = ? OR peer_device_id = ?
+                GROUP BY relay_type
+                """,
+                (device_id, device_id),
+            )
+        else:
+            cursor = await self.db.execute(
+                """
+                SELECT relay_type, COUNT(*) as cnt,
+                       SUM(carried_change_count) as total_changes,
+                       SUM(carried_media_count) as total_media
+                FROM _mesh_relay_events
+                GROUP BY relay_type
+                """
+            )
+        stats["events_by_type"] = [dict(r) for r in await cursor.fetchall()]
+
+        # Relay packages by status
+        if device_id:
+            cursor = await self.db.execute(
+                """
+                SELECT status, COUNT(*) as cnt
+                FROM _relay_packages
+                WHERE sender_device_id = ? OR receiver_device_id = ?
+                GROUP BY status
+                """,
+                (device_id, device_id),
+            )
+        else:
+            cursor = await self.db.execute(
+                "SELECT status, COUNT(*) as cnt FROM _relay_packages GROUP BY status"
+            )
+        stats["packages_by_status"] = [dict(r) for r in await cursor.fetchall()]
+
+        # Delivery receipts: pending vs acknowledged
+        if device_id:
+            cursor = await self.db.execute(
+                """
+                SELECT acknowledged_by_origin, COUNT(*) as cnt,
+                       SUM(change_count) as total_changes,
+                       SUM(media_count) as total_media
+                FROM _delivery_receipts
+                WHERE origin_device_id = ? OR delivered_by_device_id = ?
+                GROUP BY acknowledged_by_origin
+                """,
+                (device_id, device_id),
+            )
+        else:
+            cursor = await self.db.execute(
+                """
+                SELECT acknowledged_by_origin, COUNT(*) as cnt,
+                       SUM(change_count) as total_changes,
+                       SUM(media_count) as total_media
+                FROM _delivery_receipts
+                GROUP BY acknowledged_by_origin
+                """
+            )
+        stats["receipts_by_status"] = [dict(r) for r in await cursor.fetchall()]
+
+        # Active manifest count
+        cursor = await self.db.execute(
+            "SELECT COUNT(*) as cnt FROM _relay_manifests WHERE pending_change_count > 0 OR pending_media_count > 0"
+        )
+        row = await cursor.fetchone()
+        stats["active_manifests"] = row["cnt"] if row else 0
+
+        return stats
+
+    @staticmethod
+    def _receipt_to_dict(row: Any) -> dict:
+        d = dict(row)
+        d["delivered_hashes"] = json.loads(d.pop("delivered_hashes_json", "[]") or "[]")
+        d["relay_chain"] = json.loads(d.pop("relay_chain_json", "[]") or "[]")
+        return d

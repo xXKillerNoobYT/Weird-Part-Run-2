@@ -21,6 +21,7 @@ import { Card, CardHeader } from '../../../components/ui/Card';
 import { Modal } from '../../../components/ui/Modal';
 import { Input } from '../../../components/ui/Input';
 import { EmptyState } from '../../../components/ui/EmptyState';
+import { toast } from '../../../lib/toast';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
 import {
@@ -92,7 +93,11 @@ export function ContractorDetailPage() {
 
   const toggleMutation = useMutation({
     mutationFn: (isActive: boolean) => toggleGCActive(gcId, isActive),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['gc-detail', gcId] }),
+    onSuccess: (_data, isActive) => {
+      queryClient.invalidateQueries({ queryKey: ['gc-detail', gcId] });
+      toast.success(isActive ? 'Contractor activated' : 'Contractor deactivated');
+    },
+    onError: () => toast.error('Failed to update contractor status'),
   });
 
   if (isLoading) return <PageSpinner label="Loading contractor..." />;
@@ -175,11 +180,10 @@ export function ContractorDetailPage() {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-                  isActive
+                className={`flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors ${isActive
                     ? 'border-primary-500 text-primary-600 dark:text-primary-400'
                     : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
-                }`}
+                  }`}
               >
                 <Icon size={14} />
                 <span className="hidden sm:inline">{tab.label}</span>
@@ -233,7 +237,9 @@ function OverviewTab({ gc, canManage }: { gc: GCDetail; canManage: boolean }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['gc-detail', gc.id] });
       setEditing(false);
+      toast.success('Contractor information saved');
     },
+    onError: () => toast.error('Failed to save contractor information'),
   });
 
   const handleSave = () => {
@@ -513,7 +519,9 @@ function ContactsTab({ gcId, canManage }: { gcId: number; canManage: boolean }) 
       queryClient.invalidateQueries({ queryKey: ['gc-contacts', gcId] });
       queryClient.invalidateQueries({ queryKey: ['gc-detail', gcId] });
       setShowAdd(false);
+      toast.success('Contact added');
     },
+    onError: () => toast.error('Failed to add contact'),
   });
 
   const updateMutation = useMutation({
@@ -521,7 +529,9 @@ function ContactsTab({ gcId, canManage }: { gcId: number; canManage: boolean }) 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['gc-contacts', gcId] });
       setEditingContact(null);
+      toast.success('Contact updated');
     },
+    onError: () => toast.error('Failed to update contact'),
   });
 
   const deleteMutation = useMutation({
@@ -529,7 +539,9 @@ function ContactsTab({ gcId, canManage }: { gcId: number; canManage: boolean }) 
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['gc-contacts', gcId] });
       queryClient.invalidateQueries({ queryKey: ['gc-detail', gcId] });
+      toast.success('Contact deleted');
     },
+    onError: () => toast.error('Failed to delete contact'),
   });
 
   if (isLoading) return <PageSpinner label="Loading contacts..." />;

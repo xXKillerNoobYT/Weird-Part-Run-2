@@ -7,6 +7,7 @@ import type {
   ApiResponse,
   StatusMessage,
   ThemeSettings,
+  PDFSettings,
   CompanyProfile,
   CompanyProfileCreate,
   CompanyProfileUpdate,
@@ -122,6 +123,122 @@ export async function updateCompanyProfile(
 export async function deleteCompanyProfile(id: number): Promise<StatusMessage> {
   const { data } = await apiClient.delete<ApiResponse<StatusMessage>>(
     `/settings/company-profiles/${id}`,
+  );
+  return data.data!;
+}
+
+
+// ── PDF Settings ────────────────────────────────────────────
+
+/** Get PDF template/document settings (accent color, columns, footer, etc.). */
+export async function getPDFSettings(): Promise<PDFSettings> {
+  const { data } = await apiClient.get<ApiResponse<PDFSettings>>(
+    '/settings/pdf',
+  );
+  return data.data!;
+}
+
+/** Update PDF template/document settings. */
+export async function updatePDFSettings(
+  settings: PDFSettings,
+): Promise<PDFSettings> {
+  const { data } = await apiClient.put<ApiResponse<PDFSettings>>(
+    '/settings/pdf',
+    settings,
+  );
+  return data.data!;
+}
+
+
+// ── Company Logo Upload ─────────────────────────────────────
+
+/** Upload or replace the primary company logo. Returns the new logo path. */
+export async function uploadCompanyLogo(
+  file: File,
+): Promise<{ logo_path: string; filename: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const { data } = await apiClient.post<
+    ApiResponse<{ logo_path: string; filename: string }>
+  >(
+    '/settings/company-logo',
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data.data!;
+}
+
+
+// ── Billing Cycle & Pay Period Settings ─────────────────────────
+
+export interface BillingCycleSettings {
+  cycle_type: string;
+  start_day: number;
+}
+
+export interface PayPeriodSettings {
+  period_type: string;
+  start_day: number;
+}
+
+export interface PayrollColumnConfig {
+  columns: string[];
+}
+
+/** Get billing cycle configuration. */
+export async function getBillingCycle(): Promise<BillingCycleSettings> {
+  const { data } = await apiClient.get<ApiResponse<BillingCycleSettings>>(
+    '/settings/billing-cycle',
+  );
+  return data.data!;
+}
+
+/** Update billing cycle configuration. */
+export async function updateBillingCycle(
+  settings: BillingCycleSettings,
+): Promise<BillingCycleSettings> {
+  const { data } = await apiClient.put<ApiResponse<BillingCycleSettings>>(
+    '/settings/billing-cycle',
+    settings,
+  );
+  return data.data!;
+}
+
+/** Get pay period configuration. */
+export async function getPayPeriod(): Promise<PayPeriodSettings> {
+  const { data } = await apiClient.get<ApiResponse<PayPeriodSettings>>(
+    '/settings/pay-period',
+  );
+  return data.data!;
+}
+
+/** Update pay period configuration. */
+export async function updatePayPeriod(
+  settings: PayPeriodSettings,
+): Promise<PayPeriodSettings> {
+  const { data } = await apiClient.put<ApiResponse<PayPeriodSettings>>(
+    '/settings/pay-period',
+    settings,
+  );
+  return data.data!;
+}
+
+/** Get customizable payroll export columns. */
+export async function getPayrollColumns(): Promise<PayrollColumnConfig> {
+  const { data } = await apiClient.get<ApiResponse<PayrollColumnConfig>>(
+    '/settings/payroll-columns',
+  );
+  return data.data!;
+}
+
+/** Update customizable payroll export columns. */
+export async function updatePayrollColumns(
+  config: PayrollColumnConfig,
+): Promise<PayrollColumnConfig> {
+  const { data } = await apiClient.put<ApiResponse<PayrollColumnConfig>>(
+    '/settings/payroll-columns',
+    config,
   );
   return data.data!;
 }

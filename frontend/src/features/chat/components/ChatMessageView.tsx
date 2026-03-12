@@ -8,6 +8,7 @@
  * - Pinned messages banner
  * - Compose bar integration
  * - 5-second polling for live updates
+ * - Optimistic pending indicators for sent messages
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -47,6 +48,24 @@ export function ChatMessageView({
   const [editingMessage, setEditingMessage] = useState<ChatMessageResponse | null>(null);
   const prevMessageCount = useRef(0);
 
+  // ── Infinite scroll: accumulated older messages ────────────────
+  const [olderMessages, setOlderMessages] = useState<ChatMessageResponse[]>([]);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMoreOlder, setHasMoreOlder] = useState(true);
+  const loadingOlderRef = useRef(false);
+
+  // ── Pending message tracking ───────────────────────────────────
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  const pendingIdCounter = useRef(0);
+
+  // Reset older messages when channel changes
+  useEffect(() => {
+    setOlderMessages([]);
+    setHasMoreOlder(true);
+    prevMessageCount.current = 0;
+    setPendingIds(new Set());
+  }, [channelId]);
+
   // ── Data fetching with 5s polling ──────────────────────────────
   const { data, isLoading } = useQuery({
     queryKey: ['chat-channel', channelId],
@@ -55,45 +74,95 @@ export function ChatMessageView({
     refetchIntervalInBackground: false,
   });
 
-  const messages = data?.messages ?? [];
+  const latestMessages = data?.messages ?? [];
   const members = data?.members ?? [];
   const pinnedMessages = data?.pinned_messages ?? [];
 
+  // Merge older pages with latest page, deduplicating by ID
+  const allMessages = deduplicateMessages([...olderMessages, ...latestMessages]);
+
+  // Clear pending IDs that now appear in server data
+  useEffect(() => {
+    if (pendingIds.size === 0) return;
+    // Once server poll confirms messages, pending IDs are no longer needed.
+    // We clear them when message count grows (server confirmed new data).
+    if (latestMessages.length > prevMessageCount.current && prevMessageCount.current > 0) {
+      setPendingIds(new Set());
+    }
+  }, [latestMessages.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Auto-scroll to bottom on new messages ──────────────────────
   useEffect(() => {
-    if (messages.length > prevMessageCount.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (allMessages.length > prevMessageCount.current) {
+      // Only auto-scroll if user is near the bottom
+      const container = scrollContainerRef.current;
+      if (container) {
+        const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+        if (isNearBottom || prevMessageCount.current === 0) {
+          messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
     }
-    prevMessageCount.current = messages.length;
-  }, [messages.length]);
+    prevMessageCount.current = allMessages.length;
+  }, [allMessages.length]);
 
   // ── Mark as read when messages load ────────────────────────────
   useEffect(() => {
-    if (messages.length > 0) {
-      const lastId = messages[messages.length - 1].id;
+    if (latestMessages.length > 0) {
+      const lastId = latestMessages[latestMessages.length - 1].id;
       markChannelRead(channelId, { last_read_message_id: lastId }).catch(() => {
         // Silent fail — read receipts are best-effort
       });
     }
-  }, [channelId, messages.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [channelId, latestMessages.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Load older messages ────────────────────────────────────────
-  const handleScrollUp = useCallback(() => {
-    const container = scrollContainerRef.current;
-    if (!container || !data?.has_more || isLoading) return;
+  // ── Load older messages (true cursor pagination) ───────────────
+  const loadOlderMessages = useCallback(async () => {
+    if (loadingOlderRef.current || !hasMoreOlder || allMessages.length === 0) return;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
 
-    if (container.scrollTop < 100 && messages.length > 0) {
-      const oldestId = messages[0].id;
-      // Fetch older page and merge — for v1.0 keep it simple
-      // The query will refetch with the same key, so we rely on
-      // the server returning the full visible set. In future,
-      // we'd use infinite queries for true cursor pagination.
-      queryClient.prefetchQuery({
-        queryKey: ['chat-channel', channelId, 'before', oldestId],
-        queryFn: () => getChannelDetail(channelId, oldestId),
-      });
+    try {
+      const oldestId = allMessages[0].id;
+      const olderPage = await getChannelDetail(channelId, oldestId);
+
+      if (olderPage.messages.length === 0) {
+        setHasMoreOlder(false);
+      } else {
+        // Preserve scroll position — measure before prepending
+        const container = scrollContainerRef.current;
+        const prevScrollHeight = container?.scrollHeight ?? 0;
+
+        setOlderMessages((prev) =>
+          deduplicateMessages([...olderPage.messages, ...prev]),
+        );
+        setHasMoreOlder(olderPage.has_more ?? false);
+
+        // After React re-renders, restore scroll position
+        requestAnimationFrame(() => {
+          if (container) {
+            const newScrollHeight = container.scrollHeight;
+            container.scrollTop += newScrollHeight - prevScrollHeight;
+          }
+        });
+      }
+    } catch {
+      // Network error — don't break the experience
+    } finally {
+      setLoadingOlder(false);
+      loadingOlderRef.current = false;
     }
-  }, [channelId, data?.has_more, isLoading, messages, queryClient]);
+  }, [channelId, hasMoreOlder, allMessages]);
+
+  const handleScroll = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    // Trigger load when scrolled near the top
+    if (container.scrollTop < 80) {
+      loadOlderMessages();
+    }
+  }, [loadOlderMessages]);
 
   // ── Mutations ──────────────────────────────────────────────────
   const sendMutation = useMutation({
@@ -101,6 +170,7 @@ export function ChatMessageView({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['chat-channel', channelId] });
       queryClient.invalidateQueries({ queryKey: ['chat-inbox'] });
+      queryClient.invalidateQueries({ queryKey: ['chat-badge'] });
     },
   });
 
@@ -142,7 +212,21 @@ export function ChatMessageView({
       }
       return;
     }
-    sendMutation.mutate(body);
+
+    // Add a pending message ID for optimistic UI
+    const tempId = `pending-${++pendingIdCounter.current}`;
+    setPendingIds((prev) => new Set(prev).add(tempId));
+
+    sendMutation.mutate(body, {
+      onSettled: () => {
+        // Remove this pending ID regardless of success/failure
+        setPendingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(tempId);
+          return next;
+        });
+      },
+    });
   }, [editingMessage, sendMutation, editMutation]);
 
   const handleEdit = useCallback((msg: ChatMessageResponse) => {
@@ -151,7 +235,7 @@ export function ChatMessageView({
   }, []);
 
   // ── Group messages by date ─────────────────────────────────────
-  const groupedMessages = groupMessagesByDate(messages);
+  const groupedMessages = groupMessagesByDate(allMessages);
 
   // ── Render ─────────────────────────────────────────────────────
   return (
@@ -186,13 +270,13 @@ export function ChatMessageView({
       <div
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto px-4 py-3"
-        onScroll={handleScrollUp}
+        onScroll={handleScroll}
       >
-        {isLoading ? (
+        {isLoading && allMessages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
           </div>
-        ) : messages.length === 0 ? (
+        ) : allMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <p className="text-gray-400 text-sm">No messages yet</p>
             <p className="text-gray-400 text-xs mt-1">
@@ -201,14 +285,28 @@ export function ChatMessageView({
           </div>
         ) : (
           <>
-            {data?.has_more && (
+            {/* Loading older indicator */}
+            {loadingOlder && (
+              <div className="flex items-center justify-center py-3">
+                <Loader2 className="h-4 w-4 animate-spin text-gray-400 mr-2" />
+                <span className="text-xs text-gray-400">Loading older messages...</span>
+              </div>
+            )}
+
+            {hasMoreOlder && !loadingOlder && (
               <div className="text-center py-2">
                 <button
-                  onClick={handleScrollUp}
+                  onClick={loadOlderMessages}
                   className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
                 >
                   Load older messages
                 </button>
+              </div>
+            )}
+
+            {!hasMoreOlder && allMessages.length > 0 && (
+              <div className="text-center py-2">
+                <span className="text-[10px] text-gray-400">Beginning of conversation</span>
               </div>
             )}
 
@@ -238,6 +336,28 @@ export function ChatMessageView({
                 ))}
               </div>
             ))}
+
+            {/* Pending message indicators */}
+            {pendingIds.size > 0 && (
+              <div className="mb-1">
+                {Array.from(pendingIds).map((pid) => (
+                  <ChatMessageBubble
+                    key={pid}
+                    message={{
+                      id: -1,
+                      channel_id: channelId,
+                      sender_id: currentUserId,
+                      sender_name: 'You',
+                      message_type: 'text',
+                      content: 'Sending...',
+                      created_at: new Date().toISOString(),
+                    } as ChatMessageResponse}
+                    isOwn
+                    isPending
+                  />
+                ))}
+              </div>
+            )}
 
             <div ref={messagesEndRef} />
           </>
@@ -302,4 +422,20 @@ function formatDateLabel(dateStr: string): string {
     month: 'short',
     day: 'numeric',
   });
+}
+
+/** Deduplicate messages by ID, preserving order (newest last). */
+function deduplicateMessages(messages: ChatMessageResponse[]): ChatMessageResponse[] {
+  const seen = new Set<number>();
+  const result: ChatMessageResponse[] = [];
+
+  for (const msg of messages) {
+    if (!seen.has(msg.id)) {
+      seen.add(msg.id);
+      result.push(msg);
+    }
+  }
+
+  // Sort by ID ascending (chronological order)
+  return result.sort((a, b) => a.id - b.id);
 }

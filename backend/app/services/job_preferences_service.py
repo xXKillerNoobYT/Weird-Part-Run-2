@@ -151,10 +151,44 @@ class JobPreferencesRepo(BaseRepo):
     ) -> dict | None:
         """For a given part on a given job, return the most-used supplier.
 
-        Looks at part-level preferences first, then falls back to
-        the supplier preference with the highest confidence for this job.
+        Tries category-specific supplier first (e.g., "who do we use for
+        Outlets on this job?"), then falls back to the highest-confidence
+        supplier for this job regardless of category.
         """
-        # Direct: was this exact part ordered from a specific supplier before?
+        # 1) Try category-specific: get the part's category, then match
+        cat_cursor = await self.db.execute(
+            """
+            SELECT pc.name AS category_name
+            FROM parts p
+            JOIN part_types pt ON pt.id = p.type_id
+            JOIN part_categories pc ON pc.id = pt.category_id
+            WHERE p.id = ?
+            """,
+            (part_id,),
+        )
+        cat_row = await cat_cursor.fetchone()
+
+        if cat_row and cat_row["category_name"]:
+            cursor = await self.db.execute(
+                """
+                SELECT jp.entity_id AS supplier_id, s.name AS supplier_name,
+                       jp.confidence_score, jp.category
+                FROM job_preferences jp
+                JOIN suppliers s ON s.id = jp.entity_id
+                WHERE jp.job_id = ?
+                  AND jp.preference_type = 'supplier'
+                  AND jp.category = ?
+                  AND jp.is_active = 1
+                ORDER BY jp.confidence_score DESC
+                LIMIT 1
+                """,
+                (job_id, cat_row["category_name"]),
+            )
+            row = await cursor.fetchone()
+            if row:
+                return row
+
+        # 2) Fallback: best supplier for this job (any category)
         cursor = await self.db.execute(
             """
             SELECT jp.entity_id AS supplier_id, s.name AS supplier_name,
@@ -342,7 +376,7 @@ class JobPreferencesService:
                     preference_type="supplier",
                     entity_id=line["suggested_supplier_id"],
                     text_value=None,  # supplier name resolved via JOIN
-                    category=None,    # suppliers aren't category-specific
+                    category=category_name,  # remember supplier per category per job
                 )
                 counts["suppliers"] += 1
 
@@ -402,6 +436,113 @@ class JobPreferencesService:
         return await self.pref_repo.update(
             pref_id, {"is_active": 1 if is_active else 0}
         )
+
+    # ── Explicit Preferred Suppliers ─────────────────────────
+
+    async def get_explicit_suppliers(self, job_id: int) -> list[dict]:
+        """Get manually set preferred suppliers for a job.
+
+        Returns suppliers ordered by confidence_score DESC (primary first,
+        then backups). Only returns manually set preferences (auto_learned=0).
+        """
+        cursor = await self.db.execute(
+            """
+            SELECT jp.id, jp.entity_id AS supplier_id, jp.category,
+                   jp.confidence_score, jp.is_active, jp.created_at,
+                   s.name AS supplier_name
+            FROM job_preferences jp
+            JOIN suppliers s ON s.id = jp.entity_id
+            WHERE jp.job_id = ?
+              AND jp.preference_type = 'supplier'
+              AND jp.auto_learned = 0
+              AND jp.is_active = 1
+            ORDER BY jp.confidence_score DESC
+            """,
+            (job_id,),
+        )
+        return await cursor.fetchall()
+
+    async def set_explicit_suppliers(
+        self,
+        job_id: int,
+        suppliers: list[dict],
+    ) -> list[dict]:
+        """Set explicit preferred suppliers for a job.
+
+        Replaces all existing manual supplier preferences with the new list.
+        Each entry: {"supplier_id": int, "category": str | None}
+        Primary supplier is first (gets confidence=1.0), backups follow
+        with decreasing confidence (0.9, 0.8, ...).
+
+        Returns the newly created preference rows.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+
+        # 1) Deactivate all existing manual supplier preferences for this job
+        await self.db.execute(
+            """
+            UPDATE job_preferences
+            SET is_active = 0, updated_at = ?
+            WHERE job_id = ? AND preference_type = 'supplier' AND auto_learned = 0
+            """,
+            (now, job_id),
+        )
+
+        # 2) Insert/reactivate explicit suppliers with exact confidence scores
+        results = []
+        for idx, entry in enumerate(suppliers):
+            supplier_id = entry["supplier_id"]
+            category = entry.get("category")
+            # Primary = 1.0, first backup = 0.9, second = 0.8, ...
+            confidence = round(max(1.0 - (idx * 0.1), 0.1), 2)
+
+            # Check if this exact combination already exists (may be deactivated)
+            cursor = await self.db.execute(
+                """
+                SELECT id FROM job_preferences
+                WHERE job_id = ? AND preference_type = 'supplier'
+                  AND entity_id = ? AND category IS ?
+                  AND auto_learned = 0
+                """,
+                (job_id, supplier_id, category),
+            )
+            existing = await cursor.fetchone()
+
+            if existing:
+                # Reactivate with exact confidence
+                await self.db.execute(
+                    """
+                    UPDATE job_preferences
+                    SET is_active = 1, confidence_score = ?,
+                        last_used_at = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (confidence, now, now, existing["id"]),
+                )
+                row_id = existing["id"]
+            else:
+                row_id = await self.pref_repo.insert({
+                    "job_id": job_id,
+                    "preference_type": "supplier",
+                    "entity_id": supplier_id,
+                    "text_value": None,
+                    "category": category,
+                    "is_active": 1,
+                    "auto_learned": 0,
+                    "confidence_score": confidence,
+                    "last_used_at": now,
+                })
+
+            results.append({
+                "id": row_id,
+                "supplier_id": supplier_id,
+                "category": category,
+                "confidence_score": confidence,
+                "rank": idx + 1,
+            })
+
+        await self.db.commit()
+        return results
 
     async def get_all_for_job(self, job_id: int) -> dict:
         """Get all preferences grouped by type — used by the frontend to

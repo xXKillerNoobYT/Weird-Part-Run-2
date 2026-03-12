@@ -7,10 +7,10 @@
  * "+" opens the AddStockModal to receive new stock into the warehouse.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
+import { Plus, Printer } from 'lucide-react';
 import { Card } from '../../../components/ui/Card';
 import { Button } from '../../../components/ui/Button';
 import { PageSpinner } from '../../../components/ui/Spinner';
@@ -21,6 +21,7 @@ import { InventoryFilters } from '../components/inventory/InventoryFilters';
 import { InventoryTable } from '../components/inventory/InventoryTable';
 import { AddStockModal } from '../components/inventory/AddStockModal';
 import { QRLabelModal } from '../components/inventory/QRLabelModal';
+import { BulkQRPrintModal } from '../components/inventory/BulkQRPrintModal';
 import type { StockStatus, WarehouseInventoryItem } from '../../../lib/types';
 
 export function InventoryGridPage() {
@@ -40,6 +41,19 @@ export function InventoryGridPage() {
 
   // ── QR Label modal ───────────────────────────────────
   const [qrLabelItem, setQrLabelItem] = useState<WarehouseInventoryItem | null>(null);
+
+  // ── Bulk QR print selection ────────────────────────
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkQROpen, setBulkQROpen] = useState(false);
+
+  const toggleSelect = useCallback((partId: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(partId)) next.delete(partId);
+      else next.add(partId);
+      return next;
+    });
+  }, []);
 
   // Debounce search input
   useEffect(() => {
@@ -65,6 +79,24 @@ export function InventoryGridPage() {
     }),
     staleTime: 15_000,
   });
+
+  const toggleSelectAll = useCallback(() => {
+    const currentItems = data?.items ?? [];
+    setSelectedIds(prev => {
+      const allSelected = currentItems.every(i => prev.has(i.part_id));
+      if (allSelected) {
+        // Deselect all visible items
+        const next = new Set(prev);
+        currentItems.forEach(i => next.delete(i.part_id));
+        return next;
+      } else {
+        // Select all visible items
+        const next = new Set(prev);
+        currentItems.forEach(i => next.add(i.part_id));
+        return next;
+      }
+    });
+  }, [data]);
 
   const handleSort = (column: string) => {
     if (column === sortBy) {
@@ -111,9 +143,9 @@ export function InventoryGridPage() {
   return (
     <>
       <div className="space-y-4">
-        {/* Filters row with Add Stock button */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1">
+        {/* Filters row with bulk actions and Add Stock button */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
             <InventoryFilters
               search={search}
               onSearchChange={setSearch}
@@ -121,15 +153,26 @@ export function InventoryGridPage() {
               onStockStatusChange={setStockStatus}
             />
           </div>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setAddStockOpen(true)}
-            className="flex-shrink-0"
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            Add Stock
-          </Button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {selectedIds.size > 0 && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setBulkQROpen(true)}
+              >
+                <Printer className="h-4 w-4 mr-1" />
+                <span className="hidden sm:inline">Print QR</span> ({selectedIds.size})
+              </Button>
+            )}
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setAddStockOpen(true)}
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              <span className="hidden sm:inline">Add Stock</span>
+            </Button>
+          </div>
         </div>
 
         <Card noPadding>
@@ -141,6 +184,9 @@ export function InventoryGridPage() {
             onMove={handleMove}
             onSpotCheck={handleSpotCheck}
             onQRLabel={setQrLabelItem}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            onToggleSelectAll={toggleSelectAll}
           />
 
           {/* Pagination */}
@@ -181,6 +227,14 @@ export function InventoryGridPage() {
         isOpen={qrLabelItem !== null}
         onClose={() => setQrLabelItem(null)}
         item={qrLabelItem}
+      />
+      <BulkQRPrintModal
+        isOpen={bulkQROpen}
+        onClose={() => {
+          setBulkQROpen(false);
+          setSelectedIds(new Set());
+        }}
+        items={items.filter(i => selectedIds.has(i.part_id))}
       />
     </>
   );

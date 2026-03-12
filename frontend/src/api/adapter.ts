@@ -63,6 +63,7 @@ export function isFeatureAvailableLocally(feature: string): boolean {
     'parts-read',
     'fleet-read',
     'scheduling-read',
+    'chat',
   ]);
 
   return localFeatures.has(feature);

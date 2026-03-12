@@ -10,15 +10,16 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Download, FileText, Clock, BarChart3, Receipt,
-  BookOpen, DollarSign, Users,
+  BookOpen, DollarSign, Users, Archive,
 } from 'lucide-react';
 import { Card } from '../../../components/ui/Card';
 import { toast } from '../../../lib/toast';
 import { getActiveJobs } from '../../../api/jobs';
 import { getEmployees } from '../../../api/people';
 import {
-  generateExport, downloadBlob, generateBookkeeperExport,
+  generateExport, downloadBlob, generateBookkeeperExport, generateExportBundle,
 } from '../../../api/reports';
+import ReportTemplateBar from '../components/ReportTemplateBar';
 
 
 type ReportType = 'pre-billing' | 'timesheet' | 'labor-overview';
@@ -425,6 +426,169 @@ export function ExportsPage() {
           </div>
         </div>
       </Card>
+
+      {/* ═══ Section 3: Export Bundle ═══ */}
+      <ExportBundleSection jobs={jobsQuery.data ?? []} />
+
+      {/* ═══ Template Bar (save/load export page filter settings) ═══ */}
+      <div className="flex justify-end no-print">
+        <ReportTemplateBar
+          reportType="exports"
+          currentConfig={{ report_type: reportType, start_date: startDate, end_date: endDate, job_id: jobId, employee_id: employeeId, bk_format: bkFormat, bk_start_date: bkStartDate, bk_end_date: bkEndDate }}
+          onLoadTemplate={(cfg) => {
+            if (cfg.report_type) setReportType(cfg.report_type as ReportType);
+            if (cfg.start_date) setStartDate(cfg.start_date as string);
+            if (cfg.end_date) setEndDate(cfg.end_date as string);
+            if (cfg.job_id !== undefined) setJobId(cfg.job_id as number | undefined);
+            if (cfg.employee_id !== undefined) setEmployeeId(cfg.employee_id as number | undefined);
+            if (cfg.bk_format) setBkFormat(cfg.bk_format as BookkeeperFormat);
+            if (cfg.bk_start_date) setBkStartDate(cfg.bk_start_date as string);
+            if (cfg.bk_end_date) setBkEndDate(cfg.bk_end_date as string);
+          }}
+        />
+      </div>
     </div>
+  );
+}
+
+
+// ── Export Bundle Section ────────────────────────────────────────
+
+const BUNDLE_REPORT_TYPES = [
+  { key: 'pre_billing', label: 'Pre-Billing', icon: <Receipt className="h-4 w-4" /> },
+  { key: 'timesheet', label: 'Timesheets', icon: <Clock className="h-4 w-4" /> },
+  { key: 'labor_overview', label: 'Labor Overview', icon: <BarChart3 className="h-4 w-4" /> },
+  { key: 'profitability', label: 'Profitability', icon: <DollarSign className="h-4 w-4" /> },
+] as const;
+
+function ExportBundleSection({ jobs }: { jobs: { id: number; job_name: string; job_number?: string }[] }) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bundleStartDate, setBundleStartDate] = useState(() => {
+    const d = new Date(); d.setDate(1);
+    return d.toISOString().split('T')[0];
+  });
+  const [bundleEndDate, setBundleEndDate] = useState(() =>
+    new Date().toISOString().split('T')[0],
+  );
+  const [bundleJobId, setBundleJobId] = useState<number | undefined>(undefined);
+  const [generating, setGenerating] = useState(false);
+
+  const toggleType = (key: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const handleDownloadBundle = async () => {
+    if (selected.size === 0) { toast.error('Select at least one report type'); return; }
+    setGenerating(true);
+    try {
+      const items = Array.from(selected).map((rt) => ({
+        report_type: rt,
+        start_date: bundleStartDate,
+        end_date: bundleEndDate,
+        ...(rt === 'pre_billing' && bundleJobId ? { job_id: bundleJobId } : {}),
+      }));
+      const blob = await generateExportBundle(items);
+      downloadBlob(blob, `report_bundle_${bundleStartDate}_to_${bundleEndDate}.zip`);
+      toast.success('Bundle downloaded');
+    } catch {
+      toast.error('Bundle generation failed');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 mb-4">
+        <Archive className="h-5 w-5 text-primary-500" />
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+          Export Bundle (ZIP)
+        </h2>
+      </div>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+        Select multiple report types and download them all as a single ZIP file.
+      </p>
+
+      {/* Report type checkboxes */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        {BUNDLE_REPORT_TYPES.map((rt) => (
+          <button
+            key={rt.key}
+            onClick={() => toggleType(rt.key)}
+            className={`flex items-center gap-2 p-3 rounded-lg border-2 transition-colors text-sm font-medium min-h-[44px]
+              ${selected.has(rt.key)
+                ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-300'
+                : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'
+              }`}
+          >
+            {rt.icon}
+            {rt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Date range + job selector */}
+      <div className="flex items-end flex-wrap gap-4 mb-4">
+        <div className="min-w-[140px]">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">From</label>
+          <input
+            type="date"
+            value={bundleStartDate}
+            onChange={(e) => setBundleStartDate(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-600
+                       bg-white dark:bg-gray-700 px-3 py-2 text-sm
+                       text-gray-900 dark:text-gray-100 min-h-[44px]"
+          />
+        </div>
+        <div className="min-w-[140px]">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">To</label>
+          <input
+            type="date"
+            value={bundleEndDate}
+            onChange={(e) => setBundleEndDate(e.target.value)}
+            className="w-full rounded-lg border border-gray-300 dark:border-gray-600
+                       bg-white dark:bg-gray-700 px-3 py-2 text-sm
+                       text-gray-900 dark:text-gray-100 min-h-[44px]"
+          />
+        </div>
+        {selected.has('pre_billing') && (
+          <div className="min-w-[160px]">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Job <span className="text-xs text-gray-400">(for Pre-Billing)</span>
+            </label>
+            <select
+              value={bundleJobId ?? ''}
+              onChange={(e) => setBundleJobId(e.target.value ? Number(e.target.value) : undefined)}
+              className="w-full rounded-lg border border-gray-300 dark:border-gray-600
+                         bg-white dark:bg-gray-700 px-3 py-2 text-sm
+                         text-gray-900 dark:text-gray-100 min-h-[44px]"
+            >
+              <option value="">All Jobs</option>
+              {jobs.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.job_number ? `${j.job_number} — ` : ''}{j.job_name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {/* Download button */}
+      <button
+        onClick={handleDownloadBundle}
+        disabled={generating || selected.size === 0}
+        className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-medium
+                   bg-primary-600 text-white rounded-lg hover:bg-primary-700
+                   disabled:opacity-50 min-h-[44px]"
+      >
+        <Archive className="h-4 w-4" />
+        {generating ? 'Generating ZIP...' : `Download Bundle (${selected.size} report${selected.size !== 1 ? 's' : ''})`}
+      </button>
+    </Card>
   );
 }

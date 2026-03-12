@@ -29,6 +29,7 @@ import {
   Loader2,
   ChevronDown,
   AlertCircle,
+  Building2,
 } from 'lucide-react';
 import {
   getPOConversation,
@@ -92,10 +93,17 @@ const ENTRY_TYPE_CONFIG: Record<POConversationEntryType, EntryTypeConfig> = {
     iconColor: 'text-gray-400 dark:text-gray-500',
     bgColor: 'bg-gray-50/50 dark:bg-gray-800/30',
   },
+  supplier_note: {
+    icon: Building2,
+    label: 'Supplier',
+    borderColor: 'border-l-orange-400 dark:border-l-orange-500',
+    iconColor: 'text-orange-500 dark:text-orange-400',
+    bgColor: 'bg-orange-50/50 dark:bg-orange-900/10',
+  },
 };
 
-/** Entry types the user can manually select (system is auto-generated) */
-const MANUAL_ENTRY_TYPES: Exclude<POConversationEntryType, 'system'>[] = [
+/** Entry types the user can manually select (system + supplier_note are auto-generated) */
+const MANUAL_ENTRY_TYPES: Exclude<POConversationEntryType, 'system' | 'supplier_note'>[] = [
   'note',
   'call',
   'email_summary',

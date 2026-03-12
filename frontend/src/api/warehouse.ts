@@ -6,6 +6,7 @@
  */
 
 import apiClient from './client';
+import { adaptedRequest } from './adapter';
 import type { ApiResponse, PaginatedData } from '../lib/types';
 import type {
   // Dashboard
@@ -189,33 +190,57 @@ export async function getMovement(
 export async function validateMovement(
   req: MovementRequest
 ): Promise<ValidationResult> {
-  const { data } = await apiClient.post<ApiResponse<ValidationResult>>(
-    '/warehouse/movements/validate',
-    req
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<ValidationResult>>(
+        '/warehouse/movements/validate',
+        req
+      );
+      return data.data!;
+    },
+    async () => {
+      const { validateMovement: local } = await import('../local/services/movement-service');
+      return await local(req as any) as unknown as ValidationResult;
+    },
   );
-  return data.data!;
 }
 
 /** Preview before/after state of a movement batch */
 export async function previewMovement(
   req: MovementRequest
 ): Promise<MovementPreview> {
-  const { data } = await apiClient.post<ApiResponse<MovementPreview>>(
-    '/warehouse/movements/preview',
-    req
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<MovementPreview>>(
+        '/warehouse/movements/preview',
+        req
+      );
+      return data.data!;
+    },
+    async () => {
+      const { calculatePreview } = await import('../local/services/movement-service');
+      return await calculatePreview(req as any) as unknown as MovementPreview;
+    },
   );
-  return data.data!;
 }
 
 /** Execute a stock movement — atomic all-or-nothing */
 export async function executeMovement(
   req: MovementRequest
 ): Promise<MovementExecuteResponse> {
-  const { data } = await apiClient.post<ApiResponse<MovementExecuteResponse>>(
-    '/warehouse/movements/execute',
-    req
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<MovementExecuteResponse>>(
+        '/warehouse/movements/execute',
+        req
+      );
+      return data.data!;
+    },
+    async () => {
+      const { executeMovement: local } = await import('../local/services/movement-service');
+      return await local(req as any, 0) as unknown as MovementExecuteResponse;
+    },
   );
-  return data.data!;
 }
 
 

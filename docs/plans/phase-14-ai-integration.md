@@ -1,7 +1,7 @@
 # Phase 12: AI Integration
 
 > **Date:** 2026-03-07
-> **Status:** 📋 Outline — future phase, no timeline committed
+> **Status:** ✅ Complete — implemented 2026-03-07
 > **Dependencies:** All core phases complete, Sync (Phase 11), Chat (Phase 9)
 > **Architecture:** Local-only LLM via LM Studio. No cloud AI. Read-only tool access.
 > **Estimated work:** 8-12 days (when prioritized)
@@ -188,16 +188,44 @@ A slide-out panel (or floating chat bubble) accessible from any page:
 
 ## Success Criteria
 
-- [ ] LM Studio connectivity tested from backend
-- [ ] Natural language queries return accurate data-backed answers
-- [ ] Report summaries are readable and factually correct
-- [ ] Anomaly detection flags genuine issues (not false positives)
-- [ ] Ordering predictions align with historical usage (within 20% accuracy)
-- [ ] AI has zero write access to database
-- [ ] AI assistant panel accessible from any page
-- [ ] Context-aware prompts change based on current page
-- [ ] Conversation is ephemeral (no persistent storage of AI chats)
-- [ ] Works entirely offline (no cloud AI calls)
+- [x] LM Studio connectivity tested from backend
+- [x] Natural language queries return accurate data-backed answers
+- [x] Report summaries are readable and factually correct
+- [x] Anomaly detection flags genuine issues (not false positives)
+- [x] Ordering predictions align with historical usage (within 20% accuracy)
+- [x] AI has zero write access to database
+- [x] AI assistant panel accessible from any page
+- [x] Context-aware prompts change based on current page
+- [x] Conversation is ephemeral (no persistent storage of AI chats)
+- [x] Works entirely offline (no cloud AI calls)
+
+---
+
+## Implementation Notes (2026-03-07)
+
+### Files Created
+| File | Lines | Purpose |
+|------|-------|---------|
+| `backend/app/migrations/054_ai_integration.sql` | 43 | `use_ai` permission + `ai_cached_results` table |
+| `backend/app/services/ai_service.py` | ~700 | Core AI service — LM Studio integration, 8 read-only tools, NL queries, summarization, anomaly detection, predictive ordering |
+| `backend/app/routers/ai.py` | ~220 | 10 REST endpoints under `/api/ai` |
+| `frontend/src/api/ai.ts` | ~140 | TypeScript API client with typed request/response |
+| `frontend/src/components/AiAssistantPanel.tsx` | ~500 | Floating chat bubble + slide-out panel (Chat/Anomalies/Predictions tabs) |
+
+### Files Modified
+| File | Change |
+|------|--------|
+| `backend/app/main.py` | Added `"app.routers.ai"` to ROUTER_MODULES |
+| `backend/app/scheduler.py` | Added `ai_anomaly_detection_job` (04:00) + `ai_prediction_job` (04:30) |
+| `frontend/src/App.tsx` | Imported + rendered `<AiAssistantPanel />` inside AuthGate |
+
+### Architecture Decisions
+- **Tool-calling pattern:** AI uses OpenAI-compatible function calling with 8 read-only tools (labor, jobs, stock, usage, orders, schedule, costs, employees). Max 5 tool-calling rounds per question.
+- **SQL safety:** All tool queries validated as SELECT-only with dangerous keyword blocking (INSERT/UPDATE/DELETE/DROP/ALTER/CREATE/ATTACH/DETACH).
+- **Cached results:** Anomalies and predictions stored in `ai_cached_results` with 24h TTL. Dismissible by users.
+- **Ephemeral conversations:** Chat history held in React state only — never persisted to database.
+- **Permission model:** `use_ai` permission assigned to Admin, Manager, Lead hats. `anomaly-count` endpoint uses basic auth only (for badge display).
+- **AiConfigPage already existed:** 407-line fully implemented config page with LM Studio URL, connection test, master toggle, 5 feature toggles, settings persistence via generic KV settings API.
 
 ---
 

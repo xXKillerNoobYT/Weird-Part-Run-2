@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import secrets
@@ -9,7 +10,7 @@ from typing import Any
 
 import aiosqlite
 
-from app.services.device_security_service import DeviceSecurityService
+from app.services.device_security_service import DeviceSecurityService, _verify
 from app.services.sync_service import SyncService
 
 logger = logging.getLogger(__name__)
@@ -194,12 +195,20 @@ class BootstrapService:
         status: str,
         error_message: str | None = None,
         metadata: dict | None = None,
+        progress_pct: float = 0,
+        bytes_downloaded: int = 0,
+        bytes_total: int = 0,
+        checksum_computed: str | None = None,
+        checksum_verified: bool = False,
+        signature_verified: bool | None = None,
     ) -> dict:
         cursor = await self.db.execute(
             """
             INSERT INTO _bootstrap_install_events (
-                device_id, platform, artifact_id, status, error_message, metadata_json
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                device_id, platform, artifact_id, status, error_message,
+                metadata_json, progress_pct, bytes_downloaded, bytes_total,
+                checksum_computed, checksum_verified, signature_verified
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 device_id,
@@ -208,6 +217,12 @@ class BootstrapService:
                 status,
                 error_message,
                 json.dumps(metadata or {}),
+                progress_pct,
+                bytes_downloaded,
+                bytes_total,
+                checksum_computed,
+                1 if checksum_verified else 0,
+                1 if signature_verified is True else (0 if signature_verified is False else None),
             ),
         )
         event_id = cursor.lastrowid
@@ -322,3 +337,138 @@ class BootstrapService:
                 "hard_sync_request": "/api/sync/hard-sync/request",
             },
         }
+
+    # ── Artifact Verification ────────────────────────────────────
+
+    async def verify_artifact(
+        self,
+        *,
+        artifact_id: int,
+        client_checksum_sha256: str,
+    ) -> dict:
+        """Verify a downloaded artifact against the registered checksum and optional signature.
+
+        The device computes SHA-256 of the downloaded file and sends it here.
+        We compare against the stored checksum_sha256 on the artifact record.
+        If the artifact has a signature and it was signed by the shop's key,
+        we verify that too.
+
+        Returns:
+            {
+                "valid": bool,
+                "checksum_match": bool,
+                "signature_valid": bool | None,  # None when no signature registered
+                "artifact_id": int,
+                "version": str,
+                "detail": str,
+            }
+        """
+        artifact = await self.get_artifact_by_id(artifact_id)
+        if not artifact:
+            return {
+                "valid": False,
+                "checksum_match": False,
+                "signature_valid": None,
+                "artifact_id": artifact_id,
+                "version": None,
+                "detail": "Artifact not found",
+            }
+
+        # Compare checksums (case-insensitive hex comparison)
+        stored_checksum = (artifact.get("checksum_sha256") or "").strip().lower()
+        client_checksum = client_checksum_sha256.strip().lower()
+        checksum_match = stored_checksum == client_checksum and len(stored_checksum) > 0
+
+        # Signature verification (optional — only if artifact has a signature)
+        signature_valid: bool | None = None
+        if artifact.get("signature"):
+            try:
+                # Try to get the shop's public key for signature verification
+                company_id = self.DEFAULT_COMPANY_ID
+                cursor = await self.db.execute(
+                    """
+                    SELECT shop_node_public
+                    FROM _company_keys
+                    WHERE company_id = ?
+                    """,
+                    (company_id,),
+                )
+                row = await cursor.fetchone()
+                if row and row["shop_node_public"]:
+                    # The signature covers: "{platform}:{version}:{checksum_sha256}"
+                    message = f"{artifact['platform']}:{artifact['version']}:{stored_checksum}"
+                    signature_valid = _verify(
+                        row["shop_node_public"],
+                        message,
+                        artifact["signature"],
+                    )
+                else:
+                    # No shop key available — can't verify signature
+                    signature_valid = None
+            except Exception:
+                logger.warning(
+                    "Signature verification failed for artifact %d",
+                    artifact_id,
+                    exc_info=True,
+                )
+                signature_valid = False
+
+        overall_valid = checksum_match and (signature_valid is not False)
+
+        return {
+            "valid": overall_valid,
+            "checksum_match": checksum_match,
+            "signature_valid": signature_valid,
+            "artifact_id": artifact_id,
+            "version": artifact.get("version"),
+            "detail": (
+                "Artifact verified successfully"
+                if overall_valid
+                else "Checksum mismatch" if not checksum_match
+                else "Signature verification failed"
+            ),
+        }
+
+    async def sign_artifact(
+        self,
+        *,
+        artifact_id: int,
+    ) -> dict:
+        """Sign an artifact's checksum with the shop's Ed25519 key.
+
+        Generates a signature over "{platform}:{version}:{checksum}"
+        using the shop's node private key.  This allows devices to verify
+        the artifact came from this shop.
+
+        Returns the updated artifact with signature populated.
+        """
+        artifact = await self.get_artifact_by_id(artifact_id)
+        if not artifact:
+            raise ValueError(f"Artifact {artifact_id} not found")
+
+        company_id = self.DEFAULT_COMPANY_ID
+        cursor = await self.db.execute(
+            """
+            SELECT shop_node_encrypted
+            FROM _company_keys
+            WHERE company_id = ?
+            """,
+            (company_id,),
+        )
+        row = await cursor.fetchone()
+        if not row or not row["shop_node_encrypted"]:
+            raise ValueError("Shop key not initialised — run company security init first")
+
+        from app.services.device_security_service import _sign
+
+        checksum = (artifact.get("checksum_sha256") or "").strip().lower()
+        message = f"{artifact['platform']}:{artifact['version']}:{checksum}"
+        signature = _sign(row["shop_node_encrypted"], message)
+
+        await self.db.execute(
+            "UPDATE _bootstrap_artifacts SET signature = ? WHERE id = ?",
+            (signature, artifact_id),
+        )
+        await self.db.commit()
+
+        return await self.get_artifact_by_id(artifact_id)

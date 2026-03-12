@@ -70,6 +70,15 @@ export interface ThemeSettings {
   font_family: string;
 }
 
+export interface PDFSettings {
+  accent_color: string;         // Hex color for header accent bar
+  show_unit_prices: boolean;    // Show unit price column in line items
+  show_extended: boolean;       // Show extended/total column in line items
+  footer_text: string;          // Custom footer text
+  payment_terms: string;        // Default payment terms
+  delivery_notes: string;       // Default delivery instructions
+}
+
 // ── Navigation Types ───────────────────────────────────────────────
 
 export interface NavModule {
@@ -3408,6 +3417,317 @@ export interface TrailerRestockGuidance {
   }[];
 }
 
+// ── Fuel Tracking ──────────────────────────────────────────────────
+
+export interface FuelLogCreate {
+  fill_date?: string;
+  odometer_reading: number;
+  gallons: number;
+  price_per_gallon: number;
+  fuel_type?: 'regular' | 'premium' | 'diesel' | 'e85';
+  station_name?: string | null;
+  receipt_photo?: string | null;
+  notes?: string | null;
+}
+
+export interface FuelLogUpdate {
+  fill_date?: string;
+  odometer_reading?: number;
+  gallons?: number;
+  price_per_gallon?: number;
+  fuel_type?: string;
+  station_name?: string | null;
+  receipt_photo?: string | null;
+  notes?: string | null;
+}
+
+export interface FuelLog {
+  id: number;
+  vehicle_id: number;
+  driver_id: number;
+  fill_date: string;
+  odometer_reading: number;
+  gallons: number;
+  price_per_gallon: number;
+  total_cost: number;
+  fuel_type: string;
+  station_name: string | null;
+  receipt_photo: string | null;
+  notes: string | null;
+  mpg: number | null;
+  driver_name?: string | null;
+  created_at: string;
+}
+
+export interface FuelSummary {
+  fill_count: number;
+  total_gallons: number | null;
+  total_cost: number | null;
+  avg_price: number | null;
+  avg_mpg: number | null;
+  total_miles_driven: number | null;
+}
+
+// ── Telematics ─────────────────────────────────────────────────────
+
+export interface TelematicsDeviceCreate {
+  vehicle_id: number;
+  device_type?: string;
+  device_serial: string;
+  device_name?: string | null;
+}
+
+export interface TelematicsDevice {
+  id: number;
+  vehicle_id: number;
+  device_type: string;
+  device_serial: string;
+  device_name: string | null;
+  auth_token: string;
+  is_active: boolean;
+  last_seen_at: string | null;
+  vehicle_number?: string | null;
+  vehicle_make?: string | null;
+  vehicle_model?: string | null;
+  created_at: string;
+}
+
+export interface TelematicsPositionIngest {
+  auth_token: string;
+  lat: number;
+  lng: number;
+  speed_mph?: number | null;
+  heading?: number | null;
+  altitude_ft?: number | null;
+  odometer_reading?: number | null;
+  engine_on?: boolean;
+  recorded_at: string;
+}
+
+export interface TelematicsPosition {
+  id: number;
+  device_id: number;
+  vehicle_id: number;
+  lat: number;
+  lng: number;
+  speed_mph: number | null;
+  heading: number | null;
+  altitude_ft: number | null;
+  odometer_reading: number | null;
+  engine_on: boolean;
+  recorded_at: string;
+  created_at: string;
+}
+
+export interface TelematicsEventIngest {
+  auth_token: string;
+  event_type: string;
+  event_data?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  recorded_at: string;
+}
+
+export interface TelematicsEvent {
+  id: number;
+  device_id: number;
+  vehicle_id: number;
+  event_type: string;
+  event_data: string | null;
+  lat: number | null;
+  lng: number | null;
+  recorded_at: string;
+  created_at: string;
+}
+
+export interface VehicleLocationSummary {
+  vehicle_id: number;
+  vehicle_number: string;
+  vehicle_make: string | null;
+  vehicle_model: string | null;
+  lat: number;
+  lng: number;
+  speed_mph: number | null;
+  engine_on: boolean;
+  recorded_at: string;
+}
+
+// ── Vehicle Inspections ────────────────────────────────────────────
+
+export type InspectionItemSeverity = 'critical' | 'warning' | 'info';
+export type InspectionItemStatus = 'pending' | 'pass' | 'fail' | 'na';
+export type InspectionOverallResult = 'pass' | 'fail' | 'needs_attention';
+
+export interface InspectionTemplateItemCreate {
+  sort_order?: number;
+  category?: string;
+  item_name: string;
+  description?: string | null;
+  severity?: InspectionItemSeverity;
+  requires_photo?: boolean;
+}
+
+export interface InspectionTemplateCreate {
+  name: string;
+  description?: string | null;
+  vehicle_type?: string | null;
+  inspection_type?: string;
+  items: InspectionTemplateItemCreate[];
+}
+
+export interface InspectionTemplateUpdate {
+  name?: string;
+  description?: string | null;
+  vehicle_type?: string | null;
+  inspection_type?: string;
+  is_active?: boolean;
+  items?: InspectionTemplateItemCreate[];
+}
+
+export interface InspectionTemplateItem {
+  id: number;
+  template_id: number;
+  sort_order: number;
+  category: string;
+  item_name: string;
+  description: string | null;
+  severity: InspectionItemSeverity;
+  requires_photo: boolean;
+}
+
+export interface InspectionTemplate {
+  id: number;
+  name: string;
+  description: string | null;
+  vehicle_type: string | null;
+  inspection_type: string;
+  is_active: boolean;
+  items?: InspectionTemplateItem[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InspectionRecordCreate {
+  template_id: number;
+  inspection_type?: string;
+  odometer_reading?: number | null;
+  notes?: string | null;
+}
+
+export interface InspectionRecordItem {
+  id: number;
+  record_id: number;
+  template_item_id: number | null;
+  item_name: string;
+  category: string;
+  status: InspectionItemStatus;
+  severity: InspectionItemSeverity;
+  photo: string | null;
+  notes: string | null;
+}
+
+export interface InspectionRecord {
+  id: number;
+  vehicle_id: number;
+  template_id: number;
+  inspector_id: number;
+  inspection_type: string;
+  inspection_date: string;
+  odometer_reading: number | null;
+  overall_result: InspectionOverallResult | null;
+  notes: string | null;
+  completed_at: string | null;
+  inspector_name?: string | null;
+  vehicle_number?: string | null;
+  template_name?: string | null;
+  items?: InspectionRecordItem[];
+  created_at: string;
+}
+
+export interface InspectionItemSubmit {
+  status: InspectionItemStatus;
+  photo?: string | null;
+  notes?: string | null;
+}
+
+// ── Vehicle Transfers ──────────────────────────────────────────────
+
+export type TransferStatus = 'requested' | 'approved' | 'in_transit' | 'completed' | 'cancelled';
+
+export interface VehicleTransferCreate {
+  vehicle_id: number;
+  from_warehouse_id?: number | null;
+  to_warehouse_id: number;
+  reason?: string | null;
+  notes?: string | null;
+}
+
+export interface VehicleTransfer {
+  id: number;
+  vehicle_id: number;
+  from_warehouse_id: number | null;
+  to_warehouse_id: number;
+  requested_by: number;
+  approved_by: number | null;
+  status: TransferStatus;
+  reason: string | null;
+  notes: string | null;
+  approved_at: string | null;
+  completed_at: string | null;
+  vehicle_number?: string | null;
+  from_warehouse_name?: string | null;
+  to_warehouse_name?: string | null;
+  requested_by_name?: string | null;
+  approved_by_name?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── Document Alerts & Utilization ──────────────────────────────────
+
+export interface VehicleDocumentAlert {
+  vehicle_id: number;
+  vehicle_number: string;
+  vehicle_label: string;
+  alert_type: 'insurance' | 'registration';
+  expiry_date: string;
+  days_remaining: number | null;
+  is_expired: boolean;
+}
+
+export interface VehicleUtilizationEntry {
+  vehicle_id: number;
+  vehicle_number: string;
+  year: number | null;
+  make: string | null;
+  model: string | null;
+  status: string;
+  total_miles: number;
+  mileage_entries: number;
+  maintenance_cost: number;
+  fuel_cost: number;
+  total_gallons: number;
+  total_cost: number;
+  avg_mpg: number | null;
+  cost_per_mile: number | null;
+}
+
+export interface FleetUtilizationSummary {
+  total_vehicles: number;
+  fleet_total_miles: number;
+  fleet_maintenance_cost: number;
+  fleet_fuel_cost: number;
+  fleet_total_cost: number;
+  fleet_avg_cost_per_mile: number | null;
+}
+
+export interface VehicleUtilizationReport {
+  period_start: string;
+  period_end: string;
+  vehicles: VehicleUtilizationEntry[];
+  summary: FleetUtilizationSummary;
+}
+
 // ── Maintenance Cost Summary ───────────────────────────────────────
 
 export interface MaintenanceCostSummary {
@@ -3502,6 +3822,49 @@ export interface JobPreferencesSummary {
   parts: JobPreferenceResponse[];
 }
 
+// ── Explicit Preferred Suppliers ────────────────────────────────
+
+export interface PreferredSupplierEntry {
+  supplier_id: number;
+  category?: string | null;
+}
+
+export interface JobPreferredSuppliersUpdate {
+  suppliers: PreferredSupplierEntry[];
+}
+
+export interface ExplicitSupplierResponse {
+  id: number;
+  supplier_id: number;
+  supplier_name: string;
+  category: string | null;
+  confidence_score: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+// ── Cross-Job Order Summary (Phase 17 Gap 4) ───────────────────
+
+export interface OrderSummaryLine {
+  part_id: number;
+  part_name: string;
+  category_name: string | null;
+  total_qty_needed: number;
+  job_count: number;
+  job_names: string[];
+  suggested_supplier_id: number | null;
+  supplier_name: string | null;
+}
+
+export interface OrderSummary {
+  total_parts: number;
+  total_qty: number;
+  total_jobs: number;
+  total_suppliers: number;
+  lines: OrderSummaryLine[];
+  summary_text: string;
+}
+
 // ── Special Items ───────────────────────────────────────────────
 
 export interface SpecialItemResponse {
@@ -3538,7 +3901,7 @@ export interface SpecialItemResolve {
 // ── PO Conversations (Phase 7B) ────────────────────────────────
 
 /** Entry types control visual treatment in the conversation thread UI */
-export type POConversationEntryType = 'note' | 'call' | 'email_summary' | 'action' | 'system';
+export type POConversationEntryType = 'note' | 'call' | 'email_summary' | 'action' | 'system' | 'supplier_note';
 
 /** Create a manual conversation entry (system entries use a separate path) */
 export interface POConversationCreate {
@@ -4053,6 +4416,7 @@ export interface CertificationResponse {
   expiry_date: string | null;
   is_active: boolean;
   notes: string | null;
+  document_path: string | null;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -4356,6 +4720,10 @@ export type ToolMovementType =
 
 export type KitVerificationTrigger = 'checkout' | 'return' | 'audit' | 'manual';
 
+export type DepreciationMethod = 'straight_line' | 'declining_balance' | 'sum_of_years';
+
+export type CalibrationResult = 'pass' | 'fail' | 'adjusted' | 'out_of_tolerance';
+
 
 // ── Tool ─────────────────────────────────────────────────────────
 
@@ -4382,12 +4750,18 @@ export interface Tool {
   is_active: boolean;
   created_at?: string | null;
   updated_at?: string | null;
+  // Depreciation fields
+  depreciation_method?: DepreciationMethod | null;
+  salvage_value?: number;
+  useful_life_years?: number | null;
+  calibration_due_date?: string | null;
   // Joined / computed
   assigned_to_name?: string | null;
   location_name?: string | null;
   kit_component_count: number;
   next_maintenance_due?: string | null;
   overdue_maintenance_count: number;
+  current_book_value?: number | null;
 }
 
 export interface ToolListItem {
@@ -4425,6 +4799,9 @@ export interface ToolCreate {
   condition_rating?: number;
   notes?: string | null;
   photo_path?: string | null;
+  depreciation_method?: DepreciationMethod | null;
+  salvage_value?: number;
+  useful_life_years?: number | null;
 }
 
 export interface ToolUpdate {
@@ -4440,6 +4817,9 @@ export interface ToolUpdate {
   notes?: string | null;
   photo_path?: string | null;
   is_active?: boolean | null;
+  depreciation_method?: DepreciationMethod | null;
+  salvage_value?: number | null;
+  useful_life_years?: number | null;
 }
 
 
@@ -4632,6 +5012,11 @@ export interface ToolMaintenanceRecord {
   performed_by?: number | null;
   notes?: string | null;
   created_at?: string | null;
+  // Calibration fields
+  calibration_certificate?: string | null;
+  calibration_provider?: string | null;
+  calibration_standard?: string | null;
+  calibration_result?: CalibrationResult | null;
   // Joined
   maintenance_type_name?: string | null;
   performed_by_name?: string | null;
@@ -4644,6 +5029,11 @@ export interface ToolMaintenanceRecordCreate {
   vendor?: string | null;
   description?: string | null;
   notes?: string | null;
+  // Calibration-specific
+  calibration_certificate?: string | null;
+  calibration_provider?: string | null;
+  calibration_standard?: string | null;
+  calibration_result?: CalibrationResult | null;
 }
 
 export interface ToolMaintenanceAlert {
@@ -4671,6 +5061,87 @@ export interface ToolsDashboardStats {
   at_jobs: number;
   overdue_maintenance: number;
   kits_with_missing_items: number;
+}
+
+
+// ── Tool Transfer ────────────────────────────────────────────────
+
+export interface ToolTransferRequest {
+  to_location_type: ToolLocationType;
+  to_location_id: number;
+  job_id?: number | null;
+  condition_at_move?: number | null;
+  reason?: string | null;
+}
+
+
+// ── Tool Depreciation ────────────────────────────────────────────
+
+export interface DepreciationConfig {
+  depreciation_method: DepreciationMethod;
+  salvage_value: number;
+  useful_life_years: number;
+}
+
+export interface DepreciationEntry {
+  id: number;
+  tool_id: number;
+  year_number: number;
+  fiscal_year: string;
+  beginning_value: number;
+  depreciation_amount: number;
+  accumulated: number;
+  ending_value: number;
+  created_at?: string | null;
+}
+
+export interface DepreciationSummary {
+  tool_id: number;
+  tool_name: string;
+  purchase_cost?: number | null;
+  depreciation_method?: DepreciationMethod | null;
+  salvage_value: number;
+  useful_life_years?: number | null;
+  current_book_value?: number | null;
+  total_depreciated: number;
+  years_remaining?: number | null;
+  schedule: DepreciationEntry[];
+}
+
+export interface DepreciationReportItem {
+  id: number;
+  tool_number: string;
+  name: string;
+  category: string;
+  purchase_cost?: number | null;
+  depreciation_method?: DepreciationMethod | null;
+  salvage_value?: number;
+  useful_life_years?: number | null;
+  current_book_value?: number | null;
+  total_depreciated?: number | null;
+}
+
+
+// ── Todo-Tool Linking ────────────────────────────────────────────
+
+export interface EntryToolLink {
+  id: number;
+  entry_id: number;
+  tool_id: number;
+  notes?: string | null;
+  created_by: number;
+  created_at?: string | null;
+  // Joined
+  tool_number?: string | null;
+  tool_name?: string | null;
+  tool_status?: string | null;
+  tool_location_type?: string | null;
+  tool_location_name?: string | null;
+}
+
+export interface EntryToolLinkCreate {
+  tool_id: number;
+  notes?: string | null;
 }
 
 
@@ -5163,6 +5634,7 @@ export interface DispatchCreate {
 }
 
 export interface DispatchUpdate {
+  dispatch_date?: string | null;
   shift_start?: string | null;
   shift_end?: string | null;
   lunch_start?: string | null;
@@ -5284,6 +5756,7 @@ export interface SubScheduleUpdate {
 export type CalendarEntryType = 'dispatch' | 'time_off' | 'sub_schedule';
 
 export interface CalendarEntry {
+  reference_id: number | null;
   date: string;
   entry_type: CalendarEntryType;
   user_id: number | null;
@@ -5461,11 +5934,25 @@ export interface CertAlertItem {
 
 
 // ══════════════════════════════════════════════════════════════════
+// VEHICLE EXPIRY ALERTS
+// ══════════════════════════════════════════════════════════════════
+
+export interface VehicleExpiryAlert {
+  vehicle_id: number;
+  vehicle_name: string;
+  vehicle_number: string;
+  alert_type: 'insurance' | 'registration';
+  expiry_date: string;
+  days_until_expiry: number;
+}
+
+
+// ══════════════════════════════════════════════════════════════════
 // CHAT & MESSAGING
 // ══════════════════════════════════════════════════════════════════
 
 export type ChannelType = 'job' | 'dm' | 'general';
-export type MessageType = 'text' | 'photo' | 'system' | 'qa_question' | 'qa_answer' | 'qa_escalation';
+export type MessageType = 'text' | 'photo' | 'voice' | 'file' | 'system' | 'qa_question' | 'qa_answer' | 'qa_escalation';
 export type QALevel = 'worker' | 'lead' | 'foreman' | 'supervisor' | 'office';
 export type QAStatus = 'open' | 'escalated' | 'answered' | 'closed' | 'sent_to_gc';
 export type QAPriority = 'normal' | 'urgent';
@@ -5679,4 +6166,122 @@ export interface UpdateRFIRequest {
   status?: RFIStatus;
   response_text?: string | null;
   sent_via?: string | null;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Email Sending (Office Gap Closure)
+// ═══════════════════════════════════════════════════════════════════
+
+/** Current email configuration status (safe — no password exposed) */
+export interface EmailConfigStatus {
+  enabled: boolean;
+  configured: boolean;
+  smtp_host: string;
+  from_email: string;
+  from_name: string;
+}
+
+/** Request to send a PO via email */
+export interface SendPOEmailRequest {
+  to_email: string;
+  to_name?: string | null;
+  subject?: string | null;
+  body_text?: string | null;
+  cc?: string[] | null;
+  attach_pdf?: boolean;
+}
+
+/** Request to send a PO group bundle via email */
+export interface SendGroupEmailRequest {
+  to_email: string;
+  to_name?: string | null;
+  subject?: string | null;
+  body_text?: string | null;
+  cc?: string[] | null;
+}
+
+/** Response after successfully sending an email */
+export interface EmailSendResult {
+  message: string;
+  to_email: string;
+  subject: string;
+  pdf_attached: boolean;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Supplier Portal (Office Gap Closure)
+// ═══════════════════════════════════════════════════════════════════
+
+/** Create a supplier portal access token */
+export interface SupplierPortalTokenCreate {
+  supplier_id: number;
+  expires_in_days?: number;
+  note?: string | null;
+}
+
+/** Supplier portal token in API responses */
+export interface SupplierPortalToken {
+  id: number;
+  supplier_id: number;
+  supplier_name?: string | null;
+  token: string;
+  is_active: boolean;
+  expires_at: string | null;
+  last_used_at: string | null;
+  note: string | null;
+  created_by: number | null;
+  created_at: string | null;
+}
+
+/** Public portal info returned when validating a token */
+export interface SupplierPortalInfo {
+  supplier_id: number;
+  supplier_name: string;
+  company?: string | null;
+  token_expires_at: string | null;
+}
+
+/** A PO visible in the supplier portal */
+export interface SupplierPortalPO {
+  po_id: number;
+  po_number: string;
+  status: string;
+  total_cost: number;
+  line_count: number;
+  expected_delivery: string | null;
+  created_at: string | null;
+  acknowledged: boolean;
+  acknowledged_at: string | null;
+}
+
+/** Full PO detail for supplier portal view */
+export interface SupplierPortalPODetail {
+  po_id: number;
+  po_number: string;
+  status: string;
+  total_cost: number;
+  expected_delivery: string | null;
+  created_at: string | null;
+  notes: string | null;
+  lines: {
+    part_number: string | null;
+    part_description: string | null;
+    qty_ordered: number;
+    unit_cost: number;
+    line_total: number;
+  }[];
+  acknowledgment: {
+    acknowledged_at: string;
+    estimated_delivery: string | null;
+    supplier_notes: string | null;
+  } | null;
+}
+
+/** Acknowledge a PO in the supplier portal */
+export interface SupplierPortalAcknowledge {
+  po_id: number;
+  estimated_delivery?: string | null;
+  supplier_notes?: string | null;
 }

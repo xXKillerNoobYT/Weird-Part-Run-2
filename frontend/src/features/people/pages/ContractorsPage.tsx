@@ -11,7 +11,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Search, ChevronLeft, ChevronRight,
-  HardHat, X, Filter, Briefcase, Phone, Mail, Tag,
+  HardHat, X, Filter, Briefcase, Phone, Mail, Tag, Upload,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { PageSpinner } from '../../../components/ui/Spinner';
@@ -21,9 +21,10 @@ import { Input } from '../../../components/ui/Input';
 import { Modal } from '../../../components/ui/Modal';
 import { Badge } from '../../../components/ui/Badge';
 import { Card } from '../../../components/ui/Card';
+import { CSVImportModal } from '../../../components/ui/CSVImportModal';
 import { useAuthStore } from '../../../stores/auth-store';
 import { PERMISSIONS } from '../../../lib/constants';
-import { getGCs, createGC } from '../../../api/contacts';
+import { getGCs, createGC, importContractorsCSV } from '../../../api/contacts';
 import { toast } from '../../../lib/toast';
 import type { GCListItem, GCCreate, GCTradeType } from '../../../lib/types';
 
@@ -74,6 +75,7 @@ export function ContractorsPage() {
   const [pageSize, setPageSize] = useState(50);
   const [showFilters, setShowFilters] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   // Debounce search
   useEffect(() => {
@@ -161,6 +163,17 @@ export function ContractorsPage() {
 
           {canManage && (
             <Button
+              variant="ghost"
+              size="sm"
+              icon={<Upload size={16} />}
+              onClick={() => setShowImport(true)}
+            >
+              <span className="hidden sm:inline">Import</span>
+            </Button>
+          )}
+
+          {canManage && (
+            <Button
               size="sm"
               icon={<Plus size={16} />}
               onClick={() => setShowCreate(true)}
@@ -198,11 +211,10 @@ export function ContractorsPage() {
                 <button
                   key={String(opt.value)}
                   onClick={() => setIsActiveFilter(opt.value as boolean | undefined)}
-                  className={`px-2.5 py-1 text-xs rounded-full transition-colors ${
-                    isActiveFilter === opt.value
+                  className={`px-2.5 py-1 text-xs rounded-full transition-colors ${isActiveFilter === opt.value
                       ? 'bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300 font-medium'
                       : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
+                    }`}
                 >
                   {opt.label}
                 </button>
@@ -285,6 +297,17 @@ export function ContractorsPage() {
           onClose={() => setShowCreate(false)}
         />
       )}
+
+      {/* CSV Import modal */}
+      <CSVImportModal
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        title="Import Contractors"
+        description="Upload a CSV file to bulk-create general contractors. Existing contractors (matched by name) are skipped."
+        expectedColumns="name, code, contact_name, email, phone, specialty, license_number, notes"
+        importFn={importContractorsCSV}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ['general-contractors'] })}
+      />
     </div>
   );
 }

@@ -2,11 +2,12 @@
  * SecurityAdminPage — Company key management, device certificates,
  * shared channels, and security audit log.
  *
- * Four card-sections:
+ * Five card-sections:
  * 1. Company Setup — initialise or view the company key profile
  * 2. Device Certificates — view issued certs, revoke, issue new
- * 3. Key Rotation — rotate company keys (danger zone)
- * 4. Security Audit Log — immutable event trail
+ * 3. Cross-Company Sharing — create, manage, accept shared channels
+ * 4. Key Rotation — rotate company keys (danger zone)
+ * 5. Security Audit Log — immutable event trail
  */
 
 import { useState } from 'react';
@@ -16,6 +17,7 @@ import {
     Key, KeyRound, RotateCcw, ScrollText,
     Plus, RefreshCw, AlertTriangle,
     CheckCircle, XCircle, Smartphone,
+    Link2, Link2Off, UserCheck, Clock,
 } from 'lucide-react';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
@@ -25,8 +27,11 @@ import {
     initCompany, getCompany, listCompanies, rotateCompanyKeys,
     getDeviceCert, revokeCertificate,
     getSecurityAuditLog,
+    createSharedChannel, listSharedChannels, deactivateSharedChannel,
+    acceptChannelInvitation,
     type CompanyKeySummary,
     type SecurityAuditEvent,
+    type SharedChannel,
 } from '../../../api/security';
 import { listSyncDevices, type SyncDevice } from '../../../api/sync';
 
@@ -43,6 +48,7 @@ export function SecurityAdminPage() {
 
             <CompanySetupCard />
             <DeviceCertificatesCard />
+            <SharedChannelsCard />
             <KeyRotationCard />
             <AuditLogCard />
         </div>
@@ -298,7 +304,277 @@ function DeviceCertRow({
 }
 
 
-// ── 3. Key Rotation (Danger Zone) ───────────────────────────────
+// ── 3. Shared Channels (Cross-Company) ──────────────────────────
+
+function SharedChannelsCard() {
+    const queryClient = useQueryClient();
+    const [showCreate, setShowCreate] = useState(false);
+    const [channelName, setChannelName] = useState('');
+    const [partnerIds, setPartnerIds] = useState('');
+    const [scope, setScope] = useState('');
+    const [permissions, setPermissions] = useState('{"read": true, "write": false}');
+
+    const { data: companies = [] } = useQuery({
+        queryKey: ['security-companies'],
+        queryFn: listCompanies,
+    });
+
+    const ownerCompanyId = companies[0]?.company_id ?? '';
+
+    const { data: channels = [], isLoading } = useQuery({
+        queryKey: ['shared-channels', ownerCompanyId],
+        queryFn: () => listSharedChannels(ownerCompanyId),
+        enabled: !!ownerCompanyId,
+    });
+
+    const createMutation = useMutation({
+        mutationFn: () => {
+            const partnerList = partnerIds.split(',').map(s => s.trim()).filter(Boolean);
+            let scopeObj = {};
+            let permsObj = { read: true, write: false };
+            try { scopeObj = scope ? JSON.parse(scope) : {}; } catch { /* empty */ }
+            try { permsObj = permissions ? JSON.parse(permissions) : permsObj; } catch { /* empty */ }
+            return createSharedChannel({
+                channel_name: channelName,
+                owner_company_id: ownerCompanyId,
+                partner_company_ids: partnerList,
+                scope: scopeObj,
+                permissions: permsObj,
+            });
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['shared-channels'] });
+            queryClient.invalidateQueries({ queryKey: ['security-audit'] });
+            setShowCreate(false);
+            setChannelName('');
+            setPartnerIds('');
+            setScope('');
+        },
+    });
+
+    const deactivateMutation = useMutation({
+        mutationFn: (channelId: number) => deactivateSharedChannel(channelId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['shared-channels'] });
+            queryClient.invalidateQueries({ queryKey: ['security-audit'] });
+        },
+    });
+
+    const acceptMutation = useMutation({
+        mutationFn: ({ channelId, companyId }: { channelId: number; companyId: string }) =>
+            acceptChannelInvitation(channelId, companyId),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['shared-channels'] });
+        },
+    });
+
+    if (companies.length === 0) {
+        return (
+            <div className="bg-surface border border-border rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2 mb-2">
+                    <Link2 className="h-4 w-4" />
+                    Cross-Company Sharing
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Initialise a company above to manage cross-company sharing channels.
+                </p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="bg-surface border border-border rounded-lg p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+                    <Link2 className="h-4 w-4" />
+                    Cross-Company Sharing
+                </h3>
+                <Button size="sm" variant="secondary" onClick={() => setShowCreate(!showCreate)}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    <span className="hidden sm:inline">New Channel</span>
+                </Button>
+            </div>
+
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+                Share scoped data with partner companies. Only supervisors/managers can create channels.
+                Workers see shared data automatically.
+            </p>
+
+            {/* Create Form */}
+            {showCreate && (
+                <div className="space-y-2 border border-border rounded-md p-3 bg-gray-50 dark:bg-gray-800/50">
+                    <input
+                        type="text"
+                        value={channelName}
+                        onChange={(e) => setChannelName(e.target.value)}
+                        placeholder="Channel name (e.g. 'Job 42 Shared Data')"
+                        className="w-full px-3 py-2 text-sm border border-border rounded-md bg-surface text-gray-900 dark:text-gray-100"
+                    />
+                    <input
+                        type="text"
+                        value={partnerIds}
+                        onChange={(e) => setPartnerIds(e.target.value)}
+                        placeholder="Partner company IDs (comma-separated)"
+                        className="w-full px-3 py-2 text-sm border border-border rounded-md bg-surface text-gray-900 dark:text-gray-100"
+                    />
+                    <input
+                        type="text"
+                        value={scope}
+                        onChange={(e) => setScope(e.target.value)}
+                        placeholder='Scope JSON (e.g. {"job_ids": [42]})'
+                        className="w-full px-3 py-2 text-sm border border-border rounded-md bg-surface text-gray-900 dark:text-gray-100"
+                    />
+                    <input
+                        type="text"
+                        value={permissions}
+                        onChange={(e) => setPermissions(e.target.value)}
+                        placeholder='Permissions JSON'
+                        className="w-full px-3 py-2 text-sm border border-border rounded-md bg-surface text-gray-900 dark:text-gray-100"
+                    />
+                    <div className="flex gap-2">
+                        <Button
+                            size="sm"
+                            onClick={() => createMutation.mutate()}
+                            disabled={createMutation.isPending || !channelName.trim()}
+                        >
+                            {createMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                            <span className="ml-1">Create Channel</span>
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setShowCreate(false)}>
+                            Cancel
+                        </Button>
+                    </div>
+                </div>
+            )}
+
+            {/* Channel List */}
+            {isLoading ? (
+                <PageSpinner />
+            ) : channels.length === 0 ? (
+                <EmptyState
+                    icon={Link2Off}
+                    title="No shared channels"
+                    description="Create a channel to share scoped data with a partner company."
+                />
+            ) : (
+                <div className="space-y-2">
+                    {channels.map((ch) => (
+                        <ChannelRow
+                            key={ch.id}
+                            channel={ch}
+                            myCompanyId={ownerCompanyId}
+                            onDeactivate={(id) => deactivateMutation.mutate(id)}
+                            onAccept={(id, cid) => acceptMutation.mutate({ channelId: id, companyId: cid })}
+                            deactivating={deactivateMutation.isPending}
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function ChannelRow({
+    channel,
+    myCompanyId,
+    onDeactivate,
+    onAccept,
+    deactivating,
+}: {
+    channel: SharedChannel;
+    myCompanyId: string;
+    onDeactivate: (id: number) => void;
+    onAccept: (id: number, companyId: string) => void;
+    deactivating: boolean;
+}) {
+    const [expanded, setExpanded] = useState(false);
+    const members = channel.members ?? [];
+    const isOwner = channel.owner_company_id === myCompanyId;
+    const myMembership = members.find(m => m.company_id === myCompanyId);
+    const isPending = myMembership && !myMembership.accepted_at && !isOwner;
+
+    return (
+        <div className="border border-border rounded-md p-3 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                    <Link2 className="h-4 w-4 shrink-0 text-purple-500" />
+                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                        {channel.channel_name}
+                    </span>
+                    {isOwner && <Badge variant="info">Owner</Badge>}
+                    {isPending && <Badge variant="warning">Pending</Badge>}
+                    {channel.expires_at && (
+                        <span className="text-xs text-gray-400 flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            expires {new Date(channel.expires_at).toLocaleDateString()}
+                        </span>
+                    )}
+                </div>
+                <div className="flex items-center gap-1">
+                    {isPending && (
+                        <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => onAccept(channel.id, myCompanyId)}
+                            title="Accept invitation"
+                        >
+                            <UserCheck className="h-4 w-4 text-green-500" />
+                        </Button>
+                    )}
+                    {isOwner && (
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => onDeactivate(channel.id)}
+                            disabled={deactivating}
+                            title="Deactivate channel"
+                        >
+                            <Link2Off className="h-4 w-4 text-red-500" />
+                        </Button>
+                    )}
+                    <Button size="sm" variant="ghost" onClick={() => setExpanded(!expanded)}>
+                        {expanded ? 'Hide' : 'Details'}
+                    </Button>
+                </div>
+            </div>
+
+            {expanded && (
+                <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1 pl-6">
+                    <p><strong>Channel ID:</strong> {channel.id}</p>
+                    <p><strong>Owner:</strong> {channel.owner_company_id}</p>
+                    {channel.scope && Object.keys(channel.scope).length > 0 && (
+                        <p><strong>Scope:</strong> <code className="text-xs break-all">{JSON.stringify(channel.scope)}</code></p>
+                    )}
+                    {channel.permissions && Object.keys(channel.permissions).length > 0 && (
+                        <p><strong>Permissions:</strong> <code className="text-xs break-all">{JSON.stringify(channel.permissions)}</code></p>
+                    )}
+                    <p><strong>Created:</strong> {new Date(channel.created_at).toLocaleString()}</p>
+                    {members.length > 0 && (
+                        <div className="mt-2">
+                            <strong>Members:</strong>
+                            <ul className="ml-4 mt-1 space-y-0.5">
+                                {members.map((m) => (
+                                    <li key={m.id} className="flex items-center gap-2">
+                                        <span className="font-mono">{m.company_id}</span>
+                                        <Badge variant={m.role === 'owner' ? 'info' : 'neutral'}>{m.role}</Badge>
+                                        {m.accepted_at ? (
+                                            <Badge variant="success">Accepted</Badge>
+                                        ) : (
+                                            <Badge variant="warning">Pending</Badge>
+                                        )}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+
+// ── 4. Key Rotation (Danger Zone) ───────────────────────────────
 
 function KeyRotationCard() {
     const queryClient = useQueryClient();
@@ -374,7 +650,7 @@ function KeyRotationCard() {
 }
 
 
-// ── 4. Security Audit Log ───────────────────────────────────────
+// ── 5. Security Audit Log ───────────────────────────────────────
 
 function AuditLogCard() {
     const [filterType, setFilterType] = useState<string>('');

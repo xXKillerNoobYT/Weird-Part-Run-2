@@ -159,6 +159,7 @@ class TeamDispatchCreate(BaseModel):
 
 class DispatchUpdate(BaseModel):
     """Partial update for a dispatch assignment."""
+    dispatch_date: str | None = None  # for rescheduling via DnD
     shift_start: str | None = None
     shift_end: str | None = None
     lunch_start: str | None = None
@@ -263,6 +264,7 @@ class SubScheduleResponse(BaseModel):
 
 class CalendarEntry(BaseModel):
     """One entry in the assembled calendar view."""
+    reference_id: int | None = None  # ID of the dispatch/exception/sub_schedule row
     date: str
     entry_type: str  # 'dispatch', 'time_off', 'sub_schedule'
     user_id: int | None = None
@@ -397,3 +399,80 @@ class ShiftPatternResponse(BaseModel):
     is_active: bool = True
     days: list[ShiftPatternDayResponse] = Field(default_factory=list)
     created_at: datetime | None = None
+
+
+# ── PTO Policies & Balances ──────────────────────────────────────
+
+PTO_ACCRUAL_PERIODS = Literal["weekly", "biweekly", "monthly"]
+PTO_TRANSACTION_TYPES = Literal["accrual", "usage", "adjustment", "carryover", "forfeit"]
+
+
+class PtoPolicyCreate(BaseModel):
+    """Create a PTO accrual policy for a user."""
+    user_id: int
+    policy_name: str = Field("Standard PTO", max_length=100)
+    accrual_rate: float = Field(3.33, ge=0, description="Hours accrued per period")
+    accrual_period: str = Field("monthly", pattern="^(weekly|biweekly|monthly)$")
+    max_balance: float | None = Field(None, ge=0, description="Maximum banked hours (None = unlimited)")
+    carryover_limit: float | None = Field(None, ge=0, description="Max hours carried into new year")
+    start_date: str = Field(..., min_length=10, max_length=10)
+
+
+class PtoPolicyUpdate(BaseModel):
+    """Update a PTO policy."""
+    policy_name: str | None = None
+    accrual_rate: float | None = Field(None, ge=0)
+    accrual_period: str | None = Field(None, pattern="^(weekly|biweekly|monthly)$")
+    max_balance: float | None = None
+    carryover_limit: float | None = None
+    is_active: bool | None = None
+
+
+class PtoPolicyResponse(BaseModel):
+    """PTO policy details."""
+    id: int
+    user_id: int
+    policy_name: str
+    accrual_rate: float
+    accrual_period: str
+    max_balance: float | None = None
+    carryover_limit: float | None = None
+    start_date: str
+    is_active: bool = True
+
+
+class PtoTransactionCreate(BaseModel):
+    """Record a PTO transaction (manual adjustment)."""
+    user_id: int
+    transaction_type: str = Field("adjustment", pattern="^(accrual|usage|adjustment|carryover|forfeit)$")
+    hours: float
+    note: str | None = None
+    effective_date: str = Field(..., min_length=10, max_length=10)
+    reference_id: int | None = None
+    reference_type: str | None = None
+
+
+class PtoTransactionResponse(BaseModel):
+    """A PTO transaction record."""
+    id: int
+    user_id: int
+    transaction_type: str
+    hours: float
+    balance_after: float
+    reference_id: int | None = None
+    reference_type: str | None = None
+    note: str | None = None
+    effective_date: str
+    created_by: int | None = None
+    created_at: str
+
+
+class PtoBalanceResponse(BaseModel):
+    """Current PTO balance for a user."""
+    user_id: int
+    user_name: str = ""
+    current_balance: float = 0
+    accrued_ytd: float = 0
+    used_ytd: float = 0
+    policy: PtoPolicyResponse | None = None
+    recent_transactions: list[PtoTransactionResponse] = Field(default_factory=list)

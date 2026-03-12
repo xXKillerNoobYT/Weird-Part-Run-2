@@ -23,10 +23,11 @@ import { exportPartsCsv, importPartsCsv } from '../../../api/parts';
 import type { ImportResult } from '../../../lib/types';
 
 
-/** Template CSV content with the columns the import endpoint expects. */
-const CSV_TEMPLATE = `category_id,name,description,part_type,code,brand_name,manufacturer_part_number,unit_of_measure,company_cost_price,company_markup_percent,min_stock_level,max_stock_level,target_stock_level,notes
-9,"12/2 Romex 250ft","Non-metallic sheathed cable",general,WR-12-2-250,,,ft,89.99,35.0,5,20,10,
-6,"Square D 20A Breaker","Single-pole circuit breaker",specific,BR-SQD-20A,Square D,QO120,each,12.50,40.0,10,50,25,`;
+/** Template CSV content with the columns the import endpoint accepts.
+ *  Supports both ID-based and name-based hierarchy columns. */
+const CSV_TEMPLATE = `category_name,style_name,type_name,color_name,brand_name,name,description,part_type,code,manufacturer_part_number,unit_of_measure,company_cost_price,company_markup_percent,min_stock_level,max_stock_level,target_stock_level,notes
+Wire,"12/2 NM",,White,,12/2 Romex 250ft,Non-metallic sheathed cable,general,WR-12-2-250,,ft,89.99,35.0,5,20,10,
+Breakers,"Square D",20A,,,Square D 20A Breaker,Single-pole circuit breaker,specific,BR-SQD-20A,QO120,each,12.50,40.0,10,50,25,`;
 
 
 export function ImportExportPage() {
@@ -154,9 +155,10 @@ export function ImportExportPage() {
               <div className="flex items-start gap-3">
                 <Upload className="h-8 w-8 text-primary-500 mt-0.5 shrink-0" />
                 <div className="text-sm text-gray-600 dark:text-gray-300 space-y-1">
-                  <p>Upload a CSV with part data. Each row requires a <strong>category_id</strong> and <strong>name</strong>:</p>
+                  <p>Upload a CSV with part data. Each row requires a <strong>name</strong> and either <strong>category_id</strong> or <strong>category_name</strong>:</p>
                   <ul className="list-disc list-inside ml-1 text-gray-500 dark:text-gray-400">
-                    <li>Matching parts by hierarchy + name are <strong>updated</strong></li>
+                    <li>Use hierarchy <strong>names</strong> (category_name, style_name, type_name, color_name, brand_name) or IDs</li>
+                    <li>Parts with a matching <strong>code</strong> are <strong>updated</strong></li>
                     <li>Non-matching rows are <strong>created</strong></li>
                     <li>Code is optional for general parts</li>
                   </ul>

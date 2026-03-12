@@ -131,8 +131,7 @@ Implemented in:
 ## 7) Remaining planned work (future hardening)
 
 ### 7.1 Artifact delivery hardening
-- Signed manifest verification on client
-- Resume/chunked download support
+- Resume/chunked download support (currently full re-download on failure)
 - Rollback bundle fallback
 
 ### 7.2 Production bootstrap shell packaging
@@ -148,10 +147,64 @@ Implemented in:
 - [x] Install event telemetry exists
 - [x] Router mounted and tested
 - [x] Bootstrap client screens implemented
-- [ ] Artifact download/install verification integrated on mobile shells
+- [x] Artifact download/install verification integrated on mobile shells
 
 ---
 
-## 9) Notes
+## 9) Artifact download/install verification (implemented 2026-03-07)
+
+### 9.1 Backend additions
+
+**Migration:**
+- `backend/app/migrations/045_bootstrap_verification.sql` — Expanded `_bootstrap_install_events` with 8-state lifecycle (`requested|downloading|downloaded|verifying|verified|installing|installed|failed`), progress tracking (`progress_pct`, `bytes_downloaded`, `bytes_total`), and verification fields (`checksum_computed`, `checksum_verified`, `signature_verified`).
+
+**Service (bootstrap_service.py):**
+- `verify_artifact(artifact_id, client_checksum_sha256)` — Compares client SHA-256 against stored checksum, optionally verifies Ed25519 signature using shop's `shop_node_public` key. Returns `{valid, checksum_match, signature_valid, artifact_id, version, detail}`.
+- `sign_artifact(artifact_id)` — Signs artifact checksum with shop's Ed25519 node private key. Signature covers `"{platform}:{version}:{checksum_sha256}"`. Updates artifact record.
+- `log_install_event()` — Extended with progress + verification fields.
+
+**Router (bootstrap.py):**
+- `POST /api/bootstrap/artifacts/verify` — No auth (device-facing), returns verification result
+- `GET /api/bootstrap/artifacts/active/{platform}` — No auth, returns active artifact for platform
+- `POST /api/bootstrap/artifacts/{artifact_id}/sign` — Admin-only, signs artifact with shop Ed25519 key
+
+### 9.2 Frontend additions
+
+**API (bootstrap.ts):**
+- `getActiveArtifact(platform)` — Fetch active artifact metadata
+- `verifyArtifact(payload)` — Server-side checksum + signature verification
+- `signArtifact(artifactId)` — Admin artifact signing
+- Expanded types: `ArtifactVerifyPayload`, `ArtifactVerifyResult`, 8-state `InstallStatus`
+
+**Local service (bootstrap-client.ts):**
+- `runBootstrapInstall(opts)` — Complete orchestrator: fetch artifact → download with streaming progress → SHA-256 checksum → server verification → save to device → report telemetry
+- `ChunkedHasher` — Streaming SHA-256 via Web Crypto API
+- `saveFile()` — Native: `@capacitor/filesystem` into `bootstrap/` dir; Web: blob URL fallback
+- `getRetryableDownload()` — Resume interrupted downloads
+- Progress persistence via `@capacitor/preferences`
+- `getStatusLabel()` / `getStatusVariant()` — UI helpers
+
+**Admin UI (BootstrapAdminPage.tsx):**
+- Artifact table now shows signature status + "Sign" button per artifact
+- Client flow card upgraded from manual simulator to automated download/verify/install with real-time progress panel
+- Install telemetry table shows progress %, checksum verified ✓, signature verified ✓
+- `BootstrapProgressPanel` component with progress bar, verification status indicators, SHA-256 display
+
+### 9.3 Vite config
+- Added `@capacitor/filesystem` to `CAPACITOR_PACKAGES` array (externalized for web build, available at runtime on native)
+
+### 9.4 Test coverage (10 tests)
+- Original 3 flow tests
+- `test_artifact_verify_correct_checksum` — Correct checksum returns valid
+- `test_artifact_verify_wrong_checksum` — Wrong checksum returns invalid
+- `test_artifact_verify_nonexistent_artifact` — Missing artifact returns not found
+- `test_active_artifact_by_platform` — Platform-specific artifact lookup
+- `test_active_artifact_404_for_missing_platform` — 404 for missing platform
+- `test_artifact_sign_flow` — End-to-end sign + verify signature populated
+- `test_extended_install_event_fields` — Progress, checksum, signature fields recorded
+
+---
+
+## 10) Notes
 
 This plan intentionally keeps the bootstrap backend independent from app-store release cadence. Shop remains authoritative for what version enters the fleet.

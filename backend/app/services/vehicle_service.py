@@ -1020,3 +1020,294 @@ class VehicleService:
         await self.warehouse_repo.update(location_id, {"is_active": 0})
         await self.db.commit()
         return True
+
+    # ── Vehicle Transfers ──────────────────────────────────────
+
+    async def request_transfer(self, data: dict, requested_by: int) -> dict:
+        """Request a vehicle transfer between warehouses / shops."""
+        from app.repositories.transfer_repo import VehicleTransferRepo
+
+        vehicle = await self.vehicle_repo.get_by_id(data["vehicle_id"])
+        if not vehicle:
+            raise ValueError(f"Vehicle {data['vehicle_id']} not found")
+
+        transfer_repo = VehicleTransferRepo(self.db)
+        insert_data = {
+            "vehicle_id": data["vehicle_id"],
+            "from_warehouse_id": data.get("from_warehouse_id"),
+            "to_warehouse_id": data["to_warehouse_id"],
+            "requested_by": requested_by,
+            "reason": data.get("reason"),
+            "notes": data.get("notes"),
+        }
+        new_id = await transfer_repo.insert(insert_data)
+        await self.db.commit()
+        return await transfer_repo.get_with_details(new_id)
+
+    async def approve_transfer(self, transfer_id: int, approved_by: int) -> dict:
+        """Approve a pending transfer request."""
+        from app.repositories.transfer_repo import VehicleTransferRepo
+
+        transfer_repo = VehicleTransferRepo(self.db)
+        transfer = await transfer_repo.get_by_id(transfer_id)
+        if not transfer:
+            raise ValueError(f"Transfer {transfer_id} not found")
+        if transfer["status"] != "requested":
+            raise ValueError(f"Transfer is '{transfer['status']}', not 'requested'")
+
+        await transfer_repo.update(transfer_id, {
+            "status": "approved",
+            "approved_by": approved_by,
+            "approved_at": "datetime('now')",
+        })
+        # Use raw SQL for datetime function
+        await self.db.execute(
+            "UPDATE vehicle_transfers SET approved_by = ?, approved_at = datetime('now') WHERE id = ?",
+            (approved_by, transfer_id),
+        )
+        await self.db.commit()
+        return await transfer_repo.get_with_details(transfer_id)
+
+    async def complete_transfer(self, transfer_id: int) -> dict:
+        """Mark a transfer as completed — vehicle arrives at destination."""
+        from app.repositories.transfer_repo import VehicleTransferRepo
+
+        transfer_repo = VehicleTransferRepo(self.db)
+        transfer = await transfer_repo.get_by_id(transfer_id)
+        if not transfer:
+            raise ValueError(f"Transfer {transfer_id} not found")
+        if transfer["status"] not in ("approved", "in_transit"):
+            raise ValueError(
+                f"Transfer is '{transfer['status']}', must be 'approved' or 'in_transit'"
+            )
+
+        await self.db.execute(
+            "UPDATE vehicle_transfers SET status = 'completed', completed_at = datetime('now') WHERE id = ?",
+            (transfer_id,),
+        )
+        await self.db.commit()
+        return await transfer_repo.get_with_details(transfer_id)
+
+    async def start_transit(self, transfer_id: int) -> dict:
+        """Mark an approved transfer as in_transit."""
+        from app.repositories.transfer_repo import VehicleTransferRepo
+
+        transfer_repo = VehicleTransferRepo(self.db)
+        transfer = await transfer_repo.get_by_id(transfer_id)
+        if not transfer:
+            raise ValueError(f"Transfer {transfer_id} not found")
+        if transfer["status"] != "approved":
+            raise ValueError(f"Transfer is '{transfer['status']}', not 'approved'")
+
+        await transfer_repo.update(transfer_id, {"status": "in_transit"})
+        await self.db.commit()
+        return await transfer_repo.get_with_details(transfer_id)
+
+    async def cancel_transfer(self, transfer_id: int, reason: str | None = None) -> dict:
+        """Cancel a transfer (from any non-completed state)."""
+        from app.repositories.transfer_repo import VehicleTransferRepo
+
+        transfer_repo = VehicleTransferRepo(self.db)
+        transfer = await transfer_repo.get_by_id(transfer_id)
+        if not transfer:
+            raise ValueError(f"Transfer {transfer_id} not found")
+        if transfer["status"] == "completed":
+            raise ValueError("Cannot cancel a completed transfer")
+
+        patch = {"status": "cancelled"}
+        if reason:
+            patch["notes"] = (transfer.get("notes") or "") + f"\n[Cancelled] {reason}"
+        await transfer_repo.update(transfer_id, patch)
+        await self.db.commit()
+        return await transfer_repo.get_with_details(transfer_id)
+
+    async def list_transfers(
+        self,
+        *,
+        status: str | None = None,
+        vehicle_id: int | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict]:
+        """List vehicle transfers with filters."""
+        from app.repositories.transfer_repo import VehicleTransferRepo
+
+        transfer_repo = VehicleTransferRepo(self.db)
+        return await transfer_repo.list_transfers(
+            status=status, vehicle_id=vehicle_id, limit=limit, offset=offset
+        )
+
+    # ── Document Expiry Alerts ─────────────────────────────────
+
+    async def get_document_alerts(self, days_ahead: int = 30) -> list[dict]:
+        """Find vehicles with insurance or registration expiring within N days.
+
+        Returns a list of alert objects with vehicle details and expiry info.
+        """
+        cursor = await self.db.execute(
+            """
+            SELECT v.id, v.vehicle_number, v.year, v.make, v.model, v.status,
+                   v.insurance_expiry, v.registration_expiry,
+                   CASE
+                     WHEN v.insurance_expiry IS NOT NULL
+                          AND v.insurance_expiry <= date('now', ? || ' days')
+                     THEN 1 ELSE 0
+                   END AS insurance_expiring,
+                   CASE
+                     WHEN v.registration_expiry IS NOT NULL
+                          AND v.registration_expiry <= date('now', ? || ' days')
+                     THEN 1 ELSE 0
+                   END AS registration_expiring,
+                   julianday(v.insurance_expiry) - julianday('now') AS insurance_days_left,
+                   julianday(v.registration_expiry) - julianday('now') AS registration_days_left
+            FROM vehicles v
+            WHERE v.is_active = 1
+              AND (
+                (v.insurance_expiry IS NOT NULL AND v.insurance_expiry <= date('now', ? || ' days'))
+                OR
+                (v.registration_expiry IS NOT NULL AND v.registration_expiry <= date('now', ? || ' days'))
+              )
+            ORDER BY
+              COALESCE(
+                LEAST(
+                  COALESCE(julianday(v.insurance_expiry), 9999999),
+                  COALESCE(julianday(v.registration_expiry), 9999999)
+                ),
+                9999999
+              ) ASC
+            """,
+            (str(days_ahead), str(days_ahead), str(days_ahead), str(days_ahead)),
+        )
+        rows = await cursor.fetchall()
+
+        alerts = []
+        for row in rows:
+            row_dict = dict(row)
+            if row_dict.get("insurance_expiring"):
+                alerts.append({
+                    "vehicle_id": row_dict["id"],
+                    "vehicle_number": row_dict["vehicle_number"],
+                    "vehicle_label": f"{row_dict.get('year', '')} {row_dict.get('make', '')} {row_dict.get('model', '')}".strip(),
+                    "alert_type": "insurance",
+                    "expiry_date": row_dict["insurance_expiry"],
+                    "days_remaining": int(row_dict["insurance_days_left"]) if row_dict.get("insurance_days_left") is not None else None,
+                    "is_expired": (row_dict.get("insurance_days_left") or 0) < 0,
+                })
+            if row_dict.get("registration_expiring"):
+                alerts.append({
+                    "vehicle_id": row_dict["id"],
+                    "vehicle_number": row_dict["vehicle_number"],
+                    "vehicle_label": f"{row_dict.get('year', '')} {row_dict.get('make', '')} {row_dict.get('model', '')}".strip(),
+                    "alert_type": "registration",
+                    "expiry_date": row_dict["registration_expiry"],
+                    "days_remaining": int(row_dict["registration_days_left"]) if row_dict.get("registration_days_left") is not None else None,
+                    "is_expired": (row_dict.get("registration_days_left") or 0) < 0,
+                })
+
+        return alerts
+
+    # ── Fleet Utilization Report ───────────────────────────────
+
+    async def get_utilization_report(
+        self,
+        period_start: str,
+        period_end: str,
+    ) -> dict:
+        """Fleet utilization report: miles, maintenance costs, fuel costs per vehicle.
+
+        Combines data from mileage logs, maintenance records, and fuel logs.
+        """
+        # Per-vehicle miles in period
+        cursor = await self.db.execute(
+            """
+            SELECT v.id AS vehicle_id, v.vehicle_number,
+                   v.year, v.make, v.model, v.status,
+                   COALESCE(SUM(ml.total_miles), 0) AS total_miles,
+                   COUNT(ml.id) AS mileage_entries
+            FROM vehicles v
+            LEFT JOIN vehicle_mileage_log ml
+              ON ml.vehicle_id = v.id
+              AND ml.log_date BETWEEN ? AND ?
+            WHERE v.is_active = 1
+            GROUP BY v.id
+            ORDER BY total_miles DESC
+            """,
+            (period_start, period_end),
+        )
+        vehicles = [dict(r) for r in await cursor.fetchall()]
+
+        # Maintenance costs per vehicle
+        cursor = await self.db.execute(
+            """
+            SELECT vehicle_id, COALESCE(SUM(cost), 0) AS maintenance_cost
+            FROM vehicle_maintenance_records
+            WHERE service_date BETWEEN ? AND ?
+            GROUP BY vehicle_id
+            """,
+            (period_start, period_end),
+        )
+        maint_costs = {r["vehicle_id"]: r["maintenance_cost"] for r in await cursor.fetchall()}
+
+        # Fuel costs per vehicle (if fuel_logs table exists)
+        fuel_costs: dict[int, dict] = {}
+        try:
+            cursor = await self.db.execute(
+                """
+                SELECT vehicle_id,
+                       COALESCE(SUM(gallons * price_per_gallon), 0) AS fuel_cost,
+                       COALESCE(SUM(gallons), 0) AS total_gallons
+                FROM vehicle_fuel_logs
+                WHERE fill_date BETWEEN ? AND ?
+                GROUP BY vehicle_id
+                """,
+                (period_start, period_end),
+            )
+            fuel_costs = {
+                r["vehicle_id"]: {"fuel_cost": r["fuel_cost"], "total_gallons": r["total_gallons"]}
+                for r in await cursor.fetchall()
+            }
+        except Exception:
+            pass  # Table might not exist yet during migration
+
+        # Enrich each vehicle
+        fleet_miles = 0
+        fleet_maint_cost = 0
+        fleet_fuel_cost = 0
+        for v in vehicles:
+            vid = v["vehicle_id"]
+            v["maintenance_cost"] = maint_costs.get(vid, 0)
+            v["fuel_cost"] = fuel_costs.get(vid, {}).get("fuel_cost", 0)
+            v["total_gallons"] = fuel_costs.get(vid, {}).get("total_gallons", 0)
+            v["total_cost"] = v["maintenance_cost"] + v["fuel_cost"]
+
+            # Avg MPG
+            if v["total_gallons"] > 0 and v["total_miles"] > 0:
+                v["avg_mpg"] = round(v["total_miles"] / v["total_gallons"], 1)
+            else:
+                v["avg_mpg"] = None
+
+            # Cost per mile
+            if v["total_miles"] > 0:
+                v["cost_per_mile"] = round(v["total_cost"] / v["total_miles"], 2)
+            else:
+                v["cost_per_mile"] = None
+
+            fleet_miles += v["total_miles"]
+            fleet_maint_cost += v["maintenance_cost"]
+            fleet_fuel_cost += v["fuel_cost"]
+
+        return {
+            "period_start": period_start,
+            "period_end": period_end,
+            "vehicles": vehicles,
+            "summary": {
+                "total_vehicles": len(vehicles),
+                "fleet_total_miles": fleet_miles,
+                "fleet_maintenance_cost": fleet_maint_cost,
+                "fleet_fuel_cost": fleet_fuel_cost,
+                "fleet_total_cost": fleet_maint_cost + fleet_fuel_cost,
+                "fleet_avg_cost_per_mile": round(
+                    (fleet_maint_cost + fleet_fuel_cost) / fleet_miles, 2
+                ) if fleet_miles > 0 else None,
+            },
+        }

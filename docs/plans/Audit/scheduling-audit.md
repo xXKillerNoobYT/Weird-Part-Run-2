@@ -1,8 +1,8 @@
 # Scheduling & Dispatch Audit
 
-> **Date:** 2026-03-06 (updated 2026-03-07)
-> **Status:** ✅ Verified Complete (2026-03-07) — M3 gap closure: DispatchTemplatesPage (494L, full CRUD + apply), WeeklyAvailabilityPage (277L, color-coded grid), shift patterns (migration 032) all implemented. Post-audit enhancements (2026-03-07): lunch break scheduling (lunch_start/lunch_end on default schedules, dispatch, templates, shift patterns), supervisor role on dispatches, multi-job dispatch UX (enriched conflicts + "Today's Assignments" panel), calendar role-based coloring. Migration 035 + full-stack implementation. E2E responsive validated at mobile/tablet/desktop.
-> **Scope:** Full audit of the Scheduling module — default schedules, time-off requests, employee dispatching (single + bulk), subcontractor scheduling, unified calendar, lunch breaks, supervisor/floater role
+> **Date:** 2026-03-06 (updated 2026-03-09)
+> **Status:** ✅ All Gaps Closed (2026-03-09) — M3 gap closure: DispatchTemplatesPage, WeeklyAvailabilityPage, shift patterns (migration 032). Post-audit enhancements (2026-03-07): lunch breaks, supervisor role, multi-job dispatch UX, calendar role-based coloring (migration 035). Post-audit enhancements (2026-03-09): drag-and-drop calendar (@dnd-kit), full PTO balance tracking (migration 049: policies + transactions + accrual engine), dashboard scheduling widget, 4 new notification types (sub_schedule_created/cancelled, shift_pattern_assigned, pto_accrual_posted). Zero remaining gaps.
+> **Scope:** Full audit of the Scheduling module — default schedules, time-off requests, employee dispatching (single + bulk), subcontractor scheduling, unified calendar, lunch breaks, supervisor/floater role, DnD calendar, PTO balance, dashboard widget, notifications
 
 ---
 
@@ -390,7 +390,9 @@ Zero TODO, FIXME, HACK, or TEMP comments in any scheduling file (backend or fron
 
 #### Remaining (v1.0+ / intentional deferral)
 
-- **No drag-and-drop calendar** — The calendar is view-only with click-to-detail. Users can't drag dispatches between days or employees. (Complexity: high, ROI: moderate — deferred to v2.0.)
-- **No notification integration** — Creating a dispatch doesn't notify the assigned employee. Time-off approval/denial doesn't send a notification. (Note: notification hooks exist for orders; dispatch notifications were added in V1.0 Hotfix Pack for in-app. Push notifications deferred to Phase 10/PWA.)
-- **No time-off balance tracking** — Employees can request unlimited time off. There's no PTO balance, accrual, or cap enforcement. (Business decision: may not be needed for V1.0 — electricians typically have simple PTO policies.)
-- **No dashboard scheduling widget** — The main dashboard has no "today's dispatches" card. (Low complexity — could be added as a dashboard enhancement.)
+~~All items closed — zero remaining gaps.~~
+
+- ~~**No drag-and-drop calendar**~~ — ✅ **Closed (2026-03-09):** @dnd-kit integration on ScheduleCalendarPage. `DraggableEntry` wrapper (useDraggable, only dispatch entries with reference_id), `DroppableDayCell` (useDroppable, blue highlight on hover), `DragOverlay` for floating preview. PointerSensor with 8px activation distance. Drop triggers `updateDispatch` with new `dispatch_date` → invalidates queries → toast confirmation. Works on desktop grid + mobile list.
+- ~~**No notification integration**~~ — ✅ **Closed (2026-03-09):** 4 new notification types added to `NOTIFICATION_TYPES`: `sub_schedule_created` (POST /subcontractors), `sub_schedule_cancelled` (PATCH /subcontractors/{id}/cancel — fetches context before cancelling), `shift_pattern_assigned` (POST /shift-patterns/{id}/apply — targeted to employee), `pto_accrual_posted` (per-employee in run_pto_accruals loop). Combined with existing `dispatch_created`, `dispatch_cancelled`, `time_off_approved`, `time_off_denied` — all 8 scheduling event types now have full notification coverage.
+- ~~**No time-off balance tracking**~~ — ✅ **Closed (2026-03-09):** Migration 049 adds `pto_policies` (accrual_rate, period, max_balance, carryover_limit) + `pto_transactions` (accrual/usage/adjustment/carryover/forfeit, running balance_after). Backend: 6 PTO endpoints (GET balance, GET all balances, POST policy, PUT policy, POST transaction, POST run-accruals). Frontend: 4th "PTO Balance" tab on TimeOffPage with My Balance card (current balance, YTD accrued/used), collapsible transactions list, Manager Controls (Run Accruals, View All Balances table, Create Policy modal, Manual Adjustment modal).
+- ~~**No dashboard scheduling widget**~~ — ✅ **Closed (2026-03-09):** `SchedulingWidget` component on DashboardPage overview tab (between KPI grid and cert alerts). 3-column responsive layout: Today's Dispatches (count + top 3 names), Time Off This Week (count + top 3), My PTO Balance (hours + policy + YTD stats). Each section clickable → navigates to scheduling pages. Uses `getCalendarData` (7-day lookahead) + `getPtoBalance` (current user).

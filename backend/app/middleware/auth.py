@@ -56,11 +56,13 @@ async def _extract_token(authorization: str | None = Header(None)) -> str:
 async def require_user(
     token: str = Depends(_extract_token),
     db: aiosqlite.Connection = Depends(get_db),
+    x_device_id: str | None = Header(None, alias="X-Device-Id"),
 ) -> dict:
     """FastAPI dependency: require a valid authenticated user.
 
     Returns the full user dict with hats and permissions.
     Raises 401 if the token is invalid/expired or user not found.
+    Raises 403/423 if the device has an active override flag or is disabled.
     """
     user_id = get_user_id_from_token(token)
     if user_id is None:
@@ -84,6 +86,47 @@ async def require_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is deactivated",
         )
+
+    # ── Device override enforcement ────────────────────────────
+    # If the request includes X-Device-Id, check for override flags
+    # and disabled status on that device.
+    if x_device_id:
+        cursor = await db.execute("""
+            SELECT override_action, is_disabled, disabled_reason, force_sync_flag
+              FROM _device_registry WHERE device_id = ?
+        """, (x_device_id,))
+        device_row = await cursor.fetchone()
+
+        if device_row:
+            d = dict(device_row)
+            # Disabled device → block everything
+            if d.get("is_disabled"):
+                raise HTTPException(
+                    status_code=423,  # Locked
+                    detail="Device is disabled",
+                    headers={"X-Device-Override": "disabled",
+                             "X-Override-Reason": d.get("disabled_reason") or ""},
+                )
+            # Force logout → reject with instruction
+            if d.get("override_action") == "force_logout":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Force logout required",
+                    headers={"X-Device-Override": "force_logout"},
+                )
+            # Force wipe → reject with instruction
+            if d.get("override_action") == "force_wipe":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Device wipe required",
+                    headers={"X-Device-Override": "force_wipe"},
+                )
+            # Attach override info to user dict for downstream use
+            user["_device_id"] = x_device_id
+            if d.get("override_action") == "force_sync":
+                user["_force_sync"] = True
+            if d.get("force_sync_flag"):
+                user["_force_sync"] = True
 
     return user
 

@@ -7,6 +7,7 @@
  */
 
 import apiClient from './client';
+import { adaptedRequest } from './adapter';
 import type { ApiResponse, PaginatedData } from '../lib/types';
 import type {
   // Hierarchy
@@ -86,8 +87,16 @@ export async function getHierarchy(): Promise<HierarchyTree> {
 
 /** List all part categories with child counts. */
 export async function listCategories(params?: { search?: string; is_active?: boolean }): Promise<PartCategory[]> {
-  const { data } = await apiClient.get<ApiResponse<PartCategory[]>>('/parts/categories', { params });
-  return data.data ?? [];
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<PartCategory[]>>('/parts/categories', { params });
+      return data.data ?? [];
+    },
+    async () => {
+      const { getCategories } = await import('../local/services/parts-service');
+      return await getCategories() as unknown as PartCategory[];
+    },
+  );
 }
 
 /** Create a new part category. */
@@ -256,16 +265,35 @@ export async function deleteColor(colorId: number): Promise<void> {
 
 /** List parts with search, hierarchy filters, sort, and pagination. */
 export async function listParts(params: PartSearchParams = {}): Promise<PaginatedData<PartListItem>> {
-  const { data } = await apiClient.get<ApiResponse<PaginatedData<PartListItem>>>('/parts/catalog', {
-    params,
-  });
-  return data.data!;
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<PaginatedData<PartListItem>>>('/parts/catalog', {
+        params,
+      });
+      return data.data!;
+    },
+    async () => {
+      const { listParts: local } = await import('../local/services/parts-service');
+      const result = await local(params);
+      return result as unknown as PaginatedData<PartListItem>;
+    },
+  );
 }
 
 /** Get full detail for a single part. */
 export async function getPart(partId: number): Promise<Part> {
-  const { data } = await apiClient.get<ApiResponse<Part>>(`/parts/catalog/${partId}`);
-  return data.data!;
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<Part>>(`/parts/catalog/${partId}`);
+      return data.data!;
+    },
+    async () => {
+      const { getPart: local } = await import('../local/services/parts-service');
+      const part = await local(partId);
+      if (!part) throw new Error('Part not found');
+      return part as unknown as Part;
+    },
+  );
 }
 
 /** Create a new part. */
@@ -465,6 +493,12 @@ export async function deleteSupplier(supplierId: number): Promise<void> {
 /** Get forecasting data for all parts. */
 export async function getForecasting(params?: { page?: number; page_size?: number }): Promise<PaginatedData<ForecastItem>> {
   const { data } = await apiClient.get<ApiResponse<PaginatedData<ForecastItem>>>('/parts/forecasting', { params });
+  return data.data!;
+}
+
+/** Recalculate forecasts for all active parts. */
+export async function recalculateForecasts(): Promise<{ recalculated: number; errors: number; total_parts: number }> {
+  const { data } = await apiClient.post<ApiResponse<{ recalculated: number; errors: number; total_parts: number }>>('/parts/forecasting/recalculate');
   return data.data!;
 }
 

@@ -46,12 +46,12 @@ function getPayPeriodRange(p: PayPeriod): { start: string; end: string } | null 
 }
 
 const PAY_PERIOD_LABELS: Record<PayPeriod, string> = {
-  this_week:   'This Week',
-  last_week:   'Last Week',
+  this_week: 'This Week',
+  last_week: 'Last Week',
   this_2weeks: 'This Fortnight',
   last_2weeks: 'Last Fortnight',
-  this_month:  'This Month',
-  custom:      'Custom',
+  this_month: 'This Month',
+  custom: 'Custom',
 };
 import { Card } from '../../../components/ui/Card';
 import { PageSpinner } from '../../../components/ui/Spinner';
@@ -61,12 +61,15 @@ import { getEmployees } from '../../../api/people';
 import {
   getTimesheets, generateExport, downloadBlob,
 } from '../../../api/reports';
+import ReportPageToolbar from '../components/ReportPageToolbar';
+import ReportAnnotations from '../components/ReportAnnotations';
 
 
 export function TimesheetsPage() {
   // ── Controls ──────────────────────────────────────────────
   const [employeeId, setEmployeeId] = useState<number | undefined>(undefined);
   const [payPeriod, setPayPeriod] = useState<PayPeriod>('this_week');
+  const [groupBy, setGroupBy] = useState<'day' | 'week' | 'month' | 'pay_period' | 'billing_period'>('day');
   const [startDate, setStartDate] = useState(() => {
     const range = getPayPeriodRange('this_week');
     return range?.start ?? new Date().toISOString().split('T')[0];
@@ -91,12 +94,12 @@ export function TimesheetsPage() {
   });
 
   const reportQuery = useQuery({
-    queryKey: ['reports', 'timesheets', employeeId, startDate, endDate],
+    queryKey: ['reports', 'timesheets', employeeId, startDate, endDate, groupBy],
     queryFn: () => getTimesheets({
       start_date: startDate,
       end_date: endDate,
       employee_id: employeeId,
-      group_by: 'day',
+      group_by: groupBy,
     }),
     enabled: submitted,
     staleTime: 30_000,
@@ -134,16 +137,30 @@ export function TimesheetsPage() {
             Timesheets
           </h2>
           {data && (
-            <button
-              onClick={handleExport}
-              disabled={exporting}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium
-                         bg-primary-600 text-white rounded-lg hover:bg-primary-700
-                         disabled:opacity-50 min-h-[44px]"
-            >
-              <Download className="h-4 w-4" />
-              <span className="hidden sm:inline">{exporting ? 'Exporting...' : 'Export CSV'}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExport}
+                disabled={exporting}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium
+                           bg-primary-600 text-white rounded-lg hover:bg-primary-700
+                           disabled:opacity-50 min-h-[44px]"
+              >
+                <Download className="h-4 w-4" />
+                <span className="hidden sm:inline">{exporting ? 'Exporting...' : 'Export CSV'}</span>
+              </button>
+              <ReportPageToolbar
+                reportType="timesheet"
+                currentConfig={{ employee_id: employeeId, start_date: startDate, end_date: endDate, pay_period: payPeriod }}
+                onLoadTemplate={(cfg) => {
+                  if (cfg.employee_id !== undefined) setEmployeeId(cfg.employee_id as number | undefined);
+                  if (cfg.start_date) setStartDate(cfg.start_date as string);
+                  if (cfg.end_date) setEndDate(cfg.end_date as string);
+                  if (cfg.pay_period) setPayPeriod(cfg.pay_period as PayPeriod);
+                }}
+                shareContextParams={{ employee_id: employeeId, start_date: startDate, end_date: endDate }}
+                shareLabel={`Timesheet: ${startDate} to ${endDate}`}
+              />
+            </div>
           )}
         </div>
 
@@ -153,11 +170,10 @@ export function TimesheetsPage() {
             <button
               key={p}
               onClick={() => handlePayPeriodChange(p)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
-                payPeriod === p
+              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${payPeriod === p
                   ? 'bg-primary-600 text-white'
                   : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
-              }`}
+                }`}
             >
               {PAY_PERIOD_LABELS[p]}
             </button>
@@ -223,6 +239,26 @@ export function TimesheetsPage() {
           >
             Generate
           </button>
+
+          {/* Group By */}
+          <div className="min-w-[150px]">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Group By
+            </label>
+            <select
+              value={groupBy}
+              onChange={(e) => setGroupBy(e.target.value as 'day' | 'week' | 'month' | 'pay_period' | 'billing_period')}
+              className="w-full rounded-lg border border-gray-300 dark:border-gray-600
+                         bg-white dark:bg-gray-700 px-3 py-2 text-sm
+                         text-gray-900 dark:text-gray-100 min-h-[44px]"
+            >
+              <option value="day">Day</option>
+              <option value="week">Week</option>
+              <option value="month">Month</option>
+              <option value="pay_period">Pay Period</option>
+              <option value="billing_period">Billing Period</option>
+            </select>
+          </div>
         </div>
       </Card>
 
@@ -370,6 +406,14 @@ export function TimesheetsPage() {
           )}
         </>
       )}
+
+      {/* Annotations */}
+      {data && (
+        <ReportAnnotations
+          reportType="timesheet"
+          contextKey={`emp_${employeeId || 'all'}:${startDate}:${endDate}`}
+        />
+      )}
     </div>
   );
 }
@@ -390,11 +434,10 @@ function SummaryCard({ icon, label, value, highlight }: {
         <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
           {label}
         </p>
-        <p className={`text-lg font-bold truncate ${
-          highlight
+        <p className={`text-lg font-bold truncate ${highlight
             ? 'text-amber-600 dark:text-amber-400'
             : 'text-gray-900 dark:text-gray-100'
-        }`}>
+          }`}>
           {value}
         </p>
       </div>

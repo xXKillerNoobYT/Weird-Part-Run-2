@@ -6,6 +6,7 @@
  */
 
 import apiClient from './client';
+import { adaptedRequest } from './adapter';
 import type {
   ApiResponse,
   StatusMessage,
@@ -62,6 +63,30 @@ import type {
   TrailerStockTemplate,
   TrailerStockTemplateCreate,
   TrailerRestockGuidance,
+  // Fuel
+  FuelLogCreate,
+  FuelLogUpdate,
+  FuelLog,
+  FuelSummary,
+  // Telematics
+  TelematicsDeviceCreate,
+  TelematicsDevice,
+  TelematicsPosition,
+  TelematicsEvent,
+  VehicleLocationSummary,
+  // Inspections
+  InspectionTemplateCreate,
+  InspectionTemplateUpdate,
+  InspectionTemplate,
+  InspectionRecordCreate,
+  InspectionRecord,
+  InspectionItemSubmit,
+  // Transfers
+  VehicleTransferCreate,
+  VehicleTransfer,
+  // Alerts & Utilization
+  VehicleDocumentAlert,
+  VehicleUtilizationReport,
 } from '../lib/types';
 
 
@@ -77,11 +102,19 @@ export async function listVehicles(params?: {
   search?: string;
   include_inactive?: boolean;
 }): Promise<VehicleListItem[]> {
-  // Backend returns PaginatedData: { items, total, page, page_size, total_pages }
-  const { data } = await apiClient.get<
-    ApiResponse<{ items: VehicleListItem[]; total: number }>
-  >('/trucks', { params });
-  return data.data?.items ?? [];
+  return adaptedRequest(
+    async () => {
+      // Backend returns PaginatedData: { items, total, page, page_size, total_pages }
+      const { data } = await apiClient.get<
+        ApiResponse<{ items: VehicleListItem[]; total: number }>
+      >('/trucks', { params });
+      return data.data?.items ?? [];
+    },
+    async () => {
+      const { listVehicles: local } = await import('../local/services/fleet-service');
+      return await local() as unknown as VehicleListItem[];
+    },
+  );
 }
 
 /** Create a new vehicle. */
@@ -97,18 +130,37 @@ export async function createVehicle(
 
 /** Get current user's assigned vehicle dashboard. */
 export async function getMyVehicle(): Promise<MyVehicleDashboard> {
-  const { data } = await apiClient.get<ApiResponse<MyVehicleDashboard>>(
-    '/trucks/my-vehicle',
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<MyVehicleDashboard>>(
+        '/trucks/my-vehicle',
+      );
+      return data.data!;
+    },
+    async () => {
+      const { getMyVehicle: local } = await import('../local/services/fleet-service');
+      const vehicle = await local(0); // userId from local auth
+      return (vehicle ?? {}) as unknown as MyVehicleDashboard;
+    },
   );
-  return data.data!;
 }
 
 /** Get full vehicle detail. */
 export async function getVehicle(vehicleId: number): Promise<Vehicle> {
-  const { data } = await apiClient.get<ApiResponse<Vehicle>>(
-    `/trucks/${vehicleId}`,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<Vehicle>>(
+        `/trucks/${vehicleId}`,
+      );
+      return data.data!;
+    },
+    async () => {
+      const { getVehicle: local } = await import('../local/services/fleet-service');
+      const vehicle = await local(vehicleId);
+      if (!vehicle) throw new Error('Vehicle not found');
+      return vehicle as unknown as Vehicle;
+    },
   );
-  return data.data!;
 }
 
 /** Update a vehicle. */
@@ -142,10 +194,18 @@ export async function deactivateVehicle(
 export async function listAssignments(
   vehicleId: number,
 ): Promise<VehicleAssignment[]> {
-  const { data } = await apiClient.get<ApiResponse<VehicleAssignment[]>>(
-    `/trucks/${vehicleId}/assignments`,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<VehicleAssignment[]>>(
+        `/trucks/${vehicleId}/assignments`,
+      );
+      return data.data ?? [];
+    },
+    async () => {
+      const { getVehicleAssignments } = await import('../local/services/fleet-service');
+      return await getVehicleAssignments(vehicleId) as unknown as VehicleAssignment[];
+    },
   );
-  return data.data ?? [];
 }
 
 /** Assign a driver to a vehicle. */
@@ -193,11 +253,19 @@ export async function getVehicleInventory(
   vehicleId: number,
   params?: { search?: string },
 ): Promise<VehicleInventoryItem[]> {
-  const { data } = await apiClient.get<ApiResponse<VehicleInventoryItem[]>>(
-    `/trucks/${vehicleId}/inventory`,
-    { params },
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<VehicleInventoryItem[]>>(
+        `/trucks/${vehicleId}/inventory`,
+        { params },
+      );
+      return data.data ?? [];
+    },
+    async () => {
+      const { getTruckInventory } = await import('../local/services/fleet-service');
+      return await getTruckInventory(vehicleId) as unknown as VehicleInventoryItem[];
+    },
   );
-  return data.data ?? [];
 }
 
 /** Add parts to a vehicle (stock transfer). */
@@ -855,6 +923,356 @@ export async function getTrailerRestockGuidance(
 ): Promise<TrailerRestockGuidance> {
   const { data } = await apiClient.get<ApiResponse<TrailerRestockGuidance>>(
     `/trucks/trailers/${trailerId}/restock-guidance`,
+  );
+  return data.data!;
+}
+
+
+// =================================================================
+// FUEL TRACKING
+// =================================================================
+
+/** Log a fuel purchase for a vehicle. */
+export async function logFuel(vehicleId: number, body: FuelLogCreate): Promise<FuelLog> {
+  const { data } = await apiClient.post<ApiResponse<FuelLog>>(
+    `/trucks/fuel/${vehicleId}`,
+    body,
+  );
+  return data.data!;
+}
+
+/** Get fuel logs for a vehicle. */
+export async function getVehicleFuelLogs(
+  vehicleId: number,
+  params?: { limit?: number; offset?: number },
+): Promise<FuelLog[]> {
+  const { data } = await apiClient.get<ApiResponse<FuelLog[]>>(
+    `/trucks/fuel/${vehicleId}`,
+    { params },
+  );
+  return data.data!;
+}
+
+/** Update a fuel log entry. */
+export async function updateFuelLog(logId: number, body: FuelLogUpdate): Promise<FuelLog> {
+  const { data } = await apiClient.put<ApiResponse<FuelLog>>(
+    `/trucks/fuel/log/${logId}`,
+    body,
+  );
+  return data.data!;
+}
+
+/** Get fuel summary for a vehicle. */
+export async function getVehicleFuelSummary(
+  vehicleId: number,
+  params?: { period_start?: string; period_end?: string },
+): Promise<FuelSummary> {
+  const { data } = await apiClient.get<ApiResponse<FuelSummary>>(
+    `/trucks/fuel-summary/${vehicleId}`,
+    { params },
+  );
+  return data.data!;
+}
+
+/** Get fleet-wide fuel summary. */
+export async function getFleetFuelSummary(
+  params?: { period_start?: string; period_end?: string },
+): Promise<FuelSummary> {
+  const { data } = await apiClient.get<ApiResponse<FuelSummary>>(
+    `/trucks/fleet/fuel-summary`,
+    { params },
+  );
+  return data.data!;
+}
+
+
+// =================================================================
+// TELEMATICS
+// =================================================================
+
+/** List all registered telematics devices. */
+export async function listTelematicsDevices(
+  params?: { active_only?: boolean },
+): Promise<TelematicsDevice[]> {
+  const { data } = await apiClient.get<ApiResponse<TelematicsDevice[]>>(
+    '/trucks/telematics/devices',
+    { params },
+  );
+  return data.data!;
+}
+
+/** Register a telematics device on a vehicle. */
+export async function registerTelematicsDevice(
+  body: TelematicsDeviceCreate,
+): Promise<TelematicsDevice> {
+  const { data } = await apiClient.post<ApiResponse<TelematicsDevice>>(
+    '/trucks/telematics/devices',
+    body,
+  );
+  return data.data!;
+}
+
+/** Deactivate a telematics device. */
+export async function deactivateTelematicsDevice(deviceId: number): Promise<StatusMessage> {
+  const { data } = await apiClient.delete<ApiResponse<StatusMessage>>(
+    `/trucks/telematics/devices/${deviceId}`,
+  );
+  return data.data!;
+}
+
+/** Get GPS breadcrumbs for a vehicle. */
+export async function getVehiclePositions(
+  vehicleId: number,
+  params?: { since?: string; limit?: number },
+): Promise<TelematicsPosition[]> {
+  const { data } = await apiClient.get<ApiResponse<TelematicsPosition[]>>(
+    `/trucks/telematics/positions/${vehicleId}`,
+    { params },
+  );
+  return data.data!;
+}
+
+/** Get telematics events for a vehicle. */
+export async function getVehicleEvents(
+  vehicleId: number,
+  params?: { since?: string; event_type?: string; limit?: number },
+): Promise<TelematicsEvent[]> {
+  const { data } = await apiClient.get<ApiResponse<TelematicsEvent[]>>(
+    `/trucks/telematics/events/${vehicleId}`,
+    { params },
+  );
+  return data.data!;
+}
+
+/** Get last known location for every vehicle with a device. */
+export async function getFleetPositions(): Promise<VehicleLocationSummary[]> {
+  const { data } = await apiClient.get<ApiResponse<VehicleLocationSummary[]>>(
+    '/trucks/fleet/positions',
+  );
+  return data.data!;
+}
+
+
+// =================================================================
+// VEHICLE INSPECTIONS
+// =================================================================
+
+/** List all inspection templates. */
+export async function listInspectionTemplates(
+  params?: { vehicle_type?: string; inspection_type?: string },
+): Promise<InspectionTemplate[]> {
+  const { data } = await apiClient.get<ApiResponse<InspectionTemplate[]>>(
+    '/trucks/inspections/templates',
+    { params },
+  );
+  return data.data!;
+}
+
+/** Create an inspection template. */
+export async function createInspectionTemplate(
+  body: InspectionTemplateCreate,
+): Promise<InspectionTemplate> {
+  const { data } = await apiClient.post<ApiResponse<InspectionTemplate>>(
+    '/trucks/inspections/templates',
+    body,
+  );
+  return data.data!;
+}
+
+/** Get an inspection template with items. */
+export async function getInspectionTemplate(templateId: number): Promise<InspectionTemplate> {
+  const { data } = await apiClient.get<ApiResponse<InspectionTemplate>>(
+    `/trucks/inspections/templates/${templateId}`,
+  );
+  return data.data!;
+}
+
+/** Update an inspection template. */
+export async function updateInspectionTemplate(
+  templateId: number,
+  body: InspectionTemplateUpdate,
+): Promise<InspectionTemplate> {
+  const { data } = await apiClient.put<ApiResponse<InspectionTemplate>>(
+    `/trucks/inspections/templates/${templateId}`,
+    body,
+  );
+  return data.data!;
+}
+
+/** Start a new inspection for a vehicle. */
+export async function startInspection(
+  vehicleId: number,
+  body: InspectionRecordCreate,
+): Promise<InspectionRecord> {
+  const { data } = await apiClient.post<ApiResponse<InspectionRecord>>(
+    `/trucks/inspections/${vehicleId}/start`,
+    body,
+  );
+  return data.data!;
+}
+
+/** Submit pass/fail for a single inspection item. */
+export async function submitInspectionItem(
+  recordId: number,
+  itemId: number,
+  body: InspectionItemSubmit,
+): Promise<InspectionRecord> {
+  const { data } = await apiClient.put<ApiResponse<InspectionRecord>>(
+    `/trucks/inspections/records/${recordId}/items/${itemId}`,
+    body,
+  );
+  return data.data!;
+}
+
+/** Complete an inspection — calculates overall result. */
+export async function completeInspection(recordId: number): Promise<InspectionRecord> {
+  const { data } = await apiClient.post<ApiResponse<InspectionRecord>>(
+    `/trucks/inspections/records/${recordId}/complete`,
+  );
+  return data.data!;
+}
+
+/** Inspection history for a vehicle. */
+export async function getVehicleInspections(
+  vehicleId: number,
+  params?: { limit?: number; offset?: number },
+): Promise<InspectionRecord[]> {
+  const { data } = await apiClient.get<ApiResponse<InspectionRecord[]>>(
+    `/trucks/inspections/${vehicleId}/history`,
+    { params },
+  );
+  return data.data!;
+}
+
+/** Fleet-wide incomplete inspections. */
+export async function getPendingInspections(): Promise<InspectionRecord[]> {
+  const { data } = await apiClient.get<ApiResponse<InspectionRecord[]>>(
+    '/trucks/fleet/inspections/pending',
+  );
+  return data.data!;
+}
+
+/** Failed / needs-attention inspections for manager review. */
+export async function getFailedInspections(): Promise<InspectionRecord[]> {
+  const { data } = await apiClient.get<ApiResponse<InspectionRecord[]>>(
+    '/trucks/fleet/inspections/failed',
+  );
+  return data.data!;
+}
+
+
+// =================================================================
+// VEHICLE TRANSFERS
+// =================================================================
+
+/** List vehicle transfers. */
+export async function listTransfers(
+  params?: { transfer_status?: string; vehicle_id?: number; limit?: number; offset?: number },
+): Promise<VehicleTransfer[]> {
+  const { data } = await apiClient.get<ApiResponse<VehicleTransfer[]>>(
+    '/trucks/fleet/transfers',
+    { params },
+  );
+  return data.data!;
+}
+
+/** Request a vehicle transfer. */
+export async function requestTransfer(body: VehicleTransferCreate): Promise<VehicleTransfer> {
+  const { data } = await apiClient.post<ApiResponse<VehicleTransfer>>(
+    '/trucks/fleet/transfers',
+    body,
+  );
+  return data.data!;
+}
+
+/** Approve a transfer request. */
+export async function approveTransfer(transferId: number): Promise<VehicleTransfer> {
+  const { data } = await apiClient.post<ApiResponse<VehicleTransfer>>(
+    `/trucks/fleet/transfers/${transferId}/approve`,
+  );
+  return data.data!;
+}
+
+/** Mark a transfer as in-transit. */
+export async function startTransferTransit(transferId: number): Promise<VehicleTransfer> {
+  const { data } = await apiClient.post<ApiResponse<VehicleTransfer>>(
+    `/trucks/fleet/transfers/${transferId}/transit`,
+  );
+  return data.data!;
+}
+
+/** Complete a transfer. */
+export async function completeTransfer(transferId: number): Promise<VehicleTransfer> {
+  const { data } = await apiClient.post<ApiResponse<VehicleTransfer>>(
+    `/trucks/fleet/transfers/${transferId}/complete`,
+  );
+  return data.data!;
+}
+
+/** Cancel a transfer. */
+export async function cancelTransfer(
+  transferId: number,
+  reason?: string,
+): Promise<VehicleTransfer> {
+  const { data } = await apiClient.post<ApiResponse<VehicleTransfer>>(
+    `/trucks/fleet/transfers/${transferId}/cancel`,
+    undefined,
+    { params: { reason } },
+  );
+  return data.data!;
+}
+
+
+// =================================================================
+// VEHICLE PHOTO
+// =================================================================
+
+/** Upload or replace a vehicle's photo. */
+export async function uploadVehiclePhoto(
+  vehicleId: number,
+  file: File,
+): Promise<{ photo_path: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await apiClient.post<ApiResponse<{ photo_path: string }>>(
+    `/trucks/photo/${vehicleId}`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  );
+  return data.data!;
+}
+
+/** Remove a vehicle's photo. */
+export async function removeVehiclePhoto(
+  vehicleId: number,
+): Promise<void> {
+  await apiClient.delete(`/trucks/photo/${vehicleId}`);
+}
+
+
+// =================================================================
+// DOCUMENT ALERTS & UTILIZATION
+// =================================================================
+
+/** Vehicles with insurance or registration expiring soon. */
+export async function getDocumentAlerts(
+  daysAhead?: number,
+): Promise<VehicleDocumentAlert[]> {
+  const { data } = await apiClient.get<ApiResponse<VehicleDocumentAlert[]>>(
+    '/trucks/fleet/document-alerts',
+    { params: daysAhead ? { days_ahead: daysAhead } : undefined },
+  );
+  return data.data!;
+}
+
+/** Fleet utilization report: miles, costs, MPG per vehicle. */
+export async function getUtilizationReport(
+  periodStart: string,
+  periodEnd: string,
+): Promise<VehicleUtilizationReport> {
+  const { data } = await apiClient.get<ApiResponse<VehicleUtilizationReport>>(
+    '/trucks/fleet/utilization',
+    { params: { period_start: periodStart, period_end: periodEnd } },
   );
   return data.data!;
 }

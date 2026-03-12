@@ -18,6 +18,7 @@
  */
 
 import { useState, useMemo, useCallback } from 'react';
+import { toast } from '../../../lib/toast';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -36,6 +37,7 @@ import {
   Check,
   ShieldCheck,
   MailCheck,
+  Mail,
 } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
@@ -44,6 +46,7 @@ import { Modal } from '../../../components/ui/Modal';
 import { Button } from '../../../components/ui/Button';
 import { OrderStatusBadge } from '../../orders/components/OrderStatusBadge';
 import { ConversationThread } from '../../orders/components/ConversationThread';
+import { SendEmailModal } from '../../orders/components/SendEmailModal';
 import { PartIdentity } from '../../../components/ui/PartIdentity';
 import {
   listPOs,
@@ -110,6 +113,15 @@ export function POManagementTab() {
     supplierName: string;
   } | null>(null);
 
+  // Email modal state
+  const [emailTarget, setEmailTarget] = useState<{
+    poId: number;
+    poNumber: string;
+    supplierName: string;
+    supplierEmail: string | null;
+    repEmail: string | null;
+  } | null>(null);
+
   // ── Data queries ────────────────────────────────────────────
 
   // Supplier list (for sidebar)
@@ -150,20 +162,25 @@ export function POManagementTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pos'] });
       queryClient.invalidateQueries({ queryKey: ['po', selectedPoId] });
+      toast.success('PO submitted successfully');
     },
+    onError: () => toast.error('Failed to submit PO. Please try again.'),
   });
 
   const statusMut = useMutation({
     mutationFn: ({ poId, status }: { poId: number; status: string }) =>
       updatePOStatus(poId, status),
-    onSuccess: () => {
+    onSuccess: (_data, { status }) => {
       queryClient.invalidateQueries({ queryKey: ['pos'] });
       queryClient.invalidateQueries({ queryKey: ['po', selectedPoId] });
+      toast.success(`PO status updated to ${status.replace(/_/g, ' ')}`);
     },
+    onError: () => toast.error('Failed to update PO status. Please try again.'),
   });
 
   const pdfMut = useMutation({
     mutationFn: (poId: number) => generatePOPdf(poId),
+    onError: () => toast.error('Failed to generate PDF. Please try again.'),
   });
 
   const checklistMut = useMutation({
@@ -230,6 +247,21 @@ export function POManagementTab() {
       }
     },
     []
+  );
+
+  const handleSendEmail = useCallback(
+    (po: POListItem) => {
+      // Look up supplier email from the supplier list
+      const supplier = suppliers.find((s) => s.id === po.supplier_id);
+      setEmailTarget({
+        poId: po.id,
+        poNumber: po.po_number,
+        supplierName: po.supplier_name ?? 'Unknown',
+        supplierEmail: supplier?.email ?? null,
+        repEmail: supplier?.rep_email ?? null,
+      });
+    },
+    [suppliers]
   );
 
   // ── Loading state ───────────────────────────────────────────
@@ -329,6 +361,7 @@ export function POManagementTab() {
                   }
                   onGeneratePdf={() => pdfMut.mutate(po.id)}
                   onCopyClipboard={() => handleCopyClipboard(po.id)}
+                  onSendEmail={() => handleSendEmail(po)}
                   onUpdateStatus={(status) => {
                     if (status === 'acknowledged') {
                       setConfirmAction({
@@ -433,6 +466,23 @@ export function POManagementTab() {
           onCancel={() => setConfirmAction(null)}
         />
       )}
+
+      {/* ── Send Email Modal ─────────────────────────────────── */}
+      {emailTarget && (
+        <SendEmailModal
+          isOpen={!!emailTarget}
+          onClose={() => setEmailTarget(null)}
+          mode="po"
+          poId={emailTarget.poId}
+          poNumber={emailTarget.poNumber}
+          supplierName={emailTarget.supplierName}
+          supplierEmail={emailTarget.supplierEmail}
+          repEmail={emailTarget.repEmail}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['po-conversation', emailTarget.poId] });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -530,6 +580,7 @@ function POCard({
   onSubmit,
   onGeneratePdf,
   onCopyClipboard,
+  onSendEmail,
   onUpdateStatus,
   submitting,
   generatingPdf,
@@ -547,6 +598,7 @@ function POCard({
   onSubmit: () => void;
   onGeneratePdf: () => void;
   onCopyClipboard: () => void;
+  onSendEmail: () => void;
   onUpdateStatus: (status: string) => void;
   submitting: boolean;
   generatingPdf: boolean;
@@ -639,6 +691,13 @@ function POCard({
             icon={isCopied ? Check : Copy}
             label={isCopied ? 'Copied' : 'Copy'}
             onClick={(e) => { e.stopPropagation(); onCopyClipboard(); }}
+          />
+
+          {/* Send via email */}
+          <ActionButton
+            icon={Mail}
+            label="Email"
+            onClick={(e) => { e.stopPropagation(); onSendEmail(); }}
           />
 
           {/* Confirmation checklist toggle */}

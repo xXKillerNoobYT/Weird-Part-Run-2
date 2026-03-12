@@ -9,7 +9,7 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, BookOpen, FolderPlus, Archive } from 'lucide-react';
+import { ArrowLeft, BookOpen, FolderPlus, Archive, CheckCircle2, UserPlus } from 'lucide-react';
 import { PageSpinner } from '../../../components/ui/Spinner';
 import { EmptyState } from '../../../components/ui/EmptyState';
 import {
@@ -22,16 +22,20 @@ import {
   createSection,
   archiveNotebook,
   reorderSections,
+  reorderEntries,
+  bulkUpdateTasks,
 } from '../../../api/notebooks';
 import { toast } from '../../../lib/toast';
 import { SectionPanel } from '../components/SectionPanel';
 import { CreateEntryModal } from '../components/CreateEntryModal';
 import { AddSectionModal } from '../components/AddSectionModal';
+import { useBulkSelection, BulkActionBar } from '../../orders/components/BulkActionBar';
 import type {
   EntryCreate,
   SectionCreate,
   TaskStatus,
   SectionWithEntries,
+  EntryResponse,
 } from '../../../lib/types';
 
 export function NotebookDetailPage() {
@@ -54,6 +58,13 @@ export function NotebookDetailPage() {
     queryFn: () => getNotebookFull(nbId),
     enabled: !!nbId,
   });
+
+  // Collect all task entries across sections for bulk selection
+  const allTasks: EntryResponse[] = (data?.sections ?? []).flatMap(
+    (s: SectionWithEntries) =>
+      s.entries.filter((e: EntryResponse) => e.entry_type === 'task' && !('is_deleted' in e && e.is_deleted))
+  );
+  const bulkSelection = useBulkSelection(allTasks);
 
   // ── Mutations ───────────────────────────────────────────────────
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['notebook-full', nbId] });
@@ -112,6 +123,27 @@ export function NotebookDetailPage() {
     onError: () => toast.error('Failed to reorder sections'),
   });
 
+  const reorderEntriesMut = useMutation({
+    mutationFn: ({ sectionId, orderedIds }: { sectionId: number; orderedIds: number[] }) =>
+      reorderEntries(sectionId, orderedIds),
+    onSuccess: invalidate,
+    onError: () => toast.error('Failed to reorder entries'),
+  });
+
+  const bulkTaskMut = useMutation({
+    mutationFn: ({ entryIds, taskStatus, taskAssignedTo }: {
+      entryIds: number[];
+      taskStatus?: string;
+      taskAssignedTo?: number;
+    }) => bulkUpdateTasks(entryIds, taskStatus, taskAssignedTo),
+    onSuccess: (result) => {
+      invalidate();
+      bulkSelection.clear();
+      toast.success(`Updated ${result.updated} tasks`);
+    },
+    onError: () => toast.error('Bulk update failed'),
+  });
+
   // ── Handlers ────────────────────────────────────────────────────
   const handleAddEntry = (sectionId: number, type: 'note' | 'task') => {
     setShowCreateEntry({ sectionId, type });
@@ -149,6 +181,10 @@ export function NotebookDetailPage() {
     if (targetIdx < 0 || targetIdx >= ids.length) return;
     [ids[idx], ids[targetIdx]] = [ids[targetIdx], ids[idx]];
     reorderMut.mutate(ids);
+  };
+
+  const handleEntryReorder = (sectionId: number, orderedIds: number[]) => {
+    reorderEntriesMut.mutate({ sectionId, orderedIds });
   };
 
   // ── Render ──────────────────────────────────────────────────────
@@ -227,6 +263,9 @@ export function NotebookDetailPage() {
               savingFieldId={savingFieldId}
               onMoveUp={idx > 0 ? () => handleSectionMove(section.id, 'up') : undefined}
               onMoveDown={idx < sections.length - 1 ? () => handleSectionMove(section.id, 'down') : undefined}
+              onEntryReorder={handleEntryReorder}
+              isTaskSelected={bulkSelection.isSelected}
+              onToggleTask={bulkSelection.toggle}
             />
           ))}
         </div>
@@ -256,6 +295,35 @@ export function NotebookDetailPage() {
           loading={addSectionMut.isPending}
         />
       )}
+
+      {/* Bulk task action bar */}
+      <BulkActionBar
+        count={bulkSelection.selectedIds.size}
+        onClear={bulkSelection.clear}
+        loading={bulkTaskMut.isPending}
+        actions={[
+          {
+            label: 'Mark Complete',
+            icon: CheckCircle2,
+            variant: 'primary',
+            onClick: () =>
+              bulkTaskMut.mutate({
+                entryIds: [...bulkSelection.selectedIds],
+                taskStatus: 'done',
+              }),
+          },
+          {
+            label: 'Mark In Progress',
+            icon: UserPlus,
+            variant: 'default',
+            onClick: () =>
+              bulkTaskMut.mutate({
+                entryIds: [...bulkSelection.selectedIds],
+                taskStatus: 'in_progress',
+              }),
+          },
+        ]}
+      />
     </div>
   );
 }

@@ -545,3 +545,132 @@ class ToolMaintenanceRecordRepo(BaseRepo):
             (tool_id,),
         )
         return await cursor.fetchone()
+
+
+# ─── 9. ToolDepreciationRepo ─────────────────────────────────────────
+
+class ToolDepreciationRepo(BaseRepo):
+    """Repository for `tool_depreciation_entries`."""
+    TABLE = "tool_depreciation_entries"
+
+    async def get_for_tool(self, tool_id: int) -> list[dict]:
+        """Get all depreciation entries for a tool, ordered by year."""
+        cursor = await self.db.execute(
+            """SELECT * FROM tool_depreciation_entries
+               WHERE tool_id = ? ORDER BY year_number ASC""",
+            (tool_id,),
+        )
+        return await cursor.fetchall()
+
+    async def delete_for_tool(self, tool_id: int) -> None:
+        """Delete all depreciation entries for a tool (before recalculation)."""
+        await self.db.execute(
+            "DELETE FROM tool_depreciation_entries WHERE tool_id = ?",
+            (tool_id,),
+        )
+
+    async def bulk_insert(self, entries: list[dict]) -> None:
+        """Insert multiple depreciation entries at once."""
+        if not entries:
+            return
+        cols = list(entries[0].keys())
+        placeholders = ", ".join(["?"] * len(cols))
+        col_names = ", ".join(cols)
+        sql = f"INSERT INTO tool_depreciation_entries ({col_names}) VALUES ({placeholders})"
+        for entry in entries:
+            await self.db.execute(sql, [entry[c] for c in cols])
+
+    async def get_current_book_value(self, tool_id: int) -> float | None:
+        """Get the ending value of the most recent year entry."""
+        cursor = await self.db.execute(
+            """SELECT ending_value FROM tool_depreciation_entries
+               WHERE tool_id = ? ORDER BY year_number DESC LIMIT 1""",
+            (tool_id,),
+        )
+        row = await cursor.fetchone()
+        return row["ending_value"] if row else None
+
+
+# ─── 10. NotebookEntryToolRepo ───────────────────────────────────────
+
+class NotebookEntryToolRepo(BaseRepo):
+    """Repository for `notebook_entry_tools` junction table."""
+    TABLE = "notebook_entry_tools"
+
+    async def get_for_entry(self, entry_id: int) -> list[dict]:
+        """Get all tool links for a notebook entry, with tool details."""
+        cursor = await self.db.execute(
+            """SELECT net.*,
+                      t.tool_number, t.name AS tool_name,
+                      t.status AS tool_status,
+                      t.location_type AS tool_location_type,
+                      CASE t.location_type
+                          WHEN 'warehouse' THEN wl.name
+                          WHEN 'truck' THEN v.unit_number
+                          WHEN 'job' THEN j.name
+                      END AS tool_location_name
+               FROM notebook_entry_tools net
+               JOIN tools t ON t.id = net.tool_id
+               LEFT JOIN warehouse_locations wl ON t.location_type = 'warehouse'
+                   AND wl.id = t.location_id
+               LEFT JOIN vehicles v ON t.location_type = 'truck'
+                   AND v.id = t.location_id
+               LEFT JOIN jobs j ON t.location_type = 'job'
+                   AND j.id = t.location_id
+               WHERE net.entry_id = ?
+               ORDER BY net.created_at ASC""",
+            (entry_id,),
+        )
+        return await cursor.fetchall()
+
+    async def get_for_entries(self, entry_ids: list[int]) -> list[dict]:
+        """Get tool links for multiple entries at once."""
+        if not entry_ids:
+            return []
+        placeholders = ",".join(["?"] * len(entry_ids))
+        cursor = await self.db.execute(
+            f"""SELECT net.*,
+                       t.tool_number, t.name AS tool_name,
+                       t.status AS tool_status,
+                       t.location_type AS tool_location_type
+                FROM notebook_entry_tools net
+                JOIN tools t ON t.id = net.tool_id
+                WHERE net.entry_id IN ({placeholders})
+                ORDER BY net.entry_id, net.created_at ASC""",
+            entry_ids,
+        )
+        return await cursor.fetchall()
+
+    async def link_tool(
+        self, entry_id: int, tool_id: int, notes: str | None, created_by: int
+    ) -> int:
+        """Link a tool to a notebook entry. Returns new row ID."""
+        return await self.insert({
+            "entry_id": entry_id,
+            "tool_id": tool_id,
+            "notes": notes,
+            "created_by": created_by,
+        })
+
+    async def unlink_tool(self, entry_id: int, tool_id: int) -> bool:
+        """Unlink a tool from a notebook entry."""
+        cursor = await self.db.execute(
+            "DELETE FROM notebook_entry_tools WHERE entry_id = ? AND tool_id = ?",
+            (entry_id, tool_id),
+        )
+        return cursor.rowcount > 0
+
+    async def get_tools_for_tool(self, tool_id: int) -> list[dict]:
+        """Get all notebook entries that reference a specific tool."""
+        cursor = await self.db.execute(
+            """SELECT net.*, ne.title AS entry_title,
+                      nb.title AS notebook_title, nb.job_id
+               FROM notebook_entry_tools net
+               JOIN notebook_entries ne ON ne.id = net.entry_id
+               JOIN notebook_sections ns ON ns.id = ne.section_id
+               JOIN notebooks nb ON nb.id = ns.notebook_id
+               WHERE net.tool_id = ?
+               ORDER BY net.created_at DESC""",
+            (tool_id,),
+        )
+        return await cursor.fetchall()
