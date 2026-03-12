@@ -5952,7 +5952,7 @@ export interface VehicleExpiryAlert {
 // ══════════════════════════════════════════════════════════════════
 
 export type ChannelType = 'job' | 'dm' | 'general';
-export type MessageType = 'text' | 'photo' | 'system' | 'qa_question' | 'qa_answer' | 'qa_escalation';
+export type MessageType = 'text' | 'photo' | 'voice' | 'file' | 'system' | 'qa_question' | 'qa_answer' | 'qa_escalation';
 export type QALevel = 'worker' | 'lead' | 'foreman' | 'supervisor' | 'office';
 export type QAStatus = 'open' | 'escalated' | 'answered' | 'closed' | 'sent_to_gc';
 export type QAPriority = 'normal' | 'urgent';

@@ -10,15 +10,17 @@
  */
 
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, Package, Warehouse, Truck, Briefcase, BookOpen,
   ShoppingCart, Users, BarChart3, Settings, ChevronLeft, X, Zap,
-  Building2,
+  Building2, MessageSquare,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { MODULES, getDefaultTabPath, findModuleByPath } from '../../lib/navigation';
 import { useAuthStore } from '../../stores/auth-store';
 import { useSidebarStore } from '../../stores/sidebar-store';
+import { getChatBadge } from '../../api/chat';
 
 /** Map icon names to Lucide components */
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -33,6 +35,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Users,
   BarChart3,
   Settings,
+  MessageSquare,
 };
 
 export function Sidebar() {
@@ -42,6 +45,16 @@ export function Sidebar() {
   const { isCollapsed, isMobileOpen, toggleCollapse, closeMobile } = useSidebarStore();
 
   const permissions = user?.permissions ?? [];
+
+  // Chat unread badge — poll every 30s
+  const chatBadge = useQuery({
+    queryKey: ['chat-badge'],
+    queryFn: getChatBadge,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    enabled: permissions.includes('use_chat'),
+    retry: false,
+  });
 
   // Filter modules by user permissions
   const visibleModules = MODULES.filter(
@@ -98,7 +111,15 @@ export function Sidebar() {
                 isCollapsed && 'justify-center px-2',
               )}
             >
-              <Icon className={cn('h-5 w-5 shrink-0', active && 'text-primary-500')} />
+              <div className="relative">
+                <Icon className={cn('h-5 w-5 shrink-0', active && 'text-primary-500')} />
+                {/* Chat unread badge */}
+                {module.id === 'chat' && (chatBadge.data?.total_unread ?? 0) > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none">
+                    {chatBadge.data!.total_unread > 99 ? '99+' : chatBadge.data!.total_unread}
+                  </span>
+                )}
+              </div>
               {!isCollapsed && <span className="truncate">{module.label}</span>}
             </button>
           );
