@@ -322,7 +322,10 @@ class JobDispatchRepo(BaseRepo):
                       ds.end_time AS default_end,
                       (SELECT COUNT(*) FROM job_dispatch jd
                        WHERE jd.user_id = u.id AND jd.dispatch_date = ?
-                         AND jd.status NOT IN ('cancelled')) AS current_dispatches
+                         AND jd.status NOT IN ('cancelled')) AS current_dispatches,
+                      (SELECT GROUP_CONCAT(h.name)
+                       FROM user_hats uh JOIN hats h ON h.id = uh.hat_id
+                       WHERE uh.user_id = u.id) AS hats_csv
                FROM users u
                JOIN employee_default_schedules ds ON ds.user_id = u.id
                                                   AND ds.day_of_week = ?
@@ -336,7 +339,14 @@ class JobDispatchRepo(BaseRepo):
                ORDER BY u.display_name ASC""",
             (date, dow, date),
         )
-        return await cursor.fetchall()
+        rows = await cursor.fetchall()
+        # Convert hats_csv to hats list and remove the intermediate column
+        result = []
+        for row in rows:
+            cleaned = {k: v for k, v in row.items() if k != "hats_csv"}
+            cleaned["hats"] = row["hats_csv"].split(",") if row.get("hats_csv") else []
+            result.append(cleaned)
+        return result
 
     async def get_for_date_range(
         self, date_from: str, date_to: str

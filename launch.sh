@@ -67,16 +67,15 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # ── Start frontend dev server (background) ───────────────────────────────────
-if command -v node &>/dev/null && [ -d "$ROOT/frontend/node_modules" ]; then
+if command -v node &>/dev/null && [ -d "$ROOT/node_modules" ]; then
     echo "  [Frontend] Starting Vite dev server..."
-    cd "$ROOT/frontend"
+    cd "$ROOT"
     npm run dev &
     FRONTEND_PID=$!
-    cd "$ROOT"
     echo "  [Frontend] PID $FRONTEND_PID"
 else
     echo "  [Frontend] Skipped — Node.js not found or npm install not run."
-    if [ -f "$ROOT/frontend/dist/index.html" ]; then
+    if [ -f "$ROOT/dist/index.html" ]; then
         echo "  [Frontend] Pre-built bundle will be served by the backend."
     fi
 fi

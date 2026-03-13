@@ -334,13 +334,16 @@ async def sync_pull(
 @router.post("/initial")
 async def initial_sync(
     payload: InitialSyncRequest,
-    user: dict = Depends(require_user),
+    user: dict = Depends(require_permission("manage_devices")),
     db: aiosqlite.Connection = Depends(get_db),
 ):
     """Full data load for initial device setup.
 
     Returns all rows from synced tables. Used when a device first
     connects and needs to populate its local DB from scratch.
+
+    Requires ``manage_devices`` permission — only Admin (or any hat
+    with that permission) can authorize a new device to join the fleet.
     """
     svc = SyncService(db)
 
@@ -390,10 +393,14 @@ async def initial_sync(
 @router.post("/register")
 async def register_device(
     payload: DeviceRegisterPayload,
-    user: dict = Depends(require_user),
+    user: dict = Depends(require_permission("manage_devices")),
     db: aiosqlite.Connection = Depends(get_db),
 ):
-    """Register or update a device in the sync registry."""
+    """Register or update a device in the sync registry.
+
+    Requires ``manage_devices`` permission — only Admins can register
+    new devices into the fleet.
+    """
     svc = SyncService(db)
     device = await svc.register_device(
         payload.device_id, payload.device_name, payload.platform, user.get("id"),

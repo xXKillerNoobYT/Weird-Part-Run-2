@@ -165,6 +165,8 @@ UPDATE _device_registry
           AND _device_sync_profiles.primary_user_id IS NOT NULL
    );
 
--- Seed manage_devices permission
-INSERT OR IGNORE INTO permissions (key, label, description, category)
-VALUES ('manage_devices', 'Manage Devices', 'View and manage paired devices, overrides, error logs, health telemetry', 'admin');
+-- Seed manage_devices permission for the Owner hat
+INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+SELECT h.id, 'manage_devices'
+FROM hats h
+WHERE h.name = 'Owner';

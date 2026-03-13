@@ -13,7 +13,11 @@ env/
 
 # Node
 node_modules/
-frontend/dist/
+
+# Capacitor native platforms
+ios/App/Pods/
+ios/App/public/
+ios/capacitor-cordova-ios-plugins/
 
 # Database
 *.db

@@ -41,7 +41,7 @@
 
 ---
 
-## Frontend npm Dependencies (`frontend/package.json`)
+## Frontend npm Dependencies (`package.json`)
 
 ### Runtime — React Core
 - react (^19.2.0)
@@ -94,7 +94,7 @@
 - eslint + eslint-plugin-react-hooks + eslint-plugin-react-refresh + typescript-eslint + globals
 
 ### Custom (No External Package)
-- Toast system: `frontend/src/lib/toast.ts` — pure DOM implementation, zero dependencies
+- Toast system: `src/lib/toast.ts` — pure DOM implementation, zero dependencies
 
 ---
 

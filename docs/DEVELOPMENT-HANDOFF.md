@@ -59,10 +59,10 @@ Implement these first:
 - `backend/app/services/vehicle_service.py` + `backend/app/routers/dashboard.py` — vehicle expiry alerts
 
 ## Frontend
-- `frontend/src/features/jobs/components/ClockOutFlow.tsx` — photo answer input UI
-- `frontend/src/features/settings/pages/` — profile self-service page
-- `frontend/src/api/auth.ts` — profile and PIN client functions
-- `frontend/src/features/dashboard/` — vehicle alerts card
+- `src/features/jobs/components/ClockOutFlow.tsx` — photo answer input UI
+- `src/features/settings/pages/` — profile self-service page
+- `src/api/auth.ts` — profile and PIN client functions
+- `src/features/dashboard/` — vehicle alerts card
 
 ## Architecture Docs
 - `docs/plans/deployment-master-plan.md` — explicit media sync strategy under Phase C
@@ -103,8 +103,7 @@ cd backend
 pip install -r requirements.txt
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 
-# Frontend
-cd frontend
+# Frontend (from project root)
 npm install
 npm run dev
 

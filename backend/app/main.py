@@ -35,7 +35,7 @@ from app.services.auth_service import hash_pin
 
 # ── Paths ──────────────────────────────────────────────────────────
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
-_FRONTEND_DIST = _BACKEND_DIR.parent / "frontend" / "dist"
+_FRONTEND_DIST = _BACKEND_DIR.parent / "dist"
 
 # ── Logging ─────────────────────────────────────────────────────────
 logging.basicConfig(

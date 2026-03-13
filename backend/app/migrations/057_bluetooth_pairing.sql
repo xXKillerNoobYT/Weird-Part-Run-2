@@ -60,12 +60,12 @@ CREATE INDEX IF NOT EXISTS idx_bt_conn_log_remote
 -- Bluetooth Sync Configuration (stored in settings table)
 -- ═══════════════════════════════════════════════════════════════════
 -- Uses the existing settings table with category 'bluetooth'
-INSERT OR IGNORE INTO settings (key, value, category, description) VALUES
-    ('bt_enabled',        'true',      'bluetooth', 'Enable Bluetooth sync features'),
-    ('bt_device_role',    'auto',      'bluetooth', 'Device sync role: primary, secondary, or auto'),
-    ('bt_auto_connect',   'true',      'bluetooth', 'Auto-connect to paired devices on startup'),
-    ('bt_sync_interval',  '120',       'bluetooth', 'Sync interval in seconds when BT connected (default 120)'),
-    ('bt_tunnel_port',    '9000',      'bluetooth', 'Local TCP port for BT tunnel (secondary mode)');
+INSERT OR IGNORE INTO settings (key, value, category) VALUES
+    ('bt_enabled',        'true',      'bluetooth'),
+    ('bt_device_role',    'auto',      'bluetooth'),
+    ('bt_auto_connect',   'true',      'bluetooth'),
+    ('bt_sync_interval',  '120',       'bluetooth'),
+    ('bt_tunnel_port',    '9000',      'bluetooth');
 
 -- ═══════════════════════════════════════════════════════════════════
 -- Bluetooth Sync State (local key-value store for sync tracking)
@@ -77,7 +77,8 @@ CREATE TABLE IF NOT EXISTS _bt_sync_state (
 );
 
 -- ═══════════════════════════════════════════════════════════════════
--- Seed permission for Bluetooth management
--- ═══════════════════════════════════════════════════════════════════
-INSERT OR IGNORE INTO permissions (key, label, description, category)
-VALUES ('manage_bluetooth', 'Manage Bluetooth', 'Scan, pair, and manage Bluetooth device connections', 'admin');
+-- Seed manage_bluetooth permission for the Owner hat
+INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+SELECT h.id, 'manage_bluetooth'
+FROM hats h
+WHERE h.name = 'Owner';

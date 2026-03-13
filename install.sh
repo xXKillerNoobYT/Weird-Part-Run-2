@@ -114,7 +114,7 @@ else
 
     # ── 5. npm install ────────────────────────────────────────────────────────
     echo "    Installing frontend dependencies..."
-    cd "$ROOT/frontend"
+    cd "$ROOT"
     if npm install; then
         echo "    Frontend dependencies installed."
         STEP_NPM="ok"
@@ -134,8 +134,6 @@ else
             STEP_BUILD="FAILED"
         fi
     fi
-
-    cd "$ROOT"
 fi
 
 # ════════════════════════════════════════════

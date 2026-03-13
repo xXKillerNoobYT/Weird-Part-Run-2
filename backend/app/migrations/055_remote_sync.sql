@@ -210,21 +210,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_failban_ip
     ON _remote_failban(ip_address);
 
 -- ═══════════════════════════════════════════════════════════════════
--- Permission for remote sync management
--- ═══════════════════════════════════════════════════════════════════
-INSERT OR IGNORE INTO permissions (key, label, description, category)
-VALUES ('manage_remote_sync', 'Manage Remote Sync',
-        'Configure internet sync, manage remote peers, shared channels, and file sync packages',
-        'admin');
+-- Seed manage_remote_sync permission for the Owner hat
+INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+SELECT h.id, 'manage_remote_sync'
+FROM hats h
+WHERE h.name = 'Owner';
 
 -- Grant to Admin and Manager hats
-INSERT OR IGNORE INTO hat_permissions (hat_id, permission_id)
-SELECT h.id, p.id FROM hats h, permissions p
-WHERE h.name = 'Admin' AND p.key = 'manage_remote_sync';
-
-INSERT OR IGNORE INTO hat_permissions (hat_id, permission_id)
-SELECT h.id, p.id FROM hats h, permissions p
-WHERE h.name = 'Manager' AND p.key = 'manage_remote_sync';
+INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+SELECT h.id, 'manage_remote_sync'
+FROM hats h
+WHERE h.name IN ('Admin', 'Manager');
 
 -- Add remote sync log types to retention config
 INSERT OR IGNORE INTO _log_retention_config (log_type, device_retention_days, shop_retention_days) VALUES

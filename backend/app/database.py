@@ -88,38 +88,53 @@ def _split_sql_statements(sql: str) -> list[str]:
     - Comments (-- ...) and blank lines are stripped
     - Semicolons inside BEGIN...END blocks (triggers) are NOT treated
       as statement terminators — the trigger is emitted as one statement
-    - A trigger ends when we see a line starting with 'END;'
+    - Nested CASE...END and BEGIN...END inside triggers are tracked via
+      depth counting so inner END keywords don't terminate prematurely
+    - A trigger ends only when depth returns to 0
     """
+    import re
+
     statements: list[str] = []
     current: list[str] = []
-    in_begin_block = False
+    # Nesting depth: 0 = outside trigger, 1 = inside BEGIN, 2+ = nested CASE/etc.
+    depth = 0
 
-    for line in sql.splitlines():
-        stripped = line.strip()
+    for raw_line in sql.splitlines():
+        stripped = raw_line.strip()
         # Skip pure comment lines and blank lines
         if not stripped or stripped.startswith("--"):
+            continue
+        # Strip inline comments (-- ...) that follow SQL code.
+        # Be careful not to strip -- inside string literals.
+        # Simple heuristic: strip from the first " -- " or "\t--" that's
+        # outside quotes. For migration SQL this is reliable enough.
+        line = re.sub(r'\s--\s.*$', '', raw_line)
+        stripped = line.strip()
+        if not stripped:
             continue
         current.append(line)
 
         upper = stripped.upper()
 
-        # Detect entry into a BEGIN...END block (triggers)
-        if upper == "BEGIN":
-            in_begin_block = True
+        # Detect entry into a BEGIN...END block (triggers) — top level only
+        if upper == "BEGIN" and depth == 0:
+            depth = 1
             continue
 
-        # Detect end of BEGIN...END block
-        if in_begin_block and (upper == "END;" or upper == "END"):
-            in_begin_block = False
-            # Emit the entire trigger as one statement
-            stmt = "\n".join(current).strip().rstrip(";").strip()
-            if stmt:
-                statements.append(stmt)
-            current = []
-            continue
+        if depth > 0:
+            # Count nesting keywords on this line (CASE, BEGIN each need an END)
+            depth += len(re.findall(r'\bCASE\b', upper))
+            depth += len(re.findall(r'\bBEGIN\b', upper))
+            # Count END keywords that close a nesting level
+            depth -= len(re.findall(r'\bEND\b', upper))
 
-        # Inside a BEGIN block, don't split on semicolons
-        if in_begin_block:
+            if depth <= 0:
+                depth = 0
+                # Emit the entire trigger as one statement
+                stmt = "\n".join(current).strip().rstrip(";").strip()
+                if stmt:
+                    statements.append(stmt)
+                current = []
             continue
 
         # Normal statement terminator
