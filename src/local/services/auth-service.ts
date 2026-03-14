@@ -172,6 +172,9 @@ export async function seedFirstAdmin(
       'view_schedule', 'manage_schedule', 'dispatch_employees',
       'manage_time_off', 'manage_subcontractors',
       'view_chat', 'manage_chat', 'moderate_chat',
+      'use_chat', 'ask_qa', 'send_rfi',
+      'view_customers', 'view_contractors',
+      'manage_remote_sync',
     ],
     Manager: [
       'view_parts_catalog', 'edit_parts_catalog', 'edit_pricing', 'show_dollar_values',
@@ -184,6 +187,8 @@ export async function seedFirstAdmin(
       'view_fleet', 'manage_fleet', 'view_tools', 'manage_tools',
       'view_scheduling', 'manage_scheduling', 'manage_dispatch',
       'view_schedule', 'manage_schedule', 'dispatch_employees',
+      'use_chat', 'view_chat', 'manage_chat', 'ask_qa', 'send_rfi',
+      'view_customers', 'view_contractors',
     ],
     Office: [
       'view_parts_catalog', 'edit_parts_catalog', 'show_dollar_values',
@@ -191,17 +196,22 @@ export async function seedFirstAdmin(
       'view_labor', 'manage_labor', 'view_orders', 'manage_orders',
       'view_people', 'view_reports', 'export_reports',
       'view_scheduling', 'manage_scheduling', 'view_schedule', 'dispatch_employees',
+      'use_chat', 'view_chat', 'ask_qa',
+      'view_customers', 'view_contractors',
     ],
     Lead: [
       'view_parts_catalog', 'view_warehouse', 'view_trucks', 'move_stock_truck',
       'view_jobs', 'manage_jobs', 'clock_in_out', 'consume_parts_any_job',
       'view_labor', 'view_orders', 'view_reports',
       'view_fleet', 'view_tools', 'view_scheduling', 'view_schedule',
+      'use_chat', 'view_chat', 'ask_qa',
+      'view_customers',
     ],
     Worker: [
       'view_parts_catalog', 'view_warehouse', 'view_trucks', 'move_stock_truck',
       'view_jobs', 'clock_in_out', 'view_labor', 'view_orders',
       'view_fleet', 'view_tools', 'view_schedule',
+      'use_chat', 'view_chat',
     ],
     Apprentice: [
       'view_parts_catalog', 'view_trucks', 'view_jobs', 'clock_in_out', 'view_labor',

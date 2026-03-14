@@ -152,6 +152,36 @@ type SetupMode = 'choose' | 'new-company' | 'sync-device';
 function NativeSetupPrompt({ onSynced }: { onSynced: () => void }) {
   const [mode, setMode] = useState<SetupMode>('choose');
 
+  // Auto-setup on iOS (Tauri native) for testing convenience.
+  // On a fresh database, auto-create an Admin user so the app is
+  // immediately usable without manual PIN entry on the simulator.
+  useEffect(() => {
+    if (!('__TAURI__' in window)) return;
+    // Detect iOS via user agent (works in both Tauri debug + release builds).
+    // __TAURI_ENV_PLATFORM__ requires the Tauri CLI and isn't available
+    // when building via the standalone build-rust.sh / Xcode workflow.
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    if (!isIOS) return;
+
+    (async () => {
+      try {
+        const { seedFirstAdmin } = await import('../../local/services/auth-service');
+        const result = await seedFirstAdmin('Admin', '1234');
+        if (result.success && result.token) {
+          localStorage.setItem('wiredpart_token', result.token);
+          // Reload the page so AuthGate.initAuth() picks up the token
+          // and auto-authenticates without needing to tap the user card.
+          window.location.reload();
+          return;
+        }
+        // If seed failed (users exist), stay on the chooser screen
+        onSynced();
+      } catch (err) {
+        console.error('[NativeSetupPrompt] iOS auto-setup failed:', err);
+      }
+    })();
+  }, [onSynced]);
+
   if (mode === 'new-company') {
     return <NewCompanyForm onComplete={onSynced} onBack={() => setMode('choose')} />;
   }

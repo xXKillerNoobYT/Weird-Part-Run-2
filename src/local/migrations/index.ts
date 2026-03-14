@@ -20,6 +20,9 @@
  * Migration 012: Warehouse & Attachments (trailers, order attachments)
  * Migration 013: Tools & Supplier Extras (depreciation, calibration, supplier portal)
  * Migration 014: Contacts, Costs & Profiles (entity contacts, job linking, cost layers, company profiles)
+ * Migration 015: Job Team & Suppliers
+ * Migration 016: Companions & Alternatives
+ * Migration 017: Permission Backfill (use_chat, view_customers, view_contractors, manage_remote_sync, etc.)
  */
 
 import { migration as m001 } from './001_foundation';
@@ -38,6 +41,7 @@ import { migration as m013 } from './013_tools_supplier_extras';
 import { migration as m014 } from './014_contacts_costs_profiles';
 import { migration as m015 } from './015_job_team_suppliers';
 import { migration as m016 } from './016_companions_alternatives';
+import { migration as m017 } from './017_permission_backfill';
 
 export interface Migration {
   name: string;
@@ -82,4 +86,5 @@ export const migrations: Migration[] = [
   m014,
   m015,
   m016,
+  m017,
 ];

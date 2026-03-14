@@ -68,6 +68,17 @@
   .surface {
     transition: background-color 0.2s ease, color 0.2s ease;
   }
+
+  /* Prevent iOS auto-zoom on input focus.
+     iOS Safari zooms the page when a focused element has font-size < 16px.
+     Force all form inputs to 16px on touch devices to avoid this. */
+  @supports (-webkit-touch-callout: none) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
 }
 
 /* ── Utility Classes ─────────────────────────────────────── */

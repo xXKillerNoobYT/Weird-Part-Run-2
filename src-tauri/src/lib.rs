@@ -40,7 +40,7 @@ pub fn run() {
     let sync_state = commands::create_sync_state();
     let discovery_state = commands::create_discovery_state();
 
-    let mut builder = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // ── SQLite database plugin ──
         // The frontend connects via `Database.load('sqlite:wiredpart.db')`
         .plugin(tauri_plugin_sql::Builder::default().build())
@@ -51,15 +51,14 @@ pub fn run() {
 
     // Desktop-only plugins — these reference APIs that don't exist on iOS/Android.
     #[cfg(desktop)]
-    {
+    let builder = builder
         // Auto-start on boot (shop computer role)
-        builder = builder.plugin(tauri_plugin_autostart::init(
+        .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--autostarted"]),
-        ));
+        ))
         // Auto-update — checks endpoint for new versions, downloads + installs
-        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
-    }
+        .plugin(tauri_plugin_updater::Builder::new().build());
 
     builder
         // ── Managed state for P2P sync ──

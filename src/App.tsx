@@ -157,6 +157,7 @@ import { BootstrapAdminPage } from './features/settings/pages/BootstrapAdminPage
 import { SupplierBridgePage } from './features/settings/pages/SupplierBridgePage';
 import { SupplierPortalPage } from './features/settings/pages/SupplierPortalPage';
 import { UpdateProtocolPage } from './features/settings/pages/UpdateProtocolPage';
+import { ShopOnlyGuard } from './components/ShopOnlyGuard';
 import AboutPage from './features/settings/pages/AboutPage';
 import { ClockOutQuestionsPage } from './features/settings/pages/ClockOutQuestionsPage';
 
@@ -347,17 +348,17 @@ export default function App() {
                     <Route path="/settings/notifications" element={<NotificationPrefsPage />} />
                     <Route path="/settings/questions" element={<Navigate to="/office/clock-out-questions" replace />} />
                     <Route path="/settings/sync" element={<SyncPage />} />
-                    <Route path="/settings/bootstrap" element={<BootstrapAdminPage />} />
+                    <Route path="/settings/bootstrap" element={<ShopOnlyGuard feature="Bootstrap Admin"><BootstrapAdminPage /></ShopOnlyGuard>} />
                     <Route path="/settings/supplier-bridge" element={<SupplierBridgePage />} />
-                    <Route path="/settings/updates" element={<UpdateProtocolPage />} />
+                    <Route path="/settings/updates" element={<ShopOnlyGuard feature="Update Protocol"><UpdateProtocolPage /></ShopOnlyGuard>} />
                     <Route path="/settings/backups" element={<BackupsPage />} />
                     <Route path="/settings/ai-config" element={<AiConfigPage />} />
-                    <Route path="/settings/devices" element={<DeviceManagementPage />} />
-                    <Route path="/settings/keys" element={<KeyManagementPage />} />
-                    <Route path="/settings/bluetooth" element={<BluetoothPage />} />
+                    <Route path="/settings/devices" element={<ShopOnlyGuard feature="Device Management"><DeviceManagementPage /></ShopOnlyGuard>} />
+                    <Route path="/settings/keys" element={<ShopOnlyGuard feature="Key Management"><KeyManagementPage /></ShopOnlyGuard>} />
+                    <Route path="/settings/bluetooth" element={<ShopOnlyGuard feature="Bluetooth (PC-to-PC)"><BluetoothPage /></ShopOnlyGuard>} />
                     <Route path="/settings/security" element={<SecurityAdminPage />} />
-                    <Route path="/settings/remote-sync" element={<RemoteSyncPage />} />
-                    <Route path="/settings/shared-channels" element={<SharedChannelsPage />} />
+                    <Route path="/settings/remote-sync" element={<ShopOnlyGuard feature="Remote Sync"><RemoteSyncPage /></ShopOnlyGuard>} />
+                    <Route path="/settings/shared-channels" element={<ShopOnlyGuard feature="Shared Channels"><SharedChannelsPage /></ShopOnlyGuard>} />
                     <Route path="/settings/about" element={<AboutPage />} />
 
                     {/* Tools — QR scan redirect (cross-module) */}

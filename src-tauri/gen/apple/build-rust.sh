@@ -103,4 +103,27 @@ for arch in ${ARCHS:-arm64}; do
     echo "[build-rust.sh] Copied to: ${DEST_DIR}/libapp.a"
 done
 
+# ── Copy Swift compatibility libraries ──
+# The Rust static library (via swift-rs, Tauri, and Tauri plugins) contains
+# Swift object files that reference swiftCompatibility56, swiftCompatibilityConcurrency,
+# and swiftCompatibilityPacks. These live in the Xcode toolchain but the
+# arch-conditioned LIBRARY_SEARCH_PATHS may not resolve correctly in all
+# Xcode/workspace configurations. Copy them alongside libapp.a so the linker
+# finds them in the Externals search path.
+# TOOLCHAIN_DIR may point to a non-default toolchain (e.g. Metal.xctoolchain)
+# so always use the Xcode default toolchain for Swift compatibility libraries.
+XCODE_TOOLCHAIN="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain"
+SWIFT_COMPAT_DIR="${XCODE_TOOLCHAIN}/usr/lib/swift/${PLATFORM_NAME:-iphonesimulator}"
+for arch in ${ARCHS:-arm64}; do
+    DEST_DIR="${SRCROOT}/Externals/${arch}/${CONFIGURATION}"
+    for lib in swiftCompatibility56 swiftCompatibilityConcurrency swiftCompatibilityPacks; do
+        if [ -f "${SWIFT_COMPAT_DIR}/lib${lib}.a" ]; then
+            cp "${SWIFT_COMPAT_DIR}/lib${lib}.a" "${DEST_DIR}/lib${lib}.a"
+            echo "[build-rust.sh] Copied Swift compat: lib${lib}.a"
+        else
+            echo "[build-rust.sh] WARNING: ${SWIFT_COMPAT_DIR}/lib${lib}.a not found"
+        fi
+    done
+done
+
 echo "[build-rust.sh] Done."

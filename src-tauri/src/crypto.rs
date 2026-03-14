@@ -45,6 +45,7 @@ pub struct CertificatePayload {
 /// Auth fields that can be included in sync push/pull requests.
 /// All fields are optional for backward compatibility with Phase 4 clients.
 #[derive(Debug, Clone, Default, Deserialize)]
+#[allow(dead_code)]
 pub struct SyncAuth {
     /// Base64-encoded certificate JSON (issued by company admin)
     pub certificate_data: Option<String>,
@@ -56,6 +57,7 @@ pub struct SyncAuth {
 
 /// Result of verifying a sync request's authentication
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum AuthResult {
     /// Certificate verified — the device belongs to the same company
     Verified {

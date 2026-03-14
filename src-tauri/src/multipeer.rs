@@ -30,6 +30,7 @@ pub struct ReceivedMessage {
 // ── FFI Declarations (macOS/iOS only) ────────────────────────────────
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
+#[allow(dead_code)]
 extern "C" {
     fn wp_multipeer_init(
         device_id: *const libc::c_char,

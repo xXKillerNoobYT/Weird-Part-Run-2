@@ -87,11 +87,20 @@ export async function getChannelDetail(
 export async function createDMChannel(
   userIds: number[],
 ): Promise<ChatChannelResponse> {
-  const { data } = await apiClient.post<ApiResponse<ChatChannelResponse>>(
-    '/chat/channels/dm',
-    { channel_type: 'dm', user_ids: userIds },
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<ChatChannelResponse>>(
+        '/chat/channels/dm',
+        { channel_type: 'dm', user_ids: userIds },
+      );
+      return data.data!;
+    },
+    async () => {
+      const { createDMChannel: local } = await import('../local/services/chat-service');
+      const channel = await local(0, userIds); // currentUserId from local auth
+      return channel as unknown as ChatChannelResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Get or create a job channel with auto-enrollment. */
@@ -256,20 +265,36 @@ export async function markChannelRead(
 
 /** Get all unread @mentions for the current user. */
 export async function getMentions(): Promise<ChatMentionResponse[]> {
-  const { data } = await apiClient.get<ApiResponse<ChatMentionResponse[]>>(
-    '/chat/mentions',
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<ChatMentionResponse[]>>(
+        '/chat/mentions',
+      );
+      return data.data!;
+    },
+    async () => {
+      // Mentions are not yet tracked locally — return empty
+      return [] as ChatMentionResponse[];
+    },
   );
-  return data.data!;
 }
 
 /** Acknowledge a mention. */
 export async function ackMention(
   mentionId: number,
 ): Promise<StatusMessage> {
-  const { data } = await apiClient.post<ApiResponse<StatusMessage>>(
-    `/chat/mentions/${mentionId}/ack`,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<StatusMessage>>(
+        `/chat/mentions/${mentionId}/ack`,
+      );
+      return data.data!;
+    },
+    async () => {
+      // Mentions are not yet tracked locally — no-op
+      return { status: 'ok', message: 'Mention acknowledged' } as StatusMessage;
+    },
   );
-  return data.data!;
 }
 
 
@@ -347,10 +372,19 @@ export async function getQAThreads(params: {
 export async function getQAThreadDetail(
   threadId: number,
 ): Promise<QAThreadDetailResponse> {
-  const { data } = await apiClient.get<ApiResponse<QAThreadDetailResponse>>(
-    `/chat/qa/threads/${threadId}`,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<QAThreadDetailResponse>>(
+        `/chat/qa/threads/${threadId}`,
+      );
+      return data.data!;
+    },
+    async () => {
+      const { getQAThreadDetail: local } = await import('../local/services/chat-service');
+      const detail = await local(threadId);
+      return detail as unknown as QAThreadDetailResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Escalate a Q&A thread to the next level. */
@@ -358,11 +392,20 @@ export async function escalateThread(
   threadId: number,
   body: EscalateRequest = {},
 ): Promise<QAThreadResponse> {
-  const { data } = await apiClient.post<ApiResponse<QAThreadResponse>>(
-    `/chat/qa/threads/${threadId}/escalate`,
-    body,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<QAThreadResponse>>(
+        `/chat/qa/threads/${threadId}/escalate`,
+        body,
+      );
+      return data.data!;
+    },
+    async () => {
+      const { escalateThread: local } = await import('../local/services/chat-service');
+      await local(threadId, 0, body.comment ?? undefined); // escalatedBy from local auth
+      return { id: threadId, status: 'escalated' } as unknown as QAThreadResponse;
+    },
   );
-  return data.data!;
 }
 
 /** Answer a Q&A thread. */
@@ -390,10 +433,19 @@ export async function answerThread(
 export async function closeThread(
   threadId: number,
 ): Promise<StatusMessage> {
-  const { data } = await apiClient.post<ApiResponse<StatusMessage>>(
-    `/chat/qa/threads/${threadId}/close`,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<StatusMessage>>(
+        `/chat/qa/threads/${threadId}/close`,
+      );
+      return data.data!;
+    },
+    async () => {
+      const { closeThread: local } = await import('../local/services/chat-service');
+      await local(threadId);
+      return { status: 'ok', message: 'Thread closed' } as StatusMessage;
+    },
   );
-  return data.data!;
 }
 
 /** Create RFI and prepare for GC communication. */
@@ -401,11 +453,19 @@ export async function sendToGC(
   threadId: number,
   body: SendToGCRequest,
 ): Promise<RFIResponse> {
-  const { data } = await apiClient.post<ApiResponse<RFIResponse>>(
-    `/chat/qa/threads/${threadId}/send-to-gc`,
-    body,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<RFIResponse>>(
+        `/chat/qa/threads/${threadId}/send-to-gc`,
+        body,
+      );
+      return data.data!;
+    },
+    async () => {
+      // Send-to-GC requires the shop server — not available offline
+      throw new Error('Send to GC is only available when connected to the shop server.');
+    },
   );
-  return data.data!;
 }
 
 
@@ -420,11 +480,19 @@ export async function getRFIs(params: {
   limit?: number;
   offset?: number;
 } = {}): Promise<RFIResponse[]> {
-  const { data } = await apiClient.get<ApiResponse<RFIResponse[]>>(
-    '/chat/rfis',
-    { params },
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<RFIResponse[]>>(
+        '/chat/rfis',
+        { params },
+      );
+      return data.data!;
+    },
+    async () => {
+      const { listRFIs } = await import('../local/services/chat-service');
+      return await listRFIs(params) as unknown as RFIResponse[];
+    },
   );
-  return data.data!;
 }
 
 /** Update RFI status (e.g., mark as responded). */
@@ -432,9 +500,17 @@ export async function updateRFI(
   rfiId: number,
   body: UpdateRFIRequest,
 ): Promise<StatusMessage> {
-  const { data } = await apiClient.patch<ApiResponse<StatusMessage>>(
-    `/chat/rfis/${rfiId}`,
-    body,
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.patch<ApiResponse<StatusMessage>>(
+        `/chat/rfis/${rfiId}`,
+        body,
+      );
+      return data.data!;
+    },
+    async () => {
+      // RFI updates require the shop server — not available offline
+      throw new Error('RFI updates are only available when connected to the shop server.');
+    },
   );
-  return data.data!;
 }

@@ -185,11 +185,16 @@ export async function getWarehouseInventory(
 export async function receiveStock(
   req: ReceiveStockRequest
 ): Promise<ReceiveStockResult> {
-  const { data } = await apiClient.post<ApiResponse<ReceiveStockResult>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<ReceiveStockResult>>(
     '/warehouse/receive-stock',
     req
   );
   return data.data!;
+    },
+    async () => { throw new Error('Warehouse requires the shop server.'); },
+  );
 }
 
 
@@ -199,18 +204,28 @@ export async function receiveStock(
 
 /** Pulled items grouped by destination with aging info */
 export async function getStagingGroups(): Promise<StagingGroup[]> {
-  const { data } = await apiClient.get<ApiResponse<StagingGroup[]>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<StagingGroup[]>>(
     '/warehouse/staging'
   );
   return data.data ?? [];
+    },
+    async () => [] as unknown as StagingGroup[],
+  );
 }
 
 /** JPO line items received but not yet pulled from warehouse — grouped by job */
 export async function getPendingPulls(): Promise<PendingPullGroup[]> {
-  const { data } = await apiClient.get<ApiResponse<PendingPullGroup[]>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<PendingPullGroup[]>>(
     '/warehouse/staging/pending-pulls'
   );
   return data.data ?? [];
+    },
+    async () => [] as unknown as PendingPullGroup[],
+  );
 }
 
 
@@ -263,10 +278,15 @@ export async function getMovements(params: {
 export async function getMovement(
   movementId: number
 ): Promise<MovementLogEntry> {
-  const { data } = await apiClient.get<ApiResponse<MovementLogEntry>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<MovementLogEntry>>(
     `/warehouse/movements/${movementId}`
   );
   return data.data!;
+    },
+    async () => ({}) as unknown as MovementLogEntry,
+  );
 }
 
 /** Pre-flight validation for a movement */
@@ -338,62 +358,92 @@ export async function listAudits(params: {
   limit?: number;
   offset?: number;
 } = {}): Promise<AuditResponse[]> {
-  const { data } = await apiClient.get<ApiResponse<AuditResponse[]>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<AuditResponse[]>>(
     '/warehouse/audit',
     { params }
   );
   return data.data ?? [];
+    },
+    async () => [] as unknown as AuditResponse[],
+  );
 }
 
 /** Start a new audit session */
 export async function startAudit(
   req: AuditStartRequest
 ): Promise<AuditResponse> {
-  const { data } = await apiClient.post<ApiResponse<AuditResponse>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<AuditResponse>>(
     '/warehouse/audit',
     req
   );
   return data.data!;
+    },
+    async () => { throw new Error('Warehouse requires the shop server.'); },
+  );
 }
 
 /** Get parts suggested for the next rolling audit batch */
 export async function getSuggestedRollingParts(
   limit: number = 20
 ): Promise<SuggestedRollingPart[]> {
-  const { data } = await apiClient.get<ApiResponse<SuggestedRollingPart[]>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<SuggestedRollingPart[]>>(
     '/warehouse/audit/suggested-rolling',
     { params: { limit } }
   );
   return data.data ?? [];
+    },
+    async () => [] as unknown as SuggestedRollingPart[],
+  );
 }
 
 /** Get the top N parts most urgently needing a spot check */
 export async function getSuggestedSpotCheckParts(
   limit: number = 3
 ): Promise<SuggestedRollingPart[]> {
-  const { data } = await apiClient.get<ApiResponse<SuggestedRollingPart[]>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<SuggestedRollingPart[]>>(
     '/warehouse/audit/suggested-spot-check',
     { params: { limit } }
   );
   return data.data ?? [];
+    },
+    async () => [] as unknown as SuggestedRollingPart[],
+  );
 }
 
 /** Get audit detail with progress stats */
 export async function getAudit(auditId: number): Promise<AuditResponse> {
-  const { data } = await apiClient.get<ApiResponse<AuditResponse>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<AuditResponse>>(
     `/warehouse/audit/${auditId}`
   );
   return data.data!;
+    },
+    async () => ({}) as unknown as AuditResponse,
+  );
 }
 
 /** Get the next un-counted item for the card-swipe UI */
 export async function getNextAuditItem(
   auditId: number
 ): Promise<AuditItemResponse | null> {
-  const { data } = await apiClient.get<ApiResponse<AuditItemResponse | null>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<AuditItemResponse | null>>(
     `/warehouse/audit/${auditId}/next`
   );
   return data.data ?? null;
+    },
+    async () => ({}) as unknown as AuditItemResponse | null,
+  );
 }
 
 /** Record a count for an audit item */
@@ -402,9 +452,14 @@ export async function recordAuditCount(
   itemId: number,
   req: AuditCountRequest
 ): Promise<void> {
-  await apiClient.put(
+  return adaptedRequest(
+    async () => {
+      await apiClient.put(
     `/warehouse/audit/${auditId}/items/${itemId}`,
     req
+  );
+    },
+    async () => { throw new Error('Warehouse requires the shop server.'); },
   );
 }
 
@@ -412,10 +467,15 @@ export async function recordAuditCount(
 export async function completeAudit(
   auditId: number
 ): Promise<AuditSummary> {
-  const { data } = await apiClient.post<ApiResponse<AuditSummary>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<AuditSummary>>(
     `/warehouse/audit/${auditId}/complete`
   );
   return data.data!;
+    },
+    async () => { throw new Error('Warehouse requires the shop server.'); },
+  );
 }
 
 /** Create stock adjustments for all discrepancies in an audit */
@@ -435,10 +495,15 @@ export async function applyAuditAdjustments(
 
 /** Get all valid from/to locations for the wizard dropdowns */
 export async function getLocations(): Promise<LocationOption[]> {
-  const { data } = await apiClient.get<ApiResponse<LocationOption[]>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<LocationOption[]>>(
     '/warehouse/locations'
   );
   return data.data ?? [];
+    },
+    async () => [] as unknown as LocationOption[],
+  );
 }
 
 /** Part search scoped to a source location (for wizard Step 2) */
@@ -482,10 +547,15 @@ export async function uploadPhoto(
 export async function getSupplierPreference(
   partId: number
 ): Promise<SupplierPreferenceResponse> {
-  const { data } = await apiClient.get<
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<
     ApiResponse<SupplierPreferenceResponse>
   >('/warehouse/supplier-preference', { params: { part_id: partId } });
   return data.data!;
+    },
+    async () => ({}) as unknown as SupplierPreferenceResponse,
+  );
 }
 
 /** Set or update the preferred supplier for a scope level */
@@ -504,17 +574,27 @@ export async function removeSupplierPreference(
   scopeType: string,
   scopeId: number
 ): Promise<void> {
-  await apiClient.delete('/warehouse/supplier-preference', {
+  return adaptedRequest(
+    async () => {
+      await apiClient.delete('/warehouse/supplier-preference', {
     params: { scope_type: scopeType, scope_id: scopeId },
   });
+    },
+    async () => { throw new Error('Warehouse requires the shop server.'); },
+  );
 }
 
 /** Get the categorized reason options for the movement wizard */
 export async function getMovementReasons(): Promise<ReasonCategories> {
-  const { data } = await apiClient.get<ApiResponse<ReasonCategories>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<ReasonCategories>>(
     '/warehouse/movement-reasons'
   );
   return data.data ?? {};
+    },
+    async () => ({}) as unknown as ReasonCategories,
+  );
 }
 
 /** Get the valid movement paths and their rules */

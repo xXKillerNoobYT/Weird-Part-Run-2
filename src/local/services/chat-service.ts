@@ -366,7 +366,213 @@ export async function answerQuestion(
   await trackChange('qa_threads', threadId, 'UPDATE');
 }
 
+/** Get Q&A thread detail with messages and escalation timeline */
+export async function getQAThreadDetail(threadId: number): Promise<{
+  thread: LocalQAThread;
+  messages: LocalMessage[];
+  timeline: any[];
+  rfi: any | null;
+}> {
+  const db = await getDb();
+
+  // Thread
+  const threadResult = await db.query(
+    `SELECT qt.*,
+       ua.display_name as asker_name,
+       uas.display_name as assigned_name,
+       j.job_number
+     FROM qa_threads qt
+     JOIN users ua ON ua.id = qt.asked_by
+     LEFT JOIN users uas ON uas.id = qt.assigned_to
+     JOIN jobs j ON j.id = qt.job_id
+     WHERE qt.id = ?`,
+    [threadId],
+  );
+  const thread = threadResult.values[0] as LocalQAThread;
+
+  // Messages linked to this thread
+  const msgResult = await db.query(
+    `SELECT cm.*, u.display_name as sender_name
+     FROM chat_messages cm
+     JOIN users u ON u.id = cm.sender_id
+     WHERE cm.qa_thread_id = ? AND cm.deleted_at IS NULL
+     ORDER BY cm.created_at ASC`,
+    [threadId],
+  );
+  const messages = msgResult.values as LocalMessage[];
+
+  // Build timeline from messages
+  const timeline: any[] = [];
+  for (const msg of messages) {
+    if (['qa_question', 'qa_escalation', 'qa_answer', 'system'].includes(msg.message_type)) {
+      timeline.push({
+        level: msg.qa_level ?? thread.current_level,
+        action: msg.message_type === 'qa_question' ? 'asked'
+          : msg.message_type === 'qa_escalation' ? 'escalated'
+          : msg.message_type === 'qa_answer' ? 'answered'
+          : msg.content?.includes('closed') ? 'closed' : 'comment',
+        user_name: msg.sender_name,
+        comment: msg.content,
+        timestamp: msg.created_at,
+      });
+    }
+  }
+
+  // RFI linked to this thread (if any)
+  const rfiResult = await db.query(
+    `SELECT * FROM rfi_objects WHERE qa_thread_id = ? LIMIT 1`,
+    [threadId],
+  );
+  const rfi = rfiResult.values.length > 0 ? rfiResult.values[0] : null;
+
+  return { thread, messages, timeline, rfi };
+}
+
+/** Escalate a Q&A thread to the next level */
+const ESCALATION_CHAIN = ['worker', 'lead', 'foreman', 'supervisor', 'office'];
+
+export async function escalateThread(
+  threadId: number,
+  escalatedBy: number,
+  comment?: string,
+): Promise<void> {
+  const db = await getDb();
+  const threadResult = await db.query('SELECT * FROM qa_threads WHERE id = ?', [threadId]);
+  const thread = threadResult.values[0] as any;
+  if (!thread) return;
+
+  const currentIdx = ESCALATION_CHAIN.indexOf(thread.current_level);
+  const nextLevel = currentIdx < ESCALATION_CHAIN.length - 1
+    ? ESCALATION_CHAIN[currentIdx + 1]
+    : thread.current_level;
+
+  await qaRepo.update(threadId, {
+    current_level: nextLevel,
+    status: 'escalated',
+    updated_at: new Date().toISOString(),
+  });
+  await trackChange('qa_threads', threadId, 'UPDATE');
+
+  // Create escalation system message
+  const userName = await db.query('SELECT display_name FROM users WHERE id = ?', [escalatedBy]);
+  const name = (userName.values[0] as any)?.display_name ?? 'Unknown';
+  const msgContent = comment
+    ? `Escalated to ${nextLevel} by ${name}: ${comment}`
+    : `Escalated to ${nextLevel} by ${name}`;
+
+  const msgId = await messageRepo.insert({
+    channel_id: thread.channel_id,
+    sender_id: escalatedBy,
+    message_type: 'qa_escalation',
+    content: msgContent,
+    qa_thread_id: threadId,
+    qa_level: nextLevel,
+  });
+  await trackChange('chat_messages', msgId, 'INSERT');
+}
+
+/** Close a Q&A thread */
+export async function closeThread(threadId: number): Promise<void> {
+  await qaRepo.update(threadId, {
+    status: 'closed',
+    closed_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  await trackChange('qa_threads', threadId, 'UPDATE');
+}
+
+// ── RFI (read-only on devices — synced from shop) ───────────────
+
+/** List RFIs from local DB (synced down from shop) */
+export async function listRFIs(opts?: {
+  job_id?: number;
+  status?: string;
+  limit?: number;
+}): Promise<any[]> {
+  const db = await getDb();
+  const conditions: string[] = [];
+  const params: any[] = [];
+
+  if (opts?.job_id) {
+    conditions.push('r.job_id = ?');
+    params.push(opts.job_id);
+  }
+  if (opts?.status) {
+    conditions.push('r.status = ?');
+    params.push(opts.status);
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  params.push(opts?.limit ?? 100);
+
+  const result = await db.query(
+    `SELECT r.*, j.job_number, j.job_name
+     FROM rfi_objects r
+     JOIN jobs j ON j.id = r.job_id
+     ${where}
+     ORDER BY r.created_at DESC
+     LIMIT ?`,
+    params,
+  );
+  return result.values;
+}
+
 // ── Channel Creation ──────────────────────────────────────────────
+
+/** Find or create a DM channel between users */
+export async function createDMChannel(
+  currentUserId: number,
+  userIds: number[],
+): Promise<LocalChannel> {
+  const db = await getDb();
+  const allIds = Array.from(new Set([currentUserId, ...userIds])).sort((a, b) => a - b);
+
+  // Check for existing DM channel with exactly these members
+  if (allIds.length === 2) {
+    const existing = await db.query(
+      `SELECT c.* FROM chat_channels c
+       WHERE c.channel_type = 'dm' AND c.is_active = 1
+       AND (SELECT COUNT(*) FROM chat_channel_members m WHERE m.channel_id = c.id) = 2
+       AND EXISTS (SELECT 1 FROM chat_channel_members m WHERE m.channel_id = c.id AND m.user_id = ?)
+       AND EXISTS (SELECT 1 FROM chat_channel_members m WHERE m.channel_id = c.id AND m.user_id = ?)`,
+      [allIds[0], allIds[1]],
+    );
+    if (existing.values.length > 0) {
+      return existing.values[0] as LocalChannel;
+    }
+  }
+
+  // Build a display name from member names
+  const otherIds = allIds.filter(id => id !== currentUserId);
+  const namesResult = await db.query(
+    `SELECT display_name FROM users WHERE id IN (${otherIds.map(() => '?').join(',')})`,
+    otherIds,
+  );
+  const channelName = (namesResult.values as any[]).map(r => r.display_name).join(', ') || 'Direct Message';
+
+  // Create new DM channel
+  const id = await channelRepo.insert({
+    channel_type: 'dm',
+    job_id: null,
+    name: channelName,
+    created_by: currentUserId,
+    is_active: 1,
+  });
+  await trackChange('chat_channels', id, 'INSERT');
+
+  // Add all members
+  for (const uid of allIds) {
+    const mId = await memberRepo.insert({
+      channel_id: id,
+      user_id: uid,
+      role: uid === currentUserId ? 'admin' : 'member',
+    });
+    await trackChange('chat_channel_members', mId, 'INSERT');
+  }
+
+  const channel = await channelRepo.getById(id);
+  return channel as LocalChannel;
+}
 
 /** Find or create a job channel */
 export async function getOrCreateJobChannel(

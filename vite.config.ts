@@ -22,16 +22,11 @@ export default defineConfig(() => ({
   build: {
     chunkSizeWarningLimit: 600,
     rollupOptions: {
-      // Tauri plugins + bcryptjs are only available at runtime inside
-      // the native shell. Externalize so the browser build succeeds.
-      // The adapter pattern ensures these code paths are never reached
-      // in browser mode (HTTP API is used instead).
-      external: [
-        '@tauri-apps/api',
-        '@tauri-apps/plugin-sql',
-        '@tauri-apps/plugin-fs',
-        'bcryptjs',
-      ],
+      // Tauri plugins + bcryptjs are bundled into the production build.
+      // They are only executed in native mode (guarded by isNativeApp()/isTauri()).
+      // In browser mode, the adapter pattern routes to HTTP API instead.
+      // NOTE: Do NOT externalize these — the tauri:// custom protocol
+      // has no package resolution, so bare module imports fail at runtime.
       output: {
         manualChunks(id) {
           // ── node_modules ──

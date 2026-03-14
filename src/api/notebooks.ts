@@ -81,11 +81,16 @@ export async function getTemplateFull(templateId: number): Promise<TemplateFull>
 export async function createTemplate(
   template: TemplateCreate
 ): Promise<TemplateResponse> {
-  const { data } = await apiClient.post<ApiResponse<TemplateResponse>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<TemplateResponse>>(
     '/notebook-templates',
     template
   );
   return data.data!;
+    },
+    async () => { throw new Error('Notebooks requires the shop server.'); },
+  );
 }
 
 /** Update a template (shop-only) */
@@ -93,17 +98,27 @@ export async function updateTemplate(
   templateId: number,
   updates: TemplateUpdate
 ): Promise<TemplateResponse> {
-  const { data } = await apiClient.put<ApiResponse<TemplateResponse>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.put<ApiResponse<TemplateResponse>>(
     `/notebook-templates/${templateId}`,
     updates
   );
   return data.data!;
+    },
+    async () => { throw new Error('Notebooks requires the shop server.'); },
+  );
 }
 
 /** Delete a template (shop-only) */
 export async function deleteTemplate(templateId: number): Promise<void> {
-  await apiClient.delete<ApiResponse<StatusMessage>>(
+  return adaptedRequest(
+    async () => {
+      await apiClient.delete<ApiResponse<StatusMessage>>(
     `/notebook-templates/${templateId}`
+  );
+    },
+    async () => { throw new Error('Notebooks requires the shop server.'); },
   );
 }
 
@@ -112,11 +127,16 @@ export async function addTemplateSection(
   templateId: number,
   section: TemplateSectionCreate
 ): Promise<TemplateSectionResponse> {
-  const { data } = await apiClient.post<ApiResponse<TemplateSectionResponse>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<TemplateSectionResponse>>(
     `/notebook-templates/${templateId}/sections`,
     section
   );
   return data.data!;
+    },
+    async () => { throw new Error('Notebooks requires the shop server.'); },
+  );
 }
 
 /** Update a template section (shop-only) */
@@ -124,17 +144,27 @@ export async function updateTemplateSection(
   sectionId: number,
   updates: TemplateSectionUpdate
 ): Promise<TemplateSectionResponse> {
-  const { data } = await apiClient.put<ApiResponse<TemplateSectionResponse>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.put<ApiResponse<TemplateSectionResponse>>(
     `/notebook-templates/sections/${sectionId}`,
     updates
   );
   return data.data!;
+    },
+    async () => { throw new Error('Notebooks requires the shop server.'); },
+  );
 }
 
 /** Delete a template section (shop-only) */
 export async function deleteTemplateSection(sectionId: number): Promise<void> {
-  await apiClient.delete<ApiResponse<StatusMessage>>(
+  return adaptedRequest(
+    async () => {
+      await apiClient.delete<ApiResponse<StatusMessage>>(
     `/notebook-templates/sections/${sectionId}`
+  );
+    },
+    async () => { throw new Error('Notebooks requires the shop server.'); },
   );
 }
 
@@ -143,17 +173,27 @@ export async function addTemplateEntry(
   sectionId: number,
   entry: TemplateEntryCreate
 ): Promise<TemplateEntryResponse> {
-  const { data } = await apiClient.post<ApiResponse<TemplateEntryResponse>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<TemplateEntryResponse>>(
     `/notebook-templates/sections/${sectionId}/entries`,
     entry
   );
   return data.data!;
+    },
+    async () => { throw new Error('Notebooks requires the shop server.'); },
+  );
 }
 
 /** Delete a template entry (shop-only) */
 export async function deleteTemplateEntry(entryId: number): Promise<void> {
-  await apiClient.delete<ApiResponse<StatusMessage>>(
+  return adaptedRequest(
+    async () => {
+      await apiClient.delete<ApiResponse<StatusMessage>>(
     `/notebook-templates/entries/${entryId}`
+  );
+    },
+    async () => { throw new Error('Notebooks requires the shop server.'); },
   );
 }
 
@@ -528,9 +568,14 @@ export async function grantEditPermission(
   entryId: number,
   userId: number
 ): Promise<void> {
-  await apiClient.post<ApiResponse<StatusMessage>>(
+  return adaptedRequest(
+    async () => {
+      await apiClient.post<ApiResponse<StatusMessage>>(
     `/notebooks/entries/${entryId}/permissions`,
     { user_id: userId }
+  );
+    },
+    async () => { throw new Error('Notebooks requires the shop server.'); },
   );
 }
 
@@ -539,8 +584,13 @@ export async function revokeEditPermission(
   entryId: number,
   userId: number
 ): Promise<void> {
-  await apiClient.delete<ApiResponse<StatusMessage>>(
+  return adaptedRequest(
+    async () => {
+      await apiClient.delete<ApiResponse<StatusMessage>>(
     `/notebooks/entries/${entryId}/permissions/${userId}`
+  );
+    },
+    async () => { throw new Error('Notebooks requires the shop server.'); },
   );
 }
 
@@ -554,11 +604,16 @@ export async function duplicateTemplate(
   templateId: number,
   newName: string,
 ): Promise<TemplateFull> {
-  const { data } = await apiClient.post<ApiResponse<TemplateFull>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.post<ApiResponse<TemplateFull>>(
     `/notebook-templates/${templateId}/duplicate`,
     { new_name: newName },
   );
   return data.data!;
+    },
+    async () => { throw new Error('Notebooks requires the shop server.'); },
+  );
 }
 
 
@@ -581,10 +636,15 @@ export interface NotebookAttachment {
 export async function listEntryAttachments(
   entryId: number,
 ): Promise<NotebookAttachment[]> {
-  const { data } = await apiClient.get<ApiResponse<NotebookAttachment[]>>(
+  return adaptedRequest(
+    async () => {
+      const { data } = await apiClient.get<ApiResponse<NotebookAttachment[]>>(
     `/notebooks/entries/${entryId}/attachments`,
   );
   return data.data ?? [];
+    },
+    async () => [] as unknown as NotebookAttachment[],
+  );
 }
 
 /** Upload a file attachment to a notebook entry */
@@ -592,7 +652,9 @@ export async function uploadEntryAttachment(
   entryId: number,
   file: File,
 ): Promise<NotebookAttachment> {
-  const formData = new FormData();
+  return adaptedRequest(
+    async () => {
+      const formData = new FormData();
   formData.append('file', file);
   const { data } = await apiClient.post<ApiResponse<NotebookAttachment>>(
     `/notebooks/entries/${entryId}/attachments`,
@@ -600,13 +662,21 @@ export async function uploadEntryAttachment(
     { headers: { 'Content-Type': 'multipart/form-data' } },
   );
   return data.data!;
+    },
+    async () => { throw new Error('Notebooks requires the shop server.'); },
+  );
 }
 
 /** Delete a notebook attachment */
 export async function deleteEntryAttachment(
   attachmentId: number,
 ): Promise<void> {
-  await apiClient.delete(`/notebooks/attachments/${attachmentId}`);
+  return adaptedRequest(
+    async () => {
+      await apiClient.delete(`/notebooks/attachments/${attachmentId}`);
+    },
+    async () => { throw new Error('Notebooks requires the shop server.'); },
+  );
 }
 
 

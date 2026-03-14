@@ -9,12 +9,31 @@
 
 import axios from 'axios';
 import { API_BASE_URL } from '../lib/constants';
+import { isNativeApp } from '../lib/environment';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
+});
+
+// ── Request Interceptor: Block HTTP in Tauri (native) mode ─────────
+// In Tauri mode there is no HTTP server. Adapted API files never reach
+// here (adaptedRequest routes to local services). Un-adapted files
+// that still call apiClient directly get a clear error instead of a
+// network timeout, so React Query shows a meaningful message.
+apiClient.interceptors.request.use((config) => {
+  if (isNativeApp()) {
+    return Promise.reject(
+      new axios.AxiosError(
+        'This feature requires the shop server. It is not available on this device.',
+        'ERR_NATIVE_NO_SERVER',
+        config,
+      ),
+    );
+  }
+  return config;
 });
 
 // ── Request Interceptor: Attach JWT Token ──────────────────────────

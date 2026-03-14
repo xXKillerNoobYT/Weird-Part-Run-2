@@ -203,6 +203,7 @@ impl DiscoveryManager {
     }
 
     /// Shut down the mDNS daemon
+    #[allow(dead_code)]
     pub fn shutdown(&self) {
         let _ = self.daemon.shutdown();
     }

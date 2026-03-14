@@ -17,10 +17,12 @@ import { useAuthStore } from '../../../stores/auth-store';
 import { getInbox } from '../../../api/chat';
 import { ChatChannelList } from '../components/ChatChannelList';
 import { ChatMessageView } from '../components/ChatMessageView';
+import { NewDMDialog } from '../components/NewDMDialog';
 
 export default function ChatInboxPage() {
   const { user } = useAuthStore();
   const [selectedChannelId, setSelectedChannelId] = useState<number | null>(null);
+  const [showNewDM, setShowNewDM] = useState(false);
 
   // ── Inbox data (30s polling for badge/preview updates) ─────────
   const { data: inbox, isError, refetch } = useQuery({
@@ -49,6 +51,12 @@ export default function ChatInboxPage() {
     setSelectedChannelId(null);
   }, []);
 
+  const handleNewDM = useCallback(() => setShowNewDM(true), []);
+
+  const handleDMCreated = useCallback((channelId: number) => {
+    setSelectedChannelId(channelId);
+  }, []);
+
   if (!user) return null;
   if (isError) return <ErrorFallback message="Failed to load chat inbox" onRetry={refetch} />;
 
@@ -66,6 +74,7 @@ export default function ChatInboxPage() {
             channels={channels}
             selectedId={selectedChannelId}
             onSelect={handleSelectChannel}
+            onNewDM={handleNewDM}
             totalUnread={inbox?.total_unread ?? 0}
             unreadMentions={inbox?.unread_mentions ?? 0}
           />
@@ -99,6 +108,13 @@ export default function ChatInboxPage() {
           )}
         </div>
       </div>
+
+      {/* New DM dialog */}
+      <NewDMDialog
+        open={showNewDM}
+        onClose={() => setShowNewDM(false)}
+        onCreated={handleDMCreated}
+      />
     </div>
   );
 }
