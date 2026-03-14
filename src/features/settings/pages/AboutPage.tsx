@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Info, Server, Database, Monitor } from 'lucide-react';
 import apiClient from '../../../api/client';
 import type { ApiResponse } from '../../../lib/types';
-import { isNativeApp, getPlatform } from '../../../lib/environment';
+import { getPlatform } from '../../../lib/environment';
 
 // App version — single source of truth
 const APP_VERSION = '1.0.0';

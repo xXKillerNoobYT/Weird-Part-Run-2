@@ -24,6 +24,20 @@ export function isBrowser(): boolean {
   return !isNativeApp();
 }
 
+/** True when running on a desktop OS (macOS or Windows) — supports public data dir */
+export function isDesktop(): boolean {
+  if (!isTauri()) return false;
+  const platform = getPlatform();
+  return platform === 'macos' || platform === 'windows';
+}
+
+/** True when running on a mobile OS (iOS or Android) — single-user sandbox storage */
+export function isMobile(): boolean {
+  if (!isTauri()) return false;
+  const platform = getPlatform();
+  return platform === 'ios' || platform === 'android';
+}
+
 /** Returns the current platform identifier */
 export function getPlatform(): 'macos' | 'windows' | 'ios' | 'android' | 'web' {
   if (isTauri()) {

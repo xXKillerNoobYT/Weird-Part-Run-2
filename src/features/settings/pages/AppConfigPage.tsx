@@ -15,6 +15,7 @@ import { Input } from '../../../components/ui/Input';
 import { Button } from '../../../components/ui/Button';
 import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { getWarrantyLengthDays, updateWarrantyLengthDays } from '../../../api/settings';
+import { DataStorageSection } from '../components/DataStorageSection';
 
 export function AppConfigPage() {
   const queryClient = useQueryClient();
@@ -111,6 +112,66 @@ export function AppConfigPage() {
           </div>
         </div>
       </Card>
+      {/* Data Storage — desktop only, renders nothing on mobile/web */}
+      <DataStorageSection />
+
+      {/* Developer Tools — DEV builds only */}
+      {import.meta.env.DEV && <DevToolsSection />}
     </div>
+  );
+}
+
+// ── DEV-only: Developer Tools Section ────────────────────────────────
+
+function DevToolsSection() {
+  const [debugHidden, setDebugHidden] = useState(
+    () => localStorage.getItem('__dev_debug_hidden') === '1',
+  );
+
+  function toggleDebugOverlay() {
+    const newHidden = !debugHidden;
+    if (newHidden) {
+      localStorage.setItem('__dev_debug_hidden', '1');
+      // Remove overlay + CSS variable from DOM if currently visible
+      document.getElementById('__dev_debug')?.remove();
+      document.documentElement.style.removeProperty('--dev-overlay-h');
+    } else {
+      localStorage.removeItem('__dev_debug_hidden');
+    }
+    setDebugHidden(newHidden);
+  }
+
+  return (
+    <Card>
+      <CardHeader title="Developer Tools" />
+      <div className="px-4 pb-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+              Dev Overlay
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Show auth flow debug log at the bottom of the screen during startup.
+              {debugHidden ? ' Restart the app to see it again after enabling.' : ''}
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={!debugHidden}
+            onClick={toggleDebugOverlay}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              !debugHidden ? 'bg-primary-500' : 'bg-gray-300 dark:bg-gray-600'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                !debugHidden ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+    </Card>
   );
 }

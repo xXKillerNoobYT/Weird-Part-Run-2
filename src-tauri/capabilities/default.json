@@ -28,7 +28,9 @@
         { "path": "$DOWNLOAD/**" },
         { "path": "$DOCUMENT/**" },
         { "path": "$DESKTOP/**" },
-        { "path": "$TEMP/**" }
+        { "path": "$TEMP/**" },
+        { "path": "$PUBLIC/**" },
+        { "path": "/Users/Shared/WiredPart/**" }
       ]
     },
     "dialog:default",

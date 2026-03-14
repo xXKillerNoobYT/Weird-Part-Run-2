@@ -137,8 +137,8 @@ export async function triggerBackup(
       if (backupType === 'app') {
         throw new Error('App backups are not available on this device.');
       }
-      const { runBackup } = await import('../local/services/scheduler-service');
-      await runBackup();
+      const { runJobManually } = await import('../local/services/scheduler-service');
+      await runJobManually('db_backup');
       return {
         id: Date.now(),
         backup_type: 'db',
@@ -208,8 +208,8 @@ export async function cleanupBackups(
       return data.data!;
     },
     async () => {
-      const { runCleanup } = await import('../local/services/scheduler-service');
-      await runCleanup();
+      const { runJobManually } = await import('../local/services/scheduler-service');
+      await runJobManually('notification_cleanup');
       return { deleted_count: 0 };
     },
   );

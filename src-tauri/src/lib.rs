@@ -86,6 +86,9 @@ pub fn run() {
             multipeer::multipeer_pop_received,
             multipeer::multipeer_receive_count,
             multipeer::multipeer_is_running,
+            // Public data directory (desktop multi-user support)
+            commands::create_public_data_dir,
+            commands::copy_database_file,
         ])
         .setup(|app| {
             // Dev-only: enable logging plugin

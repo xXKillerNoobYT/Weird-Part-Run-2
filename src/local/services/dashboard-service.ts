@@ -10,7 +10,6 @@
  */
 
 import { getDb } from '../db';
-import { generateId } from '../../lib/ids';
 import type {
   HomeDashboardData,
   FastDriveContext,
@@ -24,7 +23,7 @@ import type {
 
 /** Run a COUNT query, returning 0 if the table doesn't exist yet. */
 async function safeCount(sql: string, params: any[] = []): Promise<number> {
-  const db = getDb();
+  const db = await getDb();
   try {
     const result = await db.query(sql, params);
     const row = result.values[0];
@@ -42,7 +41,7 @@ async function safeSelect<T = Record<string, any>>(
   sql: string,
   params: any[] = [],
 ): Promise<T[]> {
-  const db = getDb();
+  const db = await getDb();
   try {
     const result = await db.query(sql, params);
     return result.values as T[];
@@ -98,8 +97,6 @@ export async function getDashboard(): Promise<HomeDashboardData> {
 
 /** Get the current user's vehicle and ranked destination list. */
 export async function getFastDriveContext(userId: number): Promise<FastDriveContext> {
-  const db = getDb();
-
   // 1. Active vehicle assignment
   const assignmentRows = await safeSelect<Record<string, any>>(
     `SELECT va.vehicle_id, va.is_take_home,
@@ -182,7 +179,7 @@ export async function startDrive(
   userId: number,
   req: FastDriveStartRequest,
 ): Promise<FastDriveResult> {
-  const db = getDb();
+  const db = await getDb();
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
   // 1. Get active vehicle assignment

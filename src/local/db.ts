@@ -9,6 +9,7 @@
  */
 
 import { isTauri } from '../lib/environment';
+import { getDbConnectionString } from './db-config';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -72,7 +73,11 @@ export async function initLocalDb(): Promise<void> {
  */
 async function createTauriDb(): Promise<LocalDb> {
   const Database = (await import('@tauri-apps/plugin-sql')).default;
-  const db = await Database.load('sqlite:wiredpart.db');
+
+  // Resolve DB path from config: private mode → app data dir, public mode → shared dir
+  const connectionString = await getDbConnectionString();
+  console.log(`[db] Opening database: ${connectionString}`);
+  const db = await Database.load(connectionString);
 
   return {
     async query(sql: string, params: any[] = []): Promise<QueryResult> {
@@ -85,7 +90,7 @@ async function createTauriDb(): Promise<LocalDb> {
       return {
         changes: {
           changes: result.rowsAffected,
-          lastId: result.lastInsertId,
+          lastId: result.lastInsertId ?? 0,
         },
       };
     },

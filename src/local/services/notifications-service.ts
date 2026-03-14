@@ -75,7 +75,7 @@ const DEFAULT_SOUND_TYPES = [
 
 /** Get unread notification count for the bell icon badge. */
 export async function getNotificationBadge(userId: number) {
-  const db = getDb();
+  const db = await getDb();
   const result = await db.query(
     `SELECT COUNT(*) AS cnt FROM notifications WHERE user_id = ? AND is_read = 0`,
     [userId],
@@ -91,7 +91,7 @@ export async function getNotificationBadge(userId: number) {
 
 /** Get paginated notifications for a user. */
 export async function listNotifications(userId: number, params?: ListParams) {
-  const db = getDb();
+  const db = await getDb();
   const limit = params?.limit ?? 20;
   const offset = params?.offset ?? 0;
   const unreadOnly = params?.unread_only ?? false;
@@ -147,7 +147,7 @@ function normalizeNotification(row: Record<string, any>) {
 
 /** Mark notifications as read — all, or specific IDs. */
 export async function markNotificationsRead(userId: number, payload: MarkReadPayload) {
-  const db = getDb();
+  const db = await getDb();
 
   if (payload.all) {
     await db.run(
@@ -172,7 +172,7 @@ export async function markNotificationsRead(userId: number, payload: MarkReadPay
 
 /** Get notification preferences for a user.  Uses the notification_preferences table. */
 export async function getNotificationPreferences(userId: number) {
-  const db = getDb();
+  const db = await getDb();
 
   const result = await db.query(
     `SELECT notification_type, is_enabled FROM notification_preferences WHERE user_id = ?`,
@@ -208,7 +208,7 @@ export async function updateNotificationPreferences(
   userId: number,
   preferences: PreferenceInput[],
 ) {
-  const db = getDb();
+  const db = await getDb();
 
   for (const pref of preferences) {
     await db.run(
@@ -229,7 +229,7 @@ export async function updateNotificationPreferences(
 
 /** Get per-type sound settings for a user.  Stored as JSON in the settings table. */
 export async function getNotificationSoundSettings(userId: number) {
-  const db = getDb();
+  const db = await getDb();
 
   const prefix = `notification_sound_${userId}_`;
   const result = await db.query(
@@ -270,7 +270,7 @@ export async function updateNotificationSoundSettings(
   userId: number,
   settings: SoundSettingInput[],
 ) {
-  const db = getDb();
+  const db = await getDb();
 
   for (const s of settings) {
     const key = `notification_sound_${userId}_${s.type}`;
@@ -295,7 +295,7 @@ export async function updateNotificationSoundSettings(
 /** Insert a new local notification. Returns the new notification ID.
  *  Also fires an OS-level notification in Tauri mode. */
 export async function createNotification(notification: NotificationCreate) {
-  const db = getDb();
+  const db = await getDb();
 
   const result = await db.run(
     `INSERT INTO notifications (user_id, type, title, message, body, severity, source, link, entity_type, entity_id, is_read, created_at)

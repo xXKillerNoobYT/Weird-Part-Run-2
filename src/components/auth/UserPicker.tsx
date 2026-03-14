@@ -18,7 +18,6 @@ import { Zap, UserCircle, Wifi, Plus, ArrowLeft, ShieldCheck } from 'lucide-reac
 import { getUsers } from '../../api/auth';
 import { isNativeApp } from '../../lib/environment';
 import { runInitialSync } from '../../local/sync-engine';
-import { getDeviceId } from '../../lib/device-identity';
 import type { UserPickerItem } from '../../lib/types';
 import { Badge } from '../ui/Badge';
 import { Spinner } from '../ui/Spinner';

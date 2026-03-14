@@ -582,7 +582,7 @@ export async function linkCustomerToJob(
 
 /** Unlink a customer from a job */
 export async function unlinkCustomerFromJob(
-  jobId: number,
+  _jobId: number,
   linkId: number,
 ): Promise<void> {
   // Hard delete — link rows are lightweight join entries
@@ -624,7 +624,7 @@ export async function linkGCToJob(
 
 /** Unlink a GC from a job */
 export async function unlinkGCFromJob(
-  jobId: number,
+  _jobId: number,
   linkId: number,
 ): Promise<void> {
   await jobGCRepo.delete(linkId);

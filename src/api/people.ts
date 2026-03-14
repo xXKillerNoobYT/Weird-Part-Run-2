@@ -190,7 +190,7 @@ export async function createCertification(
     },
     async () => {
       const { createCertification: local } = await import('../local/services/people-service');
-      return local({ user_id: userId, ...cert }) as unknown as { id: number };
+      return local({ user_id: userId, ...cert } as any) as unknown as { id: number };
     },
   );
 }
@@ -283,7 +283,7 @@ export async function createWageEntry(
     },
     async () => {
       const { addWageEntry } = await import('../local/services/people-service');
-      return addWageEntry({ user_id: userId, ...entry }) as unknown as { id: number };
+      return addWageEntry({ user_id: userId, ...entry } as any) as unknown as { id: number };
     },
   );
 }
@@ -402,7 +402,7 @@ export async function createSkill(
     },
     async () => {
       const { addUserSkill } = await import('../local/services/people-service');
-      return addUserSkill({ user_id: userId, ...skill }) as unknown as { id: number };
+      return addUserSkill({ user_id: userId, ...skill } as any) as unknown as { id: number };
     },
   );
 }
@@ -422,7 +422,7 @@ export async function updateSkill(
     },
     async () => {
       const { updateUserSkill } = await import('../local/services/people-service');
-      return updateUserSkill(skillId, updates) as unknown as { id: number };
+      return updateUserSkill(skillId, updates as any) as unknown as { id: number };
     },
   );
 }
@@ -790,7 +790,7 @@ export async function createTeam(
     },
     async () => {
       const { createTeam } = await import('../local/services/people-service');
-      return createTeam(team) as unknown as { id: number };
+      return createTeam(team as any) as unknown as { id: number };
     },
   );
 }

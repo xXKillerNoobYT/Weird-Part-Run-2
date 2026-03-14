@@ -18,6 +18,26 @@
 
 ---
 
+## Large File Auto-Split Rule
+
+When a code file is too large to read or process in a single pass, automatically split it into smaller files that work together without breaking functionality.
+
+**Process:**
+
+1. **Read directly** — don't search the file, read it.
+2. **Detect** when the file exceeds safe processing size.
+3. **Identify natural modular boundaries:** classes, functions, components, modules, configuration blocks, domain-specific sections.
+4. **Split into smaller files** while preserving: imports/exports, namespaces, type definitions, shared utilities, dependency order.
+5. **For each new file:** give it a clear descriptive name, ensure it compiles/runs as part of the project, add/adjust imports and exports so the system remains functional.
+6. **After splitting:** generate a dependency map showing how the new files relate, plus a summary of what changed and why.
+
+**Rules:**
+- Never refactor or redesign architecture unless explicitly instructed.
+- Never remove logic or alter behavior.
+- Apply automatically for all oversized code files unless explicitly disabled.
+
+---
+
 ## The 3-Layer Architecture
 
 You operate within a 3-layer architecture that separates concerns to maximize reliability. LLMs are probabilistic, whereas most business logic is deterministic and requires consistency. This system fixes that mismatch.
@@ -173,15 +193,20 @@ Plans are living documents that build our project's institutional memory. Treat 
 - Scheduling Enhancements — lunch breaks, supervisor role, multi-job dispatch UX (✅ complete — see `docs/plans/scheduling-enhancements.md`)
 - V1.0 Deployment — 19 of 23 tasks complete. Remaining 5 tasks need Mac + physical devices (see `docs/plans/deployment-master-plan.md`)
 - Phase 17: Orders Audit Closure — all 5 gaps: category supplier prefs, supplier portal notes, PDF templates, cross-job summary, explicit preferred suppliers (✅ complete — see `docs/plans/phase-17-orders-audit-closure.md`)
+- Tauri 2.0 Migration — all 8 phases complete: scaffold, DB layer, services, API adapter, LAN sync, BT sync, native capabilities, iOS build, distribution (✅ complete — see `docs/plans/tauri-migration-plan.md`)
+- Cross-Platform Architecture Alignment — shared `isDesktop()`/`isMobile()`, public data directory feature, DB path config, Rust IPC commands, Settings UI (✅ complete — see `docs/plans/frontend-to-root-restructure.md`)
 
-**Architecture (V1.0):**
+**Architecture (V1.0 — Tauri):**
 
-Every device runs the full frontend with its own local database. Mobile gets a **lean field-worker backend** (~11 TS services), not a full mirror of the shop's 28 Python services:
-- **Shop computer:** Python FastAPI + SQLite (truth anchor + sync API + serves desktop browsers). Runs all 28 services.
-- **Mobile devices (Capacitor):** React frontend + lean TS data layer + `@capacitor-community/sqlite` — works fully offline. ~11 field-worker services (auth, jobs, labor, movement, orders, notebooks, tools, parts-read, fleet-read, scheduling-read). Admin features (cost tracking, approvals, PDF reports) stay shop-only.
-- **Desktop browsers:** Hit shop server directly over LAN (always at the shop)
-- **Sync:** Device ↔ Shop over HTTP on LAN. Change tracking via `_change_log` table. Last-writer-wins conflict resolution.
-- **API adapter pattern:** Frontend detects environment — Capacitor → local TS services, browser → HTTP API. Same React UI everywhere.
+Every device runs the same React frontend (`src/`) with its own local SQLite database. The Tauri native shell (`src-tauri/`) wraps this as a desktop/mobile app. One change in `src/` propagates to all platforms.
+
+- **Shop computer (Tauri desktop):** React frontend + full 35-service TS data layer + local SQLite. Also runs Python FastAPI as a sync anchor + serves desktop browsers over LAN.
+- **Mobile devices (Tauri iOS):** Same React frontend + same TS data layer — works fully offline. Single-user sandbox storage.
+- **Desktop browsers:** Hit shop server directly over LAN HTTP (always at the shop).
+- **Sync:** Device ↔ Shop over LAN HTTP + Apple Multipeer Connectivity (BT/Wi-Fi P2P). Change tracking via `_change_log` table. LWW + field-level merge conflict resolution.
+- **API adapter pattern:** Frontend detects environment — `isTauri()` → local TS services, `isBrowser()` → HTTP API. Same React UI everywhere.
+- **Cross-platform rule:** All UI code in `src/` runs identically everywhere. Platform differences are only: (1) screen size → responsive CSS, (2) desktop-only features → gated by `isDesktop()` in TS / `#[cfg(desktop)]` in Rust.
+- **Public directory (desktop):** Optional shared DB location (`/Users/Shared/WiredPart/` on macOS, `C:\Users\Public\WiredPart\` on Windows) for multi-user shop computers. Configured in Settings → Data Storage.
 
 **Future phases (planned — all have plan files):**
 

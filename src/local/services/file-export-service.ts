@@ -75,7 +75,7 @@ function exportFileBrowser(data: Blob | string | Uint8Array, filename: string): 
   } else if (typeof data === 'string') {
     blob = new Blob([data], { type: 'text/plain;charset=utf-8' });
   } else {
-    blob = new Blob([data], { type: 'application/octet-stream' });
+    blob = new Blob([data.buffer as ArrayBuffer], { type: 'application/octet-stream' });
   }
 
   const url = URL.createObjectURL(blob);

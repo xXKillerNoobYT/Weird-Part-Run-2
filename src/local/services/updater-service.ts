@@ -20,7 +20,7 @@
  *   }
  */
 
-import { isTauri, getPlatform } from '../../lib/environment';
+import { isTauri, isDesktop } from '../../lib/environment';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -35,15 +35,6 @@ export interface UpdateCheckResult {
   update: UpdateInfo | null;
   /** The raw Tauri Update object — pass this to installUpdate() */
   _raw: any;
-}
-
-// ── Helpers ────────────────────────────────────────────────────────
-
-/** True if auto-update is supported on this platform */
-function isDesktop(): boolean {
-  if (!isTauri()) return false;
-  const platform = getPlatform();
-  return platform === 'macos' || platform === 'windows';
 }
 
 // ── Public API ─────────────────────────────────────────────────────

@@ -34,7 +34,7 @@ export async function getNotificationBadge(): Promise<NotificationBadge> {
     },
     async () => {
       const { getNotificationBadge } = await import('../local/services/notifications-service');
-      return getNotificationBadge() as unknown as NotificationBadge;
+      return getNotificationBadge(0) as unknown as NotificationBadge;
     },
   );
 }
@@ -60,7 +60,7 @@ export async function listNotifications(params?: {
     },
     async () => {
       const { listNotifications } = await import('../local/services/notifications-service');
-      return listNotifications(params) as unknown as NotificationListResponse;
+      return listNotifications(0, params) as unknown as NotificationListResponse;
     },
   );
 }
@@ -79,7 +79,7 @@ export async function markNotificationsRead(
     },
     async () => {
       const { markNotificationsRead } = await import('../local/services/notifications-service');
-      return markNotificationsRead(payload) as unknown as StatusMessage;
+      return markNotificationsRead(0, payload as any) as unknown as StatusMessage;
     },
   );
 }
@@ -100,7 +100,7 @@ export async function getNotificationPreferences(): Promise<NotificationPreferen
     },
     async () => {
       const { getNotificationPreferences } = await import('../local/services/notifications-service');
-      return getNotificationPreferences() as unknown as NotificationPreferenceResponse;
+      return getNotificationPreferences(0) as unknown as NotificationPreferenceResponse;
     },
   );
 }
@@ -119,7 +119,7 @@ export async function updateNotificationPreferences(
     },
     async () => {
       const { updateNotificationPreferences } = await import('../local/services/notifications-service');
-      return updateNotificationPreferences(preferences) as unknown as StatusMessage;
+      return updateNotificationPreferences(0, preferences as any) as unknown as StatusMessage;
     },
   );
 }
@@ -140,7 +140,7 @@ export async function getNotificationSoundSettings(): Promise<NotificationSoundS
     },
     async () => {
       const { getNotificationSoundSettings } = await import('../local/services/notifications-service');
-      return getNotificationSoundSettings() as unknown as NotificationSoundSettingsResponse;
+      return getNotificationSoundSettings(0) as unknown as NotificationSoundSettingsResponse;
     },
   );
 }
@@ -159,7 +159,7 @@ export async function updateNotificationSoundSettings(
     },
     async () => {
       const { updateNotificationSoundSettings } = await import('../local/services/notifications-service');
-      return updateNotificationSoundSettings(settings) as unknown as StatusMessage;
+      return updateNotificationSoundSettings(0, settings as any) as unknown as StatusMessage;
     },
   );
 }

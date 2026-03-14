@@ -1108,9 +1108,6 @@ export async function getProfitability(params: {
   const { start_date, end_date, job_id } = params;
 
   const jobFilter = job_id ? 'AND j.id = ?' : '';
-  const _jobParams = job_id
-    ? [start_date, end_date, job_id]
-    : [start_date, end_date];
 
   // Get all relevant jobs
   const jobs = await safeSelect<{

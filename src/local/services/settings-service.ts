@@ -25,7 +25,6 @@ import type {
 
 // ── Repos ──────────────────────────────────────────────────────────
 
-const _settingsRepo = new BaseRepo('settings');
 const profileRepo = new BaseRepo('company_profiles');
 
 // ── Helpers ────────────────────────────────────────────────────────

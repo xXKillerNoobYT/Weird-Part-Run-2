@@ -204,6 +204,55 @@ pub async fn set_company_public_key(
     Ok(())
 }
 
+// ── Public Data Directory (Desktop Only) ────────────────────────────
+
+/// Create a shared/public data directory for multi-user desktop access.
+///
+/// On macOS: creates /Users/Shared/WiredPart/ with world-readable/writable permissions
+/// On Windows: creates C:\Users\Public\WiredPart\
+///
+/// Returns the absolute path to the created directory.
+/// Errors on non-desktop platforms.
+#[tauri::command]
+pub fn create_public_data_dir() -> Result<String, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let dir = std::path::PathBuf::from("/Users/Shared/WiredPart");
+        std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
+        // Set permissions: rwxrwxrwx so all OS-level user accounts can read/write
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777))
+            .map_err(|e| format!("Failed to set permissions on {}: {}", dir.display(), e))?;
+        log::info!("[public-dir] Created shared directory at {}", dir.display());
+        Ok(dir.to_string_lossy().to_string())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let dir = std::path::PathBuf::from(r"C:\Users\Public\WiredPart");
+        std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
+        // Windows Public folder inherits ACLs from parent — all users can access
+        log::info!("[public-dir] Created shared directory at {}", dir.display());
+        Ok(dir.to_string_lossy().to_string())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        Err("Public data directory is only supported on desktop (macOS/Windows)".to_string())
+    }
+}
+
+/// Copy a file from source to destination. Used to migrate the DB
+/// from private to public directory (or vice versa).
+///
+/// The TS side can't do this directly because the Tauri SQL plugin
+/// holds a lock on the database file.
+#[tauri::command]
+pub fn copy_database_file(source: String, destination: String) -> Result<(), String> {
+    std::fs::copy(&source, &destination)
+        .map_err(|e| format!("Failed to copy {} → {}: {}", source, destination, e))?;
+    log::info!("[public-dir] Copied database: {} → {}", source, destination);
+    Ok(())
+}
+
 /// Create the initial SharedState and ManagedDiscovery for Tauri managed state
 pub fn create_sync_state() -> SharedState {
     Arc::new(RwLock::new(SyncServerState {

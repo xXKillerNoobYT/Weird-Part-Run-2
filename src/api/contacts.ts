@@ -649,7 +649,7 @@ export async function importCustomersCSV(file: File): Promise<CSVImportResult> {
     },
     async () => {
       const { importCustomersCSV } = await import('../local/services/contacts-service');
-      return importCustomersCSV(file) as unknown as CSVImportResult;
+      return importCustomersCSV(file as any) as unknown as CSVImportResult;
     },
   );
 }
@@ -669,7 +669,7 @@ export async function importContractorsCSV(file: File): Promise<CSVImportResult>
     },
     async () => {
       const { importContractorsCSV } = await import('../local/services/contacts-service');
-      return importContractorsCSV(file) as unknown as CSVImportResult;
+      return importContractorsCSV(file as any) as unknown as CSVImportResult;
     },
   );
 }

@@ -159,7 +159,7 @@ export async function getWarehouseInventory(
       const result = await getInventoryGrid({
         search: params.search,
         category_id: params.category_id,
-        status: params.status,
+        status: params.stock_status,
         sort: params.sort_by,
         limit: params.page_size ?? 50,
         offset: ((params.page ?? 1) - 1) * (params.page_size ?? 50),

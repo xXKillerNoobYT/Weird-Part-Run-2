@@ -36,7 +36,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "category": "BusinessUtility",
+    "category": "Business",
     "shortDescription": "Field service management for electrical contractors",
     "longDescription": "WiredPart is a fully offline field service management app for electrical contractors. Track parts, jobs, labor, vehicles, tools, and more — with Bluetooth peer-to-peer sync between all devices.",
     "copyright": "Copyright 2026 WiredPart",

@@ -453,7 +453,6 @@ export async function createGlobalQuestion(data: {
   is_required?: boolean;
   sort_order?: number;
 }, userId: number): Promise<ClockOutQuestion> {
-  const db = await getDb();
   const now = new Date().toISOString();
   const repo = new BaseRepo('clock_out_questions');
   const id = await repo.insert({

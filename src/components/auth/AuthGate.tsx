@@ -48,20 +48,68 @@ export function AuthGate({ children }: AuthGateProps) {
   }, []);
 
   async function initAuth() {
-    // Direct DOM debug — bypasses React state batching (DEV only)
+    // Direct DOM debug — bypasses React state batching (DEV only).
+    // Hidden state persists in localStorage so it survives refreshes.
     const dbg = import.meta.env.DEV
       ? (() => {
-          const dbgEl = document.getElementById('__dev_debug') || (() => {
+          // Respect user preference to hide the dev overlay
+          if (localStorage.getItem('__dev_debug_hidden') === '1') {
+            return (msg: string) => { console.log('[DEV]', msg); };
+          }
+
+          void (document.getElementById('__dev_debug') || (() => {
+            // === Outer wrapper: fixed to bottom, NOT scrollable ===
+            // Uses a CSS variable (--dev-overlay-h) so the AppShell can shrink
+            // its h-screen to make room. This prevents content being hidden.
             const el = document.createElement('div');
             el.id = '__dev_debug';
-            el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:rgba(0,0,0,0.9);color:#0f0;font:10px monospace;padding:4px;z-index:99999;max-height:120px;overflow-y:auto';
+            el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:99999;background:rgba(0,0,0,0.95);border-top:2px solid #0f0;border-left:1px solid #0f0;border-right:1px solid #0f0;display:flex;flex-direction:column;max-height:120px';
+
+            // Set CSS variable so AppShell shrinks to fit
+            document.documentElement.style.setProperty('--dev-overlay-h', '120px');
+
+            // === Header bar: label + close button (never scrolls) ===
+            const header = document.createElement('div');
+            header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:2px 4px;flex-shrink:0;border-bottom:1px solid rgba(0,255,0,0.2)';
+
+            const label = document.createElement('span');
+            label.textContent = 'DEV OVERLAY';
+            label.style.cssText = 'color:#0f0;font:bold 9px monospace;opacity:0.6;letter-spacing:1px';
+            header.appendChild(label);
+
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = '✕';
+            closeBtn.style.cssText = 'color:#0f0;background:none;border:1px solid rgba(0,255,0,0.3);font:bold 11px monospace;cursor:pointer;padding:1px 6px;opacity:0.7;border-radius:2px;line-height:1';
+            closeBtn.title = 'Hide dev overlay (re-enable in Settings → App Config)';
+            closeBtn.onmouseenter = () => { closeBtn.style.opacity = '1'; closeBtn.style.borderColor = '#0f0'; };
+            closeBtn.onmouseleave = () => { closeBtn.style.opacity = '0.7'; closeBtn.style.borderColor = 'rgba(0,255,0,0.3)'; };
+            closeBtn.onclick = (e) => {
+              e.stopPropagation();
+              localStorage.setItem('__dev_debug_hidden', '1');
+              document.documentElement.style.removeProperty('--dev-overlay-h');
+              el.remove();
+            };
+            header.appendChild(closeBtn);
+            el.appendChild(header);
+
+            // === Log container: scrollable area for messages ===
+            const logContainer = document.createElement('div');
+            logContainer.id = '__dev_debug_log';
+            logContainer.style.cssText = 'flex:1;overflow-y:auto;padding:2px 4px;color:#0f0;font:10px monospace';
+            el.appendChild(logContainer);
+
             document.body.appendChild(el);
             return el;
-          })();
+          })());
           return (msg: string) => {
             console.log('[DEV]', msg);
-            dbgEl.innerHTML += `<div>${msg}</div>`;
-            dbgEl.scrollTop = dbgEl.scrollHeight;
+            const logContainer = document.getElementById('__dev_debug_log');
+            if (logContainer) {
+              const line = document.createElement('div');
+              line.textContent = msg;
+              logContainer.appendChild(line);
+              logContainer.scrollTop = logContainer.scrollHeight;
+            }
           };
         })()
       : (_msg: string) => {}; // no-op in production

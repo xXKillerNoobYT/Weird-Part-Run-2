@@ -356,7 +356,7 @@ export async function lockBillingPeriod(periodId: number): Promise<BillingPeriod
     },
     async () => {
       const { lockBillingPeriod } = await import('../local/services/billing-service');
-      return lockBillingPeriod(periodId) as unknown as BillingPeriod;
+      return lockBillingPeriod(periodId, 0) as unknown as BillingPeriod;
     },
   );
 }
@@ -503,7 +503,7 @@ export async function createAnnotation(body: {
     },
     async () => {
       const { createAnnotation } = await import('../local/services/report-service');
-      return createAnnotation(body) as unknown as ReportAnnotation;
+      return createAnnotation({ ...body, author_id: 0 } as any) as unknown as ReportAnnotation;
     },
   );
 }
@@ -516,7 +516,7 @@ export async function updateAnnotation(id: number, content: string): Promise<Rep
     },
     async () => {
       const { updateAnnotation } = await import('../local/services/report-service');
-      return updateAnnotation(id, { content }) as unknown as ReportAnnotation;
+      return updateAnnotation(id, { content } as any) as unknown as ReportAnnotation;
     },
   );
 }
@@ -528,7 +528,7 @@ export async function deleteAnnotation(id: number): Promise<void> {
     },
     async () => {
       const { deleteAnnotation } = await import('../local/services/report-service');
-      return deleteAnnotation(id);
+      await deleteAnnotation(id) as any;
     },
   );
 }
@@ -573,7 +573,7 @@ export async function createTemplate(body: {
     },
     async () => {
       const { createTemplate } = await import('../local/services/report-service');
-      return createTemplate(body) as unknown as ReportTemplate;
+      return createTemplate({ ...body, created_by: 0 } as any) as unknown as ReportTemplate;
     },
   );
 }
@@ -601,7 +601,7 @@ export async function deleteTemplate(id: number): Promise<void> {
     },
     async () => {
       const { deleteTemplate } = await import('../local/services/report-service');
-      return deleteTemplate(id);
+      await deleteTemplate(id) as any;
     },
   );
 }
@@ -636,7 +636,7 @@ export async function createShareToken(body: {
     },
     async () => {
       const { createShareToken } = await import('../local/services/report-service');
-      return createShareToken(body) as unknown as ReportShareToken;
+      return createShareToken({ ...body, created_by: 0 } as any) as unknown as ReportShareToken;
     },
   );
 }
@@ -661,7 +661,7 @@ export async function revokeShareToken(id: number): Promise<void> {
     },
     async () => {
       const { deactivateShareToken } = await import('../local/services/report-service');
-      return deactivateShareToken(id);
+      await deactivateShareToken(id) as any;
     },
   );
 }

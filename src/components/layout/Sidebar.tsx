@@ -147,7 +147,7 @@ export function Sidebar() {
       {/* Desktop Sidebar */}
       <aside
         className={cn(
-          'hidden lg:flex flex-col h-screen bg-sidebar border-r border-gray-200 dark:border-gray-700',
+          'hidden lg:flex flex-col h-full bg-sidebar border-r border-gray-200 dark:border-gray-700',
           'transition-[width] duration-200 ease-in-out',
           isCollapsed ? 'w-16' : 'w-60',
         )}

@@ -42,7 +42,7 @@ export async function getPortalInfo(
         },
         async () => {
             const { getPortalToken } = await import('../local/services/supplier-portal-service');
-            return await getPortalToken(token) as unknown as SupplierPortalInfo;
+            return await getPortalToken(token as any) as unknown as SupplierPortalInfo;
         },
     );
 }
@@ -105,7 +105,7 @@ export async function acknowledgePortalPO(
         },
         async () => {
             const { createAcknowledgment } = await import('../local/services/supplier-portal-service');
-            return await createAcknowledgment({ ...body }) as unknown as { message: string; po_id: number; acknowledged_at: string };
+            return await createAcknowledgment({ ...body, supplier_id: 0 } as any) as unknown as { message: string; po_id: number; acknowledged_at: string };
         },
     );
 }

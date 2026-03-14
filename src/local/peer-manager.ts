@@ -120,7 +120,7 @@ export async function startPeerSync(
 
     // Send company public key to Rust for Ed25519 cert verification (Phase 5)
     try {
-      const { getDevicePublicKey } = await import('./services/security-service');
+      const { getDevicePublicKey: _getDevicePublicKey } = await import('./services/security-service');
       // The company public key is stored in localStorage by the bootstrap process.
       // It's the admin's Ed25519 public key, used to verify device certificates.
       const companyPubKey = localStorage.getItem('wp_security_company_public_key');

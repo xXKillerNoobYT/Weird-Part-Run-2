@@ -24,15 +24,16 @@ export function AppShell() {
 
   return (
     <div
-      className="flex h-screen overflow-hidden bg-surface-secondary"
+      className="flex overflow-hidden bg-surface-secondary"
       style={{
+        height: 'calc(100vh - var(--dev-overlay-h, 0px))',
         paddingTop: 'var(--safe-top)',
         paddingRight: 'var(--safe-right)',
         paddingLeft: 'var(--safe-left)',
       }}
     >
-      {/* Sidebar — hidden when printing */}
-      <div className="no-print">
+      {/* Sidebar — hidden when printing, h-full so sidebar inherits shell height */}
+      <div className="no-print h-full">
         <Sidebar />
       </div>
 

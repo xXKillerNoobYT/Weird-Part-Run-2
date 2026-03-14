@@ -285,7 +285,7 @@ export async function uploadCompanyLogo(
     },
     async () => {
       const { uploadCompanyLogo } = await import('../local/services/settings-service');
-      return uploadCompanyLogo(file) as unknown as { logo_path: string; filename: string };
+      return uploadCompanyLogo(file.name) as unknown as { logo_path: string; filename: string };
     },
   );
 }

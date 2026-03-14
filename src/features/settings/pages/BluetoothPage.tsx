@@ -1,6 +1,11 @@
 /**
- * BluetoothPage — PC-to-PC Bluetooth RFCOMM pairing, tunnel management,
- * and sync controls for two-device field sync.
+ * BluetoothPage — device-to-device Bluetooth sync (mesh topology).
+ *
+ * All devices sync with each other (not just primary↔secondary). The
+ * "role" setting determines data authority: field data collected on
+ * secondary devices isn't considered saved until at least one primary
+ * device has received it. Primary = shop desktop (always-on, stable
+ * location). Secondary = mobile/field device.
  *
  * Tabs:
  *   Status   — BT hardware availability + active tunnel status & stats
@@ -148,7 +153,7 @@ function StatusTab() {
                         <p className={`text-sm font-medium ${cfg.color}`}>{cfg.label}</p>
                         {tunnel?.remote_address && (
                             <p className="text-xs text-gray-500 mt-0.5">
-                                {tunnel.mode === 'primary' ? 'Accepting from' : 'Connected to'}: <span className="font-mono">{tunnel.remote_address}</span>
+                                Syncing with: <span className="font-mono">{tunnel.remote_address}</span>
                             </p>
                         )}
                     </div>
@@ -474,8 +479,8 @@ function ScanTab() {
 
             {/* Tip */}
             <p className="text-xs text-gray-400">
-                Both PCs need Bluetooth enabled. The other PC should be set to discoverable
-                in Windows Bluetooth settings. After pairing here, use the Paired tab to connect.
+                Both devices need Bluetooth enabled. After pairing here, use the Paired tab to connect.
+                All devices sync with each other — data is confirmed once a primary device receives it.
             </p>
         </div>
     );
@@ -637,7 +642,11 @@ function ConfigTab() {
             <div className="p-3 bg-surface border border-border rounded-xl space-y-2">
                 <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Device Role</p>
                 <p className="text-xs text-gray-500">
-                    Primary = shop/truth anchor (listens for connections). Secondary = field PC (connects to primary).
+                    Determines data authority. <strong className="text-gray-700 dark:text-gray-300">Primary</strong> = data
+                    anchor — field data isn't considered saved until at least one primary device has it.
+                    Best for shop desktops that stay in one place. <strong className="text-gray-700 dark:text-gray-300">Secondary</strong> = field
+                    device that collects data on the go. All devices sync with each other, but primaries
+                    are the confirmation point.
                 </p>
                 <div className="flex gap-2 flex-wrap">
                     {(['auto', 'primary', 'secondary'] as const).map((role) => (
@@ -732,7 +741,8 @@ export function BluetoothPage() {
                     Bluetooth Sync
                 </h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                    Pair with another PC and sync data over Bluetooth RFCOMM when no network is available.
+                    Sync data between devices over Bluetooth. All devices sync with each other — field data
+                    is confirmed once a primary device receives it.
                 </p>
             </div>
 

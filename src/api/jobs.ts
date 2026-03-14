@@ -86,7 +86,7 @@ export async function createBillRateType(
     },
     async () => {
       const { createBillRateType: local } = await import('../local/services/job-service');
-      return await local(brt) as unknown as BillRateType;
+      return await local(brt as any) as unknown as BillRateType;
     },
   );
 }
@@ -106,7 +106,7 @@ export async function updateBillRateType(
     },
     async () => {
       const { updateBillRateType: local } = await import('../local/services/job-service');
-      return await local(id, updates) as unknown as BillRateType;
+      return await local(id, updates as any) as unknown as BillRateType;
     },
   );
 }
