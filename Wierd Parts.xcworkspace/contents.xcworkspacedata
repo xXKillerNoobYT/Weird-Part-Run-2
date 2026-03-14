@@ -4,4 +4,13 @@
    <FileRef
       location = "group:src-tauri/gen/apple/wiredpart.xcodeproj">
    </FileRef>
+   <FileRef
+      location = "group:core">
+   </FileRef>
+   <FileRef
+      location = "group:mac">
+   </FileRef>
+   <FileRef
+      location = "group:ios-app">
+   </FileRef>
 </Workspace>
