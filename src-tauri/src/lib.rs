@@ -27,10 +27,15 @@
 /// - OS notifications (sync reminders, shift starts)
 /// - Auto-start on boot (shop computer role)
 /// - TS-side scheduled task runner (replaces Python APScheduler)
+///
+/// Foundation Models additions:
+/// - Apple on-device LLM for AI text assistance (iOS 26+ / macOS 26+)
+/// - Swift bridge compiled via `swiftc` (see build.rs)
 
 mod commands;
 mod crypto;
 mod discovery;
+mod foundation_models;
 mod multipeer;
 mod sync_server;
 
@@ -88,6 +93,12 @@ pub fn run() {
             // Public data directory (desktop multi-user support)
             commands::create_public_data_dir,
             commands::copy_database_file,
+            // Foundation Models: on-device AI text assistance (iOS 26+ / macOS 26+)
+            foundation_models::llm_check_availability,
+            foundation_models::llm_reset_availability,
+            foundation_models::llm_request,
+            foundation_models::llm_poll_result,
+            foundation_models::llm_cancel_request,
         ])
         .setup(|app| {
             // Dev-only: enable logging plugin
