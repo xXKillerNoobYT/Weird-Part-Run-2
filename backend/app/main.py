@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 import socket
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
@@ -132,6 +133,7 @@ def _ensure_secret_key():
     This runs once, ever. After that, .env has a real key and this is a no-op.
     """
     import secrets
+    import tempfile
     from app.config import _PROJECT_ROOT
 
     if settings.SECRET_KEY != _DEV_SECRET:
@@ -157,10 +159,34 @@ def _ensure_secret_key():
         else:
             # SECRET_KEY not in .env at all — append it
             content = content.rstrip("\n") + f"\nSECRET_KEY={new_key}\n"
-        env_path.write_text(content, encoding="utf-8")
     else:
         # No .env file — create one with just the key
-        env_path.write_text(f"SECRET_KEY={new_key}\n", encoding="utf-8")
+        content = f"SECRET_KEY={new_key}\n"
+
+    # Write via temp file + rename to avoid OneDrive file-descriptor locks.
+    # pathlib.write_text() fails with OSError(9) on OneDrive-synced dirs.
+    try:
+        env_path.write_text(content, encoding="utf-8")
+    except OSError:
+        # Fallback: atomic write via tempfile in the same directory
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(env_path.parent), suffix=".env.tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(content)
+            # os.replace is atomic on the same filesystem
+            os.replace(tmp_path, str(env_path))
+        except Exception:
+            # Last resort: clean up temp file and skip .env writing
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            logger.warning(
+                "Could not write .env — SECRET_KEY will reset on next restart. "
+                "Consider moving the project out of OneDrive."
+            )
 
     # Hot-patch the running settings so this process uses the new key immediately
     object.__setattr__(settings, "SECRET_KEY", new_key)
