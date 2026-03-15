@@ -30,44 +30,61 @@ public struct BillRateType: Codable, FetchableRecord, MutablePersistableRecord, 
 public struct Job: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "jobs"
     public var id: Int64?
-    public var name: String
-    public var description: String?
+    public var jobNumber: String
+    public var jobName: String
+    public var customerName: String?
+    public var addressLine1: String?
+    public var addressLine2: String?
+    public var city: String?
+    public var state: String?
+    public var zip: String?
+    public var gpsLat: Double?
+    public var gpsLng: Double?
     public var status: String
     public var priority: String
     public var jobType: String
-    public var address: String?
-    public var gpsLat: Double?
-    public var gpsLng: Double?
-    public var customerName: String?
-    public var customerPhone: String?
-    public var customerEmail: String?
-    public var startDate: String?
-    public var endDate: String?
-    public var estimatedHours: Double?
     public var billRateTypeId: Int64?
+    public var billingRate: Double?
+    public var estimatedHours: Double?
+    public var leadUserId: Int64?
+    public var onCallType: String?
+    public var warrantyStartDate: String?
+    public var warrantyEndDate: String?
+    public var startDate: String?
+    public var dueDate: String?
+    public var completedDate: String?
     public var notes: String?
-    public var createdBy: Int64?
     public var budgetLimit: Double?
     public var budgetAlertPercent: Double?
+    public var createdBy: Int64?
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, description, status, priority, address, notes
-        case jobType = "job_type"
+        case id, status, priority, notes
+        case jobNumber = "job_number"
+        case jobName = "job_name"
+        case customerName = "customer_name"
+        case addressLine1 = "address_line1"
+        case addressLine2 = "address_line2"
+        case city, state, zip
         case gpsLat = "gps_lat"
         case gpsLng = "gps_lng"
-        case customerName = "customer_name"
-        case customerPhone = "customer_phone"
-        case customerEmail = "customer_email"
-        case startDate = "start_date"
-        case endDate = "end_date"
-        case estimatedHours = "estimated_hours"
+        case jobType = "job_type"
         case billRateTypeId = "bill_rate_type_id"
-        case createdBy = "created_by"
+        case billingRate = "billing_rate"
+        case estimatedHours = "estimated_hours"
+        case leadUserId = "lead_user_id"
+        case onCallType = "on_call_type"
+        case warrantyStartDate = "warranty_start_date"
+        case warrantyEndDate = "warranty_end_date"
+        case startDate = "start_date"
+        case dueDate = "due_date"
+        case completedDate = "completed_date"
         case budgetLimit = "budget_limit"
         case budgetAlertPercent = "budget_alert_percent"
+        case createdBy = "created_by"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"

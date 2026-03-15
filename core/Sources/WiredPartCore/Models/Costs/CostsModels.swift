@@ -314,6 +314,7 @@ public struct CompanyProfile: Codable, FetchableRecord, MutablePersistableRecord
     public var phone: String?
     public var email: String?
     public var website: String?
+    public var logoPath: String?
     public var contractorLicense: String?
     public var insuranceInfo: String?
     public var taxId: String?
@@ -326,11 +327,12 @@ public struct CompanyProfile: Codable, FetchableRecord, MutablePersistableRecord
 
     enum CodingKeys: String, CodingKey {
         case id, phone, email, website, notes
-        case companyName = "company_name"
+        case companyName = "name"
         case addressStreet = "address_street"
         case addressCity = "address_city"
         case addressState = "address_state"
         case addressZip = "address_zip"
+        case logoPath = "logo_path"
         case contractorLicense = "contractor_license"
         case insuranceInfo = "insurance_info"
         case taxId = "tax_id"
@@ -339,6 +341,15 @@ public struct CompanyProfile: Codable, FetchableRecord, MutablePersistableRecord
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+    }
+
+    public init(id: Int64? = nil, companyName: String, addressStreet: String? = nil, addressCity: String? = nil, addressState: String? = nil, addressZip: String? = nil, phone: String? = nil, email: String? = nil, website: String? = nil, logoPath: String? = nil, contractorLicense: String? = nil, insuranceInfo: String? = nil, taxId: String? = nil, isPrimary: Int = 0, branchName: String? = nil, notes: String? = nil, deletedAt: String? = nil, createdAt: String? = nil, updatedAt: String? = nil) {
+        self.id = id; self.companyName = companyName; self.addressStreet = addressStreet
+        self.addressCity = addressCity; self.addressState = addressState; self.addressZip = addressZip
+        self.phone = phone; self.email = email; self.website = website; self.logoPath = logoPath
+        self.contractorLicense = contractorLicense; self.insuranceInfo = insuranceInfo; self.taxId = taxId
+        self.isPrimary = isPrimary; self.branchName = branchName; self.notes = notes
+        self.deletedAt = deletedAt; self.createdAt = createdAt; self.updatedAt = updatedAt
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }

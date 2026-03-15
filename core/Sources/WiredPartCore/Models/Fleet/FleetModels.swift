@@ -32,29 +32,40 @@ public struct Vehicle: Codable, FetchableRecord, MutablePersistableRecord, Senda
     public static let databaseTableName = "vehicles"
     public var id: Int64?
     public var vehicleNumber: String
-    public var year: Int?
-    public var make: String?
-    public var model: String?
-    public var vin: String?
-    public var licensePlate: String?
+    public var vehicleName: String
     public var vehicleType: String
     public var status: String
-    public var homeWarehouseId: Int64?
+    public var make: String?
+    public var model: String?
+    public var year: Int?
+    public var color: String?
+    public var vin: String?
+    public var licensePlate: String?
+    public var insurancePolicy: String?
     public var insuranceExpiry: String?
     public var registrationExpiry: String?
+    public var currentOdometer: Int?
+    public var ownerUserId: Int64?
     public var notes: String?
+    public var photoPath: String?
+    public var isActive: Int
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, year, make, model, vin, status, notes
+        case id, make, model, year, color, vin, status, notes
         case vehicleNumber = "vehicle_number"
-        case licensePlate = "license_plate"
+        case vehicleName = "vehicle_name"
         case vehicleType = "vehicle_type"
-        case homeWarehouseId = "home_warehouse_id"
+        case licensePlate = "license_plate"
+        case insurancePolicy = "insurance_policy"
         case insuranceExpiry = "insurance_expiry"
         case registrationExpiry = "registration_expiry"
+        case currentOdometer = "current_odometer"
+        case ownerUserId = "owner_user_id"
+        case photoPath = "photo_path"
+        case isActive = "is_active"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"

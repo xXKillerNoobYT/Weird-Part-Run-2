@@ -49,7 +49,7 @@ extension AppDatabase {
                     .check { $0 == "INSERT" || $0 == "UPDATE" || $0 == "DELETE" }
                 t.column("changed_fields", .text)
                 t.column("old_values", .text)
-                t.column("timestamp", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("timestamp", .text).notNull().defaults(sql: "(datetime('now'))")
                 t.column("synced", .integer).notNull().defaults(to: 0)
                 t.column("sync_batch_id", .text)
                 t.column("sequence", .integer)
@@ -90,8 +90,8 @@ extension AppDatabase {
                 t.column("is_active", .integer).defaults(to: 1)
                 t.column("avatar_url", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             // Hats (Roles)
@@ -101,7 +101,7 @@ extension AppDatabase {
                 t.column("description", .text)
                 t.column("level", .integer).defaults(to: 0)
                 t.column("is_builtin", .integer).defaults(to: 0)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             // Hat Permissions
@@ -136,7 +136,7 @@ extension AppDatabase {
                 t.column("job_id", .integer).notNull()
                 t.column("permission_key", .text).notNull()
                 t.column("granted_by", .integer).references("users")
-                t.column("granted_at", .text).defaults(sql: "datetime('now')")
+                t.column("granted_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("expires_at", .text)
                 t.column("deleted_at", .text)
                 t.uniqueKey(["user_id", "job_id", "permission_key"])
@@ -151,7 +151,7 @@ extension AppDatabase {
                 t.column("is_public", .integer).defaults(to: 0)
                 t.column("last_seen", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_devices_fp", on: "devices", columns: ["device_fingerprint"])
 
@@ -161,7 +161,7 @@ extension AppDatabase {
                 t.column("key", .text).notNull().unique()
                 t.column("value", .text)
                 t.column("category", .text).defaults(to: "general")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_settings_cat", on: "settings", columns: ["category"])
 
@@ -174,7 +174,7 @@ extension AppDatabase {
                 t.column("entity_id", .integer)
                 t.column("details", .text)
                 t.column("ip_address", .text)
-                t.column("timestamp", .text).defaults(sql: "datetime('now')")
+                t.column("timestamp", .text).defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_activity_ts", on: "activity_log", columns: ["timestamp"])
             try db.create(index: "idx_activity_entity", on: "activity_log", columns: ["entity_type", "entity_id"])
@@ -194,7 +194,7 @@ extension AppDatabase {
                 t.column("entity_type", .text)
                 t.column("entity_id", .integer)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_notif_user", on: "notifications", columns: ["user_id", "is_read"])
             try db.create(index: "idx_notifications_created", on: "notifications", columns: ["created_at"])
@@ -227,8 +227,8 @@ extension AppDatabase {
                 t.column("sort_order", .integer).defaults(to: 0)
                 t.column("is_active", .integer).defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             // Part Styles
@@ -242,8 +242,8 @@ extension AppDatabase {
                 t.column("sort_order", .integer).defaults(to: 0)
                 t.column("is_active", .integer).defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["category_id", "name"])
             }
             try db.create(index: "idx_styles_category", on: "part_styles", columns: ["category_id"])
@@ -260,8 +260,8 @@ extension AppDatabase {
                 t.column("sort_order", .integer).defaults(to: 0)
                 t.column("is_active", .integer).defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["style_id", "name"])
             }
             try db.create(index: "idx_types_style", on: "part_types", columns: ["style_id"])
@@ -274,7 +274,7 @@ extension AppDatabase {
                 t.column("sort_order", .integer).defaults(to: 0)
                 t.column("is_active", .integer).defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             // Brands
@@ -285,8 +285,8 @@ extension AppDatabase {
                 t.column("notes", .text)
                 t.column("is_active", .integer).defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             // Suppliers
@@ -316,8 +316,8 @@ extension AppDatabase {
                 t.column("communication_score", .double).defaults(to: 0.85)
                 t.column("is_active", .integer).defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             // Parts
@@ -362,8 +362,8 @@ extension AppDatabase {
                 t.column("custom_margin_percent", .double)
                 t.column("cost_last_updated", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             // Generated column for company_sell_price
@@ -391,7 +391,7 @@ extension AppDatabase {
                 t.column("notes", .text)
                 t.column("is_active", .integer).defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["brand_id", "supplier_id"])
             }
 
@@ -409,7 +409,7 @@ extension AppDatabase {
                 t.column("last_price_date", .text)
                 t.column("is_preferred", .integer).defaults(to: 0)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["part_id", "supplier_id"])
             }
 
@@ -424,7 +424,7 @@ extension AppDatabase {
                 t.column("supplier_id", .integer).references("suppliers")
                 t.column("last_counted", .text)
                 t.column("deleted_at", .text)
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_stock_part", on: "stock", columns: ["part_id"])
             try db.create(index: "idx_stock_location", on: "stock", columns: ["location_type", "location_id"])
@@ -453,7 +453,7 @@ extension AppDatabase {
                 t.column("unit_cost_at_move", .double)
                 t.column("unit_sell_at_move", .double)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_movements_part", on: "stock_movements", columns: ["part_id"])
             try db.create(index: "idx_movements_job", on: "stock_movements", columns: ["job_id"])
@@ -469,7 +469,7 @@ extension AppDatabase {
                 t.column("destination_label", .text)
                 t.column("tagged_by", .integer).references("users")
                 t.column("deleted_at", .text)
-                t.column("tagged_at", .text).defaults(sql: "datetime('now')")
+                t.column("tagged_at", .text).defaults(sql: "(datetime('now'))")
             }
         }
     }
@@ -487,7 +487,7 @@ extension AppDatabase {
                 t.column("description", .text)
                 t.column("sort_order", .integer).defaults(to: 0)
                 t.column("is_active", .integer).defaults(to: 1)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             // Jobs
@@ -521,8 +521,8 @@ extension AppDatabase {
                 t.column("budget_alert_percent", .double).defaults(to: 80)
                 t.column("created_by", .integer).references("users")
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_jobs_status", on: "jobs", columns: ["status"])
             try db.create(index: "idx_jobs_number", on: "jobs", columns: ["job_number"])
@@ -537,7 +537,7 @@ extension AppDatabase {
                 t.column("unit_cost_at_consume", .double)
                 t.column("unit_sell_at_consume", .double)
                 t.column("consumed_by", .integer).references("users")
-                t.column("consumed_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("consumed_at", .text).notNull().defaults(sql: "(datetime('now'))")
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
             }
@@ -564,7 +564,7 @@ extension AppDatabase {
                 t.column("approved_by", .integer).references("users")
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_labor_user", on: "labor_entries", columns: ["user_id"])
             try db.create(index: "idx_labor_job", on: "labor_entries", columns: ["job_id"])
@@ -579,8 +579,8 @@ extension AppDatabase {
                 t.column("sort_order", .integer).notNull().defaults(to: 0)
                 t.column("is_active", .integer).notNull().defaults(to: 1)
                 t.column("created_by", .integer).references("users")
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             // Clock-Out Responses
@@ -592,7 +592,7 @@ extension AppDatabase {
                 t.column("answer_bool", .integer)
                 t.column("photo_path", .text)
                 t.column("deleted_at", .text)
-                t.column("answered_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("answered_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_cor_labor", on: "clock_out_responses", columns: ["labor_entry_id"])
 
@@ -610,7 +610,7 @@ extension AppDatabase {
                 t.column("answer_photo_path", .text)
                 t.column("shown_at_clock_in", .integer).notNull().defaults(to: 0)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
                 t.column("answered_at", .text)
             }
             try db.create(index: "idx_otq_job", on: "one_time_questions", columns: ["job_id"])
@@ -622,7 +622,7 @@ extension AppDatabase {
                 t.column("report_date", .text).notNull()
                 t.column("report_json", .text).notNull()
                 t.column("status", .text).notNull().defaults(to: "generated")
-                t.column("generated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("generated_at", .text).notNull().defaults(sql: "(datetime('now'))")
                 t.column("reviewed_by", .integer).references("users")
                 t.column("reviewed_at", .text)
                 t.column("deleted_at", .text)
@@ -646,8 +646,8 @@ extension AppDatabase {
                 t.column("is_default", .integer).notNull().defaults(to: 0)
                 t.column("created_by", .integer).references("users")
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             try db.create(table: "template_sections") { t in
@@ -683,8 +683,8 @@ extension AppDatabase {
                 t.column("created_by", .integer).notNull().references("users")
                 t.column("is_archived", .integer).notNull().defaults(to: 0)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_notebooks_job", on: "notebooks", columns: ["job_id"])
 
@@ -697,7 +697,7 @@ extension AppDatabase {
                 t.column("sort_order", .integer).notNull().defaults(to: 0)
                 t.column("is_locked", .integer).notNull().defaults(to: 0)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_nb_sections_notebook", on: "notebook_sections", columns: ["notebook_id"])
 
@@ -721,8 +721,8 @@ extension AppDatabase {
                 t.column("deleted_by", .integer).references("users")
                 t.column("deleted_at", .text)
                 t.column("sort_order", .integer).notNull().defaults(to: 0)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_nb_entries_section", on: "notebook_entries", columns: ["section_id"])
 
@@ -733,7 +733,7 @@ extension AppDatabase {
                 t.column("user_id", .integer).notNull().references("users")
                 t.column("granted_by", .integer).notNull().references("users")
                 t.column("deleted_at", .text)
-                t.column("granted_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("granted_at", .text).notNull().defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["entry_id", "user_id"])
             }
 
@@ -744,7 +744,7 @@ extension AppDatabase {
                 t.column("po_id", .integer)
                 t.column("status", .text).defaults(to: "linked")
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
         }
     }
@@ -770,8 +770,8 @@ extension AppDatabase {
                 t.column("approved_at", .text)
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_jpo_job", on: "job_parts_orders", columns: ["job_id"])
             try db.create(index: "idx_jpo_status", on: "job_parts_orders", columns: ["status"])
@@ -790,7 +790,7 @@ extension AppDatabase {
                 t.column("suggested_supplier_id", .integer).references("suppliers")
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_jpo_lines_jpo", on: "jpo_line_items", columns: ["jpo_id"])
 
@@ -817,8 +817,8 @@ extension AppDatabase {
                 t.column("supplier_notes", .text)
                 t.column("submitted_by", .integer).references("users")
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_po_supplier", on: "purchase_orders", columns: ["supplier_id"])
             try db.create(index: "idx_po_status", on: "purchase_orders", columns: ["status"])
@@ -840,7 +840,7 @@ extension AppDatabase {
                 t.column("received_by", .integer).references("users")
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_po_lines_po", on: "po_line_items", columns: ["po_id"])
 
@@ -863,8 +863,8 @@ extension AppDatabase {
                 t.column("approved_by", .integer).references("users")
                 t.column("approved_at", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             // Return Line Items
@@ -883,7 +883,7 @@ extension AppDatabase {
                 t.column("non_return_reason", .text)
                 t.column("below_target_flag", .integer).defaults(to: 0)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             // Order Status History
@@ -895,7 +895,7 @@ extension AppDatabase {
                 t.column("new_status", .text).notNull()
                 t.column("changed_by", .integer).notNull().references("users")
                 t.column("notes", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_order_history_entity", on: "order_status_history", columns: ["entity_type", "entity_id"])
 
@@ -915,7 +915,7 @@ extension AppDatabase {
                 t.column("flag_resolved_at", .text)
                 t.column("linked_part_id", .integer).references("parts")
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_special_items_jpo", on: "special_items", columns: ["jpo_id"])
 
@@ -932,8 +932,8 @@ extension AppDatabase {
                 t.column("confidence_score", .double).notNull().defaults(to: 0.5)
                 t.column("last_used_at", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
         }
     }
@@ -966,8 +966,8 @@ extension AppDatabase {
                 t.column("photo_path", .text)
                 t.column("is_active", .integer).notNull().defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             // Vehicle Assignments
@@ -978,13 +978,13 @@ extension AppDatabase {
                 t.column("assignment_type", .text).notNull().defaults(to: "primary")
                 t.column("is_take_home", .integer).notNull().defaults(to: 0)
                 t.column("home_to_shop_miles", .double)
-                t.column("start_date", .text).notNull().defaults(sql: "date('now')")
+                t.column("start_date", .text).notNull().defaults(sql: "(date('now'))")
                 t.column("end_date", .text)
                 t.column("is_active", .integer).notNull().defaults(to: 1)
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_va_vehicle", on: "vehicle_assignments", columns: ["vehicle_id"])
             try db.create(index: "idx_va_user", on: "vehicle_assignments", columns: ["user_id"])
@@ -1016,8 +1016,8 @@ extension AppDatabase {
                 t.column("useful_life_years", .integer)
                 t.column("calibration_due_date", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_tools_number", on: "tools", columns: ["tool_number"])
             try db.create(index: "idx_tools_status", on: "tools", columns: ["status"])
@@ -1054,7 +1054,7 @@ extension AppDatabase {
                 t.column("verified_by", .integer).references("users")
                 t.column("condition_at_move", .integer)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             // Kit Verification Sessions
@@ -1068,7 +1068,7 @@ extension AppDatabase {
                 t.column("missing_count", .integer).notNull().defaults(to: 0)
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             // Kit Verification Items
@@ -1093,7 +1093,7 @@ extension AppDatabase {
                 t.column("sort_order", .integer).defaults(to: 0)
                 t.column("is_active", .integer).notNull().defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             // Tool Maintenance Schedules
@@ -1109,8 +1109,8 @@ extension AppDatabase {
                 t.column("is_enabled", .integer).notNull().defaults(to: 1)
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["tool_id", "maintenance_type_id"])
             }
 
@@ -1131,7 +1131,7 @@ extension AppDatabase {
                 t.column("calibration_standard", .text)
                 t.column("calibration_result", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             // Customers
@@ -1148,8 +1148,8 @@ extension AppDatabase {
                 t.column("notes", .text)
                 t.column("is_active", .integer).defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             // General Contractors
@@ -1167,8 +1167,8 @@ extension AppDatabase {
                 t.column("notes", .text)
                 t.column("is_active", .integer).defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             // Employee Default Schedules
@@ -1204,7 +1204,7 @@ extension AppDatabase {
                 t.column("reason", .text)
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["user_id", "exception_date"])
             }
 
@@ -1225,8 +1225,8 @@ extension AppDatabase {
                 t.column("dispatched_by", .integer).references("users")
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["user_id", "dispatch_date", "job_id"])
             }
             try db.create(index: "idx_dispatch_date", on: "job_dispatch", columns: ["dispatch_date"])
@@ -1246,8 +1246,8 @@ extension AppDatabase {
                 t.column("notes", .text)
                 t.column("created_by", .integer).references("users")
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["job_id", "gc_id", "scheduled_date"])
             }
         }
@@ -1267,8 +1267,8 @@ extension AppDatabase {
                 t.column("created_by", .integer).notNull().references("users")
                 t.column("is_active", .integer).notNull().defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_chat_channels_job", on: "chat_channels", columns: ["job_id"])
 
@@ -1278,7 +1278,7 @@ extension AppDatabase {
                 t.column("user_id", .integer).notNull().references("users")
                 t.column("role", .text).notNull().defaults(to: "member")
                 t.column("muted_until", .text)
-                t.column("joined_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("joined_at", .text).notNull().defaults(sql: "(datetime('now'))")
                 t.column("left_at", .text)
                 t.column("deleted_at", .text)
                 t.uniqueKey(["channel_id", "user_id"])
@@ -1299,8 +1299,8 @@ extension AppDatabase {
                 t.column("answered_at", .text)
                 t.column("closed_at", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_qa_job", on: "qa_threads", columns: ["job_id"])
             try db.create(index: "idx_qa_status", on: "qa_threads", columns: ["status"])
@@ -1319,7 +1319,7 @@ extension AppDatabase {
                 t.column("qa_level", .text)
                 t.column("edited_at", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_cm_channel", on: "chat_messages", columns: ["channel_id", "created_at"])
 
@@ -1328,7 +1328,7 @@ extension AppDatabase {
                 t.column("channel_id", .integer).notNull().references("chat_channels")
                 t.column("user_id", .integer).notNull().references("users")
                 t.column("last_read_message_id", .integer).notNull()
-                t.column("read_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("read_at", .text).notNull().defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
                 t.uniqueKey(["channel_id", "user_id"])
             }
@@ -1355,8 +1355,8 @@ extension AppDatabase {
                 t.column("sent_via", .text)
                 t.column("sent_at", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_rfi_qa", on: "rfi_objects", columns: ["qa_thread_id"])
         }
@@ -1381,7 +1381,7 @@ extension AppDatabase {
                 t.column("remote_device", .text).notNull()
                 t.column("local_ts", .text).notNull()
                 t.column("remote_ts", .text).notNull()
-                t.column("resolved_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("resolved_at", .text).notNull().defaults(sql: "(datetime('now'))")
                 t.column("reviewed", .integer).notNull().defaults(to: 0)
             }
             try db.create(index: "idx_conflict_log_table", on: "_conflict_log", columns: ["table_name", "record_id"])
@@ -1391,7 +1391,7 @@ extension AppDatabase {
                 t.column("device_id", .text).notNull()
                 t.column("peer_id", .text).notNull()
                 t.column("last_sequence", .integer).notNull().defaults(to: 0)
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
                 t.primaryKey(["device_id", "peer_id"])
             }
 
@@ -1406,7 +1406,7 @@ extension AppDatabase {
                 t.column("last_sync_at", .text)
                 t.column("is_trusted", .integer).notNull().defaults(to: 0)
                 t.column("is_deactivated", .integer).notNull().defaults(to: 0)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             // Auto-increment sequence trigger for change log
@@ -1443,8 +1443,8 @@ extension AppDatabase {
                 t.column("notes", .text)
                 t.column("document_path", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_certifications_user", on: "certifications", columns: ["user_id", "is_active"])
             try db.create(index: "idx_certifications_expiry", on: "certifications", columns: ["expiry_date"])
@@ -1457,7 +1457,7 @@ extension AppDatabase {
                 t.column("effective_date", .text).notNull()
                 t.column("reason", .text)
                 t.column("changed_by", .integer).references("users")
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             try db.create(table: "employee_notes") { t in
@@ -1470,8 +1470,8 @@ extension AppDatabase {
                 t.column("is_private", .integer).defaults(to: 0)
                 t.column("created_by", .integer).references("users")
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             try db.create(table: "user_skills") { t in
@@ -1484,7 +1484,7 @@ extension AppDatabase {
                 t.column("verified_by", .integer).references("users")
                 t.column("verified_at", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["user_id", "skill_name"])
             }
 
@@ -1495,8 +1495,8 @@ extension AppDatabase {
                 t.column("lead_user_id", .integer).references("users")
                 t.column("is_active", .integer).notNull().defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             try db.create(table: "employee_team_members") { t in
@@ -1506,7 +1506,7 @@ extension AppDatabase {
                 t.column("user_id", .integer).notNull()
                     .references("users", onDelete: .cascade)
                 t.column("role", .text).notNull().defaults(to: "member")
-                t.column("joined_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("joined_at", .text).notNull().defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
                 t.uniqueKey(["team_id", "user_id"])
             }
@@ -1528,8 +1528,8 @@ extension AppDatabase {
                 t.column("locked_by", .integer).references("users")
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             try db.create(table: "receiving_sessions") { t in
@@ -1541,7 +1541,7 @@ extension AppDatabase {
                 t.column("completed_at", .text)
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             try db.create(table: "receiving_session_items") { t in
@@ -1556,7 +1556,7 @@ extension AppDatabase {
                 t.column("scanned_at", .text)
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
         }
     }
@@ -1574,8 +1574,8 @@ extension AppDatabase {
                 t.column("content", .text).notNull()
                 t.column("author_id", .integer).notNull().references("users")
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             try db.create(table: "report_share_tokens") { t in
@@ -1589,7 +1589,7 @@ extension AppDatabase {
                 t.column("last_accessed_at", .text)
                 t.column("is_active", .integer).notNull().defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             try db.create(table: "report_templates") { t in
@@ -1599,8 +1599,8 @@ extension AppDatabase {
                 t.column("config_json", .text).notNull().defaults(to: "{}")
                 t.column("created_by", .integer).notNull().references("users")
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             try db.create(table: "pto_policies") { t in
@@ -1614,8 +1614,8 @@ extension AppDatabase {
                 t.column("start_date", .text).notNull()
                 t.column("is_active", .integer).notNull().defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             try db.create(table: "pto_transactions") { t in
@@ -1630,7 +1630,7 @@ extension AppDatabase {
                 t.column("effective_date", .text).notNull()
                 t.column("created_by", .integer).references("users")
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
         }
     }
@@ -1651,8 +1651,8 @@ extension AppDatabase {
                 t.column("notes", .text)
                 t.column("is_active", .integer).notNull().defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             try db.create(table: "trailer_location_events") { t in
@@ -1665,7 +1665,7 @@ extension AppDatabase {
                 t.column("lat", .double)
                 t.column("lng", .double)
                 t.column("recorded_by", .integer).notNull().references("users")
-                t.column("recorded_at", .text).defaults(sql: "datetime('now')")
+                t.column("recorded_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("notes", .text)
             }
 
@@ -1680,7 +1680,7 @@ extension AppDatabase {
                 t.column("description", .text)
                 t.column("uploaded_by", .integer).references("users")
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_order_attachments_entity", on: "order_attachments", columns: ["entity_type", "entity_id"])
         }
@@ -1703,7 +1703,7 @@ extension AppDatabase {
                 t.column("accumulated", .double).notNull()
                 t.column("ending_value", .double).notNull()
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["tool_id", "year_number"])
             }
 
@@ -1716,7 +1716,7 @@ extension AppDatabase {
                 t.column("notes", .text)
                 t.column("created_by", .integer).notNull().references("users")
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["entry_id", "tool_id"])
             }
 
@@ -1730,7 +1730,7 @@ extension AppDatabase {
                 t.column("last_used_at", .text)
                 t.column("created_by", .integer).references("users")
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
 
             try db.create(table: "supplier_po_acknowledgments") { t in
@@ -1741,7 +1741,7 @@ extension AppDatabase {
                 t.column("token_id", .integer).references("supplier_portal_tokens")
                 t.column("estimated_delivery", .text)
                 t.column("supplier_notes", .text)
-                t.column("acknowledged_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("acknowledged_at", .text).notNull().defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
             }
         }
@@ -1766,8 +1766,8 @@ extension AppDatabase {
                 t.column("notes", .text)
                 t.column("is_active", .integer).defaults(to: 1)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_entity_contacts_entity", on: "entity_contacts", columns: ["entity_type", "entity_id"])
 
@@ -1781,7 +1781,7 @@ extension AppDatabase {
                 t.column("is_primary", .integer).defaults(to: 0)
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["job_id", "customer_id", "contact_role"])
             }
 
@@ -1797,7 +1797,7 @@ extension AppDatabase {
                 t.column("is_primary", .integer).defaults(to: 0)
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["job_id", "gc_id"])
             }
 
@@ -1809,7 +1809,7 @@ extension AppDatabase {
                 t.column("original_qty", .integer).notNull()
                 t.column("remaining_qty", .integer).notNull()
                 t.column("unit_cost", .double).notNull()
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_cost_layers_part", on: "cost_layers", columns: ["part_id", "remaining_qty"])
 
@@ -1818,7 +1818,7 @@ extension AppDatabase {
                 t.column("setting_key", .text).notNull().unique()
                 t.column("setting_value", .text).notNull()
                 t.column("updated_by", .integer).references("users")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
             // Seed default cost settings
             try db.execute(sql: """
@@ -1847,8 +1847,8 @@ extension AppDatabase {
                 t.column("branch_name", .text)
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
         }
     }
@@ -1865,7 +1865,7 @@ extension AppDatabase {
                     .references("jobs", onDelete: .cascade)
                 t.column("user_id", .integer).notNull().references("users")
                 t.column("role", .text).notNull().defaults(to: "member")
-                t.column("assigned_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("assigned_at", .text).notNull().defaults(sql: "(datetime('now'))")
                 t.column("assigned_by", .integer).references("users")
                 t.column("notes", .text)
                 t.column("deleted_at", .text)
@@ -1878,7 +1878,7 @@ extension AppDatabase {
                     .references("jobs", onDelete: .cascade)
                 t.column("supplier_id", .integer).notNull().references("suppliers")
                 t.column("rank", .integer).notNull().defaults(to: 0)
-                t.column("created_at", .text).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
                 t.uniqueKey(["job_id", "supplier_id"])
             }
@@ -1899,7 +1899,7 @@ extension AppDatabase {
                     .references("part_colors", onDelete: .cascade)
                 t.column("image_url", .text)
                 t.column("sort_order", .integer).defaults(to: 0)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["type_id", "color_id"])
             }
 
@@ -1909,7 +1909,7 @@ extension AppDatabase {
                     .references("part_types", onDelete: .cascade)
                 t.column("brand_id", .integer)
                     .references("brands", onDelete: .cascade)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             try db.create(table: "companion_rules") { t in
@@ -1921,8 +1921,8 @@ extension AppDatabase {
                 t.column("qty_ratio", .double).defaults(to: 1.0)
                 t.column("is_active", .integer).defaults(to: 1)
                 t.column("created_by", .integer).references("users")
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             try db.create(table: "companion_rule_sources") { t in
@@ -1961,7 +1961,7 @@ extension AppDatabase {
                 t.column("decided_at", .text)
                 t.column("order_id", .integer)
                 t.column("notes", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             try db.create(table: "companion_suggestion_sources") { t in
@@ -1987,7 +1987,7 @@ extension AppDatabase {
                 t.column("total_jobs_b", .integer).notNull().defaults(to: 0)
                 t.column("avg_ratio_a_to_b", .double).defaults(to: 1.0)
                 t.column("confidence", .double).defaults(to: 0.0)
-                t.column("last_computed", .text).defaults(sql: "datetime('now')")
+                t.column("last_computed", .text).defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["category_a_id", "category_b_id"])
             }
 
@@ -2003,7 +2003,7 @@ extension AppDatabase {
                 t.column("target_category_id", .integer)
                 t.column("target_style_id", .integer)
                 t.column("user_id", .integer).references("users")
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             try db.create(table: "part_alternatives") { t in
@@ -2016,7 +2016,7 @@ extension AppDatabase {
                 t.column("preference", .integer).notNull().defaults(to: 0)
                 t.column("notes", .text)
                 t.column("created_by", .integer).references("users")
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["part_id", "alternative_part_id"])
             }
         }

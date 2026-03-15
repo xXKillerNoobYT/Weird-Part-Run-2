@@ -9,6 +9,9 @@ struct ModelTests {
         try AppDatabase.openInMemoryDatabase()
     }
 
+    /// Helper: current timestamp string for NOT NULL DEFAULT columns
+    private var now: String { "2026-03-14 00:00:00" }
+
     // MARK: - User Model
 
     @Test("User insert and fetch round-trip")
@@ -118,7 +121,9 @@ struct ModelTests {
             jobName: "Smith Renovation",
             status: "active",
             priority: "normal",
-            jobType: "renovation"
+            jobType: "renovation",
+            createdAt: now,
+            updatedAt: now
         )
 
         try db.writer.write { dbConn in try job.insert(dbConn) }
@@ -160,7 +165,9 @@ struct ModelTests {
             vehicleName: "Shop Truck",
             vehicleType: "company_truck",
             status: "active",
-            isActive: 1
+            isActive: 1,
+            createdAt: now,
+            updatedAt: now
         )
         vehicle.licensePlate = "ABC-1234"
         vehicle.year = 2024
@@ -182,12 +189,16 @@ struct ModelTests {
     func testToolInsertFetch() throws {
         let db = try freshDB()
         var tool = Tool(
+            toolNumber: "T-042",
             name: "Hammer Drill",
             category: "power_tools",
+            locationType: "warehouse",
             status: "available",
-            calibrationRequired: 0
+            hasKit: 0,
+            isActive: 1,
+            createdAt: now,
+            updatedAt: now
         )
-        tool.toolNumber = "T-042"
         tool.serialNumber = "SN-ABCD-1234"
 
         try db.writer.write { dbConn in try tool.insert(dbConn) }
@@ -211,9 +222,11 @@ struct ModelTests {
 
         var notebook = Notebook(
             title: "Daily Notes",
-            isArchived: 0
+            createdBy: user.id!,
+            isArchived: 0,
+            createdAt: now,
+            updatedAt: now
         )
-        notebook.createdBy = user.id
 
         try db.writer.write { dbConn in try notebook.insert(dbConn) }
         #expect(notebook.id != nil)
@@ -235,7 +248,9 @@ struct ModelTests {
         var po = PurchaseOrder(
             poNumber: "PO-2026-001",
             supplierId: supplier.id!,
-            status: "draft"
+            status: "draft",
+            createdAt: now,
+            updatedAt: now
         )
 
         try db.writer.write { dbConn in try po.insert(dbConn) }
@@ -259,7 +274,9 @@ struct ModelTests {
         var channel = ChatChannel(
             channelType: "group",
             createdBy: user.id!,
-            isActive: 1
+            isActive: 1,
+            createdAt: now,
+            updatedAt: now
         )
         channel.name = "General"
 

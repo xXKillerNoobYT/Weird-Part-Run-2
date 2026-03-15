@@ -1,3 +1,0 @@
-module GRDB {
-    header "/Users/IA/GitHub/Weird-Part-Run-2/core/.build/arm64-apple-macosx/debug/GRDB.build/include/GRDB-Swift.h"
-}

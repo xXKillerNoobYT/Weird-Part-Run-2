@@ -254,10 +254,10 @@ public enum ChangeTracker {
 /// Simple device identity provider.
 /// In production this would read from Keychain or a persisted UUID.
 /// For now, provides a stable in-process identifier.
-public enum DeviceIdentity {
+public enum DeviceIdentity: Sendable {
     /// The current device's unique identifier.
     /// Set this at app launch from Keychain/UserDefaults.
-    public static var current: String = {
+    nonisolated(unsafe) public static var current: String = {
         // Default: generate a UUID for this process (tests, etc.)
         UUID().uuidString
     }()

@@ -22,6 +22,12 @@ public final class SettingsService: Sendable {
         public var primaryColor: String
         public var fontFamily: String
 
+        public init(themeMode: String, primaryColor: String, fontFamily: String) {
+            self.themeMode = themeMode
+            self.primaryColor = primaryColor
+            self.fontFamily = fontFamily
+        }
+
         public static let defaults = ThemeSettings(
             themeMode: "system",
             primaryColor: "#2563eb",
@@ -37,6 +43,15 @@ public final class SettingsService: Sendable {
         public var paymentTerms: String
         public var deliveryNotes: String
 
+        public init(accentColor: String, showUnitPrices: Bool, showExtended: Bool, footerText: String, paymentTerms: String, deliveryNotes: String) {
+            self.accentColor = accentColor
+            self.showUnitPrices = showUnitPrices
+            self.showExtended = showExtended
+            self.footerText = footerText
+            self.paymentTerms = paymentTerms
+            self.deliveryNotes = deliveryNotes
+        }
+
         public static let defaults = PDFSettings(
             accentColor: "#2563eb",
             showUnitPrices: true,
@@ -51,12 +66,22 @@ public final class SettingsService: Sendable {
         public var cycleType: String   // "monthly", "weekly", etc.
         public var startDay: Int
 
+        public init(cycleType: String, startDay: Int) {
+            self.cycleType = cycleType
+            self.startDay = startDay
+        }
+
         public static let defaults = BillingCycleSettings(cycleType: "monthly", startDay: 1)
     }
 
     public struct PayPeriodSettings: Codable, Sendable {
         public var periodType: String  // "biweekly", "weekly", "monthly"
         public var startDay: Int
+
+        public init(periodType: String, startDay: Int) {
+            self.periodType = periodType
+            self.startDay = startDay
+        }
 
         public static let defaults = PayPeriodSettings(periodType: "biweekly", startDay: 1)
     }

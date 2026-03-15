@@ -209,7 +209,7 @@ struct SettingsServiceTests {
         let db = try freshDB()
         let svc = SettingsService(db: db)
 
-        var profile = CompanyProfile(companyName: "Test Corp", isPrimary: 1)
+        var profile = CompanyProfile(companyName: "Test Corp", isPrimary: 1, createdAt: "2026-03-14 00:00:00", updatedAt: "2026-03-14 00:00:00")
         profile.phone = "555-1234"
         profile.email = "info@test.com"
 
@@ -227,7 +227,7 @@ struct SettingsServiceTests {
         let db = try freshDB()
         let svc = SettingsService(db: db)
 
-        let profile = CompanyProfile(companyName: "To Delete", isPrimary: 0)
+        let profile = CompanyProfile(companyName: "To Delete", isPrimary: 0, createdAt: "2026-03-14 00:00:00", updatedAt: "2026-03-14 00:00:00")
         let id = try svc.createCompanyProfile(profile)
 
         try svc.deleteCompanyProfile(id)

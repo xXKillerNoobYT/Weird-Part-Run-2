@@ -63,28 +63,47 @@ public struct JPOLine: Codable, FetchableRecord, MutablePersistableRecord, Senda
 public struct PurchaseOrder: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "purchase_orders"
     public var id: Int64?
-    public var poNumber: String?
-    public var supplierId: Int64?
+    public var poNumber: String
+    public var supplierId: Int64
     public var status: String
-    public var orderedBy: Int64?
-    public var orderedAt: String?
+    public var orderDate: String?
     public var expectedDelivery: String?
-    public var shippingCost: Double?
+    public var actualDelivery: String?
+    public var shippingMethod: String?
+    public var trackingNumber: String?
+    public var subtotal: Double?
     public var taxAmount: Double?
+    public var shippingCost: Double?
+    public var totalCost: Double?
     public var notes: String?
+    public var internalNotes: String?
+    public var pdfPath: String?
+    public var pdfGeneratedAt: String?
+    public var confirmationChecklist: String?
+    public var supplierNotes: String?
+    public var submittedBy: Int64?
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, status, notes
+        case id, status, subtotal, notes
         case poNumber = "po_number"
         case supplierId = "supplier_id"
-        case orderedBy = "ordered_by"
-        case orderedAt = "ordered_at"
+        case orderDate = "order_date"
         case expectedDelivery = "expected_delivery"
-        case shippingCost = "shipping_cost"
+        case actualDelivery = "actual_delivery"
+        case shippingMethod = "shipping_method"
+        case trackingNumber = "tracking_number"
         case taxAmount = "tax_amount"
+        case shippingCost = "shipping_cost"
+        case totalCost = "total_cost"
+        case internalNotes = "internal_notes"
+        case pdfPath = "pdf_path"
+        case pdfGeneratedAt = "pdf_generated_at"
+        case confirmationChecklist = "confirmation_checklist"
+        case supplierNotes = "supplier_notes"
+        case submittedBy = "submitted_by"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"

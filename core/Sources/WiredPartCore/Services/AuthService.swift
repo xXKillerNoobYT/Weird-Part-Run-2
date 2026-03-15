@@ -334,7 +334,7 @@ public final class AuthService: Sendable {
             displayName: user.displayName,
             email: user.email,
             phone: user.phone,
-            avatarURL: user.avatarURL,
+            avatarURL: user.avatarUrl,
             certification: user.certification,
             hireDate: user.hireDate,
             isActive: user.isActive == 1,

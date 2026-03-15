@@ -6,11 +6,11 @@ import GRDB
 public struct ChatChannel: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "chat_channels"
     public var id: Int64?
-    public var name: String
     public var channelType: String
     public var jobId: Int64?
-    public var createdBy: Int64?
-    public var isArchived: Int
+    public var name: String?
+    public var createdBy: Int64
+    public var isActive: Int
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
@@ -20,7 +20,7 @@ public struct ChatChannel: Codable, FetchableRecord, MutablePersistableRecord, S
         case channelType = "channel_type"
         case jobId = "job_id"
         case createdBy = "created_by"
-        case isArchived = "is_archived"
+        case isActive = "is_active"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -37,16 +37,18 @@ public struct ChatChannelMember: Codable, FetchableRecord, MutablePersistableRec
     public var channelId: Int64
     public var userId: Int64
     public var role: String
+    public var mutedUntil: String?
     public var joinedAt: String?
-    public var lastReadAt: String?
+    public var leftAt: String?
     public var deletedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id, role
         case channelId = "channel_id"
         case userId = "user_id"
+        case mutedUntil = "muted_until"
         case joinedAt = "joined_at"
-        case lastReadAt = "last_read_at"
+        case leftAt = "left_at"
         case deletedAt = "deleted_at"
     }
 

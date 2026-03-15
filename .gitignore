@@ -66,3 +66,12 @@ backend/logs/
 
 # Backups
 backups/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+*.xcuserstate
+
+# Xcode workspace user data
+xcuserdata/

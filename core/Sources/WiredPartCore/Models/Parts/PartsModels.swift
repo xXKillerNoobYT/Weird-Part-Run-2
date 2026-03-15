@@ -164,43 +164,50 @@ public struct Supplier: Codable, FetchableRecord, MutablePersistableRecord, Send
     public static let databaseTableName = "suppliers"
     public var id: Int64?
     public var name: String
-    public var code: String?
-    public var phone: String?
+    public var contactName: String?
     public var email: String?
-    public var website: String?
+    public var phone: String?
     public var address: String?
-    public var accountNumber: String?
-    public var paymentTerms: String?
-    public var notes: String?
-    public var deliveryMethod: String
-    public var minOrderAmount: Double?
-    public var freeFreightMinimum: Double?
-    public var avgDeliveryDays: Int?
+    public var website: String?
     public var repName: String?
-    public var repPhone: String?
     public var repEmail: String?
+    public var repPhone: String?
+    public var notes: String?
+    public var deliveryMethod: String?
+    public var deliveryDays: String?
+    public var specialOrderLeadDays: Int?
+    public var deliveryNotes: String?
     public var driverName: String?
     public var driverPhone: String?
+    public var driverEmail: String?
+    public var onTimeRate: Double?
+    public var qualityScore: Double?
+    public var avgLeadDays: Int?
     public var reliabilityScore: Double?
-    public var isActive: Int
+    public var communicationScore: Double?
+    public var isActive: Int?
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, code, phone, email, website, address, notes
-        case accountNumber = "account_number"
-        case paymentTerms = "payment_terms"
-        case deliveryMethod = "delivery_method"
-        case minOrderAmount = "min_order_amount"
-        case freeFreightMinimum = "free_freight_minimum"
-        case avgDeliveryDays = "avg_delivery_days"
+        case id, name, email, phone, address, website, notes
+        case contactName = "contact_name"
         case repName = "rep_name"
-        case repPhone = "rep_phone"
         case repEmail = "rep_email"
+        case repPhone = "rep_phone"
+        case deliveryMethod = "delivery_method"
+        case deliveryDays = "delivery_days"
+        case specialOrderLeadDays = "special_order_lead_days"
+        case deliveryNotes = "delivery_notes"
         case driverName = "driver_name"
         case driverPhone = "driver_phone"
+        case driverEmail = "driver_email"
+        case onTimeRate = "on_time_rate"
+        case qualityScore = "quality_score"
+        case avgLeadDays = "avg_lead_days"
         case reliabilityScore = "reliability_score"
+        case communicationScore = "communication_score"
         case isActive = "is_active"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
@@ -234,24 +241,40 @@ public struct BrandSupplierLink: Codable, FetchableRecord, MutablePersistableRec
 public struct Part: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "parts"
     public var id: Int64?
-    public var partNumber: String?
-    public var categoryId: Int64?
+    public var categoryId: Int64
     public var styleId: Int64?
     public var typeId: Int64?
     public var colorId: Int64?
-    public var brandId: Int64?
+    public var partType: String
+    public var code: String?
+    public var name: String
     public var description: String?
-    public var unit: String
-    public var sellPrice: Double?
-    public var costPrice: Double?
-    public var minStock: Int
-    public var maxStock: Int?
+    public var brandId: Int64?
+    public var manufacturerPartNumber: String?
+    public var unitOfMeasure: String?
+    public var weightLbs: Double?
+    public var companyCostPrice: Double
+    public var companyMarkupPercent: Double
+    public var minStockLevel: Int?
+    public var maxStockLevel: Int?
+    public var targetStockLevel: Int?
     public var reorderPoint: Int?
-    public var reorderQty: Int?
-    public var location: String?
-    public var barcode: String?
+    public var forecastLastRun: String?
+    public var forecastAdu30: Double?
+    public var forecastAdu90: Double?
+    public var forecastReorderPoint: Int?
+    public var forecastTargetQty: Int?
+    public var forecastSuggestedOrder: Int?
+    public var forecastDaysUntilLow: Int?
+    public var isDeprecated: Int?
+    public var deprecationReason: String?
+    public var isQrTagged: Int?
     public var notes: String?
-    public var isActive: Int
+    public var imageUrl: String?
+    public var pdfUrl: String?
+    public var shelfLocation: String?
+    public var binLocation: String?
+    public var isActive: Int?
     public var weightedAvgCost: Double?
     public var customMarginPercent: Double?
     public var costLastUpdated: String?
@@ -260,19 +283,36 @@ public struct Part: Codable, FetchableRecord, MutablePersistableRecord, Sendable
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, description, unit, location, barcode, notes
-        case partNumber = "part_number"
+        case id, code, name, description, notes
         case categoryId = "category_id"
         case styleId = "style_id"
         case typeId = "type_id"
         case colorId = "color_id"
+        case partType = "part_type"
         case brandId = "brand_id"
-        case sellPrice = "sell_price"
-        case costPrice = "cost_price"
-        case minStock = "min_stock"
-        case maxStock = "max_stock"
+        case manufacturerPartNumber = "manufacturer_part_number"
+        case unitOfMeasure = "unit_of_measure"
+        case weightLbs = "weight_lbs"
+        case companyCostPrice = "company_cost_price"
+        case companyMarkupPercent = "company_markup_percent"
+        case minStockLevel = "min_stock_level"
+        case maxStockLevel = "max_stock_level"
+        case targetStockLevel = "target_stock_level"
         case reorderPoint = "reorder_point"
-        case reorderQty = "reorder_qty"
+        case forecastLastRun = "forecast_last_run"
+        case forecastAdu30 = "forecast_adu_30"
+        case forecastAdu90 = "forecast_adu_90"
+        case forecastReorderPoint = "forecast_reorder_point"
+        case forecastTargetQty = "forecast_target_qty"
+        case forecastSuggestedOrder = "forecast_suggested_order"
+        case forecastDaysUntilLow = "forecast_days_until_low"
+        case isDeprecated = "is_deprecated"
+        case deprecationReason = "deprecation_reason"
+        case isQrTagged = "is_qr_tagged"
+        case imageUrl = "image_url"
+        case pdfUrl = "pdf_url"
+        case shelfLocation = "shelf_location"
+        case binLocation = "bin_location"
         case isActive = "is_active"
         case weightedAvgCost = "weighted_avg_cost"
         case customMarginPercent = "custom_margin_percent"

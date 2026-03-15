@@ -55,12 +55,12 @@ public struct Hat: Codable, FetchableRecord, MutablePersistableRecord, Sendable 
     public var name: String
     public var level: Int
     public var description: String?
-    public var isSystem: Int
+    public var isBuiltin: Int
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, level, description
-        case isSystem = "is_system"
+        case isBuiltin = "is_builtin"
         case createdAt = "created_at"
     }
 

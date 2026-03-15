@@ -240,7 +240,7 @@ struct AuthServiceTests {
         // Add an inactive user
         try db.writer.write { dbConn in
             try dbConn.execute(
-                sql: "INSERT INTO users (display_name, is_active) VALUES ('Inactive', 0)"
+                sql: "INSERT INTO users (display_name, pin_hash, is_active) VALUES ('Inactive', 'nohash', 0)"
             )
         }
 
