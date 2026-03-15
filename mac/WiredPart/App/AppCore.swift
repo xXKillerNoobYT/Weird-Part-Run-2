@@ -27,6 +27,14 @@ final class AppCore: ObservableObject {
     private(set) var partsService: PartsService?
     private(set) var warehouseService: WarehouseService?
     private(set) var jobsService: JobsService?
+    private(set) var ordersService: OrdersService?
+    private(set) var fleetService: FleetService?
+    private(set) var peopleService: PeopleService?
+    private(set) var schedulingService: SchedulingService?
+    private(set) var chatService: ChatService?
+    private(set) var notebooksService: NotebooksService?
+    private(set) var reportsService: ReportsService?
+    private(set) var toolsService: ToolsService?
 
     // MARK: - Initialization
 
@@ -49,6 +57,14 @@ final class AppCore: ObservableObject {
             self.partsService = PartsService(db: database)
             self.warehouseService = WarehouseService(db: database)
             self.jobsService = JobsService(db: database)
+            self.ordersService = OrdersService(db: database)
+            self.fleetService = FleetService(db: database)
+            self.peopleService = PeopleService(db: database)
+            self.schedulingService = SchedulingService(db: database)
+            self.chatService = ChatService(db: database)
+            self.notebooksService = NotebooksService(db: database)
+            self.reportsService = ReportsService(db: database)
+            self.toolsService = ToolsService(db: database)
 
             // Load theme
             if let settings = settingsService {

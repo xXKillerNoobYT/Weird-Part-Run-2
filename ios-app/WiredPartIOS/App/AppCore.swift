@@ -25,6 +25,14 @@ final class AppCore: ObservableObject {
     public private(set) var partsService: PartsService?
     public private(set) var warehouseService: WarehouseService?
     public private(set) var jobsService: JobsService?
+    public private(set) var ordersService: OrdersService?
+    public private(set) var fleetService: FleetService?
+    public private(set) var peopleService: PeopleService?
+    public private(set) var schedulingService: SchedulingService?
+    public private(set) var chatService: ChatService?
+    public private(set) var notebooksService: NotebooksService?
+    public private(set) var reportsService: ReportsService?
+    public private(set) var toolsService: ToolsService?
 
     // MARK: - Lifecycle
 
@@ -43,6 +51,14 @@ final class AppCore: ObservableObject {
             partsService = PartsService(db: db)
             warehouseService = WarehouseService(db: db)
             jobsService = JobsService(db: db)
+            ordersService = OrdersService(db: db)
+            fleetService = FleetService(db: db)
+            peopleService = PeopleService(db: db)
+            schedulingService = SchedulingService(db: db)
+            chatService = ChatService(db: db)
+            notebooksService = NotebooksService(db: db)
+            reportsService = ReportsService(db: db)
+            toolsService = ToolsService(db: db)
 
             // Check whether any users exist yet
             let users = try authService.getActiveUsers()

@@ -94,6 +94,60 @@ struct IOSContentRouter: View {
         case "/warehouse/locations":
             WarehouseRouter(tabId: "warehouse-locations")
 
+        // Orders sub-routes
+        case "/orders/jpos":
+            OrdersRouter(tabId: "orders-jpos")
+        case "/orders/purchase-orders":
+            OrdersRouter(tabId: "orders-pos")
+        case "/orders/returns":
+            OrdersRouter(tabId: "orders-returns")
+
+        // Fleet sub-routes
+        case "/fleet/vehicles":
+            FleetRouter(tabId: "fleet-vehicles")
+        case "/fleet/maintenance":
+            FleetRouter(tabId: "fleet-maintenance")
+        case "/fleet/mileage":
+            FleetRouter(tabId: "fleet-mileage")
+
+        // People sub-routes
+        case "/people/employees":
+            PeopleRouter(tabId: "people-employees")
+        case "/people/customers":
+            PeopleRouter(tabId: "people-customers")
+        case "/people/contacts":
+            PeopleRouter(tabId: "people-contacts")
+
+        // Scheduling sub-routes
+        case "/scheduling/calendar":
+            SchedulingRouter(tabId: "scheduling-calendar")
+        case "/scheduling/dispatch":
+            SchedulingRouter(tabId: "scheduling-dispatch")
+
+        // Chat sub-routes
+        case "/chat/channels":
+            IOSChatRouter(tabId: "chat-channels")
+        case "/chat/questions":
+            IOSChatRouter(tabId: "chat-questions")
+
+        // Notebooks sub-routes
+        case "/notebooks/all":
+            IOSNotebooksRouter(tabId: "notebooks-all")
+        case "/notebooks/templates":
+            IOSNotebooksRouter(tabId: "notebooks-templates")
+
+        // Reports sub-routes
+        case "/reports/timesheets":
+            IOSReportsRouter(tabId: "reports-timesheets")
+        case "/reports/spending":
+            IOSReportsRouter(tabId: "reports-spending")
+
+        // Tools sub-routes
+        case "/tools/registry":
+            IOSToolsRouter(tabId: "tools-registry")
+        case "/tools/checkouts":
+            IOSToolsRouter(tabId: "tools-checkouts")
+
         // Everything else — placeholder for future native views
         default:
             PlaceholderView(path: path)
