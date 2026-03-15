@@ -20,7 +20,12 @@ This directory contains the detailed planning artifacts for migrating WiredPart 
 | `test_matrix.md` | Full test matrix table |
 | `file_staging_list.md` | Every file to create/modify/delete with patch sketches |
 | `branching_and_rollback.md` | Branch naming, commit template, rollback steps |
-| `estimate_and_risks.md` | Time estimates + risk register |
+| `estimate_and_risks.md` | Time estimates + risk register (13 risks) |
+| `ocr_plan.md` | Document scanning & OCR auto-extraction (Phase 12+) |
+| `qr_plan.md` | QR code recognition & auto-fill pipeline (Phase 12+) |
+| `image_match_plan.md` | Camera-based part matching (Phase 12+) |
+| `text_predict_plan.md` | Intelligent text pre-fill & predictive typing (Phase 12+) |
+| `bluetooth_sync_expanded.md` | Expanded BT sync for images & AI data (Phase 12+) |
 
 ## How to Build & Test (Per Platform)
 
@@ -78,6 +83,11 @@ xcodebuild test -project ios/WiredPartIOS.xcodeproj -scheme WiredPartIOS -destin
 
 - **UI:** Full native SwiftUI (macOS/iOS). React WebView as interim fallback.
 - **Core:** `WiredPartCore` Swift package — GRDB/SQLite, business logic, sync engine.
-- **Sync:** Multipeer Connectivity (Apple). LAN HTTP (all platforms). Ad-hoc network for Mac-Windows.
+- **Sync:** Multipeer Connectivity (Apple). LAN HTTP (all platforms). Ad-hoc network for Mac-Windows. Chunked binary sync for images (Phase 12+).
 - **AI:** Foundation Models (Apple primary). Copilot Runtime (Windows primary). llama.cpp (fallback both).
+- **OCR:** Vision framework (Apple). Windows.Media.Ocr (Windows). Platform-agnostic field extraction in Core.
+- **QR:** Native camera scanning (DataScanner/AVCapture). V2 schema with 8 entity types. Auto-fill pipeline.
+- **Image Matching:** Vision VNFeaturePrint (Apple). MobileNetV3 ONNX (Windows). Cosine similarity search.
+- **Predictive Text:** Entity lookup + phrase history + LLM ghost text. 71 Tier-1 fields. Local-only history.
 - **Repo:** Monorepo with `/core`, `/mac`, `/ios`, `/windows`, `/src` (legacy).
+- **Constraint:** All AI/scanning features operate 100% offline. Bluetooth-only device sync. No cloud APIs.

@@ -456,6 +456,275 @@ Total new files across all phases: ~250–300 Swift files.
 
 ---
 
+## Phase 12+: AI-Assisted Capabilities (OCR, QR, Image Match, Text Predict, Binary Sync)
+
+> New files for intelligent text, document scanning, QR recognition, camera part matching, and expanded sync.
+> See individual plan docs: `ocr_plan.md`, `qr_plan.md`, `image_match_plan.md`, `text_predict_plan.md`, `bluetooth_sync_expanded.md`
+
+### 12+.1 OCRProcessor.swift
+```
+Path: core/Sources/WiredPartCore/AI/OCRProcessor.swift
+Action: create
+Summary: Platform-agnostic OCR result processing — field extraction, pattern matching, confidence scoring.
+Patch sketch:
+    struct OCRProcessor {
+        let partsLookup: PartsLookupProvider
+        let suppliersLookup: SuppliersLookupProvider
+        func extractFields(from: [RecognizedTextBlock], documentType: DocumentType) -> OCRExtractionResult
+        func matchSupplier(name: String) -> SupplierMatch?
+        func matchPartCode(code: String) -> PartMatch?
+        func parseDate(text: String) -> DateParseResult?
+        func parseQuantity(text: String) -> Int?
+        func parsePONumber(text: String) -> String?
+    }
+Tests: core/Tests/WiredPartCoreTests/OCRProcessorTests.swift
+Acceptance: Field extraction from 50-doc corpus with ≥ 95% char accuracy (printed), ≥ 85% (handwritten numbers).
+```
+
+### 12+.2 OCRScannerAdapter.swift
+```
+Path: core/Sources/WiredPartCore/AI/OCRScannerAdapter.swift
+Action: create
+Summary: Protocol for platform-specific OCR scanner implementations.
+Patch sketch:
+    protocol OCRScannerAdapter {
+        var isAvailable: Bool { get }
+        func scanDocument() async throws -> ScannedDocument
+        func recognizeText(in image: CGImage) async throws -> [RecognizedTextBlock]
+    }
+Tests: Platform adapter tests in mac/ios test targets.
+Acceptance: Protocol compiles; adapters conform.
+```
+
+### 12+.3 AppleOCRScanner.swift (macOS)
+```
+Path: mac/WiredPart/Adapters/AppleOCRScanner.swift
+Action: create
+Summary: macOS OCR scanner using Vision framework VNRecognizeTextRequest.
+Tests: mac/WiredPartTests/AppleOCRScannerTests.swift
+Acceptance: Text extraction from test image matches expected output.
+```
+
+### 12+.4 AppleOCRScanner.swift (iOS)
+```
+Path: ios-app/WiredPartIOS/Adapters/AppleOCRScanner.swift
+Action: create
+Summary: iOS OCR scanner using Vision + VisionKit document camera.
+Tests: ios-app/WiredPartIOSTests/AppleOCRScannerTests.swift
+Acceptance: Document camera launches, text extracted from test image.
+```
+
+### 12+.5 QRCodec.swift
+```
+Path: core/Sources/WiredPartCore/QR/QRCodec.swift
+Action: create
+Summary: Encode/decode WiredPart QR payloads (V2 schema with entity types).
+Patch sketch:
+    struct QRCodec {
+        static func encode(_ entity: QREntity) throws -> String
+        static func decode(_ payload: String) throws -> QREntity
+        func resolve(_ entity: QREntity) async throws -> QRResolvedEntity
+    }
+Tests: core/Tests/WiredPartCoreTests/QRCodecTests.swift
+Acceptance: Round-trip encode/decode for all 8 entity types; V1 backward compat.
+```
+
+### 12+.6 QRGenerator.swift
+```
+Path: core/Sources/WiredPartCore/QR/QRGenerator.swift
+Action: create
+Summary: QR code image generation using CIFilter.
+Patch sketch:
+    struct QRGenerator {
+        static func generate(_ entity: QREntity, size: CGSize) throws -> CGImage
+        static func generateLabel(_ entity: QREntity, includeText: Bool, size: CGSize) throws -> CGImage
+    }
+Tests: core/Tests/WiredPartCoreTests/QRGeneratorTests.swift
+Acceptance: Generated QR code is scannable and decodes to original entity.
+```
+
+### 12+.7 QRScannerAdapter.swift
+```
+Path: core/Sources/WiredPartCore/QR/QRScannerAdapter.swift
+Action: create
+Summary: Protocol for platform-specific QR/barcode scanning.
+Patch sketch:
+    protocol QRScannerAdapter {
+        var isAvailable: Bool { get }
+        func startScanning() async throws -> AsyncStream<QRScanEvent>
+        func stopScanning()
+    }
+Tests: Platform adapter tests.
+Acceptance: Protocol compiles; adapters conform.
+```
+
+### 12+.8 IOSQRScanner.swift
+```
+Path: ios-app/WiredPartIOS/Adapters/IOSQRScanner.swift
+Action: create
+Summary: iOS QR scanner using DataScannerViewController.
+Tests: ios-app/WiredPartIOSTests/IOSQRScannerTests.swift
+Acceptance: QR codes detected in camera feed, haptic on success.
+```
+
+### 12+.9 MacQRScanner.swift
+```
+Path: mac/WiredPart/Adapters/MacQRScanner.swift
+Action: create
+Summary: macOS QR scanner using AVCaptureSession + VNDetectBarcodesRequest.
+Tests: mac/WiredPartTests/MacQRScannerTests.swift
+Acceptance: QR codes detected from webcam; file-based QR reading works.
+```
+
+### 12+.10 ImageMatcher.swift
+```
+Path: core/Sources/WiredPartCore/AI/ImageMatcher.swift
+Action: create
+Summary: Camera-based part matching — feature index, cosine similarity, top-K search.
+Patch sketch:
+    actor ImageMatcher {
+        func loadIndex() async throws
+        func findMatches(for: CGImage, topK: Int, minimumConfidence: Float) async throws -> [ImageMatchResult]
+        func indexPartImage(partId: Int64, image: CGImage) async throws
+        func removeFromIndex(partId: Int64) async throws
+        func indexStats() -> ImageIndexStats
+    }
+Tests: core/Tests/WiredPartCoreTests/ImageMatcherTests.swift
+Acceptance: Top-3 accuracy ≥ 80% on 100-part test set; index build < 60s for 1000 parts.
+```
+
+### 12+.11 ImageFeatureAdapter.swift
+```
+Path: core/Sources/WiredPartCore/AI/ImageFeatureAdapter.swift
+Action: create
+Summary: Protocol for platform-specific image feature extraction.
+Patch sketch:
+    protocol ImageFeatureAdapter {
+        var isAvailable: Bool { get }
+        func extractFeatures(from: CGImage) async throws -> [Float]
+        var featureDimension: Int { get }
+    }
+Tests: Platform adapter tests.
+Acceptance: Feature vector extracted, correct dimension.
+```
+
+### 12+.12 AppleImageFeatureAdapter.swift
+```
+Path: mac/WiredPart/Adapters/AppleImageFeatureAdapter.swift
+Action: create (shared macOS/iOS via SPM or duplicate)
+Summary: Vision framework VNGenerateImageFeaturePrintRequest for feature extraction.
+Tests: mac/WiredPartTests/AppleImageFeatureAdapterTests.swift
+Acceptance: 2048-dim feature vector extracted from test image.
+```
+
+### 12+.13 TextPredictor.swift
+```
+Path: core/Sources/WiredPartCore/AI/TextPredictor.swift
+Action: create
+Summary: Context-aware text prediction — entity lookup, phrase history, template expansion, LLM generation.
+Patch sketch:
+    actor TextPredictor {
+        func predict(context: PredictionContext) async -> [TextSuggestion]
+        func recordEntry(fieldType: String, text: String, entityContext: [String: String]?) async
+        func generatePreFill(formType: FormType, context: PreFillContext) async -> [PreFilledField]
+        func clearHistory(fieldType: String?) async
+    }
+Tests: core/Tests/WiredPartCoreTests/TextPredictorTests.swift
+Acceptance: Entity lookup < 10ms; phrase completion < 20ms; no cross-user text history leak.
+```
+
+### 12+.14 BinarySyncManager.swift
+```
+Path: core/Sources/WiredPartCore/Sync/BinarySyncManager.swift
+Action: create
+Summary: Chunked binary transfer for images — priority queue, resume, dedup.
+Patch sketch:
+    actor BinarySyncManager {
+        func enqueue(_ attachment: BinaryAttachment, priority: Priority)
+        func processQueue(transport: SyncTransport) async
+        func handleManifest(_ manifest: BinaryManifest, fromPeer: PeerInfo) async -> BinaryRequest
+        func resumeTransfer(_ transferId: UUID) async throws
+    }
+Tests: core/Tests/WiredPartCoreTests/BinarySyncTests.swift
+Acceptance: 1MB transfer over BT < 90s; resume within 10s; records unblocked during image sync.
+```
+
+### 12+.15 SyncPriorityQueue.swift
+```
+Path: core/Sources/WiredPartCore/Sync/SyncPriorityQueue.swift
+Action: create
+Summary: Priority-ordered sync task queue.
+Patch sketch:
+    actor SyncPriorityQueue {
+        func enqueue(_ task: SyncTask, priority: Priority)
+        func dequeueNext() -> SyncTask?
+        func pendingBinaryTransferCount() -> Int
+        func cancel(forRecordId: String, table: String)
+    }
+Tests: core/Tests/WiredPartCoreTests/SyncPriorityQueueTests.swift
+Acceptance: Tasks dequeued in priority order; cancel removes correct tasks.
+```
+
+### 12+.16 CameraMatchView.swift (macOS)
+```
+Path: mac/WiredPart/Features/Parts/CameraMatchView.swift
+Action: create
+Summary: SwiftUI view for camera capture + part match results display.
+Tests: mac/WiredPartTests/CameraMatchViewTests.swift
+Acceptance: Camera opens, photo taken, results shown with confidence bars.
+```
+
+### 12+.17 CameraMatchView.swift (iOS)
+```
+Path: ios-app/WiredPartIOS/Features/Parts/CameraMatchView.swift
+Action: create
+Summary: iOS version of camera match view.
+Tests: ios-app/WiredPartIOSTests/CameraMatchViewTests.swift
+Acceptance: Same as macOS.
+```
+
+### 12+.18 DocumentScanView.swift (macOS)
+```
+Path: mac/WiredPart/Features/Shared/DocumentScanView.swift
+Action: create
+Summary: Document scan UI — file picker / camera, OCR progress, extracted fields review.
+Tests: mac/WiredPartTests/DocumentScanViewTests.swift
+Acceptance: Document loaded, OCR runs, fields displayed with confidence indicators.
+```
+
+### 12+.19 DocumentScanView.swift (iOS)
+```
+Path: ios-app/WiredPartIOS/Features/Shared/DocumentScanView.swift
+Action: create
+Summary: iOS document scan UI using VNDocumentCameraViewController.
+Tests: ios-app/WiredPartIOSTests/DocumentScanViewTests.swift
+Acceptance: Document camera launches, pages captured, OCR fields shown.
+```
+
+### 12+.20 AutoFillBanner.swift
+```
+Path: mac/WiredPart/Features/Shared/AutoFillBanner.swift (shared component)
+Action: create
+Summary: Banner shown when smart autofill pre-populates form fields.
+Tests: UI test for banner visibility.
+Acceptance: Banner appears with field count, Accept All / Clear buttons work.
+```
+
+### Test Files (Phase 12+)
+```
+core/Tests/WiredPartCoreTests/OCRProcessorTests.swift
+core/Tests/WiredPartCoreTests/QRCodecTests.swift
+core/Tests/WiredPartCoreTests/QRGeneratorTests.swift
+core/Tests/WiredPartCoreTests/ImageMatcherTests.swift
+core/Tests/WiredPartCoreTests/TextPredictorTests.swift
+core/Tests/WiredPartCoreTests/BinarySyncTests.swift
+core/Tests/WiredPartCoreTests/SyncPriorityQueueTests.swift
+```
+
+Total new files for Phase 12+: ~30 Swift files (core + platform adapters + views + tests).
+
+---
+
 ## Files to Modify (existing)
 
 | File | Phase | Change |

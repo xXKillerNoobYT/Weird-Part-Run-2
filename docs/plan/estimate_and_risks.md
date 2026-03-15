@@ -20,6 +20,7 @@
 | 10 | Scheduling | High | 2 services, 7 pages, calendar grid, drag-and-drop |
 | 11 | Remaining Modules | High | 6 modules, 24 pages, 6+ services |
 | 12 | AI — Apple | High | FoundationModelsService, LlamaCppService, AITextField, EnhancePopover, 71 field integrations |
+| 12+ | AI-Assisted Capabilities | High | OCRProcessor, QRCodec/QRGenerator, ImageMatcher, TextPredictor, BinarySyncManager, platform adapters (OCR, QR, ImageFeature), CameraMatchView, DocumentScanView, AutoFillBanner, ~30 new files, ~50 new tests |
 | 13 | AI — Windows | Medium | CopilotRuntimeService, llama.cpp on Windows |
 | 14 | Windows Target | High | Platform evaluation, app target creation, testing |
 | 15 | Cleanup | Low | Delete src/, src-tauri/, update docs |
@@ -29,17 +30,18 @@
 **Solo developer (1 experienced SwiftUI engineer):**
 - Phases 1–3 (foundation): 3–4 months
 - Phases 4–11 (feature migration): 10–14 months
-- Phase 12 (AI): 1–2 months
+- Phase 12 (AI core): 1–2 months
+- Phase 12+ (AI-assisted capabilities): 2–3 months
 - Phases 13–14 (Windows): 2–3 months
 - Phase 15 (cleanup): 1 week
-- **Total: 18–24 months**
+- **Total: 20–27 months**
 
 **Two-person team:**
 - Phases 1–3: 2–3 months (sequential, hard to parallelize)
 - Phases 4–11: 5–7 months (one person on services, one on views)
-- Phase 12: 1 month
+- Phase 12 + 12+: 2–3 months (parallelizable: one on core AI, one on OCR/QR/image)
 - Phases 13–14: 1–2 months
-- **Total: 9–12 months**
+- **Total: 10–14 months**
 
 ---
 
@@ -133,23 +135,78 @@
 | **Owner** | Phase 2, Task 2.6 |
 | **Status** | Open |
 
+### Risk 9: OCR Misreads Leading to Data Entry Errors
+
+| Attribute | Value |
+|-----------|-------|
+| **Likelihood** | High |
+| **Impact** | Medium (incorrect PO numbers, quantities, or supplier names entered into system) |
+| **Description** | OCR accuracy varies with document quality, lighting, handwriting legibility, and print quality. Field conditions (construction sites, warehouses) produce suboptimal scan conditions. A misread quantity of "42" as "47" could cause inventory discrepancies. |
+| **Mitigation** | 1. All OCR-extracted fields require user confirmation — never auto-submit. 2. Confidence scoring with color-coded indicators (green ≥ 0.90, yellow 0.70–0.89, red < 0.70). 3. Low-confidence fields not auto-filled — shown as suggestions only. 4. Real-time scan quality feedback before processing. 5. "Rescan" prompt when overall confidence < 0.50. |
+| **Owner** | Phase 12+ |
+| **Status** | Open |
+
+### Risk 10: Poor Lighting Degrades Camera Part Matching
+
+| Attribute | Value |
+|-----------|-------|
+| **Likelihood** | High |
+| **Impact** | Medium (inaccurate or no matches for parts photographed in dark conditions) |
+| **Description** | Warehouses and construction sites often have poor lighting. Flash/torch helps but can create glare. Feature extraction quality degrades significantly in low light, reducing match accuracy below useful thresholds. |
+| **Mitigation** | 1. Auto-enable flash/torch when ambient light is low. 2. Image pre-processing: contrast enhancement, noise reduction before feature extraction. 3. UI guidance: "Move to better lighting" prompt when image quality score is low. 4. Allow manual search as fallback — camera matching is supplementary, not required. |
+| **Owner** | Phase 12+ |
+| **Status** | Open |
+
+### Risk 11: QR Code Damage in Field Environments
+
+| Attribute | Value |
+|-----------|-------|
+| **Likelihood** | Medium |
+| **Impact** | Low (user falls back to manual entry) |
+| **Description** | QR labels on parts, bins, and tools get damaged in construction/warehouse environments — dirt, scratches, chemical exposure, UV fading. Standard QR has error correction up to ~30% damage (Level H), but beyond that, codes become unreadable. |
+| **Mitigation** | 1. Generate QR codes at error correction level H (30% recovery). 2. Document minimum print size (15mm × 15mm). 3. Recommend matte label stock for durability. 4. Fallback: non-WiredPart codes searched against parts catalog. 5. "Couldn't read QR" → manual entry always available. |
+| **Owner** | Phase 12+ |
+| **Status** | Open |
+
+### Risk 12: Predictive Text Hallucinations
+
+| Attribute | Value |
+|-----------|-------|
+| **Likelihood** | Medium |
+| **Impact** | High (fabricated entity names or incorrect data suggested to users) |
+| **Description** | LLM-based predictions may generate plausible but incorrect entity names (suppliers, parts, jobs) that don't exist in the database. Users trusting ghost text suggestions could enter bad data. |
+| **Mitigation** | 1. Entity-reference fields always use database lookup (not LLM) as primary suggestion source. 2. LLM only used for free-text fields (notes, descriptions, messages). 3. Ghost text clearly styled as suggestion (dimmed, distinct from user input). 4. Entity validation on form submit — flag any unrecognized entities. 5. Test suite: 100 completions verified for zero fabricated entity names. |
+| **Owner** | Phase 12+ |
+| **Status** | Open |
+
+### Risk 13: Bluetooth Sync Overload from Image Data
+
+| Attribute | Value |
+|-----------|-------|
+| **Likelihood** | Medium |
+| **Impact** | Medium (sync sessions take too long, record sync blocked by image transfers) |
+| **Description** | Adding scanned document images and part reference photos to sync payload can overwhelm Bluetooth bandwidth. A single day with 10 document scans + 5 part photos = ~15MB of binary data, which takes ~18 minutes over BT. If not managed, this blocks critical record sync. |
+| **Mitigation** | 1. Priority queue: records always sync before images. 2. Image sync is never blocking — runs in background after records complete. 3. BT image sync is user-initiated ("Sync Images Now") not automatic. 4. LAN sync recommended for bulk image transfer (100× faster). 5. Progress indicator shows image sync status separately from record sync. |
+| **Owner** | Phase 12+ |
+| **Status** | Open |
+
 ---
 
 ## Risk Summary Heat Map
 
 ```
 Impact ↑
-  High  │ [R1] [R2]         [R6]
+  High  │ [R1] [R2]         [R6]     [R12]
         │
-  Med   │      [R3] [R4]    [R7] [R8]
+  Med   │      [R3] [R4]    [R7] [R8] [R9] [R10] [R13]
         │
-  Low   │           [R5]
+  Low   │           [R5]    [R11]
         │
-        └──────────────────────────→
+        └──────────────────────────────────→
           Low    Medium    High
                 Likelihood
 ```
 
-**Top priority risks (High impact):** R1 (schema drift), R2 (sync protocol), R6 (WAL conflict)
-**Medium priority:** R3 (WebView auth), R4 (NIO vs axum), R7 (Windows), R8 (BT edge cases)
-**Low priority:** R5 (Foundation Models timing — already mitigated by design)
+**Top priority risks (High impact):** R1 (schema drift), R2 (sync protocol), R6 (WAL conflict), R12 (text hallucinations)
+**Medium priority:** R3 (WebView auth), R4 (NIO vs axum), R7 (Windows), R8 (BT edge cases), R9 (OCR misreads), R10 (poor lighting), R13 (BT image overload)
+**Low priority:** R5 (Foundation Models timing), R11 (QR damage)

@@ -280,9 +280,14 @@ These are reusable across all modules:
 | `EmptyStateView` | Placeholder when list is empty | All list views |
 | `ErrorView` | Error with retry button | All views with data loading |
 | `LoadingView` | Spinner with optional message | All async views |
-| `AITextField` | TextEditor + ghost text + enhance | All Tier-1 text fields (Phase 12) |
+| `AITextField` | TextEditor + ghost text + enhance + predictive suggestions | All Tier-1 text fields (Phase 12+) |
 | `EnhancePopover` | AI enhancement options popup | Paired with AITextField |
-| `QRScannerView` | Camera-based QR/barcode scan | Warehouse, Tools |
+| `AutoFillBanner` | "N fields pre-filled" banner with Accept All / Clear | All forms with smart autofill (Phase 12+) |
+| `QRScannerView` | Camera-based QR/barcode scan + auto-fill | Warehouse, Tools, Orders, Jobs, Fleet, Parts |
+| `DocumentScanView` | Document camera + OCR + field extraction review | Warehouse Receiving, Orders, Fleet Deliveries |
+| `CameraMatchView` | Photo capture + top-5 part matches + confidence bars | Parts Catalog, Receiving, Movement Wizard, Orders |
+| `ConfidenceIndicator` | Color-coded confidence bar (green/yellow/red) | OCR results, image match results |
+| `SyncProgressView` | Enhanced sync status with separate record/image progress | Settings Sync, Status Bar |
 | `PDFPreview` | In-app PDF viewer | Reports, PO bundles |
 | `PINPadView` | Numeric PIN entry | Login, security confirm |
 | `DateRangePickerView` | Start/end date selection | Reports, movements, mileage |
@@ -321,3 +326,82 @@ enum AppDestination: Hashable {
 ```
 
 This enables `NavigationStack` path-based navigation on macOS and `NavigationPath` on iOS.
+
+---
+
+## AI-Assisted Capability Integration Points (Phase 12+)
+
+### Document Scanning Surfaces
+
+| Module | Trigger | OCR Action |
+|--------|---------|------------|
+| Warehouse Receiving | "Scan Document" button on session | Extract PO#, quantities, part codes → pre-fill receiving form |
+| Orders (PO Import) | "Scan PO" button on New PO | Extract supplier, line items, prices → create PO draft |
+| Fleet Deliveries | "Scan Delivery" in delivery confirmation | Extract date, signature presence, notes → update delivery record |
+| Jobs / Notebooks | "Scan Notes" in notes editor | Extract handwritten text → add to notes entry |
+
+### QR Auto-Fill Surfaces
+
+| Module | Trigger | QR Types | Auto-Fill Action |
+|--------|---------|----------|-----------------|
+| Warehouse Receiving | "Scan" button | `po`, `part`, `bin` | Fill PO ref, add line item, set bin |
+| Warehouse Movement | "Scan" in wizard | `part`, `bin` | Select part, set source/dest bin |
+| Orders (New JPO) | "Scan Part" | `part`, `supplier` | Add part, pre-select supplier |
+| Jobs Clock-In | "Scan Job" | `job` | Select job to clock into |
+| Tools Checkout | "Scan Tool" | `tool` | Select tool for checkout/return |
+| Tools Kit Verify | "Scan Items" | `tool` | Check off tool from manifest |
+| Fleet Inspection | "Scan Vehicle" | `vehicle` | Load vehicle for inspection |
+| Parts Catalog | Search bar scan | `part` | Navigate to part detail |
+| People Directory | "Scan Badge" | `employee` | Navigate to employee detail |
+| **Global** | Toolbar / Cmd+Shift+Q | Any | Navigate to entity or auto-fill context field |
+
+### Camera Part Matching Surfaces
+
+| Module | Trigger | Placement |
+|--------|---------|-----------|
+| Parts Catalog | "Match by Photo" button | Toolbar next to search |
+| Warehouse Receiving | "Identify Part" per line | Inline button on line item |
+| Warehouse Movement | "Photo Match" | Step 1 part selection |
+| Orders (New JPO) | "Photo Match" in picker | Part picker toolbar |
+| Part Detail | "Update Reference Photo" | Edit mode action |
+
+### Smart Autofill Surfaces
+
+| Form | Pre-Filled Fields | Context Source |
+|------|-------------------|----------------|
+| New Purchase Order | Supplier, address, payment terms, line items | Recent POs, JPO data |
+| Daily Report | Crew names, job, hours, date header | Today's labor entries |
+| Job Notes | Date header, crew suggestion | Clock-in data |
+| Delivery Sheet | Driver, vehicle, destination | Schedule + assignments |
+| Clock-Out Questionnaire | Common previous answers | Historical responses |
+| Notebook Entry | Template-based fill | Template + job context |
+
+### Predictive Text Field Types
+
+All 71 Tier-1 text fields get ghost-text predictions. See `text_predict_plan.md` for the full field list. Key integration:
+
+| Field Category | Prediction Type | Example |
+|---------------|----------------|---------|
+| Entity-reference (supplier, part, job names) | Database lookup (< 10ms) | Type "West" → "Westinghouse Electric" |
+| Free-text (notes, descriptions) | Phrase history + LLM (< 2s) | Type "Received del" → "Received delivery from [supplier]" |
+| Chat messages | LLM generation | Natural language continuation |
+| Form fields (address, contact) | Historical data autofill | Last-used values for same entity |
+
+### Enhanced Sync Status (Settings → Sync)
+
+```
+┌────────────────────────────────┐
+│ Sync Status                     │
+├────────────────────────────────┤
+│ Records: ✅ Up to date          │
+│ Images:  🔄 3 of 8 synced      │
+│          ████████░░░░ 37%       │
+│                                 │
+│ Pending Transfers:              │
+│  📄 Delivery scan (1.2 MB)     │
+│  📷 Part ref: ELB-90 (450 KB)  │
+│  📷 Part ref: TEE-2IN (380 KB) │
+│                                 │
+│ [Sync Images Now] [Skip Images] │
+└────────────────────────────────┘
+```

@@ -338,6 +338,101 @@
 - GGUF model loading, inference via llama.cpp C++ bridge
 - Fallback when Foundation Models unavailable
 
+### OCRProcessor.swift (Phase 12+)
+- `struct OCRProcessor`
+  - `func extractFields(from: [RecognizedTextBlock], documentType: DocumentType) -> OCRExtractionResult`
+  - `func matchSupplier(name: String) -> SupplierMatch?`
+  - `func matchPartCode(code: String) -> PartMatch?`
+  - `func parseDate(text: String) -> DateParseResult?`
+  - `func parseQuantity(text: String) -> Int?`
+  - `func parsePONumber(text: String) -> String?`
+- Platform-agnostic field extraction, pattern matching, confidence scoring
+- Works with any recognized text input — no UI or Vision framework dependency
+
+### OCRScannerAdapter.swift (Phase 12+)
+- `protocol OCRScannerAdapter`
+  - `var isAvailable: Bool { get }`
+  - `func scanDocument() async throws -> ScannedDocument`
+  - `func recognizeText(in image: CGImage) async throws -> [RecognizedTextBlock]`
+- Platform adapters in `mac/` and `ios-app/` directories
+
+### ImageMatcher.swift (Phase 12+)
+- `actor ImageMatcher`
+  - `func loadIndex() async throws`
+  - `func findMatches(for: CGImage, topK: Int, minimumConfidence: Float) async throws -> [ImageMatchResult]`
+  - `func indexPartImage(partId: Int64, image: CGImage) async throws`
+  - `func removeFromIndex(partId: Int64) async throws`
+  - `func indexStats() -> ImageIndexStats`
+- Cosine similarity search against feature index
+- In-memory index for fast search (< 100ms for 10,000 parts)
+
+### ImageFeatureAdapter.swift (Phase 12+)
+- `protocol ImageFeatureAdapter`
+  - `var isAvailable: Bool { get }`
+  - `func extractFeatures(from: CGImage) async throws -> [Float]`
+  - `var featureDimension: Int { get }`
+- Apple implementation: `VNGenerateImageFeaturePrintRequest` (2048-dim)
+- Windows fallback: MobileNetV3 ONNX (1024-dim)
+
+### TextPredictor.swift (Phase 12+)
+- `actor TextPredictor`
+  - `func predict(context: PredictionContext) async -> [TextSuggestion]`
+  - `func recordEntry(fieldType: String, text: String, entityContext: [String: String]?) async`
+  - `func generatePreFill(formType: FormType, context: PreFillContext) async -> [PreFilledField]`
+  - `func clearHistory(fieldType: String?) async`
+- Priority chain: entity lookup (< 10ms) → phrase history (< 20ms) → template (< 5ms) → LLM (< 2s)
+- `_text_history` table for phrase completion (local-only, not synced)
+
+---
+
+## Module: QR
+
+**Path:** `Sources/WiredPartCore/QR/`
+
+### QRCodec.swift (Phase 12+)
+- `struct QRCodec`
+  - `static func encode(_ entity: QREntity) throws -> String`
+  - `static func decode(_ payload: String) throws -> QREntity`
+  - `func resolve(_ entity: QREntity) async throws -> QRResolvedEntity`
+- V2 schema with entity types: part, job, supplier, bin, vehicle, tool, employee, po
+- V1 backward compatibility (payloads without `type` field treated as `part`)
+
+### QRGenerator.swift (Phase 12+)
+- `struct QRGenerator`
+  - `static func generate(_ entity: QREntity, size: CGSize) throws -> CGImage`
+  - `static func generateLabel(_ entity: QREntity, includeText: Bool, size: CGSize) throws -> CGImage`
+- Uses `CIFilter.qrCodeGenerator()` (Core Image)
+- Error correction level H (30% damage recovery)
+
+### QRScannerAdapter.swift (Phase 12+)
+- `protocol QRScannerAdapter`
+  - `var isAvailable: Bool { get }`
+  - `func startScanning() async throws -> AsyncStream<QRScanEvent>`
+  - `func stopScanning()`
+- Platform adapters: `DataScannerViewController` (iOS), `AVCaptureSession` (macOS), `BarcodeScanner` (Windows)
+
+---
+
+## Module: Sync (Extended — Phase 12+)
+
+### BinarySyncManager.swift
+- `actor BinarySyncManager`
+  - `func enqueue(_ attachment: BinaryAttachment, priority: Priority)`
+  - `func processQueue(transport: SyncTransport) async`
+  - `func handleManifest(_ manifest: BinaryManifest, fromPeer: PeerInfo) async -> BinaryRequest`
+  - `func resumeTransfer(_ transferId: UUID) async throws`
+- Chunked binary transfer (16KB frames) for images and scanned documents
+- SHA-256 deduplication, CRC32 per-chunk verification
+
+### SyncPriorityQueue.swift
+- `actor SyncPriorityQueue`
+  - `func enqueue(_ task: SyncTask, priority: Priority)`
+  - `func dequeueNext() -> SyncTask?`
+  - `func pendingBinaryTransferCount() -> Int`
+  - `func cancel(forRecordId: String, table: String)`
+- Priority levels: critical (0) → high (1) → medium (3) → low (4) → background (5)
+- Records always priority 1; images priority 3–5
+
 ---
 
 ## What Does NOT Go in Core

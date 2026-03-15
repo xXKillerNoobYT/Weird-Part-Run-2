@@ -239,11 +239,28 @@ protocol LocationAdapter {
 
 ---
 
-## 6. QR/Barcode Scanner Adapter
+## 6. QR/Barcode Scanner Adapter (Enhanced — Phase 12+)
+
+The QR scanner adapter is extended to support continuous scanning, multiple code types, and the new V2 QR payload schema with entity-type auto-fill.
 
 ### Protocol (in Core)
 
 ```swift
+// core/Sources/WiredPartCore/QR/QRScannerAdapter.swift
+
+protocol QRScannerAdapter {
+    var isAvailable: Bool { get }
+    func startScanning() async throws -> AsyncStream<QRScanEvent>
+    func stopScanning()
+}
+
+enum QRScanEvent {
+    case detected(payload: String, bounds: CGRect)
+    case error(Error)
+    case permissionDenied
+}
+
+// Legacy single-scan API (backward compat)
 protocol ScannerAdapter {
     var isAvailable: Bool { get }
     func scan() async throws -> ScanResult
@@ -257,15 +274,96 @@ struct ScanResult {
 
 ### Implementations
 
-| Platform | Implementation |
-|----------|---------------|
-| macOS | `AVCaptureSession` or webcam-based |
-| iOS | `DataScannerViewController` (VisionKit) |
-| Windows | USB barcode scanner as keyboard input |
+| Platform | Implementation | Features |
+|----------|---------------|----------|
+| macOS | `AVCaptureSession` + `VNDetectBarcodesRequest` | Webcam QR/barcode, file-based QR reading |
+| iOS | `DataScannerViewController` (VisionKit) | Live camera, haptic feedback, torch control |
+| Windows | `Windows.Devices.PointOfService.BarcodeScanner` + `MediaCapture` fallback | USB scanner, camera fallback |
 
 ---
 
-## 7. PDF Generation Adapter
+## 7. OCR Scanner Adapter (Phase 12+)
+
+Document scanning and text recognition for paper POs, delivery sheets, and handwritten notes.
+
+### Protocol (in Core)
+
+```swift
+// core/Sources/WiredPartCore/AI/OCRScannerAdapter.swift
+
+protocol OCRScannerAdapter {
+    var isAvailable: Bool { get }
+
+    /// Open document scanner (camera or file picker)
+    func scanDocument() async throws -> ScannedDocument
+
+    /// Recognize text in a single image
+    func recognizeText(in image: CGImage) async throws -> [RecognizedTextBlock]
+}
+
+struct ScannedDocument {
+    let pages: [ScannedPage]
+}
+
+struct ScannedPage {
+    let image: CGImage
+    let pageIndex: Int
+}
+
+struct RecognizedTextBlock {
+    let text: String
+    let confidence: Float           // 0.0–1.0
+    let boundingBox: CGRect         // normalized coordinates
+    let isHandwritten: Bool
+}
+```
+
+### Implementations
+
+| Platform | Implementation |
+|----------|---------------|
+| macOS | `VNRecognizeTextRequest` (.accurate level) via Vision framework. File picker for existing documents. Custom word list from parts/suppliers DB. |
+| iOS | `VNDocumentCameraViewController` for multi-page document capture + `VNRecognizeTextRequest`. Real-time quality feedback. |
+| Windows | `Windows.Media.Ocr.OcrEngine` (WinRT). Fallback: Tesseract C library binding. |
+
+---
+
+## 8. Image Feature Extraction Adapter (Phase 12+)
+
+Extracts feature vectors from images for camera-based part matching.
+
+### Protocol (in Core)
+
+```swift
+// core/Sources/WiredPartCore/AI/ImageFeatureAdapter.swift
+
+protocol ImageFeatureAdapter {
+    var isAvailable: Bool { get }
+
+    /// Extract a feature vector from an image
+    func extractFeatures(from image: CGImage) async throws -> [Float]
+
+    /// Feature vector dimension (e.g., 2048 for VNFeaturePrint)
+    var featureDimension: Int { get }
+}
+```
+
+### Implementations
+
+| Platform | Implementation | Vector Dimension |
+|----------|---------------|:----------------:|
+| macOS/iOS | `VNGenerateImageFeaturePrintRequest` (Vision framework) | 2048 |
+| Windows | MobileNetV3-Small via ONNX Runtime (penultimate layer) | 1024 |
+
+### Notes
+- Apple Vision feature print is built-in — no model download needed
+- Windows requires a bundled ONNX model (~15MB)
+- Feature vectors from different adapters are NOT interchangeable — the `adapter_type` column in `part_image_features` ensures vectors are only compared against same-adapter vectors
+- If a device rebuilds its index with a different adapter, all vectors are recomputed
+
+---
+
+## 9. PDF Generation Adapter
 
 ### Protocol (in Core)
 
