@@ -43,28 +43,32 @@ public struct ConflictLogEntry: Codable, FetchableRecord, MutablePersistableReco
 
     public var id: Int64?
     public var tableName: String
-    public var recordId: Int64
-    public var localDeviceId: String?
-    public var remoteDeviceId: String?
-    public var localValues: String?
-    public var remoteValues: String?
-    public var resolvedValues: String?
-    public var resolutionStrategy: String?
+    public var recordId: String
+    public var fieldName: String
+    public var localValue: String?
+    public var remoteValue: String?
+    public var winner: String
+    public var localDevice: String
+    public var remoteDevice: String
+    public var localTs: String
+    public var remoteTs: String
     public var resolvedAt: String?
-    public var createdAt: String?
+    public var reviewed: Int = 0
 
     enum CodingKeys: String, CodingKey {
         case id
         case tableName = "table_name"
         case recordId = "record_id"
-        case localDeviceId = "local_device_id"
-        case remoteDeviceId = "remote_device_id"
-        case localValues = "local_values"
-        case remoteValues = "remote_values"
-        case resolvedValues = "resolved_values"
-        case resolutionStrategy = "resolution_strategy"
+        case fieldName = "field_name"
+        case localValue = "local_value"
+        case remoteValue = "remote_value"
+        case winner
+        case localDevice = "local_device"
+        case remoteDevice = "remote_device"
+        case localTs = "local_ts"
+        case remoteTs = "remote_ts"
         case resolvedAt = "resolved_at"
-        case createdAt = "created_at"
+        case reviewed
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) {
