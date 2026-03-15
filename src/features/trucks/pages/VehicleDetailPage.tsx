@@ -58,6 +58,7 @@ export function VehicleDetailPage() {
     queryKey: ['vehicle', vehicleId],
     queryFn: () => getVehicle(vehicleId),
     staleTime: 15_000,
+    enabled: !isNaN(vehicleId),
   });
 
   if (isLoading) return <PageSpinner label="Loading vehicle..." />;
@@ -76,7 +77,8 @@ export function VehicleDetailPage() {
   const vehicleName =
     vehicle.vehicle_name ||
     `${vehicle.make || ''} ${vehicle.model || ''}`.trim() ||
-    vehicle.vehicle_number;
+    vehicle.vehicle_number ||
+    'Unknown Vehicle';
 
   return (
     <div className="space-y-4">

@@ -56,7 +56,7 @@ export function NotebookDetailPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['notebook-full', nbId],
     queryFn: () => getNotebookFull(nbId),
-    enabled: !!nbId,
+    enabled: !!notebookId && !isNaN(nbId),
   });
 
   // Collect all task entries across sections for bulk selection
