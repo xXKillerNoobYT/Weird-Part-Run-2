@@ -47,9 +47,13 @@ export function getPlatform(): 'macos' | 'windows' | 'ios' | 'android' | 'web' {
     if (tauriPlatform === 'windows') return 'windows';
     if (tauriPlatform === 'ios') return 'ios';
     if (tauriPlatform === 'android') return 'android';
-    // Fallback: detect from user agent
-    if (navigator.userAgent.includes('Macintosh')) return 'macos';
-    if (navigator.userAgent.includes('Windows')) return 'windows';
+    // Fallback: detect from user agent (check mobile before desktop —
+    // iPad UA contains 'Macintosh' so iOS must be checked first)
+    const ua = navigator.userAgent;
+    if (ua.includes('iPhone') || ua.includes('iPad') || (ua.includes('Macintosh') && 'ontouchend' in document)) return 'ios';
+    if (ua.includes('Android')) return 'android';
+    if (ua.includes('Macintosh')) return 'macos';
+    if (ua.includes('Windows')) return 'windows';
     return 'macos'; // Default for Tauri
   }
 

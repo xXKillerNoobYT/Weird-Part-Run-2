@@ -36,26 +36,8 @@ struct SettingsRouter: View {
             SyncPage()
         case "settings-bluetooth":
             BluetoothPage()
-        case "settings-clockout":
-            ClockOutQuestionsPage()
-        case "settings-backups":
-            BackupsPage()
-        case "settings-bootstrap":
-            BootstrapAdminPage()
-        case "settings-keys":
-            KeyManagementPage()
-        case "settings-security":
-            SecurityAdminPage()
-        case "settings-updates":
-            UpdateProtocolPage()
-        case "settings-export":
-            DataExportPage()
-        case "settings-integrations":
-            IntegrationsPage()
-        case "settings-audit":
-            AuditLogPage()
-        case "settings-supplier-bridge":
-            SupplierBridgePage()
+        case "settings-reset":
+            IOSDatabaseResetPage()
         default:
             Text("Unknown settings page: \(tabId)")
                 .foregroundStyle(.secondary)

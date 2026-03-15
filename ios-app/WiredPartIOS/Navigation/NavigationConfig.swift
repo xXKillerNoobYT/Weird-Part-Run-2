@@ -85,6 +85,8 @@ let appModules: [AppModule] = [
         AppTab(id: "chat-messages", label: "Messages", icon: "bubble.left.fill", path: "/chat/messages"),
         AppTab(id: "chat-qa", label: "Q&A", icon: "questionmark.circle.fill", path: "/chat/qa"),
     ]),
+    // Desktop-only pages removed: Backups, Bootstrap, Keys, Security, Updates,
+    // Data Export, Integrations, Audit Log, Supplier Bridge, Clock-Out Qs
     AppModule(id: "settings", label: "Settings", icon: "gearshape.fill", tabs: [
         AppTab(id: "settings-themes", label: "Themes", icon: "paintpalette.fill", path: "/settings/themes"),
         AppTab(id: "settings-app-config", label: "App Config", icon: "slider.horizontal.3", path: "/settings/app-config"),
@@ -94,17 +96,8 @@ let appModules: [AppModule] = [
         AppTab(id: "settings-notifications", label: "Notifications", icon: "bell.fill", path: "/settings/notifications"),
         AppTab(id: "settings-sync", label: "Sync", icon: "arrow.triangle.2.circlepath", path: "/settings/sync"),
         AppTab(id: "settings-bluetooth", label: "Bluetooth", icon: "wave.3.right", path: "/settings/bluetooth"),
-        AppTab(id: "settings-clockout", label: "Clock-Out Qs", icon: "questionmark.circle.fill", path: "/settings/clockout"),
-        AppTab(id: "settings-backups", label: "Backups", icon: "externaldrive.fill", path: "/settings/backups"),
-        AppTab(id: "settings-bootstrap", label: "Bootstrap", icon: "arrow.clockwise.circle.fill", path: "/settings/bootstrap"),
-        AppTab(id: "settings-keys", label: "Keys", icon: "key.fill", path: "/settings/keys"),
-        AppTab(id: "settings-security", label: "Security", icon: "lock.shield.fill", path: "/settings/security"),
-        AppTab(id: "settings-updates", label: "Updates", icon: "arrow.down.circle.fill", path: "/settings/updates"),
-        AppTab(id: "settings-export", label: "Data Export", icon: "square.and.arrow.up.fill", path: "/settings/export"),
-        AppTab(id: "settings-integrations", label: "Integrations", icon: "link", path: "/settings/integrations"),
-        AppTab(id: "settings-audit", label: "Audit Log", icon: "doc.text.magnifyingglass", path: "/settings/audit"),
-        AppTab(id: "settings-supplier-bridge", label: "Supplier Bridge", icon: "arrow.left.arrow.right.circle.fill", path: "/settings/supplier-bridge"),
         AppTab(id: "settings-about", label: "About", icon: "info.circle.fill", path: "/settings/about"),
+        AppTab(id: "settings-reset", label: "Database Reset", icon: "arrow.counterclockwise.circle.fill", path: "/settings/reset"),
     ]),
 ]
 
