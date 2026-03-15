@@ -97,6 +97,7 @@ export function JobDetailPage() {
     queryKey: ['job-detail', jobId],
     queryFn: () => getJob(jobId),
     staleTime: 15_000,
+    enabled: !isNaN(jobId),
   });
 
   // Status mutation — must be called before any early returns (Rules of Hooks)
