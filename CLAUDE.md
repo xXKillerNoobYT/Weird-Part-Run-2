@@ -196,16 +196,25 @@ Plans are living documents that build our project's institutional memory. Treat 
 - Tauri 2.0 Migration — all 8 phases complete: scaffold, DB layer, services, API adapter, LAN sync, BT sync, native capabilities, iOS build, distribution (✅ complete — see `docs/plans/tauri-migration-plan.md`)
 - Cross-Platform Architecture Alignment — shared `isDesktop()`/`isMobile()`, public data directory feature, DB path config, Rust IPC commands, Settings UI (✅ complete — see `docs/plans/frontend-to-root-restructure.md`)
 
-**Architecture (V1.0 — Tauri):**
+**Recently Completed (2026-03-15):**
 
-Every device runs the same React frontend (`src/`) with its own local SQLite database. The Tauri native shell (`src-tauri/`) wraps this as a desktop/mobile app. One change in `src/` propagates to all platforms.
+- Phase 13: Windows AI Integration — llama.cpp sidecar (not Copilot Runtime), Rust IPC bridge, TS types, Settings UI, AI components (✅ complete — see `docs/plans/windows-architecture.md`)
+- Phase 14: Windows App — **Option B: Keep Tauri/React** — zero porting needed, all 86 pages + 64 services work as-is (✅ complete — see `docs/plans/windows-architecture.md`)
+- Phase 15: Cleanup — modified for Option B: no file deletions, documentation updates only (✅ complete — see `docs/plans/windows-architecture.md`)
+- Production Hardening — Sessions 1-6: 50+ backend crash fixes, 138 frontend routes audited, ErrorBoundary, global error handler, 23 pages patched, dark mode/loading/edge-case audits (✅ complete)
 
-- **Shop computer (Tauri desktop):** React frontend + full 35-service TS data layer + local SQLite. Also runs Python FastAPI as a sync anchor + serves desktop browsers over LAN.
-- **Mobile devices (Tauri iOS):** Same React frontend + same TS data layer — works fully offline. Single-user sandbox storage.
+**Architecture (V1.0 — Tauri, Dual-Platform):**
+
+Every device runs the same React frontend (`src/`) with its own local SQLite database. The Tauri native shell (`src-tauri/`) wraps this as a desktop/mobile app on **both macOS/iOS AND Windows**. One change in `src/` propagates to all platforms.
+
+- **Shop computer (Tauri desktop — macOS or Windows):** React frontend + full 35-service TS data layer + local SQLite. Also runs Python FastAPI as a sync anchor + serves desktop browsers over LAN.
+- **Windows devices (Tauri desktop):** Same React frontend via WebView2. On-device AI via **llama.cpp sidecar** (localhost:8086, GGUF models). Same sync infrastructure as other devices.
+- **Mobile devices (Tauri iOS):** Same React frontend + same TS data layer — works fully offline. Single-user sandbox storage. On-device AI via Apple Foundation Models (macOS 26+).
 - **Desktop browsers:** Hit shop server directly over LAN HTTP (always at the shop).
 - **Sync:** Device ↔ Shop over LAN HTTP + Apple Multipeer Connectivity (BT/Wi-Fi P2P). Change tracking via `_change_log` table. LWW + field-level merge conflict resolution.
 - **API adapter pattern:** Frontend detects environment — `isTauri()` → local TS services, `isBrowser()` → HTTP API. Same React UI everywhere.
-- **Cross-platform rule:** All UI code in `src/` runs identically everywhere. Platform differences are only: (1) screen size → responsive CSS, (2) desktop-only features → gated by `isDesktop()` in TS / `#[cfg(desktop)]` in Rust.
+- **AI adapter pattern:** Foundation Models bridge detects OS — Apple → native FM API, Windows → llama.cpp HTTP, Browser → no on-device AI. Same `useAITextField` hook everywhere.
+- **Cross-platform rule:** All UI code in `src/` runs identically everywhere. Platform differences are only: (1) screen size → responsive CSS, (2) desktop-only features → gated by `isDesktop()` in TS / `#[cfg(desktop)]` in Rust, (3) AI engine → gated by `#[cfg(target_os)]` in Rust.
 - **Public directory (desktop):** Optional shared DB location (`/Users/Shared/WiredPart/` on macOS, `C:\Users\Public\WiredPart\` on Windows) for multi-user shop computers. Configured in Settings → Data Storage.
 
 **Future phases (planned — all have plan files):**
@@ -229,6 +238,6 @@ Every device runs the same React frontend (`src/`) with its own local SQLite dat
 | Migrations | 35 |
 | Frontend feature files | ~180 |
 | Frontend routes | 100 |
-| Functional pages | 86 |
-| Stub pages | 2 (AiConfigPage, DeviceManagementPage — v2.0+) |
+| Functional pages | 87 |
+| Stub pages | 1 (DeviceManagementPage — v2.0+) |
 | API client functions | ~300 |

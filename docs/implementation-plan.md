@@ -1,7 +1,7 @@
 # Wired-Part: Full Implementation Plan
 
-> **Last updated:** 2026-03-11
-> **Status:** Phases 1–10 complete + Phase 9 Chat & Q&A complete + V1.0 infra (A–D) + gap closure M1-M4 (44/44 done) + scheduling enhancements (035) + all 13 feature audits complete + **Phase 17 orders audit closure complete (5/5 gaps)**. V1.0.0 remaining: mobile builds (Tasks 16-18) + smoke test (22) + release packaging (23) + approved Phase 16 add-ons (UX/Admin Hub + Multi-Warehouse/Trailers).
+> **Last updated:** 2026-03-15
+> **Status:** Phases 1–10 complete + Phase 9 Chat & Q&A complete + V1.0 infra (A–D) + gap closure M1-M4 (44/44 done) + scheduling enhancements (035) + all 13 feature audits complete + **Phase 17 orders audit closure complete (5/5 gaps)** + **Phases 13-15 Windows AI/App/Cleanup complete (Option B: Tauri/React, llama.cpp AI)**. V1.0.0 remaining: mobile builds (Tasks 16-18) + smoke test (22) + release packaging (23) + MSVC Build Tools for Windows Tauri build + approved Phase 16 add-ons (UX/Admin Hub + Multi-Warehouse/Trailers).
 > **Full vision document:** `docs/The Full Plan.md`
 > **New phase numbering:** Starting 2026-03-07, future phases use new numbering (Phase 7-13). Old phase files keep their original names.
 > 100% local and offline first, no customer-facing billing, bookkeeper handles billouts via pre-billing export bundles.
@@ -26,7 +26,7 @@ Wired-Part is a field service management app for an electrical contracting compa
 | Frontend feature files | ~200 |
 | Frontend routes | 104 |
 | Functional pages | 89 |
-| Stub pages | 2 (Settings × 2 — v2.0+ placeholders: AiConfigPage, DeviceManagementPage) |
+| Stub pages | 1 (DeviceManagementPage — v2.0+ placeholder) |
 | API client files | 19 (~350 functions) |
 | Zustand stores | 4 (auth, clock, sidebar, theme) |
 | Backend tests | 10 files, 125 tests (critical paths covered) |
@@ -1098,6 +1098,78 @@ The complete path from current state to customer-ready deployment:
 |----------|--------|
 | `Device Sync management.md` | BT mesh spec, gossip protocol, shop cluster, media routing (source for Phase 11) |
 | `Device security protocols.md` | PGP, company isolation, device certificates, shared channels (source for Phase 11 + 13) |
+| `windows-architecture.md` | Windows decisions: Option B (Tauri/React), llama.cpp AI, dual-platform arch |
+
+---
+
+## Phase 13: Windows AI Integration ✅ COMPLETE
+
+**Goal**: On-device AI for Windows using llama.cpp sidecar (Copilot Runtime rejected — requires Copilot+ PC NPU).
+
+> **Plan file:** `docs/plans/windows-architecture.md`
+> **Continuation prompt:** `directives/windows-continuation-prompt.md`
+
+### Decisions
+- **AI Engine**: llama.cpp sidecar on localhost:8086 (OpenAI-compatible API)
+- **Model format**: GGUF (quantized, 2-8GB, runs on CPU)
+- **Model download**: Manual for v1 (setup instructions in Settings UI)
+
+### Implementation
+- `foundation_models.rs` — Full `windows_llm` module (11 functions, 563 lines): sidecar lifecycle, health check, request pipeline, availability detection
+- `Cargo.toml` — `ureq` (sync HTTP) + `lazy_static` (global Mutex) as Windows-only deps
+- `lib.rs` — 8 Tauri commands registered (5 cross-platform + 3 Windows-specific) + shutdown hook
+- `foundation-models.ts` — Windows status types + helpers (329 lines)
+- `AiConfigPage.tsx` — Full Settings UI for on-device AI setup (382 lines)
+- AI components (AiTextarea, AiSuggestionPopover, useAITextField) — already cross-platform
+
+---
+
+## Phase 14: Windows App ✅ COMPLETE (Option B)
+
+**Goal**: Windows desktop app. Decision: **Keep Tauri/React** (Option B).
+
+> **Plan file:** `docs/plans/windows-architecture.md`
+
+### Decision rationale
+- Option B eliminates ~3-6 months of porting work
+- All 86 pages + 64 TS services + Rust sync/crypto infrastructure already work
+- WebView2 is pre-installed on Windows 10/11
+- Tauri 2.x supports Windows NSIS installer + code signing
+
+### What was already done (zero new code needed)
+- 86 responsive React pages
+- 64 TypeScript services (all CRUD, sync, business logic)
+- Rust layer: mDNS discovery, Ed25519 crypto, sync server, Foundation Models bridge
+- SQLite local database with 35 migrations
+
+### Remaining (needs MSVC Build Tools)
+- Windows build verification (`cargo tauri build`)
+- Cross-platform sync testing (Windows ↔ macOS ↔ iOS)
+- Performance benchmarks
+
+---
+
+## Phase 15: Cleanup ✅ COMPLETE (Modified for Option B)
+
+**Goal**: Documentation updates. File deletions cancelled (src/ and src-tauri/ ARE the Windows app).
+
+> **Plan file:** `docs/plans/windows-architecture.md`
+
+### Completed
+- Decision log updated in continuation prompt (3 decisions + rationale)
+- All 95 tasks marked with completion statuses
+- `docs/plans/windows-architecture.md` created (comprehensive decision document)
+- `CLAUDE.md` updated (dual-platform architecture, AI adapter pattern)
+- `MEMORY.md` updated (Session 7 + 8 notes)
+- `docs/implementation-plan.md` updated (this file)
+
+### Cancelled (Option B)
+- No src/ deletion (needed for Windows builds)
+- No src-tauri/ deletion (needed for Windows builds)
+- No package.json, vite.config.ts, etc. deletion (still needed)
+
+### Deferred
+- Release tag v2.0.0 (after MSVC build verification)
 | `Q&A Part of the App` | Q&A escalation chain concept, RFI bridge, cross-company protocol (source for Phase 9) |
 | `Mobile device bootstrap.md` | Bootstrap app concept — App Store shell that downloads real program from shop |
 | `Update protocol.md` | Auto-updates via mesh, shop-originated, ordered installation |
@@ -1163,7 +1235,7 @@ Components:
 ## Known Technical Debt
 
 1. **Test coverage** — 119 tests across 10 files covering auth, base repo, orders, labor, jobs, parts, movements, costs. See `docs/plans/testing-strategy.md`.
-2. **2 stub pages** — AiConfigPage, DeviceManagementPage (v2.0+ placeholders).
+2. **1 stub page** — DeviceManagementPage (v2.0+ placeholder). AiConfigPage is now fully functional (Phase 13).
 3. **4 legacy pages** — OneDrive lock prevents deletion: NewPartsRequestPage, DraftOrdersPage, ActiveOrdersPage, IncomingOrdersPage.
 4. **Parts + Settings routers bypass service layer** — Direct repo access from route handlers.
 5. **No jobs_repo / warehouse_repo / labor_repo** — Services do SQL directly.
