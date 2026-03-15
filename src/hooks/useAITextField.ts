@@ -98,7 +98,7 @@ export function useAITextField(options: AITextFieldOptions = {}): AITextFieldSta
   const [aiAvailable, setAiAvailable] = useState(false);
   const [aiDisabledForField, setAiDisabledForField] = useState(false);
 
-  const debounceTimer = useRef<ReturnType<typeof setTimeout>>();
+  const debounceTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const lastText = useRef('');
   const mounted = useRef(true);
 

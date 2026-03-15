@@ -93,12 +93,16 @@ pub fn run() {
             // Public data directory (desktop multi-user support)
             commands::create_public_data_dir,
             commands::copy_database_file,
-            // Foundation Models: on-device AI text assistance (iOS 26+ / macOS 26+)
+            // Foundation Models: on-device AI text assistance (iOS 26+ / macOS 26+ / Windows llama.cpp)
             foundation_models::llm_check_availability,
             foundation_models::llm_reset_availability,
             foundation_models::llm_request,
             foundation_models::llm_poll_result,
             foundation_models::llm_cancel_request,
+            // Windows-specific AI commands
+            foundation_models::llm_get_models_dir,
+            foundation_models::llm_get_server_dir,
+            foundation_models::llm_shutdown,
         ])
         .setup(|app| {
             // Dev-only: enable logging plugin
@@ -109,6 +113,18 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            // Hook: shut down llama.cpp sidecar on app exit (Windows)
+            #[cfg(target_os = "windows")]
+            {
+                let handle = app.handle().clone();
+                handle.on_window_event(move |_window, event| {
+                    if let tauri::WindowEvent::Destroyed = event {
+                        foundation_models::llm_shutdown();
+                    }
+                });
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())

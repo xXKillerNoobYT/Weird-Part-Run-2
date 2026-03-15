@@ -1,17 +1,16 @@
 /**
- * Foundation Models Service — TypeScript interface to Apple's on-device LLM.
+ * Foundation Models Service — TypeScript interface to on-device AI.
  *
- * This service bridges the React frontend to the native Foundation Models
- * framework via Tauri IPC → Rust → Swift FFI.
+ * Cross-platform:
+ *   - macOS/iOS: Apple Foundation Models (Swift FFI via Tauri IPC)
+ *   - Windows: llama.cpp sidecar (OpenAI-compatible local API)
+ *   - Web browser: no-op (returns 'not_native')
  *
  * Architecture:
  *   1. Check availability → cached after first call
  *   2. Submit request (async, non-blocking)
  *   3. Poll for result until complete
  *   4. Return text or error
- *
- * The service is a no-op on non-Tauri platforms (web browser) and on
- * devices where Apple Intelligence is unavailable.
  */
 
 import { isTauri } from './environment';
@@ -20,9 +19,15 @@ import { isTauri } from './environment';
 
 export type LlmAvailability =
   | 'available'
+  // Apple-specific
   | 'not_eligible'
   | 'not_enabled'
   | 'not_ready'
+  // Windows-specific
+  | 'not_installed' // llama-server + model both missing
+  | 'no_server'     // llama-server.exe missing
+  | 'no_model'      // no .gguf model file found
+  // Generic
   | 'unavailable'
   | 'not_native';
 
@@ -55,7 +60,9 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
 let cachedAvailability: LlmAvailability | null = null;
 
 /**
- * Check if Apple Foundation Models is available on this device.
+ * Check if on-device AI is available.
+ * - macOS/iOS: Apple Foundation Models
+ * - Windows: llama.cpp sidecar
  * Result is cached after first call. Use resetAvailability() to re-check.
  */
 export async function checkAvailability(): Promise<LlmAvailability> {
@@ -76,12 +83,12 @@ export async function checkAvailability(): Promise<LlmAvailability> {
   return cachedAvailability;
 }
 
-/** Whether Foundation Models is ready to use right now. */
+/** Whether on-device AI is ready to use right now. */
 export async function isAvailable(): Promise<boolean> {
   return (await checkAvailability()) === 'available';
 }
 
-/** Reset cached availability — call after user might toggle Apple Intelligence. */
+/** Reset cached availability — call after user changes AI settings or installs a model. */
 export async function resetAvailability(): Promise<void> {
   cachedAvailability = null;
   if (isTauri()) {
@@ -115,7 +122,7 @@ async function generateRaw(
   timeoutMs = 15_000,
 ): Promise<string> {
   if (!(await isAvailable())) {
-    throw new Error('Apple Intelligence is not available on this device.');
+    throw new Error('On-device AI is not available. Check Settings → AI to configure.');
   }
 
   const requestId = generateRequestId();
@@ -272,5 +279,75 @@ export async function generatePreFill(
     return await generateRaw(prompt, instructions, 10_000);
   } catch {
     return ''; // Silent failure — pre-fill is optional
+  }
+}
+
+// ── Windows-specific Helpers ───────────────────────────────────────
+
+/**
+ * Get the directory where GGUF model files should be placed (Windows only).
+ * Returns empty string on non-Windows platforms.
+ */
+export async function getModelsDir(): Promise<string> {
+  if (!isTauri()) return '';
+  try {
+    return await invoke<string>('llm_get_models_dir');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Get the directory where llama-server.exe should be placed (Windows only).
+ * Returns empty string on non-Windows platforms.
+ */
+export async function getServerDir(): Promise<string> {
+  if (!isTauri()) return '';
+  try {
+    return await invoke<string>('llm_get_server_dir');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Gracefully shut down the llama.cpp sidecar process (Windows only).
+ * Normally called automatically when the app closes.
+ */
+export async function shutdownLlm(): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke('llm_shutdown');
+  } catch {
+    // Ignore — best-effort cleanup
+  }
+}
+
+/**
+ * Get a human-readable description of the current availability status.
+ * Useful for displaying in the UI.
+ */
+export function getAvailabilityMessage(status: LlmAvailability): string {
+  switch (status) {
+    case 'available':
+      return 'On-device AI is ready';
+    case 'not_eligible':
+      return 'This device does not support Apple Intelligence';
+    case 'not_enabled':
+      return 'Apple Intelligence is not enabled in System Settings';
+    case 'not_ready':
+      return 'AI model is loading…';
+    case 'not_installed':
+      return 'llama-server and AI model not found — see setup instructions';
+    case 'no_server':
+      return 'llama-server.exe not found — download from llama.cpp releases';
+    case 'no_model':
+      return 'No GGUF model file found — download a model to the models folder';
+    case 'unavailable':
+      return 'On-device AI is not available';
+    case 'not_native':
+      return 'On-device AI requires the desktop app';
+    default:
+      return 'Unknown AI status';
   }
 }

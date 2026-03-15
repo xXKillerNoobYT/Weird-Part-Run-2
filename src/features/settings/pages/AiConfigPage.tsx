@@ -18,7 +18,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Bot, Wifi, WifiOff, Loader2, Save, ChevronDown, ChevronUp,
   MessageSquare, FileText, AlertTriangle, ShoppingCart, LayoutGrid, Server,
-  Info,
+  Info, Cpu, RefreshCw, CheckCircle2, XCircle, FolderOpen, Download,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Card, CardHeader } from '../../../components/ui/Card';
@@ -26,6 +26,12 @@ import { Badge } from '../../../components/ui/Badge';
 import { ErrorFallback } from '../../../components/ui/ErrorFallback';
 import { getAllSettings, updateSetting } from '../../../api/settings';
 import { toast } from '../../../lib/toast';
+import { getPlatform } from '../../../lib/environment';
+import {
+  checkAvailability, resetAvailability, getModelsDir, getServerDir,
+  getAvailabilityMessage,
+  type LlmAvailability,
+} from '../../../lib/foundation-models';
 
 
 // ── Feature definitions ──────────────────────────────────────────
@@ -155,6 +161,46 @@ export function AiConfigPage() {
   const [saving, setSaving] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
+  // ── On-device AI state ──
+  const platform = getPlatform();
+  const isWindows = platform === 'windows';
+  const isApple = platform === 'ios' || platform === 'macos';
+  const [llmStatus, setLlmStatus] = useState<LlmAvailability | null>(null);
+  const [llmChecking, setLlmChecking] = useState(false);
+  const [modelsDir, setModelsDir] = useState('');
+  const [serverDir, setServerDir] = useState('');
+
+  // Check on-device AI availability on mount
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      setLlmChecking(true);
+      const status = await checkAvailability();
+      if (!cancelled) setLlmStatus(status);
+      if (isWindows) {
+        const [mDir, sDir] = await Promise.all([getModelsDir(), getServerDir()]);
+        if (!cancelled) {
+          setModelsDir(mDir);
+          setServerDir(sDir);
+        }
+      }
+      if (!cancelled) setLlmChecking(false);
+    };
+    check();
+    return () => { cancelled = true; };
+  }, [isWindows]);
+
+  const handleRefreshLlm = async () => {
+    setLlmChecking(true);
+    await resetAvailability();
+    const status = await checkAvailability();
+    setLlmStatus(status);
+    setLlmChecking(false);
+    if (status === 'available') {
+      toast.success('On-device AI is ready!');
+    }
+  };
+
   // Seed form from persisted settings
   useEffect(() => {
     if (!allSettings) return;
@@ -247,6 +293,114 @@ export function AiConfigPage() {
           </p>
         </div>
       </div>
+
+      {/* On-Device AI Status (Windows llama.cpp / Apple Foundation Models) */}
+      {(isWindows || isApple) && (
+        <Card>
+          <CardHeader
+            title="On-Device AI"
+            subtitle={isWindows
+              ? 'Local AI text assistance powered by llama.cpp'
+              : 'Powered by Apple Intelligence on this device'}
+            action={
+              llmChecking
+                ? <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                : <Cpu className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+            }
+          />
+          <div className="px-4 pb-4 space-y-3">
+            {/* Status badge */}
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                {llmStatus === 'available' ? (
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-gray-400" />
+                )}
+                <span className="text-sm text-gray-700 dark:text-gray-300">
+                  {llmStatus ? getAvailabilityMessage(llmStatus) : 'Checking…'}
+                </span>
+              </div>
+              <Button size="sm" variant="ghost" onClick={handleRefreshLlm} disabled={llmChecking}>
+                <RefreshCw className={`h-3.5 w-3.5 ${llmChecking ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline ml-1">Refresh</span>
+              </Button>
+            </div>
+
+            {/* Windows setup instructions — shown when not fully available */}
+            {isWindows && llmStatus && llmStatus !== 'available' && (
+              <div className="space-y-2 pt-2 border-t border-border">
+                <p className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                  Setup Instructions
+                </p>
+
+                {(llmStatus === 'not_installed' || llmStatus === 'no_server') && (
+                  <div className="flex items-start gap-2.5 text-xs text-gray-500 dark:text-gray-400">
+                    <Download className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-blue-500" />
+                    <div>
+                      <p className="font-medium text-gray-700 dark:text-gray-300">1. Download llama-server</p>
+                      <p className="mt-0.5">
+                        Go to{' '}
+                        <span className="font-mono text-xs text-blue-600 dark:text-blue-400 select-all">
+                          github.com/ggerganov/llama.cpp/releases
+                        </span>
+                        {' '}→ download <strong>llama-server.exe</strong> (from the Windows zip).
+                      </p>
+                      {serverDir && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <FolderOpen className="h-3 w-3 flex-shrink-0" />
+                          <span className="font-mono text-xs select-all break-all">{serverDir}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {(llmStatus === 'not_installed' || llmStatus === 'no_model') && (
+                  <div className="flex items-start gap-2.5 text-xs text-gray-500 dark:text-gray-400">
+                    <Download className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-violet-500" />
+                    <div>
+                      <p className="font-medium text-gray-700 dark:text-gray-300">
+                        {llmStatus === 'not_installed' ? '2' : '1'}. Download a GGUF model
+                      </p>
+                      <p className="mt-0.5">
+                        Download a quantized model file (e.g.{' '}
+                        <span className="font-mono text-xs">Phi-3-mini-4k-instruct-q4_k_m.gguf</span>
+                        ) from Hugging Face. Place the <strong>.gguf</strong> file in:
+                      </p>
+                      {modelsDir && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <FolderOpen className="h-3 w-3 flex-shrink-0" />
+                          <span className="font-mono text-xs select-all break-all">{modelsDir}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {llmStatus === 'not_ready' && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    The AI model is starting up. This can take 10–30 seconds for the first request.
+                    Try refreshing in a moment.
+                  </p>
+                )}
+
+                <p className="text-xs text-gray-400 dark:text-gray-500 pt-1">
+                  Recommended: Phi-3 Mini (4GB, fast) or Llama 3.1 8B (6GB, versatile).
+                  Q4_K_M quantization is a good balance of quality and speed.
+                </p>
+              </div>
+            )}
+
+            {/* Available confirmation */}
+            {llmStatus === 'available' && (
+              <p className="text-xs text-green-600 dark:text-green-400">
+                AI text assistance is active. Start typing in any AI-enabled text field to see suggestions.
+              </p>
+            )}
+          </div>
+        </Card>
+      )}
 
       {/* Master toggle */}
       <Card>
