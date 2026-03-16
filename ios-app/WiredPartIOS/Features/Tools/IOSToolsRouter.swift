@@ -9,6 +9,8 @@ struct IOSToolsRouter: View {
         switch tabId {
         case "tools-registry": IOSToolRegistryPage()
         case "tools-checkouts": IOSToolCheckoutsPage()
+        case "tools-kits": IOSToolKitsPage()
+        case "tools-dashboard": IOSToolsDashboardPage()
         default: Text("Unknown tools page: \(tabId)").foregroundStyle(.secondary)
         }
     }

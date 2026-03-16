@@ -23,6 +23,14 @@ struct WarehouseRouter: View {
             WarehouseMovementsPage()
         case "warehouse-locations":
             WarehouseLocationsPage()
+        case "warehouse-staging":
+            IOSStagingPage()
+        case "warehouse-receiving":
+            IOSReceivingPage()
+        case "warehouse-returns":
+            IOSWarehouseReturnsPage()
+        case "warehouse-audit":
+            IOSAuditPage()
         default:
             Text("Unknown warehouse page: \(tabId)")
                 .foregroundStyle(.secondary)

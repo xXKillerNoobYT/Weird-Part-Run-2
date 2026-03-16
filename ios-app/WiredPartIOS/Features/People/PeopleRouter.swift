@@ -10,6 +10,8 @@ struct PeopleRouter: View {
         case "people-employees": IOSEmployeesPage()
         case "people-customers": IOSCustomersPage()
         case "people-contacts": IOSContactsPage()
+        case "people-hats": IOSHatsPage()
+        case "people-teams": IOSTeamsPage()
         default: Text("Unknown people page: \(tabId)").foregroundStyle(.secondary)
         }
     }

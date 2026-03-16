@@ -24,13 +24,13 @@ struct ReportsRouter: View {
         case "daily-summary":
             DailyReportsSummaryPage()
         case "pre-billing":
-            PlaceholderView(path: path)
+            PreBillingPage()
         case "spending":
             SpendingPage()
         case "profitability":
             ProfitabilityPage()
         case "bookkeeper":
-            PlaceholderView(path: path)
+            BookkeeperExportPage()
         default:
             TimesheetsPage()
         }

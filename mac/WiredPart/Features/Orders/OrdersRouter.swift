@@ -28,7 +28,7 @@ struct OrdersRouter: View {
         case "procurement":
             ProcurementPage()
         case "approvals":
-            PlaceholderView(path: path)
+            ApprovalsPage()
         case "special-items":
             SpecialItemsPage()
         case "staging":

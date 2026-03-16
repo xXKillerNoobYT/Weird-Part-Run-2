@@ -77,16 +77,46 @@ struct IOSContentRouter: View {
             SettingsRouter(tabId: "settings-audit")
         case "/settings/supplier-bridge":
             SettingsRouter(tabId: "settings-supplier-bridge")
-        case "/settings/reset":
+        case "/settings/reset", "/settings/database-reset":
             SettingsRouter(tabId: "settings-reset")
+        case "/settings/clock-out-questions":
+            SettingsRouter(tabId: "settings-clockout")
+        case "/settings/company-profiles":
+            SettingsRouter(tabId: "settings-company")
+        case "/settings/pdf-settings":
+            SettingsRouter(tabId: "settings-pdf")
+        case "/settings/billing-pay-settings":
+            SettingsRouter(tabId: "settings-billing")
+        case "/settings/notification-prefs":
+            SettingsRouter(tabId: "settings-notifications")
+        case "/settings/bootstrap-admin":
+            SettingsRouter(tabId: "settings-bootstrap")
+        case "/settings/key-management":
+            SettingsRouter(tabId: "settings-keys")
+        case "/settings/security-admin":
+            SettingsRouter(tabId: "settings-security")
+        case "/settings/update-protocol":
+            SettingsRouter(tabId: "settings-updates")
+        case "/settings/data-export":
+            SettingsRouter(tabId: "settings-export")
+        case "/settings/audit-log":
+            SettingsRouter(tabId: "settings-audit")
 
         // Jobs sub-routes
-        case "/jobs/list":
+        case "/jobs/list", "/jobs/active":
             JobsRouter(tabId: "jobs-list")
         case "/jobs/labor":
             JobsRouter(tabId: "jobs-labor")
         case "/jobs/reports":
             JobsRouter(tabId: "jobs-reports")
+        case "/jobs/clock":
+            JobsRouter(tabId: "jobs-clock")
+        case "/jobs/detail":
+            JobsRouter(tabId: "jobs-detail")
+        case "/jobs/questionnaire":
+            JobsRouter(tabId: "jobs-questionnaire")
+        case "/jobs/daily-reports":
+            JobsRouter(tabId: "jobs-daily-reports")
 
         // Warehouse sub-routes
         case "/warehouse/dashboard":
@@ -95,36 +125,78 @@ struct IOSContentRouter: View {
             WarehouseRouter(tabId: "warehouse-movements")
         case "/warehouse/locations":
             WarehouseRouter(tabId: "warehouse-locations")
+        case "/warehouse/staging":
+            WarehouseRouter(tabId: "warehouse-staging")
+        case "/warehouse/receiving":
+            WarehouseRouter(tabId: "warehouse-receiving")
+        case "/warehouse/returns":
+            WarehouseRouter(tabId: "warehouse-returns")
+        case "/warehouse/audit":
+            WarehouseRouter(tabId: "warehouse-audit")
 
         // Orders sub-routes
-        case "/orders/jpos":
+        case "/orders/jpos", "/orders/requests":
             OrdersRouter(tabId: "orders-jpos")
         case "/orders/purchase-orders":
             OrdersRouter(tabId: "orders-pos")
         case "/orders/returns":
             OrdersRouter(tabId: "orders-returns")
+        case "/orders/procurement":
+            OrdersRouter(tabId: "orders-procurement")
+        case "/orders/staging", "/orders/unified-order":
+            OrdersRouter(tabId: "orders-staging")
+        case "/orders/approvals":
+            OrdersRouter(tabId: "orders-approvals")
 
         // Fleet sub-routes
-        case "/fleet/vehicles":
+        case "/fleet/vehicles", "/trucks/fleet":
             FleetRouter(tabId: "fleet-vehicles")
-        case "/fleet/maintenance":
+        case "/fleet/maintenance", "/trucks/maintenance":
             FleetRouter(tabId: "fleet-maintenance")
-        case "/fleet/mileage":
+        case "/fleet/mileage", "/trucks/mileage":
             FleetRouter(tabId: "fleet-mileage")
+        case "/fleet/dashboard":
+            FleetRouter(tabId: "fleet-dashboard")
+        case "/fleet/fuel":
+            FleetRouter(tabId: "fleet-fuel")
+        case "/fleet/trailers", "/trucks/trailers":
+            FleetRouter(tabId: "fleet-trailers")
+        case "/fleet/inspections", "/trucks/inspections":
+            FleetRouter(tabId: "fleet-inspections")
+        case "/fleet/gps", "/trucks/gps":
+            FleetRouter(tabId: "fleet-gps")
 
         // People sub-routes
-        case "/people/employees":
+        case "/people/employees", "/people/directory":
             PeopleRouter(tabId: "people-employees")
         case "/people/customers":
             PeopleRouter(tabId: "people-customers")
         case "/people/contacts":
             PeopleRouter(tabId: "people-contacts")
+        case "/people/hats":
+            PeopleRouter(tabId: "people-hats")
+        case "/people/teams":
+            PeopleRouter(tabId: "people-teams")
+        case "/people/contractors":
+            PeopleRouter(tabId: "people-contractors")
 
         // Scheduling sub-routes
         case "/scheduling/calendar":
             SchedulingRouter(tabId: "scheduling-calendar")
         case "/scheduling/dispatch":
             SchedulingRouter(tabId: "scheduling-dispatch")
+        case "/scheduling/time-off":
+            SchedulingRouter(tabId: "scheduling-time-off")
+        case "/scheduling/templates":
+            SchedulingRouter(tabId: "scheduling-templates")
+        case "/scheduling/availability":
+            SchedulingRouter(tabId: "scheduling-availability")
+        case "/scheduling/sub-schedule":
+            SchedulingRouter(tabId: "scheduling-sub-schedule")
+        case "/scheduling/dispatch-admin":
+            SchedulingRouter(tabId: "scheduling-dispatch-admin")
+        case "/scheduling/my-schedule":
+            SchedulingRouter(tabId: "scheduling-my-schedule")
 
         // Chat sub-routes
         case "/chat/channels", "/chat/messages":
@@ -133,22 +205,38 @@ struct IOSContentRouter: View {
             IOSChatRouter(tabId: "chat-questions")
 
         // Notebooks sub-routes
-        case "/notebooks/all", "/notebooks/list":
+        case "/notebooks/all", "/notebooks/list", "/notebooks/general":
             IOSNotebooksRouter(tabId: "notebooks-all")
         case "/notebooks/templates":
             IOSNotebooksRouter(tabId: "notebooks-templates")
+        case "/notebooks/job-notebooks":
+            IOSNotebooksRouter(tabId: "notebooks-job-notebooks")
 
         // Reports sub-routes
         case "/reports/timesheets":
             IOSReportsRouter(tabId: "reports-timesheets")
         case "/reports/spending":
             IOSReportsRouter(tabId: "reports-spending")
+        case "/reports/daily-summary", "/reports/overview":
+            IOSReportsRouter(tabId: "reports-daily-summary")
+        case "/reports/profitability":
+            IOSReportsRouter(tabId: "reports-profitability")
+        case "/reports/pre-billing":
+            IOSReportsRouter(tabId: "reports-pre-billing")
+        case "/reports/bookkeeper":
+            IOSReportsRouter(tabId: "reports-bookkeeper")
 
         // Tools sub-routes
         case "/tools/registry":
             IOSToolsRouter(tabId: "tools-registry")
         case "/tools/checkouts", "/tools/checkout":
             IOSToolsRouter(tabId: "tools-checkouts")
+        case "/tools/kits":
+            IOSToolsRouter(tabId: "tools-kits")
+        case "/tools/dashboard":
+            IOSToolsRouter(tabId: "tools-dashboard")
+        case "/tools/admin":
+            IOSToolsRouter(tabId: "tools-admin")
 
         // Everything else — placeholder for future native views
         default:

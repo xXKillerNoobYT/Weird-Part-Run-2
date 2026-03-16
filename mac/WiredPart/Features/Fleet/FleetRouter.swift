@@ -28,9 +28,9 @@ struct FleetRouter: View {
         case "trailers":
             TrailersPage()
         case "inspections":
-            PlaceholderView(path: path)
+            InspectionsPage()
         case "gps":
-            PlaceholderView(path: path)
+            TelematicsPage()
         case "fleet-dashboard":
             FleetDashboardPage()
         default:

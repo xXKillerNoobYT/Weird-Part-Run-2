@@ -9,6 +9,10 @@ struct IOSReportsRouter: View {
         switch tabId {
         case "reports-timesheets": IOSTimesheetsPage()
         case "reports-spending": IOSSpendingPage()
+        case "reports-daily-summary": IOSDailyReportsSummaryPage()
+        case "reports-profitability": IOSProfitabilityPage()
+        case "reports-pre-billing": IOSPreBillingPage()
+        case "reports-bookkeeper": IOSBookkeeperExportPage()
         default: Text("Unknown reports page: \(tabId)").foregroundStyle(.secondary)
         }
     }

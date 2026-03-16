@@ -9,6 +9,7 @@ struct IOSNotebooksRouter: View {
         switch tabId {
         case "notebooks-all": IOSNotebooksListPage()
         case "notebooks-templates": IOSNotebookTemplatesPage()
+        case "notebooks-job-notebooks": IOSJobNotebooksPage()
         default: Text("Unknown notebooks page: \(tabId)").foregroundStyle(.secondary)
         }
     }

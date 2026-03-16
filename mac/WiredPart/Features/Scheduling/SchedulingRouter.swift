@@ -26,13 +26,13 @@ struct SchedulingRouter: View {
         case "dispatch-admin":
             DispatchBoardPage()
         case "availability":
-            PlaceholderView(path: path)
+            WeeklyAvailabilityPage()
         case "time-off":
             TimeOffPage()
         case "templates":
             DispatchTemplatesPage()
         case "sub-schedule":
-            PlaceholderView(path: path)
+            SubSchedulePage()
         default:
             ScheduleCalendarPage()
         }

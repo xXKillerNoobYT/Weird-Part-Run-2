@@ -22,6 +22,14 @@ struct JobsRouter: View {
             LaborPage()
         case "jobs-reports":
             JobReportsPage()
+        case "jobs-clock":
+            IOSClockPage()
+        case "jobs-detail":
+            JobsListPage() // Job detail requires selection; show list for drill-down
+        case "jobs-questionnaire":
+            LaborPage() // Questionnaire requires labor entry context; show labor page
+        case "jobs-daily-reports":
+            IOSDailyReportsPage()
         default:
             Text("Unknown jobs page: \(tabId)")
                 .foregroundStyle(.secondary)
