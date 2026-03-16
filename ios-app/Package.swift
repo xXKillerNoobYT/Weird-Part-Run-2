@@ -16,6 +16,7 @@ let package = Package(
                 .product(name: "WiredPartCore", package: "core"),
             ],
             path: "WiredPartIOS",
+            exclude: ["Info.plist"],
             resources: [
                 .process("Assets.xcassets"),
             ]

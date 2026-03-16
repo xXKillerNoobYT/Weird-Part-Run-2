@@ -16,6 +16,7 @@ final class AppCore: ObservableObject {
     @Published var currentUser: User?
     @Published var currentToken: String?
     @Published var permissions: [String] = []
+    @Published var theme: SettingsService.ThemeSettings = .defaults
 
     // MARK: - Services (available after init completes)
 
@@ -59,6 +60,11 @@ final class AppCore: ObservableObject {
             notebooksService = NotebooksService(db: db)
             reportsService = ReportsService(db: db)
             toolsService = ToolsService(db: db)
+
+            // Load theme settings
+            if let theme = try? settingsService.getTheme() {
+                self.theme = theme
+            }
 
             // Check whether any users exist yet
             let users = try authService.getActiveUsers()
@@ -120,6 +126,13 @@ final class AppCore: ObservableObject {
     /// Check if the current user has a specific permission.
     func hasPermission(_ key: String) -> Bool {
         permissions.contains(key)
+    }
+
+    /// Reload theme settings from the database and apply them.
+    func updateTheme() {
+        if let settings = settingsService {
+            self.theme = (try? settings.getTheme()) ?? .defaults
+        }
     }
 
     // MARK: - Database Reset

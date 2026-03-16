@@ -77,6 +77,8 @@ struct IOSContentRouter: View {
             SettingsRouter(tabId: "settings-audit")
         case "/settings/supplier-bridge":
             SettingsRouter(tabId: "settings-supplier-bridge")
+        case "/settings/reset":
+            SettingsRouter(tabId: "settings-reset")
 
         // Jobs sub-routes
         case "/jobs/list":
@@ -125,13 +127,13 @@ struct IOSContentRouter: View {
             SchedulingRouter(tabId: "scheduling-dispatch")
 
         // Chat sub-routes
-        case "/chat/channels":
+        case "/chat/channels", "/chat/messages":
             IOSChatRouter(tabId: "chat-channels")
-        case "/chat/questions":
+        case "/chat/questions", "/chat/qa":
             IOSChatRouter(tabId: "chat-questions")
 
         // Notebooks sub-routes
-        case "/notebooks/all":
+        case "/notebooks/all", "/notebooks/list":
             IOSNotebooksRouter(tabId: "notebooks-all")
         case "/notebooks/templates":
             IOSNotebooksRouter(tabId: "notebooks-templates")
@@ -145,7 +147,7 @@ struct IOSContentRouter: View {
         // Tools sub-routes
         case "/tools/registry":
             IOSToolsRouter(tabId: "tools-registry")
-        case "/tools/checkouts":
+        case "/tools/checkouts", "/tools/checkout":
             IOSToolsRouter(tabId: "tools-checkouts")
 
         // Everything else — placeholder for future native views

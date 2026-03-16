@@ -10,6 +10,20 @@ import WiredPartCore
 struct WiredPartIOSApp: App {
     @StateObject private var appCore = AppCore()
 
+    /// Resolved color scheme from the user's theme setting.
+    private var resolvedColorScheme: ColorScheme? {
+        switch appCore.theme.themeMode {
+        case "light": return .light
+        case "dark": return .dark
+        default: return nil
+        }
+    }
+
+    /// Accent color parsed from the user's theme hex string.
+    private var accentColor: Color {
+        Color(hex: appCore.theme.primaryColor) ?? .accentColor
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {
@@ -41,6 +55,8 @@ struct WiredPartIOSApp: App {
                     LoadingView()
                 }
             }
+            .preferredColorScheme(resolvedColorScheme)
+            .tint(accentColor)
         }
     }
 }
