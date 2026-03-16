@@ -40,14 +40,15 @@ public final class JobsService: Sendable {
         public let customerName: String?
         public let status: String
         public let priority: String
+        public let jobType: String
         public let teamCount: Int
         public let startDate: String?
         public let dueDate: String?
 
         public init(
             id: Int64, jobNumber: String, jobName: String, customerName: String?,
-            status: String, priority: String, teamCount: Int,
-            startDate: String?, dueDate: String?
+            status: String, priority: String, jobType: String = "service",
+            teamCount: Int, startDate: String?, dueDate: String?
         ) {
             self.id = id
             self.jobNumber = jobNumber
@@ -55,6 +56,7 @@ public final class JobsService: Sendable {
             self.customerName = customerName
             self.status = status
             self.priority = priority
+            self.jobType = jobType
             self.teamCount = teamCount
             self.startDate = startDate
             self.dueDate = dueDate
@@ -376,7 +378,7 @@ public final class JobsService: Sendable {
 
                 let sql = """
                     SELECT j.id, j.job_number, j.job_name, j.customer_name,
-                           j.status, j.priority, j.start_date, j.due_date,
+                           j.status, j.priority, j.job_type, j.start_date, j.due_date,
                            COALESCE((SELECT COUNT(*) FROM job_team_members jtm
                                      WHERE jtm.job_id = j.id AND jtm.deleted_at IS NULL), 0) AS team_count
                     FROM jobs j
@@ -394,6 +396,7 @@ public final class JobsService: Sendable {
                         customerName: row["customer_name"] as String?,
                         status: row["status"] ?? "active",
                         priority: row["priority"] ?? "normal",
+                        jobType: row["job_type"] ?? "service",
                         teamCount: row["team_count"] ?? 0,
                         startDate: row["start_date"] as String?,
                         dueDate: row["due_date"] as String?

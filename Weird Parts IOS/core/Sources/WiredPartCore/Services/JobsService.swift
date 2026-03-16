@@ -1,0 +1,1399 @@
+import Foundation
+import GRDB
+
+/// Jobs & Labor Service — full CRUD for jobs, labor/clock in-out, questionnaires,
+/// one-time questions, daily reports, team members, job parts, and dashboard KPIs.
+///
+/// All queries run against the local SQLite database via GRDB.
+/// Tables that may not yet exist are handled gracefully: queries that
+/// hit a missing table return zero counts or empty arrays rather than throwing.
+///
+/// Ported from: Jobs & Labor feature area (Phases 4, 4.5, 15)
+public final class JobsService: Sendable {
+    private let db: AppDatabase
+
+    public init(db: AppDatabase) {
+        self.db = db
+    }
+
+    // =========================================================================
+    // MARK: - Error Types
+    // =========================================================================
+
+    public enum JobsError: Error, Sendable {
+        case jobNotFound(Int64)
+        case laborEntryNotFound(Int64)
+        case alreadyClockedIn(userId: Int64, jobId: Int64)
+        case notClockedIn(userId: Int64)
+        case questionNotFound(Int64)
+    }
+
+    // =========================================================================
+    // MARK: - Result Types
+    // =========================================================================
+
+    /// A job row for list views with summary counts.
+    public struct JobListItem: Sendable, Identifiable {
+        public let id: Int64
+        public let jobNumber: String
+        public let jobName: String
+        public let customerName: String?
+        public let status: String
+        public let priority: String
+        public let teamCount: Int
+        public let startDate: String?
+        public let dueDate: String?
+
+        public init(
+            id: Int64, jobNumber: String, jobName: String, customerName: String?,
+            status: String, priority: String, teamCount: Int,
+            startDate: String?, dueDate: String?
+        ) {
+            self.id = id
+            self.jobNumber = jobNumber
+            self.jobName = jobName
+            self.customerName = customerName
+            self.status = status
+            self.priority = priority
+            self.teamCount = teamCount
+            self.startDate = startDate
+            self.dueDate = dueDate
+        }
+    }
+
+    /// Full job detail with aggregated data.
+    public struct JobDetail: Sendable {
+        public let id: Int64
+        public let jobNumber: String
+        public let jobName: String
+        public let customerName: String?
+        public let addressLine1: String?
+        public let addressLine2: String?
+        public let city: String?
+        public let state: String?
+        public let zip: String?
+        public let gpsLat: Double?
+        public let gpsLng: Double?
+        public let status: String
+        public let priority: String
+        public let jobType: String
+        public let billRateTypeId: Int64?
+        public let billingRate: Double?
+        public let estimatedHours: Double?
+        public let leadUserId: Int64?
+        public let leadUserName: String?
+        public let onCallType: String?
+        public let warrantyStartDate: String?
+        public let warrantyEndDate: String?
+        public let startDate: String?
+        public let dueDate: String?
+        public let completedDate: String?
+        public let notes: String?
+        public let budgetLimit: Double?
+        public let budgetAlertPercent: Double?
+        public let createdBy: Int64?
+        public let deletedAt: String?
+        public let createdAt: String?
+        public let updatedAt: String?
+        public let teamCount: Int
+        public let partsCost: Double
+        public let laborHours: Double
+
+        public init(
+            id: Int64, jobNumber: String, jobName: String, customerName: String?,
+            addressLine1: String?, addressLine2: String?, city: String?, state: String?, zip: String?,
+            gpsLat: Double?, gpsLng: Double?,
+            status: String, priority: String, jobType: String,
+            billRateTypeId: Int64?, billingRate: Double?, estimatedHours: Double?,
+            leadUserId: Int64?, leadUserName: String?, onCallType: String?,
+            warrantyStartDate: String?, warrantyEndDate: String?,
+            startDate: String?, dueDate: String?, completedDate: String?,
+            notes: String?, budgetLimit: Double?, budgetAlertPercent: Double?,
+            createdBy: Int64?, deletedAt: String?, createdAt: String?, updatedAt: String?,
+            teamCount: Int, partsCost: Double, laborHours: Double
+        ) {
+            self.id = id
+            self.jobNumber = jobNumber
+            self.jobName = jobName
+            self.customerName = customerName
+            self.addressLine1 = addressLine1
+            self.addressLine2 = addressLine2
+            self.city = city
+            self.state = state
+            self.zip = zip
+            self.gpsLat = gpsLat
+            self.gpsLng = gpsLng
+            self.status = status
+            self.priority = priority
+            self.jobType = jobType
+            self.billRateTypeId = billRateTypeId
+            self.billingRate = billingRate
+            self.estimatedHours = estimatedHours
+            self.leadUserId = leadUserId
+            self.leadUserName = leadUserName
+            self.onCallType = onCallType
+            self.warrantyStartDate = warrantyStartDate
+            self.warrantyEndDate = warrantyEndDate
+            self.startDate = startDate
+            self.dueDate = dueDate
+            self.completedDate = completedDate
+            self.notes = notes
+            self.budgetLimit = budgetLimit
+            self.budgetAlertPercent = budgetAlertPercent
+            self.createdBy = createdBy
+            self.deletedAt = deletedAt
+            self.createdAt = createdAt
+            self.updatedAt = updatedAt
+            self.teamCount = teamCount
+            self.partsCost = partsCost
+            self.laborHours = laborHours
+        }
+    }
+
+    /// A labor entry row enriched with user and job names.
+    public struct LaborEntryRow: Sendable, Identifiable {
+        public let id: Int64
+        public let userId: Int64
+        public let userName: String
+        public let jobId: Int64
+        public let jobName: String
+        public let clockIn: String
+        public let clockOut: String?
+        public let status: String
+        public let regularHours: Double
+        public let overtimeHours: Double
+        public let gpsInLat: Double?
+        public let gpsInLng: Double?
+        public let gpsOutLat: Double?
+        public let gpsOutLng: Double?
+
+        public init(
+            id: Int64, userId: Int64, userName: String,
+            jobId: Int64, jobName: String,
+            clockIn: String, clockOut: String?, status: String,
+            regularHours: Double, overtimeHours: Double,
+            gpsInLat: Double?, gpsInLng: Double?,
+            gpsOutLat: Double?, gpsOutLng: Double?
+        ) {
+            self.id = id
+            self.userId = userId
+            self.userName = userName
+            self.jobId = jobId
+            self.jobName = jobName
+            self.clockIn = clockIn
+            self.clockOut = clockOut
+            self.status = status
+            self.regularHours = regularHours
+            self.overtimeHours = overtimeHours
+            self.gpsInLat = gpsInLat
+            self.gpsInLng = gpsInLng
+            self.gpsOutLat = gpsOutLat
+            self.gpsOutLng = gpsOutLng
+        }
+    }
+
+    /// Summary of labor for a job.
+    public struct LaborSummary: Sendable {
+        public let totalEntries: Int
+        public let totalRegularHours: Double
+        public let totalOvertimeHours: Double
+        public let uniqueWorkers: Int
+
+        public init(totalEntries: Int, totalRegularHours: Double, totalOvertimeHours: Double, uniqueWorkers: Int) {
+            self.totalEntries = totalEntries
+            self.totalRegularHours = totalRegularHours
+            self.totalOvertimeHours = totalOvertimeHours
+            self.uniqueWorkers = uniqueWorkers
+        }
+    }
+
+    /// A clock-out questionnaire item with optional answer.
+    public struct QuestionnaireItem: Sendable {
+        public let questionId: Int64
+        public let questionText: String
+        public let answerType: String
+        public let isRequired: Bool
+        public let answer: String?
+
+        public init(questionId: Int64, questionText: String, answerType: String, isRequired: Bool, answer: String?) {
+            self.questionId = questionId
+            self.questionText = questionText
+            self.answerType = answerType
+            self.isRequired = isRequired
+            self.answer = answer
+        }
+    }
+
+    /// A one-time question row with job and user names.
+    public struct OneTimeQuestionRow: Sendable {
+        public let id: Int64
+        public let jobId: Int64
+        public let jobName: String
+        public let questionText: String
+        public let status: String
+        public let createdByName: String
+        public let answerText: String?
+        public let answeredByName: String?
+        public let answeredAt: String?
+
+        public init(
+            id: Int64, jobId: Int64, jobName: String, questionText: String,
+            status: String, createdByName: String,
+            answerText: String?, answeredByName: String?, answeredAt: String?
+        ) {
+            self.id = id
+            self.jobId = jobId
+            self.jobName = jobName
+            self.questionText = questionText
+            self.status = status
+            self.createdByName = createdByName
+            self.answerText = answerText
+            self.answeredByName = answeredByName
+            self.answeredAt = answeredAt
+        }
+    }
+
+    /// A daily report row for list views.
+    public struct DailyReportRow: Sendable, Identifiable {
+        public let id: Int64
+        public let jobId: Int64
+        public let jobName: String
+        public let reportDate: String
+        public let status: String
+        public let reviewedByName: String?
+
+        public init(id: Int64, jobId: Int64, jobName: String, reportDate: String, status: String, reviewedByName: String?) {
+            self.id = id
+            self.jobId = jobId
+            self.jobName = jobName
+            self.reportDate = reportDate
+            self.status = status
+            self.reviewedByName = reviewedByName
+        }
+    }
+
+    /// A team member row with user name.
+    public struct TeamMemberRow: Sendable, Identifiable {
+        public let id: Int64
+        public let userId: Int64
+        public let userName: String
+        public let role: String
+        public let joinedAt: String?
+
+        public init(id: Int64, userId: Int64, userName: String, role: String, joinedAt: String?) {
+            self.id = id
+            self.userId = userId
+            self.userName = userName
+            self.role = role
+            self.joinedAt = joinedAt
+        }
+    }
+
+    /// A job part row enriched with part name/code.
+    public struct JobPartRow: Sendable, Identifiable {
+        public let id: Int64
+        public let partId: Int64
+        public let partName: String
+        public let partCode: String?
+        public let qtyConsumed: Int
+        public let qtyReturned: Int
+        public let unitCost: Double?
+        public let unitSell: Double?
+
+        public init(
+            id: Int64, partId: Int64, partName: String, partCode: String?,
+            qtyConsumed: Int, qtyReturned: Int, unitCost: Double?, unitSell: Double?
+        ) {
+            self.id = id
+            self.partId = partId
+            self.partName = partName
+            self.partCode = partCode
+            self.qtyConsumed = qtyConsumed
+            self.qtyReturned = qtyReturned
+            self.unitCost = unitCost
+            self.unitSell = unitSell
+        }
+    }
+
+    /// Dashboard KPIs for the jobs overview.
+    public struct JobsDashboardKPIs: Sendable {
+        public let activeJobs: Int
+        public let clockedInUsers: Int
+        public let todayLaborHours: Double
+        public let overdueJobs: Int
+
+        public init(activeJobs: Int, clockedInUsers: Int, todayLaborHours: Double, overdueJobs: Int) {
+            self.activeJobs = activeJobs
+            self.clockedInUsers = clockedInUsers
+            self.todayLaborHours = todayLaborHours
+            self.overdueJobs = overdueJobs
+        }
+    }
+
+    /// Job stats summary (active/completed/total).
+    public struct JobStats: Sendable {
+        public let active: Int
+        public let completed: Int
+        public let total: Int
+
+        public init(active: Int, completed: Int, total: Int) {
+            self.active = active
+            self.completed = completed
+            self.total = total
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 1. Job CRUD
+    // =========================================================================
+
+    /// List jobs with optional search and status filter.
+    public func listJobs(
+        search: String? = nil,
+        status: String? = nil,
+        limit: Int = 50,
+        offset: Int = 0
+    ) throws -> [JobListItem] {
+        do {
+            return try db.writer.read { dbConn -> [JobListItem] in
+                var whereClauses = ["j.deleted_at IS NULL"]
+                var args: [DatabaseValueConvertible?] = []
+
+                if let search, !search.isEmpty {
+                    whereClauses.append("(j.job_name LIKE ? OR j.job_number LIKE ? OR j.customer_name LIKE ?)")
+                    let pattern = "%\(search)%"
+                    args.append(pattern)
+                    args.append(pattern)
+                    args.append(pattern)
+                }
+                if let status, !status.isEmpty {
+                    whereClauses.append("j.status = ?")
+                    args.append(status)
+                }
+
+                args.append(limit)
+                args.append(offset)
+
+                let sql = """
+                    SELECT j.id, j.job_number, j.job_name, j.customer_name,
+                           j.status, j.priority, j.start_date, j.due_date,
+                           COALESCE((SELECT COUNT(*) FROM job_team_members jtm
+                                     WHERE jtm.job_id = j.id AND jtm.deleted_at IS NULL), 0) AS team_count
+                    FROM jobs j
+                    WHERE \(whereClauses.joined(separator: " AND "))
+                    ORDER BY j.created_at DESC
+                    LIMIT ? OFFSET ?
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
+                return rows.map { row in
+                    JobListItem(
+                        id: row["id"] ?? 0,
+                        jobNumber: row["job_number"] ?? "",
+                        jobName: row["job_name"] ?? "",
+                        customerName: row["customer_name"] as String?,
+                        status: row["status"] ?? "active",
+                        priority: row["priority"] ?? "normal",
+                        teamCount: row["team_count"] ?? 0,
+                        startDate: row["start_date"] as String?,
+                        dueDate: row["due_date"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get a single job by ID with full detail and aggregated data.
+    public func getJob(id: Int64) throws -> JobDetail {
+        let result: JobDetail? = try db.writer.read { dbConn -> JobDetail? in
+            let sql = """
+                SELECT j.*,
+                       COALESCE(u.display_name, u.email, 'Unknown') AS lead_user_name,
+                       COALESCE((SELECT COUNT(*) FROM job_team_members jtm
+                                 WHERE jtm.job_id = j.id AND jtm.deleted_at IS NULL), 0) AS team_count,
+                       COALESCE((SELECT SUM(jp.qty_consumed * COALESCE(jp.unit_cost_at_consume, 0))
+                                 FROM job_parts jp
+                                 WHERE jp.job_id = j.id AND jp.deleted_at IS NULL), 0) AS parts_cost,
+                       COALESCE((SELECT SUM(le.regular_hours + le.overtime_hours)
+                                 FROM labor_entries le
+                                 WHERE le.job_id = j.id AND le.deleted_at IS NULL), 0) AS labor_hours
+                FROM jobs j
+                LEFT JOIN users u ON u.id = j.lead_user_id
+                WHERE j.id = ?
+                """
+            guard let row = try Row.fetchOne(dbConn, sql: sql, arguments: [id]) else {
+                return nil
+            }
+
+            return JobDetail(
+                id: row["id"] ?? 0,
+                jobNumber: row["job_number"] ?? "",
+                jobName: row["job_name"] ?? "",
+                customerName: row["customer_name"] as String?,
+                addressLine1: row["address_line1"] as String?,
+                addressLine2: row["address_line2"] as String?,
+                city: row["city"] as String?,
+                state: row["state"] as String?,
+                zip: row["zip"] as String?,
+                gpsLat: row["gps_lat"] as Double?,
+                gpsLng: row["gps_lng"] as Double?,
+                status: row["status"] ?? "active",
+                priority: row["priority"] ?? "normal",
+                jobType: row["job_type"] ?? "service",
+                billRateTypeId: row["bill_rate_type_id"] as Int64?,
+                billingRate: row["billing_rate"] as Double?,
+                estimatedHours: row["estimated_hours"] as Double?,
+                leadUserId: row["lead_user_id"] as Int64?,
+                leadUserName: row["lead_user_name"] as String?,
+                onCallType: row["on_call_type"] as String?,
+                warrantyStartDate: row["warranty_start_date"] as String?,
+                warrantyEndDate: row["warranty_end_date"] as String?,
+                startDate: row["start_date"] as String?,
+                dueDate: row["due_date"] as String?,
+                completedDate: row["completed_date"] as String?,
+                notes: row["notes"] as String?,
+                budgetLimit: row["budget_limit"] as Double?,
+                budgetAlertPercent: row["budget_alert_percent"] as Double?,
+                createdBy: row["created_by"] as Int64?,
+                deletedAt: row["deleted_at"] as String?,
+                createdAt: row["created_at"] as String?,
+                updatedAt: row["updated_at"] as String?,
+                teamCount: row["team_count"] ?? 0,
+                partsCost: row["parts_cost"] ?? 0.0,
+                laborHours: row["labor_hours"] ?? 0.0
+            )
+        }
+        guard let result else { throw JobsError.jobNotFound(id) }
+        return result
+    }
+
+    /// Create a new job. Returns the inserted row ID.
+    @discardableResult
+    public func createJob(
+        jobNumber: String,
+        jobName: String,
+        customerName: String? = nil,
+        addressLine1: String? = nil,
+        addressLine2: String? = nil,
+        city: String? = nil,
+        state: String? = nil,
+        zip: String? = nil,
+        gpsLat: Double? = nil,
+        gpsLng: Double? = nil,
+        status: String = "active",
+        priority: String = "normal",
+        jobType: String = "service",
+        billRateTypeId: Int64? = nil,
+        billingRate: Double? = nil,
+        estimatedHours: Double? = nil,
+        leadUserId: Int64? = nil,
+        onCallType: String? = nil,
+        warrantyStartDate: String? = nil,
+        warrantyEndDate: String? = nil,
+        startDate: String? = nil,
+        dueDate: String? = nil,
+        notes: String? = nil,
+        budgetLimit: Double? = nil,
+        budgetAlertPercent: Double? = nil,
+        createdBy: Int64? = nil
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO jobs
+                    (job_number, job_name, customer_name,
+                     address_line1, address_line2, city, state, zip,
+                     gps_lat, gps_lng, status, priority, job_type,
+                     bill_rate_type_id, billing_rate, estimated_hours,
+                     lead_user_id, on_call_type,
+                     warranty_start_date, warranty_end_date,
+                     start_date, due_date, notes,
+                     budget_limit, budget_alert_percent, created_by,
+                     created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                    """,
+                arguments: [
+                    jobNumber, jobName, customerName,
+                    addressLine1, addressLine2, city, state, zip,
+                    gpsLat, gpsLng, status, priority, jobType,
+                    billRateTypeId, billingRate, estimatedHours,
+                    leadUserId, onCallType,
+                    warrantyStartDate, warrantyEndDate,
+                    startDate, dueDate, notes,
+                    budgetLimit, budgetAlertPercent, createdBy
+                ]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Update an existing job. Only non-nil fields are updated.
+    public func updateJob(
+        id: Int64,
+        jobName: String? = nil,
+        customerName: String? = nil,
+        addressLine1: String? = nil,
+        addressLine2: String? = nil,
+        city: String? = nil,
+        state: String? = nil,
+        zip: String? = nil,
+        gpsLat: Double? = nil,
+        gpsLng: Double? = nil,
+        status: String? = nil,
+        priority: String? = nil,
+        jobType: String? = nil,
+        billRateTypeId: Int64? = nil,
+        billingRate: Double? = nil,
+        estimatedHours: Double? = nil,
+        leadUserId: Int64? = nil,
+        onCallType: String? = nil,
+        warrantyStartDate: String? = nil,
+        warrantyEndDate: String? = nil,
+        startDate: String? = nil,
+        dueDate: String? = nil,
+        completedDate: String? = nil,
+        notes: String? = nil,
+        budgetLimit: Double? = nil,
+        budgetAlertPercent: Double? = nil
+    ) throws {
+        try db.writer.write { dbConn in
+            var setClauses: [String] = []
+            var args: [DatabaseValueConvertible?] = []
+
+            if let jobName { setClauses.append("job_name = ?"); args.append(jobName) }
+            if let customerName { setClauses.append("customer_name = ?"); args.append(customerName) }
+            if let addressLine1 { setClauses.append("address_line1 = ?"); args.append(addressLine1) }
+            if let addressLine2 { setClauses.append("address_line2 = ?"); args.append(addressLine2) }
+            if let city { setClauses.append("city = ?"); args.append(city) }
+            if let state { setClauses.append("state = ?"); args.append(state) }
+            if let zip { setClauses.append("zip = ?"); args.append(zip) }
+            if let gpsLat { setClauses.append("gps_lat = ?"); args.append(gpsLat) }
+            if let gpsLng { setClauses.append("gps_lng = ?"); args.append(gpsLng) }
+            if let status { setClauses.append("status = ?"); args.append(status) }
+            if let priority { setClauses.append("priority = ?"); args.append(priority) }
+            if let jobType { setClauses.append("job_type = ?"); args.append(jobType) }
+            if let billRateTypeId { setClauses.append("bill_rate_type_id = ?"); args.append(billRateTypeId) }
+            if let billingRate { setClauses.append("billing_rate = ?"); args.append(billingRate) }
+            if let estimatedHours { setClauses.append("estimated_hours = ?"); args.append(estimatedHours) }
+            if let leadUserId { setClauses.append("lead_user_id = ?"); args.append(leadUserId) }
+            if let onCallType { setClauses.append("on_call_type = ?"); args.append(onCallType) }
+            if let warrantyStartDate { setClauses.append("warranty_start_date = ?"); args.append(warrantyStartDate) }
+            if let warrantyEndDate { setClauses.append("warranty_end_date = ?"); args.append(warrantyEndDate) }
+            if let startDate { setClauses.append("start_date = ?"); args.append(startDate) }
+            if let dueDate { setClauses.append("due_date = ?"); args.append(dueDate) }
+            if let completedDate { setClauses.append("completed_date = ?"); args.append(completedDate) }
+            if let notes { setClauses.append("notes = ?"); args.append(notes) }
+            if let budgetLimit { setClauses.append("budget_limit = ?"); args.append(budgetLimit) }
+            if let budgetAlertPercent { setClauses.append("budget_alert_percent = ?"); args.append(budgetAlertPercent) }
+
+            guard !setClauses.isEmpty else { return }
+            setClauses.append("updated_at = datetime('now')")
+            args.append(id)
+
+            let sql = "UPDATE jobs SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
+            try dbConn.execute(sql: sql, arguments: StatementArguments(args))
+        }
+    }
+
+    /// Get aggregate job statistics: active, completed, total counts.
+    public func getJobStats() throws -> JobStats {
+        let active = try safeCount(
+            sql: "SELECT COUNT(*) FROM jobs WHERE status = 'active' AND deleted_at IS NULL"
+        )
+        let completed = try safeCount(
+            sql: "SELECT COUNT(*) FROM jobs WHERE status = 'completed' AND deleted_at IS NULL"
+        )
+        let total = try safeCount(
+            sql: "SELECT COUNT(*) FROM jobs WHERE deleted_at IS NULL"
+        )
+        return JobStats(active: active, completed: completed, total: total)
+    }
+
+    // =========================================================================
+    // MARK: - 2. Labor / Clock In-Out
+    // =========================================================================
+
+    /// Clock a user into a job. Creates a new labor entry with status 'clocked_in'.
+    ///
+    /// - Throws: `JobsError.alreadyClockedIn` if the user already has an open entry.
+    /// - Returns: The new labor entry row ID.
+    @discardableResult
+    public func clockIn(
+        userId: Int64,
+        jobId: Int64,
+        gpsLat: Double? = nil,
+        gpsLng: Double? = nil
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            // Check for existing open clock entry
+            let existing = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT COUNT(*) FROM labor_entries
+                    WHERE user_id = ? AND status = 'clocked_in' AND deleted_at IS NULL
+                    """,
+                arguments: [userId]
+            ) ?? 0
+
+            if existing > 0 {
+                throw JobsError.alreadyClockedIn(userId: userId, jobId: jobId)
+            }
+
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO labor_entries
+                    (user_id, job_id, clock_in, clock_in_gps_lat, clock_in_gps_lng, status, created_at)
+                    VALUES (?, ?, datetime('now'), ?, ?, 'clocked_in', datetime('now'))
+                    """,
+                arguments: [userId, jobId, gpsLat, gpsLng]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Clock out a labor entry. Updates clock_out time, calculates hours, sets status to 'completed'.
+    ///
+    /// - Returns: The updated labor entry row ID.
+    @discardableResult
+    public func clockOut(
+        laborEntryId: Int64,
+        gpsLat: Double? = nil,
+        gpsLng: Double? = nil
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            // Verify the entry exists and is clocked in
+            guard let _ = try Row.fetchOne(
+                dbConn,
+                sql: "SELECT id, clock_in FROM labor_entries WHERE id = ? AND status = 'clocked_in' AND deleted_at IS NULL",
+                arguments: [laborEntryId]
+            ) else {
+                throw JobsError.laborEntryNotFound(laborEntryId)
+            }
+
+            // Calculate hours as the difference using julianday
+            // (julianday(clock_out) - julianday(clock_in)) * 24
+            try dbConn.execute(
+                sql: """
+                    UPDATE labor_entries
+                    SET clock_out = datetime('now'),
+                        clock_out_gps_lat = ?,
+                        clock_out_gps_lng = ?,
+                        regular_hours = ROUND((julianday(datetime('now')) - julianday(clock_in)) * 24, 2),
+                        status = 'completed'
+                    WHERE id = ?
+                    """,
+                arguments: [gpsLat, gpsLng, laborEntryId]
+            )
+
+            return laborEntryId
+        }
+    }
+
+    /// Get the active (clocked-in) labor entry for a user, if any.
+    public func getActiveClockEntry(userId: Int64) throws -> LaborEntryRow? {
+        do {
+            return try db.writer.read { dbConn -> LaborEntryRow? in
+                guard let row = try Row.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT le.*,
+                               COALESCE(u.display_name, u.email, 'Unknown') AS user_name,
+                               j.job_name
+                        FROM labor_entries le
+                        LEFT JOIN users u ON u.id = le.user_id
+                        LEFT JOIN jobs j ON j.id = le.job_id
+                        WHERE le.user_id = ? AND le.status = 'clocked_in' AND le.deleted_at IS NULL
+                        LIMIT 1
+                        """,
+                    arguments: [userId]
+                ) else { return nil }
+
+                return LaborEntryRow(
+                    id: row["id"] ?? 0,
+                    userId: row["user_id"] ?? 0,
+                    userName: row["user_name"] ?? "Unknown",
+                    jobId: row["job_id"] ?? 0,
+                    jobName: row["job_name"] ?? "",
+                    clockIn: row["clock_in"] ?? "",
+                    clockOut: row["clock_out"] as String?,
+                    status: row["status"] ?? "clocked_in",
+                    regularHours: row["regular_hours"] ?? 0.0,
+                    overtimeHours: row["overtime_hours"] ?? 0.0,
+                    gpsInLat: row["clock_in_gps_lat"] as Double?,
+                    gpsInLng: row["clock_in_gps_lng"] as Double?,
+                    gpsOutLat: row["clock_out_gps_lat"] as Double?,
+                    gpsOutLng: row["clock_out_gps_lng"] as Double?
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) { return nil }
+            throw error
+        }
+    }
+
+    /// List labor entries, optionally filtered by job and/or user.
+    public func listLaborEntries(
+        jobId: Int64? = nil,
+        userId: Int64? = nil,
+        limit: Int = 100
+    ) throws -> [LaborEntryRow] {
+        do {
+            return try db.writer.read { dbConn -> [LaborEntryRow] in
+                var whereClauses = ["le.deleted_at IS NULL"]
+                var args: [DatabaseValueConvertible?] = []
+
+                if let jobId {
+                    whereClauses.append("le.job_id = ?")
+                    args.append(jobId)
+                }
+                if let userId {
+                    whereClauses.append("le.user_id = ?")
+                    args.append(userId)
+                }
+
+                args.append(limit)
+
+                let sql = """
+                    SELECT le.*,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name,
+                           j.job_name
+                    FROM labor_entries le
+                    LEFT JOIN users u ON u.id = le.user_id
+                    LEFT JOIN jobs j ON j.id = le.job_id
+                    WHERE \(whereClauses.joined(separator: " AND "))
+                    ORDER BY le.clock_in DESC
+                    LIMIT ?
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
+                return rows.map { row in
+                    LaborEntryRow(
+                        id: row["id"] ?? 0,
+                        userId: row["user_id"] ?? 0,
+                        userName: row["user_name"] ?? "Unknown",
+                        jobId: row["job_id"] ?? 0,
+                        jobName: row["job_name"] ?? "",
+                        clockIn: row["clock_in"] ?? "",
+                        clockOut: row["clock_out"] as String?,
+                        status: row["status"] ?? "clocked_in",
+                        regularHours: row["regular_hours"] ?? 0.0,
+                        overtimeHours: row["overtime_hours"] ?? 0.0,
+                        gpsInLat: row["clock_in_gps_lat"] as Double?,
+                        gpsInLng: row["clock_in_gps_lng"] as Double?,
+                        gpsOutLat: row["clock_out_gps_lat"] as Double?,
+                        gpsOutLng: row["clock_out_gps_lng"] as Double?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get a labor summary for a specific job.
+    public func getLaborSummary(jobId: Int64) throws -> LaborSummary {
+        do {
+            return try db.writer.read { dbConn -> LaborSummary in
+                let row = try Row.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT COUNT(*) AS total_entries,
+                               COALESCE(SUM(regular_hours), 0) AS total_regular,
+                               COALESCE(SUM(overtime_hours), 0) AS total_overtime,
+                               COUNT(DISTINCT user_id) AS unique_workers
+                        FROM labor_entries
+                        WHERE job_id = ? AND deleted_at IS NULL
+                        """,
+                    arguments: [jobId]
+                )
+
+                return LaborSummary(
+                    totalEntries: row?["total_entries"] ?? 0,
+                    totalRegularHours: row?["total_regular"] ?? 0.0,
+                    totalOvertimeHours: row?["total_overtime"] ?? 0.0,
+                    uniqueWorkers: row?["unique_workers"] ?? 0
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return LaborSummary(totalEntries: 0, totalRegularHours: 0, totalOvertimeHours: 0, uniqueWorkers: 0)
+            }
+            throw error
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 3. Clock-Out Questionnaire
+    // =========================================================================
+
+    /// Get all active clock-out questions sorted by sort_order.
+    public func getActiveQuestions() throws -> [QuestionnaireItem] {
+        do {
+            return try db.writer.read { dbConn -> [QuestionnaireItem] in
+                let rows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT id, question_text, answer_type, is_required
+                        FROM clock_out_questions
+                        WHERE is_active = 1
+                        ORDER BY sort_order ASC
+                        """
+                )
+                return rows.map { row in
+                    QuestionnaireItem(
+                        questionId: row["id"] ?? 0,
+                        questionText: row["question_text"] ?? "",
+                        answerType: row["answer_type"] ?? "text",
+                        isRequired: (row["is_required"] as Int?) == 1,
+                        answer: nil
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Save clock-out responses for a labor entry.
+    ///
+    /// - Parameter responses: Array of tuples (questionId, answerText).
+    public func saveClockOutResponses(
+        laborEntryId: Int64,
+        responses: [(questionId: Int64, answer: String)]
+    ) throws {
+        try db.writer.write { dbConn in
+            for response in responses {
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO clock_out_responses
+                        (labor_entry_id, question_id, answer_text, answered_at)
+                        VALUES (?, ?, ?, datetime('now'))
+                        """,
+                    arguments: [laborEntryId, response.questionId, response.answer]
+                )
+            }
+        }
+    }
+
+    /// Get responses for a specific labor entry with question text.
+    public func getResponsesForEntry(laborEntryId: Int64) throws -> [QuestionnaireItem] {
+        do {
+            return try db.writer.read { dbConn -> [QuestionnaireItem] in
+                let rows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT coq.id AS question_id, coq.question_text, coq.answer_type, coq.is_required,
+                               cor.answer_text
+                        FROM clock_out_responses cor
+                        JOIN clock_out_questions coq ON coq.id = cor.question_id
+                        WHERE cor.labor_entry_id = ? AND cor.deleted_at IS NULL
+                        ORDER BY coq.sort_order ASC
+                        """,
+                    arguments: [laborEntryId]
+                )
+                return rows.map { row in
+                    QuestionnaireItem(
+                        questionId: row["question_id"] ?? 0,
+                        questionText: row["question_text"] ?? "",
+                        answerType: row["answer_type"] ?? "text",
+                        isRequired: (row["is_required"] as Int?) == 1,
+                        answer: row["answer_text"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 4. One-Time Questions
+    // =========================================================================
+
+    /// Get one-time questions for a specific job.
+    public func getQuestionsForJob(jobId: Int64) throws -> [OneTimeQuestionRow] {
+        do {
+            return try db.writer.read { dbConn -> [OneTimeQuestionRow] in
+                let rows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT otq.*,
+                               j.job_name,
+                               COALESCE(uc.display_name, uc.email, 'Unknown') AS created_by_name,
+                               COALESCE(ua.display_name, ua.email) AS answered_by_name
+                        FROM one_time_questions otq
+                        LEFT JOIN jobs j ON j.id = otq.job_id
+                        LEFT JOIN users uc ON uc.id = otq.created_by
+                        LEFT JOIN users ua ON ua.id = otq.answered_by
+                        WHERE otq.job_id = ? AND otq.deleted_at IS NULL
+                        ORDER BY otq.created_at DESC
+                        """,
+                    arguments: [jobId]
+                )
+                return rows.map { row in
+                    OneTimeQuestionRow(
+                        id: row["id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
+                        jobName: row["job_name"] ?? "",
+                        questionText: row["question_text"] ?? "",
+                        status: row["status"] ?? "pending",
+                        createdByName: row["created_by_name"] ?? "Unknown",
+                        answerText: row["answer_text"] as String?,
+                        answeredByName: row["answered_by_name"] as String?,
+                        answeredAt: row["answered_at"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Create a new one-time question for a job.
+    ///
+    /// - Returns: The new question row ID.
+    @discardableResult
+    public func createOneTimeQuestion(
+        jobId: Int64,
+        text: String,
+        createdBy: Int64,
+        targetUserId: Int64? = nil
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO one_time_questions
+                    (job_id, target_user_id, question_text, created_by, created_at)
+                    VALUES (?, ?, ?, ?, datetime('now'))
+                    """,
+                arguments: [jobId, targetUserId, text, createdBy]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Answer a one-time question.
+    public func answerOneTimeQuestion(
+        questionId: Int64,
+        answerText: String,
+        answeredBy: Int64
+    ) throws {
+        try db.writer.write { dbConn in
+            let count = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(*) FROM one_time_questions WHERE id = ? AND deleted_at IS NULL",
+                arguments: [questionId]
+            ) ?? 0
+
+            guard count > 0 else {
+                throw JobsError.questionNotFound(questionId)
+            }
+
+            try dbConn.execute(
+                sql: """
+                    UPDATE one_time_questions
+                    SET answer_text = ?, answered_by = ?, status = 'answered', answered_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                arguments: [answerText, answeredBy, questionId]
+            )
+        }
+    }
+
+    /// Get pending one-time questions, optionally filtered by target user.
+    public func getPendingQuestions(userId: Int64? = nil) throws -> [OneTimeQuestionRow] {
+        do {
+            return try db.writer.read { dbConn -> [OneTimeQuestionRow] in
+                var whereClauses = ["otq.status = 'pending'", "otq.deleted_at IS NULL"]
+                var args: [DatabaseValueConvertible?] = []
+
+                if let userId {
+                    whereClauses.append("(otq.target_user_id = ? OR otq.target_user_id IS NULL)")
+                    args.append(userId)
+                }
+
+                let sql = """
+                    SELECT otq.*,
+                           j.job_name,
+                           COALESCE(uc.display_name, uc.email, 'Unknown') AS created_by_name,
+                           COALESCE(ua.display_name, ua.email) AS answered_by_name
+                    FROM one_time_questions otq
+                    LEFT JOIN jobs j ON j.id = otq.job_id
+                    LEFT JOIN users uc ON uc.id = otq.created_by
+                    LEFT JOIN users ua ON ua.id = otq.answered_by
+                    WHERE \(whereClauses.joined(separator: " AND "))
+                    ORDER BY otq.created_at DESC
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
+                return rows.map { row in
+                    OneTimeQuestionRow(
+                        id: row["id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
+                        jobName: row["job_name"] ?? "",
+                        questionText: row["question_text"] ?? "",
+                        status: row["status"] ?? "pending",
+                        createdByName: row["created_by_name"] ?? "Unknown",
+                        answerText: row["answer_text"] as String?,
+                        answeredByName: row["answered_by_name"] as String?,
+                        answeredAt: row["answered_at"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 5. Daily Reports
+    // =========================================================================
+
+    /// List daily reports, optionally filtered by job.
+    public func listReports(jobId: Int64? = nil, limit: Int = 50) throws -> [DailyReportRow] {
+        do {
+            return try db.writer.read { dbConn -> [DailyReportRow] in
+                var whereClauses = ["dr.deleted_at IS NULL"]
+                var args: [DatabaseValueConvertible?] = []
+
+                if let jobId {
+                    whereClauses.append("dr.job_id = ?")
+                    args.append(jobId)
+                }
+
+                args.append(limit)
+
+                let sql = """
+                    SELECT dr.id, dr.job_id, dr.report_date, dr.status,
+                           j.job_name,
+                           COALESCE(u.display_name, u.email) AS reviewed_by_name
+                    FROM daily_reports dr
+                    LEFT JOIN jobs j ON j.id = dr.job_id
+                    LEFT JOIN users u ON u.id = dr.reviewed_by
+                    WHERE \(whereClauses.joined(separator: " AND "))
+                    ORDER BY dr.report_date DESC
+                    LIMIT ?
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
+                return rows.map { row in
+                    DailyReportRow(
+                        id: row["id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
+                        jobName: row["job_name"] ?? "",
+                        reportDate: row["report_date"] ?? "",
+                        status: row["status"] ?? "generated",
+                        reviewedByName: row["reviewed_by_name"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get a single daily report by ID.
+    public func getReport(id: Int64) throws -> DailyReportRow? {
+        do {
+            return try db.writer.read { dbConn -> DailyReportRow? in
+                guard let row = try Row.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT dr.id, dr.job_id, dr.report_date, dr.status,
+                               j.job_name,
+                               COALESCE(u.display_name, u.email) AS reviewed_by_name
+                        FROM daily_reports dr
+                        LEFT JOIN jobs j ON j.id = dr.job_id
+                        LEFT JOIN users u ON u.id = dr.reviewed_by
+                        WHERE dr.id = ? AND dr.deleted_at IS NULL
+                        """,
+                    arguments: [id]
+                ) else { return nil }
+
+                return DailyReportRow(
+                    id: row["id"] ?? 0,
+                    jobId: row["job_id"] ?? 0,
+                    jobName: row["job_name"] ?? "",
+                    reportDate: row["report_date"] ?? "",
+                    status: row["status"] ?? "generated",
+                    reviewedByName: row["reviewed_by_name"] as String?
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) { return nil }
+            throw error
+        }
+    }
+
+    /// Generate (or replace) a daily report for a job and date.
+    /// Uses INSERT OR REPLACE to upsert on the (job_id, report_date) unique constraint.
+    ///
+    /// - Returns: The report row ID.
+    @discardableResult
+    public func generateDailyReport(
+        jobId: Int64,
+        reportDate: String,
+        reportJson: String,
+        generatedBy: Int64
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT OR REPLACE INTO daily_reports
+                    (job_id, report_date, report_json, status, generated_at)
+                    VALUES (?, ?, ?, 'generated', datetime('now'))
+                    """,
+                arguments: [jobId, reportDate, reportJson]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Mark a daily report as reviewed.
+    public func markReportReviewed(reportId: Int64, reviewedBy: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE daily_reports
+                    SET status = 'reviewed', reviewed_by = ?, reviewed_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                arguments: [reviewedBy, reportId]
+            )
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 6. Team Members
+    // =========================================================================
+
+    /// Get all team members for a job with user names.
+    public func getTeamMembers(jobId: Int64) throws -> [TeamMemberRow] {
+        do {
+            return try db.writer.read { dbConn -> [TeamMemberRow] in
+                let rows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT jtm.id, jtm.user_id, jtm.role, jtm.assigned_at,
+                               COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+                        FROM job_team_members jtm
+                        LEFT JOIN users u ON u.id = jtm.user_id
+                        WHERE jtm.job_id = ? AND jtm.deleted_at IS NULL
+                        ORDER BY jtm.assigned_at ASC
+                        """,
+                    arguments: [jobId]
+                )
+                return rows.map { row in
+                    TeamMemberRow(
+                        id: row["id"] ?? 0,
+                        userId: row["user_id"] ?? 0,
+                        userName: row["user_name"] ?? "Unknown",
+                        role: row["role"] ?? "member",
+                        joinedAt: row["assigned_at"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Add a team member to a job.
+    ///
+    /// - Returns: The new team member row ID.
+    @discardableResult
+    public func addTeamMember(
+        jobId: Int64,
+        userId: Int64,
+        role: String = "member"
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT OR IGNORE INTO job_team_members
+                    (job_id, user_id, role, assigned_at)
+                    VALUES (?, ?, ?, datetime('now'))
+                    """,
+                arguments: [jobId, userId, role]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Remove a team member (soft-delete).
+    public func removeTeamMember(id: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE job_team_members SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [id]
+            )
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 7. Job Parts
+    // =========================================================================
+
+    /// Get all parts consumed on a job with part name/code.
+    public func getJobParts(jobId: Int64) throws -> [JobPartRow] {
+        do {
+            return try db.writer.read { dbConn -> [JobPartRow] in
+                let rows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT jp.id, jp.part_id, jp.qty_consumed, jp.qty_returned,
+                               jp.unit_cost_at_consume, jp.unit_sell_at_consume,
+                               p.name AS part_name, p.code AS part_code
+                        FROM job_parts jp
+                        LEFT JOIN parts p ON p.id = jp.part_id
+                        WHERE jp.job_id = ? AND jp.deleted_at IS NULL
+                        ORDER BY jp.consumed_at DESC
+                        """,
+                    arguments: [jobId]
+                )
+                return rows.map { row in
+                    JobPartRow(
+                        id: row["id"] ?? 0,
+                        partId: row["part_id"] ?? 0,
+                        partName: (row["part_name"] as String?) ?? "Unknown Part",
+                        partCode: row["part_code"] as String?,
+                        qtyConsumed: row["qty_consumed"] ?? 0,
+                        qtyReturned: row["qty_returned"] ?? 0,
+                        unitCost: row["unit_cost_at_consume"] as Double?,
+                        unitSell: row["unit_sell_at_consume"] as Double?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Add a part consumption record to a job.
+    ///
+    /// - Returns: The new job_parts row ID.
+    @discardableResult
+    public func addJobPart(
+        jobId: Int64,
+        partId: Int64,
+        qty: Int,
+        costAtConsume: Double? = nil,
+        performedBy: Int64
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO job_parts
+                    (job_id, part_id, qty_consumed, unit_cost_at_consume, consumed_by, consumed_at)
+                    VALUES (?, ?, ?, ?, ?, datetime('now'))
+                    """,
+                arguments: [jobId, partId, qty, costAtConsume, performedBy]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Record a return of parts from a job.
+    public func returnJobPart(jobPartId: Int64, returnQty: Int) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE job_parts
+                    SET qty_returned = qty_returned + ?
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [returnQty, jobPartId]
+            )
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 8. Dashboard KPIs
+    // =========================================================================
+
+    /// Get jobs dashboard KPIs: active jobs, clocked-in users, today's labor hours, overdue jobs.
+    public func getJobsDashboardKPIs() throws -> JobsDashboardKPIs {
+        let activeJobs = try safeCount(
+            sql: "SELECT COUNT(*) FROM jobs WHERE status = 'active' AND deleted_at IS NULL"
+        )
+
+        let clockedInUsers = try safeCount(
+            sql: """
+                SELECT COUNT(DISTINCT user_id) FROM labor_entries
+                WHERE status = 'clocked_in' AND deleted_at IS NULL
+                """
+        )
+
+        let todayHoursRaw = try safeCountDouble(
+            sql: """
+                SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
+                FROM labor_entries
+                WHERE date(clock_in) = date('now') AND deleted_at IS NULL
+                """
+        )
+
+        let overdueJobs = try safeCount(
+            sql: """
+                SELECT COUNT(*) FROM jobs
+                WHERE status = 'active'
+                  AND due_date IS NOT NULL
+                  AND date(due_date) < date('now')
+                  AND deleted_at IS NULL
+                """
+        )
+
+        return JobsDashboardKPIs(
+            activeJobs: activeJobs,
+            clockedInUsers: clockedInUsers,
+            todayLaborHours: todayHoursRaw,
+            overdueJobs: overdueJobs
+        )
+    }
+
+    // =========================================================================
+    // MARK: - Internal Helpers
+    // =========================================================================
+
+    /// Execute a SELECT COUNT(*) or SELECT COALESCE(SUM(...), 0) query returning an Int.
+    /// Returns 0 if the table does not exist.
+    private func safeCount(sql: String, arguments: StatementArguments = StatementArguments()) throws -> Int {
+        do {
+            return try db.writer.read { dbConn in
+                try Int.fetchOne(dbConn, sql: sql, arguments: arguments) ?? 0
+            }
+        } catch {
+            if isTableNotFoundError(error) { return 0 }
+            throw error
+        }
+    }
+
+    /// Execute a SELECT COALESCE(SUM(...), 0) query returning a Double.
+    /// Returns 0.0 if the table does not exist.
+    private func safeCountDouble(sql: String, arguments: StatementArguments = StatementArguments()) throws -> Double {
+        do {
+            return try db.writer.read { dbConn in
+                try Double.fetchOne(dbConn, sql: sql, arguments: arguments) ?? 0.0
+            }
+        } catch {
+            if isTableNotFoundError(error) { return 0.0 }
+            throw error
+        }
+    }
+
+    /// Detect whether a GRDB/SQLite error indicates a missing table.
+    private func isTableNotFoundError(_ error: Error) -> Bool {
+        let message = String(describing: error)
+        return message.contains("no such table")
+    }
+}

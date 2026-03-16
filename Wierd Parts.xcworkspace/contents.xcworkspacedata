@@ -2,6 +2,9 @@
 <Workspace
    version = "1.0">
    <FileRef
+      location = "container:Weird Parts IOS/Weird Parts.xcodeproj">
+   </FileRef>
+   <FileRef
       location = "group:core">
    </FileRef>
    <FileRef

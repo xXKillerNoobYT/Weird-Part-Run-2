@@ -57,7 +57,7 @@ struct WarehouseMovementsPage: View {
         #if os(iOS)
         .background(Color(.systemGroupedBackground))
         #elseif os(macOS)
-        .background(Color(.windowBackgroundColor))
+        .background(Color(.systemGroupedBackground))
         #endif
         .task { await loadData() }
     }
@@ -77,7 +77,7 @@ struct WarehouseMovementsPage: View {
         #if os(iOS)
         .background(Color(.secondarySystemGroupedBackground))
         #elseif os(macOS)
-        .background(Color(.controlBackgroundColor))
+        .background(Color(.secondarySystemGroupedBackground))
         #endif
     }
 

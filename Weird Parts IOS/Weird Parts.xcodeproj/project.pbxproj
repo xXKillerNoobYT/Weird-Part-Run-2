@@ -1,0 +1,673 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		08F2BF672F67ADE700944E97 /* core in Resources */ = {isa = PBXBuildFile; fileRef = 08F2BF662F67ADE700944E97 /* core */; };
+		08F2BF702F67B1C100944E97 /* WiredPartCore in Frameworks */ = {isa = PBXBuildFile; productRef = 08F2BF6F2F67B1C100944E97 /* WiredPartCore */; };
+		08F2BF732F67B1EE00944E97 /* WiredPartCore in Frameworks */ = {isa = PBXBuildFile; productRef = 08F2BF722F67B1EE00944E97 /* WiredPartCore */; };
+		08F2BF772F67B2CC00944E97 /* WiredPartCore in Frameworks */ = {isa = PBXBuildFile; productRef = 08F2BF762F67B2CC00944E97 /* WiredPartCore */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		08F2BE452F67A53700944E97 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 08F2BE2A2F67A53500944E97 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 08F2BE312F67A53500944E97;
+			remoteInfo = "Weird Parts IOS";
+		};
+		08F2BE4F2F67A53700944E97 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 08F2BE2A2F67A53500944E97 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 08F2BE312F67A53500944E97;
+			remoteInfo = "Weird Parts IOS";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		08F2BE322F67A53500944E97 /* Weird Parts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Weird Parts.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		08F2BE442F67A53700944E97 /* Weird PartsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Weird PartsTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		08F2BE4E2F67A53700944E97 /* Weird PartsUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Weird PartsUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		08F2BF662F67ADE700944E97 /* core */ = {isa = PBXFileReference; lastKnownFileType = folder; path = core; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		08F2BE342F67A53500944E97 /* Weird Parts IOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Weird Parts IOS";
+			sourceTree = "<group>";
+		};
+		08F2BE472F67A53700944E97 /* Weird Parts IOSTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Weird Parts IOSTests";
+			sourceTree = "<group>";
+		};
+		08F2BE512F67A53700944E97 /* Weird Parts IOSUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Weird Parts IOSUITests";
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		08F2BE2F2F67A53500944E97 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				08F2BF732F67B1EE00944E97 /* WiredPartCore in Frameworks */,
+				08F2BF772F67B2CC00944E97 /* WiredPartCore in Frameworks */,
+				08F2BF702F67B1C100944E97 /* WiredPartCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		08F2BE412F67A53700944E97 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		08F2BE4B2F67A53700944E97 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		08F2BE292F67A53500944E97 = {
+			isa = PBXGroup;
+			children = (
+				08F2BE342F67A53500944E97 /* Weird Parts IOS */,
+				08F2BE472F67A53700944E97 /* Weird Parts IOSTests */,
+				08F2BE512F67A53700944E97 /* Weird Parts IOSUITests */,
+				08F2BE332F67A53500944E97 /* Products */,
+				08F2BF662F67ADE700944E97 /* core */,
+				08F2BF742F67B22700944E97 /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+		08F2BE332F67A53500944E97 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				08F2BE322F67A53500944E97 /* Weird Parts.app */,
+				08F2BE442F67A53700944E97 /* Weird PartsTests.xctest */,
+				08F2BE4E2F67A53700944E97 /* Weird PartsUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		08F2BF742F67B22700944E97 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		08F2BE312F67A53500944E97 /* Weird Parts */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 08F2BE582F67A53800944E97 /* Build configuration list for PBXNativeTarget "Weird Parts" */;
+			buildPhases = (
+				08F2BE2E2F67A53500944E97 /* Sources */,
+				08F2BE2F2F67A53500944E97 /* Frameworks */,
+				08F2BE302F67A53500944E97 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				08F2BE342F67A53500944E97 /* Weird Parts IOS */,
+			);
+			name = "Weird Parts";
+			packageProductDependencies = (
+				08F2BF6F2F67B1C100944E97 /* WiredPartCore */,
+				08F2BF722F67B1EE00944E97 /* WiredPartCore */,
+				08F2BF762F67B2CC00944E97 /* WiredPartCore */,
+			);
+			productName = "Weird Parts IOS";
+			productReference = 08F2BE322F67A53500944E97 /* Weird Parts.app */;
+			productType = "com.apple.product-type.application";
+		};
+		08F2BE432F67A53700944E97 /* Weird PartsTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 08F2BE5B2F67A53800944E97 /* Build configuration list for PBXNativeTarget "Weird PartsTests" */;
+			buildPhases = (
+				08F2BE402F67A53700944E97 /* Sources */,
+				08F2BE412F67A53700944E97 /* Frameworks */,
+				08F2BE422F67A53700944E97 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				08F2BE462F67A53700944E97 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				08F2BE472F67A53700944E97 /* Weird Parts IOSTests */,
+			);
+			name = "Weird PartsTests";
+			packageProductDependencies = (
+			);
+			productName = "Weird Parts IOSTests";
+			productReference = 08F2BE442F67A53700944E97 /* Weird PartsTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		08F2BE4D2F67A53700944E97 /* Weird PartsUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 08F2BE5E2F67A53800944E97 /* Build configuration list for PBXNativeTarget "Weird PartsUITests" */;
+			buildPhases = (
+				08F2BE4A2F67A53700944E97 /* Sources */,
+				08F2BE4B2F67A53700944E97 /* Frameworks */,
+				08F2BE4C2F67A53700944E97 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				08F2BE502F67A53700944E97 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				08F2BE512F67A53700944E97 /* Weird Parts IOSUITests */,
+			);
+			name = "Weird PartsUITests";
+			packageProductDependencies = (
+			);
+			productName = "Weird Parts IOSUITests";
+			productReference = 08F2BE4E2F67A53700944E97 /* Weird PartsUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		08F2BE2A2F67A53500944E97 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				KnownAssetTags = (
+					New,
+				);
+				LastSwiftUpdateCheck = 2630;
+				LastUpgradeCheck = 2630;
+				TargetAttributes = {
+					08F2BE312F67A53500944E97 = {
+						CreatedOnToolsVersion = 26.3;
+					};
+					08F2BE432F67A53700944E97 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 08F2BE312F67A53500944E97;
+					};
+					08F2BE4D2F67A53700944E97 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 08F2BE312F67A53500944E97;
+					};
+				};
+			};
+			buildConfigurationList = 08F2BE2D2F67A53500944E97 /* Build configuration list for PBXProject "Weird Parts" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 08F2BE292F67A53500944E97;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				08F2BF752F67B2CC00944E97 /* XCLocalSwiftPackageReference "../core" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 08F2BE332F67A53500944E97 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				08F2BE312F67A53500944E97 /* Weird Parts */,
+				08F2BE432F67A53700944E97 /* Weird PartsTests */,
+				08F2BE4D2F67A53700944E97 /* Weird PartsUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		08F2BE302F67A53500944E97 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				08F2BF672F67ADE700944E97 /* core in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		08F2BE422F67A53700944E97 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		08F2BE4C2F67A53700944E97 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		08F2BE2E2F67A53500944E97 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		08F2BE402F67A53700944E97 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		08F2BE4A2F67A53700944E97 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		08F2BE462F67A53700944E97 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 08F2BE312F67A53500944E97 /* Weird Parts */;
+			targetProxy = 08F2BE452F67A53700944E97 /* PBXContainerItemProxy */;
+		};
+		08F2BE502F67A53700944E97 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 08F2BE312F67A53500944E97 /* Weird Parts */;
+			targetProxy = 08F2BE4F2F67A53700944E97 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		08F2BE562F67A53800944E97 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = VV3HP9M7C2;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = "";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		08F2BE572F67A53800944E97 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = VV3HP9M7C2;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = "";
+				SWIFT_VERSION = 6.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		08F2BE592F67A53800944E97 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VV3HP9M7C2;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
+				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Weird-Parts-IOS-Info.plist";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "weirdtoo.Weird-Parts-IOS";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		08F2BE5A2F67A53800944E97 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VV3HP9M7C2;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_RESOURCE_ACCESS_CAMERA = YES;
+				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Weird-Parts-IOS-Info.plist";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "weirdtoo.Weird-Parts-IOS";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		08F2BE5C2F67A53800944E97 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VV3HP9M7C2;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "weirdtoo.Weird-Parts-IOSTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Weird Parts.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Weird Parts";
+			};
+			name = Debug;
+		};
+		08F2BE5D2F67A53800944E97 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VV3HP9M7C2;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "weirdtoo.Weird-Parts-IOSTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Weird Parts.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Weird Parts";
+			};
+			name = Release;
+		};
+		08F2BE5F2F67A53800944E97 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VV3HP9M7C2;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "weirdtoo.Weird-Parts-IOSUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "Weird Parts IOS";
+			};
+			name = Debug;
+		};
+		08F2BE602F67A53800944E97 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = VV3HP9M7C2;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "weirdtoo.Weird-Parts-IOSUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = "Weird Parts IOS";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		08F2BE2D2F67A53500944E97 /* Build configuration list for PBXProject "Weird Parts" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				08F2BE562F67A53800944E97 /* Debug */,
+				08F2BE572F67A53800944E97 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		08F2BE582F67A53800944E97 /* Build configuration list for PBXNativeTarget "Weird Parts" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				08F2BE592F67A53800944E97 /* Debug */,
+				08F2BE5A2F67A53800944E97 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		08F2BE5B2F67A53800944E97 /* Build configuration list for PBXNativeTarget "Weird PartsTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				08F2BE5C2F67A53800944E97 /* Debug */,
+				08F2BE5D2F67A53800944E97 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		08F2BE5E2F67A53800944E97 /* Build configuration list for PBXNativeTarget "Weird PartsUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				08F2BE5F2F67A53800944E97 /* Debug */,
+				08F2BE602F67A53800944E97 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		08F2BF752F67B2CC00944E97 /* XCLocalSwiftPackageReference "../core" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../core;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		08F2BF6F2F67B1C100944E97 /* WiredPartCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = WiredPartCore;
+		};
+		08F2BF722F67B1EE00944E97 /* WiredPartCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = WiredPartCore;
+		};
+		08F2BF762F67B2CC00944E97 /* WiredPartCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = WiredPartCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 08F2BE2A2F67A53500944E97 /* Project object */;
+}

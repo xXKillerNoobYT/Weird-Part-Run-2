@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "WiredPartIOS",
     platforms: [
-        .iOS(.v17),
+        .iOS("26.0"),
     ],
     dependencies: [
         .package(path: "../core"),
