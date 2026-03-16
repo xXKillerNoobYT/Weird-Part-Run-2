@@ -122,6 +122,56 @@ final class AppCore: ObservableObject {
         permissions.contains(key)
     }
 
+    // MARK: - Database Reset
+
+    /// Delete all local data and return to the bootstrap screen.
+    ///
+    /// Flow:
+    /// 1. Deactivate this device in the local registry (so peers know)
+    /// 2. Release all service references (closes DB connections)
+    /// 3. Delete the SQLite file + WAL + SHM
+    /// 4. Clear saved session
+    /// 5. Re-bootstrap (creates fresh DB → no users → needsBootstrap)
+    func performDatabaseReset() async throws {
+        let dbPath = Self.databasePath()
+
+        // 1. Deactivate this device in the registry before wiping
+        if let database = self.db {
+            let resetService = DeviceResetService(db: database)
+            try? resetService.deactivateCurrentDevice()
+        }
+
+        // 2. Release all services and database connection
+        authService = nil
+        settingsService = nil
+        partsService = nil
+        warehouseService = nil
+        jobsService = nil
+        ordersService = nil
+        fleetService = nil
+        peopleService = nil
+        schedulingService = nil
+        chatService = nil
+        notebooksService = nil
+        reportsService = nil
+        toolsService = nil
+        db = nil
+
+        // 3. Delete the database file
+        try DeviceResetService.deleteDatabaseFile(atPath: dbPath)
+
+        // 4. Clear saved session
+        currentUser = nil
+        currentToken = nil
+        permissions = []
+
+        // 5. Re-bootstrap — will detect no users and set needsBootstrap = true
+        isReady = false
+        needsBootstrap = false
+        loadError = nil
+        await bootstrap()
+    }
+
     // MARK: - Database Path
 
     /// Returns the path to the SQLite database file in the app's documents directory.

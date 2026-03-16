@@ -53,12 +53,20 @@ fn compile_swift_bridge() {
         .arg("-o")
         .arg(format!("{out_dir}/libfoundation_models_bridge.a"));
 
-    // Set the correct target for iOS vs macOS
+    // Set the correct target for iOS vs macOS.
+    // We query the deployment target from the environment (set by Xcode)
+    // or fall back to the SDK version so swiftc can find its standard library.
     if target.contains("ios") {
+        let ios_version = std::env::var("IPHONEOS_DEPLOYMENT_TARGET")
+            .unwrap_or_else(|_| get_ios_sdk_version().unwrap_or_else(|| "17.0".to_string()));
         if target.contains("sim") {
-            cmd.arg("-target").arg("arm64-apple-ios17.0-simulator");
+            cmd.arg("-target")
+                .arg(format!("arm64-apple-ios{ios_version}-simulator"));
+            cmd.arg("-sdk").arg(get_sdk_path("iphonesimulator"));
         } else {
-            cmd.arg("-target").arg("arm64-apple-ios17.0");
+            cmd.arg("-target")
+                .arg(format!("arm64-apple-ios{ios_version}"));
+            cmd.arg("-sdk").arg(get_sdk_path("iphoneos"));
         }
     } else if target.contains("aarch64-apple-darwin") || target.contains("x86_64-apple-darwin") {
         cmd.arg("-target").arg(format!("{target}"));
@@ -111,6 +119,30 @@ fn compile_swift_bridge() {
     println!("cargo:rerun-if-changed=swift/FoundationModelsBridge.swift");
 }
 
+/// Query the iOS SDK version via xcrun (e.g. "26.2", "17.0").
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn get_ios_sdk_version() -> Option<String> {
+    let output = Command::new("xcrun")
+        .args(["--sdk", "iphonesimulator", "--show-sdk-version"])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        None
+    }
+}
+
+/// Get the SDK path for a given platform name (e.g. "iphonesimulator", "iphoneos").
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn get_sdk_path(sdk_name: &str) -> String {
+    let output = Command::new("xcrun")
+        .args(["--sdk", sdk_name, "--show-sdk-path"])
+        .output()
+        .expect("Failed to run xcrun --show-sdk-path");
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
 /// Find the Swift standard library directory for the current platform.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 fn get_swift_lib_dir(target: &str) -> Option<String> {
@@ -127,7 +159,7 @@ fn get_swift_lib_dir(target: &str) -> Option<String> {
     let sdk_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     // The Swift compatibility libraries are in the SDK's usr/lib/swift directory
-    let platform = if target.contains("ios-sim") || target.contains("ios17.0-sim") {
+    let platform = if target.contains("ios-sim") || target.contains("simulator") {
         "iphonesimulator"
     } else if target.contains("ios") {
         "iphoneos"

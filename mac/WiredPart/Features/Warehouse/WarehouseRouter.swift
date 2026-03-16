@@ -17,7 +17,7 @@ struct WarehouseRouter: View {
 
     var body: some View {
         switch tabId {
-        case "dashboard":
+        case "dashboard", "executive":
             WarehouseDashboardPage()
         case "movements":
             MovementsPage()

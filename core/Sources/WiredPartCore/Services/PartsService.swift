@@ -462,7 +462,7 @@ public final class PartsService: Sendable {
             args.append(id)
 
             let sql = "UPDATE part_categories SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
-            try dbConn.execute(sql: sql, arguments: StatementArguments(args)!)
+            try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
 
@@ -537,7 +537,7 @@ public final class PartsService: Sendable {
             args.append(id)
 
             let sql = "UPDATE part_styles SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
-            try dbConn.execute(sql: sql, arguments: StatementArguments(args)!)
+            try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
 
@@ -625,7 +625,7 @@ public final class PartsService: Sendable {
             args.append(id)
 
             let sql = "UPDATE part_types SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
-            try dbConn.execute(sql: sql, arguments: StatementArguments(args)!)
+            try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
 
@@ -693,7 +693,7 @@ public final class PartsService: Sendable {
             args.append(id)
 
             let sql = "UPDATE part_colors SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
-            try dbConn.execute(sql: sql, arguments: StatementArguments(args)!)
+            try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
 
@@ -814,7 +814,7 @@ public final class PartsService: Sendable {
                     LIMIT ? OFFSET ?
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     let part = try! Part(row: row)
                     return PartWithDetails(
@@ -1012,7 +1012,7 @@ public final class PartsService: Sendable {
             args.append(id)
 
             let sql = "UPDATE parts SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
-            try dbConn.execute(sql: sql, arguments: StatementArguments(args)!)
+            try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
 
@@ -1081,7 +1081,7 @@ public final class PartsService: Sendable {
                     ORDER BY b.name ASC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     let brand = try! Brand(row: row)
                     return BrandWithCount(brand: brand, partCount: row["part_count"] as Int)
@@ -1131,7 +1131,7 @@ public final class PartsService: Sendable {
             args.append(id)
 
             let sql = "UPDATE brands SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
-            try dbConn.execute(sql: sql, arguments: StatementArguments(args)!)
+            try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
 
@@ -1169,7 +1169,7 @@ public final class PartsService: Sendable {
                     ORDER BY s.name ASC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     let supplier = try! Supplier(row: row)
                     return SupplierWithCount(supplier: supplier, brandCount: row["brand_count"] as Int)
@@ -1248,7 +1248,7 @@ public final class PartsService: Sendable {
             args.append(id)
 
             let sql = "UPDATE suppliers SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
-            try dbConn.execute(sql: sql, arguments: StatementArguments(args)!)
+            try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
 
@@ -1496,7 +1496,7 @@ public final class PartsService: Sendable {
                     LIMIT ? OFFSET ?
                     """
 
-                return try Part.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                return try Part.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
             }
         } catch {
             if isTableNotFoundError(error) { return [] }
@@ -1720,7 +1720,7 @@ public final class PartsService: Sendable {
             args.append(id)
 
             let sql = "UPDATE companion_rules SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
-            try dbConn.execute(sql: sql, arguments: StatementArguments(args)!)
+            try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
 

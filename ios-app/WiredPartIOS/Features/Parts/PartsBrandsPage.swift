@@ -292,18 +292,20 @@ private struct BrandFormSheet: View {
         do {
             let db = appCore.db!
             let now = ISO8601DateFormatter().string(from: Date())
+            let websiteValue = website.isEmpty ? nil : website
+            let notesValue = notes.isEmpty ? nil : notes
             if let b = brand {
                 try await db.writer.write { dbConnection in
                     try dbConnection.execute(
                         sql: "UPDATE brands SET name = ?, website = ?, notes = ?, updated_at = ? WHERE id = ?",
-                        arguments: [trimmedName, website.isEmpty ? nil : website, notes.isEmpty ? nil : notes, now, b.id]
+                        arguments: [trimmedName, websiteValue, notesValue, now, b.id]
                     )
                 }
             } else {
                 try await db.writer.write { dbConnection in
                     try dbConnection.execute(
                         sql: "INSERT INTO brands (name, website, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                        arguments: [trimmedName, website.isEmpty ? nil : website, notes.isEmpty ? nil : notes, now, now]
+                        arguments: [trimmedName, websiteValue, notesValue, now, now]
                     )
                 }
             }

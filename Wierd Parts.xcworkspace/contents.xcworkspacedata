@@ -2,9 +2,6 @@
 <Workspace
    version = "1.0">
    <FileRef
-      location = "group:src-tauri/gen/apple/wiredpart.xcodeproj">
-   </FileRef>
-   <FileRef
       location = "group:core">
    </FileRef>
    <FileRef

@@ -183,7 +183,7 @@ public actor PeerManager {
         }
 
         // Initial peer list merge
-        await mergePeerLists()
+        mergePeerLists()
     }
 
     /// Stop the P2P sync system.

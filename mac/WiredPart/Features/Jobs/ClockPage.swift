@@ -221,7 +221,7 @@ struct ClockPage: View {
         guard let service = appCore.jobsService, let auth = appCore.authService else { return }
         do {
             let activeUsers = try auth.getActiveUsers()
-            users = activeUsers.map { ($0.id!, $0.displayName ?? $0.email ?? "User") }
+            users = activeUsers.map { ($0.id!, $0.displayName) }
             jobOptions = try service.listJobs(status: "active")
             showClockIn = true
         } catch {

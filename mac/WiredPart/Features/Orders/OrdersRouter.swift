@@ -17,14 +17,18 @@ struct OrdersRouter: View {
 
     var body: some View {
         switch tabId {
-        case "jpos":
+        case "requests", "jpos":
             JPOsPage()
+        case "unified-order":
+            OrderStagingPage()
         case "purchase-orders":
             PurchaseOrdersPage()
         case "returns":
             OrderReturnsPage()
         case "procurement":
             ProcurementPage()
+        case "approvals":
+            PlaceholderView(path: path)
         case "special-items":
             SpecialItemsPage()
         case "staging":

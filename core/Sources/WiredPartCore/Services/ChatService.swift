@@ -231,7 +231,7 @@ public final class ChatService: Sendable {
                     ORDER BY qa.created_at DESC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args as [Any])!)
                 return rows.map { row in
                     QAThreadRow(
                         id: row["id"] ?? 0,

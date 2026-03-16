@@ -27,6 +27,8 @@ struct JobsRouter: View {
             QuestionnairePage()
         case "daily-reports":
             DailyReportsPage()
+        case "management":
+            ActiveJobsPage()
         default:
             ActiveJobsPage()
         }

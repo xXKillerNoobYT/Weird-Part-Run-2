@@ -263,7 +263,7 @@ public final class PeopleService: Sendable {
                     ORDER BY u.display_name ASC, u.email ASC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     EmployeeListItem(
                         id: row["id"] ?? 0,
@@ -401,7 +401,7 @@ public final class PeopleService: Sendable {
                     ORDER BY c.company_name ASC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     CustomerListItem(
                         id: row["id"] ?? 0,
@@ -445,7 +445,7 @@ public final class PeopleService: Sendable {
                     ORDER BY co.last_name ASC, co.first_name ASC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     ContractorListItem(
                         id: row["id"] ?? 0,
@@ -498,7 +498,7 @@ public final class PeopleService: Sendable {
                     ORDER BY co.last_name ASC, co.first_name ASC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     ContactListItem(
                         id: row["id"] ?? 0,

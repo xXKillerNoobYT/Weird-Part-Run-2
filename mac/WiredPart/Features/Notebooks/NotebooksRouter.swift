@@ -17,7 +17,7 @@ struct NotebooksRouter: View {
 
     var body: some View {
         switch tabId {
-        case "all":
+        case "all", "general":
             AllNotebooksPage()
         case "job-notebooks":
             JobNotebooksPage()

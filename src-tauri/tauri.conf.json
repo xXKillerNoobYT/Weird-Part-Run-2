@@ -28,28 +28,17 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-      "icons/icon.icns",
       "icons/icon.ico"
     ],
     "category": "Business",
     "shortDescription": "Field service management for electrical contractors",
     "longDescription": "WiredPart is a fully offline field service management app for electrical contractors. Track parts, jobs, labor, vehicles, tools, and more — with Bluetooth peer-to-peer sync between all devices.",
     "copyright": "Copyright 2026 WiredPart",
-    "macOS": {
-      "minimumSystemVersion": "10.15",
-      "signingIdentity": null,
-      "entitlements": null,
-      "dmg": {
-        "appPosition": { "x": 180, "y": 170 },
-        "applicationFolderPosition": { "x": 480, "y": 170 },
-        "windowSize": { "width": 660, "height": 400 }
-      }
-    },
     "windows": {
       "nsis": {
         "installMode": "perMachine",
@@ -61,9 +50,6 @@
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
       "timestampUrl": "http://timestamp.digicert.com"
-    },
-    "iOS": {
-      "minimumSystemVersion": "16.0"
     }
   },
   "plugins": {

@@ -17,7 +17,7 @@ struct FleetRouter: View {
 
     var body: some View {
         switch tabId {
-        case "vehicles":
+        case "fleet", "vehicles":
             VehiclesPage()
         case "maintenance":
             MaintenancePage()
@@ -27,6 +27,10 @@ struct FleetRouter: View {
             FuelPage()
         case "trailers":
             TrailersPage()
+        case "inspections":
+            PlaceholderView(path: path)
+        case "gps":
+            PlaceholderView(path: path)
         case "fleet-dashboard":
             FleetDashboardPage()
         default:

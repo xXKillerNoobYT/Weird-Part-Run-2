@@ -282,14 +282,15 @@ private final class SyncHTTPHandler: ChannelInboundHandler, @unchecked Sendable 
             promise.completeWithTask {
                 await Self.handleRequest(head: head, body: body, state: stateRef)
             }
+            nonisolated(unsafe) let ctx = context
             promise.futureResult.whenComplete { [weak self] result in
                 guard let self else { return }
                 switch result {
                 case .success(let (status, responseData)):
-                    self.sendResponse(context: context, status: status, body: responseData)
+                    self.sendResponse(context: ctx, status: status, body: responseData)
                 case .failure:
                     let json = #"{"error":"internal_error"}"#
-                    self.sendResponse(context: context, status: .internalServerError, body: json.data(using: .utf8)!)
+                    self.sendResponse(context: ctx, status: .internalServerError, body: json.data(using: .utf8)!)
                 }
             }
 

@@ -19,12 +19,20 @@ struct SchedulingRouter: View {
         switch tabId {
         case "calendar":
             ScheduleCalendarPage()
+        case "my-schedule":
+            ScheduleCalendarPage()
         case "dispatch":
             DispatchBoardPage()
+        case "dispatch-admin":
+            DispatchBoardPage()
+        case "availability":
+            PlaceholderView(path: path)
         case "time-off":
             TimeOffPage()
         case "templates":
             DispatchTemplatesPage()
+        case "sub-schedule":
+            PlaceholderView(path: path)
         default:
             ScheduleCalendarPage()
         }

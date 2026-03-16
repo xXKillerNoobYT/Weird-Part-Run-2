@@ -31,7 +31,7 @@ struct ContentRouter: View {
             WarehouseRouter(path: path)
         } else if path.hasPrefix("/jobs") {
             JobsRouter(path: path)
-        } else if path.hasPrefix("/orders") || path.hasPrefix("/office") {
+        } else if path.hasPrefix("/orders") {
             OrdersRouter(path: path)
         } else if path.hasPrefix("/fleet") || path.hasPrefix("/trucks") {
             FleetRouter(path: path)

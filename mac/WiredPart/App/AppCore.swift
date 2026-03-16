@@ -136,6 +136,57 @@ final class AppCore: ObservableObject {
         self.theme = (try? settingsService.getTheme()) ?? .defaults
     }
 
+    // MARK: - Database Reset
+
+    /// Delete all local data and return to the bootstrap screen.
+    ///
+    /// Flow:
+    /// 1. Deactivate this device in the local registry (so peers know)
+    /// 2. Release all service references (closes DB connections)
+    /// 3. Delete the SQLite file + WAL + SHM
+    /// 4. Clear saved session
+    /// 5. Re-initialize (creates fresh DB → no users → bootstrap)
+    func performDatabaseReset() async throws {
+        let dbPath = Self.databasePath()
+
+        // 1. Deactivate this device in the registry before wiping
+        if let database = self.db {
+            let resetService = DeviceResetService(db: database)
+            try? resetService.deactivateCurrentDevice()
+        }
+
+        // 2. Release all services and database connection
+        authService = nil
+        settingsService = nil
+        partsService = nil
+        warehouseService = nil
+        jobsService = nil
+        ordersService = nil
+        fleetService = nil
+        peopleService = nil
+        schedulingService = nil
+        chatService = nil
+        notebooksService = nil
+        reportsService = nil
+        toolsService = nil
+        db = nil
+
+        // 3. Delete the database file
+        try DeviceResetService.deleteDatabaseFile(atPath: dbPath)
+
+        // 4. Clear saved session
+        UserDefaults.standard.removeObject(forKey: "auth_token")
+        currentUser = nil
+        currentToken = nil
+        permissions = []
+        theme = .defaults
+
+        // 5. Re-initialize — will detect no users and set needsBootstrap = true
+        isLoading = true
+        needsBootstrap = false
+        await initialize()
+    }
+
     // MARK: - Private Helpers
 
     /// Attempt to restore a session from a saved token in UserDefaults.

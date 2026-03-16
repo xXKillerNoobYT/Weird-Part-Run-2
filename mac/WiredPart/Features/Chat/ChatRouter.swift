@@ -17,9 +17,9 @@ struct ChatRouter: View {
 
     var body: some View {
         switch tabId {
-        case "channels":
+        case "inbox", "channels":
             ChannelsPage()
-        case "questions":
+        case "qa-board", "questions":
             QuestionsPage()
         default:
             ChannelsPage()

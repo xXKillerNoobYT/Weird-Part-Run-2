@@ -18,7 +18,7 @@ struct NavigationConfigTests {
 
         let settings = findModule("settings")
         #expect(settings != nil)
-        #expect(settings?.tabs.count == 19)
+        #expect(settings?.tabs.count == 20)
 
         let nonexistent = findModule("nonexistent")
         #expect(nonexistent == nil)

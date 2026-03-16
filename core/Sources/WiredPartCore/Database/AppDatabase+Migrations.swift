@@ -32,6 +32,7 @@ extension AppDatabase {
         registerMigration015JobTeamSuppliers(&migrator)
         registerMigration016CompanionsAlternatives(&migrator)
         registerMigration017PermissionBackfill(&migrator)
+        registerMigration018AICapabilities(&migrator)
     }
 }
 
@@ -2071,6 +2072,93 @@ extension AppDatabase {
                     INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
                     SELECT id, ? FROM hats WHERE name = 'Worker'
                     """, arguments: [perm])
+            }
+        }
+    }
+}
+
+// MARK: - 018: AI Capabilities (Phase 12+)
+
+extension AppDatabase {
+    private static func registerMigration018AICapabilities(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("018_ai_capabilities") { db in
+
+            // Text prediction history — local-only, per-user, not synced
+            try db.create(table: "_text_history") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("user_id", .integer).notNull()
+                t.column("field_type", .text).notNull()
+                t.column("text", .text).notNull()
+                t.column("frequency", .integer).notNull().defaults(to: 1)
+                t.column("last_used_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.uniqueKey(["user_id", "field_type", "text"])
+            }
+            try db.create(
+                index: "idx_text_history_lookup",
+                on: "_text_history",
+                columns: ["user_id", "field_type", "last_used_at"]
+            )
+
+            // Part image feature vectors for camera matching
+            try db.create(table: "part_image_features") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("part_id", .integer).notNull()
+                    .references("parts", onDelete: .cascade)
+                t.column("feature_vector", .blob).notNull()
+                t.column("adapter_type", .text).notNull()
+                t.column("image_hash", .text).notNull()
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.uniqueKey(["part_id", "adapter_type", "image_hash"])
+            }
+            try db.create(
+                index: "idx_part_image_features_adapter",
+                on: "part_image_features",
+                columns: ["adapter_type"]
+            )
+
+            // Image match history — local-only diagnostics
+            try db.create(table: "image_match_history") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("query_image_hash", .text).notNull()
+                t.column("top_match_part_id", .integer)
+                t.column("top_similarity", .double)
+                t.column("user_confirmed_part_id", .integer)
+                t.column("result_count", .integer).notNull().defaults(to: 0)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+
+            // Binary attachments for sync
+            try db.create(table: "_binary_attachments") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("table_name", .text).notNull()
+                t.column("record_id", .integer).notNull()
+                t.column("attachment_type", .text).notNull()
+                t.column("data_hash", .text).notNull().unique()
+                t.column("data_size", .integer).notNull()
+                t.column("sync_status", .text).notNull().defaults(to: "pending")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+            try db.create(
+                index: "idx_binary_attachments_sync",
+                on: "_binary_attachments",
+                columns: ["sync_status"]
+            )
+            try db.create(
+                index: "idx_binary_attachments_record",
+                on: "_binary_attachments",
+                columns: ["table_name", "record_id"]
+            )
+
+            // Sync transfer log — tracks binary transfer sessions
+            try db.create(table: "_sync_transfer_log") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("transfer_id", .text).notNull()
+                t.column("table_name", .text).notNull()
+                t.column("record_id", .integer).notNull()
+                t.column("data_size", .integer).notNull()
+                t.column("status", .text).notNull()
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
         }
     }

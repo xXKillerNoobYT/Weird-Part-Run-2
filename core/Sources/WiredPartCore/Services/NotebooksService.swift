@@ -161,7 +161,7 @@ public final class NotebooksService: Sendable {
                     ORDER BY n.updated_at DESC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     NotebookListItem(
                         id: row["id"] ?? 0,

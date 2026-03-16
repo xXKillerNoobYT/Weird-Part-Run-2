@@ -241,7 +241,7 @@ struct BrandsPage: View {
 
                 sql += " ORDER BY b.name ASC"
 
-                let rows = try Row.fetchAll(conn, sql: sql, arguments: StatementArguments(args) ?? StatementArguments())
+                let rows = try Row.fetchAll(conn, sql: sql, arguments: StatementArguments(args))
                 brands = rows.map { row in
                     BrandRow(
                         id: row["id"] ?? 0,

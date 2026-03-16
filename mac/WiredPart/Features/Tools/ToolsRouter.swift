@@ -17,12 +17,16 @@ struct ToolsRouter: View {
 
     var body: some View {
         switch tabId {
+        case "dashboard":
+            ToolsDashboardPage()
         case "registry":
             ToolRegistryPage()
         case "checkouts":
             ToolCheckoutsPage()
         case "kits":
             ToolKitsPage()
+        case "admin":
+            ToolsDashboardPage()
         default:
             ToolRegistryPage()
         }

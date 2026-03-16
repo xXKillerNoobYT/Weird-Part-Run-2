@@ -53,6 +53,8 @@ struct SettingsRouter: View {
             IntegrationsPage()
         case "audit-log":
             AuditLogPage()
+        case "database-reset":
+            DatabaseResetPage()
         default:
             AppConfigPage()
         }

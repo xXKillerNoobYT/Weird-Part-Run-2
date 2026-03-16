@@ -330,7 +330,7 @@ public final class OrdersService: Sendable {
                     LIMIT ?
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     JPOListItem(
                         id: row["id"] ?? 0,
@@ -505,7 +505,7 @@ public final class OrdersService: Sendable {
                     LIMIT ?
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     POListItem(
                         id: row["id"] ?? 0,
@@ -662,7 +662,7 @@ public final class OrdersService: Sendable {
                     LIMIT ?
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     ReturnListItem(
                         id: row["id"] ?? 0,

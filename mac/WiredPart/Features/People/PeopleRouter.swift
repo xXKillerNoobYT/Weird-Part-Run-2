@@ -19,10 +19,18 @@ struct PeopleRouter: View {
         switch tabId {
         case "employees":
             EmployeesPage()
+        case "directory":
+            EmployeesPage()
         case "customers":
             CustomersPage()
+        case "contractors":
+            ContactsPage()
         case "contacts":
             ContactsPage()
+        case "teams":
+            TeamsPage()
+        case "hats":
+            HatsPage()
         default:
             EmployeesPage()
         }

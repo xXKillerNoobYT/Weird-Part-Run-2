@@ -255,7 +255,7 @@ public final class FleetService: Sendable {
         do {
             return try db.writer.read { dbConn -> [VehicleListItem] in
                 var whereClauses = ["v.deleted_at IS NULL"]
-                var args: [DatabaseValueConvertible?] = []
+                var args: [(any DatabaseValueConvertible)?] = []
 
                 if let status, !status.isEmpty {
                     whereClauses.append("v.status = ?")
@@ -275,7 +275,7 @@ public final class FleetService: Sendable {
                     ORDER BY v.vehicle_number ASC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args as [Any])!)
                 return rows.map { row in
                     VehicleListItem(
                         id: row["id"] ?? 0,
@@ -380,7 +380,7 @@ public final class FleetService: Sendable {
         do {
             return try db.writer.read { dbConn -> [MaintenanceRow] in
                 var whereClauses = ["mr.deleted_at IS NULL"]
-                var args: [DatabaseValueConvertible?] = []
+                var args: [(any DatabaseValueConvertible)?] = []
 
                 if let vehicleId {
                     whereClauses.append("mr.vehicle_id = ?")
@@ -403,7 +403,7 @@ public final class FleetService: Sendable {
                     LIMIT ?
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args as [Any])!)
                 return rows.map { row in
                     MaintenanceRow(
                         id: row["id"] ?? 0,
@@ -431,7 +431,7 @@ public final class FleetService: Sendable {
         do {
             return try db.writer.read { dbConn -> [MileageRow] in
                 var whereClauses = ["ml.deleted_at IS NULL"]
-                var args: [DatabaseValueConvertible?] = []
+                var args: [(any DatabaseValueConvertible)?] = []
 
                 if let vehicleId {
                     whereClauses.append("ml.vehicle_id = ?")
@@ -456,7 +456,7 @@ public final class FleetService: Sendable {
                     LIMIT ?
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args as [Any])!)
                 return rows.map { row in
                     MileageRow(
                         id: row["id"] ?? 0,
@@ -483,7 +483,7 @@ public final class FleetService: Sendable {
         do {
             return try db.writer.read { dbConn -> [FuelRow] in
                 var whereClauses = ["fl.deleted_at IS NULL"]
-                var args: [DatabaseValueConvertible?] = []
+                var args: [(any DatabaseValueConvertible)?] = []
 
                 if let vehicleId {
                     whereClauses.append("fl.vehicle_id = ?")
@@ -504,7 +504,7 @@ public final class FleetService: Sendable {
                     LIMIT ?
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args as [Any])!)
                 return rows.map { row in
                     FuelRow(
                         id: row["id"] ?? 0,
@@ -532,7 +532,7 @@ public final class FleetService: Sendable {
         do {
             return try db.writer.read { dbConn -> [TrailerListItem] in
                 var whereClauses = ["jt.deleted_at IS NULL"]
-                var args: [DatabaseValueConvertible?] = []
+                var args: [(any DatabaseValueConvertible)?] = []
 
                 if let status, !status.isEmpty {
                     whereClauses.append("jt.status = ?")
@@ -550,7 +550,7 @@ public final class FleetService: Sendable {
                     ORDER BY jt.trailer_number ASC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args as [Any])!)
                 return rows.map { row in
                     TrailerListItem(
                         id: row["id"] ?? 0,

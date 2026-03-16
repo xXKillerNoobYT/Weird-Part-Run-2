@@ -256,6 +256,7 @@ enum NavigationConfig {
             NavTab(id: "data-export",          label: "Data Export",        path: "/settings/data-export",          icon: "square.and.arrow.up",      permission: "manage_settings", group: nil),
             NavTab(id: "integrations",         label: "Integrations",       path: "/settings/integrations",         icon: "puzzlepiece.extension",    permission: "manage_settings", group: nil),
             NavTab(id: "audit-log",            label: "Audit Log",          path: "/settings/audit-log",            icon: "list.bullet.clipboard",    permission: "view_activity_log", group: nil),
+            NavTab(id: "database-reset",       label: "Database Reset",     path: "/settings/database-reset",       icon: "arrow.counterclockwise.circle", permission: nil, group: nil),
         ]
     )
 

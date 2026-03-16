@@ -247,7 +247,7 @@ public final class SchedulingService: Sendable {
                     ORDER BY tor.start_date DESC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     TimeOffRow(
                         id: row["id"] ?? 0,

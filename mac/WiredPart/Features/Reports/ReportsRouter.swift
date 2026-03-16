@@ -17,14 +17,20 @@ struct ReportsRouter: View {
 
     var body: some View {
         switch tabId {
+        case "overview":
+            DailyReportsSummaryPage()
         case "timesheets":
             TimesheetsPage()
         case "daily-summary":
             DailyReportsSummaryPage()
+        case "pre-billing":
+            PlaceholderView(path: path)
         case "spending":
             SpendingPage()
         case "profitability":
             ProfitabilityPage()
+        case "bookkeeper":
+            PlaceholderView(path: path)
         default:
             TimesheetsPage()
         }

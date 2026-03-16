@@ -39,9 +39,9 @@ struct NavigationConfigTests {
         #expect(groups.count == 4)
     }
 
-    @Test("Settings module has all 19 tabs")
+    @Test("Settings module has all 20 tabs")
     func settingsTabCount() {
-        #expect(NavigationConfig.settings.tabs.count == 19)
+        #expect(NavigationConfig.settings.tabs.count == 20)
     }
 
     @Test("Settings tab IDs include all expected tabs")
@@ -53,6 +53,7 @@ struct NavigationConfigTests {
             "supplier-bridge", "sync", "bluetooth", "clock-out-questions",
             "backups", "bootstrap-admin", "key-management", "security-admin",
             "update-protocol", "data-export", "integrations", "audit-log",
+            "database-reset",
         ]
         #expect(ids == expected)
     }

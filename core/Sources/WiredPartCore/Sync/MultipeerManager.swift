@@ -358,9 +358,10 @@ extension MultipeerManager: MCNearbyServiceAdvertiserDelegate {
         withContext context: Data?,
         invitationHandler: @escaping (Bool, MCSession?) -> Void
     ) {
+        nonisolated(unsafe) let handler = invitationHandler
         syncQueue.async { [weak self] in
             guard let self else {
-                invitationHandler(false, nil)
+                handler(false, nil)
                 return
             }
 
@@ -373,9 +374,9 @@ extension MultipeerManager: MCNearbyServiceAdvertiserDelegate {
 
             // Auto-accept same-company peers
             if peerCompanyId == self.companyId {
-                invitationHandler(true, self.session)
+                handler(true, self.session)
             } else {
-                invitationHandler(false, nil)
+                handler(false, nil)
             }
         }
     }

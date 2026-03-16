@@ -385,7 +385,7 @@ public final class JobsService: Sendable {
                     LIMIT ? OFFSET ?
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     JobListItem(
                         id: row["id"] ?? 0,
@@ -594,7 +594,7 @@ public final class JobsService: Sendable {
             args.append(id)
 
             let sql = "UPDATE jobs SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
-            try dbConn.execute(sql: sql, arguments: StatementArguments(args)!)
+            try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
 
@@ -768,7 +768,7 @@ public final class JobsService: Sendable {
                     LIMIT ?
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     LaborEntryRow(
                         id: row["id"] ?? 0,
@@ -1032,7 +1032,7 @@ public final class JobsService: Sendable {
                     ORDER BY otq.created_at DESC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     OneTimeQuestionRow(
                         id: row["id"] ?? 0,
@@ -1083,7 +1083,7 @@ public final class JobsService: Sendable {
                     LIMIT ?
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     DailyReportRow(
                         id: row["id"] ?? 0,

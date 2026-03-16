@@ -244,7 +244,7 @@ public final class WarehouseService: Sendable {
                 args.append(limit)
                 args.append(offset)
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 var items = rows.map { row -> InventoryItem in
                     let totalQty: Int = row["total_qty"] ?? 0
                     let minStock: Int = row["min_stock"] ?? 0
@@ -476,7 +476,7 @@ public final class WarehouseService: Sendable {
                     LIMIT ? OFFSET ?
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     MovementRow(
                         id: row["id"] as Int64,
@@ -660,7 +660,7 @@ public final class WarehouseService: Sendable {
                     ORDER BY s.location_type, s.location_id, p.name
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     LocationStock(
                         locationType: row["location_type"] as String,
@@ -1450,7 +1450,7 @@ public final class WarehouseService: Sendable {
             args.append(id)
 
             let sql = "UPDATE job_trailers SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
-            try dbConn.execute(sql: sql, arguments: StatementArguments(args)!)
+            try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
 

@@ -141,7 +141,7 @@ public final class ToolsService: Sendable {
                     ORDER BY t.created_at DESC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     ToolListItem(
                         id: row["id"] ?? 0,
@@ -238,7 +238,7 @@ public final class ToolsService: Sendable {
                     ORDER BY tc.checked_out_at DESC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     CheckoutRow(
                         id: row["id"] ?? 0,

@@ -16,7 +16,7 @@ struct DatabaseTests {
         #expect(tableExists)
     }
 
-    @Test("All 18 migrations apply successfully")
+    @Test("All 19 migrations apply successfully")
     func testAllMigrationsApply() throws {
         let db = try AppDatabase.openInMemoryDatabase()
 
@@ -40,6 +40,7 @@ struct DatabaseTests {
             "job_team_members",  // 015
             "companion_rules",   // 016
             "hat_permissions",   // 017
+            "_text_history",     // 018
         ]
 
         for table in tables {
