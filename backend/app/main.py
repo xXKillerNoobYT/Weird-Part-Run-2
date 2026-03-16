@@ -163,35 +163,59 @@ def _ensure_secret_key():
         # No .env file — create one with just the key
         content = f"SECRET_KEY={new_key}\n"
 
-    # Write via temp file + rename to avoid OneDrive file-descriptor locks.
-    # pathlib.write_text() fails with OSError(9) on OneDrive-synced dirs.
+    # Try to persist the key to .env.  OneDrive-synced directories can
+    # break *both* pathlib.write_text() and tempfile.mkstemp() with OSError
+    # or FileNotFoundError, so we wrap everything and gracefully degrade.
+    written = False
     try:
         env_path.write_text(content, encoding="utf-8")
+        written = True
     except OSError:
-        # Fallback: atomic write via tempfile in the same directory
-        fd, tmp_path = tempfile.mkstemp(
-            dir=str(env_path.parent), suffix=".env.tmp"
-        )
+        # Fallback 1: atomic write via tempfile in the same directory
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(content)
-            # os.replace is atomic on the same filesystem
-            os.replace(tmp_path, str(env_path))
-        except Exception:
-            # Last resort: clean up temp file and skip .env writing
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            logger.warning(
-                "Could not write .env — SECRET_KEY will reset on next restart. "
-                "Consider moving the project out of OneDrive."
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(env_path.parent), suffix=".env.tmp"
             )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(content)
+                os.replace(tmp_path, str(env_path))
+                written = True
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+        except OSError:
+            pass
+
+        if not written:
+            # Fallback 2: write via system temp dir + copy
+            try:
+                fd, tmp_path = tempfile.mkstemp(suffix=".env.tmp")
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(content)
+                import shutil
+                shutil.copy2(tmp_path, str(env_path))
+                os.unlink(tmp_path)
+                written = True
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
 
     # Hot-patch the running settings so this process uses the new key immediately
     object.__setattr__(settings, "SECRET_KEY", new_key)
 
-    logger.info("Generated production SECRET_KEY (written to .env)")
+    if written:
+        logger.info("Generated production SECRET_KEY (written to .env)")
+    else:
+        logger.warning(
+            "Generated production SECRET_KEY (in-memory only — could not write "
+            ".env). Key will reset on next restart. Consider moving the project "
+            "out of OneDrive or pre-creating the .env file."
+        )
 
 
 async def _seed_admin_pin():
