@@ -32,11 +32,12 @@ public final class FleetService: Sendable {
         public let year: Int?
         public let currentOdometer: Int?
         public let assignedUserName: String?
+        public let assignedUserId: Int64?
 
         public init(
             id: Int64, vehicleNumber: String, vehicleName: String, vehicleType: String,
             status: String, make: String?, model: String?, year: Int?,
-            currentOdometer: Int?, assignedUserName: String?
+            currentOdometer: Int?, assignedUserName: String?, assignedUserId: Int64? = nil
         ) {
             self.id = id
             self.vehicleNumber = vehicleNumber
@@ -48,6 +49,7 @@ public final class FleetService: Sendable {
             self.year = year
             self.currentOdometer = currentOdometer
             self.assignedUserName = assignedUserName
+            self.assignedUserId = assignedUserId
         }
     }
 
@@ -265,7 +267,8 @@ public final class FleetService: Sendable {
                 let sql = """
                     SELECT v.id, v.vehicle_number, v.vehicle_name, v.vehicle_type,
                            v.status, v.make, v.model, v.year, v.current_odometer,
-                           COALESCE(u.display_name, u.email) AS assigned_user_name
+                           COALESCE(u.display_name, u.email) AS assigned_user_name,
+                           va.user_id AS assigned_user_id
                     FROM vehicles v
                     LEFT JOIN vehicle_assignments va
                         ON va.vehicle_id = v.id AND va.is_active = 1 AND va.deleted_at IS NULL
@@ -287,7 +290,8 @@ public final class FleetService: Sendable {
                         model: row["model"] as String?,
                         year: row["year"] as Int?,
                         currentOdometer: row["current_odometer"] as Int?,
-                        assignedUserName: row["assigned_user_name"] as String?
+                        assignedUserName: row["assigned_user_name"] as String?,
+                        assignedUserId: row["assigned_user_id"] as Int64?
                     )
                 }
             }
@@ -540,14 +544,14 @@ public final class FleetService: Sendable {
                 }
 
                 let sql = """
-                    SELECT jt.id, jt.trailer_number, jt.trailer_type, jt.status,
+                    SELECT jt.id, jt.trailer_code AS trailer_number, jt.name AS trailer_type, jt.status,
                            j.job_name AS current_job_name,
-                           v.vehicle_name AS assigned_vehicle_name
+                           u.display_name AS assigned_driver_name
                     FROM job_trailers jt
                     LEFT JOIN jobs j ON j.id = jt.current_job_id
-                    LEFT JOIN vehicles v ON v.id = jt.assigned_vehicle_id
+                    LEFT JOIN users u ON u.id = jt.assigned_driver_user_id
                     WHERE \(whereClauses.joined(separator: " AND "))
-                    ORDER BY jt.trailer_number ASC
+                    ORDER BY jt.trailer_code ASC
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args as [Any])!)
@@ -558,7 +562,7 @@ public final class FleetService: Sendable {
                         trailerType: row["trailer_type"] ?? "",
                         status: row["status"] ?? "available",
                         currentJobName: row["current_job_name"] as String?,
-                        assignedVehicleName: row["assigned_vehicle_name"] as String?
+                        assignedVehicleName: row["assigned_driver_name"] as String?
                     )
                 }
             }
@@ -606,6 +610,78 @@ public final class FleetService: Sendable {
             maintenanceDue: maintenanceDue,
             totalTrailers: totalTrailers
         )
+    }
+
+    // =========================================================================
+    // MARK: - 7. Create / Mutate
+    // =========================================================================
+
+    /// Create a new vehicle. Returns the inserted row ID.
+    public func createVehicle(
+        vehicleNumber: String,
+        vehicleName: String,
+        vehicleType: String,
+        make: String?,
+        model: String?,
+        year: Int?,
+        color: String?,
+        vin: String?,
+        licensePlate: String?,
+        notes: String?
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            let now = ISO8601DateFormatter().string(from: Date())
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO vehicles (vehicle_number, vehicle_name, vehicle_type,
+                        make, model, year, color, vin, license_plate, notes,
+                        status, is_active, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, ?, ?)
+                    """,
+                arguments: [vehicleNumber, vehicleName, vehicleType,
+                            make, model, year, color, vin, licensePlate, notes,
+                            now, now]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Create a new trailer. Returns the inserted row ID.
+    public func createTrailer(
+        trailerNumber: String,
+        trailerType: String,
+        notes: String?
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            let now = ISO8601DateFormatter().string(from: Date())
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO job_trailers (trailer_code, name, status, notes, created_at, updated_at)
+                    VALUES (?, ?, 'available', ?, ?, ?)
+                    """,
+                arguments: [trailerNumber, trailerType, notes, now, now]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Assign a driver (user) to a vehicle.
+    public func assignDriver(
+        vehicleId: Int64,
+        userId: Int64,
+        assignmentType: String,
+        isTakeHome: Bool
+    ) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO vehicle_assignments
+                        (vehicle_id, user_id, assignment_type, is_take_home, is_active)
+                    VALUES (?, ?, ?, ?, 1)
+                    """,
+                arguments: [vehicleId, userId, assignmentType, isTakeHome ? 1 : 0]
+            )
+        }
     }
 
     // =========================================================================

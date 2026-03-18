@@ -15,6 +15,7 @@ struct IOSToolRegistryPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
+    @State private var loadError: String?
 
     private let statusOptions = ["all", "available", "checked_out", "maintenance", "lost"]
 
@@ -65,12 +66,14 @@ struct IOSToolRegistryPage: View {
         if isLoading {
             ProgressView("Loading tools...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredTools.isEmpty {
-            ContentUnavailableView {
-                Label("No Tools", systemImage: "wrench.and.screwdriver")
-            } description: {
-                Text("No tools match your criteria.")
-            }
+            EmptyStateView(
+                icon: "wrench.and.screwdriver",
+                title: "No Tools",
+                message: searchText.isEmpty ? "No tools have been registered yet." : "No tools match your criteria."
+            )
         } else {
             List(filteredTools, id: \.id) { tool in
                 toolRow(tool)
@@ -186,13 +189,14 @@ struct IOSToolRegistryPage: View {
     private func loadData() {
         guard let service = appCore.toolsService else { return }
         isLoading = tools.isEmpty
+        loadError = nil
         do {
             tools = try service.listTools(
                 search: searchText.isEmpty ? nil : searchText,
                 status: statusFilter == "all" ? nil : statusFilter
             )
         } catch {
-            print("[IOSToolRegistryPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

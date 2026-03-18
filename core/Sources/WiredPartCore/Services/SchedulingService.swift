@@ -142,15 +142,17 @@ public final class SchedulingService: Sendable {
         do {
             return try db.writer.read { dbConn -> [ScheduleEntry] in
                 let sql = """
-                    SELECT s.id, s.date, s.start_time, s.end_time, s.status, s.notes,
+                    SELECT jd.id, jd.dispatch_date AS date,
+                           jd.shift_start AS start_time, jd.shift_end AS end_time,
+                           jd.status, jd.notes,
                            COALESCE(j.job_name, 'Unassigned') AS job_name
-                    FROM schedules s
-                    LEFT JOIN jobs j ON j.id = s.job_id
-                    WHERE s.user_id = ?
-                      AND s.date >= ?
-                      AND s.date <= ?
-                      AND s.deleted_at IS NULL
-                    ORDER BY s.date ASC, s.start_time ASC
+                    FROM job_dispatch jd
+                    LEFT JOIN jobs j ON j.id = jd.job_id
+                    WHERE jd.user_id = ?
+                      AND jd.dispatch_date >= ?
+                      AND jd.dispatch_date <= ?
+                      AND jd.deleted_at IS NULL
+                    ORDER BY jd.dispatch_date ASC, jd.shift_start ASC
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [userId, startDate, endDate])
@@ -182,16 +184,15 @@ public final class SchedulingService: Sendable {
         do {
             return try db.writer.read { dbConn -> [DispatchRow] in
                 let sql = """
-                    SELECT de.id, de.status, de.notes,
+                    SELECT jd.id, jd.status, jd.notes,
                            COALESCE(u.display_name, u.email, 'Unknown') AS user_name,
                            COALESCE(j.job_name, 'Unassigned') AS job_name,
-                           v.name AS vehicle_name
-                    FROM dispatch_entries de
-                    LEFT JOIN users u ON u.id = de.user_id
-                    LEFT JOIN jobs j ON j.id = de.job_id
-                    LEFT JOIN vehicles v ON v.id = de.vehicle_id
-                    WHERE de.date = ?
-                      AND de.deleted_at IS NULL
+                           NULL AS vehicle_name
+                    FROM job_dispatch jd
+                    LEFT JOIN users u ON u.id = jd.user_id
+                    LEFT JOIN jobs j ON j.id = jd.job_id
+                    WHERE jd.dispatch_date = ?
+                      AND jd.deleted_at IS NULL
                     ORDER BY u.display_name ASC
                     """
 
@@ -224,27 +225,32 @@ public final class SchedulingService: Sendable {
     ) throws -> [TimeOffRow] {
         do {
             return try db.writer.read { dbConn -> [TimeOffRow] in
-                var whereClauses = ["tor.deleted_at IS NULL"]
+                var whereClauses = ["se.deleted_at IS NULL"]
                 var args: [DatabaseValueConvertible?] = []
 
                 if let userId {
-                    whereClauses.append("tor.user_id = ?")
+                    whereClauses.append("se.user_id = ?")
                     args.append(userId)
                 }
                 if let status, !status.isEmpty {
-                    whereClauses.append("tor.status = ?")
-                    args.append(status)
+                    let statusCondition = status == "approved"
+                        ? "se.is_approved = 1"
+                        : "se.is_approved = 0"
+                    whereClauses.append(statusCondition)
                 }
 
                 let sql = """
-                    SELECT tor.id, tor.start_date, tor.end_date, tor.reason, tor.status,
+                    SELECT se.id, se.exception_date AS start_date,
+                           se.exception_date AS end_date, se.reason,
+                           CASE WHEN se.is_approved = 1 THEN 'approved' ELSE 'pending' END AS status,
                            COALESCE(u.display_name, u.email, 'Unknown') AS user_name,
                            COALESCE(ua.display_name, ua.email) AS approved_by_name
-                    FROM time_off_requests tor
-                    LEFT JOIN users u ON u.id = tor.user_id
-                    LEFT JOIN users ua ON ua.id = tor.approved_by
-                    WHERE \(whereClauses.joined(separator: " AND "))
-                    ORDER BY tor.start_date DESC
+                    FROM schedule_exceptions se
+                    LEFT JOIN users u ON u.id = se.user_id
+                    LEFT JOIN users ua ON ua.id = se.approved_by
+                    WHERE se.exception_type = 'time_off'
+                      AND \(whereClauses.joined(separator: " AND "))
+                    ORDER BY se.exception_date DESC
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
@@ -277,11 +283,11 @@ public final class SchedulingService: Sendable {
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
-                    INSERT INTO time_off_requests
-                    (user_id, start_date, end_date, reason, status, created_at)
-                    VALUES (?, ?, ?, ?, 'pending', datetime('now'))
+                    INSERT INTO schedule_exceptions
+                    (user_id, exception_date, exception_type, reason, is_approved, created_at)
+                    VALUES (?, ?, 'time_off', ?, 0, datetime('now'))
                     """,
-                arguments: [userId, startDate, endDate, reason]
+                arguments: [userId, startDate, reason]
             )
             return dbConn.lastInsertedRowID
         }
@@ -302,7 +308,7 @@ public final class SchedulingService: Sendable {
             // Verify the request exists
             let count = try Int.fetchOne(
                 dbConn,
-                sql: "SELECT COUNT(*) FROM time_off_requests WHERE id = ? AND deleted_at IS NULL",
+                sql: "SELECT COUNT(*) FROM schedule_exceptions WHERE id = ? AND exception_type = 'time_off' AND deleted_at IS NULL",
                 arguments: [id]
             ) ?? 0
 
@@ -310,23 +316,24 @@ public final class SchedulingService: Sendable {
                 throw SchedulingError.timeOffRequestNotFound(id)
             }
 
+            let isApproved = status == "approved" ? 1 : 0
             if status == "approved", let approvedBy {
                 try dbConn.execute(
                     sql: """
-                        UPDATE time_off_requests
-                        SET status = ?, approved_by = ?, approved_at = datetime('now')
+                        UPDATE schedule_exceptions
+                        SET is_approved = ?, approved_by = ?, approved_at = datetime('now')
                         WHERE id = ?
                         """,
-                    arguments: [status, approvedBy, id]
+                    arguments: [isApproved, approvedBy, id]
                 )
             } else {
                 try dbConn.execute(
                     sql: """
-                        UPDATE time_off_requests
-                        SET status = ?
+                        UPDATE schedule_exceptions
+                        SET is_approved = ?
                         WHERE id = ?
                         """,
-                    arguments: [status, id]
+                    arguments: [isApproved, id]
                 )
             }
         }
@@ -371,22 +378,22 @@ public final class SchedulingService: Sendable {
     public func getSchedulingStats() throws -> SchedulingStats {
         let scheduledToday = try safeCount(
             sql: """
-                SELECT COUNT(*) FROM schedules
-                WHERE date = date('now') AND deleted_at IS NULL
+                SELECT COUNT(*) FROM job_dispatch
+                WHERE dispatch_date = date('now') AND deleted_at IS NULL
                 """
         )
 
         let dispatchedToday = try safeCount(
             sql: """
-                SELECT COUNT(*) FROM dispatch_entries
-                WHERE date = date('now') AND deleted_at IS NULL
+                SELECT COUNT(*) FROM job_dispatch
+                WHERE dispatch_date = date('now') AND status = 'dispatched' AND deleted_at IS NULL
                 """
         )
 
         let pendingTimeOff = try safeCount(
             sql: """
-                SELECT COUNT(*) FROM time_off_requests
-                WHERE status = 'pending' AND deleted_at IS NULL
+                SELECT COUNT(*) FROM schedule_exceptions
+                WHERE exception_type = 'time_off' AND is_approved = 0 AND deleted_at IS NULL
                 """
         )
 

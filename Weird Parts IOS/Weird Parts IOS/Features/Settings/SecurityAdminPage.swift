@@ -67,7 +67,7 @@ struct SecurityAdminPage: View {
                         Text(device["name"] ?? "Unknown Device")
                             .font(.body.weight(.medium))
                         HStack(spacing: 12) {
-                            Label(device["device_type"] ?? "unknown", systemImage: "desktopcomputer")
+                            Label(device["assigned_user"] ?? "Unassigned", systemImage: "person")
                             Label(device["status"] ?? "offline", systemImage:
                                 (device["status"] == "online") ? "circle.fill" : "circle")
                                 .foregroundStyle((device["status"] == "online") ? .green : .secondary)
@@ -143,32 +143,39 @@ struct SecurityAdminPage: View {
         do {
             devices = try db.writer.read { db in
                 let rows = try Row.fetchAll(db, sql: """
-                    SELECT id, name, device_type, status, last_seen_at
-                    FROM devices ORDER BY last_seen_at DESC
+                    SELECT d.id, d.device_name, d.device_fingerprint, d.last_seen,
+                           COALESCE(u.display_name, 'Unassigned') AS assigned_user
+                    FROM devices d
+                    LEFT JOIN users u ON u.id = d.assigned_user_id
+                    WHERE d.deleted_at IS NULL
+                    ORDER BY d.last_seen DESC
                 """)
                 return rows.map { row in
                     var dict: [String: String] = [:]
                     dict["id"] = "\(row["id"] as Int64? ?? 0)"
-                    dict["name"] = row["name"] as? String ?? "Unknown"
-                    dict["device_type"] = row["device_type"] as? String ?? "unknown"
-                    dict["status"] = row["status"] as? String ?? "offline"
-                    dict["last_seen_at"] = row["last_seen_at"] as? String
+                    dict["name"] = row["device_name"] as? String ?? "Unknown"
+                    dict["device_type"] = row["device_fingerprint"] as? String ?? "unknown"
+                    dict["assigned_user"] = row["assigned_user"] as? String ?? "Unassigned"
+                    // Determine online status from last_seen recency
+                    let lastSeen = row["last_seen"] as? String
+                    dict["last_seen_at"] = lastSeen
+                    dict["status"] = Self.isRecentlyOnline(lastSeen) ? "online" : "offline"
                     return dict
                 }
             }
+            // Show trusted devices from device registry
             sessions = try db.writer.read { db in
                 let rows = try Row.fetchAll(db, sql: """
-                    SELECT s.id, s.user_id, s.created_at,
-                           COALESCE(u.display_name, u.username) AS user_name
-                    FROM sessions s
-                    LEFT JOIN users u ON u.id = s.user_id
-                    WHERE s.is_active = 1
-                    ORDER BY s.created_at DESC
+                    SELECT dr.rowid AS id, dr.device_id, dr.created_at,
+                           COALESCE(dr.device_name, 'Unknown') AS user_name
+                    FROM _device_registry dr
+                    WHERE dr.is_trusted = 1 AND dr.is_deactivated = 0
+                    ORDER BY dr.last_seen_at DESC
                 """)
                 return rows.map { row in
                     var dict: [String: String] = [:]
                     dict["id"] = "\(row["id"] as Int64? ?? 0)"
-                    dict["user_id"] = "\(row["user_id"] as Int64? ?? 0)"
+                    dict["user_id"] = "\(row["device_id"] as Int64? ?? 0)"
                     dict["user_name"] = row["user_name"] as? String ?? "Unknown"
                     dict["created_at"] = row["created_at"] as? String ?? "Unknown"
                     return dict
@@ -186,13 +193,30 @@ struct SecurityAdminPage: View {
         isLoading = false
     }
 
+    /// Check if a last_seen timestamp is within the last 5 minutes
+    private static func isRecentlyOnline(_ lastSeen: String?) -> Bool {
+        guard let lastSeen, !lastSeen.isEmpty else { return false }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: lastSeen) {
+            return Date().timeIntervalSince(date) < 300 // 5 minutes
+        }
+        // Try simpler format
+        let simple = DateFormatter()
+        simple.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        if let date = simple.date(from: lastSeen) {
+            return Date().timeIntervalSince(date) < 300
+        }
+        return false
+    }
+
     // MARK: - Force Logout
 
     private func forceLogout() {
         guard let db = appCore.db, let sessionId = selectedSessionId else { return }
         do {
             try db.writer.write { db in
-                try db.execute(sql: "UPDATE sessions SET is_active = 0 WHERE id = ?", arguments: [sessionId])
+                try db.execute(sql: "UPDATE _device_registry SET is_deactivated = 1 WHERE rowid = ?", arguments: [sessionId])
             }
             selectedSessionId = nil
             Task { loadData() }

@@ -1364,6 +1364,16 @@ public final class JobsService: Sendable {
         )
     }
 
+    /// Total parts cost across all jobs: sum of (qty_consumed * unit_cost_at_consume).
+    public func getTotalPartsCost() throws -> Double {
+        try safeCountDouble(
+            sql: """
+                SELECT COALESCE(SUM(qty_consumed * COALESCE(unit_cost_at_consume, 0)), 0)
+                FROM job_parts WHERE deleted_at IS NULL
+                """
+        )
+    }
+
     // =========================================================================
     // MARK: - Internal Helpers
     // =========================================================================

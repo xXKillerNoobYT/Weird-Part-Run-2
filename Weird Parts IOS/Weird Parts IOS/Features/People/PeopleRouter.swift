@@ -7,12 +7,14 @@ struct PeopleRouter: View {
 
     var body: some View {
         switch tabId {
-        case "people-employees": IOSEmployeesPage()
         case "people-customers": IOSCustomersPage()
         case "people-contacts": IOSContactsPage()
-        case "people-hats": IOSHatsPage()
-        case "people-teams": IOSTeamsPage()
         case "people-contractors": IOSContractorsPage()
+        case "people-teams": IOSTeamsPage()
+        // Legacy fallbacks — these pages now live in Office
+        case "people-employees": IOSEmployeesPage()
+        case "people-hats": IOSHatsPage()
+        case "people-permissions": IOSPermissionsPage()
         default: Text("Unknown people page: \(tabId)").foregroundStyle(.secondary)
         }
     }

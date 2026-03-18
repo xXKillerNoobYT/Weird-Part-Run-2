@@ -201,7 +201,7 @@ public actor PeerManager {
         multipeerManager = nil
         #endif
 
-        try? await syncServer?.stop()
+        await syncServer?.stop()
         syncServer = nil
         serverState = nil
 
@@ -419,7 +419,10 @@ public actor PeerManager {
             let encoder = JSONEncoder()
             let pushBody = try encoder.encode(pushRequest)
 
-            var urlRequest = URLRequest(url: URL(string: "\(baseURL)/sync/push")!)
+            guard let pushURL = URL(string: "\(baseURL)/sync/push") else {
+                throw URLError(.badURL)
+            }
+            var urlRequest = URLRequest(url: pushURL)
             urlRequest.httpMethod = "POST"
             urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
             urlRequest.httpBody = pushBody
@@ -445,7 +448,10 @@ public actor PeerManager {
         )
 
         let pullBody = try JSONEncoder().encode(pullRequest)
-        var pullURLRequest = URLRequest(url: URL(string: "\(baseURL)/sync/pull")!)
+        guard let pullURL = URL(string: "\(baseURL)/sync/pull") else {
+            throw URLError(.badURL)
+        }
+        var pullURLRequest = URLRequest(url: pullURL)
         pullURLRequest.httpMethod = "POST"
         pullURLRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         pullURLRequest.httpBody = pullBody

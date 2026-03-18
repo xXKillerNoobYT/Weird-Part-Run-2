@@ -12,6 +12,8 @@ struct AppConfigPage: View {
     @State private var archiveDays = "90"
     @State private var warrantyDays = "365"
     @State private var saved = false
+    @State private var loadError: String?
+    @State private var actionError: String?
 
     var body: some View {
         Form {
@@ -79,6 +81,11 @@ struct AppConfigPage: View {
             }
         }
         .onAppear { loadConfig() }
+        .alert("Error", isPresented: Binding(get: { loadError != nil || actionError != nil }, set: { if !$0 { loadError = nil; actionError = nil } })) {
+            Button("OK") { loadError = nil; actionError = nil }
+        } message: {
+            Text(loadError ?? actionError ?? "")
+        }
     }
 
     private func loadConfig() {
@@ -88,7 +95,9 @@ struct AppConfigPage: View {
             archiveDays = try appCore.settingsService.getSetting("archive_completed_days") ?? "90"
             let warranty = try appCore.settingsService.getWarrantyLengthDays()
             warrantyDays = String(warranty)
-        } catch {}
+        } catch {
+            loadError = error.localizedDescription
+        }
     }
 
     private func saveConfig() {
@@ -101,6 +110,8 @@ struct AppConfigPage: View {
             }
             saved = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
-        } catch {}
+        } catch {
+            actionError = error.localizedDescription
+        }
     }
 }

@@ -107,4 +107,41 @@ public struct SearchJobsTool: FoundationModels.Tool {
     }
 }
 
+// MARK: - Get Supplier Info Tool
+
+@available(macOS 26.0, iOS 26.0, *)
+public struct GetSupplierInfoTool: FoundationModels.Tool {
+    public let name = "getSupplierInfo"
+    public let description = "Look up supplier details by name, including contact info and linked parts/brands"
+
+    @Generable
+    public struct Arguments {
+        @Guide(description: "Search query for supplier name")
+        var query: String
+    }
+
+    private let db: AppDatabase
+
+    public init(db: AppDatabase) {
+        self.db = db
+    }
+
+    public func call(arguments: Arguments) async throws -> String {
+        let service = PartsService(db: db)
+        let results = try service.listSuppliers(search: arguments.query)
+        if results.isEmpty {
+            return "No suppliers found matching '\(arguments.query)'"
+        }
+        return results.prefix(5).map { item in
+            let s = item.supplier
+            var line = "- \(s.name)"
+            if let contact = s.contactName { line += " (Contact: \(contact))" }
+            if let phone = s.phone { line += " Phone: \(phone)" }
+            if let email = s.email { line += " Email: \(email)" }
+            line += " | \(item.brandCount) brand(s)"
+            return line
+        }.joined(separator: "\n")
+    }
+}
+
 #endif // canImport(FoundationModels)

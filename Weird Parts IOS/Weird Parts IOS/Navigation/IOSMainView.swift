@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import WiredPartCore
 
 /// Primary navigation shell for iOS.
@@ -13,6 +14,7 @@ struct IOSMainView: View {
     @State private var selectedModuleId: String = "dashboard"
     @State private var showLogoutConfirm = false
     @State private var showTabEditor = false
+    @State private var showAIAssistant = false
 
     /// Modules visible to the current user (permission-filtered, no settings on mobile).
     private var filteredModules: [AppModule] {
@@ -42,6 +44,7 @@ struct IOSMainView: View {
                 NavigationStack {
                     ModuleHostView(module: module, showLogoutConfirm: $showLogoutConfirm)
                         .environmentObject(appCore)
+                        .environmentObject(tabPrefs)
                 }
                 .tabItem {
                     Label(module.label, systemImage: module.icon)
@@ -56,6 +59,26 @@ struct IOSMainView: View {
                 }
                 .tag("__more__")
         }
+        .overlay(alignment: .bottomTrailing) {
+            Button {
+                showAIAssistant = true
+            } label: {
+                Image(systemName: "sparkles")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.white)
+                    .frame(width: 52, height: 52)
+                    .background(Circle().fill(Color.accentColor))
+                    .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+            }
+            .dsMinTapTarget()
+            .padding(.trailing, DS.Space.lg)
+            .padding(.bottom, 90) // Above the tab bar
+        }
+        .sheet(isPresented: $showAIAssistant) {
+            IOSAIAssistantPanel()
+                .environmentObject(appCore)
+        }
         .confirmationDialog("Log out?", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
             Button("Log Out", role: .destructive) {
                 appCore.logout()
@@ -64,6 +87,11 @@ struct IOSMainView: View {
         }
         .onAppear {
             tabPrefs.load(userId: appCore.currentUser?.id)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateToModule)) { notification in
+            if let moduleId = notification.userInfo?["moduleId"] as? String {
+                selectedModuleId = moduleId
+            }
         }
     }
 
@@ -109,6 +137,7 @@ struct IOSMainView: View {
                 if let module = allModulesById[moduleId] {
                     ModuleHostView(module: module, showLogoutConfirm: $showLogoutConfirm)
                         .environmentObject(appCore)
+                        .environmentObject(tabPrefs)
                 }
             }
         }
@@ -117,8 +146,8 @@ struct IOSMainView: View {
 
 // MARK: - Module Host View
 
-/// Hosts a single module's content with a horizontal capsule sub-tab bar
-/// and a content area that switches based on the selected tab.
+/// Hosts a single module's content with either a horizontal capsule sub-tab bar
+/// or a left sidebar, based on the user's navigation style preference.
 ///
 /// **Important:** This view does NOT own a NavigationStack. The parent
 /// (primary tab or More tab) provides the navigation context. This avoids
@@ -127,43 +156,43 @@ struct ModuleHostView: View {
     let module: AppModule
     @Binding var showLogoutConfirm: Bool
     @EnvironmentObject private var appCore: AppCore
+    @EnvironmentObject private var tabPrefs: TabBarPreferences
     @State private var selectedTabId: String = ""
+    @State private var showUserMenu = false
 
     /// Tabs visible to the current user after permission filtering.
     private var visibleTabsList: [AppTab] {
         visibleTabs(for: module, permissions: appCore.permissions)
     }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            // Sub-tab capsule picker (only if >1 visible tab)
-            if visibleTabsList.count > 1 {
-                subTabPicker
-            }
+    /// Whether to use sidebar layout — requires sidebar preference AND more than 1 tab.
+    private var useSidebar: Bool {
+        tabPrefs.navigationStyle == .sidebar && visibleTabsList.count > 1
+    }
 
-            // Content
-            IOSContentRouter(path: currentPath)
-                .environmentObject(appCore)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+    var body: some View {
+        Group {
+            if useSidebar {
+                sidebarLayout
+            } else {
+                topTabsLayout
+            }
         }
         .navigationTitle(module.label)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .automatic) {
-                Menu {
-                    if let user = appCore.currentUser {
-                        Text(user.displayName)
-                    }
-                    Divider()
-                    Button(role: .destructive) {
-                        showLogoutConfirm = true
-                    } label: {
-                        Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
-                    }
+                Button {
+                    showUserMenu = true
                 } label: {
                     Image(systemName: "person.circle")
                 }
             }
+        }
+        .sheet(isPresented: $showUserMenu) {
+            UserMenuSheet(showLogoutConfirm: $showLogoutConfirm)
+                .environmentObject(appCore)
+                .environmentObject(tabPrefs)
         }
         .onAppear {
             if selectedTabId.isEmpty, let first = visibleTabsList.first {
@@ -178,37 +207,125 @@ struct ModuleHostView: View {
             ?? "/dashboard"
     }
 
+    // MARK: - Top Tabs Layout (existing)
+
+    @ViewBuilder
+    private var topTabsLayout: some View {
+        VStack(spacing: 0) {
+            if visibleTabsList.count > 1 {
+                subTabPicker
+            }
+
+            IOSContentRouter(path: currentPath)
+                .environmentObject(appCore)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    // MARK: - Sidebar Layout
+
+    @ViewBuilder
+    private var sidebarLayout: some View {
+        HStack(spacing: 0) {
+            // Left sidebar with tab list
+            ScrollView {
+                VStack(spacing: DS.Space.xxs) {
+                    ForEach(visibleTabsList) { tab in
+                        Button {
+                            dsAnimate(DS.Anim.fast) {
+                                selectedTabId = tab.id
+                            }
+                        } label: {
+                            sidebarRow(tab: tab, selected: tab.id == selectedTabId)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.vertical, DS.Space.sm)
+                .padding(.horizontal, DS.Space.xs)
+            }
+            .frame(width: sidebarWidth)
+            .background(DS.Background.page)
+
+            Divider()
+
+            // Content area
+            IOSContentRouter(path: currentPath)
+                .environmentObject(appCore)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// Sidebar width adapts to device — wider on iPad/Mac.
+    private var sidebarWidth: CGFloat {
+        DeviceContext.isLargeScreen ? 220 : 180
+    }
+
+    @ViewBuilder
+    private func sidebarRow(tab: AppTab, selected: Bool) -> some View {
+        HStack(spacing: DS.Space.sm) {
+            Image(systemName: tab.icon)
+                .font(.body)
+                .foregroundStyle(selected ? Color.accentColor : .secondary)
+                .frame(width: 24)
+
+            Text(tab.label)
+                .dsStyle(.bodyText)
+                .fontWeight(selected ? .semibold : .regular)
+                .foregroundStyle(selected ? .primary : .secondary)
+
+            Spacer()
+        }
+        .padding(.horizontal, DS.Space.md)
+        .padding(.vertical, DS.Space.sm + 2)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Radius.md)
+                .fill(selected ? Color.accentColor.opacity(0.12) : Color.clear)
+        )
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - Top Tabs Capsule Picker
+
     @ViewBuilder
     private var subTabPicker: some View {
+        let chipH: CGFloat = 14
+        let isSelected: (AppTab) -> Bool = { $0.id == selectedTabId }
+
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: DS.Space.sm) {
                 ForEach(visibleTabsList) { tab in
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        dsAnimate(DS.Anim.fast) {
                             selectedTabId = tab.id
                         }
                     } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: tab.icon)
-                                .font(.caption)
-                            Text(tab.label)
-                                .font(.subheadline)
-                                .fontWeight(selectedTabId == tab.id ? .semibold : .regular)
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(
-                            Capsule()
-                                .fill(selectedTabId == tab.id ? Color.accentColor : Color.clear)
-                        )
-                        .foregroundStyle(selectedTabId == tab.id ? .white : .primary)
+                        subTabChip(tab: tab, selected: isSelected(tab), chipH: chipH)
                     }
                     .buttonStyle(.glass)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.horizontal, DS.Space.lg)
+            .padding(.vertical, DS.Space.sm)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
+    }
+
+    @ViewBuilder
+    private func subTabChip(tab: AppTab, selected: Bool, chipH: CGFloat) -> some View {
+        HStack(spacing: DS.Space.xxs) {
+            Image(systemName: tab.icon)
+                .font(.caption)
+            Text(tab.label)
+                .dsStyle(.detail)
+                .fontWeight(selected ? .semibold : .regular)
+        }
+        .padding(.horizontal, chipH)
+        .padding(.vertical, DS.Space.sm)
+        .background(
+            Capsule()
+                .fill(selected ? Color.accentColor : Color.clear)
+        )
+        .foregroundStyle(selected ? .white : .primary)
     }
 }

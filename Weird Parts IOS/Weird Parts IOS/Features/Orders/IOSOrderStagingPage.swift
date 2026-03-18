@@ -15,6 +15,7 @@ struct IOSOrderStagingPage: View {
     @State private var stagedOrders: [OrdersService.POListItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var loadError: String?
 
     var body: some View {
         stagedList
@@ -120,6 +121,7 @@ struct IOSOrderStagingPage: View {
             stagedOrders = try service.listPurchaseOrders(status: "draft")
         } catch {
             print("[IOSOrderStagingPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

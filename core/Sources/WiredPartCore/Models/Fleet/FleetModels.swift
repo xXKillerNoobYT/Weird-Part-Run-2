@@ -90,6 +90,7 @@ public struct VehicleAssignment: Codable, FetchableRecord, MutablePersistableRec
     public var notes: String?
     public var deletedAt: String?
     public var createdAt: String?
+    public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id, notes
@@ -103,6 +104,7 @@ public struct VehicleAssignment: Codable, FetchableRecord, MutablePersistableRec
         case isActive = "is_active"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
+        case updatedAt = "updated_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -363,26 +365,23 @@ public struct FuelLog: Codable, FetchableRecord, MutablePersistableRecord, Senda
 public struct JobTrailer: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "job_trailers"
     public var id: Int64?
-    public var trailerNumber: String
-    public var trailerType: String
+    public var trailerCode: String
+    public var name: String
     public var status: String
-    public var homeWarehouseId: Int64?
     public var currentJobId: Int64?
-    public var assignedVehicleId: Int64?
-    public var capacityNotes: String?
+    public var assignedDriverUserId: Int64?
     public var notes: String?
+    public var isActive: Int
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, status, notes
-        case trailerNumber = "trailer_number"
-        case trailerType = "trailer_type"
-        case homeWarehouseId = "home_warehouse_id"
+        case id, name, status, notes
+        case trailerCode = "trailer_code"
         case currentJobId = "current_job_id"
-        case assignedVehicleId = "assigned_vehicle_id"
-        case capacityNotes = "capacity_notes"
+        case assignedDriverUserId = "assigned_driver_user_id"
+        case isActive = "is_active"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -399,23 +398,21 @@ public struct TrailerLocationEvent: Codable, FetchableRecord, MutablePersistable
     public var trailerId: Int64
     public var eventType: String
     public var locationKind: String
-    public var locationId: Int64?
-    public var locationName: String?
-    public var movedBy: Int64?
+    public var jobId: Int64?
+    public var lat: Double?
+    public var lng: Double?
+    public var recordedBy: Int64?
+    public var recordedAt: String?
     public var notes: String?
-    public var deletedAt: String?
-    public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, notes
+        case id, notes, lat, lng
         case trailerId = "trailer_id"
         case eventType = "event_type"
         case locationKind = "location_kind"
-        case locationId = "location_id"
-        case locationName = "location_name"
-        case movedBy = "moved_by"
-        case deletedAt = "deleted_at"
-        case createdAt = "created_at"
+        case jobId = "job_id"
+        case recordedBy = "recorded_by"
+        case recordedAt = "recorded_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -473,23 +470,23 @@ public struct OrderAttachment: Codable, FetchableRecord, MutablePersistableRecor
     public var id: Int64?
     public var entityType: String
     public var entityId: Int64
-    public var fileName: String
     public var filePath: String
+    public var fileName: String
+    public var fileType: String?
     public var fileSize: Int?
-    public var mimeType: String?
+    public var description: String?
     public var uploadedBy: Int64?
-    public var notes: String?
     public var deletedAt: String?
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, notes
+        case id, description
         case entityType = "entity_type"
         case entityId = "entity_id"
-        case fileName = "file_name"
         case filePath = "file_path"
+        case fileName = "file_name"
+        case fileType = "file_type"
         case fileSize = "file_size"
-        case mimeType = "mime_type"
         case uploadedBy = "uploaded_by"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"

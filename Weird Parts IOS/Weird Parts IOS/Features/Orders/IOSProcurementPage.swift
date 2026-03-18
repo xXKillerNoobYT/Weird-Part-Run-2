@@ -16,6 +16,7 @@ struct IOSProcurementPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var priorityFilter = "all"
+    @State private var loadError: String?
 
     private let priorityOptions = ["all", "urgent", "high", "normal", "low"]
 
@@ -172,6 +173,7 @@ struct IOSProcurementPage: View {
             jpos = try service.listJPOs(status: "approved")
         } catch {
             print("[IOSProcurementPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

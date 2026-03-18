@@ -1,96 +1,21 @@
-# Wired-Part
+# WiredPart
 
-Field service management app for an electrical contracting company. Manages parts inventory, warehouse operations, truck inventories, job tracking, labor hours, procurement, and pre-billing exports.
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- **Python 3.12+** (tested on 3.14)
-- **Node.js 18+** with npm
-- **Git**
-
-### 1. Clone & Install
-
-```bash
-git clone https://github.com/xXKillerNoobYT/Weird-Part-Run-2.git
-cd Weird-Part-Run-2
-
-# Backend
-cd backend
-pip install -r requirements.txt
-cd ..
-
-# Frontend
-cd frontend
-npm install
-cd ..
-```
-
-### 2. Start the Servers
-
-**Backend** (API on port 8000):
-```bash
-cd backend
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-**Frontend** (UI on port 5173):
-```bash
-cd frontend
-npm run dev
-```
-
-### 3. Open the App
-
-Navigate to **http://localhost:5173** in your browser.
+Native iOS field service management app for an electrical contracting company. Manages parts inventory, warehouse operations, fleet tracking, job management, labor hours, procurement, scheduling, and reporting — all running on-device with local SQLite storage and peer-to-peer sync.
 
 ---
 
-## Default Login Credentials
+## Architecture
 
-| Field | Value |
-|-------|-------|
-| **User** | Admin |
-| **PIN** | `1234` |
-
-On first launch, the app creates a default Admin user with PIN **1234**. Select "Admin" from the user picker, then enter the PIN to sign in.
-
-> **Change the default PIN** in a production environment. The PIN is set via the `DEFAULT_ADMIN_PIN` environment variable in `.env`.
-
----
-
-## Environment Variables
-
-All configuration is in the `.env` file at the project root:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `APP_NAME` | `Wired-Part` | Application display name |
-| `APP_VERSION` | `0.1.0` | Current version |
-| `DATABASE_PATH` | `./wiredpart.db` | SQLite database file path (relative to `backend/`) |
-| `SECRET_KEY` | `dev-secret-change-...` | JWT signing key (**change in production**) |
-| `PIN_HASH_ROUNDS` | `12` | bcrypt hash rounds for PIN hashing |
-| `DEFAULT_ADMIN_PIN` | `1234` | Default admin PIN on first launch |
-| `ACCESS_TOKEN_EXPIRE_SECONDS` | `86400` | JWT access token lifetime (24 hours) |
-| `PIN_TOKEN_EXPIRE_SECONDS` | `300` | PIN verification token lifetime (5 minutes) |
-| `CORS_ORIGINS` | `["http://localhost:5173"]` | Allowed CORS origins (JSON array) |
-| `BACKEND_HOST` | `0.0.0.0` | Backend bind address |
-| `BACKEND_PORT` | `8000` | Backend port |
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| **Backend** | Python 3.12+ / FastAPI / SQLite (aiosqlite) / Pydantic v2 |
-| **Frontend** | React 19 / TypeScript / Vite / Tailwind CSS v4 |
-| **State** | Zustand (UI state) / TanStack React Query (server state) |
-| **Auth** | Device fingerprint auto-login + PIN-based login + JWT |
-| **Icons** | Lucide React |
+| Component | Technology |
+|-----------|-----------|
+| **UI** | SwiftUI (iOS 18+) |
+| **Core Library** | WiredPartCore Swift Package (shared models, services, sync) |
+| **Database** | GRDB.swift / SQLite |
+| **Sync** | LAN HTTP (swift-nio) + MultipeerConnectivity (BT/Wi-Fi P2P) |
+| **AI** | Apple Foundation Models (iOS 26+, on-device) |
+| **Security** | CryptoKit (Ed25519 device trust) |
+| **OCR** | Apple Vision framework |
+| **QR** | AVFoundation barcode scanning |
 
 ---
 
@@ -98,113 +23,75 @@ All configuration is in the `.env` file at the project root:
 
 ```
 Weird-Part-Run-2/
-├── backend/
-│   ├── app/
-│   │   ├── main.py              # FastAPI entry point
-│   │   ├── config.py            # Settings from .env
-│   │   ├── database.py          # SQLite connection + migrations
-│   │   ├── models/              # Pydantic request/response models
-│   │   ├── routers/             # API route modules
-│   │   ├── repositories/        # Data access layer
-│   │   ├── services/            # Business logic (auth, movements)
-│   │   ├── middleware/          # JWT auth + permission dependencies
-│   │   └── migrations/          # Numbered SQL migration files
-│   ├── tests/
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── App.tsx              # Root component with all routes
-│   │   ├── api/                 # Axios client + endpoint modules
-│   │   ├── components/
-│   │   │   ├── auth/            # AuthGate, UserPicker, PinLoginForm
-│   │   │   ├── layout/          # AppShell, Sidebar, TopBar, TabBar
-│   │   │   └── ui/              # Button, Card, Input, Badge, Modal, etc.
-│   │   ├── features/            # One folder per module (dashboard, parts, etc.)
-│   │   ├── stores/              # Zustand stores (auth, theme, sidebar)
-│   │   └── lib/                 # Types, navigation config, utils, constants
-│   ├── package.json
-│   └── vite.config.ts
-├── docs/
-│   └── implementation-plan.md   # Full implementation plan
-├── .env                         # Environment configuration
-├── .gitignore
-├── CLAUDE.md                    # AI agent instructions
-├── ThePlan.md                   # Full product specification
-└── README.md                    # This file
+├── Weird Parts IOS/           ← iOS app target (SwiftUI)
+│   └── Weird Parts IOS/
+│       ├── App/               ← AppCore, entry point
+│       ├── Auth/              ← Onboarding, pairing, setup
+│       ├── Features/          ← 14 feature modules
+│       │   ├── Chat/
+│       │   ├── Dashboard/
+│       │   ├── Fleet/
+│       │   ├── Jobs/
+│       │   ├── Notebooks/
+│       │   ├── Office/
+│       │   ├── Orders/
+│       │   ├── Parts/
+│       │   ├── People/
+│       │   ├── Reports/
+│       │   ├── Scheduling/
+│       │   ├── Settings/
+│       │   ├── Tools/
+│       │   └── Warehouse/
+│       ├── Navigation/        ← Router, tab config, main view
+│       ├── Scanning/          ← OCR, QR scanner adapters
+│       ├── Shared/            ← Reusable components, charts
+│       ├── Sync/              ← Peer browser, sync manager, status
+│       └── Theme/             ← Theme manager, glass modifiers
+├── core/                      ← WiredPartCore Swift Package
+│   └── Sources/WiredPartCore/
+│       ├── AI/                ← Foundation Models service, AI tools
+│       ├── Database/          ← AppDatabase, migrations, base repo
+│       ├── ImageMatch/        ← Vision-based image matching
+│       ├── Models/            ← Domain models (12 modules)
+│       ├── OCR/               ← OCR processor adapter
+│       ├── QR/                ← QR codec, generator, scanner
+│       ├── Services/          ← 15 business logic services
+│       └── Sync/              ← Sync engine, peer management, crypto
+└── docs/                      ← Plans, specs, architecture docs
 ```
-
----
-
-## Authentication Flow
-
-1. **Device auto-login**: The app generates a browser fingerprint and checks if this device is registered to a user. If so, you're logged in automatically.
-2. **User picker**: On new or public devices, a grid of active users is shown. Tap your name.
-3. **PIN entry**: Enter your 4-6 digit PIN. Auto-submits at 4 digits.
-4. **Sensitive actions**: Some operations (editing pricing, managing permissions) require a secondary PIN verification that issues a short-lived token.
 
 ---
 
 ## Modules
 
-| Module | Description | Route |
-|--------|-------------|-------|
-| Dashboard | KPI cards + quick actions | `/dashboard` |
-| Parts | Catalog, brands, pricing, forecasting, import/export | `/parts/*` |
-| Warehouse | Dashboard, inventory grid, staging, audit, movement log | `/warehouse/*` |
-| Trucks | My truck, all trucks, tools, maintenance, mileage | `/trucks/*` |
-| Jobs | Active jobs, templates | `/jobs/*` |
-| Orders | Draft POs, pending, incoming, returns, procurement | `/orders/*` |
-| People | Employees, roles/hats, permissions | `/people/*` |
-| Reports | Pre-billing, timesheets, labor overview, exports | `/reports/*` |
-| Settings | App config, themes, sync, AI config, devices | `/settings/*` |
+| Module | Description |
+|--------|-------------|
+| Dashboard | KPI cards, quick actions |
+| Parts | Catalog, categories, brands, suppliers, pricing, companions, forecasting, import/export |
+| Warehouse | Dashboard, movements, locations, staging, receiving, returns, audit, inventory grid, tools, network, settings |
+| Jobs | Job list, labor, reports, clock, detail, questionnaire, daily reports |
+| Orders | JPO requests, purchase orders, returns, procurement, staging, approvals |
+| Fleet | Vehicles, maintenance, mileage, fuel, trailers, inspections, GPS, my truck, trailer locations, truck tools |
+| People | Employees, customers, contacts, hats, teams, contractors, permissions |
+| Scheduling | Calendar, dispatch, time off, templates, availability, sub schedule, config |
+| Tools | Registry, checkouts, kits, dashboard, admin, maintenance |
+| Notebooks | All notebooks, templates, job notebooks |
+| Reports | Timesheets, spending, daily summary, profitability, pre-billing, bookkeeper, labor overview |
+| Chat | Messages, Q&A, RFIs |
+| Office | Manage jobs, warehouse exec, spending dashboard |
+| Settings | Themes, app config, company, sync, bluetooth, AI config, devices, security, and more |
 
 ---
 
-## API Documentation
+## Auth & Permissions
 
-With the backend running, visit **http://localhost:8000/docs** for the interactive Swagger UI, or **http://localhost:8000/redoc** for ReDoc.
-
-### Key Endpoints
-
-| Method | Endpoint | Description | Auth Required |
-|--------|----------|-------------|---------------|
-| `POST` | `/api/auth/device-login` | Auto-login by device fingerprint | No |
-| `POST` | `/api/auth/pin-login` | Login with user ID + PIN | No |
-| `GET` | `/api/auth/me` | Current user profile + permissions | Yes |
-| `GET` | `/api/auth/users` | User picker list | No |
-| `POST` | `/api/auth/verify-pin` | PIN verification for sensitive actions | Yes |
-| `GET` | `/api/settings/theme` | Get theme settings | Yes |
-| `PUT` | `/api/settings/theme` | Update theme settings | Yes |
-| `GET` | `/api/health` | Health check | No |
+Hat-based permission system. Users wear one or more hats (roles), and their permissions are the union of all hat permissions. 7 built-in roles from Admin (full access) to Grunt (minimal access), with 30+ permission keys.
 
 ---
 
-## Roles & Permissions
+## Sync
 
-The app uses a **hat-based** permission system. Users wear one or more "hats" (roles), and their permissions are the **union** of all hat permissions.
-
-### Built-in Hats (Roles)
-
-| Hat | Level | Description |
-|-----|-------|-------------|
-| Admin | 0 | Full access to everything |
-| Office Manager | 1 | Manages orders, people, reports, settings |
-| Foreman | 2 | Manages jobs, labor, warehouse operations |
-| Lead Technician | 3 | Job management, truck/parts operations |
-| Technician | 4 | View jobs, clock in/out, consume parts |
-| Apprentice | 5 | Limited view access, clock in/out |
-| Grunt | 6 | Minimal access (view own truck only) |
-
-There are **30 permission keys** controlling access to every feature. See `backend/app/migrations/001_foundation.sql` for the full list.
-
----
-
-## Development Notes
-
-- **Database**: SQLite with WAL mode. The `.db` file is created automatically on first run in the `backend/` directory.
-- **Migrations**: SQL files in `backend/app/migrations/` run automatically on startup. Track applied migrations in a `_migrations` table.
-- **Dark mode**: Toggle in the top bar. Persists to the backend settings store.
-- **Responsive**: Sidebar collapses on mobile, tab bar adapts to screen size.
+Devices sync via LAN HTTP and Apple MultipeerConnectivity. Each device maintains its own SQLite database. Change tracking via `_change_log` table with last-writer-wins + field-level merge conflict resolution. Ed25519 device trust via CryptoKit.
 
 ---
 

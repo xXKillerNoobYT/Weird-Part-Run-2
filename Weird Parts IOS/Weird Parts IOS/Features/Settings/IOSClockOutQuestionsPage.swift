@@ -223,7 +223,7 @@ struct IOSClockOutQuestionsPage: View {
         do {
             questions = try db.writer.read { db in
                 let rows = try Row.fetchAll(db, sql: """
-                    SELECT id, question_text, question_type, is_required, sort_order
+                    SELECT id, question_text, answer_type, is_required, sort_order
                     FROM clock_out_questions
                     ORDER BY sort_order ASC, id ASC
                 """)
@@ -231,7 +231,7 @@ struct IOSClockOutQuestionsPage: View {
                     ClockOutQuestion(
                         id: "\(row["id"] as Int64? ?? 0)",
                         text: row["question_text"] as? String ?? "",
-                        type: row["question_type"] as? String ?? "text",
+                        type: row["answer_type"] as? String ?? "text",
                         isRequired: (row["is_required"] as? Int64 ?? 1) == 1,
                         sortOrder: Int(row["sort_order"] as? Int64 ?? 0)
                     )
@@ -252,7 +252,7 @@ struct IOSClockOutQuestionsPage: View {
         do {
             try db.writer.write { db in
                 try db.execute(sql: """
-                    INSERT INTO clock_out_questions (question_text, question_type, is_required, sort_order)
+                    INSERT INTO clock_out_questions (question_text, answer_type, is_required, sort_order)
                     VALUES (?, ?, ?, ?)
                 """, arguments: [newQuestionText.trimmingCharacters(in: .whitespaces), newQuestionType, newQuestionRequired ? 1 : 0, nextOrder])
             }
@@ -269,7 +269,7 @@ struct IOSClockOutQuestionsPage: View {
             try db.writer.write { db in
                 try db.execute(sql: """
                     UPDATE clock_out_questions
-                    SET question_text = ?, question_type = ?, is_required = ?
+                    SET question_text = ?, answer_type = ?, is_required = ?
                     WHERE id = ?
                 """, arguments: [newQuestionText.trimmingCharacters(in: .whitespaces), newQuestionType, newQuestionRequired ? 1 : 0, question.id])
             }

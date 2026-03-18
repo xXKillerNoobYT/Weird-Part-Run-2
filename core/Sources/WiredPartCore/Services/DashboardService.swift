@@ -314,7 +314,7 @@ public final class DashboardService: Sendable {
     /// and today's activity counts (orders created, items received, returns filed).
     public func getDailyReport() throws -> DailyReport {
         let pendingJPOs = try safeCount(
-            sql: "SELECT COUNT(*) FROM jpos WHERE status = 'submitted' AND deleted_at IS NULL"
+            sql: "SELECT COUNT(*) FROM job_parts_orders WHERE status = 'submitted' AND deleted_at IS NULL"
         )
 
         let pendingPOs = try safeCount(

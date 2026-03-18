@@ -34,6 +34,7 @@ public final class OrdersService: Sendable {
     /// A JPO row for list views with summary counts.
     public struct JPOListItem: Sendable, Identifiable {
         public let id: Int64
+        public let jobId: Int64
         public let jobName: String
         public let requestedByName: String
         public let status: String
@@ -42,10 +43,11 @@ public final class OrdersService: Sendable {
         public let createdAt: String?
 
         public init(
-            id: Int64, jobName: String, requestedByName: String,
+            id: Int64, jobId: Int64 = 0, jobName: String, requestedByName: String,
             status: String, priority: String, lineCount: Int, createdAt: String?
         ) {
             self.id = id
+            self.jobId = jobId
             self.jobName = jobName
             self.requestedByName = requestedByName
             self.status = status
@@ -317,12 +319,12 @@ public final class OrdersService: Sendable {
                 args.append(limit)
 
                 let sql = """
-                    SELECT jp.id, jp.status, jp.priority, jp.created_at,
+                    SELECT jp.id, jp.job_id, jp.status, jp.priority, jp.created_at,
                            COALESCE(j.job_name, 'Unknown Job') AS job_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS requested_by_name,
-                           COALESCE((SELECT COUNT(*) FROM jpo_lines jl
+                           COALESCE((SELECT COUNT(*) FROM jpo_line_items jl
                                      WHERE jl.jpo_id = jp.id AND jl.deleted_at IS NULL), 0) AS line_count
-                    FROM jpos jp
+                    FROM job_parts_orders jp
                     LEFT JOIN jobs j ON j.id = jp.job_id
                     LEFT JOIN users u ON u.id = jp.requested_by
                     WHERE \(whereClauses.joined(separator: " AND "))
@@ -334,6 +336,7 @@ public final class OrdersService: Sendable {
                 return rows.map { row in
                     JPOListItem(
                         id: row["id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
                         jobName: row["job_name"] ?? "Unknown Job",
                         requestedByName: row["requested_by_name"] ?? "Unknown",
                         status: row["status"] ?? "draft",
@@ -357,7 +360,7 @@ public final class OrdersService: Sendable {
                        COALESCE(j.job_name, 'Unknown Job') AS job_name,
                        COALESCE(u_req.display_name, u_req.email, 'Unknown') AS requested_by_name,
                        COALESCE(u_app.display_name, u_app.email) AS approved_by_name
-                FROM jpos jp
+                FROM job_parts_orders jp
                 LEFT JOIN jobs j ON j.id = jp.job_id
                 LEFT JOIN users u_req ON u_req.id = jp.requested_by
                 LEFT JOIN users u_app ON u_app.id = jp.approved_by
@@ -371,7 +374,7 @@ public final class OrdersService: Sendable {
             let linesSql = """
                 SELECT jl.*,
                        p.name AS part_name
-                FROM jpo_lines jl
+                FROM jpo_line_items jl
                 LEFT JOIN parts p ON p.id = jl.part_id
                 WHERE jl.jpo_id = ? AND jl.deleted_at IS NULL
                 ORDER BY jl.created_at ASC
@@ -383,9 +386,9 @@ public final class OrdersService: Sendable {
                     jpoId: lr["jpo_id"] ?? 0,
                     partId: lr["part_id"] as Int64?,
                     partName: lr["part_name"] as String?,
-                    description: lr["description"] as String?,
-                    quantity: lr["quantity"] ?? 0,
-                    unitPrice: lr["unit_price"] as Double?,
+                    description: nil,
+                    quantity: lr["qty_requested"] ?? 0,
+                    unitPrice: nil,
                     notes: lr["notes"] as String?,
                     priority: lr["priority"] ?? "normal",
                     createdAt: lr["created_at"] as String?
@@ -425,7 +428,7 @@ public final class OrdersService: Sendable {
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
-                    INSERT INTO jpos
+                    INSERT INTO job_parts_orders
                     (job_id, requested_by, status, priority, notes,
                      created_at, updated_at)
                     VALUES (?, ?, 'draft', ?, ?, datetime('now'), datetime('now'))
@@ -442,7 +445,7 @@ public final class OrdersService: Sendable {
             // Verify the JPO exists
             guard let row = try Row.fetchOne(
                 dbConn,
-                sql: "SELECT id, status FROM jpos WHERE id = ? AND deleted_at IS NULL",
+                sql: "SELECT id, status FROM job_parts_orders WHERE id = ? AND deleted_at IS NULL",
                 arguments: [id]
             ) else {
                 throw OrdersError.jpoNotFound(id)
@@ -453,22 +456,26 @@ public final class OrdersService: Sendable {
             // Update the JPO status
             try dbConn.execute(
                 sql: """
-                    UPDATE jpos
+                    UPDATE job_parts_orders
                     SET status = ?, updated_at = datetime('now')
                     WHERE id = ?
                     """,
                 arguments: [status, id]
             )
 
-            // Record status transition in history
-            try dbConn.execute(
-                sql: """
-                    INSERT INTO status_history
-                    (entity_type, entity_id, old_status, new_status, created_at)
-                    VALUES ('jpo', ?, ?, ?, datetime('now'))
-                    """,
-                arguments: [id, oldStatus, status]
-            )
+            // Record status transition in history (best-effort — table may not exist yet)
+            do {
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO status_history
+                        (entity_type, entity_id, old_status, new_status, created_at)
+                        VALUES ('jpo', ?, ?, ?, datetime('now'))
+                        """,
+                    arguments: [id, oldStatus, status]
+                )
+            } catch {
+                // status_history table may not exist; status update still succeeds
+            }
         }
     }
 
@@ -496,7 +503,7 @@ public final class OrdersService: Sendable {
                 let sql = """
                     SELECT po.id, po.po_number, po.status, po.total_cost, po.order_date,
                            COALESCE(s.name, 'Unknown Supplier') AS supplier_name,
-                           COALESCE((SELECT COUNT(*) FROM po_lines pl
+                           COALESCE((SELECT COUNT(*) FROM po_line_items pl
                                      WHERE pl.po_id = po.id AND pl.deleted_at IS NULL), 0) AS line_count
                     FROM purchase_orders po
                     LEFT JOIN suppliers s ON s.id = po.supplier_id
@@ -544,7 +551,7 @@ public final class OrdersService: Sendable {
             let linesSql = """
                 SELECT pl.*,
                        p.name AS part_name
-                FROM po_lines pl
+                FROM po_line_items pl
                 LEFT JOIN parts p ON p.id = pl.part_id
                 WHERE pl.po_id = ? AND pl.deleted_at IS NULL
                 ORDER BY pl.created_at ASC
@@ -558,9 +565,9 @@ public final class OrdersService: Sendable {
                     partId: lr["part_id"] as Int64?,
                     partName: lr["part_name"] as String?,
                     description: lr["description"] as String?,
-                    quantityOrdered: lr["quantity_ordered"] ?? 0,
-                    quantityReceived: lr["quantity_received"] ?? 0,
-                    unitPrice: lr["unit_price"] as Double?,
+                    quantityOrdered: lr["qty_ordered"] ?? 0,
+                    quantityReceived: lr["qty_received"] ?? 0,
+                    unitPrice: lr["unit_cost"] as Double?,
                     status: lr["status"] ?? "pending",
                     notes: lr["notes"] as String?,
                     createdAt: lr["created_at"] as String?
@@ -689,7 +696,7 @@ public final class OrdersService: Sendable {
     /// Get aggregate order statistics for the dashboard.
     public func getOrderStats() throws -> OrderStats {
         let pendingJPOs = try safeCount(
-            sql: "SELECT COUNT(*) FROM jpos WHERE status IN ('draft', 'pending', 'submitted') AND deleted_at IS NULL"
+            sql: "SELECT COUNT(*) FROM job_parts_orders WHERE status IN ('draft', 'pending', 'submitted') AND deleted_at IS NULL"
         )
 
         let activePOs = try safeCount(

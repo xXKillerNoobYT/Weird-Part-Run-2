@@ -14,6 +14,7 @@ struct IOSMaintenancePage: View {
     @State private var records: [FleetService.MaintenanceRow] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var loadError: String?
 
     var body: some View {
         maintenanceList
@@ -110,6 +111,7 @@ struct IOSMaintenancePage: View {
             records = try service.listMaintenanceRecords()
         } catch {
             print("[IOSMaintenancePage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

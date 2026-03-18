@@ -125,10 +125,11 @@ struct IOSToolKitsPage: View {
                 let sql = """
                     SELECT tk.id, tk.name,
                            tk.description,
-                           COALESCE(tk.status, 'complete') AS status,
+                           COALESCE(tk.status, 'available') AS status,
                            COUNT(tki.id) AS tool_count
                     FROM tool_kits tk
-                    LEFT JOIN tool_kit_items tki ON tki.kit_id = tk.id
+                    LEFT JOIN tool_kit_items tki ON tki.kit_id = tk.id AND tki.deleted_at IS NULL
+                    WHERE tk.deleted_at IS NULL
                     GROUP BY tk.id
                     ORDER BY tk.name
                     """

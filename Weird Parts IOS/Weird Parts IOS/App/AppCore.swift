@@ -14,6 +14,7 @@ final class AppCore: ObservableObject {
     @Published var isReady = false
     @Published var loadError: String?
     @Published var needsBootstrap = false
+    @Published var needsOnboarding = false
     @Published var currentUser: User?
     @Published var currentToken: String?
     @Published var permissions: [String] = []
@@ -69,10 +70,31 @@ final class AppCore: ObservableObject {
 
             // Check whether any users exist yet
             let users = try authService.getActiveUsers()
-            needsBootstrap = users.isEmpty
+            let hasProfile = try settingsService.hasBusinessProfile()
+
+            if users.isEmpty && !hasProfile {
+                // Brand-new device — show two-path onboarding
+                needsOnboarding = true
+                needsBootstrap = false
+            } else if users.isEmpty && hasProfile {
+                // Business profile exists but no admin yet (edge case)
+                needsBootstrap = true
+                needsOnboarding = false
+            } else {
+                needsBootstrap = false
+                needsOnboarding = false
+            }
             isReady = true
         } catch {
             loadError = error.localizedDescription
+        }
+    }
+
+    /// Retry bootstrap after a failure.
+    func retryBootstrap() {
+        loadError = nil
+        Task { @MainActor in
+            await bootstrap()
         }
     }
 
@@ -122,6 +144,15 @@ final class AppCore: ObservableObject {
         } catch {
             return error.localizedDescription
         }
+    }
+
+    /// Finish onboarding and transition to the main app (or login screen).
+    func completeOnboarding() {
+        needsOnboarding = false
+        // If seedFirstAdmin was called during onboarding, currentUser is set
+        // and the app will go straight to IOSMainView.
+        // If joining an existing business (sync path), currentUser is nil
+        // and the app will show LoginView.
     }
 
     /// Check if the current user has a specific permission.
@@ -179,9 +210,10 @@ final class AppCore: ObservableObject {
         currentToken = nil
         permissions = []
 
-        // 5. Re-bootstrap — will detect no users and set needsBootstrap = true
+        // 5. Re-bootstrap — will detect no users/profile and set needsOnboarding = true
         isReady = false
         needsBootstrap = false
+        needsOnboarding = false
         loadError = nil
         await bootstrap()
     }
@@ -191,7 +223,9 @@ final class AppCore: ObservableObject {
     /// Returns the path to the SQLite database file in the app's documents directory.
     /// On iOS this is the sandboxed Documents folder.
     static func databasePath() -> String {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            fatalError("Unable to locate Documents directory — sandboxing issue")
+        }
         let dir = docs.appendingPathComponent("WiredPart")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("wiredpart.sqlite").path

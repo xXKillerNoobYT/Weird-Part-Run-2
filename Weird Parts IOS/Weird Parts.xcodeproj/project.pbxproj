@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		08F2BF672F67ADE700944E97 /* core in Resources */ = {isa = PBXBuildFile; fileRef = 08F2BF662F67ADE700944E97 /* core */; };
 		08F2BF702F67B1C100944E97 /* WiredPartCore in Frameworks */ = {isa = PBXBuildFile; productRef = 08F2BF6F2F67B1C100944E97 /* WiredPartCore */; };
 		08F2BF732F67B1EE00944E97 /* WiredPartCore in Frameworks */ = {isa = PBXBuildFile; productRef = 08F2BF722F67B1EE00944E97 /* WiredPartCore */; };
 		08F2BF772F67B2CC00944E97 /* WiredPartCore in Frameworks */ = {isa = PBXBuildFile; productRef = 08F2BF762F67B2CC00944E97 /* WiredPartCore */; };
@@ -34,7 +33,6 @@
 		08F2BE322F67A53500944E97 /* Weird Parts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Weird Parts.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		08F2BE442F67A53700944E97 /* Weird PartsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Weird PartsTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		08F2BE4E2F67A53700944E97 /* Weird PartsUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Weird PartsUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		08F2BF662F67ADE700944E97 /* core */ = {isa = PBXFileReference; lastKnownFileType = folder; path = core; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -90,7 +88,6 @@
 				08F2BE472F67A53700944E97 /* Weird Parts IOSTests */,
 				08F2BE512F67A53700944E97 /* Weird Parts IOSUITests */,
 				08F2BE332F67A53500944E97 /* Products */,
-				08F2BF662F67ADE700944E97 /* core */,
 				08F2BF742F67B22700944E97 /* Frameworks */,
 			);
 			sourceTree = "<group>";
@@ -241,7 +238,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				08F2BF672F67ADE700944E97 /* core in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -525,6 +521,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -550,6 +547,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -573,6 +571,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -596,6 +595,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;

@@ -15,6 +15,7 @@ struct IOSWarehouseReturnsPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
+    @State private var loadError: String?
 
     private let statusOptions = ["all", "pending", "requested", "approved", "shipped", "completed"]
 
@@ -65,6 +66,8 @@ struct IOSWarehouseReturnsPage: View {
         if isLoading {
             ProgressView("Loading returns...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredReturns.isEmpty {
             ContentUnavailableView {
                 Label("No Returns", systemImage: "arrow.uturn.left.circle")
@@ -170,12 +173,13 @@ struct IOSWarehouseReturnsPage: View {
     private func loadData() {
         guard let service = appCore.ordersService else { return }
         isLoading = returns.isEmpty
+        loadError = nil
         do {
             returns = try service.listReturns(
                 status: statusFilter == "all" ? nil : statusFilter
             )
         } catch {
-            print("[IOSWarehouseReturnsPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

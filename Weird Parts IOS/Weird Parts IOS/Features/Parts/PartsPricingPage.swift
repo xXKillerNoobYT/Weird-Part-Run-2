@@ -62,9 +62,9 @@ struct PartsPricingPage: View {
             PricingEditSheet(row: row) { await loadData() }
         }
         #if os(iOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #elseif os(macOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #endif
         .task { await loadData() }
     }
@@ -194,7 +194,7 @@ struct PartsPricingPage: View {
     private func loadData() async {
         isLoading = true
         do {
-            let db = appCore.db!
+            guard let db = appCore.db else { return }
             let rows = try await db.writer.read { dbConnection -> [PricingRow] in
                 let results = try Row.fetchAll(dbConnection, sql: """
                     SELECT p.id, p.name, p.code, p.company_cost_price, p.company_markup_percent,
@@ -365,7 +365,7 @@ private struct PricingEditSheet: View {
         let cost = Double(costPrice) ?? row.costPrice
         let markup = Double(markupPercent) ?? row.markupPercent
         do {
-            let db = appCore.db!
+            guard let db = appCore.db else { return }
             let now = ISO8601DateFormatter().string(from: Date())
             try await db.writer.write { dbConnection in
                 try dbConnection.execute(
@@ -376,6 +376,8 @@ private struct PricingEditSheet: View {
                     arguments: [cost, markup, now, now, row.id]
                 )
             }
-        } catch {}
+        } catch {
+            print("[PricingEditSheet] Save error: \(error)")
+        }
     }
 }

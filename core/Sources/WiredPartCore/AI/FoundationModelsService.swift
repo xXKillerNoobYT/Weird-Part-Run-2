@@ -243,6 +243,27 @@ public actor FoundationModelsService {
         return await generate(instructions: instructions, prompt: prompt)
     }
 
+    // MARK: - Chat / Q&A
+
+    /// Respond to a general natural-language question about the business.
+    ///
+    /// - Parameter query: The user's question.
+    /// - Returns: An `AIResult` containing the assistant's response.
+    public func chat(query: String) async -> AIResult {
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+            return .fail("Empty query")
+        }
+
+        let instructions = domainInstructions + "\n\n" + """
+            Answer the user's question helpfully and concisely. \
+            If the question is about app navigation, explain where to find the feature. \
+            If you don't have enough information, say so honestly. \
+            Keep responses under 3 sentences when possible.
+            """
+
+        return await generate(instructions: instructions, prompt: query)
+    }
+
     // MARK: - Private Generation
 
     /// Core generation method that handles the FoundationModels API call.

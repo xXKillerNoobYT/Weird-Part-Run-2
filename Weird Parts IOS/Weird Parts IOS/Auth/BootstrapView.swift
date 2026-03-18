@@ -96,7 +96,7 @@ struct BootstrapView: View {
         #if os(iOS)
         .background(Color(.systemBackground))
         #elseif os(macOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #endif
     }
 

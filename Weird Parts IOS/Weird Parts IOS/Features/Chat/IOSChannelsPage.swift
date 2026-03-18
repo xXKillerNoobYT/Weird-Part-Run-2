@@ -14,6 +14,7 @@ struct IOSChannelsPage: View {
     @State private var channels: [ChatService.ChannelListItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var loadError: String?
 
     var body: some View {
         channelList
@@ -30,15 +31,25 @@ struct IOSChannelsPage: View {
         if isLoading {
             ProgressView("Loading channels...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredChannels.isEmpty {
-            ContentUnavailableView {
-                Label("No Channels", systemImage: "bubble.left.and.bubble.right")
-            } description: {
-                Text("You haven't joined any channels yet.")
-            }
+            EmptyStateView(
+                icon: "bubble.left.and.bubble.right",
+                title: "No Channels",
+                message: "You haven't joined any channels yet."
+            )
         } else {
             List(filteredChannels, id: \.id) { channel in
-                channelRow(channel)
+                NavigationLink {
+                    IOSMessageThreadView(
+                        channelId: channel.id,
+                        channelName: channel.name ?? channel.jobName ?? "Chat"
+                    )
+                    .environmentObject(appCore)
+                } label: {
+                    channelRow(channel)
+                }
             }
             #if os(iOS)
             .listStyle(.insetGrouped)
@@ -90,6 +101,8 @@ struct IOSChannelsPage: View {
             }
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(channel.name ?? channel.jobName ?? "Direct Message"), \(channel.channelType) channel, \(channel.memberCount) members")
     }
 
     // MARK: - Helpers
@@ -124,10 +137,11 @@ struct IOSChannelsPage: View {
         guard let service = appCore.chatService else { return }
         guard let userId = appCore.currentUser?.id else { return }
         isLoading = channels.isEmpty
+        loadError = nil
         do {
             channels = try service.listChannels(userId: userId)
         } catch {
-            print("[IOSChannelsPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

@@ -1,7 +1,7 @@
 import Foundation
 import WiredPartCore
 
-#if os(iOS)
+#if os(iOS) && !targetEnvironment(macCatalyst)
 import UIKit
 import Vision
 import VisionKit
@@ -90,6 +90,7 @@ final class IOSQRScanner: QRScannerAdapter {
 // MARK: - Scanner Delegate
 
 @available(iOS 16.0, *)
+@MainActor
 private class ScannerDelegate: NSObject, DataScannerViewControllerDelegate {
     private let continuation: AsyncStream<QRScanEvent>.Continuation?
     private var lastPayload: String?

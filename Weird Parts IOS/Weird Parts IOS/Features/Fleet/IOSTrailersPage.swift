@@ -14,6 +14,8 @@ struct IOSTrailersPage: View {
     @State private var trailers: [FleetService.TrailerListItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var showCreateTrailer = false
+    @State private var loadError: String?
 
     var body: some View {
         trailerList
@@ -21,6 +23,19 @@ struct IOSTrailersPage: View {
             .searchable(text: $searchText, prompt: "Search trailers...")
             .refreshable { loadData() }
             .task { loadData() }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showCreateTrailer = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .requiresPermission("manage_fleet")
+                }
+            }
+            .sheet(isPresented: $showCreateTrailer) {
+                IOSCreateTrailerSheet(onSaved: { loadData() })
+            }
     }
 
     // MARK: - Trailer List
@@ -38,7 +53,9 @@ struct IOSTrailersPage: View {
             }
         } else {
             List(filteredTrailers, id: \.id) { trailer in
-                trailerRow(trailer)
+                NavigationLink(destination: IOSTrailerDetailPage(trailer: trailer)) {
+                    trailerRow(trailer)
+                }
             }
             #if os(iOS)
             .listStyle(.insetGrouped)
@@ -127,6 +144,7 @@ struct IOSTrailersPage: View {
             trailers = try service.listTrailers()
         } catch {
             print("[IOSTrailersPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

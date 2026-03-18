@@ -15,6 +15,7 @@ struct IOSReturnsPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
+    @State private var loadError: String?
 
     private let statusOptions = ["all", "pending", "requested", "approved", "shipped", "completed", "cancelled"]
 
@@ -166,6 +167,7 @@ struct IOSReturnsPage: View {
             )
         } catch {
             print("[IOSReturnsPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

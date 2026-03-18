@@ -14,6 +14,7 @@ struct PDFSettingsPage: View {
     @State private var paymentTerms = "Net 30"
     @State private var deliveryNotes = ""
     @State private var saved = false
+    @State private var errorMessage: String?
 
     private let paymentOptions = ["Net 15", "Net 30", "Net 45", "Net 60", "Due on Receipt", "COD"]
 
@@ -67,6 +68,11 @@ struct PDFSettingsPage: View {
             }
         }
         .onAppear { loadPDFSettings() }
+        .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
     }
 
     private func loadPDFSettings() {
@@ -78,7 +84,9 @@ struct PDFSettingsPage: View {
             footerText = pdf.footerText
             paymentTerms = pdf.paymentTerms
             deliveryNotes = pdf.deliveryNotes
-        } catch {}
+        } catch {
+            print("[PDFSettingsPage] Load error: \(error)")
+        }
     }
 
     private func savePDFSettings() {
@@ -94,6 +102,8 @@ struct PDFSettingsPage: View {
             _ = try appCore.settingsService.updatePDFSettings(settings)
             saved = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
-        } catch {}
+        } catch {
+            errorMessage = "Failed to save: \(error.localizedDescription)"
+        }
     }
 }

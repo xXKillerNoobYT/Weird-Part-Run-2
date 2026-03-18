@@ -79,8 +79,8 @@ struct AuditLogPage: View {
                     .clipShape(Capsule())
             }
             HStack {
-                if let userName = entry.userName {
-                    Text(userName)
+                if let deviceId = entry.deviceId {
+                    Label(String(deviceId.prefix(12)), systemImage: "desktopcomputer")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -124,11 +124,10 @@ struct AuditLogPage: View {
         do {
             entries = try db.writer.read { dbConn in
                 let rows = try Row.fetchAll(dbConn, sql: """
-                    SELECT cl.id, cl.table_name, cl.operation, cl.changed_at,
-                           COALESCE(u.display_name, u.username) AS user_name
+                    SELECT cl.id, cl.table_name, cl.operation, cl.timestamp AS changed_at,
+                           cl.device_id
                     FROM _change_log cl
-                    LEFT JOIN users u ON u.id = cl.user_id
-                    ORDER BY cl.changed_at DESC
+                    ORDER BY cl.timestamp DESC
                     LIMIT ?
                 """, arguments: [limit])
                 return rows.map { row in
@@ -137,7 +136,7 @@ struct AuditLogPage: View {
                         entityType: row["table_name"] as? String ?? "unknown",
                         action: row["operation"] as? String ?? "unknown",
                         timestamp: row["changed_at"] as? String ?? "",
-                        userName: row["user_name"] as? String
+                        deviceId: row["device_id"] as? String
                     )
                 }
             }
@@ -159,6 +158,6 @@ struct AuditLogPage: View {
         let entityType: String
         let action: String
         let timestamp: String
-        let userName: String?
+        let deviceId: String?
     }
 }

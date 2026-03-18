@@ -15,12 +15,15 @@ struct IOSAuditPage: View {
     @State private var discrepancies: [WarehouseService.AuditDiscrepancy] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var loadError: String?
 
     var body: some View {
         VStack(spacing: 0) {
             if isLoading {
                 ProgressView("Loading audit data...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { loadData() }
             } else {
                 auditContent
             }
@@ -172,11 +175,12 @@ struct IOSAuditPage: View {
     private func loadData() {
         guard let service = appCore.warehouseService else { return }
         isLoading = summary == nil
+        loadError = nil
         do {
             summary = try service.getAuditSummary()
             discrepancies = try service.getAuditDiscrepancies()
         } catch {
-            print("[IOSAuditPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

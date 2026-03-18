@@ -662,7 +662,8 @@ public final class PartsService: Sendable {
         var record = PartColor(
             name: name,
             hexCode: hexCode,
-            sortOrder: sortOrder
+            sortOrder: sortOrder,
+            isActive: 1
         )
         try db.writer.write { dbConn in
             try record.insert(dbConn)
@@ -815,8 +816,8 @@ public final class PartsService: Sendable {
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
-                return rows.map { row in
-                    let part = try! Part(row: row)
+                return try rows.map { row in
+                    let part = try Part(row: row)
                     return PartWithDetails(
                         part: part,
                         categoryName: row["category_name"] as String?,
@@ -1082,8 +1083,8 @@ public final class PartsService: Sendable {
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
-                return rows.map { row in
-                    let brand = try! Brand(row: row)
+                return try rows.map { row in
+                    let brand = try Brand(row: row)
                     return BrandWithCount(brand: brand, partCount: row["part_count"] as Int)
                 }
             }
@@ -1170,8 +1171,8 @@ public final class PartsService: Sendable {
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
-                return rows.map { row in
-                    let supplier = try! Supplier(row: row)
+                return try rows.map { row in
+                    let supplier = try Supplier(row: row)
                     return SupplierWithCount(supplier: supplier, brandCount: row["brand_count"] as Int)
                 }
             }

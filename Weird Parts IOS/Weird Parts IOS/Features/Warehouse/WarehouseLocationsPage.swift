@@ -31,9 +31,9 @@ struct WarehouseLocationsPage: View {
             LocationDetailSheet(group: group)
         }
         #if os(iOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #elseif os(macOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #endif
         .task { await loadData() }
     }

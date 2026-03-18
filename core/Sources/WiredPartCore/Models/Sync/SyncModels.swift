@@ -78,54 +78,46 @@ public struct ConflictLogEntry: Codable, FetchableRecord, MutablePersistableReco
 
 // MARK: - VectorClockEntry
 
-public struct VectorClockEntry: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+public struct VectorClockEntry: Codable, FetchableRecord, PersistableRecord, Sendable {
     public static let databaseTableName = "_vector_clock"
 
-    public var id: Int64?
     public var deviceId: String
     public var peerId: String
     public var lastSequence: Int64
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id
         case deviceId = "device_id"
         case peerId = "peer_id"
         case lastSequence = "last_sequence"
         case updatedAt = "updated_at"
     }
-
-    public mutating func didInsert(_ inserted: InsertionSuccess) {
-        id = inserted.rowID
-    }
 }
 
 // MARK: - DeviceRegistryEntry
 
-public struct DeviceRegistryEntry: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+public struct DeviceRegistryEntry: Codable, FetchableRecord, PersistableRecord, Sendable {
     public static let databaseTableName = "_device_registry"
 
-    public var id: Int64?
     public var deviceId: String
     public var deviceName: String
     public var platform: String?
+    public var role: String?
+    public var certificate: String?
     public var lastSeenAt: String?
     public var lastSyncAt: String?
     public var isTrusted: Int
+    public var isDeactivated: Int
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id
         case deviceId = "device_id"
         case deviceName = "device_name"
-        case platform
+        case platform, role, certificate
         case lastSeenAt = "last_seen_at"
         case lastSyncAt = "last_sync_at"
         case isTrusted = "is_trusted"
+        case isDeactivated = "is_deactivated"
         case createdAt = "created_at"
-    }
-
-    public mutating func didInsert(_ inserted: InsertionSuccess) {
-        id = inserted.rowID
     }
 }

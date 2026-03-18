@@ -22,14 +22,14 @@ struct IOSWeeklyAvailabilityPage: View {
 
     private var weekStart: Date {
         let cal = Calendar.current
-        let today = cal.date(byAdding: .weekOfYear, value: weekOffset, to: Date())!
-        return cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today))!
+        let today = cal.date(byAdding: .weekOfYear, value: weekOffset, to: Date()) ?? Date()
+        return cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: today)) ?? today
     }
 
     private var weekLabel: String {
         let f = DateFormatter()
         f.dateFormat = "MMM d"
-        let end = Calendar.current.date(byAdding: .day, value: 6, to: weekStart)!
+        let end = Calendar.current.date(byAdding: .day, value: 6, to: weekStart) ?? weekStart
         return "\(f.string(from: weekStart)) - \(f.string(from: end))"
     }
 
@@ -135,7 +135,7 @@ struct IOSWeeklyAvailabilityPage: View {
 
             ForEach(0..<7, id: \.self) { dayIndex in
                 Circle()
-                    .fill(row.days[dayIndex] ? Color.green : Color.red.opacity(0.3))
+                    .fill(dayIndex < row.days.count && row.days[dayIndex] ? Color.green : Color.red.opacity(0.3))
                     .frame(width: 14, height: 14)
                     .frame(width: 30)
             }
@@ -157,23 +157,24 @@ struct IOSWeeklyAvailabilityPage: View {
         guard let db = appCore.db else { return }
         isLoading = rows.isEmpty
         do {
-            let weekDates = (0..<7).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: weekStart) }
+            let weekDates = (0..<7).map { Calendar.current.date(byAdding: .day, value: $0, to: weekStart) ?? weekStart }
             let f = DateFormatter()
             f.dateFormat = "yyyy-MM-dd"
             let dateStrings = weekDates.map { f.string(from: $0) }
 
             rows = try db.writer.read { db in
-                let empSql = "SELECT id, COALESCE(first_name || ' ' || last_name, first_name) AS name FROM employees WHERE is_active = 1 ORDER BY name"
+                let empSql = "SELECT id, COALESCE(display_name, email) AS name FROM users WHERE deleted_at IS NULL ORDER BY name"
                 let employees = try Row.fetchAll(db, sql: empSql)
 
                 return try employees.map { emp in
                     let empId: Int64 = emp["id"]
                     let name: String = emp["name"]
 
+                    // Check schedule_exceptions for days off (absence = not available)
                     let days = try dateStrings.map { dateStr -> Bool in
-                        let countSql = "SELECT COUNT(*) FROM employee_availability WHERE employee_id = ? AND date = ? AND is_available = 1"
+                        let countSql = "SELECT COUNT(*) FROM schedule_exceptions WHERE user_id = ? AND exception_date = ? AND deleted_at IS NULL"
                         let count = try Int.fetchOne(db, sql: countSql, arguments: [empId, dateStr]) ?? 0
-                        return count > 0
+                        return count == 0  // Available if no exception for that date
                     }
 
                     return AvailabilityRow(id: empId, employeeName: name, days: days)

@@ -12,6 +12,7 @@ struct SyncPage: View {
     @State private var syncInterval = "30"
     @State private var autoSync = true
     @State private var saved = false
+    @State private var errorMessage: String?
 
     var body: some View {
         Form {
@@ -75,6 +76,11 @@ struct SyncPage: View {
             }
         }
         .onAppear { loadSettings() }
+        .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
     }
 
     private func loadSettings() {
@@ -83,7 +89,9 @@ struct SyncPage: View {
             shopServerAddress = map["shop_server_address"] ?? ""
             syncInterval = map["sync_interval"] ?? "30"
             autoSync = map["auto_sync"] != "false"
-        } catch {}
+        } catch {
+            print("[SyncPage] Load error: \(error)")
+        }
     }
 
     private func saveSettings() {
@@ -95,6 +103,8 @@ struct SyncPage: View {
             ], category: "sync")
             saved = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
-        } catch {}
+        } catch {
+            errorMessage = "Failed to save: \(error.localizedDescription)"
+        }
     }
 }

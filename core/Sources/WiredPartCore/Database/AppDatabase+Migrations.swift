@@ -33,6 +33,9 @@ extension AppDatabase {
         registerMigration016CompanionsAlternatives(&migrator)
         registerMigration017PermissionBackfill(&migrator)
         registerMigration018AICapabilities(&migrator)
+        registerMigration019BusinessProfiles(&migrator)
+        registerMigration020WarehouseLocationsStockEntries(&migrator)
+        registerMigration021MissingTables(&migrator)
     }
 }
 
@@ -2160,6 +2163,424 @@ extension AppDatabase {
                 t.column("status", .text).notNull()
                 t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
             }
+        }
+    }
+}
+
+// MARK: - 019: Business Profiles
+
+extension AppDatabase {
+    private static func registerMigration019BusinessProfiles(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("019_business_profiles") { db in
+
+            // Business / company profile — one row per company on this device
+            try db.create(table: "business_profiles") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("company_name", .text).notNull()
+                t.column("industry", .text)
+                t.column("address", .text)
+                t.column("city", .text)
+                t.column("state", .text)
+                t.column("zip", .text)
+                t.column("phone", .text)
+                t.column("email", .text)
+                t.column("website", .text)
+                t.column("logo_data", .blob)
+                t.column("timezone", .text).defaults(to: "America/Chicago")
+                t.column("is_active", .integer).notNull().defaults(to: 1)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+        }
+    }
+}
+
+// MARK: - 020: Warehouse Locations & Stock Entries
+
+extension AppDatabase {
+    private static func registerMigration020WarehouseLocationsStockEntries(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("020_warehouse_locations_stock_entries") { db in
+
+            // Warehouse locations — physical warehouses, shops, storage yards
+            try db.create(table: "warehouse_locations") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("address", .text)
+                t.column("location_type", .text).notNull().defaults(to: "warehouse")
+                t.column("is_active", .integer).notNull().defaults(to: 1)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+            }
+
+            // Stock entries — per-part, per-warehouse quantity tracking
+            try db.create(table: "stock_entries") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("part_id", .integer).notNull()
+                    .references("parts", onDelete: .cascade)
+                t.column("warehouse_id", .integer).notNull()
+                    .references("warehouse_locations", onDelete: .cascade)
+                t.column("quantity", .integer).notNull().defaults(to: 0)
+                t.column("bin_location", .text)
+                t.column("last_counted_at", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_stock_entries_part", on: "stock_entries", columns: ["part_id"])
+            try db.create(index: "idx_stock_entries_warehouse", on: "stock_entries", columns: ["warehouse_id"])
+            try db.create(index: "idx_stock_entries_part_wh", on: "stock_entries", columns: ["part_id", "warehouse_id"])
+        }
+    }
+}
+
+// MARK: - 021: Missing Tables (Fleet, Scheduling, Orders, Costs, Chat)
+
+extension AppDatabase {
+    private static func registerMigration021MissingTables(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("021_missing_tables") { db in
+
+            // ── Fleet: Vehicle Delivery Items ──
+            try db.create(table: "vehicle_delivery_items") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("vehicle_id", .integer).notNull().references("vehicles", onDelete: .cascade)
+                t.column("job_id", .integer).references("jobs")
+                t.column("po_id", .integer).references("purchase_orders")
+                t.column("description", .text)
+                t.column("quantity", .integer).notNull().defaults(to: 1)
+                t.column("status", .text).notNull().defaults(to: "pending")
+                t.column("loaded_by", .integer).references("users")
+                t.column("delivered_by", .integer).references("users")
+                t.column("loaded_at", .text)
+                t.column("delivered_at", .text)
+                t.column("notes", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_vdi_vehicle", on: "vehicle_delivery_items", columns: ["vehicle_id"])
+
+            // ── Fleet: Vehicle Maintenance Types ──
+            try db.create(table: "maintenance_types") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("description", .text)
+                t.column("is_active", .integer).notNull().defaults(to: 1)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+
+            // ── Fleet: Vehicle Maintenance Schedules ──
+            try db.create(table: "maintenance_schedules") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("vehicle_id", .integer).notNull().references("vehicles", onDelete: .cascade)
+                t.column("maintenance_type_id", .integer).notNull().references("maintenance_types")
+                t.column("interval_miles", .integer)
+                t.column("interval_days", .integer)
+                t.column("last_performed_at", .text)
+                t.column("last_performed_miles", .integer)
+                t.column("next_due_date", .text)
+                t.column("next_due_miles", .integer)
+                t.column("notes", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_maint_sched_vehicle", on: "maintenance_schedules", columns: ["vehicle_id"])
+
+            // ── Fleet: Vehicle Maintenance Records ──
+            try db.create(table: "maintenance_records") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("vehicle_id", .integer).notNull().references("vehicles", onDelete: .cascade)
+                t.column("maintenance_type_id", .integer).references("maintenance_types")
+                t.column("performed_at", .text).notNull()
+                t.column("performed_by", .integer).references("users")
+                t.column("odometer_reading", .integer)
+                t.column("cost", .double)
+                t.column("vendor", .text)
+                t.column("description", .text)
+                t.column("notes", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_maint_rec_vehicle", on: "maintenance_records", columns: ["vehicle_id"])
+
+            // ── Fleet: Mileage Logs ──
+            try db.create(table: "mileage_logs") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("vehicle_id", .integer).notNull().references("vehicles", onDelete: .cascade)
+                t.column("user_id", .integer).notNull().references("users")
+                t.column("log_date", .text).notNull()
+                t.column("start_odometer", .integer)
+                t.column("end_odometer", .integer)
+                t.column("total_miles", .double)
+                t.column("purpose", .text)
+                t.column("notes", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_mileage_vehicle", on: "mileage_logs", columns: ["vehicle_id"])
+            try db.create(index: "idx_mileage_user", on: "mileage_logs", columns: ["user_id"])
+
+            // ── Fleet: Trip Legs ──
+            try db.create(table: "trip_legs") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("mileage_log_id", .integer).notNull().references("mileage_logs", onDelete: .cascade)
+                t.column("leg_type", .text).notNull().defaults(to: "job")
+                t.column("from_location", .text)
+                t.column("to_location", .text)
+                t.column("miles", .double)
+                t.column("job_id", .integer).references("jobs")
+                t.column("notes", .text)
+                t.column("sort_order", .integer).notNull().defaults(to: 0)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_trip_legs_log", on: "trip_legs", columns: ["mileage_log_id"])
+
+            // ── Fleet: Mileage Reimbursements ──
+            try db.create(table: "mileage_reimbursements") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("user_id", .integer).notNull().references("users")
+                t.column("mileage_log_id", .integer).references("mileage_logs")
+                t.column("miles", .double).notNull()
+                t.column("rate_per_mile", .double).notNull()
+                t.column("amount", .double).notNull()
+                t.column("status", .text).notNull().defaults(to: "pending")
+                t.column("approved_by", .integer).references("users")
+                t.column("approved_at", .text)
+                t.column("notes", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_reimburse_user", on: "mileage_reimbursements", columns: ["user_id"])
+
+            // ── Fleet: Fuel Logs ──
+            try db.create(table: "fuel_logs") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("vehicle_id", .integer).notNull().references("vehicles", onDelete: .cascade)
+                t.column("user_id", .integer).notNull().references("users")
+                t.column("log_date", .text).notNull()
+                t.column("gallons", .double)
+                t.column("cost_per_gallon", .double)
+                t.column("total_cost", .double)
+                t.column("odometer_reading", .integer)
+                t.column("station", .text)
+                t.column("notes", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_fuel_vehicle", on: "fuel_logs", columns: ["vehicle_id"])
+
+            // ── Fleet: Trailer Stock Templates ──
+            try db.create(table: "trailer_stock_templates") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("trailer_id", .integer).notNull().references("job_trailers", onDelete: .cascade)
+                t.column("name", .text).notNull()
+                t.column("is_active", .integer).notNull().defaults(to: 1)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_tst_trailer", on: "trailer_stock_templates", columns: ["trailer_id"])
+
+            // ── Fleet: Trailer Stock Template Lines ──
+            try db.create(table: "trailer_stock_template_lines") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("template_id", .integer).notNull().references("trailer_stock_templates", onDelete: .cascade)
+                t.column("part_id", .integer).notNull().references("parts")
+                t.column("target_qty", .integer).notNull().defaults(to: 1)
+                t.column("sort_order", .integer).notNull().defaults(to: 0)
+                t.column("deleted_at", .text)
+            }
+            try db.create(index: "idx_tstl_template", on: "trailer_stock_template_lines", columns: ["template_id"])
+
+            // ── Scheduling: Dispatch Templates ──
+            try db.create(table: "dispatch_templates") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("description", .text)
+                t.column("is_active", .integer).notNull().defaults(to: 1)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+            }
+
+            // ── Scheduling: Dispatch Template Members ──
+            try db.create(table: "dispatch_template_members") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("template_id", .integer).notNull().references("dispatch_templates", onDelete: .cascade)
+                t.column("user_id", .integer).notNull().references("users")
+                t.column("role", .text).notNull().defaults(to: "worker")
+                t.column("sort_order", .integer).notNull().defaults(to: 0)
+                t.column("deleted_at", .text)
+            }
+            try db.create(index: "idx_dtm_template", on: "dispatch_template_members", columns: ["template_id"])
+
+            // ── Scheduling: Shift Patterns ──
+            try db.create(table: "shift_patterns") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("description", .text)
+                t.column("rotation_days", .integer).notNull().defaults(to: 7)
+                t.column("is_active", .integer).notNull().defaults(to: 1)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+            }
+
+            // ── Scheduling: Shift Pattern Days ──
+            try db.create(table: "shift_pattern_days") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("pattern_id", .integer).notNull().references("shift_patterns", onDelete: .cascade)
+                t.column("day_offset", .integer).notNull()
+                t.column("start_time", .text)
+                t.column("end_time", .text)
+                t.column("is_off", .integer).notNull().defaults(to: 0)
+                t.column("deleted_at", .text)
+            }
+            try db.create(index: "idx_spd_pattern", on: "shift_pattern_days", columns: ["pattern_id"])
+
+            // ── Orders: PO-JPO Links ──
+            try db.create(table: "po_jpo_links") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("po_id", .integer).notNull().references("purchase_orders", onDelete: .cascade)
+                t.column("jpo_id", .integer).notNull().references("job_parts_orders", onDelete: .cascade)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.uniqueKey(["po_id", "jpo_id"])
+            }
+
+            // ── Orders: Staging Zones ──
+            try db.create(table: "staging_zones") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("zone_type", .text).notNull().defaults(to: "receiving")
+                t.column("warehouse_id", .integer).references("warehouse_locations")
+                t.column("description", .text)
+                t.column("is_active", .integer).notNull().defaults(to: 1)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+
+            // ── Orders: Staging Items ──
+            try db.create(table: "staging_items") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("staging_zone_id", .integer).notNull().references("staging_zones", onDelete: .cascade)
+                t.column("part_id", .integer).references("parts")
+                t.column("po_line_id", .integer).references("po_line_items")
+                t.column("job_id", .integer).references("jobs")
+                t.column("quantity", .integer).notNull().defaults(to: 1)
+                t.column("status", .text).notNull().defaults(to: "staged")
+                t.column("notes", .text)
+                t.column("staged_by", .integer).references("users")
+                t.column("staged_at", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_staging_zone", on: "staging_items", columns: ["staging_zone_id"])
+
+            // ── Costs: PTO Balances ──
+            try db.create(table: "pto_balances") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("user_id", .integer).notNull().references("users")
+                t.column("policy_id", .integer).notNull().references("pto_policies")
+                t.column("balance", .double).notNull().defaults(to: 0)
+                t.column("used", .double).notNull().defaults(to: 0)
+                t.column("year", .integer).notNull()
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+                t.uniqueKey(["user_id", "policy_id", "year"])
+            }
+
+            // ── Costs: Supplier Contact Ratings ──
+            try db.create(table: "supplier_contact_ratings") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("supplier_id", .integer).notNull().references("suppliers", onDelete: .cascade)
+                t.column("contact_type", .text).notNull()
+                t.column("rater_id", .integer).notNull().references("users")
+                t.column("category", .text).notNull()
+                t.column("rating", .integer).notNull()
+                t.column("notes", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_scr_supplier", on: "supplier_contact_ratings", columns: ["supplier_id"])
+
+            // ── Costs: PO Conversations ──
+            try db.create(table: "po_conversations") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("po_id", .integer).notNull().references("purchase_orders", onDelete: .cascade)
+                t.column("entry_type", .text).notNull().defaults(to: "note")
+                t.column("author_id", .integer).notNull().references("users")
+                t.column("content", .text).notNull()
+                t.column("is_internal", .integer).notNull().defaults(to: 1)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_po_conv_po", on: "po_conversations", columns: ["po_id"])
+
+            // ── Costs: PO Groups ──
+            try db.create(table: "po_groups") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("description", .text)
+                t.column("created_by", .integer).notNull().references("users")
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+            }
+
+            // ── Costs: PO Group Members ──
+            try db.create(table: "po_group_members") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("group_id", .integer).notNull().references("po_groups", onDelete: .cascade)
+                t.column("po_id", .integer).notNull().references("purchase_orders", onDelete: .cascade)
+                t.column("added_at", .text).defaults(sql: "(datetime('now'))")
+                t.uniqueKey(["group_id", "po_id"])
+            }
+
+            // ── Costs: Category Supplier Preferences ──
+            try db.create(table: "category_supplier_preferences") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("category_id", .integer).notNull().references("part_categories", onDelete: .cascade)
+                t.column("supplier_id", .integer).notNull().references("suppliers", onDelete: .cascade)
+                t.column("priority", .integer).notNull().defaults(to: 0)
+                t.column("notes", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.uniqueKey(["category_id", "supplier_id"])
+            }
+
+            // ── Costs: Job Supplier Preferences ──
+            try db.create(table: "job_supplier_preferences") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("job_id", .integer).notNull().references("jobs", onDelete: .cascade)
+                t.column("supplier_id", .integer).notNull().references("suppliers", onDelete: .cascade)
+                t.column("is_excluded", .integer).notNull().defaults(to: 0)
+                t.column("priority", .integer).notNull().defaults(to: 0)
+                t.column("notes", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.uniqueKey(["job_id", "supplier_id"])
+            }
+
+            // ── Foundation: Add missing columns to notification_preferences ──
+            try db.alter(table: "notification_preferences") { t in
+                t.add(column: "sound", .text)
+                t.add(column: "created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+
+            // ── Chat: QA Escalations ──
+            try db.create(table: "qa_escalations") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("thread_id", .integer).notNull().references("qa_threads", onDelete: .cascade)
+                t.column("from_level", .text).notNull()
+                t.column("to_level", .text).notNull()
+                t.column("escalated_by", .integer).notNull().references("users")
+                t.column("reason", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_qa_esc_thread", on: "qa_escalations", columns: ["thread_id"])
         }
     }
 }

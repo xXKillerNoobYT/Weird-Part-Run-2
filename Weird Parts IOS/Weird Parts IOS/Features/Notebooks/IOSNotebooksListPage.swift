@@ -15,6 +15,7 @@ struct IOSNotebooksListPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var typeFilter = "all"
+    @State private var loadError: String?
 
     private let typeOptions = ["all", "general", "job", "daily_report", "checklist"]
 
@@ -65,6 +66,8 @@ struct IOSNotebooksListPage: View {
         if isLoading {
             ProgressView("Loading notebooks...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredNotebooks.isEmpty {
             ContentUnavailableView {
                 Label("No Notebooks", systemImage: "book.closed")
@@ -183,12 +186,13 @@ struct IOSNotebooksListPage: View {
     private func loadData() {
         guard let service = appCore.notebooksService else { return }
         isLoading = notebooks.isEmpty
+        loadError = nil
         do {
             notebooks = try service.listNotebooks(
                 notebookType: typeFilter == "all" ? nil : typeFilter
             )
         } catch {
-            print("[IOSNotebooksListPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

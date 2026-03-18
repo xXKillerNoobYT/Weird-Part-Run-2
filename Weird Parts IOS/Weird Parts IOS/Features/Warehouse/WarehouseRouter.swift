@@ -31,6 +31,14 @@ struct WarehouseRouter: View {
             IOSWarehouseReturnsPage()
         case "warehouse-audit":
             IOSAuditPage()
+        case "warehouse-inventory":
+            IOSInventoryGridPage()
+        case "warehouse-tools":
+            IOSWarehouseToolsPage()
+        case "warehouse-network":
+            IOSWarehouseNetworkPage()
+        case "warehouse-settings":
+            IOSWarehouseSettingsPage()
         default:
             Text("Unknown warehouse page: \(tabId)")
                 .foregroundStyle(.secondary)

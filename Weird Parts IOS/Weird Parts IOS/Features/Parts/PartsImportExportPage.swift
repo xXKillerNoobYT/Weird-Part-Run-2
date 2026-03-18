@@ -59,9 +59,9 @@ struct PartsImportExportPage: View {
             }
         }
         #if os(iOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #elseif os(macOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #endif
         .task { await loadStats() }
     }
@@ -313,7 +313,7 @@ struct PartsImportExportPage: View {
     private func loadStats() async {
         isLoading = true
         do {
-            let db = appCore.db!
+            guard let db = appCore.db else { return }
             let newStats = try await db.writer.read { dbConnection -> ImportExportStats in
                 let parts = try Int.fetchOne(dbConnection, sql: "SELECT COUNT(*) FROM parts WHERE deleted_at IS NULL") ?? 0
                 let cats = try Int.fetchOne(dbConnection, sql: "SELECT COUNT(*) FROM part_categories WHERE deleted_at IS NULL") ?? 0
@@ -340,7 +340,7 @@ struct PartsImportExportPage: View {
     private func exportParts() async {
         exportStatus = .exporting
         do {
-            let db = appCore.db!
+            guard let db = appCore.db else { return }
             let csvString = try await db.writer.read { dbConnection -> String in
                 let rows = try Row.fetchAll(dbConnection, sql: """
                     SELECT p.name, p.code, pc.name AS category, b.name AS brand,
@@ -365,14 +365,17 @@ struct PartsImportExportPage: View {
                     let desc: String? = row["description"]
                     let uom: String? = row["unit_of_measure"]
 
-                    csv += "\(csvEscape(name)),\(csvEscape(code ?? "")),\(csvEscape(category ?? "")),\(csvEscape(brand ?? "")),"
-                    csv += "\(cost),\(markup),\(csvEscape(ptype)),\(csvEscape(desc ?? "")),\(csvEscape(uom ?? ""))\n"
+                    csv += "\(csvEscapeValue(name)),\(csvEscapeValue(code ?? "")),\(csvEscapeValue(category ?? "")),\(csvEscapeValue(brand ?? "")),"
+                    csv += "\(cost),\(markup),\(csvEscapeValue(ptype)),\(csvEscapeValue(desc ?? "")),\(csvEscapeValue(uom ?? ""))\n"
                 }
                 return csv
             }
 
             // Write to documents directory
-            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+                await MainActor.run { exportStatus = .error("Cannot access Documents directory") }
+                return
+            }
             let filename = "parts_export_\(exportDateString()).csv"
             let fileURL = docs.appendingPathComponent(filename)
             try csvString.write(to: fileURL, atomically: true, encoding: .utf8)
@@ -419,7 +422,7 @@ struct PartsImportExportPage: View {
             let markupIdx = headers.firstIndex(of: "markup_percent")
             let typeIdx = headers.firstIndex(of: "part_type")
 
-            let db = appCore.db!
+            guard let db = appCore.db else { return }
             var imported = 0
 
             for lineIdx in 1..<lines.count {
@@ -493,13 +496,6 @@ struct PartsImportExportPage: View {
 
     // MARK: - CSV Helpers
 
-    private func csvEscape(_ value: String) -> String {
-        if value.contains(",") || value.contains("\"") || value.contains("\n") {
-            return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
-        }
-        return value
-    }
-
     private func parseCSVLine(_ line: String) -> [String] {
         var fields: [String] = []
         var current = ""
@@ -518,6 +514,15 @@ struct PartsImportExportPage: View {
         fields.append(current)
         return fields
     }
+}
+
+// MARK: - CSV Escape (nonisolated free function for Sendable safety)
+
+nonisolated private func csvEscapeValue(_ value: String) -> String {
+    if value.contains(",") || value.contains("\"") || value.contains("\n") {
+        return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+    return value
 }
 
 // MARK: - Free function for export date

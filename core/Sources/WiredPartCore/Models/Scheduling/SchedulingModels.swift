@@ -4,25 +4,28 @@ import GRDB
 // MARK: - DefaultSchedule
 
 public struct DefaultSchedule: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
-    public static let databaseTableName = "default_schedules"
+    public static let databaseTableName = "employee_default_schedules"
     public var id: Int64?
     public var userId: Int64
     public var dayOfWeek: Int
     public var startTime: String?
     public var endTime: String?
-    public var isOff: Int
+    public var lunchStart: String?
+    public var lunchEnd: String?
+    public var isWorkingDay: Int
+    public var notes: String?
     public var deletedAt: String?
-    public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id
+        case id, notes
         case userId = "user_id"
         case dayOfWeek = "day_of_week"
         case startTime = "start_time"
         case endTime = "end_time"
-        case isOff = "is_off"
+        case lunchStart = "lunch_start"
+        case lunchEnd = "lunch_end"
+        case isWorkingDay = "is_working_day"
         case deletedAt = "deleted_at"
-        case createdAt = "created_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -38,24 +41,30 @@ public struct ScheduleException: Codable, FetchableRecord, MutablePersistableRec
     public var exceptionType: String
     public var startTime: String?
     public var endTime: String?
-    public var reason: String?
+    public var lunchStart: String?
+    public var lunchEnd: String?
+    public var isApproved: Int
     public var approvedBy: Int64?
-    public var status: String
+    public var approvedAt: String?
+    public var reason: String?
+    public var notes: String?
     public var deletedAt: String?
     public var createdAt: String?
-    public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, reason, status
+        case id, reason, notes
         case userId = "user_id"
         case exceptionDate = "exception_date"
         case exceptionType = "exception_type"
         case startTime = "start_time"
         case endTime = "end_time"
+        case lunchStart = "lunch_start"
+        case lunchEnd = "lunch_end"
+        case isApproved = "is_approved"
         case approvedBy = "approved_by"
+        case approvedAt = "approved_at"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
-        case updatedAt = "updated_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -64,27 +73,34 @@ public struct ScheduleException: Codable, FetchableRecord, MutablePersistableRec
 // MARK: - Dispatch
 
 public struct Dispatch: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
-    public static let databaseTableName = "dispatches"
+    public static let databaseTableName = "job_dispatch"
     public var id: Int64?
     public var jobId: Int64
     public var userId: Int64
     public var dispatchDate: String
-    public var role: String
-    public var startTime: String?
-    public var endTime: String?
+    public var shiftStart: String?
+    public var shiftEnd: String?
+    public var lunchStart: String?
+    public var lunchEnd: String?
+    public var roleOnJob: String
     public var status: String
+    public var dispatchedBy: Int64?
     public var notes: String?
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, role, status, notes
+        case id, status, notes
         case jobId = "job_id"
         case userId = "user_id"
         case dispatchDate = "dispatch_date"
-        case startTime = "start_time"
-        case endTime = "end_time"
+        case shiftStart = "shift_start"
+        case shiftEnd = "shift_end"
+        case lunchStart = "lunch_start"
+        case lunchEnd = "lunch_end"
+        case roleOnJob = "role_on_job"
+        case dispatchedBy = "dispatched_by"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -99,15 +115,14 @@ public struct SubcontractorSchedule: Codable, FetchableRecord, MutablePersistabl
     public static let databaseTableName = "subcontractor_schedules"
     public var id: Int64?
     public var jobId: Int64
-    public var companyName: String
-    public var contactName: String?
-    public var contactPhone: String?
+    public var gcId: Int64
     public var scheduledDate: String
-    public var startTime: String?
-    public var endTime: String?
+    public var arrivalTime: String?
+    public var departureTime: String?
     public var scopeOfWork: String?
     public var status: String
     public var notes: String?
+    public var createdBy: Int64?
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
@@ -115,13 +130,12 @@ public struct SubcontractorSchedule: Codable, FetchableRecord, MutablePersistabl
     enum CodingKeys: String, CodingKey {
         case id, status, notes
         case jobId = "job_id"
-        case companyName = "company_name"
-        case contactName = "contact_name"
-        case contactPhone = "contact_phone"
+        case gcId = "gc_id"
         case scheduledDate = "scheduled_date"
-        case startTime = "start_time"
-        case endTime = "end_time"
+        case arrivalTime = "arrival_time"
+        case departureTime = "departure_time"
         case scopeOfWork = "scope_of_work"
+        case createdBy = "created_by"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"

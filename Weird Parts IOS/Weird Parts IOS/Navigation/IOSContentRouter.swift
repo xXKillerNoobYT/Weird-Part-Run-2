@@ -133,6 +133,14 @@ struct IOSContentRouter: View {
             WarehouseRouter(tabId: "warehouse-returns")
         case "/warehouse/audit":
             WarehouseRouter(tabId: "warehouse-audit")
+        case "/warehouse/inventory":
+            WarehouseRouter(tabId: "warehouse-inventory")
+        case "/warehouse/tools":
+            WarehouseRouter(tabId: "warehouse-tools")
+        case "/warehouse/network":
+            WarehouseRouter(tabId: "warehouse-network")
+        case "/warehouse/settings":
+            WarehouseRouter(tabId: "warehouse-settings")
 
         // Orders sub-routes
         case "/orders/jpos", "/orders/requests":
@@ -163,22 +171,31 @@ struct IOSContentRouter: View {
             FleetRouter(tabId: "fleet-trailers")
         case "/fleet/inspections", "/trucks/inspections":
             FleetRouter(tabId: "fleet-inspections")
-        case "/fleet/gps", "/trucks/gps":
-            FleetRouter(tabId: "fleet-gps")
+        case "/fleet/tracking", "/fleet/gps", "/trucks/gps":
+            FleetRouter(tabId: "fleet-tracking")
+        case "/fleet/my-truck":
+            FleetRouter(tabId: "fleet-my-truck")
+        case "/fleet/trailer-locations":
+            FleetRouter(tabId: "fleet-trailer-locations")
+        case "/fleet/truck-tools":
+            FleetRouter(tabId: "fleet-truck-tools")
 
         // People sub-routes
-        case "/people/employees", "/people/directory":
-            PeopleRouter(tabId: "people-employees")
         case "/people/customers":
             PeopleRouter(tabId: "people-customers")
         case "/people/contacts":
             PeopleRouter(tabId: "people-contacts")
-        case "/people/hats":
-            PeopleRouter(tabId: "people-hats")
-        case "/people/teams":
-            PeopleRouter(tabId: "people-teams")
         case "/people/contractors":
             PeopleRouter(tabId: "people-contractors")
+        case "/people/teams":
+            PeopleRouter(tabId: "people-teams")
+        // People legacy routes — redirect to Office
+        case "/people/employees", "/people/directory":
+            OfficeRouter(tabId: "office-employees")
+        case "/people/hats":
+            OfficeRouter(tabId: "office-hats")
+        case "/people/permissions":
+            OfficeRouter(tabId: "office-permissions")
 
         // Scheduling sub-routes
         case "/scheduling/calendar":
@@ -194,15 +211,45 @@ struct IOSContentRouter: View {
         case "/scheduling/sub-schedule":
             SchedulingRouter(tabId: "scheduling-sub-schedule")
         case "/scheduling/dispatch-admin":
-            SchedulingRouter(tabId: "scheduling-dispatch-admin")
+            SchedulingRouter(tabId: "scheduling-dispatch")
         case "/scheduling/my-schedule":
-            SchedulingRouter(tabId: "scheduling-my-schedule")
+            SchedulingRouter(tabId: "scheduling-calendar")
+        case "/scheduling/config":
+            SchedulingRouter(tabId: "scheduling-config")
+
+        // Office sub-routes
+        case "/office/manage-jobs":
+            OfficeRouter(tabId: "office-manage-jobs")
+        case "/office/warehouse-exec":
+            OfficeRouter(tabId: "office-warehouse-exec")
+        case "/office/spending":
+            OfficeRouter(tabId: "office-spending")
+        case "/office/timesheets":
+            OfficeRouter(tabId: "office-timesheets")
+        case "/office/pre-billing":
+            OfficeRouter(tabId: "office-pre-billing")
+        case "/office/bookkeeper":
+            OfficeRouter(tabId: "office-bookkeeper")
+        case "/office/profitability":
+            OfficeRouter(tabId: "office-profitability")
+        case "/office/labor-overview":
+            OfficeRouter(tabId: "office-labor-overview")
+        case "/office/daily-summary":
+            OfficeRouter(tabId: "office-daily-summary")
+        case "/office/employees":
+            OfficeRouter(tabId: "office-employees")
+        case "/office/hats":
+            OfficeRouter(tabId: "office-hats")
+        case "/office/permissions":
+            OfficeRouter(tabId: "office-permissions")
 
         // Chat sub-routes
         case "/chat/channels", "/chat/messages":
             IOSChatRouter(tabId: "chat-channels")
         case "/chat/questions", "/chat/qa":
             IOSChatRouter(tabId: "chat-questions")
+        case "/chat/rfis":
+            IOSChatRouter(tabId: "chat-rfis")
 
         // Notebooks sub-routes
         case "/notebooks/all", "/notebooks/list", "/notebooks/general":
@@ -212,19 +259,21 @@ struct IOSContentRouter: View {
         case "/notebooks/job-notebooks":
             IOSNotebooksRouter(tabId: "notebooks-job-notebooks")
 
-        // Reports sub-routes
+        // Reports legacy routes — redirect to Office
         case "/reports/timesheets":
-            IOSReportsRouter(tabId: "reports-timesheets")
+            OfficeRouter(tabId: "office-timesheets")
         case "/reports/spending":
-            IOSReportsRouter(tabId: "reports-spending")
+            OfficeRouter(tabId: "office-spending")
         case "/reports/daily-summary", "/reports/overview":
-            IOSReportsRouter(tabId: "reports-daily-summary")
+            OfficeRouter(tabId: "office-daily-summary")
         case "/reports/profitability":
-            IOSReportsRouter(tabId: "reports-profitability")
+            OfficeRouter(tabId: "office-profitability")
         case "/reports/pre-billing":
-            IOSReportsRouter(tabId: "reports-pre-billing")
+            OfficeRouter(tabId: "office-pre-billing")
         case "/reports/bookkeeper":
-            IOSReportsRouter(tabId: "reports-bookkeeper")
+            OfficeRouter(tabId: "office-bookkeeper")
+        case "/reports/labor-overview":
+            OfficeRouter(tabId: "office-labor-overview")
 
         // Tools sub-routes
         case "/tools/registry":
@@ -237,6 +286,18 @@ struct IOSContentRouter: View {
             IOSToolsRouter(tabId: "tools-dashboard")
         case "/tools/admin":
             IOSToolsRouter(tabId: "tools-admin")
+        case "/tools/maintenance":
+            IOSToolsRouter(tabId: "tools-maintenance")
+
+        // Settings additional routes
+        case "/settings/ai-config":
+            SettingsRouter(tabId: "settings-ai-config")
+        case "/settings/device-management":
+            SettingsRouter(tabId: "settings-device-management")
+        case "/settings/remote-sync":
+            SettingsRouter(tabId: "settings-remote-sync")
+        case "/settings/shared-channels":
+            SettingsRouter(tabId: "settings-shared-channels")
 
         // Everything else — placeholder for future native views
         default:
@@ -274,7 +335,7 @@ struct PlaceholderView: View {
         #if os(iOS)
         .background(Color(.systemBackground))
         #elseif os(macOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #endif
     }
 }

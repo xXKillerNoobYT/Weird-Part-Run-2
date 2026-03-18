@@ -13,6 +13,7 @@ struct IOSTeamsPage: View {
     @State private var teams: [PeopleService.TeamListItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var loadError: String?
 
     var body: some View {
         teamList
@@ -30,6 +31,8 @@ struct IOSTeamsPage: View {
         if isLoading {
             ProgressView("Loading teams...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredTeams.isEmpty {
             ContentUnavailableView {
                 Label("No Teams", systemImage: "person.3")
@@ -107,10 +110,11 @@ struct IOSTeamsPage: View {
     private func loadData() {
         guard let service = appCore.peopleService else { return }
         isLoading = teams.isEmpty
+        loadError = nil
         do {
             teams = try service.listTeams()
         } catch {
-            print("[IOSTeamsPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

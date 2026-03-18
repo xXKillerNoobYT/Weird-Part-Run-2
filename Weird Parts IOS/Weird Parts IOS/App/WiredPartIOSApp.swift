@@ -29,7 +29,10 @@ struct WiredPartIOSApp: App {
         WindowGroup {
             Group {
                 if appCore.isReady {
-                    if appCore.needsBootstrap {
+                    if appCore.needsOnboarding {
+                        OnboardingWelcomeView()
+                            .environmentObject(appCore)
+                    } else if appCore.needsBootstrap {
                         BootstrapView()
                             .environmentObject(appCore)
                     } else if appCore.currentUser == nil {
@@ -52,6 +55,10 @@ struct WiredPartIOSApp: App {
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
+                        Button("Retry") {
+                            appCore.retryBootstrap()
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
                 } else {
                     LoadingView()

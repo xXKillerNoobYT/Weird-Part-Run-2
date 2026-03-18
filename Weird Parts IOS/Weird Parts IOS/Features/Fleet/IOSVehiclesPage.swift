@@ -15,6 +15,8 @@ struct IOSVehiclesPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
+    @State private var showCreateVehicle = false
+    @State private var loadError: String?
 
     private let statusOptions = ["all", "active", "inactive", "maintenance", "retired"]
 
@@ -28,6 +30,19 @@ struct IOSVehiclesPage: View {
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showCreateVehicle = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .requiresPermission("manage_fleet")
+            }
+        }
+        .sheet(isPresented: $showCreateVehicle) {
+            IOSCreateVehicleSheet(onSaved: { loadData() })
+        }
     }
 
     // MARK: - Status Picker
@@ -65,15 +80,22 @@ struct IOSVehiclesPage: View {
         if isLoading {
             ProgressView("Loading vehicles...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredVehicles.isEmpty {
-            ContentUnavailableView {
-                Label("No Vehicles", systemImage: "car")
-            } description: {
-                Text("No vehicles match your criteria.")
+            EmptyStateView(
+                icon: "car",
+                title: "No Vehicles",
+                message: searchText.isEmpty ? "Add your first vehicle to get started." : "No vehicles match your criteria.",
+                actionLabel: searchText.isEmpty ? "Add Vehicle" : nil
+            ) {
+                showCreateVehicle = true
             }
         } else {
             List(filteredVehicles, id: \.id) { vehicle in
-                vehicleRow(vehicle)
+                NavigationLink(destination: IOSVehicleDetailPage(vehicleId: vehicle.id)) {
+                    vehicleRow(vehicle)
+                }
             }
             #if os(iOS)
             .listStyle(.insetGrouped)
@@ -139,6 +161,8 @@ struct IOSVehiclesPage: View {
             }
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(vehicle.vehicleName), \(vehicle.vehicleNumber), \(vehicle.vehicleType), status \(vehicle.status)")
     }
 
     // MARK: - Helpers
@@ -180,12 +204,13 @@ struct IOSVehiclesPage: View {
     private func loadData() {
         guard let service = appCore.fleetService else { return }
         isLoading = vehicles.isEmpty
+        loadError = nil
         do {
             vehicles = try service.listVehicles(
                 status: statusFilter == "all" ? nil : statusFilter
             )
         } catch {
-            print("[IOSVehiclesPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

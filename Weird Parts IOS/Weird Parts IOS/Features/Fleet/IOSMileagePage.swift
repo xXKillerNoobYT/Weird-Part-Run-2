@@ -14,6 +14,7 @@ struct IOSMileagePage: View {
     @State private var mileageLogs: [FleetService.MileageRow] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var loadError: String?
 
     var body: some View {
         mileageList
@@ -104,6 +105,7 @@ struct IOSMileagePage: View {
             mileageLogs = try service.listMileageLogs()
         } catch {
             print("[IOSMileagePage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

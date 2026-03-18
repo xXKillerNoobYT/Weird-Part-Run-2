@@ -6,24 +6,23 @@ import GRDB
 public struct BillingPeriod: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "billing_periods"
     public var id: Int64?
-    public var periodType: String
-    public var startDate: String
-    public var endDate: String
-    public var status: String
-    public var lockedBy: Int64?
+    public var jobId: Int64
+    public var periodStart: String
+    public var periodEnd: String
     public var lockedAt: String?
+    public var lockedBy: Int64?
     public var notes: String?
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, status, notes
-        case periodType = "period_type"
-        case startDate = "start_date"
-        case endDate = "end_date"
-        case lockedBy = "locked_by"
+        case id, notes
+        case jobId = "job_id"
+        case periodStart = "period_start"
+        case periodEnd = "period_end"
         case lockedAt = "locked_at"
+        case lockedBy = "locked_by"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -38,10 +37,9 @@ public struct ReceivingSession: Codable, FetchableRecord, MutablePersistableReco
     public static let databaseTableName = "receiving_sessions"
     public var id: Int64?
     public var poId: Int64?
+    public var startedBy: Int64
     public var mode: String
     public var status: String
-    public var startedBy: Int64
-    public var startedAt: String?
     public var completedAt: String?
     public var notes: String?
     public var deletedAt: String?
@@ -51,7 +49,6 @@ public struct ReceivingSession: Codable, FetchableRecord, MutablePersistableReco
         case id, mode, status, notes
         case poId = "po_id"
         case startedBy = "started_by"
-        case startedAt = "started_at"
         case completedAt = "completed_at"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
@@ -67,10 +64,10 @@ public struct ReceivingSessionItem: Codable, FetchableRecord, MutablePersistable
     public var id: Int64?
     public var sessionId: Int64
     public var poLineId: Int64?
-    public var partId: Int64?
     public var expectedQty: Int
     public var receivedQty: Int
-    public var conditionStatus: String
+    public var actualCost: Double?
+    public var scannedAt: String?
     public var notes: String?
     public var deletedAt: String?
     public var createdAt: String?
@@ -79,10 +76,10 @@ public struct ReceivingSessionItem: Codable, FetchableRecord, MutablePersistable
         case id, notes
         case sessionId = "session_id"
         case poLineId = "po_line_id"
-        case partId = "part_id"
         case expectedQty = "expected_qty"
         case receivedQty = "received_qty"
-        case conditionStatus = "condition_status"
+        case actualCost = "actual_cost"
+        case scannedAt = "scanned_at"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
     }
@@ -96,10 +93,9 @@ public struct ReportAnnotation: Codable, FetchableRecord, MutablePersistableReco
     public static let databaseTableName = "report_annotations"
     public var id: Int64?
     public var reportType: String
-    public var reportId: Int64
-    public var userId: Int64
+    public var contextKey: String
     public var content: String
-    public var annotationType: String
+    public var authorId: Int64
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
@@ -107,9 +103,8 @@ public struct ReportAnnotation: Codable, FetchableRecord, MutablePersistableReco
     enum CodingKeys: String, CodingKey {
         case id, content
         case reportType = "report_type"
-        case reportId = "report_id"
-        case userId = "user_id"
-        case annotationType = "annotation_type"
+        case contextKey = "context_key"
+        case authorId = "author_id"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -123,21 +118,26 @@ public struct ReportAnnotation: Codable, FetchableRecord, MutablePersistableReco
 public struct ReportShareToken: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "report_share_tokens"
     public var id: Int64?
-    public var reportType: String
-    public var reportId: Int64
     public var token: String
+    public var reportType: String
+    public var contextParams: String?
+    public var label: String?
     public var createdBy: Int64
     public var expiresAt: String?
+    public var lastAccessedAt: String?
     public var isActive: Int
+    public var deletedAt: String?
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, token
+        case id, token, label
         case reportType = "report_type"
-        case reportId = "report_id"
+        case contextParams = "context_params"
         case createdBy = "created_by"
         case expiresAt = "expires_at"
+        case lastAccessedAt = "last_accessed_at"
         case isActive = "is_active"
+        case deletedAt = "deleted_at"
         case createdAt = "created_at"
     }
 
@@ -151,17 +151,16 @@ public struct ReportTemplate: Codable, FetchableRecord, MutablePersistableRecord
     public var id: Int64?
     public var name: String
     public var reportType: String
-    public var config: String?
-    public var isDefault: Int
+    public var configJson: String?
     public var createdBy: Int64?
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, config
+        case id, name
         case reportType = "report_type"
-        case isDefault = "is_default"
+        case configJson = "config_json"
         case createdBy = "created_by"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
@@ -176,20 +175,27 @@ public struct ReportTemplate: Codable, FetchableRecord, MutablePersistableRecord
 public struct PTOPolicy: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "pto_policies"
     public var id: Int64?
-    public var name: String
+    public var userId: Int64
+    public var policyName: String
     public var accrualRate: Double
+    public var accrualPeriod: String?
     public var maxBalance: Double?
-    public var carryOverLimit: Double?
+    public var carryoverLimit: Double?
+    public var startDate: String?
     public var isActive: Int
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name
+        case id
+        case userId = "user_id"
+        case policyName = "policy_name"
         case accrualRate = "accrual_rate"
+        case accrualPeriod = "accrual_period"
         case maxBalance = "max_balance"
-        case carryOverLimit = "carry_over_limit"
+        case carryoverLimit = "carryover_limit"
+        case startDate = "start_date"
         case isActive = "is_active"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
@@ -232,19 +238,20 @@ public struct SupplierPortalToken: Codable, FetchableRecord, MutablePersistableR
     public var id: Int64?
     public var supplierId: Int64
     public var token: String
-    public var label: String?
-    public var permissions: String
-    public var expiresAt: String?
+    public var note: String?
     public var isActive: Int
+    public var expiresAt: String?
+    public var lastUsedAt: String?
     public var createdBy: Int64?
     public var deletedAt: String?
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, token, label, permissions
+        case id, token, note
         case supplierId = "supplier_id"
-        case expiresAt = "expires_at"
         case isActive = "is_active"
+        case expiresAt = "expires_at"
+        case lastUsedAt = "last_used_at"
         case createdBy = "created_by"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
@@ -259,22 +266,21 @@ public struct CostLayer: Codable, FetchableRecord, MutablePersistableRecord, Sen
     public static let databaseTableName = "cost_layers"
     public var id: Int64?
     public var partId: Int64
+    public var purchaseDate: String?
     public var poLineId: Int64?
-    public var quantity: Int
-    public var unitCost: Double
+    public var originalQty: Int
     public var remainingQty: Int
-    public var receivedAt: String?
-    public var deletedAt: String?
+    public var unitCost: Double
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, quantity
+        case id
         case partId = "part_id"
+        case purchaseDate = "purchase_date"
         case poLineId = "po_line_id"
-        case unitCost = "unit_cost"
+        case originalQty = "original_qty"
         case remainingQty = "remaining_qty"
-        case receivedAt = "received_at"
-        case deletedAt = "deleted_at"
+        case unitCost = "unit_cost"
         case createdAt = "created_at"
     }
 
@@ -288,13 +294,14 @@ public struct CompanyCostSetting: Codable, FetchableRecord, MutablePersistableRe
     public var id: Int64?
     public var settingKey: String
     public var settingValue: String
-    public var description: String?
+    public var updatedBy: Int64?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, description
+        case id
         case settingKey = "setting_key"
         case settingValue = "setting_value"
+        case updatedBy = "updated_by"
         case updatedAt = "updated_at"
     }
 
@@ -368,7 +375,8 @@ public struct NotificationPreference: Codable, FetchableRecord, MutablePersistab
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, enabled, sound
+        case id, sound
+        case enabled = "is_enabled"
         case userId = "user_id"
         case notificationType = "notification_type"
         case deletedAt = "deleted_at"
@@ -479,17 +487,27 @@ public struct JobPreference: Codable, FetchableRecord, MutablePersistableRecord,
     public var id: Int64?
     public var jobId: Int64
     public var preferenceType: String
-    public var preferenceValue: String?
-    public var notes: String?
+    public var entityId: Int64?
+    public var textValue: String?
+    public var category: String?
+    public var isActive: Int
+    public var autoLearned: Int
+    public var confidenceScore: Double?
+    public var lastUsedAt: String?
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, notes
+        case id, category
         case jobId = "job_id"
         case preferenceType = "preference_type"
-        case preferenceValue = "preference_value"
+        case entityId = "entity_id"
+        case textValue = "text_value"
+        case isActive = "is_active"
+        case autoLearned = "auto_learned"
+        case confidenceScore = "confidence_score"
+        case lastUsedAt = "last_used_at"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"

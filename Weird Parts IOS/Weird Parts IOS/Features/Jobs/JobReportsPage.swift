@@ -12,6 +12,7 @@ struct JobReportsPage: View {
 
     @State private var reports: [JobsService.DailyReportRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
 
     var body: some View {
         reportContent
@@ -27,6 +28,8 @@ struct JobReportsPage: View {
         if isLoading {
             ProgressView("Loading reports...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadReports() }
         } else if reports.isEmpty {
             ContentUnavailableView {
                 Label("No Reports", systemImage: "doc.plaintext")
@@ -90,10 +93,11 @@ struct JobReportsPage: View {
     private func loadReports() {
         guard let service = appCore.jobsService else { return }
         isLoading = reports.isEmpty
+        loadError = nil
         do {
             reports = try service.listReports()
         } catch {
-            print("[JobReportsPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

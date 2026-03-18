@@ -1,23 +1,15 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.egg-info/
-dist/
+# Xcode
+xcuserdata/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+DerivedData/
 build/
-.eggs/
-*.egg
-.venv/
-venv/
-env/
 
-# Node
-node_modules/
-
-# Capacitor native platforms
-ios/App/Pods/
-ios/App/public/
-ios/capacitor-cordova-ios-plugins/
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
 
 # Database
 *.db
@@ -25,53 +17,25 @@ ios/capacitor-cordova-ios-plugins/
 *.db-wal
 *.db-shm
 
-# Environment
-.env
-.env.local
-.env.*.local
-
-# Temporary files
-.tmp/
+# OS
+.DS_Store
+Thumbs.db
 
 # IDE
 .idea/
+.vscode/
 *.swp
 *.swo
 *~
 
-# OS
-.DS_Store
-Thumbs.db
-nul
-
-# Local tool configs
+# Claude
 .claude/
-.vscode/
 
-# Accidental logs
-..backend_log.txt
-
-# Google OAuth (keep in .gitignore, not committed)
-credentials.json
-token.json
-
-# Coverage
-htmlcov/
-.coverage
-coverage.xml
+# Temporary files
+.tmp/
 
 # Logs
 *.log
-backend/logs/
 
 # Backups
 backups/
-
-# Swift Package Manager
-.build/
-.swiftpm/
-Package.resolved
-*.xcuserstate
-
-# Xcode workspace user data
-xcuserdata/

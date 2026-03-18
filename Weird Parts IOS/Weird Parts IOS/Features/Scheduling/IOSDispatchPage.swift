@@ -15,6 +15,7 @@ struct IOSDispatchPage: View {
     @State private var isLoading = true
     @State private var selectedDate = Date()
     @State private var searchText = ""
+    @State private var loadError: String?
 
     private var dateString: String {
         let f = DateFormatter()
@@ -44,7 +45,7 @@ struct IOSDispatchPage: View {
     private var dateNavigator: some View {
         HStack {
             Button {
-                selectedDate = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate)!
+                selectedDate = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
                 loadData()
             } label: {
                 Image(systemName: "chevron.left")
@@ -59,7 +60,7 @@ struct IOSDispatchPage: View {
             Spacer()
 
             Button {
-                selectedDate = Calendar.current.date(byAdding: .day, value: 1, to: selectedDate)!
+                selectedDate = Calendar.current.date(byAdding: .day, value: 1, to: selectedDate) ?? selectedDate
                 loadData()
             } label: {
                 Image(systemName: "chevron.right")
@@ -76,6 +77,8 @@ struct IOSDispatchPage: View {
         if isLoading {
             ProgressView("Loading dispatch board...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredDispatches.isEmpty {
             ContentUnavailableView {
                 Label("No Dispatches", systemImage: "person.3.sequence")
@@ -160,10 +163,11 @@ struct IOSDispatchPage: View {
     private func loadData() {
         guard let service = appCore.schedulingService else { return }
         isLoading = dispatches.isEmpty
+        loadError = nil
         do {
             dispatches = try service.getDispatchBoard(date: dateString)
         } catch {
-            print("[IOSDispatchPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

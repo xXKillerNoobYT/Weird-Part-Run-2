@@ -15,6 +15,7 @@ struct IOSJobNotebooksPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
+    @State private var loadError: String?
 
     private let statusOptions = ["all", "active", "archived", "locked"]
 
@@ -65,6 +66,8 @@ struct IOSJobNotebooksPage: View {
         if isLoading {
             ProgressView("Loading job notebooks...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredNotebooks.isEmpty {
             ContentUnavailableView {
                 Label("No Job Notebooks", systemImage: "hammer.circle")
@@ -162,10 +165,11 @@ struct IOSJobNotebooksPage: View {
     private func loadData() {
         guard let service = appCore.notebooksService else { return }
         isLoading = notebooks.isEmpty
+        loadError = nil
         do {
             notebooks = try service.listNotebooks(notebookType: "job")
         } catch {
-            print("[IOSJobNotebooksPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

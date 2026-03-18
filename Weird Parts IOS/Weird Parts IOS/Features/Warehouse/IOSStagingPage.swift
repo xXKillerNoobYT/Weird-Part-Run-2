@@ -14,6 +14,7 @@ struct IOSStagingPage: View {
     @State private var stagedItems: [WarehouseService.StagedItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var loadError: String?
 
     var body: some View {
         stagingList
@@ -31,6 +32,8 @@ struct IOSStagingPage: View {
         if isLoading {
             ProgressView("Loading staged items...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredItems.isEmpty {
             ContentUnavailableView {
                 Label("No Staged Items", systemImage: "tray")
@@ -125,10 +128,11 @@ struct IOSStagingPage: View {
     private func loadData() {
         guard let service = appCore.warehouseService else { return }
         isLoading = stagedItems.isEmpty
+        loadError = nil
         do {
             stagedItems = try service.getStagedItems()
         } catch {
-            print("[IOSStagingPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

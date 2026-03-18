@@ -46,6 +46,85 @@ public struct User: Codable, FetchableRecord, MutablePersistableRecord, Sendable
     }
 }
 
+// MARK: - Business Profile
+
+public struct BusinessProfile: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+    public static let databaseTableName = "business_profiles"
+
+    public var id: Int64?
+    public var companyName: String
+    public var industry: String?
+    public var address: String?
+    public var city: String?
+    public var state: String?
+    public var zip: String?
+    public var phone: String?
+    public var email: String?
+    public var website: String?
+    public var logoData: Data?
+    public var timezone: String?
+    public var isActive: Int
+    public var createdAt: String?
+    public var updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case companyName = "company_name"
+        case industry, address, city, state, zip, phone, email, website
+        case logoData = "logo_data"
+        case timezone
+        case isActive = "is_active"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+
+    /// ISO-8601 timestamp for "now" matching SQLite's `datetime('now')`.
+    private static func now() -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.string(from: Date())
+    }
+
+    public init(
+        id: Int64? = nil,
+        companyName: String,
+        industry: String? = nil,
+        address: String? = nil,
+        city: String? = nil,
+        state: String? = nil,
+        zip: String? = nil,
+        phone: String? = nil,
+        email: String? = nil,
+        website: String? = nil,
+        logoData: Data? = nil,
+        timezone: String? = "America/Chicago",
+        isActive: Int = 1,
+        createdAt: String? = nil,
+        updatedAt: String? = nil
+    ) {
+        let timestamp = Self.now()
+        self.id = id
+        self.companyName = companyName
+        self.industry = industry
+        self.address = address
+        self.city = city
+        self.state = state
+        self.zip = zip
+        self.phone = phone
+        self.email = email
+        self.website = website
+        self.logoData = logoData
+        self.timezone = timezone
+        self.isActive = isActive
+        self.createdAt = createdAt ?? timestamp
+        self.updatedAt = updatedAt ?? timestamp
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) {
+        id = inserted.rowID
+    }
+}
+
 // MARK: - Hat
 
 public struct Hat: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
@@ -77,13 +156,11 @@ public struct HatPermission: Codable, FetchableRecord, MutablePersistableRecord,
     public var id: Int64?
     public var hatId: Int64
     public var permissionKey: String
-    public var grantedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case hatId = "hat_id"
         case permissionKey = "permission_key"
-        case grantedAt = "granted_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) {
@@ -99,15 +176,15 @@ public struct UserHat: Codable, FetchableRecord, MutablePersistableRecord, Senda
     public var id: Int64?
     public var userId: Int64
     public var hatId: Int64
-    public var isPrimary: Int
-    public var grantedAt: String?
+    public var isActive: Int
+    public var deletedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case userId = "user_id"
         case hatId = "hat_id"
-        case isPrimary = "is_primary"
-        case grantedAt = "granted_at"
+        case isActive = "is_active"
+        case deletedAt = "deleted_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) {
@@ -121,24 +198,22 @@ public struct Device: Codable, FetchableRecord, MutablePersistableRecord, Sendab
     public static let databaseTableName = "devices"
 
     public var id: Int64?
-    public var deviceId: String
     public var deviceName: String
-    public var platform: String?
-    public var appVersion: String?
-    public var userId: Int64?
-    public var lastSyncAt: String?
-    public var isTrusted: Int
+    public var deviceFingerprint: String?
+    public var assignedUserId: Int64?
+    public var isPublic: Int
+    public var lastSeen: String?
+    public var deletedAt: String?
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
-        case deviceId = "device_id"
         case deviceName = "device_name"
-        case platform
-        case appVersion = "app_version"
-        case userId = "user_id"
-        case lastSyncAt = "last_sync_at"
-        case isTrusted = "is_trusted"
+        case deviceFingerprint = "device_fingerprint"
+        case assignedUserId = "assigned_user_id"
+        case isPublic = "is_public"
+        case lastSeen = "last_seen"
+        case deletedAt = "deleted_at"
         case createdAt = "created_at"
     }
 
@@ -175,18 +250,26 @@ public struct AppNotification: Codable, FetchableRecord, MutablePersistableRecor
 
     public var id: Int64?
     public var userId: Int64
-    public var type: String
     public var title: String
-    public var message: String?
-    public var data: String?
+    public var body: String?
+    public var severity: String?
+    public var source: String?
+    public var link: String?
     public var isRead: Int
+    public var type: String?
+    public var message: String?
+    public var entityType: String?
+    public var entityId: Int64?
+    public var deletedAt: String?
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id
+        case id, title, body, severity, source, link, type, message
         case userId = "user_id"
-        case type, title, message, data
         case isRead = "is_read"
+        case entityType = "entity_type"
+        case entityId = "entity_id"
+        case deletedAt = "deleted_at"
         case createdAt = "created_at"
     }
 

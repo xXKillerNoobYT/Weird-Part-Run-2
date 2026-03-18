@@ -8,7 +8,8 @@ import WiredPartCore
 /// - Enhancement sheet (proofread, rewrite, summarize, expand, professional)
 /// - Pre-fill button for empty fields
 ///
-/// Falls back to a plain `TextEditor` when AI is unavailable.
+/// Controls are always visible. When AI is unavailable, tapping them
+/// shows a helpful status message instead of silently hiding functionality.
 struct IOSAITextEditor: View {
     @Binding var text: String
     let fieldType: String
@@ -19,10 +20,32 @@ struct IOSAITextEditor: View {
     @State private var isLoadingSuggestion = false
     @State private var isEnhancing = false
     @State private var showEnhanceSheet = false
-    @State private var aiAvailable = false
+    @State private var showUnavailableAlert = false
+    @State private var aiAvailability: AIAvailability = .notSupported
     @State private var debounceTask: Task<Void, Never>?
 
     private let aiService = FoundationModelsService()
+
+    private var aiAvailable: Bool {
+        aiAvailability == .available
+    }
+
+    private var unavailableMessage: String {
+        switch aiAvailability {
+        case .available:
+            return ""
+        case .appleIntelligenceNotEnabled:
+            return "Turn on Apple Intelligence in your device Settings to enable AI text features."
+        case .modelNotReady:
+            return "The AI model is still downloading. Please try again later."
+        case .deviceNotEligible:
+            return "This device doesn't support Apple Intelligence. AI features require iPhone 15 Pro or later."
+        case .unavailable:
+            return "AI features are temporarily unavailable. Please try again later."
+        case .notSupported:
+            return "AI features require iOS 26 or later with Apple Intelligence enabled."
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -75,10 +98,15 @@ struct IOSAITextEditor: View {
             }
         }
         .task {
-            aiAvailable = await aiService.isAvailable()
+            aiAvailability = await aiService.checkAvailability()
         }
         .sheet(isPresented: $showEnhanceSheet) {
             enhanceSheet
+        }
+        .alert("AI Unavailable", isPresented: $showUnavailableAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(unavailableMessage)
         }
     }
 
@@ -86,36 +114,44 @@ struct IOSAITextEditor: View {
 
     @ViewBuilder
     private var iosAIControls: some View {
-        if aiAvailable {
-            HStack(spacing: 8) {
-                if isLoadingSuggestion || isEnhancing {
-                    ProgressView()
-                        .scaleEffect(0.7)
-                }
+        HStack(spacing: 8) {
+            if isLoadingSuggestion || isEnhancing {
+                ProgressView()
+                    .scaleEffect(0.7)
+            }
 
-                // Pre-fill button
-                if text.isEmpty && !contextData.isEmpty {
-                    Button {
+            // Pre-fill button — always visible when field is empty with context
+            if text.isEmpty && !contextData.isEmpty {
+                Button {
+                    if aiAvailable {
                         Task { await preFill() }
-                    } label: {
-                        Image(systemName: "sparkles")
-                            .font(.body)
-                            .foregroundStyle(Color.accentColor)
+                    } else {
+                        showUnavailableAlert = true
                     }
-                    .buttonStyle(.plain)
+                } label: {
+                    Image(systemName: "sparkles")
+                        .font(.body)
+                        .foregroundStyle(aiAvailable ? Color.accentColor : .secondary)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("AI pre-fill")
+            }
 
-                // Enhance button
-                if !text.isEmpty {
-                    Button {
+            // Enhance button — always visible when text exists
+            if !text.isEmpty {
+                Button {
+                    if aiAvailable {
                         showEnhanceSheet = true
-                    } label: {
-                        Image(systemName: "wand.and.stars")
-                            .font(.body)
-                            .foregroundStyle(Color.accentColor)
+                    } else {
+                        showUnavailableAlert = true
                     }
-                    .buttonStyle(.plain)
+                } label: {
+                    Image(systemName: "wand.and.stars")
+                        .font(.body)
+                        .foregroundStyle(aiAvailable ? Color.accentColor : .secondary)
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Enhance text with AI")
             }
         }
     }

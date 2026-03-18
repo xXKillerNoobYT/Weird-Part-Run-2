@@ -179,15 +179,15 @@ struct IOSSubSchedulePage: View {
             rows = try db.writer.read { db in
                 let sql = """
                     SELECT ss.id,
-                           COALESCE(s.contact_name, s.company_name, 'Unknown') AS sub_name,
-                           COALESCE(s.company_name, '') AS company_name,
-                           COALESCE(j.name, 'Unknown Job') AS job_name,
-                           ss.schedule_date,
-                           COALESCE(ss.status, 'pending') AS status
+                           COALESCE(gc.contact_name, gc.company_name, 'Unknown') AS sub_name,
+                           COALESCE(gc.company_name, '') AS company_name,
+                           COALESCE(j.job_name, 'Unknown Job') AS job_name,
+                           ss.scheduled_date AS schedule_date,
+                           COALESCE(ss.status, 'scheduled') AS status
                     FROM subcontractor_schedules ss
-                    LEFT JOIN subcontractors s ON s.id = ss.subcontractor_id
+                    LEFT JOIN general_contractors gc ON gc.id = ss.gc_id
                     LEFT JOIN jobs j ON j.id = ss.job_id
-                    WHERE ss.schedule_date = ?
+                    WHERE ss.scheduled_date = ?
                     ORDER BY sub_name
                     """
                 return try Row.fetchAll(db, sql: sql, arguments: [dateString]).map { row in

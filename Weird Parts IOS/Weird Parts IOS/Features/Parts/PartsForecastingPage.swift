@@ -67,9 +67,9 @@ struct PartsForecastingPage: View {
             ForecastDetailSheet(row: row)
         }
         #if os(iOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #elseif os(macOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #endif
         .task { await loadData() }
     }
@@ -260,7 +260,7 @@ struct PartsForecastingPage: View {
     private func loadData() async {
         isLoading = true
         do {
-            let db = appCore.db!
+            guard let db = appCore.db else { return }
             let rows = try await db.writer.read { dbConnection -> [ForecastRow] in
                 let results = try Row.fetchAll(dbConnection, sql: """
                     SELECT p.id, p.name, p.code,

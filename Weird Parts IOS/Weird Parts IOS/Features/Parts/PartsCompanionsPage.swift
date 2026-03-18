@@ -61,9 +61,9 @@ struct PartsCompanionsPage: View {
             AlternativeFormSheet { await loadData() }
         }
         #if os(iOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #elseif os(macOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #endif
         .task { await loadData() }
     }
@@ -201,7 +201,7 @@ struct PartsCompanionsPage: View {
                 ForEach(filteredAlternatives) { alt in
                     HStack(spacing: 12) {
                         Image(systemName: "arrow.triangle.swap")
-                            .foregroundStyle(alt.isActive == 1 ? .purple : .secondary)
+                            .foregroundStyle(.purple)
                             .frame(width: 32)
 
                         VStack(alignment: .leading, spacing: 3) {
@@ -275,56 +275,37 @@ struct PartsCompanionsPage: View {
     private func loadData() async {
         isLoading = true
         do {
-            let db = appCore.db!
+            guard let db = appCore.db else { return }
             let result = try await db.writer.read { dbConnection -> ([CompanionRuleRow], [AlternativeRow]) in
-                // Companion rules — source/target can be category, style, type, or part
+                // Companion rules — name, description, style_match, qty_mode, qty_ratio
                 let ruleRows = try Row.fetchAll(dbConnection, sql: """
-                    SELECT cr.*,
-                           COALESCE(
-                               CASE cr.source_type
-                                   WHEN 'part' THEN (SELECT name FROM parts WHERE id = cr.source_id)
-                                   WHEN 'category' THEN (SELECT name FROM part_categories WHERE id = cr.source_id)
-                                   WHEN 'style' THEN (SELECT name FROM part_styles WHERE id = cr.source_id)
-                                   WHEN 'type' THEN (SELECT name FROM part_types WHERE id = cr.source_id)
-                               END, 'Unknown'
-                           ) AS source_name,
-                           COALESCE(
-                               CASE cr.target_type
-                                   WHEN 'part' THEN (SELECT name FROM parts WHERE id = cr.target_id)
-                                   WHEN 'category' THEN (SELECT name FROM part_categories WHERE id = cr.target_id)
-                                   WHEN 'style' THEN (SELECT name FROM part_styles WHERE id = cr.target_id)
-                                   WHEN 'type' THEN (SELECT name FROM part_types WHERE id = cr.target_id)
-                               END, 'Unknown'
-                           ) AS target_name
+                    SELECT cr.id, cr.name, COALESCE(cr.description, cr.style_match) AS description,
+                           cr.qty_mode, CAST(COALESCE(cr.qty_ratio, 1) AS INTEGER) AS qty_ratio,
+                           cr.is_active
                     FROM companion_rules cr
-                    WHERE cr.deleted_at IS NULL
                     ORDER BY cr.created_at DESC
                     """)
                 let rules = ruleRows.map { row in
                     CompanionRuleRow(
                         id: row["id"],
-                        sourceType: row["source_type"],
-                        sourceId: row["source_id"],
-                        sourceName: row["source_name"],
-                        targetType: row["target_type"],
-                        targetId: row["target_id"],
-                        targetName: row["target_name"],
-                        relationship: row["relationship"],
-                        defaultQty: row["default_qty"],
-                        isActive: row["is_active"]
+                        sourceName: row["name"] ?? "Unnamed",
+                        targetName: row["description"] ?? "",
+                        relationship: row["qty_mode"] ?? "sum",
+                        defaultQty: row["qty_ratio"] ?? 1,
+                        isActive: row["is_active"] ?? 1
                     )
                 }
 
                 // Alternatives
                 let altRows = try Row.fetchAll(dbConnection, sql: """
-                    SELECT pa.*,
+                    SELECT pa.id, pa.part_id, pa.alternative_part_id,
+                           pa.relationship, pa.preference,
                            p1.name AS part_name,
                            p2.name AS alternative_name
                     FROM part_alternatives pa
                     JOIN parts p1 ON p1.id = pa.part_id
                     JOIN parts p2 ON p2.id = pa.alternative_part_id
-                    WHERE pa.deleted_at IS NULL
-                    ORDER BY pa.priority ASC
+                    ORDER BY pa.preference ASC
                     """)
                 let alts = altRows.map { row in
                     AlternativeRow(
@@ -334,8 +315,7 @@ struct PartsCompanionsPage: View {
                         alternativePartId: row["alternative_part_id"],
                         alternativeName: row["alternative_name"],
                         relationship: row["relationship"],
-                        priority: row["priority"],
-                        isActive: row["is_active"]
+                        priority: row["preference"] ?? 0
                     )
                 }
                 return (rules, alts)
@@ -346,6 +326,7 @@ struct PartsCompanionsPage: View {
                 isLoading = false
             }
         } catch {
+            print("[PartsCompanionsPage] loadData failed: \(error)")
             await MainActor.run { isLoading = false }
         }
     }
@@ -354,35 +335,39 @@ struct PartsCompanionsPage: View {
 
     private func deleteRule(_ rule: CompanionRuleRow) async {
         do {
-            let db = appCore.db!
-            let now = ISO8601DateFormatter().string(from: Date())
+            guard let db = appCore.db else { return }
             try await db.writer.write { dbConnection in
-                try dbConnection.execute(sql: "UPDATE companion_rules SET deleted_at = ? WHERE id = ?", arguments: [now, rule.id])
+                try dbConnection.execute(sql: "DELETE FROM companion_rules WHERE id = ?", arguments: [rule.id])
             }
             await loadData()
-        } catch {}
+        } catch {
+            print("[PartsCompanionsPage] deleteRule failed: \(error)")
+        }
     }
 
     private func toggleRuleActive(_ rule: CompanionRuleRow) async {
         do {
-            let db = appCore.db!
+            guard let db = appCore.db else { return }
             let newActive = rule.isActive == 1 ? 0 : 1
             try await db.writer.write { dbConnection in
                 try dbConnection.execute(sql: "UPDATE companion_rules SET is_active = ? WHERE id = ?", arguments: [newActive, rule.id])
             }
             await loadData()
-        } catch {}
+        } catch {
+            print("[PartsCompanionsPage] toggleRuleActive failed: \(error)")
+        }
     }
 
     private func deleteAlternative(_ alt: AlternativeRow) async {
         do {
-            let db = appCore.db!
-            let now = ISO8601DateFormatter().string(from: Date())
+            guard let db = appCore.db else { return }
             try await db.writer.write { dbConnection in
-                try dbConnection.execute(sql: "UPDATE part_alternatives SET deleted_at = ? WHERE id = ?", arguments: [now, alt.id])
+                try dbConnection.execute(sql: "DELETE FROM part_alternatives WHERE id = ?", arguments: [alt.id])
             }
             await loadData()
-        } catch {}
+        } catch {
+            print("[PartsCompanionsPage] deleteAlternative failed: \(error)")
+        }
     }
 }
 
@@ -394,14 +379,10 @@ private enum CompanionTab {
 
 struct CompanionRuleRow: Identifiable, Sendable {
     let id: Int64
-    let sourceType: String
-    let sourceId: Int64
-    let sourceName: String
-    let targetType: String
-    let targetId: Int64
-    let targetName: String
-    let relationship: String
-    let defaultQty: Int
+    let sourceName: String  // rule name
+    let targetName: String  // description or style_match
+    let relationship: String  // qty_mode
+    let defaultQty: Int  // qty_ratio
     let isActive: Int
 }
 
@@ -413,7 +394,6 @@ struct AlternativeRow: Identifiable, Sendable {
     let alternativeName: String
     let relationship: String
     let priority: Int
-    let isActive: Int
 }
 
 // MARK: - Companion Rule Form Sheet
@@ -484,34 +464,42 @@ private struct CompanionRuleFormSheet: View {
         }
     }
 
-    @Sendable
     private func loadParts() async {
         do {
-            let db = appCore.db!
-            let rows = try await db.writer.read { dbConnection -> [Row] in
+            guard let db = appCore.db else { return }
+            let rows = try db.writer.read { dbConnection -> [Row] in
                 try Row.fetchAll(dbConnection, sql: "SELECT id, name FROM parts WHERE deleted_at IS NULL ORDER BY name ASC")
             }
-            await MainActor.run {
-                parts = rows.map { PartPickerItem(id: $0["id"], name: $0["name"]) }
-            }
-        } catch {}
+            parts = rows.map { PartPickerItem(id: $0["id"], name: $0["name"]) }
+        } catch {
+            print("[PartsCompanionsPage] CompanionRuleFormSheet.loadParts failed: \(error)")
+        }
     }
 
     private func save() async {
+        let capturedSourcePartId = sourcePartId
+        let capturedTargetPartId = targetPartId
+        let capturedRelationship = relationship
+        let capturedDefaultQty = defaultQty
         do {
-            let db = appCore.db!
+            guard let db = appCore.db else { return }
             let now = ISO8601DateFormatter().string(from: Date())
+            // Build a name from the source → target parts
+            let sourceName = parts.first(where: { $0.id == capturedSourcePartId })?.name ?? "Part"
+            let targetName = parts.first(where: { $0.id == capturedTargetPartId })?.name ?? "Part"
+            let ruleName = "\(sourceName) → \(targetName)"
             try await db.writer.write { dbConnection in
                 try dbConnection.execute(
                     sql: """
-                        INSERT INTO companion_rules (source_type, source_id, target_type, target_id,
-                        relationship, default_qty, is_active, created_at, updated_at)
-                        VALUES ('part', ?, 'part', ?, ?, ?, 1, ?, ?)
+                        INSERT INTO companion_rules (name, description, qty_mode, qty_ratio, is_active, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, 1, ?, ?)
                         """,
-                    arguments: [sourcePartId, targetPartId, relationship, defaultQty, now, now]
+                    arguments: [ruleName, capturedRelationship, "sum", capturedDefaultQty, now, now]
                 )
             }
-        } catch {}
+        } catch {
+            print("[PartsCompanionsPage] CompanionRuleFormSheet.save failed: \(error)")
+        }
     }
 }
 
@@ -583,34 +571,39 @@ private struct AlternativeFormSheet: View {
         }
     }
 
-    @Sendable
     private func loadParts() async {
         do {
-            let db = appCore.db!
-            let rows = try await db.writer.read { dbConnection -> [Row] in
+            guard let db = appCore.db else { return }
+            let rows = try db.writer.read { dbConnection -> [Row] in
                 try Row.fetchAll(dbConnection, sql: "SELECT id, name FROM parts WHERE deleted_at IS NULL ORDER BY name ASC")
             }
-            await MainActor.run {
-                parts = rows.map { PartPickerItem(id: $0["id"], name: $0["name"]) }
-            }
-        } catch {}
+            parts = rows.map { PartPickerItem(id: $0["id"], name: $0["name"]) }
+        } catch {
+            print("[PartsCompanionsPage] AlternativeFormSheet.loadParts failed: \(error)")
+        }
     }
 
     private func save() async {
+        let capturedPartId = partId
+        let capturedAlternativePartId = alternativePartId
+        let capturedRelationship = relationship
+        let capturedPriority = priority
         do {
-            let db = appCore.db!
+            guard let db = appCore.db else { return }
             let now = ISO8601DateFormatter().string(from: Date())
             try await db.writer.write { dbConnection in
                 try dbConnection.execute(
                     sql: """
                         INSERT INTO part_alternatives (part_id, alternative_part_id, relationship,
-                        priority, is_active, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, 1, ?, ?)
+                        preference, created_at)
+                        VALUES (?, ?, ?, ?, ?)
                         """,
-                    arguments: [partId, alternativePartId, relationship, priority, now, now]
+                    arguments: [capturedPartId, capturedAlternativePartId, capturedRelationship, capturedPriority, now]
                 )
             }
-        } catch {}
+        } catch {
+            print("[PartsCompanionsPage] AlternativeFormSheet.save failed: \(error)")
+        }
     }
 }
 

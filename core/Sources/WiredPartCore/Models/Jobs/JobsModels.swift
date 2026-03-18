@@ -7,19 +7,16 @@ public struct BillRateType: Codable, FetchableRecord, MutablePersistableRecord, 
     public static let databaseTableName = "bill_rate_types"
     public var id: Int64?
     public var name: String
-    public var rate: Double
     public var description: String?
+    public var sortOrder: Int
     public var isActive: Int
-    public var deletedAt: String?
     public var createdAt: String?
-    public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, rate, description
+        case id, name, description
+        case sortOrder = "sort_order"
         case isActive = "is_active"
-        case deletedAt = "deleted_at"
         case createdAt = "created_at"
-        case updatedAt = "updated_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -100,20 +97,26 @@ public struct JobPart: Codable, FetchableRecord, MutablePersistableRecord, Senda
     public var id: Int64?
     public var jobId: Int64
     public var partId: Int64
-    public var quantityNeeded: Int
-    public var quantityUsed: Int
+    public var qtyConsumed: Int
+    public var qtyReturned: Int
+    public var unitCostAtConsume: Double?
+    public var unitSellAtConsume: Double?
+    public var consumedBy: Int64?
+    public var consumedAt: String?
     public var notes: String?
     public var deletedAt: String?
-    public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id, notes
         case jobId = "job_id"
         case partId = "part_id"
-        case quantityNeeded = "quantity_needed"
-        case quantityUsed = "quantity_used"
+        case qtyConsumed = "qty_consumed"
+        case qtyReturned = "qty_returned"
+        case unitCostAtConsume = "unit_cost_at_consume"
+        case unitSellAtConsume = "unit_sell_at_consume"
+        case consumedBy = "consumed_by"
+        case consumedAt = "consumed_at"
         case deletedAt = "deleted_at"
-        case createdAt = "created_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -128,15 +131,19 @@ public struct LaborEntry: Codable, FetchableRecord, MutablePersistableRecord, Se
     public var jobId: Int64
     public var clockIn: String
     public var clockOut: String?
+    public var regularHours: Double
+    public var overtimeHours: Double
+    public var driveTimeMinutes: Int
+    public var clockInGpsLat: Double?
+    public var clockInGpsLng: Double?
+    public var clockOutGpsLat: Double?
+    public var clockOutGpsLng: Double?
+    public var clockInPhotoPath: String?
+    public var clockOutPhotoPath: String?
     public var status: String
-    public var gpsLatIn: Double?
-    public var gpsLngIn: Double?
-    public var gpsLatOut: Double?
-    public var gpsLngOut: Double?
+    public var editedBy: Int64?
+    public var approvedBy: Int64?
     public var notes: String?
-    public var billRateTypeId: Int64?
-    public var onCallType: String?
-    public var isPerDiem: Int
     public var deletedAt: String?
     public var createdAt: String?
 
@@ -146,13 +153,17 @@ public struct LaborEntry: Codable, FetchableRecord, MutablePersistableRecord, Se
         case jobId = "job_id"
         case clockIn = "clock_in"
         case clockOut = "clock_out"
-        case gpsLatIn = "gps_lat_in"
-        case gpsLngIn = "gps_lng_in"
-        case gpsLatOut = "gps_lat_out"
-        case gpsLngOut = "gps_lng_out"
-        case billRateTypeId = "bill_rate_type_id"
-        case onCallType = "on_call_type"
-        case isPerDiem = "is_per_diem"
+        case regularHours = "regular_hours"
+        case overtimeHours = "overtime_hours"
+        case driveTimeMinutes = "drive_time_minutes"
+        case clockInGpsLat = "clock_in_gps_lat"
+        case clockInGpsLng = "clock_in_gps_lng"
+        case clockOutGpsLat = "clock_out_gps_lat"
+        case clockOutGpsLng = "clock_out_gps_lng"
+        case clockInPhotoPath = "clock_in_photo_path"
+        case clockOutPhotoPath = "clock_out_photo_path"
+        case editedBy = "edited_by"
+        case approvedBy = "approved_by"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
     }
@@ -168,20 +179,22 @@ public struct ClockOutQuestion: Codable, FetchableRecord, MutablePersistableReco
     public var questionText: String
     public var answerType: String
     public var isRequired: Int
-    public var isActive: Int
     public var sortOrder: Int
-    public var deletedAt: String?
+    public var isActive: Int
+    public var createdBy: Int64?
     public var createdAt: String?
+    public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case questionText = "question_text"
         case answerType = "answer_type"
         case isRequired = "is_required"
-        case isActive = "is_active"
         case sortOrder = "sort_order"
-        case deletedAt = "deleted_at"
+        case isActive = "is_active"
+        case createdBy = "created_by"
         case createdAt = "created_at"
+        case updatedAt = "updated_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -190,19 +203,25 @@ public struct ClockOutQuestion: Codable, FetchableRecord, MutablePersistableReco
 // MARK: - ClockOutAnswer
 
 public struct ClockOutAnswer: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
-    public static let databaseTableName = "clock_out_answers"
+    public static let databaseTableName = "clock_out_responses"
     public var id: Int64?
     public var laborEntryId: Int64
     public var questionId: Int64
     public var answerText: String?
-    public var createdAt: String?
+    public var answerBool: Int?
+    public var photoPath: String?
+    public var deletedAt: String?
+    public var answeredAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case laborEntryId = "labor_entry_id"
         case questionId = "question_id"
         case answerText = "answer_text"
-        case createdAt = "created_at"
+        case answerBool = "answer_bool"
+        case photoPath = "photo_path"
+        case deletedAt = "deleted_at"
+        case answeredAt = "answered_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -245,23 +264,22 @@ public struct DailyReport: Codable, FetchableRecord, MutablePersistableRecord, S
     public var id: Int64?
     public var jobId: Int64
     public var reportDate: String
+    public var reportJson: String
     public var status: String
-    public var reportData: String?
-    public var generatedBy: Int64?
     public var generatedAt: String?
-    public var notes: String?
+    public var reviewedBy: Int64?
+    public var reviewedAt: String?
     public var deletedAt: String?
-    public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, status, notes
+        case id, status
         case jobId = "job_id"
         case reportDate = "report_date"
-        case reportData = "report_data"
-        case generatedBy = "generated_by"
+        case reportJson = "report_json"
         case generatedAt = "generated_at"
+        case reviewedBy = "reviewed_by"
+        case reviewedAt = "reviewed_at"
         case deletedAt = "deleted_at"
-        case createdAt = "created_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -275,7 +293,8 @@ public struct JobTeamMember: Codable, FetchableRecord, MutablePersistableRecord,
     public var jobId: Int64
     public var userId: Int64
     public var role: String
-    public var joinedAt: String?
+    public var assignedAt: String?
+    public var assignedBy: Int64?
     public var notes: String?
     public var deletedAt: String?
 
@@ -283,7 +302,8 @@ public struct JobTeamMember: Codable, FetchableRecord, MutablePersistableRecord,
         case id, role, notes
         case jobId = "job_id"
         case userId = "user_id"
-        case joinedAt = "joined_at"
+        case assignedAt = "assigned_at"
+        case assignedBy = "assigned_by"
         case deletedAt = "deleted_at"
     }
 

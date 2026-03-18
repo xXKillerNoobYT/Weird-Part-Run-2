@@ -11,6 +11,7 @@ struct ThemesPage: View {
     @State private var primaryColor = "#2563eb"
     @State private var fontFamily = "Inter"
     @State private var saved = false
+    @State private var errorMessage: String?
 
     private let themeModes = ["system", "light", "dark"]
     private let colorPresets: [(String, String)] = [
@@ -81,6 +82,11 @@ struct ThemesPage: View {
             }
         }
         .onAppear { loadTheme() }
+        .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
     }
 
     private func loadTheme() {
@@ -89,7 +95,9 @@ struct ThemesPage: View {
             themeMode = theme.themeMode
             primaryColor = theme.primaryColor
             fontFamily = theme.fontFamily
-        } catch {}
+        } catch {
+            print("[ThemesPage] Load error: \(error)")
+        }
     }
 
     private func saveTheme() {
@@ -102,6 +110,8 @@ struct ThemesPage: View {
             _ = try appCore.settingsService.updateTheme(settings)
             saved = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
-        } catch {}
+        } catch {
+            errorMessage = "Failed to save: \(error.localizedDescription)"
+        }
     }
 }

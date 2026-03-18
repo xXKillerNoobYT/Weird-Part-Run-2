@@ -15,6 +15,7 @@ struct IOSJPOsPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
+    @State private var loadError: String?
 
     private let statusOptions = ["all", "draft", "pending", "submitted", "approved", "rejected"]
 
@@ -65,15 +66,22 @@ struct IOSJPOsPage: View {
         if isLoading {
             ProgressView("Loading JPOs...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredJPOs.isEmpty {
-            ContentUnavailableView {
-                Label("No JPOs", systemImage: "doc.text")
-            } description: {
-                Text("No job purchase orders match your criteria.")
-            }
+            EmptyStateView(
+                icon: "doc.text",
+                title: "No JPOs",
+                message: searchText.isEmpty ? "No job purchase orders yet." : "No JPOs match your criteria."
+            )
         } else {
             List(filteredJPOs, id: \.id) { jpo in
-                jpoRow(jpo)
+                NavigationLink {
+                    IOSJPODetailPage(jpoId: jpo.id)
+                        .environmentObject(appCore)
+                } label: {
+                    jpoRow(jpo)
+                }
             }
             #if os(iOS)
             .listStyle(.insetGrouped)
@@ -116,6 +124,8 @@ struct IOSJPOsPage: View {
             }
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("JPO number \(jpo.id), \(jpo.jobName), status \(jpo.status), \(jpo.lineCount) line items")
     }
 
     // MARK: - Badges
@@ -154,12 +164,13 @@ struct IOSJPOsPage: View {
     private func loadData() {
         guard let service = appCore.ordersService else { return }
         isLoading = jpos.isEmpty
+        loadError = nil
         do {
             jpos = try service.listJPOs(
                 status: statusFilter == "all" ? nil : statusFilter
             )
         } catch {
-            print("[IOSJPOsPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

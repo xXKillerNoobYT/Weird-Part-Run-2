@@ -14,6 +14,7 @@ struct IOSReceivingPage: View {
     @State private var sessions: [WarehouseService.ReceivingSessionInfo] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var loadError: String?
 
     var body: some View {
         sessionList
@@ -31,6 +32,8 @@ struct IOSReceivingPage: View {
         if isLoading {
             ProgressView("Loading receiving sessions...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredSessions.isEmpty {
             ContentUnavailableView {
                 Label("No Receiving Sessions", systemImage: "shippingbox.and.arrow.backward")
@@ -130,10 +133,11 @@ struct IOSReceivingPage: View {
     private func loadData() {
         guard let service = appCore.warehouseService else { return }
         isLoading = sessions.isEmpty
+        loadError = nil
         do {
             sessions = try service.getActiveSessions()
         } catch {
-            print("[IOSReceivingPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

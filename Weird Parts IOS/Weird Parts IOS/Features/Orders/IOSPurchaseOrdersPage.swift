@@ -15,6 +15,7 @@ struct IOSPurchaseOrdersPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
+    @State private var loadError: String?
 
     private let statusOptions = ["all", "draft", "submitted", "ordered", "partial", "received", "cancelled"]
 
@@ -65,15 +66,22 @@ struct IOSPurchaseOrdersPage: View {
         if isLoading {
             ProgressView("Loading purchase orders...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredPOs.isEmpty {
-            ContentUnavailableView {
-                Label("No Purchase Orders", systemImage: "doc.text.fill")
-            } description: {
-                Text("No purchase orders match your criteria.")
-            }
+            EmptyStateView(
+                icon: "doc.text.fill",
+                title: "No Purchase Orders",
+                message: searchText.isEmpty ? "No purchase orders yet." : "No POs match your criteria."
+            )
         } else {
             List(filteredPOs, id: \.id) { po in
-                poRow(po)
+                NavigationLink {
+                    IOSPODetailPage(poId: po.id)
+                        .environmentObject(appCore)
+                } label: {
+                    poRow(po)
+                }
             }
             #if os(iOS)
             .listStyle(.insetGrouped)
@@ -148,12 +156,13 @@ struct IOSPurchaseOrdersPage: View {
     private func loadData() {
         guard let service = appCore.ordersService else { return }
         isLoading = purchaseOrders.isEmpty
+        loadError = nil
         do {
             purchaseOrders = try service.listPurchaseOrders(
                 status: statusFilter == "all" ? nil : statusFilter
             )
         } catch {
-            print("[IOSPurchaseOrdersPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

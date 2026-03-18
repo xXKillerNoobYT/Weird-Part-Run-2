@@ -14,6 +14,7 @@ struct IOSSpendingPage: View {
     @State private var summary: ReportsService.SpendingSummary?
     @State private var isLoading = true
     @State private var selectedDays = 30
+    @State private var loadError: String?
 
     private let periodOptions = [7, 14, 30, 60, 90]
 
@@ -62,6 +63,8 @@ struct IOSSpendingPage: View {
         if isLoading {
             ProgressView("Loading spending data...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if let summary {
             ScrollView {
                 LazyVGrid(columns: [
@@ -166,10 +169,11 @@ struct IOSSpendingPage: View {
     private func loadData() {
         guard let service = appCore.reportsService else { return }
         isLoading = summary == nil
+        loadError = nil
         do {
             summary = try service.getSpendingSummary(days: selectedDays)
         } catch {
-            print("[IOSSpendingPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

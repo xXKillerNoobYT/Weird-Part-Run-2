@@ -15,6 +15,8 @@ struct IOSApprovalsPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var processingId: Int64?
+    @State private var loadError: String?
+    @State private var actionError: String?
 
     var body: some View {
         approvalList
@@ -154,6 +156,7 @@ struct IOSApprovalsPage: View {
             pendingJPOs.removeAll { $0.id == id }
         } catch {
             print("[IOSApprovalsPage] Approve error: \(error)")
+            actionError = error.localizedDescription
         }
         processingId = nil
     }
@@ -166,6 +169,7 @@ struct IOSApprovalsPage: View {
             pendingJPOs.removeAll { $0.id == id }
         } catch {
             print("[IOSApprovalsPage] Deny error: \(error)")
+            actionError = error.localizedDescription
         }
         processingId = nil
     }
@@ -179,6 +183,7 @@ struct IOSApprovalsPage: View {
             pendingJPOs = try service.listJPOs(status: "pending")
         } catch {
             print("[IOSApprovalsPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

@@ -14,12 +14,15 @@ struct IOSFleetDashboardPage: View {
     @State private var stats: FleetService.FleetStats?
     @State private var recentMaintenance: [FleetService.MaintenanceRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
 
     var body: some View {
         VStack(spacing: 0) {
             if isLoading {
                 ProgressView("Loading fleet dashboard...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { loadData() }
             } else {
                 dashboardContent
             }
@@ -27,7 +30,7 @@ struct IOSFleetDashboardPage: View {
         .navigationTitle("Fleet Dashboard")
         .refreshable { loadData() }
         #if os(iOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #endif
         .task { loadData() }
     }
@@ -106,6 +109,8 @@ struct IOSFleetDashboardPage: View {
         .background(Color(.secondarySystemGroupedBackground))
         #endif
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(value)")
     }
 
     // MARK: - Recent Maintenance Activity
@@ -203,12 +208,13 @@ struct IOSFleetDashboardPage: View {
     private func loadData() {
         guard let service = appCore.fleetService else { return }
         isLoading = stats == nil && recentMaintenance.isEmpty
+        loadError = nil
 
         do {
             stats = try service.getFleetStats()
             recentMaintenance = try service.listMaintenanceRecords(limit: 5)
         } catch {
-            print("[IOSFleetDashboardPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
 
         isLoading = false

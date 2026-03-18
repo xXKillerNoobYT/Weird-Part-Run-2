@@ -59,12 +59,12 @@ public final class DeviceResetService: Sendable {
                         WHERE is_deactivated = 0 AND device_id != ?
                         """,
                     arguments: [currentId]
-                )!
+                ) ?? 0
             } else {
                 return try Int.fetchOne(
                     dbConnection,
                     sql: "SELECT COUNT(*) FROM _device_registry WHERE is_deactivated = 0"
-                )!
+                ) ?? 0
             }
         }
         return count > 0

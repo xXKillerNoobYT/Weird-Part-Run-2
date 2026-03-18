@@ -13,6 +13,7 @@ struct LoginView: View {
     @State private var pin = ""
     @State private var errorMessage: String?
     @State private var isLoading = false
+    @State private var usersLoaded = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -86,12 +87,31 @@ struct LoginView: View {
                 .padding()
             } else {
                 // User list
-                if users.isEmpty {
+                if users.isEmpty && !usersLoaded {
                     VStack(spacing: 12) {
                         ProgressView()
                         Text("Loading users...")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                } else if users.isEmpty && usersLoaded {
+                    VStack(spacing: 12) {
+                        Image(systemName: "person.slash")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.secondary)
+                        Text("No Users Found")
+                            .font(.headline)
+                        Text("Create an admin account first using the onboarding flow.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                        if let error = errorMessage {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
                     }
                     .padding()
                 } else {
@@ -141,7 +161,7 @@ struct LoginView: View {
         #if os(iOS)
         .background(Color(.systemBackground))
         #elseif os(macOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #endif
         .onAppear { loadUsers() }
     }
@@ -154,10 +174,18 @@ struct LoginView: View {
         } catch {
             errorMessage = "Failed to load users: \(error.localizedDescription)"
         }
+        usersLoaded = true
     }
 
     private func attemptLogin() {
-        guard let user = selectedUser, let userId = user.id else { return }
+        guard let user = selectedUser else {
+            errorMessage = "No user selected."
+            return
+        }
+        guard let userId = user.id else {
+            errorMessage = "Invalid user account. Please contact your administrator."
+            return
+        }
         isLoading = true
         errorMessage = nil
 

@@ -14,6 +14,7 @@ struct IOSFuelPage: View {
     @State private var fuelLogs: [FleetService.FuelRow] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var loadError: String?
 
     var body: some View {
         fuelList
@@ -106,6 +107,7 @@ struct IOSFuelPage: View {
             fuelLogs = try service.listFuelLogs()
         } catch {
             print("[IOSFuelPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

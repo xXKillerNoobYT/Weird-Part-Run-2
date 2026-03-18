@@ -9,6 +9,7 @@ struct IOSChatRouter: View {
         switch tabId {
         case "chat-channels": IOSChannelsPage()
         case "chat-questions": IOSQuestionsPage()
+        case "chat-rfis": IOSRFIListPage()
         default: Text("Unknown chat page: \(tabId)").foregroundStyle(.secondary)
         }
     }

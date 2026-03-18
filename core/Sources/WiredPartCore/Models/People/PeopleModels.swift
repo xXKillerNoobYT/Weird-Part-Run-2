@@ -9,23 +9,28 @@ public struct Certification: Codable, FetchableRecord, MutablePersistableRecord,
     public var userId: Int64
     public var certType: String
     public var certName: String
-    public var issuer: String?
+    public var issuingAuthority: String?
     public var certNumber: String?
     public var issuedDate: String?
     public var expiryDate: String?
+    public var isActive: Int
     public var notes: String?
+    public var documentPath: String?
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, issuer, notes
+        case id, notes
         case userId = "user_id"
         case certType = "cert_type"
         case certName = "cert_name"
+        case issuingAuthority = "issuing_authority"
         case certNumber = "cert_number"
         case issuedDate = "issued_date"
         case expiryDate = "expiry_date"
+        case isActive = "is_active"
+        case documentPath = "document_path"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -40,21 +45,18 @@ public struct WageHistory: Codable, FetchableRecord, MutablePersistableRecord, S
     public static let databaseTableName = "wage_history"
     public var id: Int64?
     public var userId: Int64
+    public var payRate: Double
     public var effectiveDate: String
-    public var hourlyRate: Double
     public var reason: String?
-    public var approvedBy: Int64?
-    public var notes: String?
-    public var deletedAt: String?
+    public var changedBy: Int64?
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, reason, notes
+        case id, reason
         case userId = "user_id"
+        case payRate = "pay_rate"
         case effectiveDate = "effective_date"
-        case hourlyRate = "hourly_rate"
-        case approvedBy = "approved_by"
-        case deletedAt = "deleted_at"
+        case changedBy = "changed_by"
         case createdAt = "created_at"
     }
 
@@ -67,20 +69,21 @@ public struct EmployeeNote: Codable, FetchableRecord, MutablePersistableRecord, 
     public static let databaseTableName = "employee_notes"
     public var id: Int64?
     public var userId: Int64
-    public var authorId: Int64
     public var noteType: String
-    public var content: String
+    public var title: String
+    public var body: String
     public var isPrivate: Int
+    public var createdBy: Int64?
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, content
+        case id, title, body
         case userId = "user_id"
-        case authorId = "author_id"
         case noteType = "note_type"
         case isPrivate = "is_private"
+        case createdBy = "created_by"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -97,18 +100,21 @@ public struct UserSkill: Codable, FetchableRecord, MutablePersistableRecord, Sen
     public var userId: Int64
     public var skillName: String
     public var proficiency: String
-    public var notes: String?
+    public var yearsExperience: Double?
+    public var verifiedBy: Int64?
+    public var verifiedAt: String?
     public var deletedAt: String?
     public var createdAt: String?
-    public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, proficiency, notes
+        case id, proficiency
         case userId = "user_id"
         case skillName = "skill_name"
+        case yearsExperience = "years_experience"
+        case verifiedBy = "verified_by"
+        case verifiedAt = "verified_at"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
-        case updatedAt = "updated_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -121,7 +127,7 @@ public struct EmployeeTeam: Codable, FetchableRecord, MutablePersistableRecord, 
     public var id: Int64?
     public var name: String
     public var description: String?
-    public var leadId: Int64?
+    public var leadUserId: Int64?
     public var isActive: Int
     public var deletedAt: String?
     public var createdAt: String?
@@ -129,7 +135,7 @@ public struct EmployeeTeam: Codable, FetchableRecord, MutablePersistableRecord, 
 
     enum CodingKeys: String, CodingKey {
         case id, name, description
-        case leadId = "lead_id"
+        case leadUserId = "lead_user_id"
         case isActive = "is_active"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
@@ -168,23 +174,26 @@ public struct EntityContact: Codable, FetchableRecord, MutablePersistableRecord,
     public var id: Int64?
     public var entityType: String
     public var entityId: Int64
-    public var contactName: String
-    public var contactRole: String?
-    public var phone: String?
+    public var firstName: String
+    public var lastName: String
+    public var role: String
+    public var phone: String
     public var email: String?
     public var isPrimary: Int
     public var notes: String?
+    public var isActive: Int
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, phone, email, notes
+        case id, phone, email, notes, role
         case entityType = "entity_type"
         case entityId = "entity_id"
-        case contactName = "contact_name"
-        case contactRole = "contact_role"
+        case firstName = "first_name"
+        case lastName = "last_name"
         case isPrimary = "is_primary"
+        case isActive = "is_active"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"

@@ -54,16 +54,18 @@ public final class ChatService: Sendable {
     /// A message row enriched with sender name.
     public struct MessageRow: Sendable, Identifiable {
         public let id: Int64
+        public let senderId: Int64
         public let senderName: String
         public let content: String
         public let messageType: String
         public let createdAt: String?
 
         public init(
-            id: Int64, senderName: String, content: String,
+            id: Int64, senderId: Int64, senderName: String, content: String,
             messageType: String, createdAt: String?
         ) {
             self.id = id
+            self.senderId = senderId
             self.senderName = senderName
             self.content = content
             self.messageType = messageType
@@ -74,6 +76,7 @@ public final class ChatService: Sendable {
     /// A Q&A thread row enriched with user names.
     public struct QAThreadRow: Sendable, Identifiable {
         public let id: Int64
+        public let jobId: Int64
         public let question: String
         public let askedByName: String
         public let currentLevel: String
@@ -83,11 +86,12 @@ public final class ChatService: Sendable {
         public let answeredByName: String?
 
         public init(
-            id: Int64, question: String, askedByName: String,
+            id: Int64, jobId: Int64 = 0, question: String, askedByName: String,
             currentLevel: String, status: String, priority: String,
             answer: String?, answeredByName: String?
         ) {
             self.id = id
+            self.jobId = jobId
             self.question = question
             self.askedByName = askedByName
             self.currentLevel = currentLevel
@@ -161,7 +165,7 @@ public final class ChatService: Sendable {
         do {
             return try db.writer.read { dbConn -> [MessageRow] in
                 let sql = """
-                    SELECT cm.id, cm.content, cm.message_type, cm.created_at,
+                    SELECT cm.id, cm.sender_id, cm.content, cm.message_type, cm.created_at,
                            COALESCE(u.display_name, u.email, 'Unknown') AS sender_name
                     FROM chat_messages cm
                     LEFT JOIN users u ON u.id = cm.sender_id
@@ -174,6 +178,7 @@ public final class ChatService: Sendable {
                 return rows.map { row in
                     MessageRow(
                         id: row["id"] ?? 0,
+                        senderId: row["sender_id"] ?? 0,
                         senderName: row["sender_name"] ?? "Unknown",
                         content: row["content"] ?? "",
                         messageType: row["message_type"] ?? "text",
@@ -194,8 +199,8 @@ public final class ChatService: Sendable {
             try dbConn.execute(
                 sql: """
                     INSERT INTO chat_messages
-                    (channel_id, sender_id, message_type, content, is_edited, created_at)
-                    VALUES (?, ?, 'text', ?, 0, datetime('now'))
+                    (channel_id, sender_id, message_type, content, created_at)
+                    VALUES (?, ?, 'text', ?, datetime('now'))
                     """,
                 arguments: [channelId, senderId, content]
             )
@@ -220,8 +225,8 @@ public final class ChatService: Sendable {
                 }
 
                 let sql = """
-                    SELECT qa.id, qa.question, qa.current_level, qa.status, qa.priority,
-                           qa.answer,
+                    SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.subject, qa.current_level, qa.status, qa.priority,
+                           qa.answer_text,
                            COALESCE(ua.display_name, ua.email, 'Unknown') AS asked_by_name,
                            COALESCE(ub.display_name, ub.email) AS answered_by_name
                     FROM qa_threads qa
@@ -235,12 +240,13 @@ public final class ChatService: Sendable {
                 return rows.map { row in
                     QAThreadRow(
                         id: row["id"] ?? 0,
-                        question: row["question"] ?? "",
+                        jobId: row["job_id"] ?? 0,
+                        question: row["subject"] ?? "",
                         askedByName: row["asked_by_name"] ?? "Unknown",
                         currentLevel: row["current_level"] ?? "field",
                         status: row["status"] ?? "open",
                         priority: row["priority"] ?? "normal",
-                        answer: row["answer"] as String?,
+                        answer: row["answer_text"] as String?,
                         answeredByName: row["answered_by_name"] as String?
                     )
                 }
@@ -248,6 +254,27 @@ public final class ChatService: Sendable {
         } catch {
             if isTableNotFoundError(error) { return [] }
             throw error
+        }
+    }
+
+    /// Create a new Q&A thread. Returns the inserted row ID.
+    @discardableResult
+    public func createQAThread(
+        jobId: Int64,
+        askedBy: Int64,
+        subject: String,
+        priority: String = "normal"
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO qa_threads
+                    (job_id, asked_by, subject, current_level, status, priority, created_at, updated_at)
+                    VALUES (?, ?, ?, 'worker', 'open', ?, datetime('now'), datetime('now'))
+                    """,
+                arguments: [jobId, askedBy, subject, priority]
+            )
+            return dbConn.lastInsertedRowID
         }
     }
 
@@ -262,7 +289,7 @@ public final class ChatService: Sendable {
         )
 
         let unreadMentions = try safeCount(
-            sql: "SELECT COUNT(*) FROM chat_mentions WHERE read_at IS NULL"
+            sql: "SELECT COUNT(*) FROM chat_mentions WHERE acknowledged_at IS NULL AND deleted_at IS NULL"
         )
 
         let openQuestions = try safeCount(

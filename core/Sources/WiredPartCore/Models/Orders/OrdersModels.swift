@@ -4,12 +4,16 @@ import GRDB
 // MARK: - JPO (Job Purchase Order)
 
 public struct JPO: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
-    public static let databaseTableName = "jpos"
+    public static let databaseTableName = "job_parts_orders"
     public var id: Int64?
+    public var orderNumber: String
+    public var orderType: String
     public var jobId: Int64
     public var requestedBy: Int64
     public var status: String
     public var priority: String
+    public var hasSpecialItems: Int
+    public var smartSuggestionsEnabled: Int
     public var notes: String?
     public var approvedBy: Int64?
     public var approvedAt: String?
@@ -19,8 +23,12 @@ public struct JPO: Codable, FetchableRecord, MutablePersistableRecord, Sendable 
 
     enum CodingKeys: String, CodingKey {
         case id, status, priority, notes
+        case orderNumber = "order_number"
+        case orderType = "order_type"
         case jobId = "job_id"
         case requestedBy = "requested_by"
+        case hasSpecialItems = "has_special_items"
+        case smartSuggestionsEnabled = "smart_suggestions_enabled"
         case approvedBy = "approved_by"
         case approvedAt = "approved_at"
         case deletedAt = "deleted_at"
@@ -34,23 +42,29 @@ public struct JPO: Codable, FetchableRecord, MutablePersistableRecord, Sendable 
 // MARK: - JPOLine
 
 public struct JPOLine: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
-    public static let databaseTableName = "jpo_lines"
+    public static let databaseTableName = "jpo_line_items"
     public var id: Int64?
     public var jpoId: Int64
-    public var partId: Int64?
-    public var description: String?
-    public var quantity: Int
-    public var unitPrice: Double?
+    public var partId: Int64
+    public var qtyRequested: Int
+    public var qtyOrdered: Int
+    public var qtyReceived: Int
+    public var priority: String?
+    public var entryId: Int64?
+    public var suggestedSupplierId: Int64?
     public var notes: String?
-    public var priority: String
     public var deletedAt: String?
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, description, quantity, notes, priority
+        case id, priority, notes
         case jpoId = "jpo_id"
         case partId = "part_id"
-        case unitPrice = "unit_price"
+        case qtyRequested = "qty_requested"
+        case qtyOrdered = "qty_ordered"
+        case qtyReceived = "qty_received"
+        case entryId = "entry_id"
+        case suggestedSupplierId = "suggested_supplier_id"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
     }
@@ -115,28 +129,35 @@ public struct PurchaseOrder: Codable, FetchableRecord, MutablePersistableRecord,
 // MARK: - POLine
 
 public struct POLine: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
-    public static let databaseTableName = "po_lines"
+    public static let databaseTableName = "po_line_items"
     public var id: Int64?
     public var poId: Int64
     public var jpoLineId: Int64?
-    public var partId: Int64?
-    public var description: String?
-    public var quantityOrdered: Int
-    public var quantityReceived: Int
-    public var unitPrice: Double?
-    public var status: String
+    public var partId: Int64
+    public var qtyOrdered: Int
+    public var qtyReceived: Int
+    public var unitCost: Double?
+    public var receivedUnitCost: Double?
+    public var status: String?
+    public var backorderExpectedDate: String?
+    public var receivedAt: String?
+    public var receivedBy: Int64?
     public var notes: String?
     public var deletedAt: String?
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, description, status, notes
+        case id, status, notes
         case poId = "po_id"
         case jpoLineId = "jpo_line_id"
         case partId = "part_id"
-        case quantityOrdered = "quantity_ordered"
-        case quantityReceived = "quantity_received"
-        case unitPrice = "unit_price"
+        case qtyOrdered = "qty_ordered"
+        case qtyReceived = "qty_received"
+        case unitCost = "unit_cost"
+        case receivedUnitCost = "received_unit_cost"
+        case backorderExpectedDate = "backorder_expected_date"
+        case receivedAt = "received_at"
+        case receivedBy = "received_by"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
     }
@@ -168,31 +189,39 @@ public struct POJPOLink: Codable, FetchableRecord, MutablePersistableRecord, Sen
 public struct PartReturn: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "returns"
     public var id: Int64?
+    public var returnNumber: String
+    public var returnType: String
     public var poId: Int64?
     public var supplierId: Int64?
-    public var returnType: String
+    public var jobId: Int64?
     public var status: String
-    public var reason: String?
-    public var requestedBy: Int64?
+    public var rmaNumber: String?
+    public var reason: String
+    public var shippingCarrier: String?
+    public var trackingNumber: String?
+    public var creditAmount: Double
+    public var notes: String?
+    public var initiatedBy: Int64
     public var approvedBy: Int64?
     public var approvedAt: String?
-    public var trackingNumber: String?
-    public var creditAmount: Double?
-    public var notes: String?
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id, status, reason, notes
+        case returnNumber = "return_number"
+        case returnType = "return_type"
         case poId = "po_id"
         case supplierId = "supplier_id"
-        case returnType = "return_type"
-        case requestedBy = "requested_by"
-        case approvedBy = "approved_by"
-        case approvedAt = "approved_at"
+        case jobId = "job_id"
+        case rmaNumber = "rma_number"
+        case shippingCarrier = "shipping_carrier"
         case trackingNumber = "tracking_number"
         case creditAmount = "credit_amount"
+        case initiatedBy = "initiated_by"
+        case approvedBy = "approved_by"
+        case approvedAt = "approved_at"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -207,31 +236,28 @@ public struct ReturnLineItem: Codable, FetchableRecord, MutablePersistableRecord
     public static let databaseTableName = "return_line_items"
     public var id: Int64?
     public var returnId: Int64
-    public var partId: Int64?
+    public var partId: Int64
     public var poLineId: Int64?
-    public var quantity: Int
-    public var conditionStatus: String
-    public var reason: String?
+    public var qty: Int
+    public var condition: String
+    public var disposition: String
+    public var unitCost: Double?
     public var notes: String?
-    public var sortGroup: String?
-    public var sortDisposition: String?
-    public var sortNotes: String?
-    public var sortedAt: String?
-    public var sortedBy: Int64?
+    public var returnableToSupplier: Int
+    public var nonReturnReason: String?
+    public var belowTargetFlag: Int
     public var deletedAt: String?
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, quantity, reason, notes
+        case id, qty, condition, disposition, notes
         case returnId = "return_id"
         case partId = "part_id"
         case poLineId = "po_line_id"
-        case conditionStatus = "condition_status"
-        case sortGroup = "sort_group"
-        case sortDisposition = "sort_disposition"
-        case sortNotes = "sort_notes"
-        case sortedAt = "sorted_at"
-        case sortedBy = "sorted_by"
+        case unitCost = "unit_cost"
+        case returnableToSupplier = "returnable_to_supplier"
+        case nonReturnReason = "non_return_reason"
+        case belowTargetFlag = "below_target_flag"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
     }
@@ -301,31 +327,31 @@ public struct StagingItem: Codable, FetchableRecord, MutablePersistableRecord, S
 public struct SpecialItem: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "special_items"
     public var id: Int64?
-    public var jpoId: Int64?
-    public var jpoLineId: Int64?
+    public var jpoId: Int64
     public var description: String
-    public var requestedBy: Int64?
-    public var status: String
-    public var resolution: String?
-    public var resolvedBy: Int64?
-    public var resolvedAt: String?
-    public var createdPartId: Int64?
+    public var partNumber: String?
+    public var quantity: Int
+    public var unit: String
+    public var estimatedCost: Double?
     public var notes: String?
+    public var isFlagged: Int
+    public var flagResolvedBy: Int64?
+    public var flagResolvedAt: String?
+    public var linkedPartId: Int64?
     public var deletedAt: String?
     public var createdAt: String?
-    public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, description, status, resolution, notes
+        case id, description, quantity, unit, notes
         case jpoId = "jpo_id"
-        case jpoLineId = "jpo_line_id"
-        case requestedBy = "requested_by"
-        case resolvedBy = "resolved_by"
-        case resolvedAt = "resolved_at"
-        case createdPartId = "created_part_id"
+        case partNumber = "part_number"
+        case estimatedCost = "estimated_cost"
+        case isFlagged = "is_flagged"
+        case flagResolvedBy = "flag_resolved_by"
+        case flagResolvedAt = "flag_resolved_at"
+        case linkedPartId = "linked_part_id"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
-        case updatedAt = "updated_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -334,7 +360,7 @@ public struct SpecialItem: Codable, FetchableRecord, MutablePersistableRecord, S
 // MARK: - StatusHistory
 
 public struct StatusHistory: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
-    public static let databaseTableName = "status_history"
+    public static let databaseTableName = "order_status_history"
     public var id: Int64?
     public var entityType: String
     public var entityId: Int64

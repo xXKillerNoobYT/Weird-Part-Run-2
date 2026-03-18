@@ -14,6 +14,7 @@ struct IOSContactsPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var typeFilter = "all"
+    @State private var loadError: String?
 
     private let typeOptions = ["all", "gc", "contractor", "supplier", "vendor", "other"]
 
@@ -64,6 +65,8 @@ struct IOSContactsPage: View {
         if isLoading {
             ProgressView("Loading contacts...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredContacts.isEmpty {
             ContentUnavailableView {
                 Label("No Contacts", systemImage: "person.crop.rectangle.stack")
@@ -152,13 +155,14 @@ struct IOSContactsPage: View {
     private func loadData() {
         guard let service = appCore.peopleService else { return }
         isLoading = contacts.isEmpty
+        loadError = nil
         do {
             contacts = try service.listContacts(
                 search: searchText.isEmpty ? nil : searchText,
                 contactType: typeFilter == "all" ? nil : typeFilter
             )
         } catch {
-            print("[IOSContactsPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

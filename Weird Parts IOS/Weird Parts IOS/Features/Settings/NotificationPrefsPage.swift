@@ -14,6 +14,7 @@ struct NotificationPrefsPage: View {
     @State private var syncStatus = true
     @State private var soundEnabled = true
     @State private var saved = false
+    @State private var errorMessage: String?
 
     var body: some View {
         Form {
@@ -49,6 +50,11 @@ struct NotificationPrefsPage: View {
             }
         }
         .onAppear { loadPrefs() }
+        .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
     }
 
     private func loadPrefs() {
@@ -59,7 +65,9 @@ struct NotificationPrefsPage: View {
             vehicleAlerts = map["vehicle_alerts"] != "false"
             syncStatus = map["sync_status"] != "false"
             soundEnabled = map["sound_enabled"] != "false"
-        } catch {}
+        } catch {
+            print("[NotificationPrefsPage] Load error: \(error)")
+        }
     }
 
     private func savePrefs() {
@@ -73,6 +81,8 @@ struct NotificationPrefsPage: View {
             ], category: "notifications")
             saved = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
-        } catch {}
+        } catch {
+            errorMessage = "Failed to save: \(error.localizedDescription)"
+        }
     }
 }

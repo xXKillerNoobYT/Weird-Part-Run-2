@@ -13,6 +13,7 @@ struct IOSReportsRouter: View {
         case "reports-profitability": IOSProfitabilityPage()
         case "reports-pre-billing": IOSPreBillingPage()
         case "reports-bookkeeper": IOSBookkeeperExportPage()
+        case "reports-labor-overview": IOSLaborOverviewPage()
         default: Text("Unknown reports page: \(tabId)").foregroundStyle(.secondary)
         }
     }

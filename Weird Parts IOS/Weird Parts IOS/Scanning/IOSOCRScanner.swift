@@ -15,8 +15,10 @@ import VisionKit
 /// with real-time quality feedback, then `VNRecognizeTextRequest` (.accurate)
 /// for text recognition.
 final class IOSOCRScanner: OCRScannerAdapter {
-    var isAvailable: Bool {
-        VNDocumentCameraViewController.isSupported
+    nonisolated var isAvailable: Bool {
+        MainActor.assumeIsolated {
+            VNDocumentCameraViewController.isSupported
+        }
     }
 
     // MARK: - Scan Document

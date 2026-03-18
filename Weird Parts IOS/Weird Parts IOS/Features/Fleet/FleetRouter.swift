@@ -14,7 +14,10 @@ struct FleetRouter: View {
         case "fleet-fuel": IOSFuelPage()
         case "fleet-trailers": IOSTrailersPage()
         case "fleet-inspections": IOSInspectionsPage()
-        case "fleet-gps": IOSTelematicsPage()
+        case "fleet-tracking", "fleet-gps": IOSTelematicsPage()
+        case "fleet-my-truck": IOSMyTruckPage()
+        case "fleet-trailer-locations": IOSTrailerLocationsPage()
+        case "fleet-truck-tools": IOSTruckToolsPage()
         default: Text("Unknown fleet page: \(tabId)").foregroundStyle(.secondary)
         }
     }

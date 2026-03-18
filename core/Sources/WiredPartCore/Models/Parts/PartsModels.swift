@@ -82,17 +82,17 @@ public struct PartColor: Codable, FetchableRecord, MutablePersistableRecord, Sen
     public var name: String
     public var hexCode: String?
     public var sortOrder: Int
+    public var isActive: Int
     public var deletedAt: String?
     public var createdAt: String?
-    public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name
         case hexCode = "hex_code"
         case sortOrder = "sort_order"
+        case isActive = "is_active"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
-        case updatedAt = "updated_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -105,13 +105,17 @@ public struct TypeColorLink: Codable, FetchableRecord, MutablePersistableRecord,
     public var id: Int64?
     public var typeId: Int64
     public var colorId: Int64
-    public var isDefault: Int
+    public var imageUrl: String?
+    public var sortOrder: Int?
+    public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case typeId = "type_id"
         case colorId = "color_id"
-        case isDefault = "is_default"
+        case imageUrl = "image_url"
+        case sortOrder = "sort_order"
+        case createdAt = "created_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -146,13 +150,13 @@ public struct TypeBrandLink: Codable, FetchableRecord, MutablePersistableRecord,
     public var id: Int64?
     public var typeId: Int64
     public var brandId: Int64
-    public var isPreferred: Int
+    public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case typeId = "type_id"
         case brandId = "brand_id"
-        case isPreferred = "is_preferred"
+        case createdAt = "created_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -224,13 +228,20 @@ public struct BrandSupplierLink: Codable, FetchableRecord, MutablePersistableRec
     public var id: Int64?
     public var brandId: Int64
     public var supplierId: Int64
-    public var isPreferred: Int
+    public var accountNumber: String?
+    public var notes: String?
+    public var isActive: Int
+    public var deletedAt: String?
+    public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id
+        case id, notes
         case brandId = "brand_id"
         case supplierId = "supplier_id"
-        case isPreferred = "is_preferred"
+        case accountNumber = "account_number"
+        case isActive = "is_active"
+        case deletedAt = "deleted_at"
+        case createdAt = "created_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -333,25 +344,26 @@ public struct PartSupplierLink: Codable, FetchableRecord, MutablePersistableReco
     public var partId: Int64
     public var supplierId: Int64
     public var supplierPartNumber: String?
-    public var costPrice: Double?
-    public var leadTimeDays: Int?
+    public var supplierCostPrice: Double?
+    public var moq: Int?
+    public var discountBrackets: String?
+    public var lastPriceDate: String?
     public var isPreferred: Int
-    public var notes: String?
     public var deletedAt: String?
     public var createdAt: String?
-    public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, notes
+        case id
         case partId = "part_id"
         case supplierId = "supplier_id"
         case supplierPartNumber = "supplier_part_number"
-        case costPrice = "cost_price"
-        case leadTimeDays = "lead_time_days"
+        case supplierCostPrice = "supplier_cost_price"
+        case moq
+        case discountBrackets = "discount_brackets"
+        case lastPriceDate = "last_price_date"
         case isPreferred = "is_preferred"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
-        case updatedAt = "updated_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -390,27 +402,23 @@ public struct StockEntry: Codable, FetchableRecord, MutablePersistableRecord, Se
 public struct CompanionRule: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "companion_rules"
     public var id: Int64?
-    public var sourceType: String
-    public var sourceId: Int64
-    public var targetType: String
-    public var targetId: Int64
-    public var relationship: String
-    public var defaultQty: Int
+    public var name: String
+    public var description: String?
+    public var styleMatch: String?
+    public var qtyMode: String?
+    public var qtyRatio: Double?
     public var isActive: Int
-    public var notes: String?
-    public var deletedAt: String?
+    public var createdBy: Int64?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, relationship, notes
-        case sourceType = "source_type"
-        case sourceId = "source_id"
-        case targetType = "target_type"
-        case targetId = "target_id"
-        case defaultQty = "default_qty"
+        case id, name, description
+        case styleMatch = "style_match"
+        case qtyMode = "qty_mode"
+        case qtyRatio = "qty_ratio"
         case isActive = "is_active"
-        case deletedAt = "deleted_at"
+        case createdBy = "created_by"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
@@ -426,21 +434,17 @@ public struct PartAlternative: Codable, FetchableRecord, MutablePersistableRecor
     public var partId: Int64
     public var alternativePartId: Int64
     public var relationship: String
-    public var priority: Int
+    public var preference: Int
     public var notes: String?
-    public var isActive: Int
-    public var deletedAt: String?
+    public var createdBy: Int64?
     public var createdAt: String?
-    public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, relationship, priority, notes
+        case id, relationship, preference, notes
         case partId = "part_id"
         case alternativePartId = "alternative_part_id"
-        case isActive = "is_active"
-        case deletedAt = "deleted_at"
+        case createdBy = "created_by"
         case createdAt = "created_at"
-        case updatedAt = "updated_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }

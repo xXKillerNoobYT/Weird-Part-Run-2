@@ -63,9 +63,13 @@ public struct ChatMessage: Codable, FetchableRecord, MutablePersistableRecord, S
     public var channelId: Int64
     public var senderId: Int64
     public var messageType: String
-    public var content: String
-    public var parentMessageId: Int64?
-    public var isEdited: Int
+    public var content: String?
+    public var mediaPath: String?
+    public var replyToId: Int64?
+    public var pinnedAt: String?
+    public var pinnedBy: Int64?
+    public var qaThreadId: Int64?
+    public var qaLevel: String?
     public var editedAt: String?
     public var deletedAt: String?
     public var createdAt: String?
@@ -75,8 +79,12 @@ public struct ChatMessage: Codable, FetchableRecord, MutablePersistableRecord, S
         case channelId = "channel_id"
         case senderId = "sender_id"
         case messageType = "message_type"
-        case parentMessageId = "parent_message_id"
-        case isEdited = "is_edited"
+        case mediaPath = "media_path"
+        case replyToId = "reply_to_id"
+        case pinnedAt = "pinned_at"
+        case pinnedBy = "pinned_by"
+        case qaThreadId = "qa_thread_id"
+        case qaLevel = "qa_level"
         case editedAt = "edited_at"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
@@ -91,16 +99,16 @@ public struct ChatMention: Codable, FetchableRecord, MutablePersistableRecord, S
     public static let databaseTableName = "chat_mentions"
     public var id: Int64?
     public var messageId: Int64
-    public var userId: Int64
-    public var readAt: String?
-    public var createdAt: String?
+    public var mentionedUserId: Int64
+    public var acknowledgedAt: String?
+    public var deletedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case messageId = "message_id"
-        case userId = "user_id"
-        case readAt = "read_at"
-        case createdAt = "created_at"
+        case mentionedUserId = "mentioned_user_id"
+        case acknowledgedAt = "acknowledged_at"
+        case deletedAt = "deleted_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -112,27 +120,32 @@ public struct QAThread: Codable, FetchableRecord, MutablePersistableRecord, Send
     public static let databaseTableName = "qa_threads"
     public var id: Int64?
     public var channelId: Int64?
-    public var jobId: Int64?
+    public var jobId: Int64
     public var askedBy: Int64
-    public var question: String
+    public var subject: String
     public var currentLevel: String
+    public var assignedTo: Int64?
     public var status: String
     public var priority: String
-    public var answer: String?
+    public var answerText: String?
     public var answeredBy: Int64?
     public var answeredAt: String?
+    public var closedAt: String?
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, question, status, priority, answer
+        case id, subject, status, priority
         case channelId = "channel_id"
         case jobId = "job_id"
         case askedBy = "asked_by"
         case currentLevel = "current_level"
+        case assignedTo = "assigned_to"
+        case answerText = "answer_text"
         case answeredBy = "answered_by"
         case answeredAt = "answered_at"
+        case closedAt = "closed_at"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -168,26 +181,31 @@ public struct QAEscalation: Codable, FetchableRecord, MutablePersistableRecord, 
 // MARK: - RFI
 
 public struct RFI: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
-    public static let databaseTableName = "rfis"
+    public static let databaseTableName = "rfi_objects"
     public var id: Int64?
-    public var threadId: Int64
+    public var qaThreadId: Int64
+    public var jobId: Int64
     public var gcContactId: Int64?
     public var subject: String
-    public var body: String?
+    public var body: String
     public var status: String
-    public var sentAt: String?
-    public var response: String?
+    public var responseText: String?
     public var respondedAt: String?
+    public var sentVia: String?
+    public var sentAt: String?
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, subject, body, status, response
-        case threadId = "thread_id"
+        case id, subject, body, status
+        case qaThreadId = "qa_thread_id"
+        case jobId = "job_id"
         case gcContactId = "gc_contact_id"
-        case sentAt = "sent_at"
+        case responseText = "response_text"
         case respondedAt = "responded_at"
+        case sentVia = "sent_via"
+        case sentAt = "sent_at"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"

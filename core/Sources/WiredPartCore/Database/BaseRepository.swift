@@ -58,7 +58,7 @@ public class BaseRepository: @unchecked Sendable {
         try db.writer.read { db in
             var sql = "SELECT COUNT(*) FROM \(self.tableName)"
             if let whereClause { sql += " WHERE \(whereClause)" }
-            return try Int.fetchOne(db, sql: sql, arguments: StatementArguments(params))!
+            return try Int.fetchOne(db, sql: sql, arguments: StatementArguments(params)) ?? 0
         }
     }
 

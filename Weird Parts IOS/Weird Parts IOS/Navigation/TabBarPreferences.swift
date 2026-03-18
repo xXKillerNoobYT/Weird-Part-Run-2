@@ -10,9 +10,30 @@ import Combine
 /// The first 4 entries become dedicated bottom tabs; the rest go to "More."
 /// When empty (or on first launch), the default module order from
 /// `NavigationConfig` is used.
+/// Navigation layout style for module sub-tabs.
+enum NavigationStyle: String, CaseIterable, Sendable {
+    case topTabs = "topTabs"
+    case sidebar = "sidebar"
+
+    var label: String {
+        switch self {
+        case .topTabs: return "Top Tabs"
+        case .sidebar: return "Sidebar"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .topTabs: return "rectangle.split.1x2"
+        case .sidebar: return "sidebar.left"
+        }
+    }
+}
+
 @MainActor
 final class TabBarPreferences: ObservableObject {
     @Published var tabOrder: [String] = []
+    @Published var navigationStyle: NavigationStyle = .topTabs
 
     private var userId: Int64?
 
@@ -21,6 +42,11 @@ final class TabBarPreferences: ObservableObject {
     private var userDefaultsKey: String {
         guard let id = userId else { return "tabOrder_default" }
         return "tabOrder_\(id)"
+    }
+
+    private var navStyleKey: String {
+        guard let id = userId else { return "navStyle_default" }
+        return "navStyle_\(id)"
     }
 
     // MARK: - Public API
@@ -34,11 +60,25 @@ final class TabBarPreferences: ObservableObject {
         } else {
             tabOrder = []
         }
+
+        // Load navigation style
+        if let rawStyle = UserDefaults.standard.string(forKey: navStyleKey),
+           let style = NavigationStyle(rawValue: rawStyle) {
+            navigationStyle = style
+        } else {
+            // Default: sidebar on iPad/Mac, top tabs on iPhone
+            navigationStyle = DeviceContext.isLargeScreen ? .sidebar : .topTabs
+        }
     }
 
     /// Save the current order to UserDefaults.
     func save() {
         UserDefaults.standard.set(tabOrder, forKey: userDefaultsKey)
+    }
+
+    /// Save the navigation style preference.
+    func saveNavigationStyle() {
+        UserDefaults.standard.set(navigationStyle.rawValue, forKey: navStyleKey)
     }
 
     /// Reset to default (clear saved order).

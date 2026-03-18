@@ -13,6 +13,7 @@ struct SchedulingRouter: View {
         case "scheduling-templates": IOSDispatchTemplatesPage()
         case "scheduling-availability": IOSWeeklyAvailabilityPage()
         case "scheduling-sub-schedule": IOSSubSchedulePage()
+        case "scheduling-config": IOSScheduleConfigPage()
         default: Text("Unknown scheduling page: \(tabId)").foregroundStyle(.secondary)
         }
     }

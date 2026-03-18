@@ -15,6 +15,7 @@ struct IOSQuestionsPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
+    @State private var loadError: String?
 
     private let statusOptions = ["all", "open", "answered", "escalated", "closed"]
 
@@ -65,6 +66,8 @@ struct IOSQuestionsPage: View {
         if isLoading {
             ProgressView("Loading questions...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredThreads.isEmpty {
             ContentUnavailableView {
                 Label("No Questions", systemImage: "questionmark.circle")
@@ -178,12 +181,13 @@ struct IOSQuestionsPage: View {
     private func loadData() {
         guard let service = appCore.chatService else { return }
         isLoading = threads.isEmpty
+        loadError = nil
         do {
             threads = try service.listQAThreads(
                 status: statusFilter == "all" ? nil : statusFilter
             )
         } catch {
-            print("[IOSQuestionsPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

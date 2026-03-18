@@ -16,7 +16,7 @@ struct IOSBookkeeperExportPage: View {
     @State private var laborRows: [LaborSummaryRow] = []
     @State private var materialRows: [MaterialPORow] = []
     @State private var isLoading = true
-    @State private var startDate = Calendar.current.date(byAdding: .day, value: -13, to: Date())!
+    @State private var startDate = Calendar.current.date(byAdding: .day, value: -13, to: Date()) ?? Date()
     @State private var endDate = Date()
 
     private var startDateString: String {
@@ -178,8 +178,9 @@ struct IOSBookkeeperExportPage: View {
     private func formatCurrency(_ value: Double) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
-        formatter.maximumFractionDigits = 0
-        return formatter.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: NSNumber(value: value)) ?? String(format: "$%.2f", value)
     }
 
     // MARK: - Data Loading
@@ -190,13 +191,14 @@ struct IOSBookkeeperExportPage: View {
         do {
             laborRows = try db.writer.read { db in
                 let sql = """
-                    SELECT e.id, COALESCE(e.first_name || ' ' || e.last_name, e.first_name) AS name,
+                    SELECT u.id, COALESCE(u.display_name, u.email) AS name,
                            COALESCE(SUM(le.regular_hours), 0) AS regular_hours,
                            COALESCE(SUM(le.overtime_hours), 0) AS overtime_hours
-                    FROM employees e
-                    JOIN labor_entries le ON le.employee_id = e.id
-                    WHERE le.work_date >= ? AND le.work_date <= ?
-                    GROUP BY e.id
+                    FROM users u
+                    JOIN labor_entries le ON le.user_id = u.id
+                    WHERE date(le.clock_in) >= ? AND date(le.clock_in) <= ?
+                      AND le.deleted_at IS NULL
+                    GROUP BY u.id
                     ORDER BY name
                     """
                 return try Row.fetchAll(db, sql: sql, arguments: [startDateString, endDateString]).map { row in
@@ -212,10 +214,10 @@ struct IOSBookkeeperExportPage: View {
             materialRows = try db.writer.read { db in
                 let sql = """
                     SELECT po.id, po.po_number, COALESCE(s.name, 'Unknown') AS supplier_name,
-                           COALESCE(po.total_amount, 0) AS total_amount
+                           COALESCE(po.total_cost, 0) AS total_amount
                     FROM purchase_orders po
                     LEFT JOIN suppliers s ON s.id = po.supplier_id
-                    WHERE po.created_at >= ? AND po.created_at <= ?
+                    WHERE date(po.created_at) >= ? AND date(po.created_at) <= ?
                     ORDER BY po.po_number
                     """
                 return try Row.fetchAll(db, sql: sql, arguments: [startDateString, endDateString]).map { row in

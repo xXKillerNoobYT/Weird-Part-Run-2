@@ -15,18 +15,20 @@ struct IOSScheduleCalendarPage: View {
     @State private var isLoading = true
     @State private var selectedDate = Date()
     @State private var searchText = ""
+    @State private var loadError: String?
 
     /// The date range for the current week view.
-    private var weekStart: String {
+    private var weekStartDate: Date {
         let calendar = Calendar.current
-        let start = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: selectedDate))!
-        return ISO8601DateFormatter.dateOnlyFormatter.string(from: start)
+        return calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: selectedDate)) ?? selectedDate
+    }
+
+    private var weekStart: String {
+        ISO8601DateFormatter.dateOnlyFormatter.string(from: weekStartDate)
     }
 
     private var weekEnd: String {
-        let calendar = Calendar.current
-        let start = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: selectedDate))!
-        let end = calendar.date(byAdding: .day, value: 6, to: start)!
+        let end = Calendar.current.date(byAdding: .day, value: 6, to: weekStartDate) ?? weekStartDate
         return ISO8601DateFormatter.dateOnlyFormatter.string(from: end)
     }
 
@@ -46,7 +48,7 @@ struct IOSScheduleCalendarPage: View {
     private var weekNavigator: some View {
         HStack {
             Button {
-                selectedDate = Calendar.current.date(byAdding: .weekOfYear, value: -1, to: selectedDate)!
+                selectedDate = Calendar.current.date(byAdding: .weekOfYear, value: -1, to: selectedDate) ?? selectedDate
                 loadData()
             } label: {
                 Image(systemName: "chevron.left")
@@ -61,7 +63,7 @@ struct IOSScheduleCalendarPage: View {
             Spacer()
 
             Button {
-                selectedDate = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: selectedDate)!
+                selectedDate = Calendar.current.date(byAdding: .weekOfYear, value: 1, to: selectedDate) ?? selectedDate
                 loadData()
             } label: {
                 Image(systemName: "chevron.right")
@@ -78,12 +80,14 @@ struct IOSScheduleCalendarPage: View {
         if isLoading {
             ProgressView("Loading schedule...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredEntries.isEmpty {
-            ContentUnavailableView {
-                Label("No Schedule", systemImage: "calendar")
-            } description: {
-                Text("No schedule entries for this week.")
-            }
+            EmptyStateView(
+                icon: "calendar",
+                title: "No Schedule",
+                message: "No schedule entries for this week."
+            )
         } else {
             List(filteredEntries, id: \.id) { entry in
                 scheduleRow(entry)
@@ -163,9 +167,18 @@ struct IOSScheduleCalendarPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.schedulingService else { return }
-        guard let userId = appCore.currentUser?.id else { return }
+        guard let service = appCore.schedulingService else {
+            isLoading = false
+            loadError = "Scheduling service is not available."
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            isLoading = false
+            loadError = "No logged-in user found."
+            return
+        }
         isLoading = entries.isEmpty
+        loadError = nil
         do {
             entries = try service.getMySchedule(
                 userId: userId,
@@ -173,7 +186,7 @@ struct IOSScheduleCalendarPage: View {
                 endDate: weekEnd
             )
         } catch {
-            print("[IOSScheduleCalendarPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

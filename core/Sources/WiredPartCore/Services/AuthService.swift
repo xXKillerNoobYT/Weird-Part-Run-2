@@ -85,7 +85,10 @@ public final class AuthService: Sendable {
             return AuthResult(success: false, user: nil, token: nil, message: "Invalid PIN")
         }
 
-        let token = Self.generateLocalToken(userId: user.id!)
+        guard let userId = user.id else {
+            return AuthResult(success: false, user: nil, token: nil, message: "User record missing ID")
+        }
+        let token = Self.generateLocalToken(userId: userId)
         return AuthResult(success: true, user: user, token: token, message: "Authenticated")
     }
 
@@ -114,7 +117,7 @@ public final class AuthService: Sendable {
     public func seedFirstAdmin(displayName: String, pin: String) throws -> AuthResult {
         // Guard: don't re-seed if users already exist
         let existingCount = try db.writer.read { dbConnection -> Int in
-            try Int.fetchOne(dbConnection, sql: "SELECT COUNT(*) FROM users")!
+            try Int.fetchOne(dbConnection, sql: "SELECT COUNT(*) FROM users") ?? 0
         }
 
         if existingCount > 0 {
@@ -250,7 +253,7 @@ public final class AuthService: Sendable {
                     """,
                 arguments: [userId]
             )
-            return rows.map { $0["permission_key"] as String }
+            return rows.compactMap { $0["permission_key"] as? String }
         }
     }
 
@@ -266,8 +269,40 @@ public final class AuthService: Sendable {
                     LIMIT 1
                     """,
                 arguments: [userId, permissionKey]
-            )!
+            ) ?? 0
             return count > 0
+        }
+    }
+
+    /// Get all permission keys for a specific hat.
+    public func getHatPermissions(_ hatId: Int64) throws -> [String] {
+        try db.writer.read { dbConnection in
+            let rows = try Row.fetchAll(
+                dbConnection,
+                sql: "SELECT permission_key FROM hat_permissions WHERE hat_id = ?",
+                arguments: [hatId]
+            )
+            return rows.map { $0["permission_key"] as String }
+        }
+    }
+
+    /// Add a permission key to a hat.
+    public func addHatPermission(hatId: Int64, permissionKey: String) throws {
+        try db.writer.write { dbConnection in
+            try dbConnection.execute(
+                sql: "INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key) VALUES (?, ?)",
+                arguments: [hatId, permissionKey]
+            )
+        }
+    }
+
+    /// Remove a permission key from a hat.
+    public func removeHatPermission(hatId: Int64, permissionKey: String) throws {
+        try db.writer.write { dbConnection in
+            try dbConnection.execute(
+                sql: "DELETE FROM hat_permissions WHERE hat_id = ? AND permission_key = ?",
+                arguments: [hatId, permissionKey]
+            )
         }
     }
 
@@ -329,8 +364,11 @@ public final class AuthService: Sendable {
         let hats = try getUserHats(payload.sub)
         let permissions = try getUserPermissions(payload.sub)
 
+        guard let profileId = user.id else {
+            throw AuthError.userNotFound
+        }
         return UserProfile(
-            id: user.id!,
+            id: profileId,
             displayName: user.displayName,
             email: user.email,
             phone: user.phone,
@@ -383,7 +421,9 @@ public final class AuthService: Sendable {
             exp: nowMs + 24 * 60 * 60 * 1000, // 24 hours
             type: "local"
         )
-        let data = try! JSONEncoder().encode(payload)
+        guard let data = try? JSONEncoder().encode(payload) else {
+            return "invalid_token"
+        }
         return data.base64EncodedString()
     }
 

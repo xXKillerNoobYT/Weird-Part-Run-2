@@ -14,6 +14,7 @@ struct IOSEmployeesPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
+    @State private var loadError: String?
 
     private let statusOptions = ["all", "active", "inactive", "suspended"]
 
@@ -64,15 +65,19 @@ struct IOSEmployeesPage: View {
         if isLoading {
             ProgressView("Loading employees...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredEmployees.isEmpty {
-            ContentUnavailableView {
-                Label("No Employees", systemImage: "person.3")
-            } description: {
-                Text("No employees match your criteria.")
-            }
+            EmptyStateView(
+                icon: "person.3",
+                title: "No Employees",
+                message: searchText.isEmpty ? "No employees have been added yet." : "No employees match your criteria."
+            )
         } else {
             List(filteredEmployees, id: \.id) { employee in
-                employeeRow(employee)
+                NavigationLink(destination: IOSEmployeeDetailPage(employeeId: employee.id)) {
+                    employeeRow(employee)
+                }
             }
             #if os(iOS)
             .listStyle(.insetGrouped)
@@ -120,6 +125,8 @@ struct IOSEmployeesPage: View {
             }
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(employee.displayName), \(employee.email), role \(employee.role), status \(employee.status)")
     }
 
     // MARK: - Badges
@@ -154,15 +161,20 @@ struct IOSEmployeesPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            isLoading = false
+            loadError = "People service is not available."
+            return
+        }
         isLoading = employees.isEmpty
+        loadError = nil
         do {
             employees = try service.listEmployees(
                 search: searchText.isEmpty ? nil : searchText,
                 status: statusFilter == "all" ? nil : statusFilter
             )
         } catch {
-            print("[IOSEmployeesPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

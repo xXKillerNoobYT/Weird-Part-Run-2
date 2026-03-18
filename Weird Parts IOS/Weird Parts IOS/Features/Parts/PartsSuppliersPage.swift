@@ -54,9 +54,9 @@ struct PartsSuppliersPage: View {
             SupplierDetailSheet(supplier: supplier) { await loadData() }
         }
         #if os(iOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #elseif os(macOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #endif
         .task { await loadData() }
     }
@@ -216,7 +216,7 @@ struct PartsSuppliersPage: View {
     private func loadData() async {
         isLoading = true
         do {
-            let db = appCore.db!
+            guard let db = appCore.db else { return }
             let rows = try await db.writer.read { dbConnection -> [SupplierListRow] in
                 let results = try Row.fetchAll(dbConnection, sql: """
                     SELECT s.*,
@@ -263,13 +263,15 @@ struct PartsSuppliersPage: View {
 
     private func deleteSupplier(_ supplier: SupplierListRow) async {
         do {
-            let db = appCore.db!
+            guard let db = appCore.db else { return }
             let now = ISO8601DateFormatter().string(from: Date())
             try await db.writer.write { dbConnection in
                 try dbConnection.execute(sql: "UPDATE suppliers SET deleted_at = ? WHERE id = ?", arguments: [now, supplier.id])
             }
             await loadData()
-        } catch {}
+        } catch {
+            print("[PartsSuppliersPage] Delete supplier error: \(error)")
+        }
     }
 }
 
@@ -386,8 +388,14 @@ private struct SupplierFormSheet: View {
     private func save() async {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         guard !trimmedName.isEmpty else { return }
+        let capturedContactName = contactName
+        let capturedEmail = email
+        let capturedPhone = phone
+        let capturedAddress = address
+        let capturedWebsite = website
+        let capturedNotes = notes
         do {
-            let db = appCore.db!
+            guard let db = appCore.db else { return }
             let now = ISO8601DateFormatter().string(from: Date())
             if let s = supplier {
                 try await db.writer.write { dbConnection in
@@ -396,10 +404,10 @@ private struct SupplierFormSheet: View {
                             UPDATE suppliers SET name = ?, contact_name = ?, email = ?, phone = ?,
                             address = ?, website = ?, notes = ?, updated_at = ? WHERE id = ?
                             """,
-                        arguments: [trimmedName, contactName.isEmpty ? nil : contactName,
-                                    email.isEmpty ? nil : email, phone.isEmpty ? nil : phone,
-                                    address.isEmpty ? nil : address, website.isEmpty ? nil : website,
-                                    notes.isEmpty ? nil : notes, now, s.id]
+                        arguments: [trimmedName, capturedContactName.isEmpty ? nil : capturedContactName,
+                                    capturedEmail.isEmpty ? nil : capturedEmail, capturedPhone.isEmpty ? nil : capturedPhone,
+                                    capturedAddress.isEmpty ? nil : capturedAddress, capturedWebsite.isEmpty ? nil : capturedWebsite,
+                                    capturedNotes.isEmpty ? nil : capturedNotes, now, s.id]
                     )
                 }
             } else {
@@ -410,14 +418,16 @@ private struct SupplierFormSheet: View {
                             is_active, created_at, updated_at)
                             VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                             """,
-                        arguments: [trimmedName, contactName.isEmpty ? nil : contactName,
-                                    email.isEmpty ? nil : email, phone.isEmpty ? nil : phone,
-                                    address.isEmpty ? nil : address, website.isEmpty ? nil : website,
-                                    notes.isEmpty ? nil : notes, now, now]
+                        arguments: [trimmedName, capturedContactName.isEmpty ? nil : capturedContactName,
+                                    capturedEmail.isEmpty ? nil : capturedEmail, capturedPhone.isEmpty ? nil : capturedPhone,
+                                    capturedAddress.isEmpty ? nil : capturedAddress, capturedWebsite.isEmpty ? nil : capturedWebsite,
+                                    capturedNotes.isEmpty ? nil : capturedNotes, now, now]
                     )
                 }
             }
-        } catch {}
+        } catch {
+            print("[SupplierFormSheet] Save error: \(error)")
+        }
     }
 }
 

@@ -347,8 +347,14 @@ struct IOSClockPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.jobsService else { return }
-        guard let userId = appCore.currentUser?.id else { return }
+        guard let service = appCore.jobsService else {
+            isLoading = false
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            isLoading = false
+            return
+        }
         isLoading = activeEntry == nil && todayEntries.isEmpty
         do {
             activeEntry = try service.getActiveClockEntry(userId: userId)

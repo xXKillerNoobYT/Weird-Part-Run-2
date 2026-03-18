@@ -74,6 +74,7 @@ public struct KitTemplate: Codable, FetchableRecord, MutablePersistableRecord, S
     public var isCritical: Int
     public var sortOrder: Int?
     public var notes: String?
+    public var deletedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id, brand, notes
@@ -84,6 +85,7 @@ public struct KitTemplate: Codable, FetchableRecord, MutablePersistableRecord, S
         case modelNumber = "model_number"
         case isCritical = "is_critical"
         case sortOrder = "sort_order"
+        case deletedAt = "deleted_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -105,6 +107,7 @@ public struct ToolMovement: Codable, FetchableRecord, MutablePersistableRecord, 
     public var performedBy: Int64
     public var verifiedBy: Int64?
     public var conditionAtMove: Int?
+    public var deletedAt: String?
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
@@ -119,6 +122,7 @@ public struct ToolMovement: Codable, FetchableRecord, MutablePersistableRecord, 
         case performedBy = "performed_by"
         case verifiedBy = "verified_by"
         case conditionAtMove = "condition_at_move"
+        case deletedAt = "deleted_at"
         case createdAt = "created_at"
     }
 
@@ -137,6 +141,7 @@ public struct KitVerificationSession: Codable, FetchableRecord, MutablePersistab
     public var isComplete: Int
     public var missingCount: Int
     public var notes: String?
+    public var deletedAt: String?
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
@@ -147,6 +152,7 @@ public struct KitVerificationSession: Codable, FetchableRecord, MutablePersistab
         case triggerType = "trigger_type"
         case isComplete = "is_complete"
         case missingCount = "missing_count"
+        case deletedAt = "deleted_at"
         case createdAt = "created_at"
     }
 
@@ -163,6 +169,7 @@ public struct KitVerificationItem: Codable, FetchableRecord, MutablePersistableR
     public var isPresent: Int
     public var conditionRating: Int?
     public var notes: String?
+    public var deletedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id, notes
@@ -170,6 +177,7 @@ public struct KitVerificationItem: Codable, FetchableRecord, MutablePersistableR
         case templateItemId = "template_item_id"
         case isPresent = "is_present"
         case conditionRating = "condition_rating"
+        case deletedAt = "deleted_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -185,6 +193,7 @@ public struct ToolMaintenanceType: Codable, FetchableRecord, MutablePersistableR
     public var defaultIntervalDays: Int?
     public var sortOrder: Int?
     public var isActive: Int
+    public var deletedAt: String?
     public var createdAt: String?
 
     enum CodingKeys: String, CodingKey {
@@ -192,6 +201,7 @@ public struct ToolMaintenanceType: Codable, FetchableRecord, MutablePersistableR
         case defaultIntervalDays = "default_interval_days"
         case sortOrder = "sort_order"
         case isActive = "is_active"
+        case deletedAt = "deleted_at"
         case createdAt = "created_at"
     }
 
@@ -210,6 +220,7 @@ public struct ToolMaintenanceSchedule: Codable, FetchableRecord, MutablePersista
     public var nextDueDate: String?
     public var isEnabled: Int
     public var notes: String?
+    public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
@@ -221,6 +232,7 @@ public struct ToolMaintenanceSchedule: Codable, FetchableRecord, MutablePersista
         case lastPerformedAt = "last_performed_at"
         case nextDueDate = "next_due_date"
         case isEnabled = "is_enabled"
+        case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }

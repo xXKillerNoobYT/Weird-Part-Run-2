@@ -16,6 +16,7 @@ struct IOSToolCheckoutsPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var showActiveOnly = true
+    @State private var loadError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -77,6 +78,8 @@ struct IOSToolCheckoutsPage: View {
         if isLoading {
             ProgressView("Loading checkouts...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredCheckouts.isEmpty {
             ContentUnavailableView {
                 Label("No Checkouts", systemImage: "arrow.up.right.circle")
@@ -204,10 +207,11 @@ struct IOSToolCheckoutsPage: View {
     private func loadData() {
         guard let service = appCore.toolsService else { return }
         isLoading = checkouts.isEmpty
+        loadError = nil
         do {
             checkouts = try service.listCheckouts(active: showActiveOnly)
         } catch {
-            print("[IOSToolCheckoutsPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

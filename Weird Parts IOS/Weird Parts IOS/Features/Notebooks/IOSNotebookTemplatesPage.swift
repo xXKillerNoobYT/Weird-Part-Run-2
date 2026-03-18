@@ -14,6 +14,7 @@ struct IOSNotebookTemplatesPage: View {
     @State private var templates: [NotebooksService.NotebookListItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var loadError: String?
 
     var body: some View {
         templateList
@@ -30,6 +31,8 @@ struct IOSNotebookTemplatesPage: View {
         if isLoading {
             ProgressView("Loading templates...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredTemplates.isEmpty {
             ContentUnavailableView {
                 Label("No Templates", systemImage: "doc.text")
@@ -109,10 +112,11 @@ struct IOSNotebookTemplatesPage: View {
     private func loadData() {
         guard let service = appCore.notebooksService else { return }
         isLoading = templates.isEmpty
+        loadError = nil
         do {
             templates = try service.listTemplates()
         } catch {
-            print("[IOSNotebookTemplatesPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

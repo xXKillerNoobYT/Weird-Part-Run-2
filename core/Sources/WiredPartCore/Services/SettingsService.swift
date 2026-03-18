@@ -325,6 +325,45 @@ public final class SettingsService: Sendable {
         return try getPayPeriod()
     }
 
+    // MARK: - Business Profiles
+
+    /// Get the active business profile, or nil if none exists.
+    public func getBusinessProfile() throws -> BusinessProfile? {
+        try db.writer.read { dbConnection in
+            try BusinessProfile
+                .filter(Column("is_active") == 1)
+                .fetchOne(dbConnection)
+        }
+    }
+
+    /// Create a new business profile.
+    public func createBusinessProfile(_ profile: BusinessProfile) throws -> BusinessProfile {
+        var record = profile
+        try db.writer.write { dbConnection in
+            try record.insert(dbConnection)
+        }
+        return record
+    }
+
+    /// Update an existing business profile.
+    public func updateBusinessProfile(_ profile: BusinessProfile) throws -> BusinessProfile {
+        try db.writer.write { dbConnection in
+            try profile.update(dbConnection)
+        }
+        return profile
+    }
+
+    /// Check if any business profile exists.
+    public func hasBusinessProfile() throws -> Bool {
+        try db.writer.read { dbConnection in
+            let count = try Int.fetchOne(
+                dbConnection,
+                sql: "SELECT COUNT(*) FROM business_profiles WHERE is_active = 1"
+            ) ?? 0
+            return count > 0
+        }
+    }
+
     // MARK: - Errors
 
     public enum SettingsError: Error, Sendable {

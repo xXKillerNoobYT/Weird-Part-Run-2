@@ -41,9 +41,9 @@ struct PartsBrandsPage: View {
             BrandFormSheet(brand: brandRow) { await loadData() }
         }
         #if os(iOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #elseif os(macOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #endif
         .task { await loadData() }
     }
@@ -171,7 +171,7 @@ struct PartsBrandsPage: View {
     private func loadData() async {
         isLoading = true
         do {
-            let db = appCore.db!
+            guard let db = appCore.db else { await MainActor.run { isLoading = false }; return }
             let rows = try await db.writer.read { dbConnection -> [BrandListRow] in
                 let results = try Row.fetchAll(dbConnection, sql: """
                     SELECT b.*,
@@ -205,13 +205,15 @@ struct PartsBrandsPage: View {
 
     private func deleteBrand(_ brand: BrandListRow) async {
         do {
-            let db = appCore.db!
+            guard let db = appCore.db else { return }
             let now = ISO8601DateFormatter().string(from: Date())
             try await db.writer.write { dbConnection in
                 try dbConnection.execute(sql: "UPDATE brands SET deleted_at = ? WHERE id = ?", arguments: [now, brand.id])
             }
             await loadData()
-        } catch {}
+        } catch {
+            print("[PartsBrandsPage] Delete brand error: \(error)")
+        }
     }
 }
 
@@ -290,7 +292,7 @@ private struct BrandFormSheet: View {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         guard !trimmedName.isEmpty else { return }
         do {
-            let db = appCore.db!
+            guard let db = appCore.db else { return }
             let now = ISO8601DateFormatter().string(from: Date())
             let websiteValue = website.isEmpty ? nil : website
             let notesValue = notes.isEmpty ? nil : notes
@@ -309,6 +311,8 @@ private struct BrandFormSheet: View {
                     )
                 }
             }
-        } catch {}
+        } catch {
+            print("[BrandFormSheet] Save error: \(error)")
+        }
     }
 }

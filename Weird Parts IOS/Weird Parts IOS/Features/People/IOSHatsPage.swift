@@ -13,6 +13,7 @@ struct IOSHatsPage: View {
     @State private var hats: [PeopleService.HatListItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var loadError: String?
 
     var body: some View {
         hatList
@@ -30,6 +31,8 @@ struct IOSHatsPage: View {
         if isLoading {
             ProgressView("Loading hats...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredHats.isEmpty {
             ContentUnavailableView {
                 Label("No Hats", systemImage: "graduationcap")
@@ -103,10 +106,11 @@ struct IOSHatsPage: View {
     private func loadData() {
         guard let service = appCore.peopleService else { return }
         isLoading = hats.isEmpty
+        loadError = nil
         do {
             hats = try service.listHats()
         } catch {
-            print("[IOSHatsPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

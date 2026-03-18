@@ -190,7 +190,10 @@ struct LaborPage: View {
         guard let service = appCore.jobsService, let auth = appCore.authService else { return }
         do {
             let activeUsers = try auth.getActiveUsers()
-            users = activeUsers.map { ($0.id!, $0.displayName) }
+            users = activeUsers.compactMap { user in
+                guard let id = user.id else { return nil }
+                return (id, user.displayName)
+            }
             jobOptions = try service.listJobs(status: "active")
             showClockIn = true
         } catch {
@@ -242,12 +245,13 @@ struct LaborPage: View {
     private func loadData() {
         guard let service = appCore.jobsService else { return }
         isLoading = activeEntries.isEmpty && recentEntries.isEmpty
+        errorMessage = nil
         do {
             let allEntries = try service.listLaborEntries(limit: 200)
             activeEntries = allEntries.filter { $0.clockOut == nil }
             recentEntries = Array(allEntries.prefix(50))
         } catch {
-            print("[LaborPage] Load error: \(error)")
+            errorMessage = "Failed to load labor data: \(error.localizedDescription)"
         }
         isLoading = false
     }

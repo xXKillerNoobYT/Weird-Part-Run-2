@@ -175,12 +175,13 @@ public final class ToolsService: Sendable {
         do {
             return try db.writer.read { dbConn -> [KitListItem] in
                 let sql = """
-                    SELECT tk.id, tk.name, tk.description, tk.is_active,
-                           COALESCE((SELECT COUNT(*) FROM tool_kit_items tki
-                                     WHERE tki.kit_id = tk.id AND tki.deleted_at IS NULL), 0) AS item_count
-                    FROM tool_kits tk
-                    WHERE tk.deleted_at IS NULL
-                    ORDER BY tk.name ASC
+                    SELECT t.id, t.name, '' AS description, 1 AS is_active,
+                           COUNT(kt.id) AS item_count
+                    FROM tools t
+                    INNER JOIN kit_templates kt ON kt.tool_id = t.id AND kt.deleted_at IS NULL
+                    WHERE t.deleted_at IS NULL
+                    GROUP BY t.id
+                    ORDER BY t.name ASC
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql)
@@ -216,26 +217,27 @@ public final class ToolsService: Sendable {
     public func listCheckouts(toolId: Int64? = nil, active: Bool = false) throws -> [CheckoutRow] {
         do {
             return try db.writer.read { dbConn -> [CheckoutRow] in
-                var whereClauses = ["tc.deleted_at IS NULL"]
+                var whereClauses = ["tm.deleted_at IS NULL"]
                 var args: [DatabaseValueConvertible?] = []
 
                 if let toolId {
-                    whereClauses.append("tc.tool_id = ?")
+                    whereClauses.append("tm.tool_id = ?")
                     args.append(toolId)
                 }
                 if active {
-                    whereClauses.append("tc.returned_at IS NULL")
+                    whereClauses.append("tm.movement_type = 'checkout'")
                 }
 
                 let sql = """
-                    SELECT tc.id, tc.checked_out_at, tc.expected_return, tc.returned_at,
+                    SELECT tm.id, tm.created_at AS checked_out_at,
+                           NULL AS expected_return, NULL AS returned_at,
                            t.name AS tool_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS checked_out_by_name
-                    FROM tool_checkouts tc
-                    LEFT JOIN tools t ON t.id = tc.tool_id
-                    LEFT JOIN users u ON u.id = tc.checked_out_by
+                    FROM tool_movements tm
+                    LEFT JOIN tools t ON t.id = tm.tool_id
+                    LEFT JOIN users u ON u.id = tm.performed_by
                     WHERE \(whereClauses.joined(separator: " AND "))
-                    ORDER BY tc.checked_out_at DESC
+                    ORDER BY tm.created_at DESC
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
@@ -268,8 +270,8 @@ public final class ToolsService: Sendable {
 
         let checkedOut = try safeCount(
             sql: """
-                SELECT COUNT(*) FROM tool_checkouts
-                WHERE returned_at IS NULL AND deleted_at IS NULL
+                SELECT COUNT(*) FROM tool_movements
+                WHERE movement_type = 'checkout' AND deleted_at IS NULL
                 """
         )
 
@@ -278,7 +280,7 @@ public final class ToolsService: Sendable {
         )
 
         let totalKits = try safeCount(
-            sql: "SELECT COUNT(*) FROM tool_kits WHERE deleted_at IS NULL"
+            sql: "SELECT COUNT(DISTINCT tool_id) FROM kit_templates WHERE deleted_at IS NULL"
         )
 
         return ToolsStats(

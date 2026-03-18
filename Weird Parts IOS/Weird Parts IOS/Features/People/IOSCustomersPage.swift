@@ -13,6 +13,7 @@ struct IOSCustomersPage: View {
     @State private var customers: [PeopleService.CustomerListItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var loadError: String?
 
     var body: some View {
         customerList
@@ -30,15 +31,19 @@ struct IOSCustomersPage: View {
         if isLoading {
             ProgressView("Loading customers...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredCustomers.isEmpty {
-            ContentUnavailableView {
-                Label("No Customers", systemImage: "building.2")
-            } description: {
-                Text("No customers match your search.")
-            }
+            EmptyStateView(
+                icon: "building.2",
+                title: "No Customers",
+                message: searchText.isEmpty ? "No customers have been added yet." : "No customers match your search."
+            )
         } else {
             List(filteredCustomers, id: \.id) { customer in
-                customerRow(customer)
+                NavigationLink(destination: IOSCustomerDetailPage(customer: customer)) {
+                    customerRow(customer)
+                }
             }
             #if os(iOS)
             .listStyle(.insetGrouped)
@@ -95,12 +100,13 @@ struct IOSCustomersPage: View {
     private func loadData() {
         guard let service = appCore.peopleService else { return }
         isLoading = customers.isEmpty
+        loadError = nil
         do {
             customers = try service.listCustomers(
                 search: searchText.isEmpty ? nil : searchText
             )
         } catch {
-            print("[IOSCustomersPage] Load error: \(error)")
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

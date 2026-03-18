@@ -17,6 +17,7 @@ struct BillingPayPage: View {
     @State private var payStartDay = 1
 
     @State private var saved = false
+    @State private var errorMessage: String?
 
     private let cycleTypes = ["monthly", "weekly", "biweekly"]
     private let periodTypes = ["biweekly", "weekly", "monthly", "semimonthly"]
@@ -56,6 +57,11 @@ struct BillingPayPage: View {
             }
         }
         .onAppear { loadSettings() }
+        .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
     }
 
     private func loadSettings() {
@@ -67,7 +73,9 @@ struct BillingPayPage: View {
             let pay = try appCore.settingsService.getPayPeriod()
             payPeriodType = pay.periodType
             payStartDay = pay.startDay
-        } catch {}
+        } catch {
+            print("[BillingPayPage] Load error: \(error)")
+        }
     }
 
     private func saveSettings() {
@@ -80,6 +88,8 @@ struct BillingPayPage: View {
             )
             saved = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
-        } catch {}
+        } catch {
+            errorMessage = "Failed to save: \(error.localizedDescription)"
+        }
     }
 }

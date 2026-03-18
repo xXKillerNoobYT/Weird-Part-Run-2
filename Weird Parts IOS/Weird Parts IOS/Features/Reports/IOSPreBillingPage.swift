@@ -15,7 +15,7 @@ struct IOSPreBillingPage: View {
 
     @State private var rows: [PreBillingRow] = []
     @State private var isLoading = true
-    @State private var startDate = Calendar.current.date(byAdding: .day, value: -13, to: Date())!
+    @State private var startDate = Calendar.current.date(byAdding: .day, value: -13, to: Date()) ?? Date()
     @State private var endDate = Date()
 
     private var startDateString: String {
@@ -166,15 +166,17 @@ struct IOSPreBillingPage: View {
         do {
             rows = try db.writer.read { db in
                 let sql = """
-                    SELECT j.id, j.name AS job_name,
+                    SELECT j.id, j.job_name,
                            COALESCE(SUM(le.regular_hours), 0) AS regular_hours,
                            COALESCE(SUM(le.overtime_hours), 0) AS overtime_hours
                     FROM jobs j
                     LEFT JOIN labor_entries le ON le.job_id = j.id
-                        AND le.work_date >= ? AND le.work_date <= ?
+                        AND date(le.clock_in) >= ? AND date(le.clock_in) <= ?
+                        AND le.deleted_at IS NULL
+                    WHERE j.deleted_at IS NULL
                     GROUP BY j.id
                     HAVING regular_hours > 0 OR overtime_hours > 0
-                    ORDER BY j.name
+                    ORDER BY j.job_name
                     """
                 return try Row.fetchAll(db, sql: sql, arguments: [startDateString, endDateString]).map { row in
                     PreBillingRow(

@@ -58,6 +58,14 @@ struct SettingsRouter: View {
             IOSSupplierBridgePage()
         case "settings-clockout", "settings-clock-out-questions":
             IOSClockOutQuestionsPage()
+        case "settings-ai-config":
+            IOSAIConfigPage()
+        case "settings-device-management":
+            IOSDeviceManagementPage()
+        case "settings-remote-sync":
+            IOSRemoteSyncPage()
+        case "settings-shared-channels":
+            IOSSharedChannelsPage()
         default:
             Text("Unknown settings page: \(tabId)")
                 .foregroundStyle(.secondary)

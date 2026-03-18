@@ -76,15 +76,16 @@ let appModules: [AppModule] = [
         AppTab(id: "warehouse-receiving", label: "Receiving", icon: "shippingbox.fill", path: "/warehouse/receiving"),
         AppTab(id: "warehouse-returns", label: "Returns", icon: "arrow.uturn.left", path: "/warehouse/returns"),
         AppTab(id: "warehouse-audit", label: "Audit", icon: "checkmark.shield.fill", path: "/warehouse/audit", permission: "perform_audit"),
+        AppTab(id: "warehouse-inventory", label: "Inventory", icon: "square.grid.3x3.fill", path: "/warehouse/inventory"),
+        AppTab(id: "warehouse-tools", label: "Tools", icon: "wrench.and.screwdriver.fill", path: "/warehouse/tools"),
+        AppTab(id: "warehouse-network", label: "Network", icon: "antenna.radiowaves.left.and.right", path: "/warehouse/network", permission: "manage_devices"),
+        AppTab(id: "warehouse-settings", label: "Settings", icon: "gearshape.fill", path: "/warehouse/settings", permission: "manage_warehouse"),
     ], permission: "view_warehouse"),
     AppModule(id: "jobs", label: "Jobs", icon: "hammer.fill", tabs: [
         AppTab(id: "jobs-list", label: "All Jobs", icon: "list.bullet", path: "/jobs/list"),
         AppTab(id: "jobs-labor", label: "Labor", icon: "clock.fill", path: "/jobs/labor", permission: "view_labor"),
         AppTab(id: "jobs-reports", label: "Reports", icon: "doc.text.fill", path: "/jobs/reports"),
         AppTab(id: "jobs-clock", label: "Clock", icon: "clock.badge.checkmark.fill", path: "/jobs/clock", permission: "clock_in_out"),
-        AppTab(id: "jobs-detail", label: "Detail", icon: "doc.text.magnifyingglass", path: "/jobs/detail"),
-        AppTab(id: "jobs-questionnaire", label: "Questionnaire", icon: "questionmark.circle.fill", path: "/jobs/questionnaire"),
-        AppTab(id: "jobs-daily-reports", label: "Daily Reports", icon: "doc.plaintext.fill", path: "/jobs/daily-reports"),
     ], permission: "view_jobs"),
     AppModule(id: "orders", label: "Orders", icon: "cart.fill", tabs: [
         AppTab(id: "orders-jpos", label: "Requests", icon: "doc.badge.plus", path: "/orders/jpos"),
@@ -95,23 +96,22 @@ let appModules: [AppModule] = [
         AppTab(id: "orders-approvals", label: "Approvals", icon: "checkmark.circle.fill", path: "/orders/approvals"),
     ], permission: "view_orders"),
     AppModule(id: "fleet", label: "Fleet", icon: "car.fill", tabs: [
+        AppTab(id: "fleet-dashboard", label: "Dashboard", icon: "chart.bar.fill", path: "/fleet/dashboard"),
         AppTab(id: "fleet-vehicles", label: "Vehicles", icon: "car.fill", path: "/fleet/vehicles"),
+        AppTab(id: "fleet-trailers", label: "Trailers", icon: "box.truck.fill", path: "/fleet/trailers"),
         AppTab(id: "fleet-maintenance", label: "Maintenance", icon: "wrench.fill", path: "/fleet/maintenance"),
         AppTab(id: "fleet-mileage", label: "Mileage", icon: "speedometer", path: "/fleet/mileage"),
-        AppTab(id: "fleet-dashboard", label: "Dashboard", icon: "chart.bar.fill", path: "/fleet/dashboard"),
         AppTab(id: "fleet-fuel", label: "Fuel", icon: "fuelpump.fill", path: "/fleet/fuel"),
-        AppTab(id: "fleet-trailers", label: "Trailers", icon: "box.truck.fill", path: "/fleet/trailers"),
         AppTab(id: "fleet-inspections", label: "Inspections", icon: "checklist", path: "/fleet/inspections"),
-        AppTab(id: "fleet-gps", label: "GPS", icon: "location.fill", path: "/fleet/gps"),
+        AppTab(id: "fleet-tracking", label: "Tracking", icon: "location.fill", path: "/fleet/tracking"),
+        AppTab(id: "fleet-my-truck", label: "My Truck", icon: "car.rear.fill", path: "/fleet/my-truck"),
     ], permission: "view_fleet"),
     AppModule(id: "people", label: "People", icon: "person.2.fill", tabs: [
-        AppTab(id: "people-employees", label: "Employees", icon: "person.fill", path: "/people/employees"),
         AppTab(id: "people-customers", label: "Customers", icon: "person.crop.circle", path: "/people/customers", permission: "view_customers"),
         AppTab(id: "people-contacts", label: "Contacts", icon: "person.crop.rectangle.fill", path: "/people/contacts"),
-        AppTab(id: "people-hats", label: "Hats", icon: "graduationcap.fill", path: "/people/hats"),
-        AppTab(id: "people-teams", label: "Teams", icon: "person.3.fill", path: "/people/teams"),
         AppTab(id: "people-contractors", label: "Contractors", icon: "person.badge.shield.checkmark.fill", path: "/people/contractors", permission: "view_contractors"),
-    ], permission: "view_employees"),
+        AppTab(id: "people-teams", label: "Teams", icon: "person.3.fill", path: "/people/teams"),
+    ], permission: "view_people"),
     AppModule(id: "scheduling", label: "Scheduling", icon: "calendar", tabs: [
         AppTab(id: "scheduling-calendar", label: "Calendar", icon: "calendar", path: "/scheduling/calendar"),
         AppTab(id: "scheduling-dispatch", label: "Dispatch", icon: "paperplane.fill", path: "/scheduling/dispatch", permission: "manage_dispatch"),
@@ -119,53 +119,62 @@ let appModules: [AppModule] = [
         AppTab(id: "scheduling-templates", label: "Templates", icon: "doc.on.doc.fill", path: "/scheduling/templates", permission: "manage_scheduling"),
         AppTab(id: "scheduling-availability", label: "Availability", icon: "clock.fill", path: "/scheduling/availability"),
         AppTab(id: "scheduling-sub-schedule", label: "Sub Schedule", icon: "person.badge.clock", path: "/scheduling/sub-schedule", permission: "manage_subcontractors"),
+        AppTab(id: "scheduling-config", label: "Config", icon: "gearshape.fill", path: "/scheduling/config", permission: "manage_scheduling"),
     ], permission: "view_scheduling"),
-    AppModule(id: "tools", label: "Tools", icon: "briefcase.fill", tabs: [
+    AppModule(id: "tools", label: "Tools", icon: "wrench.adjustable.fill", tabs: [
         AppTab(id: "tools-registry", label: "Registry", icon: "list.bullet", path: "/tools/registry"),
         AppTab(id: "tools-checkouts", label: "Checkouts", icon: "arrow.right.circle.fill", path: "/tools/checkouts"),
         AppTab(id: "tools-kits", label: "Kits", icon: "suitcase.fill", path: "/tools/kits"),
         AppTab(id: "tools-dashboard", label: "Dashboard", icon: "chart.bar.fill", path: "/tools/dashboard"),
+        AppTab(id: "tools-admin", label: "Admin", icon: "person.badge.key.fill", path: "/tools/admin", permission: "manage_tools"),
+        AppTab(id: "tools-maintenance", label: "Maintenance", icon: "wrench.adjustable.fill", path: "/tools/maintenance"),
     ], permission: "view_tools"),
     AppModule(id: "notebooks", label: "Notebooks", icon: "note.text", tabs: [
         AppTab(id: "notebooks-all", label: "All Notebooks", icon: "list.bullet", path: "/notebooks/all"),
         AppTab(id: "notebooks-templates", label: "Templates", icon: "doc.on.doc.fill", path: "/notebooks/templates", permission: "manage_templates"),
         AppTab(id: "notebooks-job-notebooks", label: "Job Notebooks", icon: "book.closed.fill", path: "/notebooks/job-notebooks"),
     ]),
-    AppModule(id: "reports", label: "Reports", icon: "chart.pie.fill", tabs: [
-        AppTab(id: "reports-timesheets", label: "Timesheets", icon: "clock.badge.checkmark", path: "/reports/timesheets"),
-        AppTab(id: "reports-spending", label: "Spending", icon: "creditcard.fill", path: "/reports/spending", permission: "show_dollar_values"),
-        AppTab(id: "reports-daily-summary", label: "Daily Summary", icon: "chart.bar.fill", path: "/reports/daily-summary"),
-        AppTab(id: "reports-profitability", label: "Profitability", icon: "chart.pie.fill", path: "/reports/profitability", permission: "show_dollar_values"),
-        AppTab(id: "reports-pre-billing", label: "Pre-Billing", icon: "doc.text.fill", path: "/reports/pre-billing", permission: "export_reports"),
-        AppTab(id: "reports-bookkeeper", label: "Bookkeeper", icon: "books.vertical.fill", path: "/reports/bookkeeper", permission: "export_reports"),
-    ], permission: "view_reports"),
+
     AppModule(id: "chat", label: "Chat", icon: "bubble.left.and.bubble.right.fill", tabs: [
         AppTab(id: "chat-channels", label: "Messages", icon: "bubble.left.fill", path: "/chat/channels"),
         AppTab(id: "chat-questions", label: "Q&A", icon: "questionmark.circle.fill", path: "/chat/questions"),
+        AppTab(id: "chat-rfis", label: "RFIs", icon: "doc.questionmark.fill", path: "/chat/rfis", permission: "manage_jobs"),
     ], permission: "view_chat"),
+    AppModule(id: "office", label: "Office", icon: "briefcase.fill", tabs: [
+        // Operations
+        AppTab(id: "office-manage-jobs", label: "Manage Jobs", icon: "hammer.fill", path: "/office/manage-jobs", permission: "manage_jobs"),
+        AppTab(id: "office-warehouse-exec", label: "Warehouse", icon: "building.fill", path: "/office/warehouse-exec", permission: "manage_warehouse"),
+        // Finance & Billing
+        AppTab(id: "office-spending", label: "Spending", icon: "dollarsign.circle.fill", path: "/office/spending", permission: "show_dollar_values"),
+        AppTab(id: "office-timesheets", label: "Timesheets", icon: "clock.badge.checkmark", path: "/office/timesheets", permission: "view_reports"),
+        AppTab(id: "office-pre-billing", label: "Pre-Billing", icon: "doc.text.fill", path: "/office/pre-billing", permission: "export_reports"),
+        AppTab(id: "office-bookkeeper", label: "Bookkeeper", icon: "books.vertical.fill", path: "/office/bookkeeper", permission: "export_reports"),
+        AppTab(id: "office-profitability", label: "Profitability", icon: "chart.pie.fill", path: "/office/profitability", permission: "show_dollar_values"),
+        AppTab(id: "office-labor-overview", label: "Labor Overview", icon: "person.3.fill", path: "/office/labor-overview", permission: "view_labor"),
+        AppTab(id: "office-daily-summary", label: "Daily Summary", icon: "chart.bar.fill", path: "/office/daily-summary", permission: "view_reports"),
+        // HR & Admin
+        AppTab(id: "office-employees", label: "Employees", icon: "person.fill", path: "/office/employees", permission: "view_people"),
+        AppTab(id: "office-hats", label: "Hats & Roles", icon: "graduationcap.fill", path: "/office/hats", permission: "manage_people"),
+        AppTab(id: "office-permissions", label: "Permissions", icon: "lock.shield.fill", path: "/office/permissions", permission: "manage_people"),
+    ], permission: "manage_jobs"),
+    // Settings tabs are slimmed here — the full list is handled by UserMenuSheet.
     AppModule(id: "settings", label: "Settings", icon: "gearshape.fill", tabs: [
         AppTab(id: "settings-themes", label: "Themes", icon: "paintpalette.fill", path: "/settings/themes"),
         AppTab(id: "settings-app-config", label: "App Config", icon: "slider.horizontal.3", path: "/settings/app-config"),
-        AppTab(id: "settings-company", label: "Company", icon: "building.2.fill", path: "/settings/company"),
-        AppTab(id: "settings-pdf", label: "PDF", icon: "doc.fill", path: "/settings/pdf"),
-        AppTab(id: "settings-billing", label: "Billing & Pay", icon: "dollarsign.circle.fill", path: "/settings/billing"),
         AppTab(id: "settings-notifications", label: "Notifications", icon: "bell.fill", path: "/settings/notifications"),
         AppTab(id: "settings-sync", label: "Sync", icon: "arrow.triangle.2.circlepath", path: "/settings/sync"),
-        AppTab(id: "settings-bluetooth", label: "Bluetooth", icon: "wave.3.right", path: "/settings/bluetooth"),
-        AppTab(id: "settings-about", label: "About", icon: "info.circle.fill", path: "/settings/about"),
-        AppTab(id: "settings-reset", label: "Database Reset", icon: "arrow.counterclockwise.circle.fill", path: "/settings/reset", permission: "manage_devices"),
-        AppTab(id: "settings-clockout", label: "Clock-Out Questions", icon: "questionmark.circle.fill", path: "/settings/clockout"),
-        AppTab(id: "settings-backups", label: "Backups", icon: "externaldrive.fill", path: "/settings/backups"),
-        AppTab(id: "settings-bootstrap", label: "Bootstrap", icon: "desktopcomputer", path: "/settings/bootstrap", permission: "manage_devices"),
-        AppTab(id: "settings-keys", label: "Key Management", icon: "key.fill", path: "/settings/keys", permission: "manage_devices"),
         AppTab(id: "settings-security", label: "Security", icon: "lock.shield.fill", path: "/settings/security", permission: "manage_devices"),
-        AppTab(id: "settings-updates", label: "Updates", icon: "arrow.down.circle.fill", path: "/settings/updates"),
-        AppTab(id: "settings-export", label: "Data Export", icon: "square.and.arrow.up.fill", path: "/settings/export", permission: "export_reports"),
-        AppTab(id: "settings-integrations", label: "Integrations", icon: "puzzlepiece.extension.fill", path: "/settings/integrations", permission: "manage_settings"),
         AppTab(id: "settings-audit", label: "Audit Log", icon: "list.bullet.clipboard.fill", path: "/settings/audit", permission: "view_activity_log"),
-        AppTab(id: "settings-supplier-bridge", label: "Supplier Bridge", icon: "link.circle.fill", path: "/settings/supplier-bridge", permission: "manage_settings"),
     ], permission: "manage_settings"),
 ]
+
+// MARK: - Navigation Notification
+
+extension Notification.Name {
+    /// Posted when a view wants to navigate to a specific module tab.
+    /// `userInfo` should contain `"moduleId"` (String) and optionally `"tabId"` (String).
+    static let navigateToModule = Notification.Name("WiredPart.navigateToModule")
+}
 
 // MARK: - Lookup Table
 

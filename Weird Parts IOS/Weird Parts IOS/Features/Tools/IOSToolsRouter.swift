@@ -11,6 +11,8 @@ struct IOSToolsRouter: View {
         case "tools-checkouts": IOSToolCheckoutsPage()
         case "tools-kits": IOSToolKitsPage()
         case "tools-dashboard": IOSToolsDashboardPage()
+        case "tools-admin": IOSToolAdminPage()
+        case "tools-maintenance": IOSToolMaintenancePage()
         default: Text("Unknown tools page: \(tabId)").foregroundStyle(.secondary)
         }
     }

@@ -1,8 +1,5 @@
 import Foundation
-import NIOCore
-import NIOPosix
-import NIOHTTP1
-import NIOFoundationCompat
+import Network
 import os
 
 // MARK: - Wire-Format Types
@@ -179,156 +176,206 @@ public actor SyncServerState {
     }
 }
 
-// MARK: - LAN Sync Server
+// MARK: - LAN Sync Server (Network.framework)
 
-/// HTTP sync server running on the local network.
+/// HTTP sync server running on the local network using Network.framework.
 ///
-/// Ported from: `src-tauri/src/sync_server.rs`
+/// Replaces the previous swift-nio implementation with Apple's built-in
+/// networking stack — zero external dependencies.
 ///
 /// Endpoints:
 /// - `POST /sync/push` — receive changes from peers
 /// - `POST /sync/pull` — send our changes to peers
 /// - `GET  /sync/status` — health check + device info (no auth)
 ///
-/// Uses swift-nio for HTTP/1.1 framing. Binds to `0.0.0.0:0`
-/// so the OS assigns a random available port, which is then
-/// advertised via mDNS.
+/// Binds to `0.0.0.0:0` so the OS assigns a random available port,
+/// which is then advertised via mDNS.
 public final class LanSyncServer: Sendable {
     private let state: SyncServerState
-    private let group: EventLoopGroup
-    private let channelLock = OSAllocatedUnfairLock<Channel?>(initialState: nil)
+    private let listenerLock = OSAllocatedUnfairLock<NWListener?>(initialState: nil)
+    private let logger = Logger(subsystem: "com.wiredpart.core", category: "LanSyncServer")
 
     public init(state: SyncServerState) {
         self.state = state
-        self.group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     }
 
     /// Start the server. Returns the OS-assigned port number.
     public func start() async throws -> UInt16 {
-        let stateRef = self.state
+        let params = NWParameters.tcp
+        params.allowLocalEndpointReuse = true
 
-        let bootstrap = ServerBootstrap(group: group)
-            .serverChannelOption(.backlog, value: 256)
-            .childChannelInitializer { channel in
-                channel.pipeline.configureHTTPServerPipeline().flatMap {
-                    channel.pipeline.addHandler(SyncHTTPHandler(state: stateRef))
+        let listener = try NWListener(using: params, on: .any)
+        listenerLock.withLock { $0 = listener }
+
+        let stateRef = self.state
+        let loggerRef = self.logger
+
+        return try await withCheckedThrowingContinuation { continuation in
+            nonisolated(unsafe) var resumed = false
+
+            listener.stateUpdateHandler = { newState in
+                switch newState {
+                case .ready:
+                    guard !resumed else { return }
+                    resumed = true
+                    if let port = listener.port?.rawValue {
+                        let assignedPort = port
+                        Task { await stateRef.setPort(assignedPort) }
+                        continuation.resume(returning: assignedPort)
+                    } else {
+                        continuation.resume(throwing: SyncServerError.failedToBind)
+                    }
+                case .failed(let error):
+                    guard !resumed else { return }
+                    resumed = true
+                    loggerRef.error("Listener failed: \(error.localizedDescription)")
+                    continuation.resume(throwing: SyncServerError.failedToBind)
+                default:
+                    break
                 }
             }
-            .childChannelOption(.socketOption(.so_reuseaddr), value: 1)
 
-        let channel = try await bootstrap.bind(host: "0.0.0.0", port: 0).get()
-        channelLock.withLock { $0 = channel }
+            listener.newConnectionHandler = { [weak self] connection in
+                guard let self else { return }
+                self.handleConnection(connection)
+            }
 
-        guard let localAddress = channel.localAddress,
-              let port = localAddress.port else {
-            throw SyncServerError.failedToBind
+            listener.start(queue: .global(qos: .userInitiated))
         }
-
-        let assignedPort = UInt16(port)
-        await state.setPort(assignedPort)
-        return assignedPort
     }
 
     /// Gracefully shut down the server.
-    public func stop() async throws {
-        let channel = channelLock.withLock { ch -> Channel? in
-            let c = ch
-            ch = nil
-            return c
+    public func stop() async {
+        let listener = listenerLock.withLock { l -> NWListener? in
+            let current = l
+            l = nil
+            return current
         }
-        try await channel?.close()
-        try await group.shutdownGracefully()
-    }
-}
-
-public enum SyncServerError: Error {
-    case failedToBind
-}
-
-// MARK: - HTTP Handler
-
-/// NIO channel handler that routes HTTP requests to sync endpoints.
-private final class SyncHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
-    typealias InboundIn = HTTPServerRequestPart
-    typealias OutboundOut = HTTPServerResponsePart
-
-    private let state: SyncServerState
-    private var requestHead: HTTPRequestHead?
-    private var bodyBuffer: ByteBuffer?
-
-    init(state: SyncServerState) {
-        self.state = state
+        listener?.cancel()
     }
 
-    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        let part = unwrapInboundIn(data)
+    // MARK: - Connection Handling
 
-        switch part {
-        case .head(let head):
-            requestHead = head
-            bodyBuffer = context.channel.allocator.buffer(capacity: 0)
+    /// Accept a new TCP connection, read the full HTTP request, route it,
+    /// and send the HTTP response.
+    private func handleConnection(_ connection: NWConnection) {
+        let stateRef = self.state
+        let loggerRef = self.logger
 
-        case .body(var body):
-            bodyBuffer?.writeBuffer(&body)
+        connection.start(queue: .global(qos: .userInitiated))
 
-        case .end:
-            guard let head = requestHead else { return }
-            let body = bodyBuffer ?? context.channel.allocator.buffer(capacity: 0)
-
-            let stateRef = self.state
-
-            // Use NIO's promise pattern to bridge async actor calls back to the event loop.
-            let promise = context.eventLoop.makePromise(of: (HTTPResponseStatus, Data).self)
-            promise.completeWithTask {
-                await Self.handleRequest(head: head, body: body, state: stateRef)
-            }
-            nonisolated(unsafe) let ctx = context
-            promise.futureResult.whenComplete { [weak self] result in
-                guard let self else { return }
-                switch result {
-                case .success(let (status, responseData)):
-                    self.sendResponse(context: ctx, status: status, body: responseData)
-                case .failure:
-                    let json = #"{"error":"internal_error"}"#
-                    self.sendResponse(context: ctx, status: .internalServerError, body: json.data(using: .utf8)!)
-                }
+        // Read up to 1 MB of request data
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1_048_576) { data, _, isComplete, error in
+            guard let data, error == nil else {
+                connection.cancel()
+                return
             }
 
-            requestHead = nil
-            bodyBuffer = nil
+            Task {
+                let (status, body) = await Self.routeHTTPRequest(data: data, state: stateRef, logger: loggerRef)
+                let response = Self.buildHTTPResponse(status: status, body: body)
+                connection.send(content: response, completion: .contentProcessed { _ in
+                    connection.cancel()
+                })
+            }
         }
     }
 
-    /// Route and handle the request.
-    private static func handleRequest(
-        head: HTTPRequestHead,
-        body: ByteBuffer,
-        state: SyncServerState
-    ) async -> (HTTPResponseStatus, Data) {
-        let method = head.method
-        let uri = head.uri
+    // MARK: - HTTP Parsing & Routing
 
-        switch (method, uri) {
-        case (.GET, "/sync/status"):
+    /// Parse a raw HTTP/1.1 request and route it to the appropriate handler.
+    private static func routeHTTPRequest(
+        data: Data,
+        state: SyncServerState,
+        logger: Logger
+    ) async -> (Int, Data) {
+        guard let request = parseHTTPRequest(data) else {
+            let json = #"{"error":"bad_request"}"#
+            return (400, Data(json.utf8))
+        }
+
+        switch (request.method, request.path) {
+        case ("GET", "/sync/status"):
             return await handleStatus(state: state)
 
-        case (.POST, "/sync/push"):
-            return await handlePush(body: body, state: state)
+        case ("POST", "/sync/push"):
+            return await handlePush(body: request.body, state: state)
 
-        case (.POST, "/sync/pull"):
-            return await handlePull(body: body, state: state)
+        case ("POST", "/sync/pull"):
+            return await handlePull(body: request.body, state: state)
 
         default:
             let json = #"{"error":"not_found"}"#
-            return (.notFound, json.data(using: .utf8)!)
+            return (404, Data(json.utf8))
         }
+    }
+
+    /// Minimal HTTP/1.1 request parser.
+    /// Extracts method, path, headers, and body from raw TCP data.
+    private static func parseHTTPRequest(_ data: Data) -> HTTPRequest? {
+        // Split headers from body at the \r\n\r\n boundary
+        let separator = Data([0x0D, 0x0A, 0x0D, 0x0A]) // \r\n\r\n
+        guard let separatorRange = data.range(of: separator) else { return nil }
+
+        let headerData = data[data.startIndex..<separatorRange.lowerBound]
+        let bodyData = data[separatorRange.upperBound...]
+
+        guard let headerString = String(data: headerData, encoding: .utf8) else { return nil }
+        var lines = headerString.components(separatedBy: "\r\n")
+        guard !lines.isEmpty else { return nil }
+
+        // Parse request line: "GET /sync/status HTTP/1.1"
+        let requestLine = lines.removeFirst()
+        let parts = requestLine.split(separator: " ", maxSplits: 2)
+        guard parts.count >= 2 else { return nil }
+
+        let method = String(parts[0])
+        let path = String(parts[1])
+
+        // Parse headers
+        var headers: [String: String] = [:]
+        for line in lines {
+            if let colonIndex = line.firstIndex(of: ":") {
+                let key = line[line.startIndex..<colonIndex].trimmingCharacters(in: .whitespaces).lowercased()
+                let value = line[line.index(after: colonIndex)...].trimmingCharacters(in: .whitespaces)
+                headers[key] = value
+            }
+        }
+
+        // Determine body length from Content-Length header
+        var body = Data(bodyData)
+        if let contentLengthStr = headers["content-length"],
+           let contentLength = Int(contentLengthStr) {
+            body = Data(bodyData.prefix(contentLength))
+        }
+
+        return HTTPRequest(method: method, path: path, headers: headers, body: body)
+    }
+
+    /// Build a raw HTTP/1.1 response from status code and JSON body.
+    private static func buildHTTPResponse(status: Int, body: Data) -> Data {
+        let statusText: String = switch status {
+        case 200: "OK"
+        case 400: "Bad Request"
+        case 401: "Unauthorized"
+        case 403: "Forbidden"
+        case 404: "Not Found"
+        case 500: "Internal Server Error"
+        default: "Unknown"
+        }
+
+        var response = Data()
+        let header = "HTTP/1.1 \(status) \(statusText)\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
+        response.append(Data(header.utf8))
+        response.append(body)
+        return response
     }
 
     // MARK: - Endpoint Handlers
 
     private static func handleStatus(
         state: SyncServerState
-    ) async -> (HTTPResponseStatus, Data) {
+    ) async -> (Int, Data) {
         let pendingCount = await state.outbox.count
         let syncAt = await state.lastSyncAt
         let serverPort = await state.port
@@ -344,27 +391,24 @@ private final class SyncHTTPHandler: ChannelInboundHandler, @unchecked Sendable 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = (try? encoder.encode(response)) ?? Data()
-        return (.ok, data)
+        return (200, data)
     }
 
     private static func handlePush(
-        body: ByteBuffer,
+        body: Data,
         state: SyncServerState
-    ) async -> (HTTPResponseStatus, Data) {
-        let bodyData = Data(buffer: body)
-
-        guard let request = try? JSONDecoder().decode(SyncPushRequest.self, from: bodyData) else {
+    ) async -> (Int, Data) {
+        guard let request = try? JSONDecoder().decode(SyncPushRequest.self, from: body) else {
             let json = #"{"error":"invalid_json"}"#
-            return (.badRequest, json.data(using: .utf8)!)
+            return (400, Data(json.utf8))
         }
 
         // Auth check
-        let authResult = await checkAuth(
+        if let errorResponse = await checkAuth(
             auth: request.auth ?? SyncAuth(),
             requestCompanyId: request.companyId,
             state: state
-        )
-        if let errorResponse = authResult {
+        ) {
             return errorResponse
         }
 
@@ -378,27 +422,24 @@ private final class SyncHTTPHandler: ChannelInboundHandler, @unchecked Sendable 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = (try? encoder.encode(response)) ?? Data()
-        return (.ok, data)
+        return (200, data)
     }
 
     private static func handlePull(
-        body: ByteBuffer,
+        body: Data,
         state: SyncServerState
-    ) async -> (HTTPResponseStatus, Data) {
-        let bodyData = Data(buffer: body)
-
-        guard let request = try? JSONDecoder().decode(SyncPullRequest.self, from: bodyData) else {
+    ) async -> (Int, Data) {
+        guard let request = try? JSONDecoder().decode(SyncPullRequest.self, from: body) else {
             let json = #"{"error":"invalid_json"}"#
-            return (.badRequest, json.data(using: .utf8)!)
+            return (400, Data(json.utf8))
         }
 
         // Auth check
-        let authResult = await checkAuth(
+        if let errorResponse = await checkAuth(
             auth: request.auth ?? SyncAuth(),
             requestCompanyId: request.companyId,
             state: state
-        )
-        if let errorResponse = authResult {
+        ) {
             return errorResponse
         }
 
@@ -416,7 +457,7 @@ private final class SyncHTTPHandler: ChannelInboundHandler, @unchecked Sendable 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = (try? encoder.encode(response)) ?? Data()
-        return (.ok, data)
+        return (200, data)
     }
 
     // MARK: - Auth
@@ -427,14 +468,14 @@ private final class SyncHTTPHandler: ChannelInboundHandler, @unchecked Sendable 
         auth: SyncAuth,
         requestCompanyId: String,
         state: SyncServerState
-    ) async -> (HTTPResponseStatus, Data)? {
+    ) async -> (Int, Data)? {
         let serverCompanyId = state.companyId
         let companyPublicKey = await state.companyPublicKey
 
         // Company ID must match
         if requestCompanyId != serverCompanyId {
             let json = #"{"error":"company_id_mismatch"}"#
-            return (.forbidden, json.data(using: .utf8)!)
+            return (403, Data(json.utf8))
         }
 
         // Verify certificate if company key is configured
@@ -450,32 +491,25 @@ private final class SyncHTTPHandler: ChannelInboundHandler, @unchecked Sendable 
 
         case .required:
             let json = #"{"error":"certificate_required"}"#
-            return (.unauthorized, json.data(using: .utf8)!)
+            return (401, Data(json.utf8))
 
         case .rejected(let reason):
             let json = "{\"error\":\"certificate_rejected\",\"reason\":\"\(reason)\"}"
-            return (.forbidden, json.data(using: .utf8)!)
+            return (403, Data(json.utf8))
         }
     }
+}
 
-    // MARK: - Response Writer
+public enum SyncServerError: Error {
+    case failedToBind
+}
 
-    private func sendResponse(
-        context: ChannelHandlerContext,
-        status: HTTPResponseStatus,
-        body: Data
-    ) {
-        var headers = HTTPHeaders()
-        headers.add(name: "Content-Type", value: "application/json")
-        headers.add(name: "Content-Length", value: "\(body.count)")
+// MARK: - Parsed HTTP Request
 
-        let head = HTTPResponseHead(version: .http1_1, status: status, headers: headers)
-        context.write(wrapOutboundOut(.head(head)), promise: nil)
-
-        var buffer = context.channel.allocator.buffer(capacity: body.count)
-        buffer.writeBytes(body)
-        context.write(wrapOutboundOut(.body(.byteBuffer(buffer))), promise: nil)
-
-        context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
-    }
+/// Simple parsed HTTP/1.1 request used internally by the sync server.
+private struct HTTPRequest {
+    let method: String
+    let path: String
+    let headers: [String: String]
+    let body: Data
 }

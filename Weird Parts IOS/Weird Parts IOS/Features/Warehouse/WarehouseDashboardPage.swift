@@ -13,21 +13,24 @@ struct WarehouseDashboardPage: View {
     @State private var kpis: WarehouseService.WarehouseKPI?
     @State private var recentMovements: [WarehouseService.MovementRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
 
     var body: some View {
         VStack(spacing: 0) {
             if isLoading {
                 ProgressView("Loading warehouse...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { Task { await loadData() } }
             } else {
                 dashboardContent
             }
         }
         .refreshable { await loadData() }
         #if os(iOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #elseif os(macOS)
-        .background(Color(.systemGroupedBackground))
+        .background(DS.Background.page)
         #endif
         .task { await loadData() }
     }
@@ -115,6 +118,8 @@ struct WarehouseDashboardPage: View {
         .background(Color(.secondarySystemGroupedBackground))
         #endif
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(value)")
     }
 
     // MARK: - Quick Actions
@@ -127,16 +132,37 @@ struct WarehouseDashboardPage: View {
                 .padding(.horizontal, 4)
 
             HStack(spacing: 12) {
-                quickActionButton(
-                    title: "New Movement",
-                    icon: "arrow.left.arrow.right.circle.fill",
-                    color: .blue
-                )
-                quickActionButton(
-                    title: "Scan QR",
-                    icon: "qrcode.viewfinder",
-                    color: .orange
-                )
+                Button {
+                    // Navigate to warehouse movements tab
+                    NotificationCenter.default.post(
+                        name: .navigateToModule,
+                        object: nil,
+                        userInfo: ["moduleId": "warehouse"]
+                    )
+                } label: {
+                    quickActionButton(
+                        title: "New Movement",
+                        icon: "arrow.left.arrow.right.circle.fill",
+                        color: .blue
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    // Navigate to warehouse tools
+                    NotificationCenter.default.post(
+                        name: .navigateToModule,
+                        object: nil,
+                        userInfo: ["moduleId": "warehouse"]
+                    )
+                } label: {
+                    quickActionButton(
+                        title: "Scan QR",
+                        icon: "qrcode.viewfinder",
+                        color: .orange
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -263,6 +289,7 @@ struct WarehouseDashboardPage: View {
     @Sendable
     private func loadData() async {
         isLoading = true
+        loadError = nil
         do {
             guard let service = appCore.warehouseService else {
                 await MainActor.run { isLoading = false }
@@ -276,7 +303,10 @@ struct WarehouseDashboardPage: View {
                 isLoading = false
             }
         } catch {
-            await MainActor.run { isLoading = false }
+            await MainActor.run {
+                loadError = error.localizedDescription
+                isLoading = false
+            }
         }
     }
 
