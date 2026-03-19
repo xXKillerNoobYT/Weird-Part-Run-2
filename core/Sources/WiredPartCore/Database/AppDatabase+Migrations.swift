@@ -36,6 +36,7 @@ extension AppDatabase {
         registerMigration019BusinessProfiles(&migrator)
         registerMigration020WarehouseLocationsStockEntries(&migrator)
         registerMigration021MissingTables(&migrator)
+        registerMigration022NotebookColumns(&migrator)
     }
 }
 
@@ -2581,6 +2582,27 @@ extension AppDatabase {
                 t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_qa_esc_thread", on: "qa_escalations", columns: ["thread_id"])
+        }
+    }
+}
+
+// MARK: - 022: Notebook Missing Columns
+
+extension AppDatabase {
+    private static func registerMigration022NotebookColumns(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("022_notebook_columns") { db in
+            // The notebooks table was missing notebook_type, status, and content columns
+            // that the NotebooksService queries and UI expect.
+            try db.alter(table: "notebooks") { t in
+                t.add(column: "notebook_type", .text).notNull().defaults(to: "general")
+                t.add(column: "status", .text).notNull().defaults(to: "active")
+                t.add(column: "content", .text)
+            }
+
+            // Backfill: notebooks linked to a job should have type "job"
+            try db.execute(sql: """
+                UPDATE notebooks SET notebook_type = 'job' WHERE job_id IS NOT NULL
+                """)
         }
     }
 }

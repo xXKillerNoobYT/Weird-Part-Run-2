@@ -14,6 +14,7 @@ struct DSKPICard: View {
     let icon: String
     let color: Color
     var trend: DSKPITrend? = nil
+    var onTap: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.sm) {
@@ -24,6 +25,11 @@ struct DSKPICard: View {
                 Spacer()
                 if let trend {
                     trendIndicator(trend)
+                }
+                if onTap != nil {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                 }
             }
 
@@ -37,8 +43,11 @@ struct DSKPICard: View {
         .padding(DS.Space.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dsElevatedCard()
+        .contentShape(Rectangle())
+        .onTapGesture { onTap?() }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title): \(value)")
+        .accessibilityAddTraits(onTap != nil ? .isButton : [])
     }
 
     @ViewBuilder

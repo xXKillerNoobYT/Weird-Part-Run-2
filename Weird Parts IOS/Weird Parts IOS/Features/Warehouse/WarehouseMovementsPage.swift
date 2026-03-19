@@ -1146,8 +1146,8 @@ private struct MovementWizard: View {
                     conn,
                     sql: """
                         SELECT p.id, p.name, p.code,
-                               COALESCE((SELECT SUM(se.quantity) FROM stock_entries se
-                                         WHERE se.part_id = p.id AND se.deleted_at IS NULL), 0) AS available_qty
+                               COALESCE((SELECT SUM(s.qty) FROM stock s
+                                         WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) AS available_qty
                         FROM parts p
                         WHERE p.deleted_at IS NULL AND (p.name LIKE ? OR p.code LIKE ?)
                         ORDER BY p.name ASC LIMIT 15

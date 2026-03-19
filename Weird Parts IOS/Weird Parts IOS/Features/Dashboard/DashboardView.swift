@@ -4,39 +4,33 @@ import Combine
 import GRDB
 import WiredPartCore
 
-/// Main dashboard view matching the macOS Dashboard layout.
+/// Main dashboard view with KPI cards, charts, alerts, and quick actions.
 ///
-/// Shows a time-of-day greeting with two tabs:
-///   1. Overview — KPI cards, certification/vehicle expiry alerts, quick actions
-///   2. Daily Report — pending actions, today's activity, expected deliveries, budget alerts
-///
+/// Sub-pages (QR Scanner, Clock In/Out, Daily Report) are pushed via NavigationStack.
 /// Uses AppCore to query the database directly for summary statistics.
 /// All data is fetched on appear, supports pull-to-refresh, and auto-refreshes every 60s.
 struct DashboardView: View {
     @EnvironmentObject private var appCore: AppCore
 
-    @State private var activeTab = 0
-
-    // Overview state
+    // KPI + alerts state
     @State private var stats = DashboardStats()
     @State private var certAlerts: [CertAlert] = []
     @State private var vehicleAlerts: [VehicleAlert] = []
-
-    // Daily Report state
-    @State private var pendingJPOs: Int = 0
-    @State private var pendingPOs: Int = 0
-    @State private var returnsToSort: Int = 0
-    @State private var overdueDeliveries: Int = 0
-    @State private var todayCreatedOrders: Int = 0
-    @State private var todayReceivedItems: Int = 0
-    @State private var todayReturns: Int = 0
-    @State private var expectedDeliveries: [ExpectedDelivery] = []
-    @State private var budgetAlerts: [JobBudgetAlert] = []
 
     // Charts data
     @State private var laborChartData: [LaborDayData] = []
     @State private var stockChartData: [StockLevelData] = []
     @State private var spendingChartData: [SpendingCategory] = []
+
+    // KPI detail sheet
+    @State private var activeKPIDetail: KPIDetailType?
+
+    // Dashboard sub-page navigation
+    enum DashboardDestination: Hashable {
+        case scanner
+        case clock
+        case dailyReport
+    }
 
     @State private var isLoading = true
     @State private var loadError: String?
@@ -44,44 +38,48 @@ struct DashboardView: View {
     private let refreshTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: DS.Space.xl) {
-                // Greeting
-                greeting
-                    .padding(.horizontal, DS.Space.lg)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: DS.Space.xl) {
+                    // Greeting
+                    greeting
+                        .padding(.horizontal, DS.Space.lg)
 
-                // Tab picker
-                Picker("View", selection: $activeTab) {
-                    Text("Overview").tag(0)
-                    Text("Daily Report").tag(1)
+                    if isLoading {
+                        DSLoadingState()
+                            .padding(.top, DS.Space.jumbo)
+                    } else if let error = loadError {
+                        ErrorStateView(message: error) { Task { await loadData() } }
+                            .padding(.top, DS.Space.xl)
+                    } else {
+                        kpiSection
+                        chartsSection
+                        alertsContent
+                        quickActionsSection
+                    }
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, DS.Space.lg)
-
-                if isLoading {
-                    DSLoadingState()
-                        .padding(.top, DS.Space.jumbo)
-                } else if let error = loadError {
-                    ErrorStateView(message: error) { Task { await loadData() } }
-                        .padding(.top, DS.Space.xl)
-                } else if activeTab == 0 {
-                    // Overview tab
-                    kpiSection
-                    chartsSection
-                    alertsContent
-                    quickActionsSection
-                } else {
-                    // Daily Report tab
-                    dailyReportContent
+                .padding(.vertical)
+            }
+            .refreshable { await loadData() }
+            .background(DS.Background.page)
+            .task { await loadData() }
+            .onReceive(refreshTimer) { _ in
+                Task { await loadData() }
+            }
+            .sheet(item: $activeKPIDetail) { detail in
+                KPIDetailSheet(type: detail)
+                    .environmentObject(appCore)
+            }
+            .navigationDestination(for: DashboardDestination.self) { dest in
+                switch dest {
+                case .scanner:
+                    IOSDashboardQRScannerPage()
+                case .clock:
+                    IOSClockPage()
+                case .dailyReport:
+                    DashboardDailyReportPage()
                 }
             }
-            .padding(.vertical)
-        }
-        .refreshable { await loadData() }
-        .background(DS.Background.page)
-        .task { await loadData() }
-        .onReceive(refreshTimer) { _ in
-            Task { await loadData() }
         }
     }
 
@@ -125,14 +123,33 @@ struct DashboardView: View {
 
     @ViewBuilder
     private var kpiSection: some View {
-        LazyVGrid(columns: [
+        let twoColumns = [
             GridItem(.flexible(), spacing: DS.Space.md),
             GridItem(.flexible(), spacing: DS.Space.md),
-        ], spacing: DS.Space.md) {
-            DSKPICard(title: "Total Parts", value: "\(stats.totalParts)", icon: "shippingbox", color: .blue)
-            DSKPICard(title: "Active Jobs", value: "\(stats.activeJobs)", icon: "hammer", color: .orange)
-            DSKPICard(title: "Pending Orders", value: "\(stats.pendingOrders)", icon: "cart", color: .purple)
-            DSKPICard(title: "Low Stock", value: "\(stats.lowStockCount)", icon: "exclamationmark.triangle", color: stats.lowStockCount > 0 ? .red : .green)
+        ]
+        VStack(spacing: DS.Space.md) {
+            // Row 1: Part Types + Total Stock
+            LazyVGrid(columns: twoColumns, spacing: DS.Space.md) {
+                DSKPICard(title: "Part Types", value: "\(stats.partTypes)", icon: "list.clipboard", color: .blue) {
+                    activeKPIDetail = .partTypes
+                }
+                DSKPICard(title: "Total Stock", value: "\(stats.totalStock)", icon: "shippingbox.fill", color: .teal) {
+                    activeKPIDetail = .totalStock
+                }
+            }
+            // Row 2: Active Jobs + Pending Orders
+            LazyVGrid(columns: twoColumns, spacing: DS.Space.md) {
+                DSKPICard(title: "Active Jobs", value: "\(stats.activeJobs)", icon: "hammer", color: .orange) {
+                    activeKPIDetail = .activeJobs
+                }
+                DSKPICard(title: "Pending Orders", value: "\(stats.pendingOrders)", icon: "cart", color: .purple) {
+                    activeKPIDetail = .pendingOrders
+                }
+            }
+            // Row 3: Low Stock (full width)
+            DSKPICard(title: "Low Stock", value: "\(stats.lowStockCount)", icon: "exclamationmark.triangle", color: stats.lowStockCount > 0 ? .red : .green) {
+                activeKPIDetail = .lowStock
+            }
         }
         .padding(.horizontal, DS.Space.lg)
     }
@@ -232,260 +249,37 @@ struct DashboardView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: DS.Space.md) {
-                    DSQuickActionButton(title: "Clock In", icon: "clock.badge.checkmark.fill", color: .green) {
-                        navigateToModule("jobs")
+                    NavigationLink(value: DashboardDestination.scanner) {
+                        DSQuickActionButton(title: "Scan QR", icon: "qrcode.viewfinder", color: .purple)
+                    }
+                    .buttonStyle(.plain)
+
+                    NavigationLink(value: DashboardDestination.clock) {
+                        DSQuickActionButton(title: "Clock In", icon: "clock.badge.checkmark.fill", color: .green)
+                    }
+                    .buttonStyle(.plain)
+
+                    NavigationLink(value: DashboardDestination.dailyReport) {
+                        DSQuickActionButton(title: "Daily Report", icon: "doc.text.magnifyingglass", color: .indigo)
+                    }
+                    .buttonStyle(.plain)
+
+                    DSQuickActionButton(title: "Move Stock", icon: "arrow.left.arrow.right", color: .orange) {
+                        navigateToModule("warehouse")
                     }
                     DSQuickActionButton(title: "New Order", icon: "plus.circle.fill", color: .blue) {
                         navigateToModule("orders")
                     }
-                    DSQuickActionButton(title: "Move Stock", icon: "arrow.left.arrow.right", color: .orange) {
-                        navigateToModule("warehouse")
-                    }
-                    DSQuickActionButton(title: "Scan QR", icon: "qrcode.viewfinder", color: .purple) {
-                        navigateToModule("warehouse")
-                    }
                 }
                 .padding(.horizontal, DS.Space.lg)
             }
         }
     }
 
-    // MARK: - Daily Report
+    // Daily Report is now a separate sub-page: DashboardDailyReportPage
 
-    @ViewBuilder
-    private var dailyReportContent: some View {
-        VStack(alignment: .leading, spacing: DS.Space.lg) {
-            // Overdue alert banner
-            if overdueDeliveries > 0 {
-                DSAlertBanner(
-                    severity: .error,
-                    title: "\(overdueDeliveries) overdue deliver\(overdueDeliveries == 1 ? "y" : "ies")",
-                    message: "Immediate attention required"
-                )
-                .padding(.horizontal, DS.Space.lg)
-            }
-
-            // Pending Actions
-            pendingActionsCard
-                .padding(.horizontal, DS.Space.lg)
-
-            // Today's Activity
-            todayActivityCard
-                .padding(.horizontal, DS.Space.lg)
-
-            // Expected Deliveries
-            expectedDeliveriesCard
-                .padding(.horizontal, DS.Space.lg)
-
-            // Budget Alerts
-            if !budgetAlerts.isEmpty {
-                budgetAlertsCard
-                    .padding(.horizontal, DS.Space.lg)
-            }
-
-            // Live indicator
-            HStack(spacing: DS.Space.xs) {
-                Circle()
-                    .fill(DS.SemanticColor.success)
-                    .frame(width: 6, height: 6)
-                Text("Live — updates every 60 seconds")
-                    .dsStyle(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, DS.Space.sm)
-        }
-    }
-
-    private var pendingActionsCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Pending Actions")
-                    .dsStyle(.sectionTitle)
-                Spacer()
-                let total = pendingJPOs + pendingPOs + returnsToSort + overdueDeliveries
-                Text(total > 0 ? "\(total)" : "All clear")
-                    .dsStyle(.label)
-                    .padding(.horizontal, DS.Space.sm)
-                    .padding(.vertical, DS.Space.xxxs + 1)
-                    .background(Capsule().fill(DS.SemanticColor.tint(total > 0 ? DS.SemanticColor.warning : DS.SemanticColor.success)))
-                    .foregroundStyle(total > 0 ? DS.SemanticColor.warning : DS.SemanticColor.success)
-            }
-            .padding(DS.Space.lg)
-
-            VStack(spacing: 0) {
-                pendingActionRow("JPOs awaiting approval", count: pendingJPOs, icon: "cart", urgent: false)
-                Divider().padding(.leading, DS.Space.jumbo)
-                pendingActionRow("POs to submit", count: pendingPOs, icon: "shippingbox", urgent: false)
-                Divider().padding(.leading, DS.Space.jumbo)
-                pendingActionRow("Returns to sort", count: returnsToSort, icon: "arrow.uturn.backward.circle", urgent: false)
-                Divider().padding(.leading, DS.Space.jumbo)
-                pendingActionRow("Overdue deliveries", count: overdueDeliveries, icon: "exclamationmark.triangle", urgent: true)
-            }
-            .padding(.horizontal, DS.Space.lg)
-            .padding(.bottom, DS.Space.md)
-        }
-        .dsCard()
-    }
-
-    private func pendingActionRow(_ label: String, count: Int, icon: String, urgent: Bool) -> some View {
-        HStack(spacing: DS.Space.md) {
-            Image(systemName: icon)
-                .frame(width: 20)
-                .foregroundStyle(urgent && count > 0 ? DS.SemanticColor.error : .secondary)
-            Text(label)
-                .dsStyle(.detail)
-            Spacer()
-            Text("\(count)")
-                .dsStyle(.detail)
-                .fontWeight(.bold)
-                .foregroundStyle(
-                    count > 0
-                        ? (urgent ? DS.SemanticColor.error : DS.SemanticColor.warning)
-                        : .secondary
-                )
-        }
-        .padding(.vertical, DS.Space.xs)
-        .opacity(count > 0 ? 1 : 0.5)
-    }
-
-    private var todayActivityCard: some View {
-        VStack(alignment: .leading, spacing: DS.Space.md) {
-            Text("Today's Activity")
-                .dsStyle(.sectionTitle)
-
-            HStack(spacing: DS.Space.md) {
-                activityStat("Orders Created", value: todayCreatedOrders, color: .blue)
-                activityStat("Items Received", value: todayReceivedItems, color: .green)
-                activityStat("Returns", value: todayReturns, color: .purple)
-            }
-        }
-        .padding(DS.Space.lg)
-        .dsCard()
-    }
-
-    private func activityStat(_ label: String, value: Int, color: Color) -> some View {
-        VStack(spacing: DS.Space.xxs) {
-            Text("\(value)")
-                .dsStyle(.kpiValue)
-                .foregroundStyle(color)
-            Text(label)
-                .dsStyle(.label)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, DS.Space.sm)
-        .background(RoundedRectangle(cornerRadius: DS.Radius.sm).fill(DS.SemanticColor.muted(color)))
-    }
-
-    private var expectedDeliveriesCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Expected Deliveries This Week")
-                    .dsStyle(.sectionTitle)
-                Spacer()
-                if !expectedDeliveries.isEmpty {
-                    Text("\(expectedDeliveries.count)")
-                        .dsStyle(.label)
-                        .padding(.horizontal, DS.Space.sm)
-                        .padding(.vertical, DS.Space.xxxs + 1)
-                        .background(Capsule().fill(Color(.systemGray4)))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(DS.Space.lg)
-
-            if expectedDeliveries.isEmpty {
-                Text("No deliveries expected this week.")
-                    .dsStyle(.detail)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.bottom, DS.Space.lg)
-            } else {
-                VStack(spacing: DS.Space.sm) {
-                    ForEach(expectedDeliveries) { delivery in
-                        HStack(spacing: DS.Space.md) {
-                            Image(systemName: "truck.box")
-                                .foregroundStyle(delivery.isOverdue ? DS.SemanticColor.error : .secondary)
-                            VStack(alignment: .leading, spacing: DS.Space.xxxs) {
-                                Text("\(delivery.poNumber) — \(delivery.supplierName)")
-                                    .dsStyle(.detail)
-                                    .lineLimit(1)
-                                Text("\(delivery.lineCount) item\(delivery.lineCount == 1 ? "" : "s")")
-                                    .dsStyle(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing, spacing: DS.Space.xxxs) {
-                                Text(delivery.expectedDate)
-                                    .dsStyle(.caption)
-                                    .fontWeight(.medium)
-                                    .foregroundStyle(delivery.isOverdue ? DS.SemanticColor.error : .secondary)
-                                if delivery.isOverdue {
-                                    Text("Overdue")
-                                        .dsStyle(.label)
-                                        .padding(.horizontal, DS.Space.xs)
-                                        .padding(.vertical, 1)
-                                        .background(Capsule().fill(DS.SemanticColor.tint(DS.SemanticColor.error)))
-                                        .foregroundStyle(DS.SemanticColor.error)
-                                }
-                            }
-                        }
-                        .padding(DS.Space.md - 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: DS.Radius.sm)
-                                .stroke(delivery.isOverdue ? DS.SemanticColor.error.opacity(0.3) : Color(.separator), lineWidth: 1)
-                        )
-                    }
-                }
-                .padding(.horizontal, DS.Space.lg)
-                .padding(.bottom, DS.Space.md)
-            }
-        }
-        .dsCard()
-    }
-
-    private var budgetAlertsCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Budget Alerts")
-                .dsStyle(.sectionTitle)
-                .padding(DS.Space.lg)
-
-            VStack(spacing: DS.Space.sm) {
-                ForEach(budgetAlerts) { alert in
-                    let alertColor = alert.pctUsed >= 100 ? DS.SemanticColor.error : DS.SemanticColor.warning
-                    HStack(spacing: DS.Space.md) {
-                        Image(systemName: "dollarsign.circle")
-                            .foregroundStyle(alertColor)
-                        VStack(alignment: .leading, spacing: DS.Space.xxxs) {
-                            Text(alert.jobName)
-                                .dsStyle(.detail)
-                                .lineLimit(1)
-                            Text("$\(Int(alert.currentSpend)) of $\(Int(alert.budgetLimit))")
-                                .dsStyle(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Text("\(Int(alert.pctUsed))%")
-                            .dsStyle(.label)
-                            .padding(.horizontal, DS.Space.sm)
-                            .padding(.vertical, DS.Space.xxxs + 1)
-                            .background(Capsule().fill(DS.SemanticColor.tint(alertColor)))
-                            .foregroundStyle(alertColor)
-                    }
-                    .padding(DS.Space.md - 2)
-                    .background(
-                        RoundedRectangle(cornerRadius: DS.Radius.sm)
-                            .stroke(alertColor.opacity(0.3), lineWidth: 1)
-                    )
-                }
-            }
-            .padding(.horizontal, DS.Space.lg)
-            .padding(.bottom, DS.Space.md)
-        }
-        .dsCard()
-    }
+    // Daily report cards (pendingActions, todayActivity, expectedDeliveries, budgetAlerts)
+    // are now in DashboardDailyReportPage.swift
 
     // MARK: - Navigation
 
@@ -524,15 +318,19 @@ struct DashboardView: View {
                     WHERE p.deleted_at IS NULL
                       AND p.min_stock_level > 0
                       AND (
-                        SELECT COALESCE(SUM(se.quantity), 0)
-                        FROM stock_entries se
-                        WHERE se.part_id = p.id
-                          AND se.deleted_at IS NULL
+                        SELECT COALESCE(SUM(s.qty), 0)
+                        FROM stock s
+                        WHERE s.part_id = p.id
+                          AND s.deleted_at IS NULL
                       ) < p.min_stock_level
                     """) ?? 0
 
+                // Total physical stock units across all locations
+                let totalStock = try Int.fetchOne(dbConnection, sql: "SELECT COALESCE(SUM(qty), 0) FROM stock WHERE deleted_at IS NULL") ?? 0
+
                 let newStats = DashboardStats(
-                    totalParts: totalParts,
+                    partTypes: totalParts,
+                    totalStock: totalStock,
                     activeJobs: activeJobs,
                     pendingOrders: pendingOrders,
                     lowStockCount: lowStockCount
@@ -583,102 +381,10 @@ struct DashboardView: View {
                     return nil
                 }
 
-                // --- Daily Report data ---
-
-                let pJPOs = try Int.fetchOne(dbConnection, sql: "SELECT COUNT(*) FROM job_parts_orders WHERE status = 'submitted' AND deleted_at IS NULL") ?? 0
-                let pPOs = try Int.fetchOne(dbConnection, sql: "SELECT COUNT(*) FROM purchase_orders WHERE status = 'submitted' AND deleted_at IS NULL") ?? 0
-                let rSort = try Int.fetchOne(dbConnection, sql: "SELECT COUNT(*) FROM returns WHERE status = 'submitted' AND deleted_at IS NULL") ?? 0
-                let oDeliv = try Int.fetchOne(dbConnection, sql: """
-                    SELECT COUNT(*) FROM purchase_orders
-                    WHERE expected_delivery IS NOT NULL
-                      AND date(expected_delivery) < date('now')
-                      AND status NOT IN ('received', 'cancelled')
-                      AND deleted_at IS NULL
-                    """) ?? 0
-
-                let tOrders = try Int.fetchOne(dbConnection, sql: "SELECT COUNT(*) FROM purchase_orders WHERE date(created_at) = date('now') AND deleted_at IS NULL") ?? 0
-                let tReceived = try Int.fetchOne(dbConnection, sql: "SELECT COUNT(*) FROM receiving_sessions WHERE date(created_at) = date('now') AND deleted_at IS NULL") ?? 0
-                let tReturns = try Int.fetchOne(dbConnection, sql: "SELECT COUNT(*) FROM returns WHERE date(created_at) = date('now') AND deleted_at IS NULL") ?? 0
-
-                // Expected deliveries this week
-                let deliveryRows = try Row.fetchAll(dbConnection, sql: """
-                    SELECT po.id, po.po_number, po.expected_delivery,
-                           COALESCE(s.name, 'Unknown') AS supplier_name,
-                           (SELECT COUNT(*) FROM po_line_items pl WHERE pl.po_id = po.id AND pl.deleted_at IS NULL) AS line_count,
-                           CASE WHEN date(po.expected_delivery) < date('now') THEN 1 ELSE 0 END AS is_overdue
-                    FROM purchase_orders po
-                    LEFT JOIN suppliers s ON s.id = po.supplier_id
-                    WHERE po.expected_delivery IS NOT NULL
-                      AND po.status NOT IN ('received', 'cancelled')
-                      AND po.deleted_at IS NULL
-                      AND date(po.expected_delivery) BETWEEN date('now', '-7 days') AND date('now', '+7 days')
-                    ORDER BY po.expected_delivery ASC
-                    LIMIT 20
-                    """)
-                let expDeliv = deliveryRows.map { row in
-                    ExpectedDelivery(
-                        id: row["id"] ?? 0,
-                        poNumber: row["po_number"] ?? "",
-                        supplierName: row["supplier_name"] ?? "Unknown",
-                        expectedDate: String((row["expected_delivery"] as String? ?? "").prefix(10)),
-                        lineCount: row["line_count"] ?? 0,
-                        isOverdue: (row["is_overdue"] as Int? ?? 0) == 1
-                    )
-                }
-
-                // Budget alerts: jobs where spending exceeds 80% of budget
-                let budgetRows = try Row.fetchAll(dbConnection, sql: """
-                    SELECT * FROM (
-                        SELECT j.id, j.job_name, j.budget_limit AS budget,
-                               COALESCE(
-                                 (SELECT SUM(le.regular_hours * COALESCE(u.pay_rate, 0))
-                                  FROM labor_entries le
-                                  LEFT JOIN users u ON u.id = le.user_id
-                                  WHERE le.job_id = j.id AND le.deleted_at IS NULL), 0
-                               ) +
-                               COALESCE(
-                                 (SELECT SUM(po.total_cost)
-                                  FROM purchase_orders po
-                                  JOIN po_jpo_links pjl ON pjl.po_id = po.id
-                                  JOIN job_parts_orders jpo ON jpo.id = pjl.jpo_id
-                                  WHERE jpo.job_id = j.id
-                                    AND po.status NOT IN ('cancelled')
-                                    AND po.deleted_at IS NULL), 0
-                               ) AS current_spend
-                        FROM jobs j
-                        WHERE j.budget_limit IS NOT NULL AND j.budget_limit > 0
-                          AND j.status = 'active'
-                          AND j.deleted_at IS NULL
-                    ) sub
-                    WHERE current_spend >= budget * 0.8
-                    ORDER BY (current_spend * 1.0 / budget) DESC
-                    LIMIT 10
-                    """)
-                let bAlerts = budgetRows.map { row in
-                    let budget: Double = row["budget"] ?? 0
-                    let spend: Double = row["current_spend"] ?? 0
-                    return JobBudgetAlert(
-                        id: row["id"] ?? 0,
-                        jobName: row["job_name"] ?? "",
-                        currentSpend: spend,
-                        budgetLimit: budget,
-                        pctUsed: budget > 0 ? (spend / budget) * 100 : 0
-                    )
-                }
-
                 return DashboardLoadResult(
                     stats: newStats,
                     certAlerts: certs,
-                    vehicleAlerts: vAlerts,
-                    pendingJPOs: pJPOs,
-                    pendingPOs: pPOs,
-                    returnsToSort: rSort,
-                    overdueDeliveries: oDeliv,
-                    todayCreatedOrders: tOrders,
-                    todayReceivedItems: tReceived,
-                    todayReturns: tReturns,
-                    expectedDeliveries: expDeliv,
-                    budgetAlerts: bAlerts
+                    vehicleAlerts: vAlerts
                 )
             }
 
@@ -686,15 +392,6 @@ struct DashboardView: View {
                 stats = result.stats
                 certAlerts = result.certAlerts
                 vehicleAlerts = result.vehicleAlerts
-                pendingJPOs = result.pendingJPOs
-                pendingPOs = result.pendingPOs
-                returnsToSort = result.returnsToSort
-                overdueDeliveries = result.overdueDeliveries
-                todayCreatedOrders = result.todayCreatedOrders
-                todayReceivedItems = result.todayReceivedItems
-                todayReturns = result.todayReturns
-                expectedDeliveries = result.expectedDeliveries
-                budgetAlerts = result.budgetAlerts
                 isLoading = false
             }
 
@@ -743,13 +440,13 @@ struct DashboardView: View {
                 // Top 8 parts by stock level (show low stock prominently)
                 let stockRows = try Row.fetchAll(conn, sql: """
                     SELECT p.name,
-                           COALESCE((SELECT SUM(se.quantity) FROM stock_entries se
-                                     WHERE se.part_id = p.id AND se.deleted_at IS NULL), 0) AS qty,
+                           COALESCE((SELECT SUM(s.qty) FROM stock s
+                                     WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) AS qty,
                            COALESCE(p.min_stock_level, 0) AS min_level
                     FROM parts p
                     WHERE p.deleted_at IS NULL AND p.min_stock_level > 0
-                    ORDER BY (COALESCE((SELECT SUM(se.quantity) FROM stock_entries se
-                              WHERE se.part_id = p.id AND se.deleted_at IS NULL), 0) * 1.0
+                    ORDER BY (COALESCE((SELECT SUM(s.qty) FROM stock s
+                              WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) * 1.0
                               / NULLIF(p.min_stock_level, 0)) ASC
                     LIMIT 8
                     """)
@@ -805,7 +502,8 @@ private func dashboardDateString(daysFromNow days: Int) -> String {
 // MARK: - Data Types
 
 private struct DashboardStats: Sendable {
-    var totalParts = 0
+    var partTypes = 0
+    var totalStock = 0
     var activeJobs = 0
     var pendingOrders = 0
     var lowStockCount = 0
@@ -816,15 +514,6 @@ private struct DashboardLoadResult: Sendable {
     let stats: DashboardStats
     let certAlerts: [CertAlert]
     let vehicleAlerts: [VehicleAlert]
-    let pendingJPOs: Int
-    let pendingPOs: Int
-    let returnsToSort: Int
-    let overdueDeliveries: Int
-    let todayCreatedOrders: Int
-    let todayReceivedItems: Int
-    let todayReturns: Int
-    let expectedDeliveries: [ExpectedDelivery]
-    let budgetAlerts: [JobBudgetAlert]
 }
 
 private struct CertAlert: Sendable {
@@ -838,22 +527,6 @@ private struct VehicleAlert: Sendable {
     let alertMessage: String
 }
 
-private struct ExpectedDelivery: Identifiable, Sendable {
-    let id: Int64
-    let poNumber: String
-    let supplierName: String
-    let expectedDate: String
-    let lineCount: Int
-    let isOverdue: Bool
-}
-
-private struct JobBudgetAlert: Identifiable, Sendable {
-    let id: Int64
-    let jobName: String
-    let currentSpend: Double
-    let budgetLimit: Double
-    let pctUsed: Double
-}
 
 
 

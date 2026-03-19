@@ -11,6 +11,7 @@ struct PartsForecastingPage: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var forecastRows: [ForecastRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var searchText = ""
     @State private var filterUrgency: UrgencyFilter = .all
     @State private var selectedRow: ForecastRow?
@@ -55,6 +56,8 @@ struct PartsForecastingPage: View {
             if isLoading {
                 ProgressView("Loading forecast data...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { Task { await loadData() } }
             } else if filteredRows.isEmpty {
                 emptyState
             } else {
@@ -270,9 +273,9 @@ struct PartsForecastingPage: View {
                            p.forecast_last_run,
                            p.min_stock_level, p.max_stock_level, p.target_stock_level,
                            p.reorder_point,
-                           COALESCE(SUM(se.quantity), 0) AS current_stock
+                           COALESCE(SUM(s.qty), 0) AS current_stock
                     FROM parts p
-                    LEFT JOIN stock_entries se ON se.part_id = p.id AND se.deleted_at IS NULL
+                    LEFT JOIN stock s ON s.part_id = p.id AND s.deleted_at IS NULL
                     WHERE p.deleted_at IS NULL
                     GROUP BY p.id
                     ORDER BY COALESCE(p.forecast_days_until_low, 9999) ASC
@@ -302,7 +305,10 @@ struct PartsForecastingPage: View {
                 isLoading = false
             }
         } catch {
-            await MainActor.run { isLoading = false }
+            await MainActor.run {
+                loadError = error.localizedDescription
+                isLoading = false
+            }
         }
     }
 }

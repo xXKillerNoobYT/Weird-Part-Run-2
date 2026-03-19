@@ -1,16 +1,34 @@
 import SwiftUI
 import WiredPartCore
 
+// MARK: - AI Display Mode
+
+/// Controls how the AI assistant panel is presented.
+enum AIDisplayMode: String, Sendable {
+    case sheet   // Full modal sheet (default)
+    case overlay // Floating panel, app remains navigable
+}
+
+// MARK: - AI Assistant Panel
+
 /// Floating AI assistant panel accessible from any page in the app.
 ///
 /// Provides a compact interface for asking natural language questions
-/// about the business data. Uses on-device Foundation Models when available,
-/// gracefully degrades when unavailable.
+/// about the business data. Uses on-device Foundation Models with tool calling
+/// when available, gracefully degrades to keyword matching when unavailable.
 ///
-/// Can be summoned via a floating button in the main view.
+/// Features:
+/// - Enter to send, Shift+Enter for newline
+/// - Real database queries via Foundation Models tool calling
+/// - Permission-gated data access (AI can't see what the user can't see)
+/// - App layout awareness for navigation guidance
+/// - Sheet or floating overlay display mode
 struct IOSAIAssistantPanel: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
+
+    @Binding var displayMode: AIDisplayMode
+    @Binding var isVisible: Bool
 
     @State private var query = ""
     @State private var messages: [AssistantMessage] = []
@@ -20,42 +38,142 @@ struct IOSAIAssistantPanel: View {
     private let aiService = FoundationModelsService()
 
     var body: some View {
+        if displayMode == .sheet {
+            sheetContent
+        } else {
+            overlayContent
+        }
+    }
+
+    // MARK: - Sheet Mode
+
+    @ViewBuilder
+    private var sheetContent: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Availability banner
-                availabilityHeader
-
-                // Messages
-                messagesArea
-
-                // Input
-                inputBar
-            }
-            .navigationTitle("AI Assistant")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                }
-                ToolbarItem(placement: .automatic) {
-                    Button {
-                        messages.removeAll()
-                    } label: {
-                        Image(systemName: "trash")
+            chatBody
+                .navigationTitle("AI Assistant")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") { dismiss() }
                     }
-                    .disabled(messages.isEmpty)
+                    ToolbarItemGroup(placement: .automatic) {
+                        Button {
+                            withAnimation { displayMode = .overlay }
+                            dismiss()
+                            // Re-show as overlay after sheet dismisses
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                isVisible = true
+                            }
+                        } label: {
+                            Image(systemName: "pip")
+                        }
+                        .help("Switch to floating overlay")
+
+                        Button {
+                            messages.removeAll()
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .disabled(messages.isEmpty)
+                    }
                 }
+        }
+    }
+
+    // MARK: - Overlay Mode
+
+    @ViewBuilder
+    private var overlayContent: some View {
+        VStack(spacing: 0) {
+            // Overlay header with controls
+            overlayHeader
+
+            Divider()
+
+            // Availability banner
+            availabilityHeader
+
+            // Messages + Input
+            chatBody
+        }
+        .frame(
+            width: DeviceContext.isLargeScreen ? 360 : nil,
+            height: DeviceContext.isLargeScreen ? 440 : nil
+        )
+        .frame(maxWidth: DeviceContext.isLargeScreen ? 360 : .infinity,
+               maxHeight: DeviceContext.isLargeScreen ? 440 : .infinity)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
+        .padding(DeviceContext.isLargeScreen ? 12 : 0)
+    }
+
+    @ViewBuilder
+    private var overlayHeader: some View {
+        HStack {
+            Text("AI Assistant")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+
+            Spacer()
+
+            Button {
+                // Switch to sheet mode
+                isVisible = false
+                withAnimation { displayMode = .sheet }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    isVisible = true
+                }
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.caption)
             }
-            .task {
-                aiAvailability = await aiService.checkAvailability()
-                if messages.isEmpty {
-                    messages.append(AssistantMessage(
-                        role: .assistant,
-                        content: "How can I help you today? I can answer questions about your jobs, parts, orders, and more."
-                    ))
-                }
+            .buttonStyle(.plain)
+            .help("Switch to full sheet")
+
+            Button {
+                messages.removeAll()
+            } label: {
+                Image(systemName: "trash")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .disabled(messages.isEmpty)
+
+            Button {
+                isVisible = false
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    // MARK: - Shared Chat Body
+
+    @ViewBuilder
+    private var chatBody: some View {
+        VStack(spacing: 0) {
+            if displayMode == .sheet {
+                availabilityHeader
+            }
+            messagesArea
+            inputBar
+        }
+        .task {
+            aiAvailability = await aiService.checkAvailability()
+            if messages.isEmpty {
+                messages.append(AssistantMessage(
+                    role: .assistant,
+                    content: "How can I help you today? I can search your data, answer questions about jobs, parts, orders, and help you navigate the app."
+                ))
             }
         }
     }
@@ -164,11 +282,9 @@ struct IOSAIAssistantPanel: View {
 
     @ViewBuilder
     private var inputBar: some View {
-        HStack(spacing: 8) {
-            TextField("Ask a question...", text: $query)
-                .textFieldStyle(.roundedBorder)
-                .frame(minHeight: 44)
-                .disabled(isProcessing)
+        HStack(alignment: .bottom, spacing: 8) {
+            // Multi-line text editor with Enter/Shift+Enter handling
+            chatTextEditor
 
             Button {
                 sendQuery()
@@ -188,10 +304,43 @@ struct IOSAIAssistantPanel: View {
         #endif
     }
 
+    /// Text editor that supports Enter to send and Shift+Enter for newline.
+    @ViewBuilder
+    private var chatTextEditor: some View {
+        let lineCount = max(1, query.components(separatedBy: "\n").count)
+        let dynamicHeight = min(max(CGFloat(lineCount) * 20 + 16, 44), 120)
+
+        TextEditor(text: $query)
+            .font(.subheadline)
+            .scrollContentBackground(.hidden)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .frame(minHeight: 44, maxHeight: dynamicHeight)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color(.separator), lineWidth: 0.5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(.secondarySystemGroupedBackground))
+                    )
+            )
+            .disabled(isProcessing)
+            .onKeyPress(.return, phases: .down) { keyPress in
+                if keyPress.modifiers.contains(.shift) {
+                    // Shift+Enter: allow default (insert newline)
+                    return .ignored
+                } else {
+                    // Enter alone: send the message
+                    sendQuery()
+                    return .handled
+                }
+            }
+    }
+
     // MARK: - Send Query
 
     private func sendQuery() {
-        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
         messages.append(AssistantMessage(role: .user, content: trimmed))
@@ -199,27 +348,54 @@ struct IOSAIAssistantPanel: View {
         isProcessing = true
 
         Task {
-            // Generate response
             let response = await generateResponse(for: trimmed)
             messages.append(AssistantMessage(role: .assistant, content: response))
             isProcessing = false
         }
     }
 
-    /// Generates a response using Foundation Models when available,
+    /// Generates a response using Foundation Models with tool calling when available,
     /// falls back to basic keyword matching.
     private func generateResponse(for queryText: String) async -> String {
-        if aiAvailability == .available {
-            // Use Foundation Models
-            let result = await aiService.chat(query: queryText)
+        if aiAvailability == .available, let db = appCore.db {
+            // Use Foundation Models with tool calling for real database access
+            let navContext = buildNavigationContext(permissions: appCore.permissions)
+            let result = await aiService.chatWithTools(
+                query: queryText,
+                db: db,
+                permissions: appCore.permissions,
+                navigationContext: navContext
+            )
             if result.success, let text = result.text, !text.isEmpty {
                 return text
             }
         }
 
-        // Fallback: basic keyword matching against local data
+        // Fallback: basic keyword matching
         return generateFallbackResponse(for: queryText)
     }
+
+    // MARK: - Navigation Context Builder
+
+    /// Builds a string describing the app's module/tab layout with permission annotations.
+    /// This is embedded in the AI's system instructions so it can guide users to features
+    /// and note when they lack access to something.
+    private func buildNavigationContext(permissions: [String]) -> String {
+        var lines: [String] = ["App Navigation Structure:"]
+        for module in appModules {
+            let hasAccess = module.permission == nil || permissions.contains(module.permission!)
+            let accessNote = hasAccess ? "" : " [NO ACCESS]"
+            lines.append("- \(module.label) (\(module.icon))\(accessNote)")
+            for tab in module.tabs {
+                let tabAccess = tab.permission == nil || permissions.contains(tab.permission!)
+                let tabNote = tabAccess ? "" : " [NO ACCESS]"
+                lines.append("  - \(tab.label): \(tab.path)\(tabNote)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Fallback Response
 
     private func generateFallbackResponse(for queryText: String) -> String {
         let lower = queryText.lowercased()
@@ -243,18 +419,18 @@ struct IOSAIAssistantPanel: View {
             return "The Fleet module tracks vehicles, trailers, mileage, fuel, and maintenance. Check My Truck for your assigned vehicle."
         }
 
-        return "I can help you navigate the app. Try asking about jobs, orders, parts, scheduling, reports, or fleet management."
+        return "I can help you navigate the app and search your data. Try asking about jobs, orders, parts, scheduling, reports, or fleet management."
     }
 }
 
 // MARK: - Message Model
 
-private struct AssistantMessage: Identifiable, Sendable {
+struct AssistantMessage: Identifiable, Sendable {
     let id = UUID()
     let role: MessageRole
     let content: String
 }
 
-private enum MessageRole: Sendable {
+enum MessageRole: Sendable {
     case user, assistant
 }

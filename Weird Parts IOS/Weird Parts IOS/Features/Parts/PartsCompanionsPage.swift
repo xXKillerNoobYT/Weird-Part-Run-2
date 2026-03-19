@@ -12,10 +12,23 @@ struct PartsCompanionsPage: View {
     @State private var companionRules: [CompanionRuleRow] = []
     @State private var alternatives: [AlternativeRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var searchText = ""
     @State private var activeTab = CompanionTab.rules
-    @State private var showAddRule = false
-    @State private var showAddAlternative = false
+    // Single active-sheet enum to avoid multiple .sheet conflicts
+    enum ActiveSheet: Identifiable {
+        case addRule
+        case addAlternative
+
+        var id: String {
+            switch self {
+            case .addRule: return "addRule"
+            case .addAlternative: return "addAlternative"
+            }
+        }
+    }
+
+    @State private var activeSheet: ActiveSheet?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,6 +44,8 @@ struct PartsCompanionsPage: View {
             if isLoading {
                 ProgressView("Loading...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { Task { await loadData() } }
             } else {
                 switch activeTab {
                 case .rules:
@@ -46,19 +61,21 @@ struct PartsCompanionsPage: View {
             ToolbarItem(placement: .automatic) {
                 Button {
                     switch activeTab {
-                    case .rules: showAddRule = true
-                    case .alternatives: showAddAlternative = true
+                    case .rules: activeSheet = .addRule
+                    case .alternatives: activeSheet = .addAlternative
                     }
                 } label: {
                     Image(systemName: "plus")
                 }
             }
         }
-        .sheet(isPresented: $showAddRule) {
-            CompanionRuleFormSheet { await loadData() }
-        }
-        .sheet(isPresented: $showAddAlternative) {
-            AlternativeFormSheet { await loadData() }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .addRule:
+                CompanionRuleFormSheet { await loadData() }
+            case .addAlternative:
+                AlternativeFormSheet { await loadData() }
+            }
         }
         #if os(iOS)
         .background(DS.Background.page)
@@ -86,7 +103,7 @@ struct PartsCompanionsPage: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
                 Button {
-                    showAddRule = true
+                    activeSheet = .addRule
                 } label: {
                     Label("Add Rule", systemImage: "plus.circle.fill")
                 }
@@ -183,7 +200,7 @@ struct PartsCompanionsPage: View {
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
                 Button {
-                    showAddAlternative = true
+                    activeSheet = .addAlternative
                 } label: {
                     Label("Add Alternative", systemImage: "plus.circle.fill")
                 }
@@ -326,8 +343,10 @@ struct PartsCompanionsPage: View {
                 isLoading = false
             }
         } catch {
-            print("[PartsCompanionsPage] loadData failed: \(error)")
-            await MainActor.run { isLoading = false }
+            await MainActor.run {
+                loadError = error.localizedDescription
+                isLoading = false
+            }
         }
     }
 

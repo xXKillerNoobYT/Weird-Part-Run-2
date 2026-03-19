@@ -157,7 +157,9 @@ struct IOSClockOutQuestionsPage: View {
                 }
             }
             .navigationTitle("Add Question")
+            #if !os(macOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { showAddSheet = false }
@@ -193,7 +195,9 @@ struct IOSClockOutQuestionsPage: View {
                 }
             }
             .navigationTitle("Edit Question")
+            #if !os(macOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { editingQuestion = nil }

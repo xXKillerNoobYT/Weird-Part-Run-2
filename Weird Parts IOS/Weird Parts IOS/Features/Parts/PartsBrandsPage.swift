@@ -10,15 +10,30 @@ struct PartsBrandsPage: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var brands: [BrandListRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var searchText = ""
-    @State private var showAddBrand = false
-    @State private var editingBrand: BrandListRow?
+    // Single active-sheet enum to avoid multiple .sheet conflicts
+    enum ActiveSheet: Identifiable {
+        case addBrand
+        case editBrand(BrandListRow)
+
+        var id: String {
+            switch self {
+            case .addBrand: return "addBrand"
+            case .editBrand(let b): return "edit-\(b.id)"
+            }
+        }
+    }
+
+    @State private var activeSheet: ActiveSheet?
 
     var body: some View {
         VStack(spacing: 0) {
             if isLoading {
                 ProgressView("Loading brands...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { Task { await loadData() } }
             } else if filteredBrands.isEmpty {
                 emptyState
             } else {
@@ -29,16 +44,18 @@ struct PartsBrandsPage: View {
         .refreshable { await loadData() }
         .toolbar {
             ToolbarItem(placement: .automatic) {
-                Button { showAddBrand = true } label: {
+                Button { activeSheet = .addBrand } label: {
                     Image(systemName: "plus")
                 }
             }
         }
-        .sheet(isPresented: $showAddBrand) {
-            BrandFormSheet(brand: nil) { await loadData() }
-        }
-        .sheet(item: $editingBrand) { brandRow in
-            BrandFormSheet(brand: brandRow) { await loadData() }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .addBrand:
+                BrandFormSheet(brand: nil) { await loadData() }
+            case .editBrand(let brandRow):
+                BrandFormSheet(brand: brandRow) { await loadData() }
+            }
         }
         #if os(iOS)
         .background(DS.Background.page)
@@ -72,7 +89,7 @@ struct PartsBrandsPage: View {
 
             ForEach(filteredBrands) { brand in
                 Button {
-                    editingBrand = brand
+                    activeSheet = .editBrand(brand)
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "tag.fill")
@@ -126,7 +143,7 @@ struct PartsBrandsPage: View {
                         Label("Delete", systemImage: "trash")
                     }
                     Button {
-                        editingBrand = brand
+                        activeSheet = .editBrand(brand)
                     } label: {
                         Label("Edit", systemImage: "pencil")
                     }
@@ -156,7 +173,7 @@ struct PartsBrandsPage: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
             Button {
-                showAddBrand = true
+                activeSheet = .addBrand
             } label: {
                 Label("Add Brand", systemImage: "plus.circle.fill")
             }
@@ -197,7 +214,10 @@ struct PartsBrandsPage: View {
                 isLoading = false
             }
         } catch {
-            await MainActor.run { isLoading = false }
+            await MainActor.run {
+                loadError = error.localizedDescription
+                isLoading = false
+            }
         }
     }
 

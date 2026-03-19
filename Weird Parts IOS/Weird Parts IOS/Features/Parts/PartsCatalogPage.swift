@@ -45,10 +45,22 @@ struct PartsCatalogPage: View {
     @State private var currentPage = 1
     private let pageSize = 25
 
-    // MARK: - Sheets
-    @State private var showAddPart = false
-    @State private var selectedPart: CatalogPartRow?
-    @State private var quickEditPart: CatalogPartRow?
+    // MARK: - Sheets (single enum to avoid multiple .sheet conflicts)
+    enum ActiveSheet: Identifiable {
+        case addPart
+        case partDetail(CatalogPartRow)
+        case quickEdit(CatalogPartRow)
+
+        var id: String {
+            switch self {
+            case .addPart: return "addPart"
+            case .partDetail(let p): return "detail-\(p.id)"
+            case .quickEdit(let p): return "quickEdit-\(p.id)"
+            }
+        }
+    }
+
+    @State private var activeSheet: ActiveSheet?
     @State private var loadError: String?
 
     // MARK: - Cascading filter options
@@ -96,20 +108,21 @@ struct PartsCatalogPage: View {
                           : "line.3.horizontal.decrease.circle")
                 }
                 Button {
-                    showAddPart = true
+                    activeSheet = .addPart
                 } label: {
                     Image(systemName: "plus")
                 }
             }
         }
-        .sheet(isPresented: $showAddPart) {
-            PartFormSheet(part: nil, categories: categories, brands: brands) { await loadData() }
-        }
-        .sheet(item: $selectedPart) { partRow in
-            PartDetailSheet(partRow: partRow, categories: categories, brands: brands) { await loadData() }
-        }
-        .sheet(item: $quickEditPart) { partRow in
-            QuickEditSheet(part: partRow) { await loadData() }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .addPart:
+                PartFormSheet(part: nil, categories: categories, brands: brands) { await loadData() }
+            case .partDetail(let partRow):
+                PartDetailSheet(partRow: partRow, categories: categories, brands: brands) { await loadData() }
+            case .quickEdit(let partRow):
+                QuickEditSheet(part: partRow) { await loadData() }
+            }
         }
         .background(DS.Background.page)
         .task { await loadLookups(); await loadData() }
@@ -318,7 +331,7 @@ struct PartsCatalogPage: View {
 
             ForEach(parts, id: \.id) { part in
                 Button {
-                    selectedPart = part
+                    activeSheet = .partDetail(part)
                 } label: {
                     partRow(part)
                 }
@@ -330,7 +343,7 @@ struct PartsCatalogPage: View {
                         Label("Delete", systemImage: "trash")
                     }
                     Button {
-                        quickEditPart = part
+                        activeSheet = .quickEdit(part)
                     } label: {
                         Label("Edit", systemImage: "pencil")
                     }
@@ -477,7 +490,7 @@ struct PartsCatalogPage: View {
                 .padding(.horizontal, 32)
             if !hasActiveFilters && searchText.isEmpty {
                 Button {
-                    showAddPart = true
+                    activeSheet = .addPart
                 } label: {
                     Label("Add Part", systemImage: "plus.circle.fill")
                 }
@@ -531,7 +544,10 @@ struct PartsCatalogPage: View {
                 brands = result.4
             }
         } catch {
-            print("[PartsCatalogPage] Load lookups error: \(error)")
+            await MainActor.run {
+                loadError = error.localizedDescription
+                isLoading = false
+            }
         }
     }
 
@@ -578,7 +594,7 @@ struct PartsCatalogPage: View {
             }
 
             if lowStockOnly {
-                whereClauses.append("p.min_stock_level IS NOT NULL AND COALESCE((SELECT SUM(se.quantity) FROM stock_entries se WHERE se.part_id = p.id AND se.deleted_at IS NULL), 0) < p.min_stock_level")
+                whereClauses.append("p.min_stock_level IS NOT NULL AND COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) < p.min_stock_level")
             }
 
             let whereSQL = whereClauses.joined(separator: " AND ")
@@ -618,7 +634,7 @@ struct PartsCatalogPage: View {
                            b.name AS brand_name,
                            ps.name AS style_name,
                            pcol.name AS color_name,
-                           COALESCE((SELECT SUM(se.quantity) FROM stock_entries se WHERE se.part_id = p.id AND se.deleted_at IS NULL), 0) AS total_stock
+                           COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) AS total_stock
                     FROM parts p
                     LEFT JOIN part_categories pc ON pc.id = p.category_id
                     LEFT JOIN brands b ON b.id = p.brand_id
@@ -1063,7 +1079,6 @@ private struct PartDetailSheet: View {
             .sheet(isPresented: $showEditForm) {
                 PartFormSheet(part: partRow, categories: categories, brands: brands) {
                     await onUpdate()
-                    dismiss()
                 }
             }
             .task { await loadStock() }

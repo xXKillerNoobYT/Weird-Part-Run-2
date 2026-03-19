@@ -38,6 +38,9 @@ struct IOSVehicleDetailPage: View {
         .sheet(isPresented: $showAssignDriver) {
             IOSAssignDriverSheet(vehicleId: vehicleId)
         }
+        .onChange(of: showAssignDriver) { _, isShowing in
+            if !isShowing { loadData() }
+        }
     }
 
     // MARK: - Tab Picker

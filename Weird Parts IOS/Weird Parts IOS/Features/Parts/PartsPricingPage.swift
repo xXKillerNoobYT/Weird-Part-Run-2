@@ -10,6 +10,7 @@ struct PartsPricingPage: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var pricingRows: [PricingRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var searchText = ""
     @State private var sortBy: PricingSortOption = .name
     @State private var editingRow: PricingRow?
@@ -50,6 +51,8 @@ struct PartsPricingPage: View {
             if isLoading {
                 ProgressView("Loading pricing...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { Task { await loadData() } }
             } else if sortedParts.isEmpty {
                 emptyState
             } else {
@@ -224,7 +227,10 @@ struct PartsPricingPage: View {
                 isLoading = false
             }
         } catch {
-            await MainActor.run { isLoading = false }
+            await MainActor.run {
+                loadError = error.localizedDescription
+                isLoading = false
+            }
         }
     }
 }

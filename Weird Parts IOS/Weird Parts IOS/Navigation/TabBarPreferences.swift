@@ -14,11 +14,13 @@ import Combine
 enum NavigationStyle: String, CaseIterable, Sendable {
     case topTabs = "topTabs"
     case sidebar = "sidebar"
+    case fullSidebar = "fullSidebar"
 
     var label: String {
         switch self {
         case .topTabs: return "Top Tabs"
         case .sidebar: return "Sidebar"
+        case .fullSidebar: return "Full Sidebar"
         }
     }
 
@@ -26,6 +28,7 @@ enum NavigationStyle: String, CaseIterable, Sendable {
         switch self {
         case .topTabs: return "rectangle.split.1x2"
         case .sidebar: return "sidebar.left"
+        case .fullSidebar: return "sidebar.squares.leading"
         }
     }
 }
@@ -66,8 +69,8 @@ final class TabBarPreferences: ObservableObject {
            let style = NavigationStyle(rawValue: rawStyle) {
             navigationStyle = style
         } else {
-            // Default: sidebar on iPad/Mac, top tabs on iPhone
-            navigationStyle = DeviceContext.isLargeScreen ? .sidebar : .topTabs
+            // Default: full sidebar on iPad/Mac, top tabs on iPhone
+            navigationStyle = DeviceContext.isLargeScreen ? .fullSidebar : .topTabs
         }
     }
 

@@ -10,9 +10,22 @@ struct PartsSuppliersPage: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var suppliers: [SupplierListRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var searchText = ""
-    @State private var showAddSupplier = false
-    @State private var selectedSupplier: SupplierListRow?
+    // Single active-sheet enum to avoid multiple .sheet conflicts
+    enum ActiveSheet: Identifiable {
+        case addSupplier
+        case supplierDetail(SupplierListRow)
+
+        var id: String {
+            switch self {
+            case .addSupplier: return "addSupplier"
+            case .supplierDetail(let s): return "detail-\(s.id)"
+            }
+        }
+    }
+
+    @State private var activeSheet: ActiveSheet?
     @State private var filterActive: Bool? = true
 
     var body: some View {
@@ -32,6 +45,8 @@ struct PartsSuppliersPage: View {
             if isLoading {
                 ProgressView("Loading suppliers...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { Task { await loadData() } }
             } else if filteredSuppliers.isEmpty {
                 emptyState
             } else {
@@ -42,16 +57,18 @@ struct PartsSuppliersPage: View {
         .refreshable { await loadData() }
         .toolbar {
             ToolbarItem(placement: .automatic) {
-                Button { showAddSupplier = true } label: {
+                Button { activeSheet = .addSupplier } label: {
                     Image(systemName: "plus")
                 }
             }
         }
-        .sheet(isPresented: $showAddSupplier) {
-            SupplierFormSheet(supplier: nil) { await loadData() }
-        }
-        .sheet(item: $selectedSupplier) { supplier in
-            SupplierDetailSheet(supplier: supplier) { await loadData() }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .addSupplier:
+                SupplierFormSheet(supplier: nil) { await loadData() }
+            case .supplierDetail(let supplier):
+                SupplierDetailSheet(supplier: supplier) { await loadData() }
+            }
         }
         #if os(iOS)
         .background(DS.Background.page)
@@ -93,7 +110,7 @@ struct PartsSuppliersPage: View {
 
             ForEach(filteredSuppliers) { supplier in
                 Button {
-                    selectedSupplier = supplier
+                    activeSheet = .supplierDetail(supplier)
                 } label: {
                     supplierRow(supplier)
                 }
@@ -201,7 +218,7 @@ struct PartsSuppliersPage: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
             Button {
-                showAddSupplier = true
+                activeSheet = .addSupplier
             } label: {
                 Label("Add Supplier", systemImage: "plus.circle.fill")
             }
@@ -255,7 +272,10 @@ struct PartsSuppliersPage: View {
                 isLoading = false
             }
         } catch {
-            await MainActor.run { isLoading = false }
+            await MainActor.run {
+                loadError = error.localizedDescription
+                isLoading = false
+            }
         }
     }
 
@@ -532,7 +552,6 @@ private struct SupplierDetailSheet: View {
             .sheet(isPresented: $showEditForm) {
                 SupplierFormSheet(supplier: supplier) {
                     await onUpdate()
-                    dismiss()
                 }
             }
         }

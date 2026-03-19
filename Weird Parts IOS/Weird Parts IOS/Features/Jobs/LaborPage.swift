@@ -39,6 +39,9 @@ struct LaborPage: View {
             .refreshable { loadData() }
             .task { loadData() }
             .sheet(isPresented: $showClockIn) { clockInSheet }
+            .onChange(of: showClockIn) { _, isShowing in
+                if !isShowing { loadData() }
+            }
     }
 
     // MARK: - Content

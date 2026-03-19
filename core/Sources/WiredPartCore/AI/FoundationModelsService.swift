@@ -264,6 +264,70 @@ public actor FoundationModelsService {
         return await generate(instructions: instructions, prompt: query)
     }
 
+    // MARK: - Chat with Tools (Database Access)
+
+    /// Respond to a question using Foundation Models tool calling for real database access.
+    ///
+    /// Tools are automatically called by the framework when the model decides they're needed.
+    /// Each tool respects user permissions — queries for data the user can't see return
+    /// a permission-denied message instead of results.
+    ///
+    /// - Parameters:
+    ///   - query: The user's question.
+    ///   - db: The app database for tool queries.
+    ///   - permissions: The current user's permission keys.
+    ///   - navigationContext: A string describing the app's module/tab layout with access annotations.
+    /// - Returns: An `AIResult` containing the assistant's response.
+    public func chatWithTools(
+        query: String,
+        db: AppDatabase,
+        permissions: [String],
+        navigationContext: String
+    ) async -> AIResult {
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
+            return .fail("Empty query")
+        }
+
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, iOS 26.0, *) {
+            do {
+                let tools: [any FoundationModels.Tool] = [
+                    SearchPartsTool(db: db, permissions: permissions),
+                    SearchContactsTool(db: db, permissions: permissions),
+                    SearchJobsTool(db: db, permissions: permissions),
+                    GetSupplierInfoTool(db: db, permissions: permissions),
+                ]
+
+                let chatInstructions = domainInstructions + "\n\n" + """
+                    You are a helpful assistant for the WiredPart app. You have access to tools \
+                    that can search the local database for parts, contacts, jobs, and suppliers. \
+                    Use these tools when the user asks about specific data. \
+                    \
+                    When answering navigation questions, use the app layout below to direct users \
+                    to the correct module and tab. If a section is marked [NO ACCESS], tell the user \
+                    they don't have permission and suggest they talk to their admin. \
+                    \
+                    Keep responses concise and practical. If you used a tool, summarize the results \
+                    naturally — don't just dump raw data. \
+                    \
+                    \(navigationContext)
+                    """
+
+                let session = LanguageModelSession(tools: tools, instructions: chatInstructions)
+                let response = try await session.respond(to: query)
+                let text = response.content
+                return .ok(text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines))
+            } catch {
+                return .fail("AI generation failed: \(error.localizedDescription)")
+            }
+        } else {
+            return .fail("Foundation Models requires macOS 26+ or iOS 26+")
+        }
+        #else
+        return .fail("Foundation Models not available on this platform")
+        #endif
+    }
+
     // MARK: - Private Generation
 
     /// Core generation method that handles the FoundationModels API call.
@@ -273,7 +337,7 @@ public actor FoundationModelsService {
             do {
                 let session = LanguageModelSession(instructions: instructions)
                 let response = try await session.respond(to: prompt)
-                let text = String(describing: response)
+                let text = response.content
                 return .ok(text.trimmingCharacters(in: .whitespacesAndNewlines))
             } catch {
                 return .fail("AI generation failed: \(error.localizedDescription)")

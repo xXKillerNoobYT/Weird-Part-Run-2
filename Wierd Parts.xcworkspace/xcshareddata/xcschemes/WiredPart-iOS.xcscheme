@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "1600"
+   LastUpgradeVersion = "2630"
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
@@ -14,10 +14,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "WiredPartIOS"
-               BuildableName = "WiredPartIOS"
-               BlueprintName = "WiredPartIOS"
-               ReferencedContainer = "container:ios-app">
+               BlueprintIdentifier = "08F2BE312F67A53500944E97"
+               BuildableName = "Weird Parts.app"
+               BlueprintName = "Weird Parts"
+               ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -34,10 +34,10 @@
             parallelizable = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "WiredPartIOSTests"
-               BuildableName = "WiredPartIOSTests"
-               BlueprintName = "WiredPartIOSTests"
-               ReferencedContainer = "container:ios-app">
+               BlueprintIdentifier = "08F2BE432F67A53700944E97"
+               BuildableName = "Weird PartsTests.xctest"
+               BlueprintName = "Weird PartsTests"
+               ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
             </BuildableReference>
          </TestableReference>
          <TestableReference
@@ -67,10 +67,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "WiredPartIOS"
-            BuildableName = "WiredPartIOS"
-            BlueprintName = "WiredPartIOS"
-            ReferencedContainer = "container:ios-app">
+            BlueprintIdentifier = "08F2BE312F67A53500944E97"
+            BuildableName = "Weird Parts.app"
+            BlueprintName = "Weird Parts"
+            ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <LocationScenarioReference
@@ -88,10 +88,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "WiredPartIOS"
-            BuildableName = "WiredPartIOS"
-            BlueprintName = "WiredPartIOS"
-            ReferencedContainer = "container:ios-app">
+            BlueprintIdentifier = "08F2BE312F67A53500944E97"
+            BuildableName = "Weird Parts.app"
+            BlueprintName = "Weird Parts"
+            ReferencedContainer = "container:Weird Parts IOS/Weird Parts.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

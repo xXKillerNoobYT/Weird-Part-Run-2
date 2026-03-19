@@ -13,8 +13,33 @@ struct IOSMainView: View {
     @EnvironmentObject private var tabPrefs: TabBarPreferences
     @State private var selectedModuleId: String = "dashboard"
     @State private var showLogoutConfirm = false
-    @State private var showTabEditor = false
     @State private var showAIAssistant = false
+    @State private var aiDisplayMode: AIDisplayMode = .sheet
+
+    // Full sidebar state
+    @State private var expandedModuleId: String? = "dashboard"
+    @State private var selectedTabPath: String = "/dashboard"
+
+    // Single active-sheet enum for sidebar layout to avoid multiple .sheet conflicts
+    enum SidebarSheet: Identifiable {
+        case userMenu
+        case tabEditor
+        case aiAssistant
+
+        var id: String {
+            switch self {
+            case .userMenu: return "userMenu"
+            case .tabEditor: return "tabEditor"
+            case .aiAssistant: return "aiAssistant"
+            }
+        }
+    }
+
+    @State private var activeSidebarSheet: SidebarSheet?
+
+    // Tab-view layout still uses separate booleans since sheets are on different NavigationStacks
+    @State private var showTabEditor = false
+    @State private var showUserMenu = false
 
     /// Modules visible to the current user (permission-filtered, no settings on mobile).
     private var filteredModules: [AppModule] {
@@ -38,46 +63,12 @@ struct IOSMainView: View {
     }
 
     var body: some View {
-        TabView(selection: $selectedModuleId) {
-            // Primary tabs — each gets its own NavigationStack
-            ForEach(primaryModules) { module in
-                NavigationStack {
-                    ModuleHostView(module: module, showLogoutConfirm: $showLogoutConfirm)
-                        .environmentObject(appCore)
-                        .environmentObject(tabPrefs)
-                }
-                .tabItem {
-                    Label(module.label, systemImage: module.icon)
-                }
-                .tag(module.id)
+        Group {
+            if tabPrefs.navigationStyle == .fullSidebar {
+                fullSidebarLayout
+            } else {
+                tabViewLayout
             }
-
-            // "More" tab — single NavigationStack, pushes modules
-            moreTab
-                .tabItem {
-                    Label("More", systemImage: "ellipsis.circle.fill")
-                }
-                .tag("__more__")
-        }
-        .overlay(alignment: .bottomTrailing) {
-            Button {
-                showAIAssistant = true
-            } label: {
-                Image(systemName: "sparkles")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.white)
-                    .frame(width: 52, height: 52)
-                    .background(Circle().fill(Color.accentColor))
-                    .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-            }
-            .dsMinTapTarget()
-            .padding(.trailing, DS.Space.lg)
-            .padding(.bottom, 90) // Above the tab bar
-        }
-        .sheet(isPresented: $showAIAssistant) {
-            IOSAIAssistantPanel()
-                .environmentObject(appCore)
         }
         .confirmationDialog("Log out?", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
             Button("Log Out", role: .destructive) {
@@ -90,9 +81,329 @@ struct IOSMainView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToModule)) { notification in
             if let moduleId = notification.userInfo?["moduleId"] as? String {
-                selectedModuleId = moduleId
+                if tabPrefs.navigationStyle == .fullSidebar {
+                    // Navigate within full sidebar
+                    expandedModuleId = moduleId
+                    if let module = allModulesById[moduleId],
+                       let firstTab = visibleTabs(for: module, permissions: appCore.permissions).first {
+                        selectedTabPath = firstTab.path
+                    }
+                } else {
+                    selectedModuleId = moduleId
+                }
             }
         }
+    }
+
+    // MARK: - Tab View Layout (existing)
+
+    @ViewBuilder
+    private var tabViewLayout: some View {
+        TabView(selection: $selectedModuleId) {
+            ForEach(primaryModules) { module in
+                NavigationStack {
+                    ModuleHostView(module: module, showLogoutConfirm: $showLogoutConfirm)
+                        .environmentObject(appCore)
+                        .environmentObject(tabPrefs)
+                }
+                .tabItem {
+                    Label(module.label, systemImage: module.icon)
+                }
+                .tag(module.id)
+            }
+
+            moreTab
+                .tabItem {
+                    Label("More", systemImage: "ellipsis.circle.fill")
+                }
+                .tag("__more__")
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if !showAIAssistant || aiDisplayMode == .sheet {
+                aiFloatingButton(bottomPadding: 90)
+            }
+        }
+        .sheet(isPresented: aiDisplayMode == .sheet ? $showAIAssistant : .constant(false)) {
+            IOSAIAssistantPanel(displayMode: $aiDisplayMode, isVisible: $showAIAssistant)
+                .environmentObject(appCore)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if showAIAssistant && aiDisplayMode == .overlay {
+                IOSAIAssistantPanel(displayMode: $aiDisplayMode, isVisible: $showAIAssistant)
+                    .environmentObject(appCore)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .padding(.bottom, 90)
+            }
+        }
+    }
+
+    // MARK: - Full Sidebar Layout
+
+    @ViewBuilder
+    private var fullSidebarLayout: some View {
+        NavigationStack {
+            HStack(spacing: 0) {
+                // Left sidebar with all modules
+                fullSidebarView
+                    .frame(width: DeviceContext.isLargeScreen ? 240 : 200)
+
+                Divider()
+
+                // Content area
+                IOSContentRouter(path: selectedTabPath)
+                    .environmentObject(appCore)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .toolbar {
+                ToolbarItem(placement: .automatic) {
+                    Button {
+                        activeSidebarSheet = .userMenu
+                    } label: {
+                        Image(systemName: "person.circle")
+                    }
+                }
+            }
+        }
+        .sheet(item: $activeSidebarSheet) { sheet in
+            switch sheet {
+            case .userMenu:
+                UserMenuSheet(showLogoutConfirm: $showLogoutConfirm)
+                    .environmentObject(appCore)
+                    .environmentObject(tabPrefs)
+            case .tabEditor:
+                TabBarEditorView(allVisibleModules: filteredModules)
+                    .environmentObject(tabPrefs)
+            case .aiAssistant:
+                IOSAIAssistantPanel(displayMode: $aiDisplayMode, isVisible: $showAIAssistant)
+                    .environmentObject(appCore)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if !showAIAssistant || aiDisplayMode == .sheet {
+                aiFloatingButton(bottomPadding: DS.Space.xl)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if showAIAssistant && aiDisplayMode == .overlay {
+                IOSAIAssistantPanel(displayMode: $aiDisplayMode, isVisible: $showAIAssistant)
+                    .environmentObject(appCore)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .padding(.bottom, DS.Space.xl)
+            }
+        }
+    }
+
+    // MARK: - Full Sidebar View
+
+    @ViewBuilder
+    private var fullSidebarView: some View {
+        VStack(spacing: 0) {
+            fullSidebarHeader
+            Divider()
+            fullSidebarModuleList
+            Divider()
+            fullSidebarActions
+        }
+        .background(DS.Background.page)
+    }
+
+    @ViewBuilder
+    private var fullSidebarHeader: some View {
+        HStack {
+            Text("Wired Part")
+                .font(.headline)
+                .fontWeight(.bold)
+            Spacer()
+        }
+        .padding(.horizontal, DS.Space.md)
+        .padding(.vertical, DS.Space.sm)
+    }
+
+    @ViewBuilder
+    private var fullSidebarModuleList: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach(orderedModules) { module in
+                    fullSidebarModuleRow(module)
+                }
+            }
+            .padding(.vertical, DS.Space.xs)
+            .padding(.horizontal, DS.Space.xs)
+        }
+    }
+
+    @ViewBuilder
+    private func fullSidebarModuleRow(_ module: AppModule) -> some View {
+        let moduleTabs = visibleTabs(for: module, permissions: appCore.permissions)
+        let isExpanded = expandedModuleId == module.id
+
+        VStack(spacing: 0) {
+            fullSidebarModuleHeader(module: module, isExpanded: isExpanded, tabCount: moduleTabs.count)
+
+            if isExpanded && moduleTabs.count > 1 {
+                fullSidebarSubTabs(moduleTabs)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func fullSidebarModuleHeader(module: AppModule, isExpanded: Bool, tabCount: Int) -> some View {
+        let moduleTabs = visibleTabs(for: module, permissions: appCore.permissions)
+
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                if isExpanded {
+                    expandedModuleId = nil
+                } else {
+                    expandedModuleId = module.id
+                    if let firstTab = moduleTabs.first {
+                        let currentlyInModule = moduleTabs.contains(where: { $0.path == selectedTabPath })
+                        if !currentlyInModule {
+                            selectedTabPath = firstTab.path
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: DS.Space.sm) {
+                Image(systemName: module.icon)
+                    .font(.body)
+                    .foregroundStyle(isExpanded ? Color.accentColor : .secondary)
+                    .frame(width: 24)
+
+                Text(module.label)
+                    .font(.subheadline)
+                    .fontWeight(isExpanded ? .semibold : .regular)
+                    .foregroundStyle(isExpanded ? .primary : .secondary)
+
+                Spacer()
+
+                if tabCount > 1 {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, DS.Space.md)
+            .padding(.vertical, DS.Space.sm + 2)
+            .background(
+                RoundedRectangle(cornerRadius: DS.Radius.md)
+                    .fill(isExpanded ? Color.accentColor.opacity(0.08) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func fullSidebarSubTabs(_ tabs: [AppTab]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(tabs) { tab in
+                fullSidebarTabRow(tab)
+            }
+        }
+        .padding(.bottom, DS.Space.xxs)
+    }
+
+    @ViewBuilder
+    private func fullSidebarTabRow(_ tab: AppTab) -> some View {
+        let isSelected = tab.path == selectedTabPath
+
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                selectedTabPath = tab.path
+            }
+        } label: {
+            HStack(spacing: DS.Space.sm) {
+                Image(systemName: tab.icon)
+                    .font(.caption)
+                    .foregroundColor(isSelected ? Color.accentColor : Color.secondary)
+                    .frame(width: 20)
+
+                Text(tab.label)
+                    .font(.caption)
+                    .fontWeight(isSelected ? .semibold : .regular)
+                    .foregroundStyle(isSelected ? .primary : .secondary)
+
+                Spacer()
+
+                if isSelected {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: 5, height: 5)
+                }
+            }
+            .padding(.leading, DS.Space.md + 24 + DS.Space.sm)
+            .padding(.trailing, DS.Space.md)
+            .padding(.vertical, DS.Space.xs + 2)
+            .background(
+                RoundedRectangle(cornerRadius: DS.Radius.sm)
+                    .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var fullSidebarActions: some View {
+        VStack(spacing: DS.Space.xxs) {
+            Button {
+                activeSidebarSheet = .tabEditor
+            } label: {
+                sidebarActionRow(icon: "square.grid.2x2", label: "Edit Tabs")
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                activeSidebarSheet = .userMenu
+            } label: {
+                sidebarActionRow(icon: "person.circle", label: "Account")
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, DS.Space.xs)
+        .padding(.horizontal, DS.Space.xs)
+    }
+
+    @ViewBuilder
+    private func sidebarActionRow(icon: String, label: String) -> some View {
+        HStack(spacing: DS.Space.sm) {
+            Image(systemName: icon)
+                .frame(width: 24)
+            Text(label)
+                .font(.caption)
+            Spacer()
+        }
+        .padding(.horizontal, DS.Space.md)
+        .padding(.vertical, DS.Space.sm)
+        .foregroundStyle(.secondary)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - AI Floating Button
+
+    @ViewBuilder
+    private func aiFloatingButton(bottomPadding: CGFloat) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                if tabPrefs.navigationStyle == .fullSidebar && aiDisplayMode == .sheet {
+                    activeSidebarSheet = .aiAssistant
+                }
+                showAIAssistant = true
+            }
+        } label: {
+            Image(systemName: "sparkles")
+                .font(.title2)
+                .fontWeight(.semibold)
+                .foregroundStyle(.white)
+                .frame(width: 52, height: 52)
+                .background(Circle().fill(Color.accentColor))
+                .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+        }
+        .dsMinTapTarget()
+        .padding(.trailing, DS.Space.lg)
+        .padding(.bottom, bottomPadding)
     }
 
     // MARK: - More Tab

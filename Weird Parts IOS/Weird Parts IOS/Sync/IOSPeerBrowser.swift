@@ -71,11 +71,7 @@ struct IOSPeerBrowser: View {
             }
             .padding()
             .frame(maxWidth: .infinity)
-            #if os(iOS)
             .background(Color(.secondarySystemGroupedBackground))
-            #elseif os(macOS)
-            .background(Color(.secondarySystemGroupedBackground))
-            #endif
         }
     }
 

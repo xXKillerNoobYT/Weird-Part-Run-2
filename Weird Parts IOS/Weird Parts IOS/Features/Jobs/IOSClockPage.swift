@@ -39,6 +39,9 @@ struct IOSClockPage: View {
                 loadData()
             }
             .sheet(isPresented: $showClockInSheet) { clockInSheet }
+            .onChange(of: showClockInSheet) { _, isShowing in
+                if !isShowing { loadData() }
+            }
     }
 
     // MARK: - Content

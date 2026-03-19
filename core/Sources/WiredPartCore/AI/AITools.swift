@@ -29,12 +29,17 @@ public struct SearchPartsTool: FoundationModels.Tool {
     }
 
     private let db: AppDatabase
+    private let permissions: [String]
 
-    public init(db: AppDatabase) {
+    public init(db: AppDatabase, permissions: [String]) {
         self.db = db
+        self.permissions = permissions
     }
 
     public func call(arguments: Arguments) async throws -> String {
+        guard permissions.contains("view_parts_catalog") else {
+            return "You don't have permission to search parts. Ask your admin for access."
+        }
         let service = PartsService(db: db)
         let results = try service.searchParts(query: arguments.query, limit: 5)
         if results.isEmpty {
@@ -59,12 +64,17 @@ public struct SearchContactsTool: FoundationModels.Tool {
     }
 
     private let db: AppDatabase
+    private let permissions: [String]
 
-    public init(db: AppDatabase) {
+    public init(db: AppDatabase, permissions: [String]) {
         self.db = db
+        self.permissions = permissions
     }
 
     public func call(arguments: Arguments) async throws -> String {
+        guard permissions.contains("view_people") else {
+            return "You don't have permission to search contacts. Ask your admin for access."
+        }
         let service = PeopleService(db: db)
         let customers = try service.listCustomers(search: arguments.query)
         if customers.isEmpty {
@@ -90,12 +100,17 @@ public struct SearchJobsTool: FoundationModels.Tool {
     }
 
     private let db: AppDatabase
+    private let permissions: [String]
 
-    public init(db: AppDatabase) {
+    public init(db: AppDatabase, permissions: [String]) {
         self.db = db
+        self.permissions = permissions
     }
 
     public func call(arguments: Arguments) async throws -> String {
+        guard permissions.contains("view_jobs") else {
+            return "You don't have permission to search jobs. Ask your admin for access."
+        }
         let service = JobsService(db: db)
         let jobs = try service.listJobs(search: arguments.query, limit: 5)
         if jobs.isEmpty {
@@ -121,12 +136,17 @@ public struct GetSupplierInfoTool: FoundationModels.Tool {
     }
 
     private let db: AppDatabase
+    private let permissions: [String]
 
-    public init(db: AppDatabase) {
+    public init(db: AppDatabase, permissions: [String]) {
         self.db = db
+        self.permissions = permissions
     }
 
     public func call(arguments: Arguments) async throws -> String {
+        guard permissions.contains("view_parts_catalog") else {
+            return "You don't have permission to look up suppliers. Ask your admin for access."
+        }
         let service = PartsService(db: db)
         let results = try service.listSuppliers(search: arguments.query)
         if results.isEmpty {

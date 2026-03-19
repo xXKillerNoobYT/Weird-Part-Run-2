@@ -46,8 +46,7 @@ struct OfficeRouter: View {
             IOSPermissionsPage()
 
         default:
-            Text("Unknown office page: \(tabId)")
-                .foregroundStyle(.secondary)
+            OfficePlaceholderView(pageName: tabId.replacingOccurrences(of: "office-", with: "").replacingOccurrences(of: "-", with: " ").capitalized)
         }
     }
 }

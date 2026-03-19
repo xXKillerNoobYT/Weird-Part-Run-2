@@ -24,11 +24,24 @@ struct CategoriesTreeView: View {
     @State private var expandedStyles: Set<Int64> = []
     @State private var expandedTypes: Set<Int64> = []
 
-    // Sheet triggers for adding new items
-    @State private var showAddCategory = false
-    @State private var addStyleCategoryId: Int64?
-    @State private var addTypeStyleId: Int64?
-    @State private var showAddColor = false
+    // Single active-sheet enum to avoid multiple .sheet conflicts
+    enum ActiveSheet: Identifiable {
+        case addCategory
+        case addStyle(Int64)
+        case addType(Int64)
+        case addColor
+
+        var id: String {
+            switch self {
+            case .addCategory: return "addCategory"
+            case .addStyle(let id): return "addStyle-\(id)"
+            case .addType(let id): return "addType-\(id)"
+            case .addColor: return "addColor"
+            }
+        }
+    }
+
+    @State private var activeSheet: ActiveSheet?
 
     var onRefresh: () async -> Void
 
@@ -40,10 +53,10 @@ struct CategoriesTreeView: View {
                     .font(.headline)
                 Spacer()
                 Menu {
-                    Button { showAddCategory = true } label: {
+                    Button { activeSheet = .addCategory } label: {
                         Label("New Category", systemImage: "folder.badge.plus")
                     }
-                    Button { showAddColor = true } label: {
+                    Button { activeSheet = .addColor } label: {
                         Label("New Color", systemImage: "paintpalette")
                     }
                 } label: {
@@ -63,7 +76,7 @@ struct CategoriesTreeView: View {
                     message: "Create categories to organize your parts hierarchy.",
                     actionLabel: "Add Category"
                 ) {
-                    showAddCategory = true
+                    activeSheet = .addCategory
                 }
             } else {
                 ScrollView {
@@ -76,17 +89,17 @@ struct CategoriesTreeView: View {
                 }
             }
         }
-        .sheet(isPresented: $showAddCategory) {
-            CategoryFormSheet(category: nil) { await onRefresh() }
-        }
-        .sheet(isPresented: $showAddColor) {
-            ColorFormSheet(color: nil) { await onRefresh() }
-        }
-        .sheet(item: $addStyleCategoryId) { catId in
-            StyleFormSheet(style: nil, categoryId: catId) { await onRefresh() }
-        }
-        .sheet(item: $addTypeStyleId) { styleId in
-            TypeFormSheet(type: nil, styleId: styleId) { await onRefresh() }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .addCategory:
+                CategoryFormSheet(category: nil) { await onRefresh() }
+            case .addStyle(let catId):
+                StyleFormSheet(style: nil, categoryId: catId) { await onRefresh() }
+            case .addType(let styleId):
+                TypeFormSheet(type: nil, styleId: styleId) { await onRefresh() }
+            case .addColor:
+                ColorFormSheet(color: nil) { await onRefresh() }
+            }
         }
     }
 
@@ -135,7 +148,7 @@ struct CategoriesTreeView: View {
 
                 // Add Style button
                 Button {
-                    addStyleCategoryId = catId
+                    activeSheet = .addStyle(catId)
                 } label: {
                     Label("Add Style", systemImage: "plus")
                         .font(.caption)
@@ -192,7 +205,7 @@ struct CategoriesTreeView: View {
 
                 // Add Type button
                 Button {
-                    addTypeStyleId = styleId
+                    activeSheet = .addType(styleId)
                 } label: {
                     Label("Add Type", systemImage: "plus")
                         .font(.caption)

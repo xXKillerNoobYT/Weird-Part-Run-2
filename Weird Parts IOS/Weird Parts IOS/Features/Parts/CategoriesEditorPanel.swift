@@ -10,6 +10,31 @@ struct CategoriesEditorPanel: View {
 
     @EnvironmentObject private var appCore: AppCore
 
+    // Single active-sheet enum to avoid multiple .sheet conflicts
+    enum ActiveSheet: Identifiable {
+        case addStyle(Int64)
+        case addType(Int64)
+        case addColor
+        case editCategory(PartCategory)
+        case editStyle(PartStyle)
+        case editType(PartType)
+        case editColor(PartColor)
+
+        var id: String {
+            switch self {
+            case .addStyle(let id): return "addStyle-\(id)"
+            case .addType(let id): return "addType-\(id)"
+            case .addColor: return "addColor"
+            case .editCategory(let c): return "editCat-\(c.id ?? 0)"
+            case .editStyle(let s): return "editStyle-\(s.id ?? 0)"
+            case .editType(let t): return "editType-\(t.id ?? 0)"
+            case .editColor(let c): return "editColor-\(c.id ?? 0)"
+            }
+        }
+    }
+
+    @State private var activeSheet: ActiveSheet?
+
     var body: some View {
         Group {
             if let selection {
@@ -23,14 +48,23 @@ struct CategoriesEditorPanel: View {
                 emptySelection
             }
         }
-        .sheet(item: $addStyleCategoryId) { catId in
-            StyleFormSheet(style: nil, categoryId: catId) { await onRefresh() }
-        }
-        .sheet(item: $addTypeStyleId) { styleId in
-            TypeFormSheet(type: nil, styleId: styleId) { await onRefresh() }
-        }
-        .sheet(isPresented: $showAddColor) {
-            ColorFormSheet(color: nil) { await onRefresh() }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .addStyle(let catId):
+                StyleFormSheet(style: nil, categoryId: catId) { await onRefresh() }
+            case .addType(let styleId):
+                TypeFormSheet(type: nil, styleId: styleId) { await onRefresh() }
+            case .addColor:
+                ColorFormSheet(color: nil) { await onRefresh() }
+            case .editCategory(let cat):
+                CategoryFormSheet(category: cat) { await onRefresh() }
+            case .editStyle(let s):
+                StyleFormSheet(style: s, categoryId: s.categoryId) { await onRefresh() }
+            case .editType(let t):
+                TypeFormSheet(type: t, styleId: t.styleId) { await onRefresh() }
+            case .editColor(let c):
+                ColorFormSheet(color: c) { await onRefresh() }
+            }
         }
     }
 
@@ -120,7 +154,7 @@ struct CategoriesEditorPanel: View {
                             .font(.headline)
                         Spacer()
                         Button {
-                            addStyleCategoryId = catId
+                            activeSheet = .addStyle(catId)
                         } label: {
                             Label("Add Style", systemImage: "plus")
                                 .font(.caption)
@@ -204,7 +238,7 @@ struct CategoriesEditorPanel: View {
                             .font(.headline)
                         Spacer()
                         Button {
-                            addTypeStyleId = styleId
+                            activeSheet = .addType(styleId)
                         } label: {
                             Label("Add Type", systemImage: "plus")
                                 .font(.caption)
@@ -284,28 +318,13 @@ struct CategoriesEditorPanel: View {
 
                 Divider()
 
-                // Brand checkboxes section
-                CategoriesBrandSection(typeId: typeId)
-
-                Divider()
-
-                // Color picker section
-                CategoriesColorPicker(
+                // Brand selection + per-brand color pickers
+                TypeBrandColorSection(
                     typeId: typeId,
-                    brandId: nil,
                     hierarchy: hierarchy,
-                    onRefresh: onRefresh
+                    onRefresh: onRefresh,
+                    onAddColor: { activeSheet = .addColor }
                 )
-
-                Divider()
-
-                // Add color shortcut
-                Button {
-                    showAddColor = true
-                } label: {
-                    Label("Create New Color", systemImage: "paintpalette")
-                }
-                .buttonStyle(.bordered)
             }
         } else {
             Text("Type not found")
@@ -385,9 +404,7 @@ struct CategoriesEditorPanel: View {
             // Find the color in the hierarchy
             if let color = findColor(colorId) {
                 HStack(spacing: DS.Space.md) {
-                    Circle()
-                        .fill(Color(hex: color.hexCode ?? "#888888") ?? .gray)
-                        .frame(width: 40, height: 40)
+                    colorSwatch(hex: color.hexCode)
                     VStack(alignment: .leading) {
                         Text(color.name)
                             .font(.title2)
@@ -397,8 +414,43 @@ struct CategoriesEditorPanel: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .monospaced()
+                        } else {
+                            Text("No color value")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
+                }
+
+                // Show parent context
+                if let (_, _, typeNode) = findType(typeId) {
+                    HStack(spacing: DS.Space.xs) {
+                        Text("on type")
+                            .foregroundStyle(.secondary)
+                        Text(typeNode.type.name)
+                            .fontWeight(.medium)
+                    }
+                    .font(.subheadline)
+                }
+
+                Divider()
+
+                // Stats
+                HStack(spacing: DS.Space.xl) {
+                    statPill(value: color.sortOrder, label: "Sort Order")
+                    if color.hexCode != nil {
+                        statPill(value: 1, label: "Has Color")
+                    } else {
+                        statPill(value: 0, label: "No Color")
+                    }
+                }
+
+                Divider()
+
+                // Action buttons
+                HStack(spacing: DS.Space.md) {
+                    editColorButton(color)
+                    deleteColorButton(colorId)
                 }
 
                 Divider()
@@ -408,6 +460,33 @@ struct CategoriesEditorPanel: View {
                     .foregroundStyle(.secondary)
             } else {
                 Text("Color not found")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Color swatch circle, handles nil hex gracefully
+    @ViewBuilder
+    private func colorSwatch(hex: String?) -> some View {
+        if let hex, !hex.isEmpty, let resolved = Color(hex: hex) {
+            Circle()
+                .fill(resolved)
+                .frame(width: 40, height: 40)
+                .overlay(
+                    Circle()
+                        .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
+                )
+        } else {
+            ZStack {
+                Circle()
+                    .fill(Color(.secondarySystemGroupedBackground))
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Circle()
+                            .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
+                    )
+                Image(systemName: "nosign")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
@@ -456,28 +535,19 @@ struct CategoriesEditorPanel: View {
 
     // MARK: - Action Buttons
 
-    @State private var editingCategory: PartCategory?
-    @State private var editingStyle: PartStyle?
-    @State private var editingType: PartType?
     @State private var showDeleteConfirm = false
     @State private var deleteAction: (() async -> Void)?
-
-    // Sub-item creation sheet triggers
-    @State private var addStyleCategoryId: Int64?
-    @State private var addTypeStyleId: Int64?
-    @State private var showAddColor = false
+    @State private var deleteConfirmTitle = "Delete?"
+    @State private var deleteConfirmMessage = "This action cannot be undone."
 
     @ViewBuilder
     private func editCategoryButton(_ category: PartCategory) -> some View {
         Button {
-            editingCategory = category
+            activeSheet = .editCategory(category)
         } label: {
             Label("Edit", systemImage: "pencil")
         }
         .buttonStyle(.bordered)
-        .sheet(item: $editingCategory) { cat in
-            CategoryFormSheet(category: cat) { await onRefresh() }
-        }
     }
 
     @ViewBuilder
@@ -492,13 +562,15 @@ struct CategoriesEditorPanel: View {
                     print("[EditorPanel] Delete category error: \(error)")
                 }
             }
+            deleteConfirmTitle = "Delete Category?"
+            deleteConfirmMessage = "This will soft-delete the category. Styles and types under it will remain but become orphaned."
             showDeleteConfirm = true
         } label: {
             Label("Delete", systemImage: "trash")
         }
         .buttonStyle(.bordered)
         .tint(.red)
-        .alert("Delete Category?", isPresented: $showDeleteConfirm) {
+        .alert(deleteConfirmTitle, isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
                 if let action = deleteAction {
@@ -506,21 +578,18 @@ struct CategoriesEditorPanel: View {
                 }
             }
         } message: {
-            Text("This will soft-delete the category. Styles and types under it will remain but become orphaned.")
+            Text(deleteConfirmMessage)
         }
     }
 
     @ViewBuilder
     private func editStyleButton(_ style: PartStyle) -> some View {
         Button {
-            editingStyle = style
+            activeSheet = .editStyle(style)
         } label: {
             Label("Edit", systemImage: "pencil")
         }
         .buttonStyle(.bordered)
-        .sheet(item: $editingStyle) { s in
-            StyleFormSheet(style: s, categoryId: s.categoryId) { await onRefresh() }
-        }
     }
 
     @ViewBuilder
@@ -535,6 +604,8 @@ struct CategoriesEditorPanel: View {
                     print("[EditorPanel] Delete style error: \(error)")
                 }
             }
+            deleteConfirmTitle = "Delete Style?"
+            deleteConfirmMessage = "This will soft-delete the style. Types under it will remain but become orphaned."
             showDeleteConfirm = true
         } label: {
             Label("Delete", systemImage: "trash")
@@ -546,14 +617,11 @@ struct CategoriesEditorPanel: View {
     @ViewBuilder
     private func editTypeButton(_ ptype: PartType) -> some View {
         Button {
-            editingType = ptype
+            activeSheet = .editType(ptype)
         } label: {
             Label("Edit", systemImage: "pencil")
         }
         .buttonStyle(.bordered)
-        .sheet(item: $editingType) { t in
-            TypeFormSheet(type: t, styleId: t.styleId) { await onRefresh() }
-        }
     }
 
     @ViewBuilder
@@ -568,6 +636,40 @@ struct CategoriesEditorPanel: View {
                     print("[EditorPanel] Delete type error: \(error)")
                 }
             }
+            deleteConfirmTitle = "Delete Type?"
+            deleteConfirmMessage = "This will soft-delete the type and its associations."
+            showDeleteConfirm = true
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
+        .buttonStyle(.bordered)
+        .tint(.red)
+    }
+
+    @ViewBuilder
+    private func editColorButton(_ color: PartColor) -> some View {
+        Button {
+            activeSheet = .editColor(color)
+        } label: {
+            Label("Edit", systemImage: "pencil")
+        }
+        .buttonStyle(.bordered)
+    }
+
+    @ViewBuilder
+    private func deleteColorButton(_ colorId: Int64) -> some View {
+        Button(role: .destructive) {
+            deleteAction = {
+                guard let service = appCore.partsService else { return }
+                do {
+                    try service.deleteColor(id: colorId)
+                    await onRefresh()
+                } catch {
+                    print("[EditorPanel] Delete color error: \(error)")
+                }
+            }
+            deleteConfirmTitle = "Delete Color?"
+            deleteConfirmMessage = "This will soft-delete the color. Parts using this color will no longer show it."
             showDeleteConfirm = true
         } label: {
             Label("Delete", systemImage: "trash")

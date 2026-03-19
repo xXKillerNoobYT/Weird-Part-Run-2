@@ -95,16 +95,36 @@ struct CategoriesColorPicker: View {
             }
         } label: {
             VStack(spacing: DS.Space.xs) {
-                Circle()
-                    .fill(Color(hex: color.hexCode ?? "#888888") ?? .gray)
-                    .frame(width: 36, height: 36)
-                    .overlay {
-                        if isLinked || wasJustAdded {
-                            Image(systemName: "checkmark")
-                                .font(.caption.bold())
-                                .foregroundStyle(.white)
-                        }
+                ZStack {
+                    if let hex = color.hexCode, !hex.isEmpty, let c = Color(hex: hex) {
+                        Circle()
+                            .fill(c)
+                            .frame(width: 36, height: 36)
+                            .overlay(
+                                Circle()
+                                    .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
+                            )
+                    } else {
+                        // "None" / no-color indicator
+                        Circle()
+                            .fill(Color(.secondarySystemGroupedBackground))
+                            .frame(width: 36, height: 36)
+                            .overlay(
+                                Circle()
+                                    .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
+                            )
+                            .overlay {
+                                Image(systemName: "nosign")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(.secondary)
+                            }
                     }
+                    if isLinked || wasJustAdded {
+                        Image(systemName: "checkmark")
+                            .font(.caption.bold())
+                            .foregroundStyle(.white)
+                    }
+                }
                 Text(color.name)
                     .font(.caption)
                     .lineLimit(1)

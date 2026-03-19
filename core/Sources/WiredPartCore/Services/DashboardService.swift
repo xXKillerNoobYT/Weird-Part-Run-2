@@ -23,8 +23,10 @@ public final class DashboardService: Sendable {
 
     /// Top-level KPI counts displayed as summary cards on the dashboard.
     public struct KPISummary: Sendable {
-        /// Total number of active (non-deleted) parts in the catalog.
-        public let totalParts: Int
+        /// Total number of active (non-deleted) part types in the catalog.
+        public let partTypes: Int
+        /// Total physical stock units across all locations.
+        public let totalStock: Int
         /// Number of jobs with status = 'active'.
         public let activeJobs: Int
         /// Number of POs in draft, submitted, or acknowledged status.
@@ -33,12 +35,14 @@ public final class DashboardService: Sendable {
         public let lowStockAlerts: Int
 
         public init(
-            totalParts: Int,
+            partTypes: Int,
+            totalStock: Int,
             activeJobs: Int,
             pendingOrders: Int,
             lowStockAlerts: Int
         ) {
-            self.totalParts = totalParts
+            self.partTypes = partTypes
+            self.totalStock = totalStock
             self.activeJobs = activeJobs
             self.pendingOrders = pendingOrders
             self.lowStockAlerts = lowStockAlerts
@@ -145,8 +149,12 @@ public final class DashboardService: Sendable {
     /// - Returns: A `KPISummary` with total parts, active jobs, pending orders,
     ///   and low-stock alert counts.
     public func getKPISummary() throws -> KPISummary {
-        let totalParts = try safeCount(
+        let partTypes = try safeCount(
             sql: "SELECT COUNT(*) FROM parts WHERE deleted_at IS NULL"
+        )
+
+        let totalStock = try safeCount(
+            sql: "SELECT COALESCE(SUM(qty), 0) FROM stock WHERE deleted_at IS NULL"
         )
 
         let activeJobs = try safeCount(
@@ -161,7 +169,7 @@ public final class DashboardService: Sendable {
                 """
         )
 
-        // Low stock: parts where the sum of stock_entries < min_stock_level.
+        // Low stock: parts where the sum of stock qty < min_stock_level.
         // We use a correlated subquery to aggregate stock per part, then compare
         // against the part's configured minimum. Parts with min_stock_level = 0
         // are excluded (they have no configured minimum).
@@ -171,16 +179,17 @@ public final class DashboardService: Sendable {
                 WHERE p.deleted_at IS NULL
                   AND p.min_stock_level > 0
                   AND (
-                    SELECT COALESCE(SUM(se.quantity), 0)
-                    FROM stock_entries se
-                    WHERE se.part_id = p.id
-                      AND se.deleted_at IS NULL
+                    SELECT COALESCE(SUM(s.qty), 0)
+                    FROM stock s
+                    WHERE s.part_id = p.id
+                      AND s.deleted_at IS NULL
                   ) < p.min_stock_level
                 """
         )
 
         return KPISummary(
-            totalParts: totalParts,
+            partTypes: partTypes,
+            totalStock: totalStock,
             activeJobs: activeJobs,
             pendingOrders: pendingOrders,
             lowStockAlerts: lowStockAlerts
