@@ -1,93 +1,61 @@
-# WiredPart Native SwiftUI Migration — Plan Directory
+# WiredPart — Plans Directory
 
-> **Created:** 2026-03-14
-> **Master plan:** See `swiftui-native-migration-plan.md` in `docs/plans/`
+> **Last updated:** 2026-03-18
+> **Current work:** Dashboard Hub, iOS audit fixes, brand-supplier linking
+> **Completed phases:** 1-10 + all gap closures + Tauri migration + production hardening
 
-## Overview
+---
 
-This directory contains the detailed planning artifacts for migrating WiredPart from a Tauri/React WebView architecture to full native SwiftUI (macOS/iOS) with a shared Swift core package.
+## Project Summary
 
-## Plan Files
+WiredPart is a construction/trade business management app. Local-first, offline-capable, syncs peer-to-peer over Bluetooth and Wi-Fi. Runs on iOS (iPhone + iPad), macOS, and Windows via shared core package.
 
-| File | Purpose |
-|------|---------|
-| `README.md` | This file — overview and how to build/test |
-| `repo_map.md` | Current repo structure mapped to target structure |
-| `core_boundary.md` | All modules in WiredPartCore with function/class lists |
-| `adapters.md` | Platform adapter interfaces (sync, AI, filesystem) |
-| `ui_flow.md` | Page-by-page flow map for macOS and iOS |
-| `ai_agent_checks.md` | Cross-platform validation checks and thresholds |
-| `test_matrix.md` | Full test matrix table |
-| `file_staging_list.md` | Every file to create/modify/delete with patch sketches |
-| `branching_and_rollback.md` | Branch naming, commit template, rollback steps |
-| `estimate_and_risks.md` | Time estimates + risk register (13 risks) |
-| `ocr_plan.md` | Document scanning & OCR auto-extraction (Phase 12+) |
-| `qr_plan.md` | QR code recognition & auto-fill pipeline (Phase 12+) |
-| `image_match_plan.md` | Camera-based part matching (Phase 12+) |
-| `text_predict_plan.md` | Intelligent text pre-fill & predictive typing (Phase 12+) |
-| `bluetooth_sync_expanded.md` | Expanded BT sync for images & AI data (Phase 12+) |
+**Stats:** ~160 Swift files (iOS) + 50 core files | 23 migrations, ~130 tables (GRDB/SQLite) | 15 services
 
-## How to Build & Test (Per Platform)
+---
 
-### Swift Core Package (all platforms)
+## Active Plans
 
-```bash
-cd core/
-swift build          # compile the package
-swift test           # run all unit tests (in-memory SQLite)
-```
+| Plan | Status | Description |
+|------|--------|-------------|
+| `dashboard-hub-plan.md` | **ACTIVE** | Dashboard as user hub: 4 tabs (Overview + clock banner, Clock with GPS-sorted jobs + geofencing, Daily Report command center, Fast QR scanner) |
+| `deployment-master-plan.md` | 19/23 | App Store, DMG, NSIS distribution. 4 remaining tasks need physical devices |
+| `qr_plan.md` | Reference | QR v2 payload schema, 8 entity types, auto-fill pipeline |
 
-### macOS App (Xcode)
+## Future Plans (Designed, Not Started)
 
-1. Open `mac/WiredPartMac.xcodeproj` in Xcode
-2. Select the `WiredPartMac` scheme
-3. Build: Cmd+B
-4. Run: Cmd+R
-5. Test: Cmd+U (runs XCUITest suite)
+| Plan | Description |
+|------|-------------|
+| `bluetooth_sync_expanded.md` | Extended BT sync for AI data, chunked binary transfer (16KB frames), priority system |
+| `phase-13-sync-bluetooth.md` | Full BT mesh protocol, gossip, PGP encryption, device pairing |
+| `phase-14-ai-integration.md` | Local LLM, NL queries, anomaly detection, predictive ordering |
+| `phase-15-remote-sync.md` | **ON HOLD** — internet sync, shop-to-shop, shared channels |
+| `phase-16-ux-polish-and-admin-hub.md` | Nav restructure, warehouse enhancements, teams, device mgmt |
+| `apple-foundation-models-integration.md` | Apple Foundation Models (macOS 26+), on-device AI, tool use |
+| `ai-assistant-plan.md` | AI assistant panel, text prediction, contextual suggestions |
+| `supplier-communication-bridge-plan.md` | Supplier portal, PO acknowledgments, delivery tracking |
+| `phase-12-pwa-desktop.md` | Service worker, keyboard shortcuts, command palette |
+| `Mobile device bootstrap.md` | App Store shell that downloads real program from shop |
+| `windows-architecture.md` | Tauri/React dual-platform, llama.cpp for Windows AI |
+| `sideloading-guide.md` | Enterprise distribution without App Store |
 
-### iOS App (Xcode)
+## Architecture
 
-1. Open `ios/WiredPartIOS.xcodeproj` in Xcode
-2. Select `WiredPartIOS` scheme and a simulator
-3. Build: Cmd+B
-4. Run: Cmd+R
-5. Test: Cmd+U
+- **Sync:** Apple Multipeer Connectivity (BT/Wi-Fi P2P) + LAN HTTP. LWW + field-level merge. Ed25519 device trust. Vector clocks.
+- **AI:** Foundation Models (Apple), llama.cpp (Windows), no cloud. On-device only.
+- **QR:** VisionKit DataScannerViewController. V2 schema with 8 entity types. Auto-fill pipeline.
+- **Constraint:** Everything offline. Bluetooth-only sync. No cloud APIs.
 
-### Legacy Tauri App (unchanged during migration)
+## Completed Phase History
+
+All completed plans archived in `archive/`. Phases 1→10, Tauri migration, production hardening, testing strategy, all gap closures — all done.
+
+## Build & Test
 
 ```bash
-# Frontend dev
-npm run dev
+# Core package
+cd core && swift build && swift test
 
-# Tauri desktop
-cd src-tauri && cargo tauri dev
-
-# Tauri iOS
-cd src-tauri && cargo tauri ios dev
+# iOS app (Xcode)
+# Open Wierd Parts.xcworkspace, select WiredPart-iOS scheme, Cmd+B
 ```
-
-### Running Tests
-
-```bash
-# Core package unit tests (fast, in-memory)
-cd core && swift test
-
-# macOS UI tests
-xcodebuild test -project mac/WiredPartMac.xcodeproj -scheme WiredPartMac -destination 'platform=macOS'
-
-# iOS UI tests
-xcodebuild test -project ios/WiredPartIOS.xcodeproj -scheme WiredPartIOS -destination 'platform=iOS Simulator,name=iPhone 16'
-```
-
-## Architecture Decisions
-
-- **UI:** Full native SwiftUI (macOS/iOS). React WebView as interim fallback.
-- **Core:** `WiredPartCore` Swift package — GRDB/SQLite, business logic, sync engine.
-- **Sync:** Multipeer Connectivity (Apple). LAN HTTP (all platforms). Ad-hoc network for Mac-Windows. Chunked binary sync for images (Phase 12+).
-- **AI:** Foundation Models (Apple primary). Copilot Runtime (Windows primary). llama.cpp (fallback both).
-- **OCR:** Vision framework (Apple). Windows.Media.Ocr (Windows). Platform-agnostic field extraction in Core.
-- **QR:** Native camera scanning (DataScanner/AVCapture). V2 schema with 8 entity types. Auto-fill pipeline.
-- **Image Matching:** Vision VNFeaturePrint (Apple). MobileNetV3 ONNX (Windows). Cosine similarity search.
-- **Predictive Text:** Entity lookup + phrase history + LLM ghost text. 71 Tier-1 fields. Local-only history.
-- **Repo:** Monorepo with `/core`, `/mac`, `/ios`, `/windows`, `/src` (legacy).
-- **Constraint:** All AI/scanning features operate 100% offline. Bluetooth-only device sync. No cloud APIs.
