@@ -13,6 +13,7 @@ struct IOSTimeOffPage: View {
 
     @State private var requests: [SchedulingService.TimeOffRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var searchText = ""
 
     var body: some View {
@@ -30,6 +31,8 @@ struct IOSTimeOffPage: View {
         if isLoading {
             ProgressView("Loading time-off requests...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
         } else if filteredRequests.isEmpty {
             ContentUnavailableView {
                 Label("No Requests", systemImage: "calendar.badge.clock")
@@ -129,15 +132,16 @@ struct IOSTimeOffPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.schedulingService else { return }
+        guard let service = appCore.schedulingService else {
+            isLoading = false
+            loadError = "Scheduling service unavailable"
+            return
+        }
         isLoading = requests.isEmpty
         do {
             requests = try service.listTimeOffRequests()
         } catch {
-            let msg = String(describing: error)
-            if !msg.contains("no such table") {
-                print("[IOSTimeOffPage] Load error: \(error)")
-            }
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

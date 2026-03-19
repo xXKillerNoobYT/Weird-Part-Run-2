@@ -13,6 +13,7 @@ struct IOSDispatchTemplatesPage: View {
 
     @State private var templates: [SchedulingService.TemplateListItem] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var searchText = ""
 
     var body: some View {
@@ -30,6 +31,8 @@ struct IOSDispatchTemplatesPage: View {
         if isLoading {
             ProgressView("Loading templates...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
         } else if filteredTemplates.isEmpty {
             ContentUnavailableView {
                 Label("No Templates", systemImage: "doc.on.doc")
@@ -100,15 +103,16 @@ struct IOSDispatchTemplatesPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.schedulingService else { return }
+        guard let service = appCore.schedulingService else {
+            isLoading = false
+            loadError = "Scheduling service unavailable"
+            return
+        }
         isLoading = templates.isEmpty
         do {
             templates = try service.listDispatchTemplates()
         } catch {
-            let msg = String(describing: error)
-            if !msg.contains("no such table") {
-                print("[IOSDispatchTemplatesPage] Load error: \(error)")
-            }
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

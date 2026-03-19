@@ -14,6 +14,7 @@ struct IOSToolKitsPage: View {
 
     @State private var kits: [ToolKitRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var searchText = ""
 
     var body: some View {
@@ -31,6 +32,8 @@ struct IOSToolKitsPage: View {
         if isLoading {
             ProgressView("Loading tool kits...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
         } else if filteredKits.isEmpty {
             ContentUnavailableView {
                 Label("No Kits", systemImage: "bag")
@@ -118,7 +121,11 @@ struct IOSToolKitsPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else { return }
+        guard let db = appCore.db else {
+            isLoading = false
+            loadError = "Database unavailable"
+            return
+        }
         isLoading = kits.isEmpty
         do {
             kits = try db.writer.read { db in
@@ -144,10 +151,7 @@ struct IOSToolKitsPage: View {
                 }
             }
         } catch {
-            let msg = String(describing: error)
-            if !msg.contains("no such table") {
-                print("[IOSToolKitsPage] Load error: \(error)")
-            }
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

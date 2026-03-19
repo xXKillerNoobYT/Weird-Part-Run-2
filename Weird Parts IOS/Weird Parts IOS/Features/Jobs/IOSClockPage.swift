@@ -366,10 +366,7 @@ struct IOSClockPage: View {
             todayEntries = entries.filter { $0.clockIn.hasPrefix(String(todayPrefix)) }
             todayHours = todayEntries.reduce(0) { $0 + $1.regularHours + $1.overtimeHours }
         } catch {
-            let msg = String(describing: error)
-            if !msg.contains("no such table") {
-                print("[IOSClockPage] Load error: \(error)")
-            }
+            errorMessage = error.localizedDescription
         }
         isLoading = false
     }

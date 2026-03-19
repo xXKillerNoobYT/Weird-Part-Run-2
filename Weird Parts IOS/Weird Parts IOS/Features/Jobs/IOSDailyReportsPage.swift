@@ -13,6 +13,7 @@ struct IOSDailyReportsPage: View {
 
     @State private var reports: [ReportsService.DailyReportSummaryRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var selectedDate = Date()
 
     var body: some View {
@@ -88,6 +89,8 @@ struct IOSDailyReportsPage: View {
         if isLoading {
             ProgressView("Loading reports...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
         } else if reports.isEmpty {
             ContentUnavailableView {
                 Label("No Activity", systemImage: "doc.plaintext")
@@ -222,16 +225,17 @@ struct IOSDailyReportsPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.reportsService else { return }
+        guard let service = appCore.reportsService else {
+            isLoading = false
+            loadError = "Reports service unavailable"
+            return
+        }
         isLoading = reports.isEmpty
         let dateStr = isoDate(selectedDate)
         do {
             reports = try service.getDailyReportSummary(date: dateStr)
         } catch {
-            let msg = String(describing: error)
-            if !msg.contains("no such table") {
-                print("[IOSDailyReportsPage] Load error: \(error)")
-            }
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

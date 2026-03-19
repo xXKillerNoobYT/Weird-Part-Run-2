@@ -14,6 +14,7 @@ struct IOSToolsDashboardPage: View {
     @State private var stats: ToolsService.ToolsStats?
     @State private var recentCheckouts: [ToolsService.CheckoutRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
 
     var body: some View {
         dashboardContent
@@ -29,6 +30,8 @@ struct IOSToolsDashboardPage: View {
         if isLoading {
             ProgressView("Loading tools data...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
         } else if let stats {
             ScrollView {
                 VStack(spacing: 16) {
@@ -185,16 +188,17 @@ struct IOSToolsDashboardPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.toolsService else { return }
+        guard let service = appCore.toolsService else {
+            isLoading = false
+            loadError = "Tools service unavailable"
+            return
+        }
         isLoading = stats == nil
         do {
             stats = try service.getToolsStats()
             recentCheckouts = try service.listCheckouts(active: false)
         } catch {
-            let msg = String(describing: error)
-            if !msg.contains("no such table") {
-                print("[IOSToolsDashboardPage] Load error: \(error)")
-            }
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

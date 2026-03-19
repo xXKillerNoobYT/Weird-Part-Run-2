@@ -11,6 +11,7 @@ struct WarehouseLocationsPage: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var locationStock: [WarehouseService.LocationStock] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var searchText = ""
     @State private var selectedLocation: LocationGroup?
 
@@ -18,6 +19,9 @@ struct WarehouseLocationsPage: View {
         VStack(spacing: 0) {
             if isLoading {
                 ProgressView("Loading locations...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if groupedLocations.isEmpty {
                 emptyState
@@ -188,7 +192,10 @@ struct WarehouseLocationsPage: View {
         isLoading = true
         do {
             guard let service = appCore.warehouseService else {
-                await MainActor.run { isLoading = false }
+                await MainActor.run {
+                    loadError = "Warehouse service unavailable"
+                    isLoading = false
+                }
                 return
             }
             let fetched = try service.getLocationStock()
@@ -197,7 +204,10 @@ struct WarehouseLocationsPage: View {
                 isLoading = false
             }
         } catch {
-            await MainActor.run { isLoading = false }
+            await MainActor.run {
+                loadError = error.localizedDescription
+                isLoading = false
+            }
         }
     }
 

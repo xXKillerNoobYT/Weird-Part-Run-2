@@ -1,38 +1,49 @@
-# WiredPart iOS — Audit Observations
+# WiredPart iOS — Observations & Progress Log
 
-## Audit Date: 2026-03-18
+## Initial Audit: 2026-03-18
 
-### What Was Found
+**180+ issues** across ~160 Swift files. Backend/service layer is solid. Issues are in the UI layer: missing actions, swallowed errors, stubs, sheet conflicts.
 
-**180+ issues** across ~160 Swift files. The app has a comprehensive architecture and service layer — the backend is solid. The issues are overwhelmingly in the UI layer: missing action buttons, swallowed errors, stub content shown to users, and sheet/popup conflicts.
+### Systemic Patterns Found
 
-### Systemic Patterns
+1. "Catch and Forget" — ~25 catch blocks print to console only
+2. "Guard and Abandon" — ~10 guard-let-else-return leave infinite spinners
+3. "Read-Only Pages" — ~30 pages missing create/edit/delete
+4. "no such table" Suppression — ~15 files silently eat errors
+5. Multiple `.sheet` on one view — CategoriesEditorPanel (7), IOSMainView (5+)
+6. Fake Sync — SyncWaitingView, IOSSyncManager simulate without working
+7. Duplicate utilities — formatDate, formatCurrency copy-pasted 12+ times
 
-1. **"Catch and Forget"** — ~25 catch blocks print to console, never show errors to users
-2. **"Guard and Abandon"** — ~10 guard-let-else-return blocks leave isLoading=true forever
-3. **"Read-Only Pages"** — ~30 list/detail pages missing create/edit/delete actions
-4. **"no such table" Suppression** — ~15 files silently eat database migration errors
-5. **Multiple `.sheet` on one view** — CategoriesEditorPanel (7), IOSMainView (5+), CategoriesTreeView (4)
-6. **Fake Sync** — SyncWaitingView, IOSSyncManager, DevicePairingView all simulate without doing real work
-7. **Duplicate utilities** — formatDate, formatCurrency, safeCount copy-pasted across 12+ files
+---
 
-### Fix Priority
+## Fix Log
 
-| Priority | Prompt | Impact |
-|----------|--------|--------|
-| P0 | 01 (Sheets) | Users can't close popups |
-| P0 | 02 (Errors) | Users see blank screens |
-| P0 | 03 (Spinners) | Users see infinite loading |
-| P1 | 04 (Stubs) | Users are deceived by fake sync |
-| P1 | 05 (AppCore) | App crashes if DB fails |
-| P2 | 06-08 (CRUD) | Users can't create/edit/delete data |
-| P3 | 09 (Security) | PIN weakness, sync injection |
-| P3 | 10 (Services) | Data integrity bugs |
+### Prompt 01 — Sheet/Popup Dismissal (DONE - 2026-03-18)
 
-### What Worked Well
+- 7 files fixed: CategoriesEditorPanel, CategoriesTreeView, IOSMainView, PartsCatalogPage, PartsSuppliersPage, PartsBrandsPage, PartsCompanionsPage → single `.sheet(item:)` enum
+- 3 files fixed: IOSClockPage, LaborPage, IOSVehicleDetailPage → `.onChange` data reload
+- 1 supporting: TypeBrandColorSection binding → closure pattern
+- 6 files already correct — no changes needed
+- Build: SUCCESS
 
-- Architecture is clean — AppCore → Services → GRDB is a solid pattern
-- Design system exists (tokens, styles, reusable components)
-- Navigation routing is comprehensive with legacy redirects
-- Permission gating infrastructure is in place
-- Error state and empty state view components exist but aren't used everywhere
+### Prompt 02 — Error Visibility (PENDING)
+### Prompt 03 — Infinite Spinners (PENDING)
+### Prompt 04 — Stub Sync & Placeholders (PENDING)
+### Prompt 05 — AppCore Safety (PENDING)
+### Prompt 06-08 — Missing CRUD (PENDING)
+### Prompt 09 — Security Hardening (PENDING)
+### Prompt 10 — Service Layer Bugs (PENDING)
+### Prompt 11A-C — Brand-Supplier Linking (PENDING)
+### Prompt 12A-F — Dashboard Hub (PENDING)
+
+---
+
+## What Worked Well
+
+- Architecture: AppCore → Services → GRDB is solid
+- Design system exists (DS tokens, styles, components)
+- Navigation routing comprehensive with legacy redirects
+- Permission gating infrastructure in place
+- ErrorStateView and EmptyStateView components exist (just underused)
+- QR auto-fill pipeline already built in core package
+- Sync infrastructure exists in core (just not wired to iOS UI)

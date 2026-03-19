@@ -17,6 +17,7 @@ struct IOSJobDetailPage: View {
     @State private var teamMembers: [JobsService.TeamMemberRow] = []
     @State private var laborSummary: JobsService.LaborSummary?
     @State private var isLoading = true
+    @State private var loadError: String?
 
     var body: some View {
         detailContent
@@ -35,6 +36,8 @@ struct IOSJobDetailPage: View {
         if isLoading {
             ProgressView("Loading job...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
         } else if let job {
             List {
                 // Header section
@@ -277,17 +280,18 @@ struct IOSJobDetailPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            isLoading = false
+            loadError = "Jobs service unavailable"
+            return
+        }
         isLoading = job == nil
         do {
             job = try service.getJob(id: jobId)
             teamMembers = try service.getTeamMembers(jobId: jobId)
             laborSummary = try service.getLaborSummary(jobId: jobId)
         } catch {
-            let msg = String(describing: error)
-            if !msg.contains("no such table") {
-                print("[IOSJobDetailPage] Load error: \(error)")
-            }
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

@@ -90,7 +90,7 @@ struct SyncPage: View {
             syncInterval = map["sync_interval"] ?? "30"
             autoSync = map["auto_sync"] != "false"
         } catch {
-            print("[SyncPage] Load error: \(error)")
+            errorMessage = "Failed to load settings: \(error.localizedDescription)"
         }
     }
 

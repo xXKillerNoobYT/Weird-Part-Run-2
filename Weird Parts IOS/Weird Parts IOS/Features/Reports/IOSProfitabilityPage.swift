@@ -13,6 +13,7 @@ struct IOSProfitabilityPage: View {
 
     @State private var rows: [ReportsService.JobProfitRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var searchText = ""
 
     var body: some View {
@@ -30,6 +31,8 @@ struct IOSProfitabilityPage: View {
         if isLoading {
             ProgressView("Loading profitability...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
         } else if filteredRows.isEmpty {
             ContentUnavailableView {
                 Label("No Data", systemImage: "chart.line.uptrend.xyaxis")
@@ -122,15 +125,16 @@ struct IOSProfitabilityPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.reportsService else { return }
+        guard let service = appCore.reportsService else {
+            isLoading = false
+            loadError = "Reports service unavailable"
+            return
+        }
         isLoading = rows.isEmpty
         do {
             rows = try service.getProfitabilitySummary()
         } catch {
-            let msg = String(describing: error)
-            if !msg.contains("no such table") {
-                print("[IOSProfitabilityPage] Load error: \(error)")
-            }
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

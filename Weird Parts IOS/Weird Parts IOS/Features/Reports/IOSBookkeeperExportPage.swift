@@ -16,6 +16,7 @@ struct IOSBookkeeperExportPage: View {
     @State private var laborRows: [LaborSummaryRow] = []
     @State private var materialRows: [MaterialPORow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var startDate = Calendar.current.date(byAdding: .day, value: -13, to: Date()) ?? Date()
     @State private var endDate = Date()
 
@@ -67,6 +68,8 @@ struct IOSBookkeeperExportPage: View {
         if isLoading {
             ProgressView("Loading bookkeeper data...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
         } else if laborRows.isEmpty && materialRows.isEmpty {
             ContentUnavailableView {
                 Label("No Data", systemImage: "doc.richtext")
@@ -186,7 +189,11 @@ struct IOSBookkeeperExportPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else { return }
+        guard let db = appCore.db else {
+            isLoading = false
+            loadError = "Database unavailable"
+            return
+        }
         isLoading = laborRows.isEmpty && materialRows.isEmpty
         do {
             laborRows = try db.writer.read { db in
@@ -230,10 +237,7 @@ struct IOSBookkeeperExportPage: View {
                 }
             }
         } catch {
-            let msg = String(describing: error)
-            if !msg.contains("no such table") {
-                print("[IOSBookkeeperExportPage] Load error: \(error)")
-            }
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

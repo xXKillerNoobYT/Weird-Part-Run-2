@@ -15,6 +15,7 @@ struct IOSPreBillingPage: View {
 
     @State private var rows: [PreBillingRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var startDate = Calendar.current.date(byAdding: .day, value: -13, to: Date()) ?? Date()
     @State private var endDate = Date()
 
@@ -66,6 +67,8 @@ struct IOSPreBillingPage: View {
         if isLoading {
             ProgressView("Loading pre-billing data...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
         } else if rows.isEmpty {
             ContentUnavailableView {
                 Label("No Billing Data", systemImage: "doc.text")
@@ -161,7 +164,11 @@ struct IOSPreBillingPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else { return }
+        guard let db = appCore.db else {
+            isLoading = false
+            loadError = "Database unavailable"
+            return
+        }
         isLoading = rows.isEmpty
         do {
             rows = try db.writer.read { db in
@@ -188,10 +195,7 @@ struct IOSPreBillingPage: View {
                 }
             }
         } catch {
-            let msg = String(describing: error)
-            if !msg.contains("no such table") {
-                print("[IOSPreBillingPage] Load error: \(error)")
-            }
+            loadError = error.localizedDescription
         }
         isLoading = false
     }
