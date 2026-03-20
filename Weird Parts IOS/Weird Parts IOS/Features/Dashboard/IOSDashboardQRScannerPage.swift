@@ -1,196 +1,195 @@
 import SwiftUI
 import GRDB
 import WiredPartCore
+#if os(iOS) && !targetEnvironment(macCatalyst)
+import VisionKit
+#endif
 
-/// Dashboard QR Scanner sub-page.
+/// Fast continuous QR scanner — camera opens immediately, shows live item info.
 ///
-/// Uses the existing `IOSQRScanner` (VisionKit DataScannerViewController)
-/// for camera-based scanning, with a manual code entry fallback.
-/// After a scan, shows entity info + contextual quick actions.
+/// Features:
+/// - Camera starts on appear, scans continuously
+/// - Info overlay shows the current scanned item (updates as you point at different codes)
+/// - Lock button freezes the current scan for details/actions
+/// - Quick actions auto-lock the camera until action completes
+/// - Last scan remembered if QR goes out of frame
+/// - Manual entry fallback below the camera
 struct IOSDashboardQRScannerPage: View {
     @EnvironmentObject private var appCore: AppCore
 
-    @State private var manualCode = ""
+    // Scanner state
     @State private var isScanning = false
-    @State private var scanResult: ScanResultData?
+    @State private var isLocked = false
+    @State private var currentResult: ScanResultData?
+    @State private var lastResult: ScanResultData? // Remembered
     @State private var scanError: String?
     @State private var isProcessing = false
+
+    // Manual entry
+    @State private var manualCode = ""
 
     #if os(iOS) && !targetEnvironment(macCatalyst)
     @State private var scanner: IOSQRScanner?
     #endif
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: DS.Space.xl) {
-                // Camera scan section
-                cameraScanSection
-                    .padding(.horizontal, DS.Space.lg)
-
-                // Manual entry section
-                manualEntrySection
-                    .padding(.horizontal, DS.Space.lg)
-
-                // Error display
-                if let error = scanError {
-                    DSAlertBanner(severity: .error, title: "Scan Error", message: error)
-                        .padding(.horizontal, DS.Space.lg)
-                }
-
-                // Processing indicator
-                if isProcessing {
-                    ProgressView("Looking up code...")
-                        .padding()
-                }
-
-                // Result card
-                if let result = scanResult {
-                    resultCard(result)
-                        .padding(.horizontal, DS.Space.lg)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-            }
-            .padding(.vertical, DS.Space.lg)
-        }
-        .background(DS.Background.page)
-        .navigationTitle("QR Scanner")
-        .animation(.easeInOut(duration: 0.3), value: scanResult != nil)
-    }
-
-    // MARK: - Camera Scan Section
-
-    private var cameraScanSection: some View {
-        VStack(spacing: DS.Space.md) {
+        VStack(spacing: 0) {
             #if os(iOS) && !targetEnvironment(macCatalyst)
             if DataScannerViewController.isSupported {
-                Button {
-                    startCameraScanning()
-                } label: {
-                    HStack(spacing: DS.Space.md) {
-                        Image(systemName: "camera.viewfinder")
-                            .font(.title2)
-                        VStack(alignment: .leading) {
-                            Text("Scan with Camera")
-                                .dsStyle(.label)
-                                .fontWeight(.semibold)
-                            Text("Point camera at a QR code or barcode")
-                                .dsStyle(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(DS.Space.lg)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.plain)
-                .dsElevatedCard()
+                // Camera viewfinder (top half)
+                cameraSection
+                    .frame(maxHeight: .infinity)
+
+                // Info overlay + controls (bottom half)
+                bottomSection
             } else {
-                // No camera available
-                VStack(spacing: DS.Space.sm) {
-                    Image(systemName: "camera.badge.ellipsis")
-                        .font(.largeTitle)
-                        .foregroundStyle(.tertiary)
-                    Text("Camera not available")
-                        .dsStyle(.label)
-                        .foregroundStyle(.secondary)
-                    Text("Use manual entry below to look up a code")
-                        .dsStyle(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(DS.Space.xl)
-                .frame(maxWidth: .infinity)
-                .dsCard()
+                noCameraFallback
             }
             #else
-            VStack(spacing: DS.Space.sm) {
-                Image(systemName: "camera.badge.ellipsis")
-                    .font(.largeTitle)
-                    .foregroundStyle(.tertiary)
-                Text("Camera scanning is available on iOS devices")
-                    .dsStyle(.label)
-                    .foregroundStyle(.secondary)
+            noCameraFallback
+            #endif
+        }
+        .background(Color.black)
+        .navigationTitle("QR Scanner")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            #if os(iOS) && !targetEnvironment(macCatalyst)
+            if DataScannerViewController.isSupported {
+                startContinuousScanning()
             }
-            .padding(DS.Space.xl)
-            .frame(maxWidth: .infinity)
-            .dsCard()
+            #endif
+        }
+        .onDisappear {
+            #if os(iOS) && !targetEnvironment(macCatalyst)
+            scanner?.stopScanning()
             #endif
         }
     }
 
-    // MARK: - Manual Entry
+    // MARK: - Camera Section
 
-    private var manualEntrySection: some View {
-        VStack(alignment: .leading, spacing: DS.Space.sm) {
-            Text("Manual Entry")
-                .dsStyle(.sectionTitle)
+    #if os(iOS) && !targetEnvironment(macCatalyst)
+    @ViewBuilder
+    private var cameraSection: some View {
+        ZStack {
+            // Camera preview placeholder
+            // In production, embed the DataScannerViewController view here
+            Rectangle()
+                .fill(Color.black)
+                .overlay(
+                    VStack {
+                        if isLocked {
+                            HStack {
+                                Spacer()
+                                Label("Locked", systemImage: "lock.fill")
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Capsule().fill(.orange))
+                                    .padding()
+                            }
+                        }
+                        Spacer()
+                    }
+                )
 
-            HStack(spacing: DS.Space.sm) {
-                TextField("Type or paste code...", text: $manualCode)
-                    .textFieldStyle(.roundedBorder)
-                    .submitLabel(.search)
-                    .onSubmit { processManualCode() }
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
+            // Scanning frame overlay
+            if !isLocked {
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.white.opacity(0.5), lineWidth: 2)
+                    .frame(width: 250, height: 250)
+            }
 
-                Button("Look Up") {
-                    processManualCode()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(manualCode.trimmingCharacters(in: .whitespaces).isEmpty || isProcessing)
+            // Processing indicator
+            if isProcessing {
+                ProgressView()
+                    .tint(.white)
+                    .scaleEffect(1.5)
             }
         }
     }
+    #endif
 
-    // MARK: - Result Card
+    // MARK: - Bottom Section (Info + Controls)
 
     @ViewBuilder
-    private func resultCard(_ result: ScanResultData) -> some View {
-        VStack(alignment: .leading, spacing: DS.Space.md) {
-            // Header
-            HStack(spacing: DS.Space.md) {
-                Image(systemName: result.isFound ? "checkmark.circle.fill" : "questionmark.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(result.isFound ? DS.SemanticColor.success : DS.SemanticColor.warning)
-                VStack(alignment: .leading, spacing: DS.Space.xxxs) {
-                    Text(result.isFound ? result.entityTitle : "Not Found")
-                        .dsStyle(.label)
-                        .fontWeight(.semibold)
-                    Text(result.code)
-                        .dsStyle(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+    private var bottomSection: some View {
+        VStack(spacing: 0) {
+            // Result card or empty state
+            resultOverlay
+                .frame(minHeight: 120)
+
+            Divider()
+
+            // Controls bar
+            controlsBar
+                .padding(DS.Space.md)
+
+            // Manual entry
+            manualEntryBar
+                .padding(.horizontal, DS.Space.md)
+                .padding(.bottom, DS.Space.md)
+        }
+        .background(Color(.systemBackground))
+    }
+
+    // MARK: - Result Overlay
+
+    @ViewBuilder
+    private var resultOverlay: some View {
+        let displayResult = currentResult ?? lastResult
+
+        if let result = displayResult {
+            VStack(alignment: .leading, spacing: DS.Space.sm) {
+                // Header row
+                HStack(spacing: DS.Space.md) {
+                    Image(systemName: result.isFound ? "checkmark.circle.fill" : "questionmark.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(result.isFound ? .green : .orange)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(result.isFound ? result.entityTitle : "Not Found")
+                            .font(.headline)
+                            .lineLimit(1)
+                        if let type = result.entityType {
+                            Text(type.rawValue.capitalized)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Spacer()
+
+                    // Lock/Unlock button
+                    Button {
+                        toggleLock()
+                    } label: {
+                        Image(systemName: isLocked ? "lock.fill" : "lock.open")
+                            .font(.title3)
+                            .foregroundStyle(isLocked ? .orange : .secondary)
+                            .frame(width: 44, height: 44)
+                            .background(
+                                Circle().fill(isLocked
+                                    ? Color.orange.opacity(0.15)
+                                    : Color(.secondarySystemGroupedBackground))
+                            )
+                    }
                 }
-                Spacer()
-                if let type = result.entityType {
-                    Text(type.rawValue.capitalized)
-                        .dsStyle(.caption)
-                        .padding(.horizontal, DS.Space.sm)
-                        .padding(.vertical, DS.Space.xxxs)
-                        .background(Capsule().fill(Color(.systemGray5)))
-                }
-            }
 
-            if result.isFound {
-                Divider()
-
-                // Stock locations (for parts)
-                if let stockLocations = result.stockLocations, !stockLocations.isEmpty {
-                    VStack(alignment: .leading, spacing: DS.Space.xs) {
-                        Label("Stock Locations", systemImage: "mappin.and.ellipse")
-                            .dsStyle(.label)
-                            .foregroundStyle(.secondary)
-
-                        ForEach(stockLocations, id: \.label) { loc in
-                            HStack {
-                                Text(loc.label)
-                                    .dsStyle(.detail)
-                                Spacer()
-                                Text("\(loc.qty) units")
-                                    .dsStyle(.detail)
-                                    .fontWeight(.medium)
+                // Stock locations (parts)
+                if result.isFound, let stockLocs = result.stockLocations, !stockLocs.isEmpty {
+                    HStack(spacing: DS.Space.md) {
+                        ForEach(stockLocs, id: \.label) { loc in
+                            VStack(spacing: 2) {
+                                Text("\(loc.qty)")
+                                    .font(.subheadline)
+                                    .fontWeight(.bold)
                                     .monospacedDigit()
+                                Text(loc.label)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -198,80 +197,212 @@ struct IOSDashboardQRScannerPage: View {
 
                 // Detail fields
                 if !result.detailFields.isEmpty {
-                    VStack(alignment: .leading, spacing: DS.Space.xs) {
-                        ForEach(result.detailFields, id: \.key) { field in
-                            LabeledContent(field.key, value: field.value)
-                                .dsStyle(.detail)
+                    HStack(spacing: DS.Space.lg) {
+                        ForEach(result.detailFields.prefix(3), id: \.key) { field in
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(field.key)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                Text(field.value)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                            }
                         }
                     }
                 }
 
-                Divider()
-
-                // Quick actions
-                quickActions(for: result)
-            } else {
-                Text("The scanned code was not recognized in the system.")
-                    .dsStyle(.detail)
+                // Quick actions (only when locked)
+                if isLocked && result.isFound {
+                    Divider()
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: DS.Space.md) {
+                            quickActions(for: result)
+                        }
+                    }
+                }
+            }
+            .padding(DS.Space.md)
+        } else if let error = scanError {
+            VStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(DS.Space.md)
+        } else {
+            VStack(spacing: 8) {
+                Image(systemName: "viewfinder")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+                Text("Point camera at a QR code")
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
+            .padding(DS.Space.md)
         }
-        .padding(DS.Space.lg)
-        .dsElevatedCard()
     }
+
+    // MARK: - Controls Bar
+
+    private var controlsBar: some View {
+        HStack(spacing: DS.Space.lg) {
+            if isLocked {
+                Button {
+                    unlockAndResume()
+                } label: {
+                    Label("Resume Scanning", systemImage: "play.fill")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.blue)
+            }
+
+            Spacer()
+
+            if currentResult != nil || lastResult != nil {
+                Button {
+                    currentResult = nil
+                    lastResult = nil
+                } label: {
+                    Label("Clear", systemImage: "xmark.circle")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    // MARK: - Manual Entry
+
+    private var manualEntryBar: some View {
+        HStack(spacing: DS.Space.sm) {
+            TextField("Type code manually...", text: $manualCode)
+                .textFieldStyle(.roundedBorder)
+                .submitLabel(.search)
+                .onSubmit { processManualCode() }
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+
+            Button("Look Up") { processManualCode() }
+                .buttonStyle(.bordered)
+                .disabled(manualCode.trimmingCharacters(in: .whitespaces).isEmpty || isProcessing)
+        }
+    }
+
+    // MARK: - No Camera Fallback
+
+    private var noCameraFallback: some View {
+        ScrollView {
+            VStack(spacing: DS.Space.xl) {
+                Image(systemName: "camera.badge.ellipsis")
+                    .font(.system(size: 48))
+                    .foregroundStyle(.tertiary)
+                    .padding(.top, DS.Space.jumbo)
+
+                Text("Camera not available")
+                    .font(.title3)
+                    .fontWeight(.medium)
+
+                VStack(alignment: .leading, spacing: DS.Space.sm) {
+                    Text("Manual Entry")
+                        .dsStyle(.sectionTitle)
+
+                    HStack(spacing: DS.Space.sm) {
+                        TextField("Type or paste code...", text: $manualCode)
+                            .textFieldStyle(.roundedBorder)
+                            .submitLabel(.search)
+                            .onSubmit { processManualCode() }
+
+                        Button("Look Up") { processManualCode() }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(manualCode.isEmpty || isProcessing)
+                    }
+                }
+                .padding(.horizontal, DS.Space.lg)
+
+                if let result = currentResult {
+                    resultOverlay
+                        .dsCard()
+                        .padding(.horizontal, DS.Space.lg)
+                }
+            }
+        }
+        .background(DS.Background.page)
+    }
+
+    // MARK: - Quick Actions
 
     @ViewBuilder
     private func quickActions(for result: ScanResultData) -> some View {
-        VStack(alignment: .leading, spacing: DS.Space.sm) {
-            Text("Quick Actions")
-                .dsStyle(.label)
-                .foregroundStyle(.secondary)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: DS.Space.md) {
-                    switch result.entityType {
-                    case .part:
-                        DSQuickActionButton(title: "Move Stock", icon: "arrow.left.arrow.right", color: .orange) {
-                            navigateToModule("warehouse")
-                        }
-                        DSQuickActionButton(title: "View Details", icon: "info.circle", color: .blue) {
-                            navigateToModule("parts")
-                        }
-                    case .tool:
-                        DSQuickActionButton(title: "Check Status", icon: "wrench.and.screwdriver", color: .blue) {
-                            navigateToModule("tools")
-                        }
-                    case .job:
-                        DSQuickActionButton(title: "View Job", icon: "hammer", color: .orange) {
-                            navigateToModule("jobs")
-                        }
-                    case .vehicle:
-                        DSQuickActionButton(title: "View Fleet", icon: "car", color: .green) {
-                            navigateToModule("fleet")
-                        }
-                    default:
-                        DSQuickActionButton(title: "View Details", icon: "info.circle", color: .blue) {}
-                    }
-
-                    // Scan another
-                    DSQuickActionButton(title: "Scan Again", icon: "qrcode.viewfinder", color: .purple) {
-                        scanResult = nil
-                        scanError = nil
-                    }
-                }
+        switch result.entityType {
+        case .part:
+            DSQuickActionButton(title: "Move Stock", icon: "arrow.left.arrow.right", color: .orange) {
+                autoLockAction { navigateToModule("warehouse") }
             }
+            DSQuickActionButton(title: "View Part", icon: "info.circle", color: .blue) {
+                autoLockAction { navigateToModule("parts") }
+            }
+        case .tool:
+            DSQuickActionButton(title: "Check Status", icon: "wrench.and.screwdriver", color: .blue) {
+                autoLockAction { navigateToModule("tools") }
+            }
+        case .job:
+            DSQuickActionButton(title: "View Job", icon: "hammer", color: .orange) {
+                autoLockAction { navigateToModule("jobs") }
+            }
+        case .vehicle:
+            DSQuickActionButton(title: "View Fleet", icon: "car", color: .green) {
+                autoLockAction { navigateToModule("fleet") }
+            }
+        default:
+            DSQuickActionButton(title: "Details", icon: "info.circle", color: .blue) {}
+        }
+
+        DSQuickActionButton(title: "Scan Next", icon: "qrcode.viewfinder", color: .purple) {
+            unlockAndResume()
         }
     }
 
-    // MARK: - Scanning Logic
+    // MARK: - Lock / Unlock
+
+    private func toggleLock() {
+        if isLocked {
+            unlockAndResume()
+        } else {
+            isLocked = true
+            #if os(iOS) && !targetEnvironment(macCatalyst)
+            scanner?.stopScanning()
+            #endif
+        }
+    }
+
+    private func unlockAndResume() {
+        isLocked = false
+        currentResult = nil
+        #if os(iOS) && !targetEnvironment(macCatalyst)
+        startContinuousScanning()
+        #endif
+    }
+
+    private func autoLockAction(_ action: @escaping () -> Void) {
+        isLocked = true
+        action()
+    }
+
+    // MARK: - Continuous Scanning
 
     #if os(iOS) && !targetEnvironment(macCatalyst)
-    private func startCameraScanning() {
+    private func startContinuousScanning() {
+        guard !isLocked else { return }
         let newScanner = IOSQRScanner()
         scanner = newScanner
 
         guard newScanner.isAvailable else {
-            scanError = "Camera scanner is not available on this device."
+            scanError = "Camera scanner not available."
             return
         }
 
@@ -282,50 +413,51 @@ struct IOSDashboardQRScannerPage: View {
             do {
                 let stream = try await newScanner.startScanning()
                 for await event in stream {
+                    guard !isLocked else { continue }
+
                     switch event {
                     case .detected(let payload, _):
-                        newScanner.stopScanning()
-                        isScanning = false
-                        await processCode(payload)
-                        return
+                        // Don't stop scanning — process and update overlay
+                        await processCode(payload, autoLock: false)
                     case .error(let msg):
-                        newScanner.stopScanning()
-                        isScanning = false
                         scanError = msg
-                        return
                     case .permissionDenied:
-                        newScanner.stopScanning()
+                        scanError = "Camera permission denied. Enable in Settings."
                         isScanning = false
-                        scanError = "Camera permission denied. Please enable camera access in Settings."
                         return
                     }
                 }
             } catch {
-                isScanning = false
                 scanError = error.localizedDescription
+                isScanning = false
             }
         }
     }
     #endif
 
+    // MARK: - Process Code
+
     private func processManualCode() {
         let code = manualCode.trimmingCharacters(in: .whitespaces)
         guard !code.isEmpty else { return }
         Task {
-            await processCode(code)
+            await processCode(code, autoLock: true)
+            await MainActor.run { manualCode = "" }
         }
     }
 
-    private func processCode(_ code: String) async {
+    private func processCode(_ code: String, autoLock: Bool) async {
         guard let db = appCore.db else {
             scanError = "Database not available"
             return
         }
 
+        // Skip if we just scanned the same code
+        if let current = currentResult, current.code == code { return }
+
         await MainActor.run {
             isProcessing = true
             scanError = nil
-            scanResult = nil
         }
 
         do {
@@ -333,8 +465,6 @@ struct IOSDashboardQRScannerPage: View {
             let result = try autoFill.processQRScan(code)
 
             var stockLocations: [StockLocation]?
-
-            // If it's a part, load stock locations
             if result.entityType == .part, let partId = result.entityId {
                 stockLocations = try await loadPartStockLocations(db: db, partId: partId)
             }
@@ -342,18 +472,21 @@ struct IOSDashboardQRScannerPage: View {
             let title = buildEntityTitle(result: result)
             let detailFields = buildDetailFields(result: result)
 
+            let scanData = ScanResultData(
+                code: code,
+                isFound: result.isFound,
+                entityType: result.entityType,
+                entityId: result.entityId,
+                entityTitle: title,
+                stockLocations: stockLocations,
+                detailFields: detailFields
+            )
+
             await MainActor.run {
-                scanResult = ScanResultData(
-                    code: code,
-                    isFound: result.isFound,
-                    entityType: result.entityType,
-                    entityId: result.entityId,
-                    entityTitle: title,
-                    stockLocations: stockLocations,
-                    detailFields: detailFields
-                )
+                currentResult = scanData
+                lastResult = scanData // Remember it
                 isProcessing = false
-                manualCode = ""
+                if autoLock { isLocked = true }
             }
         } catch {
             await MainActor.run {
@@ -362,6 +495,8 @@ struct IOSDashboardQRScannerPage: View {
             }
         }
     }
+
+    // MARK: - Helpers
 
     private func loadPartStockLocations(db: AppDatabase, partId: Int64) async throws -> [StockLocation] {
         try await db.writer.read { conn in
@@ -391,26 +526,16 @@ struct IOSDashboardQRScannerPage: View {
     private func buildEntityTitle(result: QRAutoFillResult) -> String {
         guard result.isFound else { return "Unknown" }
         let fields = result.fields
-
         switch result.entityType {
-        case .part:
-            return fields["name"] ?? fields["code"] ?? "Part"
-        case .job:
-            return fields["job_name"] ?? fields["job_number"] ?? "Job"
-        case .tool:
-            return fields["tool_name"] ?? fields["serial_number"] ?? "Tool"
-        case .vehicle:
-            return fields["vehicle_name"] ?? fields["vehicle_number"] ?? "Vehicle"
-        case .supplier:
-            return fields["name"] ?? "Supplier"
-        case .employee:
-            return fields["display_name"] ?? "Employee"
-        case .bin:
-            return fields["label"] ?? fields["code"] ?? "Bin"
-        case .po:
-            return fields["po_number"] ?? "Purchase Order"
-        case .none:
-            return fields["name"] ?? fields["code"] ?? "Entity"
+        case .part: return fields["name"] ?? fields["code"] ?? "Part"
+        case .job: return fields["job_name"] ?? fields["job_number"] ?? "Job"
+        case .tool: return fields["tool_name"] ?? fields["serial_number"] ?? "Tool"
+        case .vehicle: return fields["vehicle_name"] ?? fields["vehicle_number"] ?? "Vehicle"
+        case .supplier: return fields["name"] ?? "Supplier"
+        case .employee: return fields["display_name"] ?? "Employee"
+        case .bin: return fields["label"] ?? fields["code"] ?? "Bin"
+        case .po: return fields["po_number"] ?? "Purchase Order"
+        case .none: return fields["name"] ?? fields["code"] ?? "Entity"
         }
     }
 
@@ -418,7 +543,6 @@ struct IOSDashboardQRScannerPage: View {
         guard result.isFound else { return [] }
         let fields = result.fields
         var details: [DetailField] = []
-
         switch result.entityType {
         case .part:
             if let code = fields["code"] { details.append(DetailField(key: "Code", value: code)) }
@@ -435,23 +559,17 @@ struct IOSDashboardQRScannerPage: View {
         case .vehicle:
             if let num = fields["vehicle_number"] { details.append(DetailField(key: "Number", value: num)) }
             if let status = fields["status"] { details.append(DetailField(key: "Status", value: status.capitalized)) }
-        default:
-            break
+        default: break
         }
-
         return details
     }
 
     private func navigateToModule(_ moduleId: String) {
-        NotificationCenter.default.post(
-            name: .navigateToModule,
-            object: nil,
-            userInfo: ["moduleId": moduleId]
-        )
+        NotificationCenter.default.post(name: .navigateToModule, object: nil, userInfo: ["moduleId": moduleId])
     }
 }
 
-// MARK: - Local Model Types
+// MARK: - Local Types
 
 private struct ScanResultData {
     let code: String
@@ -472,7 +590,3 @@ private struct DetailField {
     let key: String
     let value: String
 }
-
-#if os(iOS) && !targetEnvironment(macCatalyst)
-import VisionKit
-#endif

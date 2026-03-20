@@ -13,6 +13,8 @@ struct IOSJPODetailPage: View {
     @State private var jpo: OrdersService.JPODetail?
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var showAddLineItem = false
+    @State private var actionError: String?
 
     var body: some View {
         Group {
@@ -29,6 +31,24 @@ struct IOSJPODetailPage: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showAddLineItem = true
+                } label: {
+                    Label("Add Item", systemImage: "plus")
+                }
+            }
+        }
+        .sheet(isPresented: $showAddLineItem) {
+            AddJPOLineItemSheet(jpoId: jpoId, onSave: { loadData() })
+                .environmentObject(appCore)
+        }
+        .alert("Error", isPresented: .constant(actionError != nil)) {
+            Button("OK") { actionError = nil }
+        } message: {
+            Text(actionError ?? "")
+        }
         .task { loadData() }
     }
 
@@ -51,6 +71,30 @@ struct IOSJPODetailPage: View {
                 }
                 if let notes = jpo.notes, !notes.isEmpty {
                     DetailField(label: "Notes", value: notes)
+                }
+
+                // Approve/Reject buttons for pending JPOs
+                if jpo.status == "pending" {
+                    HStack(spacing: 12) {
+                        Button {
+                            rejectJPO()
+                        } label: {
+                            Label("Reject", systemImage: "xmark.circle.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.red)
+
+                        Button {
+                            approveJPO()
+                        } label: {
+                            Label("Approve", systemImage: "checkmark.circle.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
+                    }
+                    .padding(.vertical, 4)
                 }
 
                 // Line Items
@@ -87,6 +131,28 @@ struct IOSJPODetailPage: View {
                 }
             }
             .padding()
+        }
+    }
+
+    // MARK: - Actions
+
+    private func approveJPO() {
+        guard let service = appCore.ordersService else { return }
+        do {
+            try service.updateJPOStatus(id: jpoId, status: "approved")
+            loadData()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func rejectJPO() {
+        guard let service = appCore.ordersService else { return }
+        do {
+            try service.updateJPOStatus(id: jpoId, status: "rejected")
+            loadData()
+        } catch {
+            actionError = error.localizedDescription
         }
     }
 
@@ -144,6 +210,122 @@ private struct DetailField: View {
                 .foregroundStyle(.secondary)
             Text(value)
                 .font(.body)
+        }
+    }
+}
+
+// MARK: - Add JPO Line Item Sheet
+
+private struct AddJPOLineItemSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let jpoId: Int64
+    let onSave: () -> Void
+
+    @State private var searchText = ""
+    @State private var searchResults: [Part] = []
+    @State private var selectedPart: Part?
+    @State private var quantity = 1
+    @State private var notes = ""
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Part") {
+                    TextField("Search parts...", text: $searchText)
+                        .onChange(of: searchText) { searchParts() }
+
+                    if let part = selectedPart {
+                        HStack {
+                            Text(part.name)
+                                .fontWeight(.medium)
+                            Spacer()
+                            Button("Change") { selectedPart = nil }
+                                .font(.caption)
+                        }
+                        .padding(.vertical, 2)
+                    } else if !searchResults.isEmpty {
+                        ForEach(searchResults, id: \.id) { part in
+                            Button {
+                                selectedPart = part
+                                searchText = part.name
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(part.name)
+                                        .fontWeight(.medium)
+                                    if let code = part.code, !code.isEmpty {
+                                        Text(code)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                            .foregroundStyle(.primary)
+                        }
+                    }
+                }
+
+                Section("Details") {
+                    Stepper("Quantity: \(quantity)", value: $quantity, in: 1...9999)
+                    TextField("Notes (optional)", text: $notes)
+                }
+
+                if let error = errorMessage {
+                    Section {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Add Line Item")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") { save() }
+                        .disabled(selectedPart == nil)
+                }
+            }
+        }
+    }
+
+    private func searchParts() {
+        guard let service = appCore.partsService, searchText.count >= 2 else {
+            searchResults = []
+            return
+        }
+        do {
+            searchResults = try service.searchParts(query: searchText, limit: 10)
+        } catch {
+            searchResults = []
+        }
+    }
+
+    private func save() {
+        guard let service = appCore.ordersService,
+              let part = selectedPart,
+              let partId = part.id else {
+            errorMessage = "Service unavailable or no part selected"
+            return
+        }
+        do {
+            try service.addJPOLineItem(
+                jpoId: jpoId,
+                partId: partId,
+                quantity: quantity,
+                notes: notes.isEmpty ? nil : notes
+            )
+            onSave()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }

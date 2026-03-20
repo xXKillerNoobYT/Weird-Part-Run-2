@@ -1,53 +1,32 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Pricing management page showing parts with their cost, markup, and sell prices.
 ///
-/// Displays a sortable list of parts with pricing details. Supports inline
-/// editing of cost and markup percentages, and shows price history.
+/// Displays a sortable, filterable list of parts with hierarchical pricing details.
+/// Each row shows where the price comes from (tier badge), weighted average cost,
+/// and sell price. Supports category filtering and multiple sort options.
 struct PartsPricingPage: View {
     @EnvironmentObject private var appCore: AppCore
-    @State private var pricingRows: [PricingRow] = []
+    @State private var pricingRows: [PricingDisplayRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var searchText = ""
     @State private var sortBy: PricingSortOption = .name
-    @State private var editingRow: PricingRow?
+    @State private var filterCategory: Int64? = nil
+    @State private var categories: [PartCategory] = []
+    @State private var pricingMode: String = "markup" // "markup" or "margin"
+    @State private var activeSheet: PricingActiveSheet?
 
     var body: some View {
         VStack(spacing: 0) {
-            // Sort picker
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    Text("Sort:")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    ForEach(PricingSortOption.allCases, id: \.self) { option in
-                        Button {
-                            withAnimation { sortBy = option }
-                        } label: {
-                            Text(option.label)
-                                .font(.subheadline)
-                                .fontWeight(sortBy == option ? .semibold : .regular)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(sortBy == option ? Color.accentColor : Color.clear)
-                                .foregroundStyle(sortBy == option ? .white : .primary)
-                                .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-            }
-            #if os(iOS)
-            .background(Color(.secondarySystemGroupedBackground))
-            #elseif os(macOS)
-            .background(Color(.secondarySystemGroupedBackground))
-            #endif
+            // Filter bar
+            filterBar
 
+            // Sort chips
+            sortChips
+
+            // Content
             if isLoading {
                 ProgressView("Loading pricing...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -59,22 +38,111 @@ struct PartsPricingPage: View {
                 pricingList
             }
         }
-        .searchable(text: $searchText, prompt: "Search parts...")
+        .searchable(text: $searchText, prompt: "Search parts by name or code...")
         .refreshable { await loadData() }
-        .sheet(item: $editingRow) { row in
-            PricingEditSheet(row: row) { await loadData() }
+        .sheet(item: $activeSheet) { sheet in
+            sheetContent(sheet)
         }
-        #if os(iOS)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button {
+                        activeSheet = .bulkEdit
+                    } label: {
+                        Label("Bulk Edit Markup", systemImage: "slider.horizontal.3")
+                    }
+                    Button {
+                        activeSheet = .pricingSettings
+                    } label: {
+                        Label("Pricing Settings", systemImage: "gear")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+            }
+        }
         .background(DS.Background.page)
-        #elseif os(macOS)
-        .background(DS.Background.page)
-        #endif
         .task { await loadData() }
+    }
+
+    // MARK: - Filter Bar
+
+    @ViewBuilder
+    private var filterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                // Category filter
+                Menu {
+                    Button("All Categories") { filterCategory = nil }
+                    Divider()
+                    ForEach(categories, id: \.id) { cat in
+                        Button(cat.name) { filterCategory = cat.id }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                        Text(filterCategory == nil ? "All Categories" : categories.first(where: { $0.id == filterCategory })?.name ?? "Category")
+                            .lineLimit(1)
+                    }
+                    .font(.subheadline)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(filterCategory != nil ? Color.accentColor : Color(.tertiarySystemGroupedBackground))
+                    .foregroundStyle(filterCategory != nil ? .white : .primary)
+                    .clipShape(Capsule())
+                }
+
+                Spacer()
+
+                // Pricing mode badge
+                Text(pricingMode == "markup" ? "Markup Mode" : "Margin Mode")
+                    .font(.caption2)
+                    .fontWeight(.medium)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.accentColor.opacity(0.15))
+                    .clipShape(Capsule())
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 6)
+        }
+        .background(Color(.secondarySystemGroupedBackground))
+    }
+
+    // MARK: - Sort Chips
+
+    @ViewBuilder
+    private var sortChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                Text("Sort:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(PricingSortOption.allCases, id: \.self) { option in
+                    Button {
+                        withAnimation { sortBy = option }
+                    } label: {
+                        Text(option.label)
+                            .font(.subheadline)
+                            .fontWeight(sortBy == option ? .semibold : .regular)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(sortBy == option ? Color.accentColor : Color.clear)
+                            .foregroundStyle(sortBy == option ? .white : .primary)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+        .background(Color(.secondarySystemGroupedBackground))
     }
 
     // MARK: - Sort & Filter
 
-    private var sortedParts: [PricingRow] {
+    private var sortedParts: [PricingDisplayRow] {
         var result = pricingRows
 
         if !searchText.isEmpty {
@@ -86,17 +154,14 @@ struct PartsPricingPage: View {
         }
 
         switch sortBy {
-        case .name:
-            result.sort { $0.name.lowercased() < $1.name.lowercased() }
-        case .costAsc:
-            result.sort { $0.costPrice < $1.costPrice }
-        case .costDesc:
-            result.sort { $0.costPrice > $1.costPrice }
-        case .markupDesc:
-            result.sort { $0.markupPercent > $1.markupPercent }
-        case .sellDesc:
-            result.sort { $0.sellPrice > $1.sellPrice }
+        case .name: result.sort { $0.name.lowercased() < $1.name.lowercased() }
+        case .costAsc: result.sort { $0.weightedAvgCost < $1.weightedAvgCost }
+        case .costDesc: result.sort { $0.weightedAvgCost > $1.weightedAvgCost }
+        case .markupDesc: result.sort { $0.effectiveMarkup > $1.effectiveMarkup }
+        case .sellDesc: result.sort { $0.sellPrice > $1.sellPrice }
+        case .tierLevel: result.sort { $0.tierLevel < $1.tierLevel }
         }
+
         return result
     }
 
@@ -113,62 +178,105 @@ struct PartsPricingPage: View {
 
             ForEach(sortedParts) { row in
                 Button {
-                    editingRow = row
+                    activeSheet = .editPart(row)
                 } label: {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(row.name)
-                                .font(.body)
-                                .fontWeight(.medium)
-                                .lineLimit(1)
-                            if let code = row.code {
-                                Text(code)
-                                    .font(.caption)
-                                    .monospaced()
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-
-                        Spacer()
-
-                        VStack(alignment: .trailing, spacing: 2) {
-                            HStack(spacing: 4) {
-                                Text("Cost:")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text(String(format: "$%.2f", row.costPrice))
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                            }
-                            HStack(spacing: 4) {
-                                Text("Sell:")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text(String(format: "$%.2f", row.sellPrice))
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundStyle(.green)
-                            }
-                            Text(String(format: "+%.1f%%", row.markupPercent))
-                                .font(.caption2)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.accentColor.opacity(0.1))
-                                .clipShape(Capsule())
-                        }
-
-                        Image(systemName: "chevron.right")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-                    .frame(minHeight: 56)
+                    pricingRowView(row)
                 }
                 .buttonStyle(.plain)
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
+    }
+
+    @ViewBuilder
+    private func pricingRowView(_ row: PricingDisplayRow) -> some View {
+        HStack(spacing: 12) {
+            // Left: name + code + tier badge
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(row.name)
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                    if row.isStale {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                    }
+                }
+                HStack(spacing: 6) {
+                    if let code = row.code {
+                        Text(code)
+                            .font(.caption)
+                            .monospaced()
+                            .foregroundStyle(.secondary)
+                    }
+                    tierBadge(row.tierLevel, isInherited: row.isInherited)
+                }
+            }
+
+            Spacer()
+
+            // Right: pricing info
+            VStack(alignment: .trailing, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text("Avg:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(formatPrice(row.weightedAvgCost))
+                        .font(.subheadline)
+                }
+                HStack(spacing: 4) {
+                    Text("Sell:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(formatPrice(row.sellPrice))
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.green)
+                }
+                // Show primary mode value (markup or margin)
+                if pricingMode == "markup" {
+                    Text(String(format: "+%.1f%% markup", row.effectiveMarkup))
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.accentColor.opacity(0.1))
+                        .clipShape(Capsule())
+                } else {
+                    Text(String(format: "%.1f%% margin", row.effectiveMargin))
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.accentColor.opacity(0.1))
+                        .clipShape(Capsule())
+                }
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(minHeight: 56)
+    }
+
+    // MARK: - Tier Badge
+
+    @ViewBuilder
+    private func tierBadge(_ level: String, isInherited: Bool) -> some View {
+        HStack(spacing: 2) {
+            if isInherited {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 8))
+            }
+            Text(isInherited ? "from \(level)" : level)
+        }
+        .font(.system(size: 9))
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background(isInherited ? Color.orange.opacity(0.15) : Color.green.opacity(0.15))
+        .foregroundStyle(isInherited ? .orange : .green)
+        .clipShape(Capsule())
     }
 
     // MARK: - Empty State
@@ -191,38 +299,94 @@ struct PartsPricingPage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    // MARK: - Sheet Handling
+
+    @ViewBuilder
+    private func sheetContent(_ sheet: PricingActiveSheet) -> some View {
+        switch sheet {
+        case .editPart(let row):
+            PricingEditSheet(row: row, pricingMode: pricingMode) { await loadData() }
+        case .bulkEdit:
+            // Placeholder — prompt 16F builds this
+            NavigationStack {
+                Text("Bulk Edit — coming in next prompt")
+                    .navigationTitle("Bulk Edit")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { activeSheet = nil }
+                        }
+                    }
+            }
+        case .pricingSettings:
+            // Placeholder — prompt 16F builds this
+            NavigationStack {
+                Text("Pricing Settings — coming in next prompt")
+                    .navigationTitle("Settings")
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { activeSheet = nil }
+                        }
+                    }
+            }
+        }
+    }
+
     // MARK: - Data Loading
 
     @Sendable
     private func loadData() async {
         isLoading = true
+        loadError = nil
         do {
-            guard let db = appCore.db else { return }
-            let rows = try await db.writer.read { dbConnection -> [PricingRow] in
-                let results = try Row.fetchAll(dbConnection, sql: """
-                    SELECT p.id, p.name, p.code, p.company_cost_price, p.company_markup_percent,
-                           p.weighted_avg_cost, p.custom_margin_percent, p.cost_last_updated
-                    FROM parts p
-                    WHERE p.deleted_at IS NULL
-                    ORDER BY p.name ASC
-                    """)
-                return results.map { row in
-                    let cost: Double = row["company_cost_price"]
-                    let markup: Double = row["company_markup_percent"]
-                    return PricingRow(
-                        id: row["id"],
-                        name: row["name"],
-                        code: row["code"],
-                        costPrice: cost,
-                        markupPercent: markup,
-                        sellPrice: cost * (1 + markup / 100),
-                        weightedAvgCost: row["weighted_avg_cost"],
-                        customMarginPercent: row["custom_margin_percent"],
-                        costLastUpdated: row["cost_last_updated"]
-                    )
-                }
+            guard let service = appCore.partsService else {
+                loadError = "Parts service not available"
+                isLoading = false
+                return
             }
+
+            // Load categories for filter
+            let cats = try service.listCategories()
+
+            // Load pricing mode and stale threshold
+            let mode = try service.getCompanyCostSetting(key: "pricing_mode") ?? "markup"
+            let thresholdDays = Int(try service.getCompanyCostSetting(key: "stale_price_threshold_days") ?? "90") ?? 90
+
+            // Load all parts with resolved pricing
+            let parts = try service.listParts(categoryId: filterCategory, limit: 10000)
+            var rows: [PricingDisplayRow] = []
+
+            for pwd in parts {
+                guard let partId = pwd.part.id else { continue }
+                let resolved = try service.resolvePartPricing(partId: partId)
+
+                // Check if stale (cost not updated in > threshold days, or never updated)
+                let isStale: Bool
+                if let lastUpdated = pwd.part.costLastUpdated,
+                   let date = ISO8601DateFormatter().date(from: lastUpdated) {
+                    isStale = Calendar.current.dateComponents([.day], from: date, to: Date()).day ?? 0 > thresholdDays
+                } else {
+                    isStale = pwd.part.costLastUpdated == nil
+                }
+
+                rows.append(PricingDisplayRow(
+                    id: partId,
+                    name: pwd.part.name,
+                    code: pwd.part.code,
+                    categoryName: pwd.categoryName ?? "",
+                    weightedAvgCost: resolved.weightedAvgCost,
+                    effectiveMarkup: resolved.effectiveMarkup,
+                    effectiveMargin: resolved.effectiveMargin,
+                    sellPrice: resolved.sellPrice,
+                    tierLevel: resolved.tierLevel,
+                    isInherited: resolved.isInherited,
+                    costLastUpdated: pwd.part.costLastUpdated,
+                    isStale: isStale
+                ))
+            }
+
             await MainActor.run {
+                categories = cats
+                pricingMode = mode
                 pricingRows = rows
                 isLoading = false
             }
@@ -233,12 +397,18 @@ struct PartsPricingPage: View {
             }
         }
     }
+
+    // MARK: - Helpers
+
+    private func formatPrice(_ value: Double) -> String {
+        String(format: "$%.2f", value)
+    }
 }
 
 // MARK: - Sort Options
 
 private enum PricingSortOption: CaseIterable {
-    case name, costAsc, costDesc, markupDesc, sellDesc
+    case name, costAsc, costDesc, markupDesc, sellDesc, tierLevel
 
     var label: String {
         switch self {
@@ -247,79 +417,182 @@ private enum PricingSortOption: CaseIterable {
         case .costDesc: return "Cost ↓"
         case .markupDesc: return "Markup ↓"
         case .sellDesc: return "Sell ↓"
+        case .tierLevel: return "Tier"
         }
     }
 }
 
-// MARK: - Pricing Row
+// MARK: - Display Row
 
-struct PricingRow: Identifiable, Sendable {
+struct PricingDisplayRow: Identifiable, Sendable {
     let id: Int64
     let name: String
     let code: String?
-    let costPrice: Double
-    let markupPercent: Double
+    let categoryName: String
+    let weightedAvgCost: Double
+    let effectiveMarkup: Double
+    let effectiveMargin: Double
     let sellPrice: Double
-    let weightedAvgCost: Double?
-    let customMarginPercent: Double?
+    let tierLevel: String       // "Part", "Brand", "Type", "Style", "Category", "Default"
+    let isInherited: Bool       // true = price from parent, false = directly set
     let costLastUpdated: String?
+    let isStale: Bool           // true if > threshold days since last cost update
+}
+
+// MARK: - Active Sheet Enum
+
+private enum PricingActiveSheet: Identifiable {
+    case editPart(PricingDisplayRow)
+    case bulkEdit
+    case pricingSettings
+
+    var id: String {
+        switch self {
+        case .editPart(let row): return "edit-\(row.id)"
+        case .bulkEdit: return "bulk"
+        case .pricingSettings: return "settings"
+        }
+    }
 }
 
 // MARK: - Pricing Edit Sheet
 
 private struct PricingEditSheet: View {
-    let row: PricingRow
+    let row: PricingDisplayRow
+    let pricingMode: String
     let onSave: () async -> Void
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
 
-    @State private var costPrice = ""
-    @State private var markupPercent = ""
+    @State private var markupText = ""
+    @State private var marginText = ""
+    @State private var fixedPriceText = ""
+    @State private var useFixedPrice = false
+    @State private var saveError: String?
+    @State private var isSaving = false
+    @State private var costLayers: [CostLayer] = []
+    @State private var priceHistory: [PriceHistory] = []
 
     private var previewSellPrice: Double {
-        let cost = Double(costPrice) ?? 0
-        let markup = Double(markupPercent) ?? 0
-        return cost * (1 + markup / 100)
+        if useFixedPrice, let fixed = Double(fixedPriceText), fixed > 0 {
+            return max(fixed, row.weightedAvgCost) // never below cost
+        }
+        let markup = Double(markupText) ?? 0
+        return row.weightedAvgCost * (1 + max(markup, 0) / 100)
+    }
+
+    private var previewMargin: Double {
+        let sell = previewSellPrice
+        guard sell > 0 else { return 0 }
+        return ((sell - row.weightedAvgCost) / sell) * 100
+    }
+
+    private var previewMarkup: Double {
+        guard row.weightedAvgCost > 0 else { return 0 }
+        return ((previewSellPrice - row.weightedAvgCost) / row.weightedAvgCost) * 100
     }
 
     var body: some View {
         NavigationStack {
             Form {
+                // Part info
                 Section("Part") {
                     LabeledContent("Name", value: row.name)
                     if let code = row.code {
                         LabeledContent("Code", value: code)
                     }
+                    HStack {
+                        Text("Price Source")
+                        Spacer()
+                        tierBadge(row.tierLevel, isInherited: row.isInherited)
+                    }
                 }
 
-                Section("Pricing") {
-                    HStack {
-                        Text("Cost Price")
-                        Spacer()
-                        Text("$")
-                        TextField("0.00", text: $costPrice)
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: 120)
-                            #if os(iOS)
-                            .keyboardType(.decimalPad)
-                            #endif
+                // Weighted average cost (read-only)
+                Section("Cost (from FIFO batches)") {
+                    LabeledContent("Weighted Avg Cost") {
+                        Text(String(format: "$%.5f", row.weightedAvgCost))
+                            .fontWeight(.medium)
                     }
-                    .frame(minHeight: 44)
-
-                    HStack {
-                        Text("Markup")
-                        Spacer()
-                        TextField("0", text: $markupPercent)
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: 80)
-                            #if os(iOS)
-                            .keyboardType(.decimalPad)
-                            #endif
-                        Text("%")
+                    if !costLayers.isEmpty {
+                        DisclosureGroup("Cost Layers (\(costLayers.count) batches)") {
+                            ForEach(costLayers, id: \.id) { layer in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("\(layer.remainingQty)/\(layer.originalQty) remaining")
+                                            .font(.caption)
+                                        if let date = layer.purchaseDate {
+                                            Text(date.prefix(10))
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    Spacer()
+                                    Text(String(format: "$%.5f/ea", layer.unitCost))
+                                        .font(.caption)
+                                        .monospaced()
+                                }
+                            }
+                        }
                     }
-                    .frame(minHeight: 44)
                 }
 
+                // Pricing inputs
+                Section("Set Price for This Part") {
+                    Toggle("Use Fixed Sell Price", isOn: $useFixedPrice.animation())
+
+                    if useFixedPrice {
+                        HStack {
+                            Text("Fixed Price")
+                            Spacer()
+                            Text("$")
+                            TextField("0.00", text: $fixedPriceText)
+                                .multilineTextAlignment(.trailing)
+                                .frame(maxWidth: 120)
+                                .keyboardType(.decimalPad)
+                        }
+                        .frame(minHeight: 44)
+                    } else {
+                        // Primary input based on company mode
+                        if pricingMode == "markup" {
+                            HStack {
+                                Text("Markup")
+                                Spacer()
+                                TextField("0", text: $markupText)
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(maxWidth: 80)
+                                    .keyboardType(.decimalPad)
+                                Text("%")
+                            }
+                            .frame(minHeight: 44)
+
+                            // Calculated margin (read-only)
+                            LabeledContent("Margin (calculated)") {
+                                Text(String(format: "%.1f%%", previewMargin))
+                                    .foregroundStyle(.secondary)
+                            }
+                        } else {
+                            HStack {
+                                Text("Margin")
+                                Spacer()
+                                TextField("0", text: $marginText)
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(maxWidth: 80)
+                                    .keyboardType(.decimalPad)
+                                Text("%")
+                            }
+                            .frame(minHeight: 44)
+
+                            // Calculated markup (read-only)
+                            LabeledContent("Markup (calculated)") {
+                                Text(String(format: "%.1f%%", previewMarkup))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                // Preview
                 Section("Preview") {
                     LabeledContent("Sell Price") {
                         Text(String(format: "$%.2f", previewSellPrice))
@@ -327,63 +600,133 @@ private struct PricingEditSheet: View {
                             .foregroundStyle(.green)
                     }
                     LabeledContent("Profit per Unit") {
-                        let cost = Double(costPrice) ?? 0
-                        Text(String(format: "$%.2f", previewSellPrice - cost))
-                            .foregroundStyle(Color.accentColor)
+                        let profit = previewSellPrice - row.weightedAvgCost
+                        Text(String(format: "$%.2f", profit))
+                            .foregroundStyle(profit > 0 ? Color.accentColor : .red)
                     }
                 }
 
-                if let wac = row.weightedAvgCost {
-                    Section("Cost History") {
-                        LabeledContent("Weighted Avg Cost", value: String(format: "$%.2f", wac))
-                        if let lastUpdated = row.costLastUpdated {
-                            LabeledContent("Last Updated", value: lastUpdated)
+                // Price history
+                if !priceHistory.isEmpty {
+                    Section("Recent Price Changes") {
+                        ForEach(priceHistory.prefix(5), id: \.id) { entry in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.changeType.replacingOccurrences(of: "_", with: " ").capitalized)
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                    if let date = entry.createdAt {
+                                        Text(date.prefix(10))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                if let oldVal = entry.oldValue, let newVal = entry.newValue {
+                                    Text(String(format: "$%.2f → $%.2f", oldVal, newVal))
+                                        .font(.caption)
+                                        .monospaced()
+                                }
+                            }
                         }
+                    }
+                }
+
+                if let error = saveError {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.subheadline)
                     }
                 }
             }
             .navigationTitle("Edit Pricing")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        Task {
-                            await save()
-                            await onSave()
-                            dismiss()
-                        }
+                    Button {
+                        Task { await saveAndDismiss() }
+                    } label: {
+                        if isSaving { ProgressView() } else { Text("Save") }
                     }
+                    .disabled(isSaving)
                 }
             }
             .onAppear {
-                costPrice = String(format: "%.2f", row.costPrice)
-                markupPercent = String(format: "%.1f", row.markupPercent)
+                markupText = String(format: "%.1f", row.effectiveMarkup)
+                marginText = String(format: "%.1f", row.effectiveMargin)
             }
+            .task { await loadDetails() }
         }
     }
 
-    private func save() async {
-        let cost = Double(costPrice) ?? row.costPrice
-        let markup = Double(markupPercent) ?? row.markupPercent
-        do {
-            guard let db = appCore.db else { return }
-            let now = ISO8601DateFormatter().string(from: Date())
-            try await db.writer.write { dbConnection in
-                try dbConnection.execute(
-                    sql: """
-                        UPDATE parts SET company_cost_price = ?, company_markup_percent = ?,
-                        cost_last_updated = ?, updated_at = ? WHERE id = ?
-                        """,
-                    arguments: [cost, markup, now, now, row.id]
-                )
+    @ViewBuilder
+    private func tierBadge(_ level: String, isInherited: Bool) -> some View {
+        HStack(spacing: 2) {
+            if isInherited {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 8))
             }
-        } catch {
-            print("[PricingEditSheet] Save error: \(error)")
+            Text(isInherited ? "from \(level)" : level)
         }
+        .font(.system(size: 9))
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background(isInherited ? Color.orange.opacity(0.15) : Color.green.opacity(0.15))
+        .foregroundStyle(isInherited ? .orange : .green)
+        .clipShape(Capsule())
+    }
+
+    private func loadDetails() async {
+        guard let service = appCore.partsService else { return }
+        do {
+            costLayers = try service.getCostLayers(partId: row.id, nonEmptyOnly: true)
+            priceHistory = try service.getPriceHistory(partId: row.id, limit: 10)
+        } catch {
+            print("[PricingEditSheet] Load details error: \(error)")
+        }
+    }
+
+    private func saveAndDismiss() async {
+        isSaving = true
+        saveError = nil
+        do {
+            guard let service = appCore.partsService else {
+                saveError = "Parts service not available"
+                isSaving = false
+                return
+            }
+
+            if useFixedPrice {
+                let fixed = Double(fixedPriceText) ?? 0
+                _ = try service.setPricingTier(partId: row.id, fixedSellPrice: max(fixed, row.weightedAvgCost))
+            } else if pricingMode == "markup" {
+                let markup = max(Double(markupText) ?? 0, 0)
+                _ = try service.setPricingTier(partId: row.id, markupPercent: markup)
+            } else {
+                let margin = max(Double(marginText) ?? 0, 0)
+                _ = try service.setPricingTier(partId: row.id, marginPercent: margin)
+            }
+
+            // Log the change
+            try service.logPriceChange(
+                partId: row.id,
+                changeType: "markup_change",
+                oldValue: row.effectiveMarkup,
+                newValue: Double(markupText) ?? row.effectiveMarkup,
+                oldSellPrice: row.sellPrice,
+                newSellPrice: previewSellPrice,
+                source: "manual"
+            )
+
+            await onSave()
+            dismiss()
+        } catch {
+            saveError = error.localizedDescription
+        }
+        isSaving = false
     }
 }

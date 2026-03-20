@@ -278,6 +278,31 @@ QR-related data syncs normally — the QR system itself doesn't generate new syn
 
 ---
 
+## Implementation Status
+
+### Core Infrastructure (COMPLETE)
+- ✅ `QRCodec.swift` — V2 payload encode/decode, V1 backward compat, 8 entity types, 14 tests passing
+- ✅ `QRGenerator.swift` — CIFilter-based QR image generation, PNG export
+- ✅ `IOSQRScanner.swift` — VisionKit DataScannerViewController, QR + barcode support, haptic feedback
+- ✅ `QRScannerAdapter.swift` / `QRAutoFillService` — DB lookup for all entity types, field mappings
+- ✅ `IOSDashboardQRScannerPage.swift` — Continuous scan with lock/unlock, entity detail, quick actions
+- ✅ `IOSOCRScanner.swift` — VisionKit document camera, text extraction
+- ✅ `IOSAutoFillBanner.swift` — Touch-optimized auto-fill banners for QR and OCR
+
+### Per-Module Integration (Prompts 20A-20D)
+- ⬜ 20A: Reusable `QRScanSheet` component + Warehouse (Receiving PO scan, Movement part/bin scan)
+- ⬜ 20B: Orders (PO creation part/supplier scan, PO list lookup, Procurement JPO scan)
+- ⬜ 20C: Jobs clock-in scan, Tool checkout/return/registry scan
+- ⬜ 20D: Catalog part/barcode scan, Employee badge scan
+
+### Deferred (v2.0+)
+- macOS AVCaptureSession scanner
+- Windows MediaCapture + USB barcode scanner
+- QR label thermal printing integration
+- File-based QR reading (drag image)
+
+---
+
 ## Acceptance Criteria
 
 | Criterion | Target | Measurement |

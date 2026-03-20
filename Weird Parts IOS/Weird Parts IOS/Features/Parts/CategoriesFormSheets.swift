@@ -19,6 +19,8 @@ struct CategoryFormSheet: View {
     @State private var name = ""
     @State private var description = ""
     @State private var sortOrder = 0
+    @State private var saveError: String?
+    @State private var isSaving = false
 
     var body: some View {
         NavigationStack {
@@ -30,6 +32,14 @@ struct CategoryFormSheet: View {
                         .frame(minHeight: 44)
                     Stepper("Sort Order: \(sortOrder)", value: $sortOrder, in: 0...999)
                 }
+
+                if let error = saveError {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.subheadline)
+                    }
+                }
             }
             .navigationTitle(category == nil ? "New Category" : "Edit Category")
             #if os(iOS)
@@ -40,14 +50,16 @@ struct CategoryFormSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        Task {
-                            await save()
-                            await onSave()
-                            dismiss()
+                    Button {
+                        Task { await saveAndDismiss() }
+                    } label: {
+                        if isSaving {
+                            ProgressView()
+                        } else {
+                            Text("Save")
                         }
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
             }
             .onAppear {
@@ -60,18 +72,31 @@ struct CategoryFormSheet: View {
         }
     }
 
-    private func save() async {
-        let trimmedName = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmedName.isEmpty else { return }
+    private func saveAndDismiss() async {
+        isSaving = true
+        saveError = nil
         do {
-            guard let service = appCore.partsService else { return }
-            if let existing = category, let id = existing.id {
-                try service.updateCategory(id: id, name: trimmedName, description: description.isEmpty ? nil : description, sortOrder: sortOrder)
-            } else {
-                try service.createCategory(name: trimmedName, description: description.isEmpty ? nil : description)
-            }
+            try await save()
+            await onSave()
+            dismiss()
         } catch {
-            print("[CategoryFormSheet] Save error: \(error)")
+            saveError = error.localizedDescription
+        }
+        isSaving = false
+    }
+
+    private func save() async throws {
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmedName.isEmpty else {
+            throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Name cannot be empty"])
+        }
+        guard let service = appCore.partsService else {
+            throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Parts service not available"])
+        }
+        if let existing = category, let id = existing.id {
+            try service.updateCategory(id: id, name: trimmedName, description: description.isEmpty ? nil : description, sortOrder: sortOrder)
+        } else {
+            try service.createCategory(name: trimmedName, description: description.isEmpty ? nil : description)
         }
     }
 }
@@ -87,6 +112,8 @@ struct StyleFormSheet: View {
     @State private var name = ""
     @State private var description = ""
     @State private var sortOrder = 0
+    @State private var saveError: String?
+    @State private var isSaving = false
 
     var body: some View {
         NavigationStack {
@@ -98,6 +125,14 @@ struct StyleFormSheet: View {
                         .frame(minHeight: 44)
                     Stepper("Sort Order: \(sortOrder)", value: $sortOrder, in: 0...999)
                 }
+
+                if let error = saveError {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.subheadline)
+                    }
+                }
             }
             .navigationTitle(style == nil ? "New Style" : "Edit Style")
             #if os(iOS)
@@ -108,14 +143,16 @@ struct StyleFormSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        Task {
-                            await save()
-                            await onSave()
-                            dismiss()
+                    Button {
+                        Task { await saveAndDismiss() }
+                    } label: {
+                        if isSaving {
+                            ProgressView()
+                        } else {
+                            Text("Save")
                         }
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
             }
             .onAppear {
@@ -128,18 +165,31 @@ struct StyleFormSheet: View {
         }
     }
 
-    private func save() async {
-        let trimmedName = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmedName.isEmpty else { return }
+    private func saveAndDismiss() async {
+        isSaving = true
+        saveError = nil
         do {
-            guard let service = appCore.partsService else { return }
-            if let existing = style, let id = existing.id {
-                try service.updateStyle(id: id, name: trimmedName, description: description.isEmpty ? nil : description, sortOrder: sortOrder)
-            } else {
-                try service.createStyle(categoryId: categoryId, name: trimmedName, description: description.isEmpty ? nil : description, sortOrder: sortOrder)
-            }
+            try await save()
+            await onSave()
+            dismiss()
         } catch {
-            print("[StyleFormSheet] Save error: \(error)")
+            saveError = error.localizedDescription
+        }
+        isSaving = false
+    }
+
+    private func save() async throws {
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmedName.isEmpty else {
+            throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Name cannot be empty"])
+        }
+        guard let service = appCore.partsService else {
+            throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Parts service not available"])
+        }
+        if let existing = style, let id = existing.id {
+            try service.updateStyle(id: id, name: trimmedName, description: description.isEmpty ? nil : description, sortOrder: sortOrder)
+        } else {
+            try service.createStyle(categoryId: categoryId, name: trimmedName, description: description.isEmpty ? nil : description, sortOrder: sortOrder)
         }
     }
 }
@@ -155,6 +205,8 @@ struct TypeFormSheet: View {
     @State private var name = ""
     @State private var description = ""
     @State private var sortOrder = 0
+    @State private var saveError: String?
+    @State private var isSaving = false
 
     var body: some View {
         NavigationStack {
@@ -166,6 +218,14 @@ struct TypeFormSheet: View {
                         .frame(minHeight: 44)
                     Stepper("Sort Order: \(sortOrder)", value: $sortOrder, in: 0...999)
                 }
+
+                if let error = saveError {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.subheadline)
+                    }
+                }
             }
             .navigationTitle(type == nil ? "New Type" : "Edit Type")
             #if os(iOS)
@@ -176,14 +236,16 @@ struct TypeFormSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        Task {
-                            await save()
-                            await onSave()
-                            dismiss()
+                    Button {
+                        Task { await saveAndDismiss() }
+                    } label: {
+                        if isSaving {
+                            ProgressView()
+                        } else {
+                            Text("Save")
                         }
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
             }
             .onAppear {
@@ -196,18 +258,31 @@ struct TypeFormSheet: View {
         }
     }
 
-    private func save() async {
-        let trimmedName = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmedName.isEmpty else { return }
+    private func saveAndDismiss() async {
+        isSaving = true
+        saveError = nil
         do {
-            guard let service = appCore.partsService else { return }
-            if let existing = type, let id = existing.id {
-                try service.updateType(id: id, name: trimmedName, description: description.isEmpty ? nil : description, sortOrder: sortOrder)
-            } else {
-                try service.createType(styleId: styleId, name: trimmedName, description: description.isEmpty ? nil : description, sortOrder: sortOrder)
-            }
+            try await save()
+            await onSave()
+            dismiss()
         } catch {
-            print("[TypeFormSheet] Save error: \(error)")
+            saveError = error.localizedDescription
+        }
+        isSaving = false
+    }
+
+    private func save() async throws {
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmedName.isEmpty else {
+            throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Name cannot be empty"])
+        }
+        guard let service = appCore.partsService else {
+            throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Parts service not available"])
+        }
+        if let existing = type, let id = existing.id {
+            try service.updateType(id: id, name: trimmedName, description: description.isEmpty ? nil : description, sortOrder: sortOrder)
+        } else {
+            try service.createType(styleId: styleId, name: trimmedName, description: description.isEmpty ? nil : description, sortOrder: sortOrder)
         }
     }
 }
@@ -223,6 +298,8 @@ struct ColorFormSheet: View {
     @State private var hasColor = true
     @State private var selectedColor: Color = .gray
     @State private var sortOrder = 0
+    @State private var saveError: String?
+    @State private var isSaving = false
 
     /// Common preset colors for quick selection
     private let presetColors: [(String, Color)] = [
@@ -327,6 +404,14 @@ struct ColorFormSheet: View {
                 Section {
                     Stepper("Sort Order: \(sortOrder)", value: $sortOrder, in: 0...999)
                 }
+
+                if let error = saveError {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.subheadline)
+                    }
+                }
             }
             .navigationTitle(color == nil ? "New Color" : "Edit Color")
             #if os(iOS)
@@ -337,14 +422,16 @@ struct ColorFormSheet: View {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        Task {
-                            await save()
-                            await onSave()
-                            dismiss()
+                    Button {
+                        Task { await saveAndDismiss() }
+                    } label: {
+                        if isSaving {
+                            ProgressView()
+                        } else {
+                            Text("Save")
                         }
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
             }
             .onAppear {
@@ -411,19 +498,32 @@ struct ColorFormSheet: View {
 
     // MARK: - Save
 
-    private func save() async {
-        let trimmedName = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmedName.isEmpty else { return }
-        let hex: String? = hasColor ? hexStringFromColor(selectedColor) : nil
+    private func saveAndDismiss() async {
+        isSaving = true
+        saveError = nil
         do {
-            guard let service = appCore.partsService else { return }
-            if let existing = color, let id = existing.id {
-                try service.updateColor(id: id, name: trimmedName, hexCode: hex ?? "", sortOrder: sortOrder)
-            } else {
-                try service.createColor(name: trimmedName, hexCode: hex ?? "", sortOrder: sortOrder)
-            }
+            try await save()
+            await onSave()
+            dismiss()
         } catch {
-            print("[ColorFormSheet] Save error: \(error)")
+            saveError = error.localizedDescription
+        }
+        isSaving = false
+    }
+
+    private func save() async throws {
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmedName.isEmpty else {
+            throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Name cannot be empty"])
+        }
+        guard let service = appCore.partsService else {
+            throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Parts service not available"])
+        }
+        let hex: String? = hasColor ? hexStringFromColor(selectedColor) : nil
+        if let existing = color, let id = existing.id {
+            try service.updateColor(id: id, name: trimmedName, hexCode: hex ?? "", sortOrder: sortOrder)
+        } else {
+            try service.createColor(name: trimmedName, hexCode: hex ?? "", sortOrder: sortOrder)
         }
     }
 }
