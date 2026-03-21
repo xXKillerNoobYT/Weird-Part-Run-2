@@ -149,11 +149,17 @@ When clocked into Job A, a "Switch Job" button shows the job picker. Selecting J
 - Clock keeps running during paid breaks
 - Only unpaid lunch portion clocks user out
 
+### Bonus Forfeiture Rule
+- **Bonuses require real-time break button usage.** If the employee didn't hit the break/lunch buttons during the day, there's no way to verify actual break duration after the fact.
+- Clock-out questionnaire catches missed breaks for compliance records, but **bonuses are forfeited** — no retroactive bonus claims.
+- This incentivizes employees to actually use the break buttons in real-time.
+
 ### Clock-Out Questionnaire — Missed Breaks
 - "Did you take your breaks today?" → Yes / Forgot / Partial
 - If forgot or partial: checkbox which ones missed
 - Report sent to Office for resolution
 - If "yes" but no break buttons were hit: auto-fill records at default times for compliance
+- **No bonus awarded** when breaks are only reported at clock-out (unverifiable)
 
 ### Break States on Clock Page
 - **Paid break:** Status = "On Break", clock keeps running, counts against daily break budget
