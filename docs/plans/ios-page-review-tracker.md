@@ -26,7 +26,7 @@
 | Parts → Pricing | 1 page | ✅ | 16A-16I (9) | 16A-D DONE; 16E-I queued |
 | Parts → Companions | 1 page | ✅ | 19A-19K (11) | All queued |
 | Parts → Forecasting | 1 page | ✅ | 23A-23B (2) | All queued |
-| Parts → Import/Export | 1 page | ❌ | — | Not started |
+| Parts → Import/Export | 1 page | ✅ | 24A (1) | Queued |
 | QR System (cross-cutting) | multiple | ✅ | 20A-20D, 21A-21B (6) | All queued |
 | Supplier Bridge (cross-cutting) | multiple | ✅ | 22A-22C (3) | All queued |
 | Review Cleanup (cross-cutting) | multiple | ✅ | 18A (1) | Queued |

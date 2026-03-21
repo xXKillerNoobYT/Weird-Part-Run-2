@@ -46,7 +46,7 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 16F | Bulk Markup + Settings | No bulk edit, no markup/margin mode toggle, no stale threshold | DONE |
 | 16G | Stale Alerts + Receiving | No stale price warnings, no price verification during receiving | DONE |
 | 16H | Catalog Pricing + View Modes | No pricing on catalog page, only one pricing view layout | DONE |
-| 16I | Pricing AI Integration | No AI assistant for pricing page tasks | |
+| 16I | Pricing AI Integration | No AI assistant for pricing page tasks | DONE |
 | 17A | Supplier Migration + Models | No account_number column, no StockMovement model, no traceability | |
 | 17B | Supplier Form Rebuild | Only 7 of 15+ fields editable, missing rep/delivery/account fields | |
 | 17C | Supplier Performance Scores | Quality/on-time/reliability not auto-calculated from real data | |
@@ -84,6 +84,7 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 23F | Target Recommendation Engine | Daily recommendation, approve/dismiss, category changes, ADU+APW | |
 | 23G | Forecasting Location UI | Location picker, recommendation filter + cards, approve/dismiss actions | |
 | 23H | Forecast Detail Panel Redesign | Full part editor, stock health bars per location, editable MIN/TARGET/MAX | |
+| 24A | Import/Export Redesign | Service layer, field selection export, import preview + per-conflict resolution | |
 
 ## Prompt 01 Results (2026-03-18)
 
