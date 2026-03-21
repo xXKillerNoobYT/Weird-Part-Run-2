@@ -37,6 +37,15 @@ extension AppDatabase {
         registerMigration020WarehouseLocationsStockEntries(&migrator)
         registerMigration021MissingTables(&migrator)
         registerMigration022NotebookColumns(&migrator)
+        registerMigration023PinSalt(&migrator)
+        registerMigration024ScheduledDeletions(&migrator)
+        registerMigration025PricingSystem(&migrator)
+        registerMigration026SupplierEnhancements(&migrator)
+        registerMigration027CompanionPolls(&migrator)
+        registerMigration028SupplierBridge(&migrator)
+        registerMigration029LocationStockTargets(&migrator)
+        registerMigration030ForecastSettings(&migrator)
+        registerMigration031TargetRecommendations(&migrator)
     }
 }
 
@@ -2603,6 +2612,470 @@ extension AppDatabase {
             try db.execute(sql: """
                 UPDATE notebooks SET notebook_type = 'job' WHERE job_id IS NOT NULL
                 """)
+        }
+    }
+}
+
+// MARK: - 023: PIN Salt for Per-User Hashing
+
+extension AppDatabase {
+    private static func registerMigration023PinSalt(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("023_pin_salt") { db in
+            // Add per-user salt column for secure PIN hashing.
+            // Existing users get a NULL salt; on next login the system
+            // will detect the legacy hash format, re-hash with a salt,
+            // and store both the new hash and the salt.
+            try db.alter(table: "users") { t in
+                t.add(column: "pin_salt", .text)
+            }
+        }
+    }
+}
+
+// MARK: - 025: Pricing System
+
+extension AppDatabase {
+    private static func registerMigration025PricingSystem(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("025_pricing_system") { db in
+            // Hierarchical price tiers — set price/markup at any hierarchy level
+            // Prices cascade: category → style → type → brand → part (most specific wins)
+            try db.create(table: "pricing_tiers") { t in
+                t.autoIncrementedPrimaryKey("id")
+                // Exactly ONE of these should be set to define the tier level
+                t.column("category_id", .integer).references("part_categories")
+                t.column("style_id", .integer).references("part_styles")
+                t.column("type_id", .integer).references("part_types")
+                t.column("brand_id", .integer).references("brands")
+                t.column("part_id", .integer).references("parts")
+                // The actual pricing values
+                t.column("markup_percent", .double)        // e.g. 50.0 = 50% markup
+                t.column("margin_percent", .double)         // alternative: margin mode
+                t.column("fixed_sell_price", .double)       // optional: override with fixed price
+                t.column("set_by", .integer).references("users")
+                t.column("notes", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+            // Ensure only one active tier per hierarchy point
+            try db.create(index: "idx_pricing_tiers_category", on: "pricing_tiers", columns: ["category_id"], condition: Column("deleted_at") == nil)
+            try db.create(index: "idx_pricing_tiers_style", on: "pricing_tiers", columns: ["style_id"], condition: Column("deleted_at") == nil)
+            try db.create(index: "idx_pricing_tiers_type", on: "pricing_tiers", columns: ["type_id"], condition: Column("deleted_at") == nil)
+            try db.create(index: "idx_pricing_tiers_brand", on: "pricing_tiers", columns: ["brand_id"], condition: Column("deleted_at") == nil)
+            try db.create(index: "idx_pricing_tiers_part", on: "pricing_tiers", columns: ["part_id"], condition: Column("deleted_at") == nil)
+
+            // Price change history — every time a price/markup changes, log it
+            try db.create(table: "price_history") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("part_id", .integer).references("parts")
+                t.column("pricing_tier_id", .integer).references("pricing_tiers")
+                t.column("change_type", .text).notNull()     // "cost_update", "markup_change", "margin_change", "tier_set", "tier_removed", "reset"
+                t.column("old_value", .double)
+                t.column("new_value", .double)
+                t.column("old_sell_price", .double)
+                t.column("new_sell_price", .double)
+                t.column("source", .text)                     // "manual", "receiving", "po_update", "bulk_edit", "tier_cascade"
+                t.column("source_id", .integer)               // PO id, receiving session id, etc.
+                t.column("changed_by", .integer).references("users")
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_price_history_part", on: "price_history", columns: ["part_id", "created_at"])
+
+            // Sale consumption records — track which FIFO batches were used for each sale
+            // This enables LIFO returns: restore the most recently consumed batch
+            try db.create(table: "cost_layer_consumptions") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("cost_layer_id", .integer).notNull().references("cost_layers")
+                t.column("part_id", .integer).notNull().references("parts")
+                t.column("job_id", .integer).references("jobs")
+                t.column("qty_consumed", .integer).notNull()
+                t.column("unit_cost_at_sale", .double).notNull()  // locked cost from the batch
+                t.column("sell_price_charged", .double)           // what the customer was charged
+                t.column("supplier_id", .integer).references("suppliers") // which supplier this batch came from
+                t.column("is_returned", .integer).notNull().defaults(to: 0) // 1 if this consumption was reversed by a return
+                t.column("returned_at", .text)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_consumptions_part_job", on: "cost_layer_consumptions", columns: ["part_id", "job_id"])
+            try db.create(index: "idx_consumptions_layer", on: "cost_layer_consumptions", columns: ["cost_layer_id"])
+
+            // Add new company cost settings
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO company_cost_settings (setting_key, setting_value)
+                VALUES
+                    ('pricing_mode', 'markup'),
+                    ('stale_price_threshold_days', '90'),
+                    ('default_markup_percent', '50')
+                """)
+        }
+    }
+}
+
+// MARK: - 024: Scheduled Deletions (Smart Delete)
+
+extension AppDatabase {
+    private static func registerMigration024ScheduledDeletions(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("024_scheduled_deletions") { db in
+            try db.create(table: "scheduled_deletions") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("entity_type", .text).notNull()       // "category", "style", "type", "brand", "color", "part"
+                t.column("entity_id", .integer).notNull()
+                t.column("entity_name", .text).notNull()        // human-readable name for display
+                t.column("reason", .text)                        // why it's being deleted
+                t.column("status", .text).notNull().defaults(to: "draining")  // "draining", "pending_approval", "approved", "cancelled"
+                t.column("stock_at_schedule", .integer).defaults(to: 0)       // stock level when scheduled
+                t.column("stock_reached_zero_at", .text)         // ISO8601 timestamp when stock first hit 0
+                t.column("delete_after", .text)                  // ISO8601 timestamp = stock_reached_zero_at + 30 days
+                t.column("alternative_part_id", .integer)        // recommended replacement part
+                t.column("alternative_part_name", .text)         // cached name for display
+                t.column("scheduled_by", .integer)               // user who initiated
+                t.column("approved_by", .integer)                // user who approved final delete
+                t.column("approved_at", .text)
+                t.column("deleted_at", .text)                    // soft delete
+                t.column("created_at", .text).notNull().defaults(sql: "CURRENT_TIMESTAMP")
+                t.column("updated_at", .text).notNull().defaults(sql: "CURRENT_TIMESTAMP")
+            }
+        }
+    }
+
+    // MARK: - 026: Supplier Enhancements
+
+    private static func registerMigration026SupplierEnhancements(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("026_supplier_enhancements") { db in
+            // Add account number to suppliers (customer account # with this supplier)
+            try db.alter(table: "suppliers") { t in
+                t.add(column: "account_number", .text)
+            }
+        }
+    }
+
+    // MARK: - 027: Companion Polls & Auto-Discovery
+
+    private static func registerMigration027CompanionPolls(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("027_companion_polls") { db in
+
+            // -- ALTER existing tables --
+
+            // Add type_id to sources and targets (rules can now match at type level)
+            try db.alter(table: "companion_rule_sources") { t in
+                t.add(column: "type_id", .integer).references("part_types")
+            }
+            try db.alter(table: "companion_rule_targets") { t in
+                t.add(column: "type_id", .integer).references("part_types")
+            }
+
+            // Add brand matching + color auto-match flags to rules
+            try db.alter(table: "companion_rules") { t in
+                t.add(column: "try_match_brand", .integer).notNull().defaults(to: 0)
+                t.add(column: "auto_color_match", .integer).notNull().defaults(to: 1)
+                t.add(column: "parent_rule_id", .integer).references("companion_rules")
+                t.add(column: "auto_delete_at", .text)
+                t.add(column: "deleted_at", .text)
+            }
+
+            // Add points system + drill-down level to co_occurrence_pairs
+            try db.alter(table: "co_occurrence_pairs") { t in
+                t.add(column: "points", .integer).notNull().defaults(to: 0)
+                t.add(column: "style_a_id", .integer).references("part_styles")
+                t.add(column: "style_b_id", .integer).references("part_styles")
+                t.add(column: "type_a_id", .integer).references("part_types")
+                t.add(column: "type_b_id", .integer).references("part_types")
+                t.add(column: "brand_a_id", .integer).references("brands")
+                t.add(column: "brand_b_id", .integer).references("brands")
+                t.add(column: "match_level", .text).notNull().defaults(to: "category")
+                t.add(column: "rejection_count", .integer).notNull().defaults(to: 0)
+                t.add(column: "is_blocked", .integer).notNull().defaults(to: 0)
+                t.add(column: "tied_cooldown_until", .text)
+            }
+
+            // New indexes for co_occurrence drill-down
+            try db.create(index: "idx_co_occurrence_level", on: "co_occurrence_pairs", columns: ["match_level", "points"])
+            try db.create(index: "idx_co_occurrence_blocked", on: "co_occurrence_pairs", columns: ["is_blocked", "match_level"])
+
+            // -- CREATE new tables --
+
+            // companion_polls — one poll per auto-suggested companion rule
+            try db.create(table: "companion_polls") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("co_occurrence_id", .integer).notNull()
+                    .references("co_occurrence_pairs", onDelete: .cascade)
+                t.column("proposed_rule_name", .text).notNull()
+                t.column("proposed_rule_description", .text)
+                t.column("source_category_id", .integer).references("part_categories")
+                t.column("source_style_id", .integer).references("part_styles")
+                t.column("source_type_id", .integer).references("part_types")
+                t.column("target_category_id", .integer).references("part_categories")
+                t.column("target_style_id", .integer).references("part_styles")
+                t.column("target_type_id", .integer).references("part_types")
+                t.column("match_level", .text).notNull().defaults(to: "category")
+                t.column("try_match_brand", .integer).notNull().defaults(to: 0)
+                t.column("auto_color_match", .integer).notNull().defaults(to: 1)
+                t.column("status", .text).notNull().defaults(to: "active")
+                t.column("admin_locked_result", .text)
+                t.column("admin_locked_by", .integer).references("users")
+                t.column("admin_locked_at", .text)
+                t.column("result", .text)
+                t.column("created_rule_id", .integer).references("companion_rules")
+                t.column("start_date", .text).notNull().defaults(sql: "(date('now'))")
+                t.column("end_date", .text).notNull().defaults(sql: "(date('now', '+30 days'))")
+                t.column("completed_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+
+            // companion_votes — one vote per user per poll
+            try db.create(table: "companion_votes") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("poll_id", .integer).notNull()
+                    .references("companion_polls", onDelete: .cascade)
+                t.column("user_id", .integer).notNull()
+                    .references("users", onDelete: .cascade)
+                t.column("vote", .text).notNull()
+                t.column("has_power", .integer).notNull().defaults(to: 0)
+                t.column("voted_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+                t.uniqueKey(["poll_id", "user_id"])
+            }
+
+            // companion_poll_results — finalized results for closed polls
+            try db.create(table: "companion_poll_results") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("poll_id", .integer).notNull().unique()
+                    .references("companion_polls", onDelete: .cascade)
+                t.column("passed", .integer).notNull()
+                t.column("total_votes", .integer).notNull().defaults(to: 0)
+                t.column("powered_accept", .integer).notNull().defaults(to: 0)
+                t.column("powered_reject", .integer).notNull().defaults(to: 0)
+                t.column("all_accept", .integer).notNull().defaults(to: 0)
+                t.column("all_reject", .integer).notNull().defaults(to: 0)
+                t.column("was_admin_locked", .integer).notNull().defaults(to: 0)
+                t.column("finalized_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+
+            // companion_auto_discovery_log — tracks analysis runs
+            try db.create(table: "companion_auto_discovery_log") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("analysis_date", .text).notNull()
+                t.column("match_level", .text).notNull()
+                t.column("data_window_months", .integer).notNull()
+                t.column("pairs_analyzed", .integer).notNull().defaults(to: 0)
+                t.column("new_pairs_found", .integer).notNull().defaults(to: 0)
+                t.column("poll_created_id", .integer).references("companion_polls")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+
+            // -- Indexes --
+
+            try db.create(index: "idx_polls_status", on: "companion_polls", columns: ["status"])
+            try db.create(index: "idx_polls_dates", on: "companion_polls", columns: ["start_date", "end_date"])
+            try db.create(index: "idx_votes_poll", on: "companion_votes", columns: ["poll_id"])
+            try db.create(index: "idx_votes_user", on: "companion_votes", columns: ["user_id"])
+            try db.create(index: "idx_rules_parent", on: "companion_rules", columns: ["parent_rule_id"])
+
+            // -- Seed new permissions --
+
+            // companion_vote_power — votes that actually count toward poll results
+            let voteHats = try Row.fetchAll(db, sql: "SELECT id FROM hats WHERE name IN ('Admin', 'Manager', 'Lead')")
+            for hat in voteHats {
+                let hatId: Int64 = hat["id"]
+                try db.execute(sql: "INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key) VALUES (?, 'companion_vote_power')", arguments: [hatId])
+            }
+
+            // vote_veto — admin controls: lock result, skip poll, preview next week
+            if let adminHat = try Row.fetchOne(db, sql: "SELECT id FROM hats WHERE name = 'Admin'") {
+                let adminId: Int64 = adminHat["id"]
+                try db.execute(sql: "INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key) VALUES (?, 'vote_veto')", arguments: [adminId])
+            }
+        }
+
+    }
+}
+
+// MARK: - 028: Supplier Communication Bridge
+
+extension AppDatabase {
+    private static func registerMigration028SupplierBridge(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("028_supplier_bridge") { db in
+            try db.create(table: "supplier_channel_bridges") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("channel_id", .integer).notNull()
+                    .references("chat_channels", onDelete: .cascade)
+                t.column("supplier_id", .integer).notNull()
+                    .references("suppliers", onDelete: .cascade)
+                t.column("contact_id", .integer)
+                    .references("entity_contacts", onDelete: .setNull)
+                t.column("display_name", .text).notNull()
+                t.column("role", .text)
+                t.column("invite_token", .text).notNull()
+                t.column("is_active", .integer).notNull().defaults(to: 1)
+                t.column("last_seen_at", .text)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+
+                t.uniqueKey(["channel_id", "supplier_id"])
+            }
+            try db.create(index: "idx_supplier_channel_bridges_supplier",
+                          on: "supplier_channel_bridges", columns: ["supplier_id"])
+            try db.create(index: "idx_supplier_channel_bridges_token",
+                          on: "supplier_channel_bridges", columns: ["invite_token"],
+                          unique: true)
+
+            try db.create(table: "supplier_messages") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("message_id", .integer).notNull()
+                    .references("chat_messages", onDelete: .cascade)
+                t.column("bridge_id", .integer).notNull()
+                    .references("supplier_channel_bridges", onDelete: .cascade)
+                t.column("direction", .text).notNull()
+                t.column("attachment_type", .text)
+                t.column("attachment_ref", .text)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+            }
+            try db.create(index: "idx_supplier_messages_bridge",
+                          on: "supplier_messages", columns: ["bridge_id"])
+        }
+    }
+}
+
+// MARK: - 029: Location Stock Targets
+
+extension AppDatabase {
+    private static func registerMigration029LocationStockTargets(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("029_location_stock_targets") { db in
+            try db.create(table: "location_stock_targets") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("part_id", .integer).notNull()
+                    .references("parts", onDelete: .cascade)
+                t.column("location_type", .text).notNull()
+                t.column("location_id", .integer).notNull()
+                t.column("min_stock", .integer).notNull().defaults(to: 0)
+                t.column("target_stock", .integer).notNull().defaults(to: 0)
+                t.column("max_stock", .integer).notNull().defaults(to: 0)
+                t.column("forecast_adu_30", .double).defaults(to: 0)
+                t.column("forecast_adu_90", .double).defaults(to: 0)
+                t.column("forecast_days_until_low", .integer).defaults(to: 999)
+                t.column("forecast_suggested_order", .integer).defaults(to: 0)
+                t.column("forecast_last_run", .text)
+                t.column("certainty_rating", .double).defaults(to: 0)
+                t.column("deleted_at", .text)
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_lst_part_location", on: "location_stock_targets",
+                          columns: ["part_id", "location_type", "location_id"], unique: true)
+            try db.create(index: "idx_lst_location", on: "location_stock_targets",
+                          columns: ["location_type", "location_id"])
+        }
+    }
+}
+
+// MARK: - 030: Forecast Settings + Free Space
+
+extension AppDatabase {
+    private static func registerMigration030ForecastSettings(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("030_forecast_settings") { db in
+            try db.create(table: "forecast_settings") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("location_type", .text).notNull()
+                t.column("location_id", .integer)
+                t.column("usage_unit", .text).notNull().defaults(to: "daily")
+                t.column("adu_lookback_days", .integer).defaults(to: 365)
+                t.column("window_weeks", .integer).defaults(to: 3)
+                t.column("min_data_days", .integer).defaults(to: 90)
+                t.column("common_min_multiplier", .double).defaults(to: 3.5)
+                t.column("common_target_multiplier", .double).defaults(to: 14.0)
+                t.column("common_max_multiplier", .double).defaults(to: 21.0)
+                t.column("critical_min_multiplier", .double).defaults(to: 7.0)
+                t.column("critical_target_multiplier", .double).defaults(to: 14.0)
+                t.column("critical_max_multiplier", .double).defaults(to: 30.0)
+                t.column("free_space_suppress_threshold", .integer).defaults(to: 3)
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_fs_location", on: "forecast_settings",
+                          columns: ["location_type", "location_id"], unique: true)
+
+            // Seed: Shop (ADU, parts/day, 365-day lookback)
+            try db.execute(sql: """
+                INSERT INTO forecast_settings (location_type, usage_unit, adu_lookback_days, min_data_days,
+                    common_min_multiplier, common_target_multiplier, common_max_multiplier,
+                    critical_min_multiplier, critical_target_multiplier, critical_max_multiplier)
+                VALUES ('warehouse', 'daily', 365, 90, 3.5, 14.0, 21.0, 7.0, 21.0, 30.0)
+                """)
+
+            // Seed: Truck (APW, parts/X-weeks, 3-week window)
+            try db.execute(sql: """
+                INSERT INTO forecast_settings (location_type, usage_unit, window_weeks, min_data_days,
+                    common_min_multiplier, common_target_multiplier, common_max_multiplier,
+                    critical_min_multiplier, critical_target_multiplier, critical_max_multiplier)
+                VALUES ('truck', 'weekly', 3, 60, 1.0, 2.0, 3.0, 7.0, 14.0, 21.0)
+                """)
+
+            // Seed: Trailer (same as truck defaults)
+            try db.execute(sql: """
+                INSERT INTO forecast_settings (location_type, usage_unit, window_weeks, min_data_days,
+                    common_min_multiplier, common_target_multiplier, common_max_multiplier,
+                    critical_min_multiplier, critical_target_multiplier, critical_max_multiplier)
+                VALUES ('trailer', 'weekly', 3, 60, 1.0, 2.0, 3.0, 7.0, 14.0, 21.0)
+                """)
+
+            // Free space ratings per location (1-10 scale)
+            try db.create(table: "location_free_space") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("location_type", .text).notNull()
+                t.column("location_id", .integer).notNull()
+                t.column("free_space_rating", .integer).notNull().defaults(to: 5)
+                t.column("updated_by", .integer).references("users")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_lfs_location", on: "location_free_space",
+                          columns: ["location_type", "location_id"], unique: true)
+
+            // Add part_category and do_not_restock to location_stock_targets
+            try? db.alter(table: "location_stock_targets") { t in
+                t.add(column: "part_category", .text).defaults(to: "common")
+                t.add(column: "do_not_restock", .integer).defaults(to: 0)
+            }
+        }
+    }
+}
+
+// MARK: - 031: Target Recommendations
+
+extension AppDatabase {
+    private static func registerMigration031TargetRecommendations(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("031_target_recommendations") { db in
+            try db.create(table: "target_recommendations") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("part_id", .integer).notNull().references("parts", onDelete: .cascade)
+                t.column("location_type", .text).notNull()
+                t.column("location_id", .integer).notNull()
+                t.column("recommendation_type", .text).notNull().defaults(to: "adjust")
+                t.column("current_min", .integer)
+                t.column("current_target", .integer)
+                t.column("current_max", .integer)
+                t.column("recommended_min", .integer)
+                t.column("recommended_target", .integer)
+                t.column("recommended_max", .integer)
+                t.column("current_category", .text)
+                t.column("recommended_category", .text)
+                t.column("usage_value", .double).notNull()
+                t.column("usage_unit", .text).notNull()
+                t.column("data_days", .integer).notNull()
+                t.column("impact_score", .double).notNull()
+                t.column("reason", .text)
+                t.column("status", .text).defaults(to: "pending")
+                t.column("approved_by", .integer).references("users")
+                t.column("approved_at", .text)
+                t.column("dismissed_by", .integer).references("users")
+                t.column("dismissed_reason", .text)
+                t.column("cooldown_until", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
+            }
+            try db.create(index: "idx_tr_part_loc", on: "target_recommendations",
+                          columns: ["part_id", "location_type", "location_id"])
+            try db.create(index: "idx_tr_status", on: "target_recommendations", columns: ["status"])
         }
     }
 }

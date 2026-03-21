@@ -16,6 +16,21 @@ struct IOSPurchaseOrdersPage: View {
     @State private var searchText = ""
     @State private var statusFilter = "all"
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case createPO
+        case qrScanner
+        case scannedPODetail(Int64)
+
+        var id: String {
+            switch self {
+            case .createPO: "createPO"
+            case .qrScanner: "qrScanner"
+            case .scannedPODetail(let poId): "scannedPO-\(poId)"
+            }
+        }
+    }
 
     private let statusOptions = ["all", "draft", "submitted", "ordered", "partial", "received", "cancelled"]
 
@@ -26,9 +41,39 @@ struct IOSPurchaseOrdersPage: View {
         }
         .navigationTitle("Purchase Orders")
         .searchable(text: $searchText, prompt: "Search POs...")
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button { activeSheet = .qrScanner } label: { Image(systemName: "qrcode.viewfinder") }
+                Button { activeSheet = .createPO } label: { Image(systemName: "plus") }
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            sheetContent(for: sheet)
+        }
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
+    }
+
+    @ViewBuilder
+    private func sheetContent(for sheet: ActiveSheet) -> some View {
+        switch sheet {
+        case .createPO:
+            CreatePOSheet(onSave: { loadData() })
+                .environmentObject(appCore)
+        case .qrScanner:
+            QRScanSheet(expectedType: .po) { result in
+                if let poId = result.entityId, result.isFound {
+                    activeSheet = .scannedPODetail(poId)
+                }
+            }
+            .environmentObject(appCore)
+        case .scannedPODetail(let poId):
+            NavigationStack {
+                IOSPODetailPage(poId: poId)
+                    .environmentObject(appCore)
+            }
+        }
     }
 
     // MARK: - Status Picker
