@@ -101,6 +101,25 @@ Name A→Z, Name Z→A, Quality ↓, On-Time ↓, Reliability ↓, Most Parts, R
 - System prompt emphasizes READ-ONLY — cannot modify suppliers
 - Can answer: best supplier by score, supplier for brand X, compare quality, etc.
 
+## Brand-Supplier Linking (Prompts 11A-11C, 15A-15C — ALL DONE)
+
+**Service methods (11A):**
+- `linkBrandToSupplier(brandId:supplierId:)` / `unlinkBrandToSupplier(brandId:supplierId:)` in PartsService
+- Uses existing `brand_supplier_links` table
+
+**Brand detail sheet (11B):**
+- Shows linked suppliers list with name and contact
+- Edit button opens supplier picker
+
+**Brand-supplier picker (11C):**
+- Checkbox picker for managing brand-supplier links
+- Toggle on/off, shows current links, searchable
+
+**Brands + Suppliers cleanup (15A-15C — DONE):**
+- 15A: Removed raw SQL from both pages → PartsService methods, removed `import GRDB`
+- 15B: Delete confirmations, save error feedback on both pages
+- 15C: Fixed nested .sheet conflict in SupplierDetailSheet → onEdit closure pattern
+
 ## Bug Fixes Included
 
 | Bug | Fix | Prompt |

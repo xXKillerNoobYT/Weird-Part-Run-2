@@ -1,20 +1,20 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Demand forecasting page showing parts with their forecast data.
 ///
 /// Displays average daily usage (ADU), reorder points, suggested orders,
 /// and days until low stock. Color-coded urgency indicators help prioritize
-/// reordering decisions.
+/// reordering decisions. Trend arrows compare ADU-30 vs ADU-90.
 struct PartsForecastingPage: View {
     @EnvironmentObject private var appCore: AppCore
-    @State private var forecastRows: [ForecastRow] = []
+    @State private var forecastRows: [PartsService.ForecastDataRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var searchText = ""
     @State private var filterUrgency: UrgencyFilter = .all
-    @State private var selectedRow: ForecastRow?
+    @State private var selectedRow: PartsService.ForecastDataRow?
+    @State private var isRecalculating = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -47,11 +47,7 @@ struct PartsForecastingPage: View {
                 .padding(.horizontal)
                 .padding(.vertical, 8)
             }
-            #if os(iOS)
             .background(Color(.secondarySystemGroupedBackground))
-            #elseif os(macOS)
-            .background(Color(.secondarySystemGroupedBackground))
-            #endif
 
             if isLoading {
                 ProgressView("Loading forecast data...")
@@ -69,43 +65,53 @@ struct PartsForecastingPage: View {
         .sheet(item: $selectedRow) { row in
             ForecastDetailSheet(row: row)
         }
-        #if os(iOS)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    Task { await recalculateForecasts() }
+                } label: {
+                    if isRecalculating {
+                        ProgressView()
+                    } else {
+                        Label("Recalculate", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                .disabled(isRecalculating)
+            }
+        }
         .background(DS.Background.page)
-        #elseif os(macOS)
-        .background(DS.Background.page)
-        #endif
         .task { await loadData() }
     }
 
     // MARK: - Filtered
 
-    private var filteredRows: [ForecastRow] {
+    private var filteredRows: [PartsService.ForecastDataRow] {
         var result = forecastRows
 
         switch filterUrgency {
         case .all:
             break
         case .critical:
-            result = result.filter { ($0.daysUntilLow ?? 999) <= 7 }
+            result = result.filter { ($0.part.forecastDaysUntilLow ?? 999) <= 7 }
         case .warning:
             result = result.filter {
-                let days = $0.daysUntilLow ?? 999
+                let days = $0.part.forecastDaysUntilLow ?? 999
                 return days > 7 && days <= 30
             }
         case .healthy:
-            result = result.filter { ($0.daysUntilLow ?? 999) > 30 }
+            result = result.filter { ($0.part.forecastDaysUntilLow ?? 999) > 30 }
         }
 
         if !searchText.isEmpty {
             let query = searchText.lowercased()
             result = result.filter {
-                $0.name.lowercased().contains(query) ||
-                ($0.code?.lowercased().contains(query) ?? false)
+                $0.part.name.lowercased().contains(query) ||
+                ($0.part.code?.lowercased().contains(query) ?? false)
             }
         }
 
         // Sort by urgency (most urgent first)
-        result.sort { ($0.daysUntilLow ?? 999) < ($1.daysUntilLow ?? 999) }
+        result.sort { ($0.part.forecastDaysUntilLow ?? 999) < ($1.part.forecastDaysUntilLow ?? 999) }
         return result
     }
 
@@ -119,17 +125,17 @@ struct PartsForecastingPage: View {
                 HStack(spacing: 16) {
                     statCard(
                         label: "Critical",
-                        count: forecastRows.filter { ($0.daysUntilLow ?? 999) <= 7 }.count,
+                        count: forecastRows.filter { ($0.part.forecastDaysUntilLow ?? 999) <= 7 }.count,
                         color: .red
                     )
                     statCard(
                         label: "Warning",
-                        count: forecastRows.filter { let d = $0.daysUntilLow ?? 999; return d > 7 && d <= 30 }.count,
+                        count: forecastRows.filter { let d = $0.part.forecastDaysUntilLow ?? 999; return d > 7 && d <= 30 }.count,
                         color: .orange
                     )
                     statCard(
                         label: "Healthy",
-                        count: forecastRows.filter { ($0.daysUntilLow ?? 999) > 30 }.count,
+                        count: forecastRows.filter { ($0.part.forecastDaysUntilLow ?? 999) > 30 }.count,
                         color: .green
                     )
                 }
@@ -145,10 +151,21 @@ struct PartsForecastingPage: View {
                     .buttonStyle(.plain)
                 }
             }
+
+            // Last recalculated timestamp
+            if let lastRun = forecastRows.first(where: { $0.part.forecastLastRun != nil })?.part.forecastLastRun {
+                Section {
+                    HStack {
+                        Image(systemName: "clock")
+                            .foregroundStyle(.secondary)
+                        Text("Last recalculated: \(formatTimestamp(lastRun))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     @ViewBuilder
@@ -166,30 +183,33 @@ struct PartsForecastingPage: View {
     }
 
     @ViewBuilder
-    private func forecastRowView(_ row: ForecastRow) -> some View {
+    private func forecastRowView(_ row: PartsService.ForecastDataRow) -> some View {
         HStack(spacing: 12) {
             // Urgency indicator
             Circle()
-                .fill(urgencyColor(row.daysUntilLow))
+                .fill(urgencyColor(row.part.forecastDaysUntilLow))
                 .frame(width: 12, height: 12)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(row.name)
+                Text(row.part.name)
                     .font(.body)
                     .fontWeight(.medium)
                     .lineLimit(1)
 
                 HStack(spacing: 8) {
-                    if let code = row.code {
+                    if let code = row.part.code {
                         Text(code)
                             .font(.caption)
                             .monospaced()
                             .foregroundStyle(.secondary)
                     }
-                    if let adu = row.adu30, adu > 0 {
-                        Text(String(format: "ADU: %.1f/day", adu))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                    HStack(spacing: 4) {
+                        if let adu = row.part.forecastAdu30, adu > 0 {
+                            Text(String(format: "ADU: %.1f/day", adu))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        trendIndicator(adu30: row.part.forecastAdu30, adu90: row.part.forecastAdu90)
                     }
                 }
             }
@@ -197,10 +217,10 @@ struct PartsForecastingPage: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 3) {
-                if let days = row.daysUntilLow {
+                if let days = row.part.forecastDaysUntilLow {
                     Text("\(days)d")
                         .font(.headline)
-                        .foregroundStyle(urgencyColor(row.daysUntilLow))
+                        .foregroundStyle(urgencyColor(row.part.forecastDaysUntilLow))
                     Text("until low")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -213,7 +233,7 @@ struct PartsForecastingPage: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if let suggested = row.suggestedOrder, suggested > 0 {
+                if let suggested = row.part.forecastSuggestedOrder, suggested > 0 {
                     Text("Order \(suggested)")
                         .font(.caption2)
                         .padding(.horizontal, 6)
@@ -228,6 +248,31 @@ struct PartsForecastingPage: View {
                 .foregroundStyle(.tertiary)
         }
         .frame(minHeight: 60)
+    }
+
+    // MARK: - Trend Indicator
+
+    @ViewBuilder
+    private func trendIndicator(adu30: Double?, adu90: Double?) -> some View {
+        if let short = adu30, let long = adu90, long > 0 {
+            let ratio = short / long
+            if ratio > 1.15 {
+                // Usage trending up (30-day > 90-day by 15%+)
+                Image(systemName: "arrow.up.right")
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+            } else if ratio < 0.85 {
+                // Usage trending down
+                Image(systemName: "arrow.down.right")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+            } else {
+                // Stable
+                Image(systemName: "arrow.right")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private func urgencyColor(_ daysUntilLow: Int?) -> Color {
@@ -262,44 +307,14 @@ struct PartsForecastingPage: View {
     @Sendable
     private func loadData() async {
         isLoading = true
+        loadError = nil
         do {
-            guard let db = appCore.db else { return }
-            let rows = try await db.writer.read { dbConnection -> [ForecastRow] in
-                let results = try Row.fetchAll(dbConnection, sql: """
-                    SELECT p.id, p.name, p.code,
-                           p.forecast_adu_30, p.forecast_adu_90,
-                           p.forecast_reorder_point, p.forecast_target_qty,
-                           p.forecast_suggested_order, p.forecast_days_until_low,
-                           p.forecast_last_run,
-                           p.min_stock_level, p.max_stock_level, p.target_stock_level,
-                           p.reorder_point,
-                           COALESCE(SUM(s.qty), 0) AS current_stock
-                    FROM parts p
-                    LEFT JOIN stock s ON s.part_id = p.id AND s.deleted_at IS NULL
-                    WHERE p.deleted_at IS NULL
-                    GROUP BY p.id
-                    ORDER BY COALESCE(p.forecast_days_until_low, 9999) ASC
-                    """)
-                return results.map { row in
-                    ForecastRow(
-                        id: row["id"],
-                        name: row["name"],
-                        code: row["code"],
-                        adu30: row["forecast_adu_30"],
-                        adu90: row["forecast_adu_90"],
-                        reorderPoint: row["forecast_reorder_point"],
-                        targetQty: row["forecast_target_qty"],
-                        suggestedOrder: row["forecast_suggested_order"],
-                        daysUntilLow: row["forecast_days_until_low"],
-                        lastRun: row["forecast_last_run"],
-                        minStock: row["min_stock_level"],
-                        maxStock: row["max_stock_level"],
-                        targetStock: row["target_stock_level"],
-                        manualReorderPoint: row["reorder_point"],
-                        currentStock: row["current_stock"]
-                    )
-                }
+            guard let service = appCore.partsService else {
+                loadError = "Parts service not available"
+                isLoading = false
+                return
             }
+            let rows = try service.listForecastDataWithStock()
             await MainActor.run {
                 forecastRows = rows
                 isLoading = false
@@ -310,6 +325,45 @@ struct PartsForecastingPage: View {
                 isLoading = false
             }
         }
+    }
+
+    @Sendable
+    private func recalculateForecasts() async {
+        isRecalculating = true
+        do {
+            guard let service = appCore.partsService else { return }
+            try service.recalculateForecasts()
+            await loadData()
+        } catch {
+            await MainActor.run {
+                loadError = "Recalculation failed: \(error.localizedDescription)"
+            }
+        }
+        await MainActor.run {
+            isRecalculating = false
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func formatTimestamp(_ iso: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: iso) {
+            let display = DateFormatter()
+            display.dateStyle = .medium
+            display.timeStyle = .short
+            return display.string(from: date)
+        }
+        // Try without fractional seconds
+        formatter.formatOptions = [.withInternetDateTime]
+        if let date = formatter.date(from: iso) {
+            let display = DateFormatter()
+            display.dateStyle = .medium
+            display.timeStyle = .short
+            return display.string(from: date)
+        }
+        return iso
     }
 }
 
@@ -337,62 +391,74 @@ private enum UrgencyFilter: CaseIterable {
     }
 }
 
-struct ForecastRow: Identifiable, Sendable {
-    let id: Int64
-    let name: String
-    let code: String?
-    let adu30: Double?
-    let adu90: Double?
-    let reorderPoint: Int?
-    let targetQty: Int?
-    let suggestedOrder: Int?
-    let daysUntilLow: Int?
-    let lastRun: String?
-    let minStock: Int?
-    let maxStock: Int?
-    let targetStock: Int?
-    let manualReorderPoint: Int?
-    let currentStock: Int
+// MARK: - Identifiable conformance for ForecastDataRow
+
+extension PartsService.ForecastDataRow: Identifiable {
+    public var id: Int64 { part.id ?? 0 }
 }
 
 // MARK: - Forecast Detail Sheet
 
 private struct ForecastDetailSheet: View {
-    let row: ForecastRow
+    let row: PartsService.ForecastDataRow
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             List {
                 Section("Part") {
-                    LabeledContent("Name", value: row.name)
-                    if let code = row.code {
+                    LabeledContent("Name", value: row.part.name)
+                    if let code = row.part.code {
                         LabeledContent("Code", value: code)
                     }
                     LabeledContent("Current Stock", value: "\(row.currentStock)")
                 }
 
                 Section("Forecast Metrics") {
-                    if let adu30 = row.adu30 {
+                    if let adu30 = row.part.forecastAdu30 {
                         LabeledContent("Avg Daily Usage (30d)", value: String(format: "%.2f", adu30))
                     }
-                    if let adu90 = row.adu90 {
+                    if let adu90 = row.part.forecastAdu90 {
                         LabeledContent("Avg Daily Usage (90d)", value: String(format: "%.2f", adu90))
                     }
-                    if let rp = row.reorderPoint {
+                    // Trend row
+                    if let adu30 = row.part.forecastAdu30, let adu90 = row.part.forecastAdu90, adu90 > 0 {
+                        let ratio = adu30 / adu90
+                        LabeledContent("Usage Trend") {
+                            HStack(spacing: 4) {
+                                if ratio > 1.15 {
+                                    Image(systemName: "arrow.up.right")
+                                        .foregroundStyle(.red)
+                                    Text("Increasing")
+                                        .foregroundStyle(.red)
+                                } else if ratio < 0.85 {
+                                    Image(systemName: "arrow.down.right")
+                                        .foregroundStyle(.green)
+                                    Text("Decreasing")
+                                        .foregroundStyle(.green)
+                                } else {
+                                    Image(systemName: "arrow.right")
+                                        .foregroundStyle(.secondary)
+                                    Text("Stable")
+                                }
+                            }
+                            .font(.subheadline)
+                        }
+                    }
+                    if let rp = row.part.forecastReorderPoint {
                         LabeledContent("Reorder Point", value: "\(rp)")
                     }
-                    if let target = row.targetQty {
+                    if let target = row.part.forecastTargetQty {
                         LabeledContent("Target Qty", value: "\(target)")
                     }
-                    if let suggested = row.suggestedOrder {
+                    if let suggested = row.part.forecastSuggestedOrder {
                         LabeledContent("Suggested Order") {
                             Text("\(suggested)")
                                 .fontWeight(.bold)
                                 .foregroundStyle(Color.accentColor)
                         }
                     }
-                    if let days = row.daysUntilLow {
+                    if let days = row.part.forecastDaysUntilLow {
                         LabeledContent("Days Until Low") {
                             Text("\(days)")
                                 .fontWeight(.bold)
@@ -402,21 +468,21 @@ private struct ForecastDetailSheet: View {
                 }
 
                 Section("Stock Levels") {
-                    if let min = row.minStock {
+                    if let min = row.part.minStockLevel {
                         LabeledContent("Min Stock", value: "\(min)")
                     }
-                    if let max = row.maxStock {
+                    if let max = row.part.maxStockLevel {
                         LabeledContent("Max Stock", value: "\(max)")
                     }
-                    if let target = row.targetStock {
+                    if let target = row.part.targetStockLevel {
                         LabeledContent("Target Stock", value: "\(target)")
                     }
-                    if let rp = row.manualReorderPoint {
+                    if let rp = row.part.reorderPoint {
                         LabeledContent("Manual Reorder Point", value: "\(rp)")
                     }
                 }
 
-                if let lastRun = row.lastRun {
+                if let lastRun = row.part.forecastLastRun {
                     Section("Last Updated") {
                         Text(lastRun)
                             .font(.subheadline)
@@ -425,9 +491,7 @@ private struct ForecastDetailSheet: View {
                 }
             }
             .navigationTitle("Forecast Details")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }

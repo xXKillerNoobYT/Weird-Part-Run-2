@@ -42,10 +42,10 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 16B | FIFO/LIFO Cost Engine | No service methods for batch costing, weighted average, returns | DONE |
 | 16C | Hierarchical Pricing Service | Can't set prices at category/style/type level with cascade | DONE |
 | 16D | Pricing Page UI Rebuild | Page uses raw SQL, no tier badges, no hierarchy awareness | DONE |
-| 16E | Price Override Flow | No way to set tier pricing and confirm override conflicts | |
-| 16F | Bulk Markup + Settings | No bulk edit, no markup/margin mode toggle, no stale threshold | |
-| 16G | Stale Alerts + Receiving | No stale price warnings, no price verification during receiving | |
-| 16H | Catalog Pricing + View Modes | No pricing on catalog page, only one pricing view layout | |
+| 16E | Price Override Flow | No way to set tier pricing and confirm override conflicts | DONE |
+| 16F | Bulk Markup + Settings | No bulk edit, no markup/margin mode toggle, no stale threshold | DONE |
+| 16G | Stale Alerts + Receiving | No stale price warnings, no price verification during receiving | DONE |
+| 16H | Catalog Pricing + View Modes | No pricing on catalog page, only one pricing view layout | DONE |
 | 16I | Pricing AI Integration | No AI assistant for pricing page tasks | |
 | 17A | Supplier Migration + Models | No account_number column, no StockMovement model, no traceability | |
 | 17B | Supplier Form Rebuild | Only 7 of 15+ fields editable, missing rep/delivery/account fields | |
@@ -76,6 +76,14 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 22A | Supplier Bridge Migration + Service | No supplier communication; bridge tables, channel creation, direction tracking | |
 | 22B | Supplier Bridge UI | Supplier channel badges, detail page messaging, PO reference attachments | |
 | 22C | Supplier Bridge Job Channels | Job-linked supplier channels, supplier RFI integration, unread badges on jobs | |
+| 23A | Forecasting Page Cleanup | Raw SQL → service layer, platform guards, recalculate button, trend indicators | DONE |
+| 23B | Forecasting AI Integration | AI tool for forecast queries, page context notification, read-only | |
+| 23C | Forecasting Stat Card Filters | Delete chip bar, stat cards act as toggle filters | |
+| 23D | Forecasting Location Backbone | Migration: location_stock_targets, per-location forecast service methods | |
+| 23E | Forecast Settings Migration | forecast_settings (ADU/APW per location), location_free_space, seed defaults | |
+| 23F | Target Recommendation Engine | Daily recommendation, approve/dismiss, category changes, ADU+APW | |
+| 23G | Forecasting Location UI | Location picker, recommendation filter + cards, approve/dismiss actions | |
+| 23H | Forecast Detail Panel Redesign | Full part editor, stock health bars per location, editable MIN/TARGET/MAX | |
 
 ## Prompt 01 Results (2026-03-18)
 
@@ -159,4 +167,22 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 - findOverrideConflicts: lower-level override detection for confirmation UI
 - getPreviewParts: random sample of affected parts with before/after pricing
 - getCompanyCostSetting/updateCompanyCostSetting: settings CRUD with upsert
+- Build: SUCCESS
+
+## Prompt 16F Results (2026-03-20)
+
+- Created PricingBulkEditSheet.swift: scope picker (All/By Category), markup/margin input, preview of 15 locked sample parts, optional one-at-a-time review, apply to all
+- Created PricingSettingsSheet.swift: pricing mode toggle (markup/margin) with formula explanations, default markup %, stale threshold days
+- Replaced placeholder sheet handlers in PartsPricingPage.swift with real sheet invocations
+- Used `_ = try` for setPricingTier return value, `Section { } header: { }` for interpolated headers
+- Build: SUCCESS
+
+## Prompt 16G Results (2026-03-21)
+
+- Service: isPartPriceStale, getStalePricedParts, markPriceVerified added to PartsService
+- Added partId + unitPrice to ReceivingItemInfo struct + updated SQL query
+- Receiving flow: PO list → start session → line items with qty stepper + price verification (matches/different/not shown)
+- Cost layers created automatically during receiving completion
+- Stale badge on PO detail line items (orange triangle)
+- Removed #if os(iOS) platform guard from PO detail
 - Build: SUCCESS

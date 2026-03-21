@@ -4,6 +4,50 @@
 
 ---
 
+## Design-First Workflow (MANDATORY)
+
+The `docs/plans/` folder is the **source of truth** for all design goals and decisions. Prompts in `xcode-ai/fix-prompts/` are written to implement what the plans define. Reviews compare the implementation result against the plan.
+
+**Workflow:**
+1. **Plan** → Design goals and decisions are written in `docs/plans/` with full detail
+2. **Prompt** → Xcode AI prompts in `xcode-ai/fix-prompts/` implement the plan
+3. **Review** → Results are compared against the plan to catch drift or missed requirements
+4. **Improve** → Plan is updated with learnings, but the original design intent is preserved
+
+**Rules:**
+- NEVER implement features without a plan document in `docs/plans/`
+- Plans contain the WHY and WHAT. Prompts contain the HOW.
+- When reviewing completed prompts, compare against the plan — not just "does it compile?"
+- When improving a design, update the plan FIRST, then update the prompts
+- Keep all design decisions with reasoning — don't delete old decisions, mark them as superseded if changed
+
+**Key plan documents:**
+- `docs/plans/ios-page-review-tracker.md` — master tracking of all page reviews and decisions
+- `docs/plans/inventory-intelligence-system.md` — forecasting, wishlist, procurement, movements
+- `docs/plans/forecasting-page-redesign.md` — focused plan for 23A-23H prompt chain
+
+---
+
+## Prompt Completion Logging (REQUIRED)
+
+After completing **every** prompt, you MUST append a log entry to `xcode-ai/prompt-results-log.md`. Use this exact format:
+
+```markdown
+## Prompt [NUMBER] — [TITLE] (YYYY-MM-DD)
+
+**Status:** SUCCESS | PARTIAL | FAILED
+**Files Changed:** [list each file modified/created]
+**What Was Done:**
+- [bullet point summary of each change]
+**Issues Found:**
+- [any problems discovered during implementation, or "None"]
+**Build:** PASS | FAIL (with error summary if FAIL)
+```
+
+This log is how the review agent tracks your progress. Do NOT skip this step.
+
+---
+
 ## What This App Is
 
 **WiredPart** is a construction/trade business management app for electricians and similar trades. It manages jobs, employees, parts inventory, warehouse operations, fleet/vehicles, tools, orders/procurement, scheduling, reports, chat, and notebooks.
@@ -106,7 +150,7 @@ Key tables by domain:
 | `core/Services/JobsService.swift` | Jobs, labor entries, clock in/out, daily reports. |
 | `core/Services/PartsService.swift` | Parts hierarchy, brands, suppliers, stock, pricing, companions. |
 | `core/Services/WarehouseService.swift` | Stock movements, receiving, audit, staging. |
-| `core/Database/AppDatabase+Migrations.swift` | All 23 migrations. Schema source of truth. |
+| `core/Database/AppDatabase+Migrations.swift` | All migrations (23 base + 024-030 additions). Schema source of truth. |
 
 ---
 
@@ -150,19 +194,32 @@ guard let service = appCore.jobsService else {
 
 ---
 
-## Known Issues (Updated 2026-03-18)
+## Known Issues (Updated 2026-03-21)
 
-### Fixed (Prompt 01)
-- CategoriesEditorPanel, CategoriesTreeView, IOSMainView, PartsCatalogPage, PartsSuppliersPage, PartsBrandsPage, PartsCompanionsPage — all converted to single `.sheet(item:)` enum pattern
-- IOSClockPage, LaborPage, IOSVehicleDetailPage — added `.onChange` data reload on dismiss
+### Fixed (Prompts 01-16F, 23A)
+- `.sheet(item:)` enum pattern applied across all reviewed pages (01)
+- Error visibility: `loadError` + `ErrorStateView` on 19+ pages (02)
+- Infinite spinners: guard-let-else clears isLoading (03)
+- Sync layer honestly stubbed — no fake success messages (04)
+- AppCore uses safe optionals, `AppCoreError` enum instead of fatalError (05)
+- Full CRUD on Jobs, People, Orders, Warehouse, Scheduling, Chat pages (06-08)
+- PIN hashing: per-user salt + 10K iterations (09)
+- Service layer table name/column bugs fixed (10)
+- Brand-supplier linking, categories smart delete, pricing FIFO/LIFO engine (11-16F)
+- Forecasting: raw SQL → service layer, recalculate button, trend indicators (23A)
 
 ### Still Open
-- Sync layer is stubbed (IOSSyncManager, SyncWaitingView, DevicePairingView)
-- AppCore uses IUOs (`db!`, `authService!`, `settingsService!`)
-- ~25 pages print errors to console instead of showing to user
-- ~10 pages have infinite spinner bug (guard-let-else-return without clearing isLoading)
-- ~30 pages are read-only where CRUD is expected
-- Security: PIN hashing uses fixed salt, invalid token magic string
+- Sync layer is stubbed (IOSSyncManager, SyncWaitingView, DevicePairingView) — future phase
+- Some pages in unreviewed areas may still have raw SQL or missing error handling
+- Pages not yet reviewed: Jobs, People, Orders, Warehouse, Scheduling, Chat, Tools, Fleet, Reports, Office, Notebooks, Settings
+
+### New Architecture Concepts (from Forecasting review)
+- **Per-location stock targets:** `location_stock_targets` table with MIN/TARGET/MAX per location
+- **Forecast settings:** `forecast_settings` table — shop uses ADU (parts/day), trucks use APW (parts/X-week window)
+- **Target recommendations:** `target_recommendations` table — max 1/day, 60-day cooldown, validates MIN < TARGET < MAX
+- **Free space ratings:** `location_free_space` table — 1-10 scale per location, monthly update notification
+- **Part categories per location:** "common" vs "critical" — different multipliers, different stocking strategies
+- **Inventory Intelligence System:** Full plan at `docs/plans/inventory-intelligence-system.md`
 
 ---
 

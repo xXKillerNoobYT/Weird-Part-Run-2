@@ -155,12 +155,22 @@ Plans are living documents that build our project's institutional memory. Treat 
 
 **Rules for plan management:**
 
-1. **Always save to `docs/`.** Never leave plans only in `.claude/plans/` — those are ephemeral and won't persist.
+1. **Always save to `docs/plans/`.** Never leave plans only in `.claude/plans/` — those are ephemeral and won't persist. Plans are the source of truth for design goals and decisions.
 2. **Use descriptive filenames:** `phase-N-short-name.md` or `feature-short-name.md`.
 3. **ALWAYS read plans before making edits.** Before writing ANY code in a phase, read BOTH the plan you built (in `.claude/plans/`) AND the saved copy (in `docs/plans/`). Understand the full design before implementing. This prevents drift, contradictions, and wasted rework. At the start of a new phase, also read the master plan to understand cross-phase dependencies.
 4. **Update plans as work completes.** Mark completed items, note any deviations from the original plan, and add learnings. Plans should reflect reality, not just intent.
 5. **Preserve plan history.** Don't delete old plans when creating new ones. The progression from Phase 1 → 2 → 3 → ... tells the story of the project's evolution. Future agents (and the user) benefit from this context.
 6. **When creating a new plan,** reference the master plan and summarize what phases came before. This makes each plan self-contained enough to understand in isolation.
+7. **Design-first workflow (MANDATORY).** Plans come before prompts. ALL design decisions from reviews and discussions MUST be saved to `docs/plans/` with full detail before Xcode AI prompts are written. Plans define the WHAT and WHY. Prompts define the HOW. Reviews compare the result against the plan.
+8. **Save ALL design info immediately.** If a conversation produces design decisions (data models, business rules, UI flows, behavioral rules, table schemas), save them to `docs/plans/` right away. Don't lose design work by leaving it only in conversation context.
+9. **Xcode AI prompts track separately.** Prompt files live in `xcode-ai/fix-prompts/`. Tracking is in `xcode-ai/fix-prompts/00-fix-order.md`. The Xcode instruction file is at `xcode-ai/xcode.md`. But these all implement what `docs/plans/` specifies.
+10. **INVOKE the `xcode-planner-and-review` skill** (via the Skill tool) for ALL iOS/Swift/Xcode work — planning features, writing prompts, reviewing code, auditing results. Do NOT do this work manually. The skill enforces the design-first workflow, tracks decisions, generates prompts with proper structure, audits results against plans, and self-improves. If the task involves iOS pages, Swift code, Xcode AI prompts, or page reviews — call the skill FIRST.
+
+**Key active plan documents:**
+
+- `docs/plans/ios-page-review-tracker.md` — master tracking of all iOS page reviews, decisions, and remaining work
+- `docs/plans/inventory-intelligence-system.md` — forecasting, wishlist, procurement redesign, movements, MIN/TARGET/MAX rules
+- `docs/plans/forecasting-page-redesign.md` — focused design spec for forecasting prompts 23A-23H
 
 **Current plan history:**
 

@@ -26,8 +26,18 @@
 - 6 files already correct — no changes needed
 - Build: SUCCESS
 
-### Prompt 02 — Error Visibility (PENDING)
-### Prompt 03 — Infinite Spinners (PENDING)
+### Prompt 02 — Error Visibility (DONE - 2026-03-18)
+
+- 19 files fixed: Dashboard (2), Jobs (3), Parts (6, prior session), Warehouse (1), Scheduling (2), Tools (2), Reports (4), Settings (1)
+- Consistent pattern: `loadError` state + catch sets it + guard clears isLoading + `ContentUnavailableView` error branch
+- "Catch and Forget" pattern now eliminated across the codebase
+- Build: SUCCESS
+### Prompt 03 — Infinite Spinners (DONE - 2026-03-18)
+
+- 6 files fixed: IOSEmployeeDetailPage, IOSToolRegistryPage, IOSToolCheckoutsPage, IOSToolMaintenancePage, IOSToolAdminPage, IOSSpendingPage
+- 3 already fixed by Prompt 02: IOSToolsDashboardPage, IOSProfitabilityPage, IOSDailyReportsSummaryPage
+- "Guard and Abandon" pattern now eliminated
+- Build: SUCCESS
 ### Prompt 04 — Stub Sync & Placeholders (PENDING)
 ### Prompt 05 — AppCore Safety (PENDING)
 ### Prompt 06-08 — Missing CRUD (PENDING)
