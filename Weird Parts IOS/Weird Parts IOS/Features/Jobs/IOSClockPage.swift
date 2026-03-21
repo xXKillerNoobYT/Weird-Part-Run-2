@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreLocation
+import GRDB
 import WiredPartCore
 
 /// Clock in/out page for iOS.
@@ -11,6 +12,7 @@ import WiredPartCore
 struct IOSClockPage: View {
     @EnvironmentObject private var appCore: AppCore
     @StateObject private var locationManager = LocationManager()
+    @StateObject private var geofenceManager = GeofenceManager()
 
     // MARK: - State
 
@@ -26,6 +28,22 @@ struct IOSClockPage: View {
     @State private var isShopClockIn = false
     @State private var linkedJobId: Int64?
     @State private var linkedJobName: String?
+
+    // Sheets
+    @State private var activeSheet: ActiveSheet?
+    @State private var lastLaborEntryId: Int64?
+
+    private enum ActiveSheet: Identifiable {
+        case questionnaire(Int64)
+        case jobScanner
+
+        var id: String {
+            switch self {
+            case .questionnaire(let id): "questionnaire-\(id)"
+            case .jobScanner: "jobScanner"
+            }
+        }
+    }
 
     struct JobWithDistance: Identifiable {
         let id: Int64
@@ -47,10 +65,40 @@ struct IOSClockPage: View {
     var body: some View {
         clockContent
             .navigationTitle("Clock In / Out")
+            .toolbar {
+                if activeEntry == nil {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button { activeSheet = .jobScanner } label: {
+                            Label("Scan Job", systemImage: "qrcode.viewfinder")
+                        }
+                    }
+                }
+            }
             .refreshable { loadData() }
             .task {
                 locationManager.requestPermission()
                 loadData()
+            }
+            .fullScreenCover(isPresented: $geofenceManager.didExitJobRegion) {
+                GeofenceAlertView(
+                    geofenceManager: geofenceManager,
+                    onResolved: { loadData() }
+                )
+                .environmentObject(appCore)
+                .interactiveDismissDisabled(true)
+            }
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .questionnaire(let entryId):
+                    IOSQuestionnairePage(laborEntryId: entryId, onComplete: { loadData() })
+                case .jobScanner:
+                    QRScanSheet(expectedType: .job) { result in
+                        if let jobId = result.entityId, result.isFound {
+                            clockIn(jobId: jobId, isShop: false)
+                        }
+                    }
+                    .environmentObject(appCore)
+                }
             }
     }
 
@@ -355,9 +403,16 @@ struct IOSClockPage: View {
                     // Clock in to Shop/Warehouse (jobId = 0 or a special "shop" job)
                     try service.clockIn(userId: userId, jobId: jobId ?? 0, gpsLat: lat, gpsLng: lng)
                     isShopClockIn = true
+                    geofenceManager.stopMonitoring()
                 } else if let jid = jobId {
                     try service.clockIn(userId: userId, jobId: jid, gpsLat: lat, gpsLng: lng)
                     isShopClockIn = false
+                    // Start geofence monitoring if job has coordinates
+                    if let job = sortedJobs.first(where: { $0.id == jid }),
+                       let jobLat = job.latitude, let jobLng = job.longitude,
+                       jobLat != 0, jobLng != 0 {
+                        geofenceManager.startMonitoring(jobId: jid, jobName: job.jobName, latitude: jobLat, longitude: jobLng)
+                    }
                 }
                 errorMessage = nil
                 loadData()
@@ -379,10 +434,13 @@ struct IOSClockPage: View {
                     gpsLat: location?.coordinate.latitude,
                     gpsLng: location?.coordinate.longitude
                 )
+                geofenceManager.stopMonitoring()
                 errorMessage = nil
                 linkedJobId = nil
                 linkedJobName = nil
                 isShopClockIn = false
+                lastLaborEntryId = entryId
+                activeSheet = .questionnaire(entryId)
                 loadData()
             } catch {
                 errorMessage = "Clock out failed: \(error.localizedDescription)"
@@ -449,7 +507,9 @@ struct IOSClockPage: View {
             // Load active jobs
             let jobRows = try db.writer.read { conn -> [Row] in
                 try Row.fetchAll(conn, sql: """
-                    SELECT id, job_name, job_number, address, latitude, longitude, status
+                    SELECT id, job_name, job_number,
+                           COALESCE(address_line1, '') || CASE WHEN city IS NOT NULL THEN ', ' || city ELSE '' END AS address,
+                           gps_lat AS latitude, gps_lng AS longitude, status
                     FROM jobs
                     WHERE status IN ('active', 'in_progress') AND deleted_at IS NULL
                     ORDER BY job_name ASC
