@@ -85,7 +85,7 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 23G | Forecasting Location UI | Location picker, recommendation filter + cards, approve/dismiss actions | DONE |
 | 23H | Forecast Detail Panel Redesign | Full part editor, stock health bars per location, editable MIN/TARGET/MAX | DONE |
 | 24A | Import/Export Redesign | Service layer, field selection export, import preview + per-conflict resolution | DONE |
-| 26A | PO List Cleanup | Platform guard, count badges, date formatting, loadError guard | |
+| 26A | PO List Cleanup | Platform guard, count badges, date formatting, loadError guard | DONE |
 | 26B | PO List Swipe + Sort | Swipe actions with AI summary, sort options, awaiting delivery KPI | |
 | 26C | PO Detail Lifecycle | Status-based actions (7 states), Drafting status, cancel confirmations | |
 | 26D | PO Detail Supplier CRM | Supplier contact info, score bars, tabbed notes (PO + Supplier) | |
@@ -96,6 +96,14 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 27C | JPO Detail Redesign | Per-part approve/hold/reject, bulk actions, delivery options, PO linkage | |
 | 27D | JPO Hold + Chat | Per-part chat thread, question prompt, auto-membership, chat indicator on list | |
 | 27E | Full Audit Trail | part_change_log table, who-did-what logging, PartHistoryView component (cross-cutting) | |
+| 28A | Procurement Redesign | Demand consolidation, stock logic, pull options, smart cards, bring-to-target buttons | |
+| 28B | Procurement Suppliers | Per-part supplier pick, cheapest/rated/fastest highlight, 2PM cutoff, split by JPO | |
+| 28C | Procurement PO Preview | Supplier-grouped preview, partial generation, save for later | |
+| 28D | Job Stage Planner | Stage model, category mapping, held/released parts, auto-release, stage settings | |
+| 29A | Receiving Fix | Hardcoded user ID, ActiveSheet pattern, platform guard | |
+| 29B | Returns Fix | ErrorStateView, console→UI errors, platform guard, smart cards | |
+| 29C | Approvals Dashboard | Smart cards, reject reason, actionError display, multi-type approvals | |
+| 29D | Orders Cleanup | Remove UnifiedOrderPage, update router tab order, consolidate SupplierPicker | |
 
 ## Prompt 01 Results (2026-03-18)
 

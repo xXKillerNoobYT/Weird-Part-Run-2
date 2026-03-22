@@ -12,6 +12,7 @@ struct IOSPurchaseOrdersPage: View {
     // MARK: - State
 
     @State private var purchaseOrders: [OrdersService.POListItem] = []
+    @State private var allPurchaseOrders: [OrdersService.POListItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
@@ -86,7 +87,7 @@ struct IOSPurchaseOrdersPage: View {
                         statusFilter = status
                         loadData()
                     } label: {
-                        Text(status == "all" ? "All" : status.capitalized)
+                        Text("\(status == "all" ? "All" : status.capitalized) (\(countForStatus(status)))")
                             .font(.caption)
                             .fontWeight(statusFilter == status ? .bold : .regular)
                             .padding(.horizontal, 12)
@@ -128,9 +129,7 @@ struct IOSPurchaseOrdersPage: View {
                     poRow(po)
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -152,7 +151,7 @@ struct IOSPurchaseOrdersPage: View {
                 Text(po.supplierName)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                if let date = po.orderDate {
+                if let date = formatDate(po.orderDate) {
                     Text(date)
                         .font(.caption)
                         .foregroundStyle(.tertiary)
@@ -196,16 +195,38 @@ struct IOSPurchaseOrdersPage: View {
             .foregroundStyle(color)
     }
 
+    // MARK: - Helpers
+
+    private func countForStatus(_ status: String) -> Int {
+        if status == "all" { return allPurchaseOrders.count }
+        return allPurchaseOrders.filter { $0.status == status }.count
+    }
+
+    private func formatDate(_ isoString: String?) -> String? {
+        guard let str = isoString else { return nil }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withFullDate]
+        guard let date = iso.date(from: String(str.prefix(10))) else { return str }
+        let display = DateFormatter()
+        display.dateStyle = .medium
+        return display.string(from: date)
+    }
+
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            loadError = "Orders service not available"
+            isLoading = false
+            return
+        }
         isLoading = purchaseOrders.isEmpty
         loadError = nil
         do {
-            purchaseOrders = try service.listPurchaseOrders(
-                status: statusFilter == "all" ? nil : statusFilter
-            )
+            allPurchaseOrders = try service.listPurchaseOrders(status: nil)
+            purchaseOrders = statusFilter == "all"
+                ? allPurchaseOrders
+                : allPurchaseOrders.filter { $0.status == statusFilter }
         } catch {
             loadError = error.localizedDescription
         }

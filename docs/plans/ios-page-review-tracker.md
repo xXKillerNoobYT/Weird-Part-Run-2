@@ -68,6 +68,15 @@ Cross-cutting audit of the entire app for structural issues.
 - **Smart Cards are a PROGRAM STANDARD:** Stat card filters (tap to filter, tap again for all, counts on each card) replace horizontal chip bars on ALL list pages. This is the standard filter pattern across the entire app.
 - **Help/Info button on ALL pages:** Every page gets a help button explaining what it does and how to use it.
 - **Full audit trail on ALL parts:** `part_change_log` table tracks who changed what, when, across the entire app. Visible in part detail view.
+- **AI Assistant capabilities (PROGRAM STANDARD):**
+  - Has access to page-specific detailed info for the OPEN page
+  - Has general read-only info for everything else in the program
+  - Can activate/change card filters to surface relevant info on the current page
+  - Can give instructions on what to click (but CANNOT navigate for the user)
+  - Knows the full program layout and can guide users to the right page
+  - LOCKED to user-specific info (respects hat permissions)
+  - CANNOT edit, modify, or delete any data — strictly read + filter activation
+  - Needs significant work — this is an ongoing feature, not a one-prompt fix
 
 ### CRUD & Security (Prompts 06-10) — DONE
 
