@@ -91,6 +91,11 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 26D | PO Detail Supplier CRM | Supplier contact info, score bars, tabbed notes (PO + Supplier) | |
 | 26E | Parts Order Management | NEW page: supplier-centric cross-PO view, dual filters, multi-select actions | |
 | 26F | PO Detail Jobs + Timeline | Job grouping, delivery timeline bars, inline draft editing, receipt history | |
+| 27A | JPO List Cleanup | ActiveSheet, QR scan, count badges, Create JPO with clock auto-fill | |
+| 27B | JPO Per-Part Status | Migration: line_status + delivery_option, smart routing (stock → transfer vs approval) | |
+| 27C | JPO Detail Redesign | Per-part approve/hold/reject, bulk actions, delivery options, PO linkage | |
+| 27D | JPO Hold + Chat | Per-part chat thread, question prompt, auto-membership, chat indicator on list | |
+| 27E | Full Audit Trail | part_change_log table, who-did-what logging, PartHistoryView component (cross-cutting) | |
 
 ## Prompt 01 Results (2026-03-18)
 
