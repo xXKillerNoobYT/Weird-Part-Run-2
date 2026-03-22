@@ -86,7 +86,7 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 23H | Forecast Detail Panel Redesign | Full part editor, stock health bars per location, editable MIN/TARGET/MAX | DONE |
 | 24A | Import/Export Redesign | Service layer, field selection export, import preview + per-conflict resolution | DONE |
 | 26A | PO List Cleanup | Platform guard, count badges, date formatting, loadError guard | DONE |
-| 26B | PO List Swipe + Sort | Swipe actions with AI summary, sort options, awaiting delivery KPI | |
+| 26B | PO List Swipe + Sort | Swipe actions with AI summary, sort options, awaiting delivery KPI | DONE |
 | 26C | PO Detail Lifecycle | Status-based actions (7 states), Drafting status, cancel confirmations | |
 | 26D | PO Detail Supplier CRM | Supplier contact info, score bars, tabbed notes (PO + Supplier) | |
 | 26E | Parts Order Management | NEW page: supplier-centric cross-PO view, dual filters, multi-select actions | |
@@ -104,6 +104,11 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 29B | Returns Fix | ErrorStateView, console→UI errors, platform guard, smart cards | |
 | 29C | Approvals Dashboard | Smart cards, reject reason, actionError display, multi-type approvals | |
 | 29D | Orders Cleanup | Remove UnifiedOrderPage, update router tab order, consolidate SupplierPicker | |
+| 30A | JPO Creation Layout | 3-panel (search/cart/suggestions), job auto-fill, delivery options, stock indicators | |
+| 30B | JPO Creation Search | AI-powered search (cart + last 5 context), QR scan, ⚡ best match, internet toggle | |
+| 30C | JPO Creation Suggestions | Companion rules (5) + AI picks (3), context switch on cart selection | |
+| 30D | JPO Creation Feedback | Qty confirm dialog, companion points, ratio learning, AI→rule promotion | |
+| 30E | JPO Creation Submit | Create JPO + lines, smart routing, replace IOSUnifiedOrderPage | |
 
 ## Prompt 01 Results (2026-03-18)
 
