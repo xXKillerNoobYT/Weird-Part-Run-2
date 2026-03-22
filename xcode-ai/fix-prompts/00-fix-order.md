@@ -87,7 +87,7 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 24A | Import/Export Redesign | Service layer, field selection export, import preview + per-conflict resolution | DONE |
 | 26A | PO List Cleanup | Platform guard, count badges, date formatting, loadError guard | DONE |
 | 26B | PO List Swipe + Sort | Swipe actions with AI summary, sort options, awaiting delivery KPI | DONE |
-| 26C | PO Detail Lifecycle | Status-based actions (7 states), Drafting status, cancel confirmations | |
+| 26C | PO Detail Lifecycle | Status-based actions (7 states), Drafting status, cancel confirmations | DONE |
 | 26D | PO Detail Supplier CRM | Supplier contact info, score bars, tabbed notes (PO + Supplier) | |
 | 26E | Parts Order Management | NEW page: supplier-centric cross-PO view, dual filters, multi-select actions | |
 | 26F | PO Detail Jobs + Timeline | Job grouping, delivery timeline bars, inline draft editing, receipt history | |

@@ -3,8 +3,9 @@ import WiredPartCore
 
 /// Purchase Order detail page.
 ///
-/// Shows PO header, supplier info, line items, shipping/tracking,
-/// and cost breakdown.
+/// Shows PO header, supplier info, status-based action buttons,
+/// line items with stale price warnings, shipping/tracking,
+/// and cost breakdown. Actions change based on the PO's lifecycle state.
 struct IOSPODetailPage: View {
     @EnvironmentObject private var appCore: AppCore
 
@@ -13,6 +14,29 @@ struct IOSPODetailPage: View {
     @State private var po: OrdersService.PODetail?
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var actionMessage: String?
+
+    // Confirmations
+    @State private var showDeleteConfirmation = false
+    @State private var showCancelConfirmation = false
+    @State private var showCancelRemainingConfirmation = false
+    @State private var cancelReason = ""
+
+    // Sheets
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case receiveShipment
+        case manageParts
+        case contactSupplier
+        case updateETA
+        case doubleOrder
+        case reportIssue
+        case receiptHistory
+        case contactCreator
+
+        var id: String { String(describing: self) }
+    }
 
     var body: some View {
         Group {
@@ -26,11 +50,118 @@ struct IOSPODetailPage: View {
             }
         }
         .navigationTitle("PO \(po?.poNumber ?? "#\(poId)")")
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
-        #endif
+        .sheet(item: $activeSheet) { sheet in
+            sheetContent(for: sheet)
+        }
+        // Delete Draft confirmation
+        .alert("Delete Draft?", isPresented: $showDeleteConfirmation) {
+            Button("Keep Draft", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                Task { await deleteDraftPO() }
+            }
+        } message: {
+            Text("This will permanently delete this draft purchase order.")
+        }
+        // Cancel PO confirmation
+        .alert("Cancel Purchase Order?", isPresented: $showCancelConfirmation) {
+            TextField("Reason (required)", text: $cancelReason)
+            Button("Keep Order", role: .cancel) { cancelReason = "" }
+            Button("Cancel PO", role: .destructive) {
+                Task {
+                    guard !cancelReason.trimmingCharacters(in: .whitespaces).isEmpty else {
+                        actionMessage = "Cancellation reason is required."
+                        return
+                    }
+                    await transitionPO(to: "cancelled")
+                    cancelReason = ""
+                }
+            }
+        } message: {
+            Text("This will cancel the entire purchase order. A reason is required.")
+        }
+        // Cancel Remaining confirmation
+        .alert("Cancel Remaining Items?", isPresented: $showCancelRemainingConfirmation) {
+            TextField("Reason (required)", text: $cancelReason)
+            Button("Keep Remaining", role: .cancel) { cancelReason = "" }
+            Button("Cancel Remaining", role: .destructive) {
+                Task {
+                    guard !cancelReason.trimmingCharacters(in: .whitespaces).isEmpty else {
+                        actionMessage = "Cancellation reason is required."
+                        return
+                    }
+                    await transitionPO(to: "cancelled")
+                    cancelReason = ""
+                }
+            }
+        } message: {
+            Text("This will cancel all unreceived items. Contact the supplier first to confirm. A reason is required.")
+        }
+        // Action message
+        .alert("Notice", isPresented: .constant(actionMessage != nil)) {
+            Button("OK") { actionMessage = nil }
+        } message: {
+            Text(actionMessage ?? "")
+        }
         .task { loadData() }
     }
+
+    // MARK: - Sheet Content
+
+    @ViewBuilder
+    private func sheetContent(for sheet: ActiveSheet) -> some View {
+        switch sheet {
+        case .receiveShipment:
+            NavigationStack {
+                IOSReceiveShipmentPage()
+                    .environmentObject(appCore)
+            }
+        case .manageParts:
+            NavigationStack {
+                Text("Parts Management — Coming Soon")
+                    .navigationTitle("Manage Parts")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+        case .contactSupplier:
+            NavigationStack {
+                Text("Supplier Contact — Coming Soon")
+                    .navigationTitle("Contact Supplier")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+        case .updateETA:
+            NavigationStack {
+                Text("Update ETA — Coming Soon")
+                    .navigationTitle("Update ETA")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+        case .doubleOrder:
+            NavigationStack {
+                Text("Double Order — Coming Soon")
+                    .navigationTitle("Double Order")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+        case .reportIssue:
+            NavigationStack {
+                Text("Report Issue — Coming Soon")
+                    .navigationTitle("Report Issue")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+        case .receiptHistory:
+            NavigationStack {
+                Text("Receipt History — Coming Soon")
+                    .navigationTitle("Receipt History")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+        case .contactCreator:
+            NavigationStack {
+                Text("Contact Creator — Coming Soon")
+                    .navigationTitle("Contact Creator")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+        }
+    }
+
+    // MARK: - Content
 
     @ViewBuilder
     private func poContent(_ po: OrdersService.PODetail) -> some View {
@@ -46,6 +177,9 @@ struct IOSPODetailPage: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+
+                // Action Buttons
+                actionButtons(for: po.status)
 
                 // Supplier
                 VStack(alignment: .leading, spacing: 4) {
@@ -88,6 +222,19 @@ struct IOSPODetailPage: View {
                                 Text(line.partName ?? "Item")
                                     .font(.subheadline)
                                     .fontWeight(.medium)
+                                // Stale price warning
+                                if let partId = line.partId,
+                                   let service = appCore.partsService,
+                                   (try? service.isPartPriceStale(partId: partId)) == true {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                            .font(.caption2)
+                                            .foregroundStyle(.orange)
+                                        Text("Price not verified recently")
+                                            .font(.caption2)
+                                            .foregroundStyle(.orange)
+                                    }
+                                }
                                 Text("Qty: \(line.quantityOrdered) | Received: \(line.quantityReceived)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -139,15 +286,163 @@ struct IOSPODetailPage: View {
         }
     }
 
+    // MARK: - Action Buttons
+
+    @ViewBuilder
+    private func actionButtons(for status: String) -> some View {
+        VStack(spacing: 8) {
+            switch status {
+            case "draft":
+                HStack(spacing: 8) {
+                    actionButton("Submit to Supplier", icon: "paperplane.fill", color: .blue) {
+                        await transitionPO(to: "submitted")
+                    }
+                    actionButton("Delete Draft", icon: "trash", color: .red) {
+                        showDeleteConfirmation = true
+                    }
+                }
+                actionButton("Manage Parts", icon: "list.bullet.rectangle", color: .accentColor) {
+                    activeSheet = .manageParts
+                }
+
+            case "submitted":
+                HStack(spacing: 8) {
+                    actionButton("Mark Ordered", icon: "checkmark.circle.fill", color: .blue) {
+                        await transitionPO(to: "ordered")
+                    }
+                    actionButton("Drafting / Unclear", icon: "questionmark.circle", color: .yellow) {
+                        await transitionPO(to: "drafting")
+                    }
+                }
+                HStack(spacing: 8) {
+                    actionButton("Cancel PO", icon: "xmark.circle", color: .red) {
+                        showCancelConfirmation = true
+                    }
+                    actionButton("Contact Supplier", icon: "message.fill", color: .green) {
+                        activeSheet = .contactSupplier
+                    }
+                }
+
+            case "ordered":
+                HStack(spacing: 8) {
+                    actionButton("Receive Shipment", icon: "shippingbox.and.arrow.backward.fill", color: .green) {
+                        activeSheet = .receiveShipment
+                    }
+                    actionButton("Update ETA", icon: "calendar.badge.clock", color: .orange) {
+                        activeSheet = .updateETA
+                    }
+                }
+                HStack(spacing: 8) {
+                    actionButton("Cancel PO", icon: "xmark.circle", color: .red) {
+                        showCancelConfirmation = true
+                    }
+                    actionButton("Contact Supplier", icon: "message.fill", color: .green) {
+                        activeSheet = .contactSupplier
+                    }
+                }
+                actionButton("Manage Parts", icon: "list.bullet.rectangle", color: .accentColor) {
+                    activeSheet = .manageParts
+                }
+
+            case "partial":
+                HStack(spacing: 8) {
+                    actionButton("Receive More", icon: "shippingbox.and.arrow.backward.fill", color: .green) {
+                        activeSheet = .receiveShipment
+                    }
+                    actionButton("Cancel Remaining", icon: "xmark.circle", color: .red) {
+                        showCancelRemainingConfirmation = true
+                    }
+                }
+                HStack(spacing: 8) {
+                    actionButton("Contact Supplier", icon: "message.fill", color: .green) {
+                        activeSheet = .contactSupplier
+                    }
+                    actionButton("Double Order", icon: "doc.on.doc", color: .orange) {
+                        activeSheet = .doubleOrder
+                    }
+                }
+                actionButton("Manage Parts", icon: "list.bullet.rectangle", color: .accentColor) {
+                    activeSheet = .manageParts
+                }
+
+            case "received":
+                HStack(spacing: 8) {
+                    actionButton("Report Issue", icon: "exclamationmark.triangle", color: .orange) {
+                        activeSheet = .reportIssue
+                    }
+                    actionButton("View History", icon: "clock.arrow.circlepath", color: .secondary) {
+                        activeSheet = .receiptHistory
+                    }
+                }
+
+            case "drafting":
+                HStack(spacing: 8) {
+                    actionButton("Resume Draft", icon: "pencil.circle.fill", color: .blue) {
+                        await transitionPO(to: "draft")
+                    }
+                    actionButton("Contact Job Creator", icon: "person.fill.questionmark", color: .orange) {
+                        activeSheet = .contactCreator
+                    }
+                }
+
+            case "cancelled":
+                EmptyView()
+
+            default:
+                EmptyView()
+            }
+        }
+    }
+
+    private func actionButton(_ title: String, icon: String, color: Color, action: @escaping () async -> Void) -> some View {
+        Button {
+            Task { await action() }
+        } label: {
+            Label(title, systemImage: icon)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(color.opacity(0.12))
+                .foregroundStyle(color)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Status Transitions
+
+    private func transitionPO(to newStatus: String) async {
+        guard let service = appCore.ordersService else { return }
+        do {
+            try service.updatePOStatus(id: poId, status: newStatus)
+            loadData()
+        } catch {
+            actionMessage = "Failed to update status: \(error.localizedDescription)"
+        }
+    }
+
+    private func deleteDraftPO() async {
+        guard let service = appCore.ordersService else { return }
+        do {
+            try service.deletePO(id: poId)
+            actionMessage = "Draft deleted."
+        } catch {
+            actionMessage = "Failed to delete draft: \(error.localizedDescription)"
+        }
+    }
+
     // MARK: - Helpers
 
     private func statusColor(_ status: String) -> Color {
         switch status {
         case "draft": .secondary
-        case "sent": .blue
-        case "partial": .orange
+        case "submitted": .orange
+        case "ordered": .blue
+        case "partial": .purple
         case "received": .green
         case "cancelled": .red
+        case "drafting": .yellow
         default: .secondary
         }
     }
@@ -160,7 +455,11 @@ struct IOSPODetailPage: View {
     }
 
     private func loadData() {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            loadError = "Orders service not available"
+            isLoading = false
+            return
+        }
         isLoading = po == nil
         loadError = nil
         do {
