@@ -140,10 +140,64 @@ Part-level fast actions (when parts selected):
 - [Change Qty]
 - [Remove + Hold] (returns to procurement for different supplier)
 
-### Where it lives: TBD
-Options under consideration:
-- Orders → dedicated tab (alongside POs, JPOs, Procurement)
-- Only accessible from PO Detail via "Manage Parts" button
+### Where it lives: Its own tab under Orders (CONFIRMED)
+
+```
+Orders
+├── Purchase Orders
+├── Job Orders (JPOs)
+├── Procurement
+├── Parts Management  ← THIS PAGE
+├── Returns
+├── Wishlist          ← future
+└── Approvals
+```
+
+- Also accessible via [Manage Parts] button on PO Detail (pre-filtered to that supplier)
+- User can change supplier filter on the page to see other suppliers
+
+### Filter Defaults
+
+**PO Filters (card toggles):**
+- ☑ Draft, ☑ Active, ☑ Partial — DEFAULT ON
+- ☐ Received, ☐ Cancelled — DEFAULT OFF
+
+**Parts Status Filters (card toggles with icons):**
+- ☐ ✅ Received — OFF by default (hide parts we don't need to worry about)
+- ☑ ⏳ Waiting — ON (show incoming parts with green→red delivery timeline)
+- ☑ 🔴 Backorder — ON (doesn't count against supplier, but track brand/supplier patterns)
+- ☑ ⚠️ Price Changed — ON (needs price verification)
+
+### Smart Delivery Timeline (on ⏳ Waiting parts)
+
+Each waiting part shows delivery progress bars:
+- **Promised delivery:** what supplier said (e.g., 5 days)
+- **3-month average:** what supplier actually does (e.g., 7.2 days)
+- **Adjusted ETA:** system's best estimate based on history
+- **This order:** current progress
+
+Color transitions AFTER adjusted ETA (not promised):
+- 🟢 On Track → 🟡 Day 1 late → 🟠 Day 3 late → 🔴 Day 5+ late → OVERDUE at Day 7+
+
+Processing time self-corrects:
+- If supplier consistently takes 7d when they say 5d → adjusted ETA moves to 7-8d
+- If supplier improves → numbers move back toward promised
+- Same pattern as forecasting recommendations — converges toward reality over time
+
+### 🔴 Backorder Tracking
+
+- Does NOT count against supplier reliability records
+- DO track which brand + supplier combos have frequent backorders
+- **Backorder Report goes in REPORTS section** (not Orders)
+- Report shows: brand × supplier matrix, backorder frequency, insight recommendations
+
+### ⚠️ Price Changed Verification
+
+Price changes detected during receiving:
+- Show old price vs new price + % change
+- Show which jobs are affected
+- Actions: [Accept New Price] [Dispute] [Keep Original]
+- Accepting updates part pricing and flags jobs for rebilling review
 
 ### Export to Supplier
 - Parts grouped by job in the export
@@ -158,13 +212,49 @@ Options under consideration:
 
 This is a global requirement, not PO-specific.
 
+## 9. PO Detail Page Review (IOSPODetailPage.swift — 225 lines)
+
+### Current State
+Functional but minimal. Shows status badge, supplier name, tracking, line items flat (no job grouping), cost summary. Only toolbar action is "Receive Shipment". Has stale price warning on line items.
+
+### Issues Found
+1. **Only 1 action** — needs full status-based action buttons
+2. **No supplier CRM section** — no call/message/notes, no scores
+3. **No job grouping** — line items shown flat
+4. **No [Manage Parts] button** — can't open Parts Management page
+5. **"sent" status** but we use "submitted" — mismatch
+6. **No backorder indicator** on line items
+7. **No delivery timeline bars** (green→red)
+8. **No "Drafting/Unclear" status** handling
+9. **No help/info button**
+
+### Required Design (from workflow above)
+- Top: Status badge + order date + delivery timeline bars
+- Status-based action buttons (see Status Details table)
+- Supplier CRM section: phone, email, rep, account #, per-PO notes, score bars
+- Line items grouped by job (Job #412, Job #418, Forecast, Wishlist)
+- Each line item shows: part name, qty ordered/received, unit price, total, status icon (✅⏳🔴⚠️), mini delivery bar
+- Backorder lines show [Update ETA] [Double Order] (branded only)
+- Cost summary at bottom
+- [Manage Parts] button opens Parts Management filtered to this supplier
+
+### Design Questions (ALL CONFIRMED 2026-03-21)
+
+1. **PO Notes vs Supplier Notes:** BOTH — separate tabs. PO tab shows communication about THIS order. Supplier tab shows recent entries from supplier profile (read-only on this page).
+
+2. **Backorder actions:** PER LINE ITEM. Each backordered part gets its own [Update ETA] [Double Order] buttons inline. One part can be double-ordered while others wait.
+
+3. **Receipt history:** YES, TIMELINE. "Batch 1: 6 items received Mar 25. Batch 2: 3 items received Mar 28." Shows the full receiving story with dates and quantities.
+
+4. **Edit line items on Draft:** BOTH (Option C). Quick-edit for qty/price inline on Draft POs + [Manage Parts] button for complex operations (move between POs, remove + hold, etc.).
+
 ## Prompt Chain
 
-| Prompt | What |
-|--------|------|
-| 26A | PO page cleanup: platform guard, count badges, date formatting, loadError guard |
-| 26B | Swipe actions with AI summary confirmation, sort options, awaiting delivery KPI |
-| 26C | PO lifecycle: status transitions, Drafting status, backorder tracking |
-| 26D | Supplier CRM section on PO detail: notes, fast actions, score bars |
-| 26E | Parts Order Management Page: supplier-centric view, multi-select, part-level actions |
-| 26F | PO export: job grouping, supplier communication format |
+| Prompt | What | Status |
+|--------|------|--------|
+| 26A | PO list cleanup: platform guard, count badges, date formatting, loadError guard | Queued |
+| 26B | PO list: swipe cancel with AI summary, sort options, awaiting delivery KPI | Queued |
+| 26C | PO detail lifecycle: status-based actions (7 states), Drafting status, confirmations | Written |
+| 26D | PO detail supplier CRM: contact info, score bars, tabbed notes (PO + Supplier) | Written |
+| 26E | Parts Order Management page (NEW): supplier-centric cross-PO view, dual filters, multi-select | Written |
+| 26F | PO detail: job grouping, delivery timeline bars, inline draft editing, receipt history | Written |

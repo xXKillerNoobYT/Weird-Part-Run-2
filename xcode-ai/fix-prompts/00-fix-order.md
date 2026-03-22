@@ -47,44 +47,50 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 16G | Stale Alerts + Receiving | No stale price warnings, no price verification during receiving | DONE |
 | 16H | Catalog Pricing + View Modes | No pricing on catalog page, only one pricing view layout | DONE |
 | 16I | Pricing AI Integration | No AI assistant for pricing page tasks | DONE |
-| 17A | Supplier Migration + Models | No account_number column, no StockMovement model, no traceability | |
-| 17B | Supplier Form Rebuild | Only 7 of 15+ fields editable, missing rep/delivery/account fields | |
-| 17C | Supplier Performance Scores | Quality/on-time/reliability not auto-calculated from real data | |
-| 17D | Supplier Detail Rebuild | Missing brands, PO history, part count in detail view | |
-| 17E | Supplier Contacts Integration | No multi-contact support, no link to People system | |
-| 17F | Supplier Sort + Field Fix + Pricing Display | No sort options, wrong field mapping, no supplier costs on pricing page | |
-| 17G | Brands Detail Sheet Fix | Double .sheet conflict, hardcoded supplierCount=0 | |
-| 17H | Supplier AI Integration | No AI assistant for suppliers page (read-only) | |
-| 18A | Review Cleanup | Error visibility in 3 category components, dead imports, minor bugs | |
-| 19A | Companion Migration + Models | No tables for polls, votes, auto-discovery, no type_id on sources/targets | |
-| 19B | Companion Rules + Points Service | 11 service methods: hierarchy rules CRUD, soft delete, co-occurrence points engine | |
-| 19C | Companion Polls + Voting Service | 12 methods: weekly polls, casting votes, admin lock/skip, training questions | |
-| 19D | Companion Page Cleanup | Raw SQL → service calls, soft delete, error banners, orphan indicators | |
-| 19E | Companion Rule Form Rebuild | Individual part pickers → cascading category/style/type pickers with level control | |
-| 19F | Companion Polls UI | 3rd tab "Polls", vote cards, admin controls (lock/skip/preview), training questions | |
-| 19G | Companion Clock-Out Integration | Wire questionnaire into clock-out, add companion polls as optional questions | |
-| 19H | Companion Testing Sandbox | "What If" scenario builder with real job data, matched rules, next level preview | |
-| 19I | Companion Admin Dashboard | Voting accuracy table, poll history, manual vs auto-discovered rule counts | |
-| 19J | Companion Auto-Discovery Engine | Style/type drill-down, runAutoDiscoveryCycle orchestrator, app launch trigger | |
-| 19K | Companion AI Integration | 4 read-only AI tools: rules, polls, co-occurrence explain, voting summary | |
-| 20A | QR Warehouse Integration | Reusable QRScanSheet, scan PO for receiving, scan part/bin for movements | |
-| 20B | QR Orders Integration | Scan part to add PO line item, scan supplier, scan PO for lookup | |
-| 20C | QR Jobs + Tools Integration | Scan job for clock-in, scan tool for checkout/return, tool registry lookup | |
-| 20D | QR Catalog + People Integration | Scan part/barcode in catalog, scan employee badge for lookup | |
-| 21A | QR Label PDF Engine | No way to print QR labels; PDF generator with 6 sizes, 11 paper types, 6 layouts | |
-| 21B | QR Label Print UI | Label print sheet with size/layout/paper pickers, used sticker picker, iOS print | |
-| 22A | Supplier Bridge Migration + Service | No supplier communication; bridge tables, channel creation, direction tracking | |
-| 22B | Supplier Bridge UI | Supplier channel badges, detail page messaging, PO reference attachments | |
-| 22C | Supplier Bridge Job Channels | Job-linked supplier channels, supplier RFI integration, unread badges on jobs | |
+| 17A | Supplier Migration + Models | No account_number column, no StockMovement model, no traceability | DONE |
+| 17B | Supplier Form Rebuild | Only 7 of 15+ fields editable, missing rep/delivery/account fields | DONE |
+| 17C | Supplier Performance Scores | Quality/on-time/reliability not auto-calculated from real data | DONE |
+| 17D | Supplier Detail Rebuild | Missing brands, PO history, part count in detail view | DONE |
+| 17E | Supplier Contacts Integration | No multi-contact support, no link to People system | DONE |
+| 17F | Supplier Sort + Field Fix + Pricing Display | No sort options, wrong field mapping, no supplier costs on pricing page | DONE |
+| 17G | Brands Detail Sheet Fix | Double .sheet conflict, hardcoded supplierCount=0 | DONE |
+| 17H | Supplier AI Integration | No AI assistant for suppliers page (read-only) | DONE |
+| 18A | Review Cleanup | Error visibility in 3 category components, dead imports, minor bugs | DONE |
+| 19A | Companion Migration + Models | No tables for polls, votes, auto-discovery, no type_id on sources/targets | DONE |
+| 19B | Companion Rules + Points Service | 11 service methods: hierarchy rules CRUD, soft delete, co-occurrence points engine | DONE |
+| 19C | Companion Polls + Voting Service | 12 methods: weekly polls, casting votes, admin lock/skip, training questions | DONE |
+| 19D | Companion Page Cleanup | Raw SQL → service calls, soft delete, error banners, orphan indicators | DONE |
+| 19E | Companion Rule Form Rebuild | Individual part pickers → cascading category/style/type pickers with level control | DONE |
+| 19F | Companion Polls UI | 3rd tab "Polls", vote cards, admin controls (lock/skip/preview), training questions | DONE |
+| 19G | Companion Clock-Out Integration | Wire questionnaire into clock-out, add companion polls as optional questions | DONE |
+| 19H | Companion Testing Sandbox | "What If" scenario builder with real job data, matched rules, next level preview | DONE |
+| 19I | Companion Admin Dashboard | Voting accuracy table, poll history, manual vs auto-discovered rule counts | DONE |
+| 19J | Companion Auto-Discovery Engine | Style/type drill-down, runAutoDiscoveryCycle orchestrator, app launch trigger | DONE |
+| 19K | Companion AI Integration | 4 read-only AI tools: rules, polls, co-occurrence explain, voting summary | DONE |
+| 20A | QR Warehouse Integration | Reusable QRScanSheet, scan PO for receiving, scan part/bin for movements | DONE |
+| 20B | QR Orders Integration | Scan part to add PO line item, scan supplier, scan PO for lookup | DONE |
+| 20C | QR Jobs + Tools Integration | Scan job for clock-in, scan tool for checkout/return, tool registry lookup | DONE |
+| 20D | QR Catalog + People Integration | Scan part/barcode in catalog, scan employee badge for lookup | DONE |
+| 21A | QR Label PDF Engine | No way to print QR labels; PDF generator with 6 sizes, 11 paper types, 6 layouts | DONE |
+| 21B | QR Label Print UI | Label print sheet with size/layout/paper pickers, used sticker picker, iOS print | DONE |
+| 22A | Supplier Bridge Migration + Service | No supplier communication; bridge tables, channel creation, direction tracking | DONE |
+| 22B | Supplier Bridge UI | Supplier channel badges, detail page messaging, PO reference attachments | DONE |
+| 22C | Supplier Bridge Job Channels | Job-linked supplier channels, supplier RFI integration, unread badges on jobs | DONE |
 | 23A | Forecasting Page Cleanup | Raw SQL → service layer, platform guards, recalculate button, trend indicators | DONE |
-| 23B | Forecasting AI Integration | AI tool for forecast queries, page context notification, read-only | |
-| 23C | Forecasting Stat Card Filters | Delete chip bar, stat cards act as toggle filters | |
-| 23D | Forecasting Location Backbone | Migration: location_stock_targets, per-location forecast service methods | |
-| 23E | Forecast Settings Migration | forecast_settings (ADU/APW per location), location_free_space, seed defaults | |
-| 23F | Target Recommendation Engine | Daily recommendation, approve/dismiss, category changes, ADU+APW | |
-| 23G | Forecasting Location UI | Location picker, recommendation filter + cards, approve/dismiss actions | |
-| 23H | Forecast Detail Panel Redesign | Full part editor, stock health bars per location, editable MIN/TARGET/MAX | |
-| 24A | Import/Export Redesign | Service layer, field selection export, import preview + per-conflict resolution | |
+| 23B | Forecasting AI Integration | AI tool for forecast queries, page context notification, read-only | DONE |
+| 23C | Forecasting Stat Card Filters | Delete chip bar, stat cards act as toggle filters | DONE |
+| 23D | Forecasting Location Backbone | Migration: location_stock_targets, per-location forecast service methods | DONE |
+| 23E | Forecast Settings Migration | forecast_settings (ADU/APW per location), location_free_space, seed defaults | DONE |
+| 23F | Target Recommendation Engine | Daily recommendation, approve/dismiss, category changes, ADU+APW | DONE |
+| 23G | Forecasting Location UI | Location picker, recommendation filter + cards, approve/dismiss actions | DONE |
+| 23H | Forecast Detail Panel Redesign | Full part editor, stock health bars per location, editable MIN/TARGET/MAX | DONE |
+| 24A | Import/Export Redesign | Service layer, field selection export, import preview + per-conflict resolution | DONE |
+| 26A | PO List Cleanup | Platform guard, count badges, date formatting, loadError guard | |
+| 26B | PO List Swipe + Sort | Swipe actions with AI summary, sort options, awaiting delivery KPI | |
+| 26C | PO Detail Lifecycle | Status-based actions (7 states), Drafting status, cancel confirmations | |
+| 26D | PO Detail Supplier CRM | Supplier contact info, score bars, tabbed notes (PO + Supplier) | |
+| 26E | Parts Order Management | NEW page: supplier-centric cross-PO view, dual filters, multi-select actions | |
+| 26F | PO Detail Jobs + Timeline | Job grouping, delivery timeline bars, inline draft editing, receipt history | |
 
 ## Prompt 01 Results (2026-03-18)
 
