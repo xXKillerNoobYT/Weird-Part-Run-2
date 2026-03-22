@@ -88,7 +88,7 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 26A | PO List Cleanup | Platform guard, count badges, date formatting, loadError guard | DONE |
 | 26B | PO List Swipe + Sort | Swipe actions with AI summary, sort options, awaiting delivery KPI | DONE |
 | 26C | PO Detail Lifecycle | Status-based actions (7 states), Drafting status, cancel confirmations | DONE |
-| 26D | PO Detail Supplier CRM | Supplier contact info, score bars, tabbed notes (PO + Supplier) | |
+| 26D | PO Detail Supplier CRM | Supplier contact info, score bars, tabbed notes (PO + Supplier) | DONE |
 | 26E | Parts Order Management | NEW page: supplier-centric cross-PO view, dual filters, multi-select actions | |
 | 26F | PO Detail Jobs + Timeline | Job grouping, delivery timeline bars, inline draft editing, receipt history | |
 | 27A | JPO List Cleanup | ActiveSheet, QR scan, count badges, Create JPO with clock auto-fill | |
@@ -109,6 +109,15 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 30C | JPO Creation Suggestions | Companion rules (5) + AI picks (3), context switch on cart selection | |
 | 30D | JPO Creation Feedback | Qty confirm dialog, companion points, ratio learning, AI→rule promotion | |
 | 30E | JPO Creation Submit | Create JPO + lines, smart routing, replace IOSUnifiedOrderPage | |
+| 31A | Warehouse Dashboard | Remove GRDB, smart cards, fix quick actions, ActiveSheet, platform guard | |
+| 31B | Warehouse Movements | Remove GRDB, ActiveSheet, smart cards, platform guard | |
+| 31C | Warehouse Locations | Remove GRDB, action buttons in detail sheet, platform guard | |
+| 31D | Warehouse Staging | Swipe confirmation, batch clear, smart cards, platform guard | |
+| 31E | Warehouse Receiving | Start/continue session actions, smart cards, platform guard | |
+| 31F | Warehouse Audit | Fix setup stub, finalize/adjust actions, certainty tie-in TODO, platform guards | |
+| 31G | Warehouse Inventory Grid | Location picker, group by type, low-stock styling, actions, smart cards | |
+| 31H | Warehouse Returns+Tools+Network+Settings | Actions for display-only pages, remove dummy data, fix errors | |
+| 31I | Warehouse Router | Fix unknown route → ErrorStateView, verify all 11 routes | |
 
 ## Prompt 01 Results (2026-03-18)
 

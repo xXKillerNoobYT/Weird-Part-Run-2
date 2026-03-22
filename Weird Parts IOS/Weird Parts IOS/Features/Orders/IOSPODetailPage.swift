@@ -3,15 +3,17 @@ import WiredPartCore
 
 /// Purchase Order detail page.
 ///
-/// Shows PO header, supplier info, status-based action buttons,
-/// line items with stale price warnings, shipping/tracking,
-/// and cost breakdown. Actions change based on the PO's lifecycle state.
+/// Shows PO header, supplier CRM section with contact info and scores,
+/// status-based action buttons, line items with stale price warnings,
+/// shipping/tracking, cost breakdown, and tabbed notes (PO + Supplier).
+/// Actions change based on the PO's lifecycle state.
 struct IOSPODetailPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     let poId: Int64
 
     @State private var po: OrdersService.PODetail?
+    @State private var supplier: Supplier?
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var actionMessage: String?
@@ -24,6 +26,12 @@ struct IOSPODetailPage: View {
 
     // Sheets
     @State private var activeSheet: ActiveSheet?
+
+    // Notes
+    @State private var selectedNotesTab = 0
+    @State private var newNoteText = ""
+    @State private var poNotes: [PONoteEntry] = []
+    @State private var supplierNotes: [PONoteEntry] = []
 
     private enum ActiveSheet: Identifiable {
         case receiveShipment
@@ -181,15 +189,8 @@ struct IOSPODetailPage: View {
                 // Action Buttons
                 actionButtons(for: po.status)
 
-                // Supplier
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Supplier")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(po.supplierName)
-                        .font(.body)
-                        .fontWeight(.medium)
-                }
+                // Supplier CRM Section
+                supplierCRMSection(po)
 
                 // Shipping
                 if let tracking = po.trackingNumber, !tracking.isEmpty {
@@ -272,18 +273,193 @@ struct IOSPODetailPage: View {
                 .padding()
                 .dsCard()
 
-                if let notes = po.notes, !notes.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Notes")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(notes)
-                            .font(.body)
-                    }
-                }
+                // Tabbed Notes
+                notesTabSection(po)
             }
             .padding()
         }
+    }
+
+    // MARK: - Supplier CRM Section
+
+    @ViewBuilder
+    private func supplierCRMSection(_ po: OrdersService.PODetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Header with name + quick actions
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(po.supplierName)
+                        .font(.headline)
+                    if let sup = supplier {
+                        if let rep = sup.repName, !rep.isEmpty {
+                            Text("Rep: \(rep)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let acct = sup.accountNumber, !acct.isEmpty {
+                            Text("Acct: \(acct)")
+                                .font(.caption)
+                                .monospaced()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                Spacer()
+                // Quick contact buttons
+                if let sup = supplier {
+                    HStack(spacing: 12) {
+                        if let phone = sup.phone, !phone.isEmpty,
+                           let url = URL(string: "tel:\(phone)") {
+                            Link(destination: url) {
+                                Image(systemName: "phone.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(.green)
+                            }
+                        }
+                        if let email = sup.email, !email.isEmpty,
+                           let url = URL(string: "mailto:\(email)") {
+                            Link(destination: url) {
+                                Image(systemName: "envelope.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(.blue)
+                            }
+                        }
+                        Button {
+                            activeSheet = .contactSupplier
+                        } label: {
+                            Image(systemName: "message.fill")
+                                .font(.title3)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                }
+            }
+
+            // Reliability scores
+            if let sup = supplier {
+                HStack(spacing: 16) {
+                    scoreBar(label: "Reliability", value: sup.reliabilityScore, color: .blue)
+                    scoreBar(label: "On-Time", value: sup.onTimeRate, color: .green)
+                    scoreBar(label: "Quality", value: sup.qualityScore, color: .purple)
+                }
+            }
+
+            // View supplier profile link
+            NavigationLink {
+                Text("Supplier Profile")
+            } label: {
+                Label("View Supplier Profile", systemImage: "person.crop.rectangle")
+                    .font(.caption)
+            }
+        }
+        .padding()
+        .dsCard()
+    }
+
+    // MARK: - Score Bar
+
+    @ViewBuilder
+    private func scoreBar(label: String, value: Double?, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            if let score = value {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(color.opacity(0.15))
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(color)
+                            .frame(width: geo.size.width * min(max(score / 100, 0), 1))
+                    }
+                }
+                .frame(height: 6)
+                Text("\(Int(score))%")
+                    .font(.caption2)
+                    .fontWeight(.medium)
+            } else {
+                Text("--")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    // MARK: - Tabbed Notes Section
+
+    @ViewBuilder
+    private func notesTabSection(_ po: OrdersService.PODetail) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("Notes", selection: $selectedNotesTab) {
+                Text("PO Notes (\(poNotes.count))").tag(0)
+                Text("Supplier Notes (\(supplierNotes.count))").tag(1)
+            }
+            .pickerStyle(.segmented)
+
+            if selectedNotesTab == 0 {
+                // PO-specific notes — editable
+                ForEach(poNotes) { note in
+                    noteRow(note)
+                }
+
+                // Add note field
+                HStack {
+                    TextField("Add a note...", text: $newNoteText)
+                        .textFieldStyle(.roundedBorder)
+                    Button {
+                        guard !newNoteText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                        Task { await addPONote() }
+                    } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.accentColor)
+                    }
+                    .disabled(newNoteText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+
+                if poNotes.isEmpty {
+                    Text("No notes yet. Add communication history for this order.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .padding(.vertical, 4)
+                }
+            } else {
+                // Supplier-wide notes — read-only
+                ForEach(supplierNotes) { note in
+                    noteRow(note)
+                }
+
+                if supplierNotes.isEmpty {
+                    Text("No supplier notes. Add them from the Supplier Profile page.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .padding(.vertical, 4)
+                }
+            }
+        }
+        .padding()
+        .dsCard()
+    }
+
+    @ViewBuilder
+    private func noteRow(_ note: PONoteEntry) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                if let author = note.author {
+                    Text(author)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+                Spacer()
+                Text(note.date)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            Text(note.text)
+                .font(.subheadline)
+        }
+        .padding(.vertical, 4)
     }
 
     // MARK: - Action Buttons
@@ -432,6 +608,20 @@ struct IOSPODetailPage: View {
         }
     }
 
+    // MARK: - Notes Actions
+
+    private func addPONote() async {
+        guard let service = appCore.ordersService else { return }
+        let author = appCore.currentUser?.displayName ?? "Unknown"
+        do {
+            try service.addPONote(poId: poId, note: newNoteText, author: author)
+            newNoteText = ""
+            loadData()
+        } catch {
+            actionMessage = "Failed to add note: \(error.localizedDescription)"
+        }
+    }
+
     // MARK: - Helpers
 
     private func statusColor(_ status: String) -> Color {
@@ -463,12 +653,61 @@ struct IOSPODetailPage: View {
         isLoading = po == nil
         loadError = nil
         do {
-            po = try service.getPODetail(id: poId)
+            let detail = try service.getPODetail(id: poId)
+            po = detail
+
+            // Load supplier details
+            if let partsService = appCore.partsService {
+                supplier = try? partsService.getSupplier(id: detail.supplierId)
+            }
+
+            // Parse PO notes
+            if let notesStr = detail.notes, !notesStr.isEmpty {
+                poNotes = parseNotes(notesStr)
+            } else {
+                poNotes = []
+            }
+
+            // Parse supplier-wide notes (read-only)
+            if let supNotes = supplier?.notes, !supNotes.isEmpty {
+                supplierNotes = parseNotes(supNotes)
+            } else {
+                supplierNotes = []
+            }
         } catch {
             loadError = error.localizedDescription
         }
         isLoading = false
     }
+
+    /// Parse timestamped notes from a newline-delimited string.
+    /// Expected format: "2026-03-20T14:30:00Z [Author]: Note text"
+    /// Falls back to plain text if format doesn't match.
+    private func parseNotes(_ raw: String) -> [PONoteEntry] {
+        raw.components(separatedBy: "\n")
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            .map { line in
+                let parts = line.components(separatedBy: "]: ")
+                guard parts.count >= 2 else {
+                    return PONoteEntry(text: line, author: nil, date: "")
+                }
+                let prefix = parts[0]
+                let text = parts.dropFirst().joined(separator: "]: ")
+                let prefixParts = prefix.components(separatedBy: " [")
+                let date = prefixParts.first ?? ""
+                let author = prefixParts.count > 1 ? prefixParts[1] : nil
+                return PONoteEntry(text: text, author: author, date: String(date.prefix(10)))
+            }
+    }
+}
+
+// MARK: - Note Entry
+
+private struct PONoteEntry: Identifiable {
+    let id = UUID()
+    let text: String
+    let author: String?
+    let date: String
 }
 
 // MARK: - Cost Line
