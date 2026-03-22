@@ -65,6 +65,9 @@ Cross-cutting audit of the entire app for structural issues.
 - **Single `.sheet(item:)` rule:** SwiftUI only respects the first `.sheet()` modifier. Use `ActiveSheet` enum.
 - **Error visibility:** Every `loadData()` must have `@State private var loadError: String?` with UI display.
 - **44px touch targets:** All tappable elements use `.frame(minHeight: 44)`.
+- **Smart Cards are a PROGRAM STANDARD:** Stat card filters (tap to filter, tap again for all, counts on each card) replace horizontal chip bars on ALL list pages. This is the standard filter pattern across the entire app.
+- **Help/Info button on ALL pages:** Every page gets a help button explaining what it does and how to use it.
+- **Full audit trail on ALL parts:** `part_change_log` table tracks who changed what, when, across the entire app. Visible in part detail view.
 
 ### CRUD & Security (Prompts 06-10) — DONE
 

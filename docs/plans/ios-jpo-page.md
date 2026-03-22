@@ -55,18 +55,25 @@
 ```
 Part requested on JPO:
     │
-    ├── Part is at SHOP with sufficient stock?
-    │   → Auto-create transfer request (no approval needed)
-    │   → Status: "transfer"
+    ├── Can ALL parts in the JPO be grabbed from shelf?
+    │   YES → Check: would any transfer bring stock below MIN?
+    │   │     NO  → Auto-create transfer requests (no approval)
+    │   │     YES → Ask for approval (but don't lock/hold if
+    │   │           transfer already started)
+    │   │
+    │   NO → Entire JPO needs approval (can't do partial
+    │        auto-transfers — all or nothing from shelf)
     │
-    ├── Part is on USER'S TRUCK with sufficient stock?
-    │   → Auto-create transfer request
-    │   → Status: "transfer"
-    │
-    └── Part needs to be ORDERED from supplier?
+    └── Parts need to be ORDERED from supplier?
         → Requires approval
         → Status: "pending" → manager reviews
 ```
+
+**CRITICAL RULES:**
+1. **All-or-nothing from shelf** — If 100% of the parts CAN'T be grabbed from the shelf, the whole JPO needs approval. No partial auto-transfers.
+2. **Below MIN warning** — If transferring would bring stock below MIN level, ask for approval but DON'T lock the transfer if it's already in progress.
+3. **Hold cancels pending transfer** — If a manager puts a part on Hold BEFORE the transfer has started, remove that part from the transfer queue.
+4. **Smart cards are a PROGRAM STANDARD** — The stat card filter pattern (tap to filter, tap again for all, counts on each card) is the standard UI pattern for ALL list pages across the entire app.
 
 ## Hold + Chat Integration
 
