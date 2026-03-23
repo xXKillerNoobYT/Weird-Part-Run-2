@@ -30,6 +30,23 @@ struct JobReportsPage: View {
         reportContent
             .navigationTitle("Daily Reports")
             .searchable(text: $searchText, prompt: "Search by job name or date...")
+            .toolbar {
+                ToolbarItem(placement: .secondaryAction) {
+                    Button { showHelp = true } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
+            }
+            .sheet(isPresented: $showHelp) {
+                PageHelpSheet(
+                    title: "Job Reports Help",
+                    sections: [
+                        ("Overview", "Browse daily reports across all jobs. Each report shows the job name, date, status, and who reviewed it."),
+                        ("Search", "Use the search bar to filter reports by job name, date, or status."),
+                        ("Details", "Reports are generated automatically from daily job activity and clock entries. Pull down to refresh.")
+                    ]
+                )
+            }
             .refreshable { loadReports() }
             .task { loadReports() }
     }

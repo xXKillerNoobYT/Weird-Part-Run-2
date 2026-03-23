@@ -17,6 +17,7 @@ struct LaborPage: View {
     @State private var showClockIn = false
     @State private var errorMessage: String?
     @State private var searchText = ""
+    @State private var showHelp = false
 
     private var filteredActiveEntries: [JobsService.LaborEntryRow] {
         guard !searchText.isEmpty else { return activeEntries }

@@ -320,21 +320,23 @@ struct IOSReceiveShipmentPage: View {
 
             // Mini summary of routing decisions
             let grouped = Dictionary(grouping: routingResults.values, by: \.label)
-            FlowLayout(spacing: 6) {
-                ForEach(Array(grouped.keys.sorted()), id: \.self) { label in
-                    let items = grouped[label]!
-                    let result = items.first!
-                    HStack(spacing: 4) {
-                        Image(systemName: result.icon)
-                            .font(.caption2)
-                        Text("\(items.count)x \(label)")
-                            .font(.caption2)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(Array(grouped.keys.sorted()), id: \.self) { label in
+                        let items = grouped[label]!
+                        let result = items.first!
+                        HStack(spacing: 4) {
+                            Image(systemName: result.icon)
+                                .font(.caption2)
+                            Text("\(items.count)x \(label)")
+                                .font(.caption2)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(result.color.opacity(0.12))
+                        .foregroundStyle(result.color)
+                        .clipShape(Capsule())
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(result.color.opacity(0.12))
-                    .foregroundStyle(result.color)
-                    .clipShape(Capsule())
                 }
             }
         }
@@ -617,11 +619,14 @@ struct IOSReceiveShipmentPage: View {
                 try warehouseService.updateSessionItem(itemId: item.id, receivedQty: qty)
             }
 
-            // Complete the session (creates stock movements)
+            // Complete the session (creates stock movements for non-routed items)
+            // Items that were already routed (staged, written off, returned) have their
+            // movements created during the routing flow. The session completion adds
+            // warehouse stock for unrouted items.
             let userId = appCore.currentUser?.id ?? 0
             try warehouseService.completeSession(sessionId: sessionId, completedBy: userId)
 
-            // Process price verifications → create cost layers
+            // Process price verifications -> create cost layers
             if let partsService = appCore.partsService {
                 for item in sessionItems {
                     guard let partId = item.partId else { continue }
@@ -657,18 +662,50 @@ struct IOSReceiveShipmentPage: View {
                         }
 
                     case .notShown:
-                        // Skip — don't update cost_last_updated, don't create cost layer
+                        // Skip -- don't update cost_last_updated, don't create cost layer
                         break
 
                     case .none:
-                        // No verification selected — skip
+                        // No verification selected -- skip
                         break
                     }
                 }
             }
 
+            // Build completion summary
+            let routedCount = routingResults.count
+            let totalCount = sessionItems.count
+            let summary: String
+            if routedCount > 0 {
+                let stagedCount = routingResults.values.filter { result in
+                    switch result.route {
+                    case .stageForJob, .suggestStaging: return true
+                    default: return false
+                    }
+                }.count
+                let shelfCount = routingResults.values.filter { result in
+                    switch result.route {
+                    case .restockShelf, .usedToShelf: return true
+                    default: return false
+                    }
+                }.count
+                let returnCount = routingResults.values.filter { result in
+                    switch result.route {
+                    case .recommendReturn, .returnOverstock, .damagedReturn: return true
+                    default: return false
+                    }
+                }.count
+                var parts: [String] = []
+                if stagedCount > 0 { parts.append("\(stagedCount) staged for jobs") }
+                if shelfCount > 0 { parts.append("\(shelfCount) shelved") }
+                if returnCount > 0 { parts.append("\(returnCount) returning") }
+                summary = "Receiving complete. \(routedCount)/\(totalCount) items routed: \(parts.joined(separator: ", "))."
+            } else {
+                summary = "Receiving complete. Stock has been updated."
+            }
+
             await MainActor.run {
-                completionMessage = "Receiving complete. Stock has been updated."
+                completionMessage = summary
                 isCompleting = false
             }
         } catch {

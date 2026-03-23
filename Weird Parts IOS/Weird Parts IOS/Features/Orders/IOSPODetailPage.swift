@@ -960,7 +960,7 @@ struct IOSPODetailPage: View {
         let text = newSupplierMessage.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
         do {
-            try chatService.sendSupplierMessage(
+            _ = try chatService.sendSupplierMessage(
                 channelId: channelId,
                 senderId: userId,
                 content: text,
