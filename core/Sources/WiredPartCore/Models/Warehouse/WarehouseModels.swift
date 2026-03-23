@@ -1,0 +1,65 @@
+import Foundation
+import GRDB
+
+// MARK: - StockMovement
+
+/// Represents a single inventory movement from one location to another.
+/// Tracks the full journey of parts: Supplier → Warehouse → Staging → Truck → Job.
+public struct StockMovement: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+    public static let databaseTableName = "stock_movements"
+    public var id: Int64?
+    public var partId: Int64
+    public var qty: Int
+    public var fromLocationType: String?
+    public var fromLocationId: Int64?
+    public var toLocationType: String?
+    public var toLocationId: Int64?
+    public var supplierId: Int64?
+    public var movementType: String
+    public var reason: String?
+    public var referenceNumber: String?
+    public var notes: String?
+    public var jobId: Int64?
+    public var performedBy: Int64
+    public var verifiedBy: Int64?
+    public var photoPath: String?
+    public var scanConfirmed: Int
+    public var gpsLat: Double?
+    public var gpsLng: Double?
+    public var unitCostAtMove: Double?
+    public var unitSellAtMove: Double?
+    public var deletedAt: String?
+    public var createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, qty, reason, notes
+        case partId = "part_id"
+        case fromLocationType = "from_location_type"
+        case fromLocationId = "from_location_id"
+        case toLocationType = "to_location_type"
+        case toLocationId = "to_location_id"
+        case supplierId = "supplier_id"
+        case movementType = "movement_type"
+        case referenceNumber = "reference_number"
+        case jobId = "job_id"
+        case performedBy = "performed_by"
+        case verifiedBy = "verified_by"
+        case photoPath = "photo_path"
+        case scanConfirmed = "scan_confirmed"
+        case gpsLat = "gps_lat"
+        case gpsLng = "gps_lng"
+        case unitCostAtMove = "unit_cost_at_move"
+        case unitSellAtMove = "unit_sell_at_move"
+        case deletedAt = "deleted_at"
+        case createdAt = "created_at"
+    }
+
+    /// Human-readable description of the movement direction
+    public var movementDescription: String {
+        let from = fromLocationType?.capitalized ?? "Unknown"
+        let to = toLocationType?.capitalized ?? "Unknown"
+        return "\(from) → \(to)"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}

@@ -18,10 +18,8 @@ struct SyncPage: View {
         Form {
             Section("Sync Server") {
                 TextField("Shop Server Address (e.g. 192.168.1.100:8080)", text: $shopServerAddress)
-                    #if os(iOS)
                     .keyboardType(.URL)
                     .textInputAutocapitalization(.never)
-                    #endif
                     .autocorrectionDisabled()
             }
 
@@ -31,17 +29,15 @@ struct SyncPage: View {
                     Text("Sync Interval (seconds)")
                     Spacer()
                     TextField("30", text: $syncInterval)
-                        #if os(iOS)
                         .keyboardType(.numberPad)
-                        #endif
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
                 }
             }
 
             Section("Status") {
-                LabeledContent("Last Sync", value: "Not yet synced")
-                LabeledContent("Pending Changes", value: "0")
+                Text("Sync not configured")
+                    .foregroundStyle(.secondary)
             }
 
             Section {
@@ -58,7 +54,7 @@ struct SyncPage: View {
                 .buttonStyle(.borderedProminent)
 
                 Button {
-                    // Trigger manual sync (placeholder)
+                    errorMessage = "Sync infrastructure not yet configured."
                 } label: {
                     HStack {
                         Spacer()
@@ -84,8 +80,12 @@ struct SyncPage: View {
     }
 
     private func loadSettings() {
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service unavailable"
+            return
+        }
         do {
-            let map = try appCore.settingsService.getSettingsByCategory("sync")
+            let map = try service.getSettingsByCategory("sync")
             shopServerAddress = map["shop_server_address"] ?? ""
             syncInterval = map["sync_interval"] ?? "30"
             autoSync = map["auto_sync"] != "false"
@@ -95,14 +95,21 @@ struct SyncPage: View {
     }
 
     private func saveSettings() {
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service unavailable"
+            return
+        }
         do {
-            try appCore.settingsService.upsertSettingsMap([
+            try service.upsertSettingsMap([
                 "shop_server_address": shopServerAddress,
                 "sync_interval": syncInterval,
                 "auto_sync": String(autoSync),
             ], category: "sync")
             saved = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                saved = false
+            }
         } catch {
             errorMessage = "Failed to save: \(error.localizedDescription)"
         }

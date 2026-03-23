@@ -86,9 +86,7 @@ struct IOSCreateJobSheet: View {
                             .frame(width: 60)
                         TextField("ZIP", text: $zip)
                             .textContentType(.postalCode)
-                            #if os(iOS)
                             .keyboardType(.numberPad)
-                            #endif
                             .frame(width: 70)
                     }
                 }
@@ -108,13 +106,9 @@ struct IOSCreateJobSheet: View {
                 // Budget
                 Section("Budget") {
                     TextField("Estimated Hours", text: $estimatedHours)
-                        #if os(iOS)
                         .keyboardType(.decimalPad)
-                        #endif
                     TextField("Budget Limit ($)", text: $budgetLimit)
-                        #if os(iOS)
                         .keyboardType(.decimalPad)
-                        #endif
                 }
 
                 // Notes
@@ -133,9 +127,7 @@ struct IOSCreateJobSheet: View {
                 }
             }
             .navigationTitle("Create Job")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

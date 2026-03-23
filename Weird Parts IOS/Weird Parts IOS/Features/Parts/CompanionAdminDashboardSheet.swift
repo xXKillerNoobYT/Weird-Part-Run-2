@@ -11,6 +11,7 @@ struct CompanionAdminDashboardSheet: View {
     @State private var userStats: [UserVotingStat] = []
     @State private var pollHistory: [PollHistoryRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var ruleStats: (manual: Int, autoDiscovered: Int) = (0, 0)
 
     struct UserVotingStat: Identifiable {
@@ -130,7 +131,11 @@ struct CompanionAdminDashboardSheet: View {
     }
 
     private func loadData() async {
-        guard let service = appCore.partsService, let db = appCore.db else { return }
+        guard let service = appCore.partsService, let db = appCore.db else {
+            loadError = "Service not available"
+            isLoading = false
+            return
+        }
         do {
             // Load user voting stats
             let users: [Row] = try await db.writer.read { dbConn -> [Row] in

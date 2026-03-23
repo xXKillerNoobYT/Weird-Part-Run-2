@@ -40,8 +40,7 @@ struct WarehouseRouter: View {
         case "warehouse-settings":
             IOSWarehouseSettingsPage()
         default:
-            Text("Unknown warehouse page: \(tabId)")
-                .foregroundStyle(.secondary)
+            ErrorStateView(message: "Unknown warehouse page: \(tabId)") { }
         }
     }
 }

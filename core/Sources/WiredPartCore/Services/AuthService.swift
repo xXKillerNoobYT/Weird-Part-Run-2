@@ -80,7 +80,7 @@ public final class AuthService: Sendable {
             return AuthResult(success: false, user: nil, token: nil, message: "PIN not configured. Sync with shop first.")
         }
 
-        let isValid = Self.verifyPinLocally(pin: pin, storedHash: pinHash)
+        let isValid = Self.verifyPinLocally(pin: pin, storedHash: pinHash, salt: user.pinSalt)
         guard isValid else {
             return AuthResult(success: false, user: nil, token: nil, message: "Invalid PIN")
         }
@@ -88,6 +88,20 @@ public final class AuthService: Sendable {
         guard let userId = user.id else {
             return AuthResult(success: false, user: nil, token: nil, message: "User record missing ID")
         }
+
+        // Migration path: re-hash legacy PINs with a per-user salt on successful login
+        if user.pinSalt == nil {
+            let newSalt = Self.generateSalt()
+            let newHash = Self.hashPin(pin, salt: newSalt)
+            let now = Self.currentTimestamp()
+            try db.writer.write { dbConn in
+                try dbConn.execute(
+                    sql: "UPDATE users SET pin_hash = ?, pin_salt = ?, updated_at = ? WHERE id = ?",
+                    arguments: [newHash, newSalt, now, userId]
+                )
+            }
+        }
+
         let token = Self.generateLocalToken(userId: userId)
         return AuthResult(success: true, user: user, token: token, message: "Authenticated")
     }
@@ -125,7 +139,8 @@ public final class AuthService: Sendable {
         }
 
         let now = Self.currentTimestamp()
-        let pinHash = Self.hashPin(pin)
+        let salt = Self.generateSalt()
+        let pinHash = Self.hashPin(pin, salt: salt)
 
         try db.writer.write { dbConnection in
             // 1. Create built-in hats
@@ -166,10 +181,10 @@ public final class AuthService: Sendable {
             // 3. Create the first admin user
             try dbConnection.execute(
                 sql: """
-                    INSERT INTO users (display_name, pin_hash, is_active, created_at, updated_at)
-                    VALUES (?, ?, 1, ?, ?)
+                    INSERT INTO users (display_name, pin_hash, pin_salt, is_active, created_at, updated_at)
+                    VALUES (?, ?, ?, 1, ?, ?)
                     """,
-                arguments: [displayName, pinHash, now, now]
+                arguments: [displayName, pinHash, salt, now, now]
             )
 
             let userId = dbConnection.lastInsertedRowID
@@ -390,30 +405,79 @@ public final class AuthService: Sendable {
         case userNotFound
     }
 
+    // MARK: - User Management
+
+    /// Create a new user (employee). Returns the new user's ID.
+    @discardableResult
+    public func createUser(
+        displayName: String,
+        pin: String,
+        email: String? = nil,
+        phone: String? = nil
+    ) throws -> Int64 {
+        let salt = Self.generateSalt()
+        let pinHash = Self.hashPin(pin, salt: salt)
+        let now = Self.currentTimestamp()
+        return try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO users (display_name, pin_hash, pin_salt, email, phone, is_active, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                    """,
+                arguments: [displayName, pinHash, salt, email, phone, now, now]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
     // MARK: - Internal Helpers
 
-    /// Verify a PIN against a stored SHA-256 hash.
-    static func verifyPinLocally(pin: String, storedHash: String) -> Bool {
+    /// Verify a PIN against a stored hash.
+    /// Supports both legacy (fixed salt) and new (per-user salt + key stretching) formats.
+    static func verifyPinLocally(pin: String, storedHash: String, salt: String?) -> Bool {
         // If it's a bcrypt hash, we can't verify offline
         if storedHash.hasPrefix("$2b$") || storedHash.hasPrefix("$2a$") {
             return false
         }
 
-        // SHA-256 comparison
-        let computed = hashPin(pin)
-        return computed == storedHash
+        if let salt {
+            // New per-user salted hash with key stretching
+            let computed = hashPin(pin, salt: salt)
+            return computed == storedHash
+        } else {
+            // Legacy fixed-salt hash (pre-migration 023)
+            let computed = legacyHashPin(pin)
+            return computed == storedHash
+        }
     }
 
-    /// Hash a PIN using SHA-256 with a fixed salt.
-    /// Produces the same hash format as the TypeScript `hashPin()`.
-    static func hashPin(_ pin: String) -> String {
+    /// Hash a PIN with a per-user salt using iterated SHA-256 for key stretching.
+    static func hashPin(_ pin: String, salt: String) -> String {
+        let input = Data((pin + ":" + salt).utf8)
+        var hash = SHA256.hash(data: input)
+        for _ in 0..<10_000 {
+            hash = SHA256.hash(data: Data(hash))
+        }
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Legacy fixed-salt hash for backward compatibility during migration.
+    /// Used only to verify old PINs before re-hashing with a per-user salt.
+    private static func legacyHashPin(_ pin: String) -> String {
         let data = Data((pin + ":wiredpart").utf8)
         let digest = SHA256.hash(data: data)
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
+    /// Generate a random salt for PIN hashing.
+    static func generateSalt() -> String {
+        let bytes = (0..<16).map { _ in UInt8.random(in: 0...255) }
+        return Data(bytes).base64EncodedString()
+    }
+
     /// Generate a simple local session token (base64 JSON).
-    static func generateLocalToken(userId: Int64) -> String {
+    /// Returns nil if encoding fails — never returns a magic string.
+    static func generateLocalToken(userId: Int64) -> String? {
         let nowMs = Date().timeIntervalSince1970 * 1000
         let payload = TokenPayload(
             sub: userId,
@@ -422,7 +486,7 @@ public final class AuthService: Sendable {
             type: "local"
         )
         guard let data = try? JSONEncoder().encode(payload) else {
-            return "invalid_token"
+            return nil
         }
         return data.base64EncodedString()
     }

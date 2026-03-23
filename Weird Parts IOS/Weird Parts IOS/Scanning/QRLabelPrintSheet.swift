@@ -283,7 +283,6 @@ struct QRLabelPrintSheet: View {
             return
         }
 
-        #if os(iOS)
         let printController = UIPrintInteractionController.shared
         printController.printingItem = pdfData
 
@@ -300,9 +299,5 @@ struct QRLabelPrintSheet: View {
                 dismiss()
             }
         }
-        #else
-        printError = "Printing is only available on iOS."
-        isPrinting = false
-        #endif
     }
 }

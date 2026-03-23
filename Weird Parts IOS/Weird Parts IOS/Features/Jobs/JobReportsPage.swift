@@ -13,10 +13,23 @@ struct JobReportsPage: View {
     @State private var reports: [JobsService.DailyReportRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var searchText = ""
+    @State private var showHelp = false
+
+    private var filteredReports: [JobsService.DailyReportRow] {
+        guard !searchText.isEmpty else { return reports }
+        let query = searchText.lowercased()
+        return reports.filter {
+            $0.jobName.lowercased().contains(query) ||
+            $0.reportDate.lowercased().contains(query) ||
+            $0.status.lowercased().contains(query)
+        }
+    }
 
     var body: some View {
         reportContent
             .navigationTitle("Daily Reports")
+            .searchable(text: $searchText, prompt: "Search by job name or date...")
             .refreshable { loadReports() }
             .task { loadReports() }
     }
@@ -37,12 +50,10 @@ struct JobReportsPage: View {
                 Text("Daily reports will appear here when generated.")
             }
         } else {
-            List(reports, id: \.id) { report in
+            List(filteredReports, id: \.id) { report in
                 reportRow(report)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 

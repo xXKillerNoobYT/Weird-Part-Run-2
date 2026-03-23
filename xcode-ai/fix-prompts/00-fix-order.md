@@ -122,7 +122,7 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 32B | Empty Catch Blocks | Fix all empty catch {} and catch { print() } blocks (5+ files) | DONE |
 | 32C | Guard Without Error | Fix 42 files with guard-let-service that silently returns | DONE |
 | 32D | Platform Guards Batch 1 | Remove #if os(iOS) from all Features/ files (~50 files) | DONE |
-| 32E | Platform Guards Batch 2 | Remove #if os(iOS) from AI/Auth/App/Nav/Scanning/Sync/Shared (~57 files) | |
+| 32E | Platform Guards Batch 2 | Remove #if os(iOS) from AI/Auth/App/Nav/Scanning/Sync/Shared (~57 files) | DONE |
 | 32F | ActiveSheet Conversion | Convert 19 files from showXxx Bool to ActiveSheet enum | |
 | 32G | Print-to-State Errors | Replace print() error logging with UI state in 25+ files | |
 | 32H | Refreshable + Searchable | Add missing .refreshable and .searchable to 58 list pages | |
@@ -283,4 +283,11 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 ## Prompt 32D Results (2026-03-22)
 - Removed 119 platform guards (#if os(iOS)/#elseif os(macOS)/#endif) from 80 files in Features/
 - Kept 9 compound guards (#if os(iOS) && !targetEnvironment(macCatalyst)) in QR scanner
+- Build: PASS
+
+## Prompt 32E Results (2026-03-22)
+- Removed 104 platform guard lines from 23 files in AI/Auth/App/Navigation/Scanning/Sync/Shared/WebFallback
+- IOSQRScanner: kept #if !targetEnvironment(macCatalyst) guard (DataScannerViewController unavailable on Catalyst), added Catalyst stub
+- QRScanSheet: replaced direct DataScannerViewController.isSupported with computed property guarded for Catalyst
+- WebFallback: removed macOS NSViewRepresentable branch, kept iOS UIViewRepresentable
 - Build: PASS

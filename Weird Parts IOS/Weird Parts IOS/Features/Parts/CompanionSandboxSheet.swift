@@ -16,6 +16,7 @@ struct CompanionSandboxSheet: View {
     @State private var nextLevelPreview: [NextLevelPreview] = []
     @State private var isAnalyzing = false
     @State private var pickerSelection: Int64 = 0
+    @State private var loadError: String?
 
     struct SelectedCategory: Identifiable {
         let id = UUID()
@@ -305,7 +306,7 @@ struct CompanionSandboxSheet: View {
 
     private func loadCategories() async {
         guard let service = appCore.partsService else { return }
-        do { categories = try service.listCategories() } catch {}
+        do { categories = try service.listCategories() } catch { loadError = error.localizedDescription }
     }
 
     private func analyze() async {

@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreLocation
 import GRDB
 import WiredPartCore
 
@@ -15,6 +16,7 @@ struct GeofenceAlertView: View {
     @State private var targetJobId: Int64?
     @State private var activeJobs: [JobOption] = []
     @State private var isProcessing = false
+    @State private var loadError: String?
 
     private var currentJobName: String {
         geofenceManager.currentJobName ?? "Unknown Job"
@@ -262,7 +264,7 @@ struct GeofenceAlertView: View {
                 JobOption(id: row["id"] ?? 0, name: row["job_name"] ?? "", number: row["job_number"] ?? "")
             }
         } catch {
-            print("[GeofenceAlert] Load jobs error: \(error)")
+            loadError = error.localizedDescription
         }
     }
 

@@ -53,9 +53,8 @@ struct IOSPublicReportView: View {
     }
 
     private func loadReport() {
-        // Public report loading via token — will be wired to ReportsService
+        // Public report sharing is not yet available
+        loadError = "Public report sharing is not yet available."
         isLoading = false
-        reportTitle = "Public Report"
-        reportContent = "Report content will be loaded from the server using token: \(reportToken)"
     }
 }

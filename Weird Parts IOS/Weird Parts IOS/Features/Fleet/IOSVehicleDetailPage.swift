@@ -126,9 +126,7 @@ struct IOSVehicleDetailPage: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     // MARK: - Assignments
@@ -166,9 +164,7 @@ struct IOSVehicleDetailPage: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     private func assignmentRow(_ a: FleetService.AssignmentRow) -> some View {
@@ -230,9 +226,7 @@ struct IOSVehicleDetailPage: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     // MARK: - Mileage
@@ -263,9 +257,7 @@ struct IOSVehicleDetailPage: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     // MARK: - Fuel
@@ -303,9 +295,7 @@ struct IOSVehicleDetailPage: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     // MARK: - Helpers

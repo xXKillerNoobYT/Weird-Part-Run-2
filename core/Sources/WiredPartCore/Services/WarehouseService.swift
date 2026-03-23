@@ -849,11 +849,13 @@ public final class WarehouseService: Sendable {
         public let id: Int64
         public let sessionId: Int64
         public let poLineId: Int64
+        public let partId: Int64?
         public let partName: String
         public let partCode: String?
         public let expectedQty: Int
         public let receivedQty: Int
         public let actualCost: Double?
+        public let unitPrice: Double?
         public let scannedAt: String?
         public let notes: String?
     }
@@ -971,6 +973,8 @@ public final class WarehouseService: Sendable {
                     dbConn,
                     sql: """
                         SELECT rsi.*,
+                               pli.part_id,
+                               pli.unit_price,
                                p.name AS part_name,
                                p.code AS part_code
                         FROM receiving_session_items rsi
@@ -986,11 +990,13 @@ public final class WarehouseService: Sendable {
                         id: row["id"] ?? 0,
                         sessionId: row["session_id"] ?? 0,
                         poLineId: row["po_line_id"] ?? 0,
+                        partId: row["part_id"] as Int64?,
                         partName: (row["part_name"] as String?) ?? "Unknown Part",
                         partCode: row["part_code"] as String?,
                         expectedQty: row["expected_qty"] ?? 0,
                         receivedQty: row["received_qty"] ?? 0,
                         actualCost: row["actual_cost"] as Double?,
+                        unitPrice: row["unit_price"] as Double?,
                         scannedAt: row["scanned_at"] as String?,
                         notes: row["notes"] as String?
                     )
@@ -1325,6 +1331,95 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    // MARK: - 8b. Audit Session Management
+
+    /// Create a new audit session and return its ID.
+    ///
+    /// The session tracks scope, zone, and options. Audit counts are recorded
+    /// against stock entries via `recordAuditCount`.
+    @discardableResult
+    public func createAuditSession(
+        scope: String,
+        zone: String?,
+        sampleSize: Int?,
+        includeZeroStock: Bool,
+        notes: String?
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO audit_sessions (scope, zone, sample_size, include_zero_stock, notes, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 'active', datetime('now'), datetime('now'))
+                    """,
+                arguments: [scope, zone, sampleSize, includeZeroStock ? 1 : 0, notes]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Finalize (close) an audit session.
+    public func finalizeAuditSession(sessionId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE audit_sessions SET status = 'completed', completed_at = datetime('now'), updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                arguments: [sessionId]
+            )
+        }
+    }
+
+    /// Adjust system stock to match the physical count for a specific part at a location.
+    public func adjustAuditCount(
+        partId: Int64,
+        locationType: String,
+        locationId: Int64,
+        newQty: Int,
+        reason: String?,
+        performedBy: Int64?
+    ) throws {
+        try db.writer.write { dbConn in
+            // Update the stock record
+            try dbConn.execute(
+                sql: """
+                    UPDATE stock SET qty = ?, last_counted = datetime('now'), updated_at = datetime('now')
+                    WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [newQty, partId, locationType, locationId]
+            )
+
+            // Record the adjustment as a movement
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO stock_movements (part_id, qty, from_location_type, from_location_id, to_location_type, to_location_id, movement_type, reason, notes, performed_by, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'adjustment', ?, 'Audit count adjustment', ?, datetime('now'))
+                    """,
+                arguments: [partId, newQty, locationType, locationId, locationType, locationId, reason ?? "Audit adjustment", performedBy]
+            )
+        }
+    }
+
+    /// Record an audit recount for a part at a specific location.
+    public func recordAuditRecount(partId: Int64, locationType: String, locationId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE stock SET last_counted = datetime('now')
+                    WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [partId, locationType, locationId]
+            )
+        }
+    }
+
+    /// Calculate audit accuracy percentage from the summary.
+    public func getAuditAccuracy() throws -> Double {
+        let summary = try getAuditSummary()
+        guard summary.totalParts > 0 else { return 100.0 }
+        return Double(summary.totalParts - summary.discrepancies) / Double(summary.totalParts) * 100.0
+    }
+
     // =========================================================================
     // MARK: - 9. Trailers
     // =========================================================================
@@ -1501,6 +1596,469 @@ public final class WarehouseService: Sendable {
             if isTableNotFoundError(error) { return [] }
             throw error
         }
+    }
+
+    // =========================================================================
+    // MARK: - 10. Staging Boxes
+    // =========================================================================
+
+    /// Physical staging box info for display.
+    public struct StagingBox: Sendable, Identifiable {
+        public let id: Int64
+        public let jobId: Int64
+        public let jobName: String?
+        public let jobNumber: String?
+        public let boxNumber: String       // e.g. "0412-01"
+        public let boxSize: String         // small / normal / large
+        public let labelText: String       // e.g. "SMITH RES 0412-01"
+        public let isFull: Bool
+        public let areaId: Int64?
+        public let createdAt: String?
+    }
+
+    /// Create a new staging box for a job, auto-generating box_number and label_text.
+    ///
+    /// Box number format: `<jobNumber>-<seq>` where seq auto-increments
+    /// per job (01, 02, 03...). Label text shows a short human-readable string
+    /// suitable for writing on the physical box with a marker.
+    @discardableResult
+    public func createStagingBox(
+        jobId: Int64,
+        size: String = "normal",
+        areaId: Int64? = nil
+    ) throws -> StagingBox {
+        try db.writer.write { dbConn in
+            // Fetch job info for label generation
+            let jobRow = try Row.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT j.job_number, j.job_name
+                    FROM jobs j WHERE j.id = ? AND j.deleted_at IS NULL
+                    """,
+                arguments: [jobId]
+            )
+
+            let jobNumber = (jobRow?["job_number"] as String?) ?? "\(jobId)"
+            let jobName = (jobRow?["job_name"] as String?) ?? ""
+
+            // Count existing boxes for this job to determine sequence
+            let existingCount = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT COUNT(*) FROM staging_boxes
+                    WHERE job_id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [jobId]
+            ) ?? 0
+
+            let seq = existingCount + 1
+            let seqStr = String(format: "%02d", seq)
+            let boxNumber = "\(jobNumber)-\(seqStr)"
+
+            // Build short label: first word of job name (uppercase) + box number
+            let shortName = buildShortLabel(jobName: jobName)
+            let labelText = "\(shortName) \(boxNumber)"
+
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO staging_boxes
+                    (job_id, box_number, box_size, label_text, is_full, area_id, created_at)
+                    VALUES (?, ?, ?, ?, 0, ?, datetime('now'))
+                    """,
+                arguments: [jobId, boxNumber, size, labelText, areaId]
+            )
+
+            let newId = dbConn.lastInsertedRowID
+
+            return StagingBox(
+                id: newId,
+                jobId: jobId,
+                jobName: jobName,
+                jobNumber: jobNumber,
+                boxNumber: boxNumber,
+                boxSize: size,
+                labelText: labelText,
+                isFull: false,
+                areaId: areaId,
+                createdAt: nil
+            )
+        }
+    }
+
+    /// List staging boxes, optionally filtered by job.
+    public func listStagingBoxes(jobId: Int64? = nil) throws -> [StagingBox] {
+        do {
+            return try db.writer.read { dbConn -> [StagingBox] in
+                var whereClauses = ["sb.deleted_at IS NULL"]
+                var args: [DatabaseValueConvertible?] = []
+
+                if let jobId {
+                    whereClauses.append("sb.job_id = ?")
+                    args.append(jobId)
+                }
+
+                let sql = """
+                    SELECT sb.*,
+                           j.job_name, j.job_number
+                    FROM staging_boxes sb
+                    LEFT JOIN jobs j ON j.id = sb.job_id
+                    WHERE \(whereClauses.joined(separator: " AND "))
+                    ORDER BY j.job_number, sb.box_number
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
+                return rows.map { row in
+                    StagingBox(
+                        id: row["id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
+                        jobName: row["job_name"] as String?,
+                        jobNumber: row["job_number"] as String?,
+                        boxNumber: row["box_number"] ?? "",
+                        boxSize: row["box_size"] ?? "normal",
+                        labelText: row["label_text"] ?? "",
+                        isFull: (row["is_full"] as Int?) == 1,
+                        areaId: row["area_id"] as Int64?,
+                        createdAt: row["created_at"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Mark a box as full. Automatically creates the next box for the same job.
+    ///
+    /// - Returns: The newly created next box (auto-incremented).
+    @discardableResult
+    public func markBoxFull(boxId: Int64) throws -> StagingBox {
+        // First mark the box as full
+        let (jobId, areaId, size): (Int64, Int64?, String) = try db.writer.read { dbConn in
+            guard let row = try Row.fetchOne(
+                dbConn,
+                sql: "SELECT job_id, area_id, box_size FROM staging_boxes WHERE id = ? AND deleted_at IS NULL",
+                arguments: [boxId]
+            ) else {
+                throw WarehouseError.partNotFound(boxId)
+            }
+            return (row["job_id"] as Int64, row["area_id"] as Int64?, (row["box_size"] as String?) ?? "normal")
+        }
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE staging_boxes SET is_full = 1 WHERE id = ?",
+                arguments: [boxId]
+            )
+        }
+
+        // Auto-create the next box
+        return try createStagingBox(jobId: jobId, size: size, areaId: areaId)
+    }
+
+    /// Mark a box as open (not full).
+    public func markBoxOpen(boxId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE staging_boxes SET is_full = 0 WHERE id = ?",
+                arguments: [boxId]
+            )
+        }
+    }
+
+    /// Soft-delete a staging box.
+    public func deleteStagingBox(boxId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE staging_boxes SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [boxId]
+            )
+        }
+    }
+
+    /// Build a short label from a job name for box labeling.
+    ///
+    /// Takes the first meaningful words of the job name (up to ~15 chars)
+    /// and uppercases them. Examples:
+    ///   "Smith Residence Remodel" → "SMITH RES"
+    ///   "Johnson Office Build" → "JOHNSON OFF"
+    private func buildShortLabel(jobName: String) -> String {
+        let words = jobName.split(separator: " ")
+        guard !words.isEmpty else { return "JOB" }
+
+        var label = ""
+        for word in words {
+            let candidate = label.isEmpty ? String(word) : "\(label) \(word)"
+            if candidate.count > 15 {
+                // If we haven't added anything yet, take the first word truncated
+                if label.isEmpty {
+                    label = String(word.prefix(12))
+                }
+                break
+            }
+            label = candidate
+        }
+        return label.uppercased()
+    }
+
+    // =========================================================================
+    // MARK: - 10. Receiving Routing
+    // =========================================================================
+
+    /// Stock level info for a part, used during receiving routing decisions.
+    public struct PartStockLevels: Sendable {
+        public let partId: Int64
+        public let partName: String
+        public let currentShelfQty: Int
+        public let minStock: Int
+        public let targetStock: Int
+        public let maxStock: Int
+
+        /// True when shelf stock is below target level.
+        public var isBelowTarget: Bool { currentShelfQty < targetStock }
+        /// True when shelf stock is at or above max level.
+        public var isAtOrAboveMax: Bool { maxStock > 0 && currentShelfQty >= maxStock }
+        /// True when shelf stock is above target but below max.
+        public var isAboveTargetBelowMax: Bool {
+            currentShelfQty >= targetStock && (maxStock <= 0 || currentShelfQty < maxStock)
+        }
+        /// Quantity needed to reach target.
+        public var qtyToTarget: Int { max(0, targetStock - currentShelfQty) }
+    }
+
+    /// Job link info for a PO line item, discovered via jpo_line_id -> jpo -> job.
+    public struct POLineJobLink: Sendable {
+        public let jobId: Int64
+        public let jobName: String
+        public let jpoId: Int64
+    }
+
+    /// An active JPO line that wants a specific part (for cross-job staging suggestions).
+    public struct ActiveJPODemand: Sendable {
+        public let jpoId: Int64
+        public let jpoLineId: Int64
+        public let jobId: Int64
+        public let jobName: String
+        public let qtyRequested: Int
+        public let qtyFulfilled: Int
+
+        /// Remaining unfulfilled quantity.
+        public var qtyNeeded: Int { max(0, qtyRequested - qtyFulfilled) }
+    }
+
+    /// The routing decision for a single received item.
+    public enum ReceivingRoute: Sendable {
+        /// Part is good and linked to a job — send to staging.
+        case stageForJob(jobId: Int64, jobName: String, jpoId: Int64)
+        /// Part is good, another active JPO wants it — suggest staging.
+        case suggestStaging(demands: [ActiveJPODemand])
+        /// Part is good, below target — restock shelf.
+        case restockShelf(levels: PartStockLevels)
+        /// Part is good, above target but below max — recommend return.
+        case recommendReturn(levels: PartStockLevels)
+        /// Part is good, at or above max — return to supplier.
+        case returnOverstock(levels: PartStockLevels)
+        /// Part is used, below target — shelf it.
+        case usedToShelf(levels: PartStockLevels)
+        /// Part is used, not needed — write off.
+        case usedWriteOff(levels: PartStockLevels)
+        /// Part is damaged — return to supplier for replacement or refund.
+        case damagedReturn
+        /// Wrong part received.
+        case wrongPart
+    }
+
+    /// Get shelf stock levels for a part (warehouse location_type only).
+    public func getPartStockLevels(partId: Int64) throws -> PartStockLevels {
+        try db.writer.read { dbConn -> PartStockLevels in
+            let partRow = try Row.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT p.id, p.name,
+                           COALESCE(p.min_stock_level, 0) AS min_stock,
+                           COALESCE(p.target_stock_level, 0) AS target_stock,
+                           COALESCE(p.max_stock_level, 0) AS max_stock
+                    FROM parts p
+                    WHERE p.id = ? AND p.deleted_at IS NULL
+                    """,
+                arguments: [partId]
+            )
+
+            let shelfQty = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT COALESCE(SUM(qty), 0) FROM stock
+                    WHERE part_id = ? AND location_type = 'warehouse'
+                      AND deleted_at IS NULL
+                    """,
+                arguments: [partId]
+            ) ?? 0
+
+            return PartStockLevels(
+                partId: partId,
+                partName: (partRow?["name"] as String?) ?? "Unknown Part",
+                currentShelfQty: shelfQty,
+                minStock: partRow?["min_stock"] ?? 0,
+                targetStock: partRow?["target_stock"] ?? 0,
+                maxStock: partRow?["max_stock"] ?? 0
+            )
+        }
+    }
+
+    /// Check if a PO line item is linked to a job via JPO.
+    /// Returns the job link info if found.
+    public func getJobLinkForPOLine(poLineId: Int64) throws -> POLineJobLink? {
+        do {
+            return try db.writer.read { dbConn -> POLineJobLink? in
+                let row = try Row.fetchOne(
+                    dbConn,
+                    sql: """
+                        SELECT jpo.job_id, j.job_name, jpo.id AS jpo_id
+                        FROM po_line_items pl
+                        JOIN jpo_line_items jli ON jli.id = pl.jpo_line_id
+                        JOIN job_parts_orders jpo ON jpo.id = jli.jpo_id
+                        JOIN jobs j ON j.id = jpo.job_id
+                        WHERE pl.id = ? AND pl.jpo_line_id IS NOT NULL
+                        """,
+                    arguments: [poLineId]
+                )
+                guard let row else { return nil }
+                return POLineJobLink(
+                    jobId: row["job_id"] ?? 0,
+                    jobName: row["job_name"] ?? "Unknown Job",
+                    jpoId: row["jpo_id"] ?? 0
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) { return nil }
+            throw error
+        }
+    }
+
+    /// Find active JPO lines that want a specific part (for cross-job staging suggestions).
+    /// Excludes the given PO line's own JPO to avoid double-counting.
+    public func getActiveJPODemandForPart(
+        partId: Int64,
+        excludeJPOId: Int64? = nil
+    ) throws -> [ActiveJPODemand] {
+        do {
+            return try db.writer.read { dbConn -> [ActiveJPODemand] in
+                var whereClauses = [
+                    "jl.part_id = ?",
+                    "jl.line_status IN ('approved', 'pending')",
+                    "jl.deleted_at IS NULL",
+                    "jpo.deleted_at IS NULL",
+                    "jpo.status NOT IN ('completed', 'cancelled')",
+                ]
+                var args: [DatabaseValueConvertible?] = [partId]
+
+                if let excludeJPOId {
+                    whereClauses.append("jpo.id != ?")
+                    args.append(excludeJPOId)
+                }
+
+                let sql = """
+                    SELECT jl.id AS jpo_line_id, jl.qty_requested,
+                           COALESCE(jl.qty_fulfilled, 0) AS qty_fulfilled,
+                           jpo.id AS jpo_id, jpo.job_id,
+                           COALESCE(j.job_name, 'Unknown Job') AS job_name
+                    FROM jpo_line_items jl
+                    JOIN job_parts_orders jpo ON jpo.id = jl.jpo_id
+                    LEFT JOIN jobs j ON j.id = jpo.job_id
+                    WHERE \(whereClauses.joined(separator: " AND "))
+                    ORDER BY jpo.priority DESC, jpo.created_at ASC
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
+                return rows.compactMap { row -> ActiveJPODemand? in
+                    let qtyRequested: Int = row["qty_requested"] ?? 0
+                    let qtyFulfilled: Int = row["qty_fulfilled"] ?? 0
+                    guard qtyRequested > qtyFulfilled else { return nil }
+
+                    return ActiveJPODemand(
+                        jpoId: row["jpo_id"] ?? 0,
+                        jpoLineId: row["jpo_line_id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
+                        jobName: row["job_name"] ?? "Unknown Job",
+                        qtyRequested: qtyRequested,
+                        qtyFulfilled: qtyFulfilled
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Move received parts to staging for a job (does NOT count toward shelf inventory).
+    @discardableResult
+    public func stageReceivedPartsForJob(
+        partId: Int64,
+        qty: Int,
+        jobId: Int64,
+        performedBy: Int64,
+        notes: String? = nil
+    ) throws -> Int64 {
+        try createMovement(
+            partId: partId,
+            qty: qty,
+            fromLocationType: nil,
+            fromLocationId: nil,
+            toLocationType: "pulled",
+            toLocationId: jobId,
+            movementType: "receiving_staged",
+            reason: "Received and staged for job",
+            notes: notes,
+            performedBy: performedBy,
+            jobId: jobId
+        )
+    }
+
+    /// Record a write-off for used/damaged parts that won't go on shelf.
+    @discardableResult
+    public func writeOffReceivedPart(
+        partId: Int64,
+        qty: Int,
+        reason: String,
+        performedBy: Int64,
+        notes: String? = nil
+    ) throws -> Int64 {
+        try createMovement(
+            partId: partId,
+            qty: qty,
+            fromLocationType: nil,
+            fromLocationId: nil,
+            toLocationType: nil,
+            toLocationId: nil,
+            movementType: "write_off",
+            reason: reason,
+            notes: notes,
+            performedBy: performedBy
+        )
+    }
+
+    /// Record a supplier return for damaged parts.
+    @discardableResult
+    public func returnDamagedToSupplier(
+        partId: Int64,
+        qty: Int,
+        returnType: String,  // "replacement" or "refund"
+        performedBy: Int64,
+        notes: String? = nil
+    ) throws -> Int64 {
+        try createMovement(
+            partId: partId,
+            qty: qty,
+            fromLocationType: nil,
+            fromLocationId: nil,
+            toLocationType: nil,
+            toLocationId: nil,
+            movementType: "return_to_supplier",
+            reason: "Damaged: \(returnType)",
+            notes: notes,
+            performedBy: performedBy
+        )
     }
 
     // =========================================================================

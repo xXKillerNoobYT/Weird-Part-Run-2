@@ -1,6 +1,6 @@
 import SwiftUI
 import WiredPartCore
-#if os(iOS) && !targetEnvironment(macCatalyst)
+#if !targetEnvironment(macCatalyst)
 import VisionKit
 #endif
 
@@ -34,15 +34,20 @@ struct QRScanSheet: View {
     // Manual entry
     @State private var manualCode = ""
 
-    #if os(iOS) && !targetEnvironment(macCatalyst)
     @State private var scanner: IOSQRScanner?
-    #endif
+
+    private var isScannerSupported: Bool {
+        #if targetEnvironment(macCatalyst)
+        return false
+        #else
+        return DataScannerViewController.isSupported
+        #endif
+    }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                #if os(iOS) && !targetEnvironment(macCatalyst)
-                if DataScannerViewController.isSupported {
+                if isScannerSupported {
                     cameraSection
                         .frame(maxHeight: .infinity)
 
@@ -50,9 +55,6 @@ struct QRScanSheet: View {
                 } else {
                     manualOnlyView
                 }
-                #else
-                manualOnlyView
-                #endif
             }
             .background(Color.black)
             .navigationTitle(scanTitle)
@@ -63,16 +65,12 @@ struct QRScanSheet: View {
                 }
             }
             .onAppear {
-                #if os(iOS) && !targetEnvironment(macCatalyst)
-                if DataScannerViewController.isSupported {
+                if isScannerSupported {
                     startScanning()
                 }
-                #endif
             }
             .onDisappear {
-                #if os(iOS) && !targetEnvironment(macCatalyst)
                 scanner?.stopScanning()
-                #endif
             }
         }
     }
@@ -86,7 +84,6 @@ struct QRScanSheet: View {
 
     // MARK: - Camera Section
 
-    #if os(iOS) && !targetEnvironment(macCatalyst)
     @ViewBuilder
     private var cameraSection: some View {
         ZStack {
@@ -105,7 +102,6 @@ struct QRScanSheet: View {
             }
         }
     }
-    #endif
 
     // MARK: - Bottom Section
 
@@ -215,7 +211,6 @@ struct QRScanSheet: View {
 
     // MARK: - Scanning
 
-    #if os(iOS) && !targetEnvironment(macCatalyst)
     private func startScanning() {
         let newScanner = IOSQRScanner()
         scanner = newScanner
@@ -249,7 +244,6 @@ struct QRScanSheet: View {
             }
         }
     }
-    #endif
 
     // MARK: - Processing
 

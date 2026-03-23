@@ -12,6 +12,7 @@ struct IOSContractorsPage: View {
     @State private var searchText = ""
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var showAddContractor = false
 
     var body: some View {
         Group {
@@ -34,6 +35,17 @@ struct IOSContractorsPage: View {
         .onChange(of: searchText) { _, _ in loadData() }
         .task { loadData() }
         .refreshable { loadData() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { showAddContractor = true } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(isPresented: $showAddContractor) {
+            AddContractorSheet { loadData() }
+                .environmentObject(appCore)
+        }
     }
 
     private var contractorList: some View {
@@ -73,7 +85,11 @@ struct IOSContractorsPage: View {
     }
 
     private func loadData() {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            isLoading = false
+            loadError = "People service unavailable"
+            return
+        }
         isLoading = contractors.isEmpty
         loadError = nil
         do {
@@ -85,3 +101,78 @@ struct IOSContractorsPage: View {
         isLoading = false
     }
 }
+// MARK: - Add Contractor Sheet
+
+private struct AddContractorSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let onSave: () -> Void
+
+    @State private var companyName = ""
+    @State private var contactName = ""
+    @State private var email = ""
+    @State private var phone = ""
+    @State private var trade = ""
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Required") {
+                    TextField("Company Name", text: $companyName)
+                        .textContentType(.organizationName)
+                }
+                Section("Details") {
+                    TextField("Contact Name", text: $contactName)
+                        .textContentType(.name)
+                    TextField("Phone", text: $phone)
+                        .textContentType(.telephoneNumber)
+                        .keyboardType(.phonePad)
+                    TextField("Email", text: $email)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .autocapitalization(.none)
+                    TextField("Trade / Specialty", text: $trade)
+                }
+                if let error = errorMessage {
+                    Section {
+                        Text(error).foregroundStyle(.red).font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Add Contractor")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(companyName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        guard let service = appCore.peopleService else {
+            errorMessage = "People service unavailable"
+            return
+        }
+        do {
+            try service.createContractor(
+                companyName: companyName.trimmingCharacters(in: .whitespaces),
+                contactName: contactName.isEmpty ? nil : contactName,
+                email: email.isEmpty ? nil : email,
+                phone: phone.isEmpty ? nil : phone,
+                notes: trade.isEmpty ? nil : "Trade: \(trade)"
+            )
+            onSave()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+

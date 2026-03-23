@@ -68,17 +68,13 @@ struct AdminAccountSetupView: View {
                     SecureField("PIN (4+ digits)", text: $pin)
                         .textFieldStyle(.roundedBorder)
                         .textContentType(.newPassword)
-                        #if os(iOS)
                         .keyboardType(.numberPad)
-                        #endif
                         .frame(maxWidth: 300)
 
                     SecureField("Confirm PIN", text: $confirmPin)
                         .textFieldStyle(.roundedBorder)
                         .textContentType(.newPassword)
-                        #if os(iOS)
                         .keyboardType(.numberPad)
-                        #endif
                         .frame(maxWidth: 300)
 
                     if pinMismatch {
@@ -118,9 +114,7 @@ struct AdminAccountSetupView: View {
             .padding(.horizontal, 24)
         }
         .navigationTitle("Admin Setup")
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
-        #endif
         .navigationDestination(isPresented: $navigateToComplete) {
             OnboardingCompleteView()
                 .environmentObject(appCore)
@@ -133,8 +127,9 @@ struct AdminAccountSetupView: View {
         isLoading = true
         errorMessage = nil
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            let result = appCore.seedFirstAdmin(
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(200))
+            let result = await appCore.seedFirstAdmin(
                 displayName: displayName.trimmingCharacters(in: .whitespaces),
                 pin: pin
             )

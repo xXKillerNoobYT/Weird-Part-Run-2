@@ -18,6 +18,7 @@ struct JobsListPage: View {
     @State private var statusFilter = "all"
     @State private var showCreateJob = false
     @State private var loadError: String?
+    @State private var showHelp = false
 
     private let statusOptions = ["all", "active", "completed", "on_hold", "cancelled"]
 
@@ -37,6 +38,21 @@ struct JobsListPage: View {
                 }
                 .requiresPermission("manage_jobs")
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showHelp) {
+            PageHelpSheet(
+                title: "Jobs Help",
+                sections: [
+                    ("Overview", "View and manage all jobs. Filter by status using the chips at the top, or search by name and job number."),
+                    ("Creating Jobs", "Tap the + button to create a new job. Fill in the job name, number, customer, address, and other details."),
+                    ("Job Details", "Tap any job to see its full detail page with team, labor, parts, orders, notebooks, and cost tracking.")
+                ]
+            )
         }
         .sheet(isPresented: $showCreateJob) {
             IOSCreateJobSheet {
@@ -104,9 +120,7 @@ struct JobsListPage: View {
                     jobRow(job)
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 

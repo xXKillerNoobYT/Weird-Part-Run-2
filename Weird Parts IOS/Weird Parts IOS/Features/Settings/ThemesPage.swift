@@ -90,26 +90,37 @@ struct ThemesPage: View {
     }
 
     private func loadTheme() {
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service unavailable"
+            return
+        }
         do {
-            let theme = try appCore.settingsService.getTheme()
+            let theme = try service.getTheme()
             themeMode = theme.themeMode
             primaryColor = theme.primaryColor
             fontFamily = theme.fontFamily
         } catch {
-            print("[ThemesPage] Load error: \(error)")
+            errorMessage = "Failed to load: \(error.localizedDescription)"
         }
     }
 
     private func saveTheme() {
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service unavailable"
+            return
+        }
         let settings = SettingsService.ThemeSettings(
             themeMode: themeMode,
             primaryColor: primaryColor,
             fontFamily: fontFamily
         )
         do {
-            _ = try appCore.settingsService.updateTheme(settings)
+            _ = try service.updateTheme(settings)
             saved = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                saved = false
+            }
         } catch {
             errorMessage = "Failed to save: \(error.localizedDescription)"
         }

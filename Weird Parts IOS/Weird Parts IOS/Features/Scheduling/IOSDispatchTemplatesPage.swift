@@ -43,9 +43,7 @@ struct IOSDispatchTemplatesPage: View {
             List(filteredTemplates, id: \.id) { template in
                 templateRow(template)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 

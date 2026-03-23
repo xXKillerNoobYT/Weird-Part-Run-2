@@ -53,9 +53,7 @@ struct IOSTrailerLocationsPage: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     private func trailerRow(_ trailer: FleetService.TrailerListItem) -> some View {
@@ -118,7 +116,6 @@ struct IOSTrailerLocationsPage: View {
         do {
             trailers = try fleet.listTrailers()
         } catch {
-            print("[IOSTrailerLocationsPage] Load error: \(error)")
             loadError = error.localizedDescription
         }
         isLoading = false

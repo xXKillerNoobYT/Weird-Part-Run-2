@@ -28,6 +28,10 @@ final class IOSSyncManager {
         let discoveredAt: String
     }
 
+    /// Whether real sync infrastructure is connected.
+    /// When false, sync operations show "not available" instead of faking it.
+    var isSyncAvailable: Bool { false }
+
     init() {}
 
     /// Start automatic sync with the given interval.
@@ -49,32 +53,27 @@ final class IOSSyncManager {
 
     /// Trigger a sync cycle immediately.
     func syncNow() async {
+        guard isSyncAvailable else {
+            syncStatus = .idle
+            errorMessage = "Sync not configured. Connect to a shop computer first."
+            return
+        }
         guard syncStatus != .syncing else { return }
         syncStatus = .syncing
         errorMessage = nil
 
-        // Simulate sync cycle using SyncEngine
-        // In production, this calls SyncEngine.triggerSync()
-        try? await Task.sleep(nanoseconds: 1_500_000_000)
-
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        lastSyncDate = formatter.string(from: Date())
-        pendingChanges = 0
-        syncStatus = .synced
+        // Real sync will call SyncEngine.triggerSync() here
     }
 
     /// Start scanning for nearby peers.
     func startPeerDiscovery() {
+        guard isSyncAvailable else {
+            isScanning = false
+            errorMessage = "Peer discovery requires sync infrastructure. Connect to a shop computer first."
+            return
+        }
         isScanning = true
         // In production, this calls MultipeerManager.startBrowsing()
-        // Simulate finding a peer after a delay
-        Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            await MainActor.run {
-                isScanning = false
-            }
-        }
     }
 
     /// Stop scanning for peers.

@@ -248,12 +248,17 @@ public final class PeopleService: Sendable {
                     args.append(pattern)
                 }
                 if let status, !status.isEmpty {
-                    whereClauses.append("u.status = ?")
-                    args.append(status)
+                    if status == "active" {
+                        whereClauses.append("u.is_active = 1")
+                    } else if status == "inactive" {
+                        whereClauses.append("u.is_active = 0")
+                    }
                 }
 
                 let sql = """
-                    SELECT u.id, u.display_name, u.email, u.phone, u.status, u.role,
+                    SELECT u.id, u.display_name, u.email, u.phone,
+                           CASE WHEN u.is_active = 1 THEN 'active' ELSE 'inactive' END AS status,
+                           COALESCE(MAX(h.name), 'user') AS role,
                            GROUP_CONCAT(h.name, ', ') AS hat_names
                     FROM users u
                     LEFT JOIN user_hats uh ON uh.user_id = u.id
@@ -289,7 +294,8 @@ public final class PeopleService: Sendable {
             guard let userRow = try Row.fetchOne(
                 dbConn,
                 sql: """
-                    SELECT id, display_name, email, phone, status, role,
+                    SELECT id, display_name, email, phone,
+                           CASE WHEN is_active = 1 THEN 'active' ELSE 'inactive' END AS status,
                            created_at, updated_at, deleted_at
                     FROM users
                     WHERE id = ?
@@ -359,7 +365,7 @@ public final class PeopleService: Sendable {
                 email: userRow["email"] ?? "",
                 phone: userRow["phone"] as String?,
                 status: userRow["status"] ?? "active",
-                role: userRow["role"] ?? "user",
+                role: hats.first?.name ?? "user",
                 createdAt: userRow["created_at"] as String?,
                 updatedAt: userRow["updated_at"] as String?,
                 deletedAt: userRow["deleted_at"] as String?,
@@ -610,6 +616,123 @@ public final class PeopleService: Sendable {
             totalCustomers: totalCustomers,
             totalContacts: totalContacts
         )
+    }
+
+    // =========================================================================
+    // MARK: - 8. CRUD — Create Methods
+    // =========================================================================
+
+    /// Create a new customer. Returns the new customer's ID.
+    @discardableResult
+    public func createCustomer(
+        name: String,
+        companyName: String? = nil,
+        email: String? = nil,
+        phone: String? = nil,
+        address: String? = nil,
+        city: String? = nil,
+        state: String? = nil,
+        zip: String? = nil,
+        notes: String? = nil
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO customers (name, company_name, email, phone, address, city, state, zip, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                arguments: [name, companyName, email, phone, address, city, state, zip, notes]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Create a new contact (used for contractors, GC contacts, supplier contacts, etc.).
+    /// Returns the new contact's ID.
+    @discardableResult
+    public func createContact(
+        entityType: String,
+        entityId: Int64,
+        firstName: String,
+        lastName: String = "",
+        role: String,
+        phone: String,
+        email: String? = nil,
+        isPrimary: Bool = false,
+        notes: String? = nil
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO entity_contacts (entity_type, entity_id, first_name, last_name, role, phone, email, is_primary, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                arguments: [entityType, entityId, firstName, lastName, role, phone, email, isPrimary ? 1 : 0, notes]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Create a new general contractor. Returns the new contractor's ID.
+    @discardableResult
+    public func createContractor(
+        companyName: String,
+        contactName: String? = nil,
+        email: String? = nil,
+        phone: String? = nil,
+        trade: String? = nil,
+        notes: String? = nil
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO general_contractors (company_name, contact_name, email, phone, notes)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                arguments: [companyName, contactName, email, phone, notes]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Create a new team. Returns the new team's ID.
+    @discardableResult
+    public func createTeam(name: String, description: String? = nil) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO employee_teams (name, description)
+                    VALUES (?, ?)
+                    """,
+                arguments: [name, description]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Create a new hat (role). Returns the new hat's ID.
+    @discardableResult
+    public func createHat(name: String, description: String? = nil, level: Int = 0) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO hats (name, description, level, is_builtin)
+                    VALUES (?, ?, ?, 0)
+                    """,
+                arguments: [name, description, level]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Delete a hat by ID (soft delete).
+    public func deleteHat(id: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE hats SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [id]
+            )
+        }
     }
 
     // =========================================================================

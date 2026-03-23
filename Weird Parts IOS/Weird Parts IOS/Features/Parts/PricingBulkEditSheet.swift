@@ -122,7 +122,10 @@ struct PricingBulkEditSheet: View {
             }
         }
         .task {
-            guard let service = appCore.partsService else { return }
+            guard let service = appCore.partsService else {
+                saveError = "Parts service not available"
+                return
+            }
             pricingMode = (try? service.getCompanyCostSetting(key: "pricing_mode")) ?? "markup"
             categories = (try? service.listCategories()) ?? []
         }
@@ -319,7 +322,10 @@ struct PricingBulkEditSheet: View {
     }
 
     private func loadPreview() async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            saveError = "Parts service not available"
+            return
+        }
         saveError = nil
         do {
             let markup = pricingMode == "markup" ? Double(markupText) : nil

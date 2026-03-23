@@ -63,9 +63,7 @@ struct CreateReturnSheet: View {
                 }
             }
             .navigationTitle("New Return")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -81,16 +79,22 @@ struct CreateReturnSheet: View {
     }
 
     private func loadSuppliers() {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            saveError = "Parts service not available"
+            return
+        }
         do {
             suppliers = try service.listSuppliers()
         } catch {
-            print("[CreateReturnSheet] Load suppliers error: \(error)")
+            saveError = "Could not load suppliers: \(error.localizedDescription)"
         }
     }
 
     private func saveReturn() {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            saveError = "Orders service not available"
+            return
+        }
         isSaving = true
         saveError = nil
         do {

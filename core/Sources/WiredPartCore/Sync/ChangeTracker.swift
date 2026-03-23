@@ -81,7 +81,7 @@ public enum ChangeTracker {
             try Int.fetchOne(
                 dbConnection,
                 sql: "SELECT COUNT(*) FROM _change_log WHERE synced = 0"
-            )!
+            ) ?? 0
         }
     }
 
@@ -180,7 +180,7 @@ public enum ChangeTracker {
             try Int64.fetchOne(
                 dbConnection,
                 sql: "SELECT COALESCE(MAX(sequence), 0) FROM _change_log"
-            )!
+            ) ?? 0
         }
     }
 
@@ -251,14 +251,21 @@ public enum ChangeTracker {
 
 // MARK: - DeviceIdentity
 
-/// Simple device identity provider.
-/// In production this would read from Keychain or a persisted UUID.
-/// For now, provides a stable in-process identifier.
+/// Persistent device identity provider.
+/// Stores a stable UUID in UserDefaults so the same device ID
+/// is used across app launches. Falls back to a new UUID on first use.
 public enum DeviceIdentity: Sendable {
+    private static let userDefaultsKey = "com.wiredpart.deviceId"
+
     /// The current device's unique identifier.
-    /// Set this at app launch from Keychain/UserDefaults.
+    /// Reads from UserDefaults on first access; generates and persists a new UUID
+    /// if none exists. This ensures the same device ID survives app restarts.
     nonisolated(unsafe) public static var current: String = {
-        // Default: generate a UUID for this process (tests, etc.)
-        UUID().uuidString
+        if let stored = UserDefaults.standard.string(forKey: userDefaultsKey) {
+            return stored
+        }
+        let newId = UUID().uuidString
+        UserDefaults.standard.set(newId, forKey: userDefaultsKey)
+        return newId
     }()
 }

@@ -15,6 +15,7 @@ struct IOSInspectionsPage: View {
 
     @State private var inspections: [InspectionRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var searchText = ""
 
     var body: some View {
@@ -42,9 +43,7 @@ struct IOSInspectionsPage: View {
             List(filteredInspections, id: \.id) { inspection in
                 inspectionRow(inspection)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -112,7 +111,11 @@ struct IOSInspectionsPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else { return }
+        guard let db = appCore.db else {
+            loadError = "Database not available"
+            isLoading = false
+            return
+        }
         isLoading = inspections.isEmpty
 
         do {
@@ -147,7 +150,7 @@ struct IOSInspectionsPage: View {
             if msg.contains("no such table") {
                 inspections = []
             } else {
-                print("[IOSInspectionsPage] Error: \(error)")
+                loadError = error.localizedDescription
             }
         }
 

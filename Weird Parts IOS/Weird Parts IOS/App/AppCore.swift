@@ -22,9 +22,9 @@ final class AppCore: ObservableObject {
 
     // MARK: - Services (available after init completes)
 
-    private(set) var db: AppDatabase!
-    private(set) var authService: AuthService!
-    private(set) var settingsService: SettingsService!
+    private(set) var db: AppDatabase?
+    private(set) var authService: AuthService?
+    private(set) var settingsService: SettingsService?
     public private(set) var partsService: PartsService?
     public private(set) var warehouseService: WarehouseService?
     public private(set) var jobsService: JobsService?
@@ -47,36 +47,66 @@ final class AppCore: ObservableObject {
 
     private func bootstrap() async {
         do {
-            let path = Self.databasePath()
-            db = try AppDatabase.openDatabase(atPath: path)
-            authService = AuthService(db: db)
-            settingsService = SettingsService(db: db)
-            partsService = PartsService(db: db)
-            warehouseService = WarehouseService(db: db)
-            jobsService = JobsService(db: db)
-            ordersService = OrdersService(db: db)
-            fleetService = FleetService(db: db)
-            peopleService = PeopleService(db: db)
-            schedulingService = SchedulingService(db: db)
-            chatService = ChatService(db: db)
-            notebooksService = NotebooksService(db: db)
-            reportsService = ReportsService(db: db)
-            toolsService = ToolsService(db: db)
+            // Resolve the database path on the main actor (it accesses FileManager),
+            // then perform all blocking database work off the main thread to avoid
+            // priority inversion (user-interactive main thread waiting on
+            // GRDB's default-QoS pool semaphore).
+            let path = try Self.databasePath()
+            let result = try await Task.detached(priority: .userInitiated) {
+                let database = try AppDatabase.openDatabase(atPath: path)
+                let auth = AuthService(db: database)
+                let settings = SettingsService(db: database)
 
-            // Load theme settings
-            if let theme = try? settingsService.getTheme() {
+                let theme = try? settings.getTheme()
+                let users = try auth.getActiveUsers()
+                let hasProfile = try settings.hasBusinessProfile()
+
+                return (
+                    database: database,
+                    auth: auth,
+                    settings: settings,
+                    parts: PartsService(db: database),
+                    warehouse: WarehouseService(db: database),
+                    jobs: JobsService(db: database),
+                    orders: OrdersService(db: database),
+                    fleet: FleetService(db: database),
+                    people: PeopleService(db: database),
+                    scheduling: SchedulingService(db: database),
+                    chat: ChatService(db: database),
+                    notebooks: NotebooksService(db: database),
+                    reports: ReportsService(db: database),
+                    tools: ToolsService(db: database),
+                    theme: theme,
+                    users: users,
+                    hasProfile: hasProfile
+                )
+            }.value
+
+            // Apply results back on MainActor
+            db = result.database
+            authService = result.auth
+            settingsService = result.settings
+            partsService = result.parts
+            warehouseService = result.warehouse
+            jobsService = result.jobs
+            ordersService = result.orders
+            fleetService = result.fleet
+            peopleService = result.people
+            schedulingService = result.scheduling
+            chatService = result.chat
+            notebooksService = result.notebooks
+            reportsService = result.reports
+            toolsService = result.tools
+
+            if let theme = result.theme {
                 self.theme = theme
             }
 
-            // Check whether any users exist yet
-            let users = try authService.getActiveUsers()
-            let hasProfile = try settingsService.hasBusinessProfile()
-
-            if users.isEmpty && !hasProfile {
+            if result.users.isEmpty && !result.hasProfile {
                 // Brand-new device — show two-path onboarding
                 needsOnboarding = true
                 needsBootstrap = false
-            } else if users.isEmpty && hasProfile {
+            } else if result.users.isEmpty && result.hasProfile {
                 // Business profile exists but no admin yet (edge case)
                 needsBootstrap = true
                 needsOnboarding = false
@@ -85,6 +115,15 @@ final class AppCore: ObservableObject {
                 needsOnboarding = false
             }
             isReady = true
+
+            // Run companion auto-discovery cycle in the background
+            Task.detached { [partsService] in
+                do {
+                    try partsService?.runAutoDiscoveryCycle()
+                } catch {
+                    // Non-critical — auto-discovery failures should not affect app operation
+                }
+            }
         } catch {
             loadError = error.localizedDescription
         }
@@ -101,18 +140,25 @@ final class AppCore: ObservableObject {
     // MARK: - Auth Actions
 
     /// Authenticate a user by PIN and store the session.
-    func login(userId: Int64, pin: String) -> String? {
+    func login(userId: Int64, pin: String) async -> String? {
+        guard let authService else { return "App not ready. Please wait." }
         do {
-            let result = try authService.authenticateByPin(userId: userId, pin: pin)
-            if result.success {
-                currentUser = result.user
-                currentToken = result.token
-                if let uid = result.user?.id {
-                    permissions = try authService.getUserPermissions(uid)
+            let result = try await Task.detached(priority: .userInitiated) {
+                let authResult = try authService.authenticateByPin(userId: userId, pin: pin)
+                var perms: [String] = []
+                if authResult.success, let uid = authResult.user?.id {
+                    perms = try authService.getUserPermissions(uid)
                 }
+                return (auth: authResult, permissions: perms)
+            }.value
+
+            if result.auth.success {
+                currentUser = result.auth.user
+                currentToken = result.auth.token
+                permissions = result.permissions
                 return nil // no error
             } else {
-                return result.message
+                return result.auth.message
             }
         } catch {
             return error.localizedDescription
@@ -127,19 +173,26 @@ final class AppCore: ObservableObject {
     }
 
     /// Run the first-device bootstrap, creating the admin user and default data.
-    func seedFirstAdmin(displayName: String, pin: String) -> String? {
+    func seedFirstAdmin(displayName: String, pin: String) async -> String? {
+        guard let authService else { return "App not ready. Please wait." }
         do {
-            let result = try authService.seedFirstAdmin(displayName: displayName, pin: pin)
-            if result.success {
-                currentUser = result.user
-                currentToken = result.token
-                needsBootstrap = false
-                if let uid = result.user?.id {
-                    permissions = try authService.getUserPermissions(uid)
+            let result = try await Task.detached(priority: .userInitiated) {
+                let seedResult = try authService.seedFirstAdmin(displayName: displayName, pin: pin)
+                var perms: [String] = []
+                if seedResult.success, let uid = seedResult.user?.id {
+                    perms = try authService.getUserPermissions(uid)
                 }
+                return (seed: seedResult, permissions: perms)
+            }.value
+
+            if result.seed.success {
+                currentUser = result.seed.user
+                currentToken = result.seed.token
+                needsBootstrap = false
+                permissions = result.permissions
                 return nil
             } else {
-                return result.message
+                return result.seed.message
             }
         } catch {
             return error.localizedDescription
@@ -178,7 +231,7 @@ final class AppCore: ObservableObject {
     /// 4. Clear saved session
     /// 5. Re-bootstrap (creates fresh DB → no users → needsBootstrap)
     func performDatabaseReset() async throws {
-        let dbPath = Self.databasePath()
+        let dbPath = try Self.databasePath()
 
         // 1. Deactivate this device in the registry before wiping
         if let database = self.db {
@@ -220,11 +273,18 @@ final class AppCore: ObservableObject {
 
     // MARK: - Database Path
 
+    enum AppCoreError: LocalizedError {
+        case noDocumentsDirectory
+        var errorDescription: String? {
+            "Unable to locate app storage directory. Please restart the app."
+        }
+    }
+
     /// Returns the path to the SQLite database file in the app's documents directory.
     /// On iOS this is the sandboxed Documents folder.
-    static func databasePath() -> String {
+    static func databasePath() throws -> String {
         guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            fatalError("Unable to locate Documents directory — sandboxing issue")
+            throw AppCoreError.noDocumentsDirectory
         }
         let dir = docs.appendingPathComponent("WiredPart")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

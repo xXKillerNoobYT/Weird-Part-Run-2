@@ -41,9 +41,7 @@ struct IOSMaintenancePage: View {
             List(filteredRecords, id: \.id) { record in
                 maintenanceRow(record)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -110,7 +108,6 @@ struct IOSMaintenancePage: View {
         do {
             records = try service.listMaintenanceRecords()
         } catch {
-            print("[IOSMaintenancePage] Load error: \(error)")
             loadError = error.localizedDescription
         }
         isLoading = false

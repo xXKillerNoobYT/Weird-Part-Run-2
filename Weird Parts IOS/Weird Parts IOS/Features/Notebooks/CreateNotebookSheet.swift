@@ -59,9 +59,7 @@ struct CreateNotebookSheet: View {
                 }
             }
             .navigationTitle("New Notebook")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -77,13 +75,19 @@ struct CreateNotebookSheet: View {
     }
 
     private func loadJobs() {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            saveError = "Jobs service not available"
+            return
+        }
         jobs = (try? service.listJobs(status: "active", limit: 200)) ?? []
     }
 
     private func saveNotebook() {
         guard let service = appCore.notebooksService,
-              let userId = appCore.currentUser?.id else { return }
+              let userId = appCore.currentUser?.id else {
+            saveError = "Service not available"
+            return
+        }
         isSaving = true
         saveError = nil
         do {

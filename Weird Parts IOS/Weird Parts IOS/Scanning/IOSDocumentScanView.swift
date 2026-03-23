@@ -1,7 +1,6 @@
 import SwiftUI
 import WiredPartCore
 
-#if os(iOS)
 import UIKit
 
 // MARK: - iOS Document Scan View
@@ -181,4 +180,3 @@ struct IOSDocumentScanView: View {
     }
 }
 
-#endif

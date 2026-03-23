@@ -130,7 +130,7 @@ private struct PartTypesDetailView: View {
     private func loadCategories() async {
         guard let db = appCore.db else { isLoading = false; return }
         do {
-            let rows = try await db.writer.read { conn -> [Row] in
+            let rows = try db.writer.read { conn -> [Row] in
                 try Row.fetchAll(conn, sql: """
                     SELECT pc.id, pc.name,
                            COUNT(p.id) AS part_count
@@ -201,7 +201,7 @@ private struct CategoryPartsListView: View {
     private func loadParts() async {
         guard let db = appCore.db else { isLoading = false; return }
         do {
-            let rows = try await db.writer.read { conn -> [Row] in
+            let rows = try db.writer.read { conn -> [Row] in
                 try Row.fetchAll(conn, sql: """
                     SELECT p.id, p.name, p.code,
                            COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) AS total_stock
@@ -278,7 +278,7 @@ private struct TotalStockDetailView: View {
     private func loadLocationGroups() async {
         guard let db = appCore.db else { isLoading = false; return }
         do {
-            let rows = try await db.writer.read { conn -> [Row] in
+            let rows = try db.writer.read { conn -> [Row] in
                 try Row.fetchAll(conn, sql: """
                     SELECT location_type,
                            COUNT(DISTINCT location_id) AS loc_count,
@@ -356,7 +356,7 @@ private struct LocationTypeStockView: View {
     private func loadItems() async {
         guard let db = appCore.db else { isLoading = false; return }
         do {
-            let rows = try await db.writer.read { conn -> [Row] in
+            let rows = try db.writer.read { conn -> [Row] in
                 try Row.fetchAll(conn, sql: """
                     SELECT s.location_id, s.part_id, s.qty,
                            p.name AS part_name, p.code AS part_code
@@ -514,7 +514,7 @@ private struct JobKPIDetailView: View {
     private func loadDetail() async {
         guard let db = appCore.db else { isLoading = false; return }
         do {
-            let row = try await db.writer.read { conn -> Row? in
+            let row = try db.writer.read { conn -> Row? in
                 try Row.fetchOne(conn, sql: """
                     SELECT j.job_name, j.status, j.customer_name,
                            j.start_date, j.due_date, j.budget_limit,
@@ -801,7 +801,7 @@ private struct LowStockDetailView: View {
     private func loadLowStock() async {
         guard let db = appCore.db else { isLoading = false; return }
         do {
-            let rows = try await db.writer.read { conn -> [Row] in
+            let rows = try db.writer.read { conn -> [Row] in
                 try Row.fetchAll(conn, sql: """
                     SELECT p.id, p.name, p.code, p.min_stock_level,
                            COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) AS current_qty

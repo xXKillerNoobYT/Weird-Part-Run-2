@@ -46,6 +46,10 @@ extension AppDatabase {
         registerMigration029LocationStockTargets(&migrator)
         registerMigration030ForecastSettings(&migrator)
         registerMigration031TargetRecommendations(&migrator)
+        registerMigration032JPOPerPartStatus(&migrator)
+        registerMigration033PartChangeLog(&migrator)
+        registerMigration034JobStages(&migrator)
+        registerMigration035StagingBoxes(&migrator)
     }
 }
 
@@ -2909,7 +2913,7 @@ extension AppDatabase {
                 t.column("is_active", .integer).notNull().defaults(to: 1)
                 t.column("last_seen_at", .text)
                 t.column("created_at", .text).notNull()
-                    .defaults(sql: "datetime('now')")
+                    .defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
 
                 t.uniqueKey(["channel_id", "supplier_id"])
@@ -2930,7 +2934,7 @@ extension AppDatabase {
                 t.column("attachment_type", .text)
                 t.column("attachment_ref", .text)
                 t.column("created_at", .text).notNull()
-                    .defaults(sql: "datetime('now')")
+                    .defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
             }
             try db.create(index: "idx_supplier_messages_bridge",
@@ -3076,6 +3080,143 @@ extension AppDatabase {
             try db.create(index: "idx_tr_part_loc", on: "target_recommendations",
                           columns: ["part_id", "location_type", "location_id"])
             try db.create(index: "idx_tr_status", on: "target_recommendations", columns: ["status"])
+        }
+    }
+}
+
+// MARK: - 032: JPO Per-Part Status
+
+extension AppDatabase {
+    private static func registerMigration032JPOPerPartStatus(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("032_jpo_per_part_status") { db in
+            // Add per-line status fields to jpo_line_items
+            try db.alter(table: "jpo_line_items") { t in
+                t.add(column: "line_status", .text).defaults(to: "pending")
+                t.add(column: "hold_reason", .text)
+                t.add(column: "reject_reason", .text)
+                t.add(column: "chat_thread_id", .integer)
+                t.add(column: "po_line_id", .integer)
+                t.add(column: "transfer_id", .integer)
+                t.add(column: "status_updated_at", .text)
+                t.add(column: "status_updated_by", .integer)
+            }
+
+            // Add delivery option to job_purchase_orders
+            try db.alter(table: "job_parts_orders") { t in
+                t.add(column: "delivery_option", .text).defaults(to: "partial")
+                t.add(column: "delivery_locked", .integer).defaults(to: 0)
+            }
+
+            // Backfill existing lines to "pending"
+            try db.execute(sql: """
+                UPDATE jpo_line_items SET line_status = 'pending'
+                WHERE line_status IS NULL
+                """)
+        }
+    }
+
+    private static func registerMigration033PartChangeLog(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("033_part_change_log") { db in
+            try db.create(table: "part_change_log") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("part_id", .integer).notNull()
+                    .references("parts", onDelete: .cascade)
+                t.column("user_id", .integer)
+                    .references("users", onDelete: .setNull)
+                t.column("user_name", .text)
+                t.column("action", .text).notNull()
+                t.column("field_name", .text)
+                t.column("old_value", .text)
+                t.column("new_value", .text)
+                t.column("context", .text)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_pcl_part", on: "part_change_log", columns: ["part_id"])
+            try db.create(index: "idx_pcl_user", on: "part_change_log", columns: ["user_id"])
+            try db.create(index: "idx_pcl_date", on: "part_change_log", columns: ["created_at"])
+            try db.create(index: "idx_pcl_action", on: "part_change_log", columns: ["part_id", "action"])
+        }
+    }
+
+    // MARK: - 034: Job Stages
+
+    private static func registerMigration034JobStages(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("034_job_stages") { db in
+            // Job stages table
+            try db.create(table: "job_stages") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("sort_order", .integer).notNull().defaults(to: 0)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+            }
+
+            // Category → Stage mapping
+            try db.create(table: "job_stage_category_map") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("stage_id", .integer).notNull()
+                    .references("job_stages", onDelete: .cascade)
+                t.column("category_id", .integer).notNull()
+                    .references("part_categories", onDelete: .cascade)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+                t.uniqueKey(["stage_id", "category_id"])
+            }
+
+            // Add stage_id to jpo_line_items (auto-assigned from category mapping)
+            try db.alter(table: "jpo_line_items") { t in
+                t.add(column: "stage_id", .integer)
+                    .references("job_stages")
+            }
+
+            // Add current_stage_id to jobs
+            try db.alter(table: "jobs") { t in
+                t.add(column: "current_stage_id", .integer)
+                    .references("job_stages")
+            }
+
+            // Indexes
+            try db.create(index: "idx_jscm_stage", on: "job_stage_category_map", columns: ["stage_id"])
+            try db.create(index: "idx_jscm_category", on: "job_stage_category_map", columns: ["category_id"])
+            try db.create(index: "idx_jpo_lines_stage", on: "jpo_line_items", columns: ["stage_id"])
+
+            // Seed 3 default stages
+            try db.execute(sql: """
+                INSERT INTO job_stages (name, sort_order) VALUES
+                ('Rough-in', 1),
+                ('Prep/Makeup', 2),
+                ('Trim-out', 3)
+                """)
+        }
+    }
+}
+
+// MARK: - 035: Staging Boxes
+
+extension AppDatabase {
+    private static func registerMigration035StagingBoxes(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("035_staging_boxes") { db in
+            // Physical staging boxes for organizing pulled parts by job
+            try db.create(table: "staging_boxes") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("job_id", .integer).notNull()
+                    .references("jobs", onDelete: .cascade)
+                t.column("box_number", .text).notNull()       // e.g. "0412-01"
+                t.column("box_size", .text).notNull()
+                    .defaults(to: "normal")                    // small / normal / large
+                t.column("label_text", .text).notNull()        // e.g. "SMITH RES 0412-01"
+                t.column("is_full", .integer).notNull()
+                    .defaults(to: 0)
+                t.column("area_id", .integer)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+            }
+
+            try db.create(index: "idx_staging_boxes_job", on: "staging_boxes", columns: ["job_id"])
+            try db.create(index: "idx_staging_boxes_full", on: "staging_boxes", columns: ["is_full"])
         }
     }
 }

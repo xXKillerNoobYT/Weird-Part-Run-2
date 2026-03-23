@@ -52,9 +52,7 @@ struct IOSMyTruckPage: View {
             mileageSection
             fuelSection
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     private func vehicleHeaderSection(_ v: FleetService.VehicleDetail) -> some View {

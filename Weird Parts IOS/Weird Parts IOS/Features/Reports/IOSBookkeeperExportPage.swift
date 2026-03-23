@@ -94,9 +94,7 @@ struct IOSBookkeeperExportPage: View {
                     }
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 

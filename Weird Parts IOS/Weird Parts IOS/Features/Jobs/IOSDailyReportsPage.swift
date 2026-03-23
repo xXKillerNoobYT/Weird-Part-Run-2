@@ -15,6 +15,7 @@ struct IOSDailyReportsPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var selectedDate = Date()
+    @State private var showHelp = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,6 +23,23 @@ struct IOSDailyReportsPage: View {
             reportContent
         }
         .navigationTitle("Daily Reports")
+        .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showHelp) {
+            PageHelpSheet(
+                title: "Daily Reports Help",
+                sections: [
+                    ("Overview", "View per-job activity summaries for any date. See worker count, total hours logged, and report status for each job."),
+                    ("Navigation", "Use the left/right arrows to move between dates. Tap 'Today' to jump back to the current date."),
+                    ("Data", "Pull down to refresh. Reports are generated automatically based on clock entries and job activity.")
+                ]
+            )
+        }
         .refreshable { loadData() }
         .task { loadData() }
     }
@@ -131,9 +149,7 @@ struct IOSDailyReportsPage: View {
                     }
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 

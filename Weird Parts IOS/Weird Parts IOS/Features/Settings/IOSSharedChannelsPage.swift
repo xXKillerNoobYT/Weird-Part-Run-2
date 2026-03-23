@@ -30,9 +30,7 @@ struct IOSSharedChannelsPage: View {
                 .disabled(true) // Enabled with sync infrastructure
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
         .navigationTitle("Shared Channels")
     }
 }

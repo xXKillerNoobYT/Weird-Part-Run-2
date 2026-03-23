@@ -148,5 +148,19 @@ private class ScannerDelegate: NSObject, DataScannerViewControllerDelegate {
         continuation?.yield(.error("Scanner became unavailable: \(error.localizedDescription)"))
     }
 }
+#else
+// MARK: - Mac Catalyst Stub
 
+/// Stub for Mac Catalyst where DataScannerViewController is unavailable.
+@available(iOS 16.0, *)
+@MainActor
+final class IOSQRScanner: QRScannerAdapter {
+    var isAvailable: Bool { false }
+
+    func startScanning() async throws -> AsyncStream<QRScanEvent> {
+        throw OCRError.scannerNotAvailable
+    }
+
+    func stopScanning() {}
+}
 #endif

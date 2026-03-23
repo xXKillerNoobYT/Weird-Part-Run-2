@@ -29,9 +29,7 @@ struct IOSFleetDashboardPage: View {
         }
         .navigationTitle("Fleet Dashboard")
         .refreshable { loadData() }
-        #if os(iOS)
         .background(DS.Background.page)
-        #endif
         .task { loadData() }
     }
 
@@ -105,9 +103,7 @@ struct IOSFleetDashboardPage: View {
                 .foregroundStyle(.secondary)
         }
         .padding()
-        #if os(iOS)
         .background(Color(.secondarySystemGroupedBackground))
-        #endif
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title): \(value)")
@@ -133,9 +129,7 @@ struct IOSFleetDashboardPage: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
-                #if os(iOS)
                 .background(Color(.secondarySystemGroupedBackground))
-                #endif
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             } else {
                 VStack(spacing: 0) {
@@ -148,9 +142,7 @@ struct IOSFleetDashboardPage: View {
                         }
                     }
                 }
-                #if os(iOS)
                 .background(Color(.secondarySystemGroupedBackground))
-                #endif
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
         }

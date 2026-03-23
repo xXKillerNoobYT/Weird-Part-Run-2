@@ -16,6 +16,7 @@ struct IOSWeeklyAvailabilityPage: View {
 
     @State private var rows: [AvailabilityRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var weekOffset = 0
 
     private let dayLabels = ["M", "T", "W", "T", "F", "S", "S"]
@@ -86,6 +87,8 @@ struct IOSWeeklyAvailabilityPage: View {
         if isLoading {
             ProgressView("Loading availability...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if rows.isEmpty {
             ContentUnavailableView {
                 Label("No Data", systemImage: "calendar.badge.exclamationmark")
@@ -117,9 +120,7 @@ struct IOSWeeklyAvailabilityPage: View {
                     }
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -156,6 +157,7 @@ struct IOSWeeklyAvailabilityPage: View {
     private func loadData() {
         guard let db = appCore.db else { return }
         isLoading = rows.isEmpty
+        loadError = nil
         do {
             let weekDates = (0..<7).map { Calendar.current.date(byAdding: .day, value: $0, to: weekStart) ?? weekStart }
             let f = DateFormatter()
@@ -183,7 +185,7 @@ struct IOSWeeklyAvailabilityPage: View {
         } catch {
             let msg = String(describing: error)
             if !msg.contains("no such table") {
-                print("[IOSWeeklyAvailabilityPage] Load error: \(error)")
+                loadError = error.localizedDescription
             }
         }
         isLoading = false

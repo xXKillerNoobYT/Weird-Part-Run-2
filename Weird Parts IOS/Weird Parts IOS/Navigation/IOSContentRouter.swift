@@ -19,6 +19,12 @@ struct IOSContentRouter: View {
         // Dashboard
         case "/dashboard":
             DashboardView()
+        case "/dashboard/clock":
+            IOSClockPage()
+        case "/dashboard/report":
+            DashboardDailyReportPage()
+        case "/dashboard/scanner":
+            IOSDashboardQRScannerPage()
 
         // Parts sub-routes
         case "/parts/categories":
@@ -110,7 +116,7 @@ struct IOSContentRouter: View {
         case "/jobs/reports":
             JobsRouter(tabId: "jobs-reports")
         case "/jobs/clock":
-            JobsRouter(tabId: "jobs-clock")
+            IOSClockPage() // Redirect — Clock now lives under Dashboard
         case "/jobs/detail":
             JobsRouter(tabId: "jobs-detail")
         case "/jobs/questionnaire":
@@ -332,10 +338,6 @@ struct PlaceholderView: View {
                 .padding(.horizontal, 32)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        #if os(iOS)
         .background(Color(.systemBackground))
-        #elseif os(macOS)
-        .background(DS.Background.page)
-        #endif
     }
 }

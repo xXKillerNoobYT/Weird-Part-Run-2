@@ -6,6 +6,9 @@ struct IOSCustomerDetailPage: View {
     @EnvironmentObject private var appCore: AppCore
     let customer: PeopleService.CustomerListItem
 
+    @State private var customerJobs: [JobsService.JobListItem] = []
+    @State private var jobsError: String?
+
     var body: some View {
         List {
             Section("Company Info") {
@@ -43,17 +46,57 @@ struct IOSCustomerDetailPage: View {
                 }
             }
 
-            // Job history placeholder
+            // Job history
             Section("Job History") {
-                Text("Job history will be populated from JobsService")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
+                if let error = jobsError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                } else if customerJobs.isEmpty {
+                    EmptyStateView(
+                        icon: "clock",
+                        title: "No Job History",
+                        message: "Jobs linked to this customer will appear here."
+                    )
+                } else {
+                    ForEach(customerJobs) { job in
+                        NavigationLink(value: job.id) {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(job.jobName)
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                    Text(job.jobNumber)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                StatusBadge(
+                                    text: job.status.replacingOccurrences(of: "_", with: " ").capitalized,
+                                    color: job.status == "active" ? .green : job.status == "completed" ? .blue : .secondary
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
         .navigationTitle(customer.companyName ?? customer.contactName ?? "Customer")
+        .refreshable { loadJobHistory() }
+        .task { loadJobHistory() }
+    }
+
+    private func loadJobHistory() {
+        guard let service = appCore.jobsService else {
+            jobsError = "Service unavailable"
+            return
+        }
+        do {
+            customerJobs = try service.getJobsForCustomer(customerId: customer.id)
+        } catch {
+            jobsError = error.localizedDescription
+        }
     }
 
     private func detailRow(_ label: String, _ value: String) -> some View {

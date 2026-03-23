@@ -95,9 +95,7 @@ struct BusinessProfileSetupView: View {
                         TextField("ZIP", text: $zip)
                             .textFieldStyle(.roundedBorder)
                             .textContentType(.postalCode)
-                            #if os(iOS)
                             .keyboardType(.numberPad)
-                            #endif
                             .frame(width: 80)
                     }
                 }
@@ -112,22 +110,16 @@ struct BusinessProfileSetupView: View {
                     TextField("Phone", text: $phone)
                         .textFieldStyle(.roundedBorder)
                         .textContentType(.telephoneNumber)
-                        #if os(iOS)
                         .keyboardType(.phonePad)
-                        #endif
                     TextField("Email", text: $email)
                         .textFieldStyle(.roundedBorder)
                         .textContentType(.emailAddress)
-                        #if os(iOS)
                         .keyboardType(.emailAddress)
-                        #endif
                         .textInputAutocapitalization(.never)
                     TextField("Website", text: $website)
                         .textFieldStyle(.roundedBorder)
                         .textContentType(.URL)
-                        #if os(iOS)
                         .keyboardType(.URL)
-                        #endif
                         .textInputAutocapitalization(.never)
                 }
                 .padding(.horizontal, 24)
@@ -161,9 +153,7 @@ struct BusinessProfileSetupView: View {
             }
         }
         .navigationTitle("Business Profile")
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
-        #endif
         .navigationDestination(isPresented: $navigateToAdmin) {
             AdminAccountSetupView()
                 .environmentObject(appCore)
@@ -189,7 +179,8 @@ struct BusinessProfileSetupView: View {
             isActive: 1
         )
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(200))
             do {
                 guard let settingsService = appCore.settingsService else {
                     errorMessage = "Settings service not available. Please restart the app."

@@ -14,17 +14,13 @@ struct AboutPage: View {
             }
 
             Section("Database") {
-                LabeledContent("Location", value: AppCore.databasePath())
+                LabeledContent("Location", value: (try? AppCore.databasePath()) ?? "Unknown")
                     .font(.caption2)
             }
 
             Section("Device") {
-                #if os(iOS)
                 LabeledContent("Device", value: UIDevice.current.name)
                 LabeledContent("OS", value: "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
-                #else
-                LabeledContent("OS", value: "macOS")
-                #endif
             }
 
             Section("Legal") {
@@ -36,12 +32,6 @@ struct AboutPage: View {
     }
 
     private var platformName: String {
-        #if os(iOS)
         return "iOS"
-        #elseif os(macOS)
-        return "macOS"
-        #else
-        return "Unknown"
-        #endif
     }
 }

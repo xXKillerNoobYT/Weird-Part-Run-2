@@ -29,9 +29,7 @@ struct IOSAssignDriverSheet: View {
                 driverListSection
             }
             .navigationTitle("Assign Driver")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .searchable(text: $searchText, prompt: "Search employees...")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -127,7 +125,6 @@ struct IOSAssignDriverSheet: View {
         do {
             employees = try service.listEmployees()
         } catch {
-            print("[IOSAssignDriverSheet] Load error: \(error)")
             loadError = error.localizedDescription
         }
         isLoading = false

@@ -29,9 +29,7 @@ struct PartsCategoriesPage: View {
                 compactLayout
             }
         }
-        #if os(iOS)
         .background(DS.Background.page)
-        #endif
         .task { await loadHierarchy() }
         .refreshable { await loadHierarchy() }
     }
@@ -78,9 +76,7 @@ struct PartsCategoriesPage: View {
                     onRefresh: { await loadHierarchy() }
                 )
                 .navigationTitle("Details")
-                #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
-                #endif
             }
         }
     }
@@ -106,7 +102,6 @@ struct PartsCategoriesPage: View {
                 loadError = error.localizedDescription
                 isLoading = false
             }
-            print("[PartsCategoriesPage] Load error: \(error)")
         }
     }
 }

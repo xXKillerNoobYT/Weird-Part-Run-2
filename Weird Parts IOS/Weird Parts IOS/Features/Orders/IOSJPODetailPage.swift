@@ -25,6 +25,16 @@ struct IOSJPODetailPage: View {
     @State private var showRejectConfirm = false
     @State private var rejectingLineId: Int64? // nil = reject selected
 
+    // Hold + chat
+    @State private var holdQuestion = ""
+    @State private var showHoldPrompt = false
+    @State private var holdingLineId: Int64?
+    @State private var holdingPartName: String?
+
+    // Smart routing — stock check before approval
+    @State private var showBelowMinWarning = false
+    @State private var pendingTransferLine: OrdersService.JPOLineRow?
+
     private enum ActiveSheet: Identifiable {
         case addLineItem
         case viewChat(Int64)
@@ -85,6 +95,39 @@ struct IOSJPODetailPage: View {
         } message: {
             Text("A reason is required for rejection. The requester will be notified.")
         }
+        // Hold question prompt
+        .alert("Ask About This Part", isPresented: $showHoldPrompt) {
+            TextField("Your question...", text: $holdQuestion)
+            Button("Cancel", role: .cancel) { holdQuestion = "" }
+            Button("Hold + Send Question") {
+                guard !holdQuestion.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                createHoldWithChat()
+            }
+        } message: {
+            if let name = holdingPartName {
+                Text("Ask the requester about \"\(name)\". They'll be notified to respond in chat.")
+            }
+        }
+        // Below-min stock warning — approve with transfer vs procurement
+        .alert("Stock Warning", isPresented: $showBelowMinWarning) {
+            Button("Transfer Anyway") {
+                if let line = pendingTransferLine {
+                    executeStockTransfer(line)
+                    pendingTransferLine = nil
+                }
+            }
+            Button("Send to Procurement") {
+                if let line = pendingTransferLine {
+                    sendToProcurement(line.id)
+                    pendingTransferLine = nil
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                pendingTransferLine = nil
+            }
+        } message: {
+            Text("Pulling this quantity will bring shop stock below minimum level. Transfer anyway or send to procurement for ordering?")
+        }
         // Error alert
         .alert("Error", isPresented: .constant(actionError != nil)) {
             Button("OK") { actionError = nil }
@@ -102,11 +145,10 @@ struct IOSJPODetailPage: View {
         case .addLineItem:
             AddJPOLineItemSheet(jpoId: jpoId, onSave: { loadData() })
                 .environmentObject(appCore)
-        case .viewChat(let threadId):
+        case .viewChat(let channelId):
             NavigationStack {
-                Text("Chat Thread #\(threadId) — Coming Soon")
-                    .navigationTitle("Chat")
-                    .navigationBarTitleDisplayMode(.inline)
+                IOSMessageThreadView(channelId: channelId, channelName: "Hold Q&A")
+                    .environmentObject(appCore)
             }
         case .viewPO(let poId):
             NavigationStack {
@@ -301,7 +343,11 @@ struct IOSJPODetailPage: View {
                 .buttonStyle(.bordered)
                 .tint(.green)
 
-                Button { holdLine(line.id) } label: {
+                Button {
+                    holdingLineId = line.id
+                    holdingPartName = line.partName ?? "Part"
+                    showHoldPrompt = true
+                } label: {
                     Label("Hold", systemImage: "pause.circle.fill")
                         .font(.caption2)
                 }
@@ -320,12 +366,36 @@ struct IOSJPODetailPage: View {
             }
 
         case "transfer":
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.right.circle.fill")
-                    .foregroundStyle(.blue)
-                Text("In stock — transfer request created")
-                    .font(.caption)
-                    .foregroundStyle(.blue)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.right.circle.fill")
+                        .foregroundStyle(.blue)
+                    Text("In stock — transfer request created")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                }
+                HStack(spacing: 8) {
+                    Button {
+                        holdingLineId = line.id
+                        holdingPartName = line.partName ?? "Part"
+                        showHoldPrompt = true
+                    } label: {
+                        Label("Hold", systemImage: "pause.circle.fill")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.yellow)
+
+                    Button {
+                        rejectingLineId = line.id
+                        showRejectConfirm = true
+                    } label: {
+                        Label("Reject", systemImage: "xmark.circle.fill")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                }
             }
 
         case "on_hold":
@@ -495,28 +565,181 @@ struct IOSJPODetailPage: View {
 
     // MARK: - Actions
 
+    /// Smart-route a JPO line: check shop stock before sending to procurement.
+    /// - If shop has enough AND it won't drop below MIN -> create warehouse transfer
+    /// - If shop has enough but would drop below MIN -> show warning, let user choose
+    /// - If shop doesn't have enough -> send to procurement (existing behavior)
     private func approveLine(_ lineId: Int64) {
-        guard let service = appCore.ordersService else { return }
+        // Find the line in the current JPO data
+        guard let line = jpo?.lines.first(where: { $0.id == lineId }) else {
+            // Fallback: just approve normally
+            sendToProcurement(lineId)
+            return
+        }
+
+        guard let partId = line.partId else {
+            // No part linked — can't check stock, send to procurement
+            sendToProcurement(lineId)
+            return
+        }
+
+        // Check shop stock for this part
         do {
-            try service.updateJPOLineStatus(lineId: lineId, status: "approved",
-                                            updatedBy: appCore.currentUser?.id)
-            loadData()
-        } catch { actionError = error.localizedDescription }
+            let warehouseStock = try appCore.warehouseService?.getStockQty(
+                partId: partId, locationType: "warehouse", locationId: 1
+            ) ?? 0
+
+            let requestedQty = line.quantity
+
+            if warehouseStock >= requestedQty {
+                // Shop has enough — check if it would drop below MIN
+                let minStock = try getPartMinStock(partId: partId)
+                let remainingAfterTransfer = warehouseStock - requestedQty
+
+                if minStock > 0 && remainingAfterTransfer < minStock {
+                    // Would drop below min — show warning
+                    pendingTransferLine = line
+                    showBelowMinWarning = true
+                } else {
+                    // Safe to transfer — won't drop below min
+                    executeStockTransfer(line)
+                }
+            } else {
+                // Not enough stock — send to procurement
+                sendToProcurement(lineId)
+            }
+        } catch {
+            // On error, fall back to standard procurement flow
+            actionError = error.localizedDescription
+            sendToProcurement(lineId)
+        }
     }
 
-    private func holdLine(_ lineId: Int64) {
+    /// Execute a warehouse-to-pulled transfer for a JPO line and mark it as "transfer".
+    private func executeStockTransfer(_ line: OrdersService.JPOLineRow) {
+        guard let warehouseService = appCore.warehouseService,
+              let ordersService = appCore.ordersService,
+              let partId = line.partId,
+              let userId = appCore.currentUser?.id else {
+            sendToProcurement(line.id)
+            return
+        }
+
+        do {
+            // Create a warehouse -> pulled movement for this part
+            let movementId = try warehouseService.createMovement(
+                partId: partId,
+                qty: line.quantity,
+                fromLocationType: "warehouse",
+                fromLocationId: 1,
+                toLocationType: "pulled",
+                toLocationId: 1,
+                movementType: "transfer",
+                reason: "JPO smart route — in stock",
+                notes: "Auto-transfer from JPO #\(line.jpoId), line #\(line.id)",
+                performedBy: userId
+            )
+
+            // Update the JPO line to "transfer" status and link the movement
+            try ordersService.updateJPOLineStatus(
+                lineId: line.id,
+                status: "transfer",
+                updatedBy: userId
+            )
+
+            // Store the transfer_id on the line for cancel support
+            try linkTransferToLine(lineId: line.id, transferId: movementId)
+
+            loadData()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    /// Send a line to procurement by setting its status to "approved".
+    private func sendToProcurement(_ lineId: Int64) {
         guard let service = appCore.ordersService else { return }
         do {
-            try service.updateJPOLineStatus(lineId: lineId, status: "on_hold",
-                                            reason: "Question pending",
-                                            updatedBy: appCore.currentUser?.id)
+            try service.updateJPOLineStatus(
+                lineId: lineId,
+                status: "approved",
+                updatedBy: appCore.currentUser?.id
+            )
             loadData()
-        } catch { actionError = error.localizedDescription }
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    /// Get the min_stock_level for a part.
+    private func getPartMinStock(partId: Int64) throws -> Int {
+        guard let partsService = appCore.partsService else { return 0 }
+        let detail = try partsService.getPart(id: partId)
+        return detail.part.minStockLevel ?? 0
+    }
+
+    /// Link a movement (transfer) ID to a JPO line item for later cancellation.
+    private func linkTransferToLine(lineId: Int64, transferId: Int64) throws {
+        guard let ordersService = appCore.ordersService else { return }
+        // Use the existing updateJPOLineStatus mechanism — the transfer_id column
+        // exists on jpo_line_items. We write directly since ordersService doesn't
+        // expose a dedicated setter.
+        try ordersService.setJPOLineTransferId(lineId: lineId, transferId: transferId)
+    }
+
+    private func createHoldWithChat() {
+        guard let service = appCore.ordersService,
+              let lineId = holdingLineId,
+              let jpo = jpo,
+              let userId = appCore.currentUser?.id else {
+            holdQuestion = ""
+            return
+        }
+        do {
+            // If the line was in "transfer" status, cancel the pending movement first
+            if let line = jpo.lines.first(where: { $0.id == lineId }),
+               line.lineStatus == "transfer",
+               let warehouseService = appCore.warehouseService {
+                try service.cancelJPOLineTransfer(
+                    lineId: lineId,
+                    reversedBy: userId,
+                    warehouseService: warehouseService
+                )
+            }
+
+            let channelId = try service.holdJPOLineWithChat(
+                lineId: lineId,
+                holdReason: holdQuestion,
+                userId: userId,
+                partName: holdingPartName ?? "Part",
+                jpoId: jpo.id
+            )
+            holdQuestion = ""
+            holdingLineId = nil
+            holdingPartName = nil
+            loadData()
+            activeSheet = .viewChat(channelId)
+        } catch {
+            holdQuestion = ""
+            actionError = error.localizedDescription
+        }
     }
 
     private func rejectLine(_ lineId: Int64, reason: String) {
         guard let service = appCore.ordersService else { return }
         do {
+            // If the line was in "transfer" status, cancel the pending movement first
+            if let line = jpo?.lines.first(where: { $0.id == lineId }),
+               line.lineStatus == "transfer",
+               let warehouseService = appCore.warehouseService,
+               let userId = appCore.currentUser?.id {
+                try service.cancelJPOLineTransfer(
+                    lineId: lineId,
+                    reversedBy: userId,
+                    warehouseService: warehouseService
+                )
+            }
+
             try service.updateJPOLineStatus(lineId: lineId, status: "rejected",
                                             reason: reason,
                                             updatedBy: appCore.currentUser?.id)
@@ -530,7 +753,25 @@ struct IOSJPODetailPage: View {
     }
 
     private func holdSelected() {
-        for lineId in selectedLineIds { holdLine(lineId) }
+        // For bulk hold, hold each selected line with a chat thread
+        // Use the prompt — pick the first selected line to name the prompt
+        if let firstId = selectedLineIds.first,
+           let firstLine = jpo?.lines.first(where: { $0.id == firstId }) {
+            holdingLineId = firstId
+            holdingPartName = firstLine.partName ?? "Part"
+            showHoldPrompt = true
+        }
+        // Note: This holds just the first selected line via the prompt.
+        // For the rest, we do a simple status-only hold.
+        let remaining = selectedLineIds.dropFirst()
+        for lineId in remaining {
+            guard let service = appCore.ordersService else { break }
+            do {
+                try service.updateJPOLineStatus(lineId: lineId, status: "on_hold",
+                                                reason: "Grouped hold",
+                                                updatedBy: appCore.currentUser?.id)
+            } catch { actionError = error.localizedDescription }
+        }
         selectedLineIds.removeAll()
     }
 

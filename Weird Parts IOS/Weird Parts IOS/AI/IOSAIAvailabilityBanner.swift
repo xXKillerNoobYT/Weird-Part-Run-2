@@ -31,7 +31,7 @@ struct IOSAIAvailabilityBanner: View {
         .background(statusColor.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .task {
-            availability = await aiService.checkAvailability()
+            availability = aiService.checkAvailability()
         }
     }
 

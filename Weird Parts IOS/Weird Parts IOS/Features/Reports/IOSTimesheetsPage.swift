@@ -80,9 +80,7 @@ struct IOSTimesheetsPage: View {
             List(filteredRows, id: \.id) { row in
                 timesheetRow(row)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 

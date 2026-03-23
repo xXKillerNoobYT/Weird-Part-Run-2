@@ -106,9 +106,7 @@ struct IOSDailyReportsSummaryPage: View {
                     }
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 

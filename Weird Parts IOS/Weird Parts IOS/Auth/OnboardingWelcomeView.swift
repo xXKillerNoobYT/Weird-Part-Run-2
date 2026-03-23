@@ -122,11 +122,7 @@ struct OnboardingWelcomeView: View {
                     .padding(.bottom, 24)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            #if os(iOS)
             .background(Color(.systemBackground))
-            #elseif os(macOS)
-            .background(Color(.windowBackgroundColor))
-            #endif
             .navigationDestination(for: OnboardingPath.self) { path in
                 switch path {
                 case .createNew:

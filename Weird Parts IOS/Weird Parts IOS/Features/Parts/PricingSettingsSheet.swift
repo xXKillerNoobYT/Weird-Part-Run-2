@@ -94,7 +94,10 @@ struct PricingSettingsSheet: View {
     }
 
     private func loadSettings() async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            saveError = "Parts service not available"
+            return
+        }
         pricingMode = (try? service.getCompanyCostSetting(key: "pricing_mode")) ?? "markup"
         defaultMarkup = (try? service.getCompanyCostSetting(key: "default_markup_percent")) ?? "50"
         staleThresholdDays = (try? service.getCompanyCostSetting(key: "stale_price_threshold_days")) ?? "90"

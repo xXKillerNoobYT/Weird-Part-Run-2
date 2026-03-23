@@ -34,6 +34,11 @@ struct IOSAIAssistantPanel: View {
     @State private var messages: [AssistantMessage] = []
     @State private var isProcessing = false
     @State private var aiAvailability: AIAvailability = .notSupported
+    @State private var catalogContext: String?
+    @State private var pricingContext: String?
+    @State private var suppliersContext: String?
+    @State private var companionsContext: String?
+    @State private var forecastContext: String?
 
     private let aiService = FoundationModelsService()
 
@@ -52,9 +57,7 @@ struct IOSAIAssistantPanel: View {
         NavigationStack {
             chatBody
                 .navigationTitle("AI Assistant")
-                #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
-                #endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Close") { dismiss() }
@@ -64,7 +67,8 @@ struct IOSAIAssistantPanel: View {
                             withAnimation { displayMode = .overlay }
                             dismiss()
                             // Re-show as overlay after sheet dismisses
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                            Task {
+                                try? await Task.sleep(nanoseconds: 400_000_000)
                                 isVisible = true
                             }
                         } label: {
@@ -124,7 +128,8 @@ struct IOSAIAssistantPanel: View {
                 // Switch to sheet mode
                 isVisible = false
                 withAnimation { displayMode = .sheet }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                Task {
+                    try? await Task.sleep(nanoseconds: 300_000_000)
                     isVisible = true
                 }
             } label: {
@@ -168,13 +173,53 @@ struct IOSAIAssistantPanel: View {
             inputBar
         }
         .task {
-            aiAvailability = await aiService.checkAvailability()
+            aiAvailability = aiService.checkAvailability()
             if messages.isEmpty {
                 messages.append(AssistantMessage(
                     role: .assistant,
                     content: "How can I help you today? I can search your data, answer questions about jobs, parts, orders, and help you navigate the app."
                 ))
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .catalogPageActive)) { notification in
+            if let context = notification.userInfo?["context"] as? String {
+                catalogContext = context
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .catalogPageInactive)) { _ in
+            catalogContext = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pricingPageActive)) { notification in
+            if let context = notification.userInfo?["context"] as? String {
+                pricingContext = context
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .pricingPageInactive)) { _ in
+            pricingContext = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .suppliersPageActive)) { notification in
+            if let context = notification.userInfo?["context"] as? String {
+                suppliersContext = context
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .suppliersPageInactive)) { _ in
+            suppliersContext = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .companionsPageActive)) { notification in
+            if let context = notification.userInfo?["context"] as? String {
+                companionsContext = context
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .companionsPageInactive)) { _ in
+            companionsContext = nil
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .forecastingPageActive)) { notification in
+            if let context = notification.userInfo?["context"] as? String {
+                forecastContext = context
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .forecastingPageInactive)) { _ in
+            forecastContext = nil
         }
     }
 
@@ -211,11 +256,7 @@ struct IOSAIAssistantPanel: View {
         }
         .padding(8)
         .frame(maxWidth: .infinity)
-        #if os(iOS)
         .background(Color(.secondarySystemGroupedBackground))
-        #elseif os(macOS)
-        .background(Color(.secondarySystemGroupedBackground))
-        #endif
     }
 
     // MARK: - Messages Area
@@ -297,11 +338,7 @@ struct IOSAIAssistantPanel: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
-        #if os(iOS)
         .background(Color(.systemBackground))
-        #elseif os(macOS)
-        .background(DS.Background.page)
-        #endif
     }
 
     /// Text editor that supports Enter to send and Shift+Enter for newline.
@@ -359,7 +396,24 @@ struct IOSAIAssistantPanel: View {
     private func generateResponse(for queryText: String) async -> String {
         if aiAvailability == .available, let db = appCore.db {
             // Use Foundation Models with tool calling for real database access
-            let navContext = buildNavigationContext(permissions: appCore.permissions)
+            var navContext = buildNavigationContext(permissions: appCore.permissions)
+            if let ctx = catalogContext {
+                navContext += "\n\nCatalog Page Context: \(ctx)"
+                navContext += " You can set catalog filters by responding with a JSON action block."
+            }
+            if let ctx = pricingContext {
+                navContext += "\n\nPricing Page Context: \(ctx)"
+            }
+            if let ctx = suppliersContext {
+                navContext += "\n\nSuppliers Page Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = companionsContext {
+                navContext += "\n\nCompanions Page Context (READ-ONLY): \(ctx)"
+            }
+            if let ctx = forecastContext {
+                navContext += "\n\nForecasting Page Context: \(ctx)"
+                navContext += " You can help the user understand their forecast data, identify parts that need reordering, and explain usage trends."
+            }
             let result = await aiService.chatWithTools(
                 query: queryText,
                 db: db,
@@ -371,8 +425,130 @@ struct IOSAIAssistantPanel: View {
             }
         }
 
+        // Fallback: if on the catalog page, try to handle filter requests locally
+        if catalogContext != nil {
+            return handleCatalogFallback(for: queryText)
+        }
+
+        // Fallback: if on the pricing page, provide pricing-specific help
+        if let ctx = pricingContext {
+            return handlePricingFallback(for: queryText, context: ctx)
+        }
+
+        // Fallback: if on the suppliers page, provide supplier-specific help
+        if let ctx = suppliersContext {
+            return handleSuppliersFallback(for: queryText, context: ctx)
+        }
+
+        // Fallback: if on the companions page, provide companions-specific help
+        if companionsContext != nil {
+            return "I can help you with companion rules, voting polls, and co-occurrence data. On-device AI is required for full functionality — please check Settings > AI to enable Apple Foundation Models."
+        }
+
         // Fallback: basic keyword matching
         return generateFallbackResponse(for: queryText)
+    }
+
+    /// Handles pricing-specific queries when Foundation Models aren't available.
+    private func handlePricingFallback(for queryText: String, context: String) -> String {
+        let lower = queryText.lowercased()
+
+        if lower.contains("markup") && lower.contains("margin") {
+            return "**Markup vs Margin**\n\nMarkup is calculated on cost: (Sell - Cost) / Cost × 100\n\nMargin is calculated on sell price: (Sell - Cost) / Sell × 100\n\nExample: Cost $10, Sell $15 → Markup 50%, Margin 33.3%\n\nYou can switch between modes in Pricing Settings."
+        }
+
+        if lower.contains("stale") || lower.contains("outdated") || lower.contains("update") {
+            return "Stale prices are parts whose cost hasn't been verified recently (default: 90 days). Look for the orange triangle icon on the pricing list. You can verify prices during PO receiving, or update them manually by tapping any part."
+        }
+
+        if lower.contains("fifo") || lower.contains("cost layer") || lower.contains("weighted") {
+            return "**FIFO Costing**\n\nWhen you receive parts, each batch creates a cost layer at the purchase price. When parts are consumed (sold/used), the oldest batch is used first (First In, First Out).\n\nThe weighted average cost combines all batches: Σ(qty × cost) / Σ(qty). This is what's used to calculate markup and margin."
+        }
+
+        if lower.contains("tier") || lower.contains("hierarchy") || lower.contains("inherit") {
+            return "**Hierarchical Pricing**\n\nPrices cascade: Part → Brand → Type → Style → Category → Default. A part uses the most specific tier available. Parts with a direct price tier show a green 'Part' badge. Inherited prices show an orange badge indicating the source level."
+        }
+
+        // Generic: return the context summary
+        return "Here's the current pricing summary from this page:\n\n\(context)\n\nAsk me about markup vs margin, stale prices, FIFO costing, or tier pricing for more details."
+    }
+
+    /// Handles supplier-specific queries when Foundation Models aren't available.
+    private func handleSuppliersFallback(for queryText: String, context: String) -> String {
+        let lower = queryText.lowercased()
+
+        if lower.contains("best") && (lower.contains("quality") || lower.contains("score")) {
+            return "Check the supplier list sorted by Quality score (use the sort button → Quality ↓). The quality score is based on return rate — fewer returns means higher quality. Scores appear after the first PO is received and items are returned/not returned."
+        }
+
+        if lower.contains("on-time") || lower.contains("on time") || lower.contains("delivery") {
+            return "On-Time Rate measures how often a supplier delivers within their stated delivery window. Sort by On-Time ↓ to find the most reliable deliverers. The rate is calculated from PO creation date to receiving session completion date vs. the supplier's stated delivery days."
+        }
+
+        if lower.contains("account") || lower.contains("number") {
+            return "Account numbers are shown on each supplier's detail card. You can search by account number using the search bar. To add or edit an account number, tap a supplier → Edit (pencil icon)."
+        }
+
+        if lower.contains("edit") || lower.contains("change") || lower.contains("add") || lower.contains("delete") || lower.contains("remove") {
+            return "I'm a read-only assistant for supplier data — I can't make changes. To edit a supplier, tap it to open the detail sheet, then use the pencil (edit) button. To add a new supplier, use the + button in the toolbar."
+        }
+
+        if lower.contains("brand") {
+            return "Each supplier's detail sheet shows which brands they carry. You can also manage brand-supplier links from the Brands tab → tap a brand → Manage Suppliers."
+        }
+
+        if lower.contains("contact") {
+            return "Supplier contacts are shown on the detail sheet. You can add multiple contacts with different roles (Sales Rep, Accounts Payable, etc.) using the + button in the Contacts section. Phone numbers and emails are tappable."
+        }
+
+        return "Here's the current supplier data:\n\n\(context)\n\nAsk me about quality scores, on-time rates, account numbers, brands, or contacts for more details."
+    }
+
+    /// Handles catalog-specific queries when Foundation Models aren't available.
+    private func handleCatalogFallback(for queryText: String) -> String {
+        let lower = queryText.lowercased()
+        var filters: [String: Any] = [:]
+
+        if lower.contains("clear") && (lower.contains("filter") || lower.contains("all")) {
+            filters["clearAll"] = true
+            applyAIFilterCommand(filters)
+            return "Done — cleared all filters."
+        }
+
+        if lower.contains("low stock") || lower.contains("low-stock") {
+            filters["lowStock"] = true
+        }
+
+        // Look for filter keywords
+        let filterKeywords = [
+            ("brand", "brand"), ("category", "category"), ("color", "color"),
+            ("style", "style"), ("type", "type")
+        ]
+        for (keyword, filterKey) in filterKeywords {
+            if let range = lower.range(of: "\(keyword) ") {
+                let afterKeyword = String(lower[range.upperBound...]).trimmingCharacters(in: .whitespaces)
+                let value = afterKeyword.components(separatedBy: .whitespaces).first ?? afterKeyword
+                if !value.isEmpty {
+                    filters[filterKey] = value.capitalized
+                }
+            }
+        }
+
+        if !filters.isEmpty {
+            applyAIFilterCommand(filters)
+            return "Updated catalog filters. Check the catalog view for results."
+        }
+
+        return generateFallbackResponse(for: queryText)
+    }
+
+    /// Posts filter changes to the catalog page via NotificationCenter.
+    private func applyAIFilterCommand(_ filters: [String: Any]) {
+        NotificationCenter.default.post(
+            name: .aiSetCatalogFilters,
+            object: nil,
+            userInfo: filters
+        )
     }
 
     // MARK: - Navigation Context Builder

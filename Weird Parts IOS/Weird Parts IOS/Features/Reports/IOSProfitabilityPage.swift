@@ -43,9 +43,7 @@ struct IOSProfitabilityPage: View {
             List(filteredRows, id: \.id) { row in
                 profitRow(row)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 

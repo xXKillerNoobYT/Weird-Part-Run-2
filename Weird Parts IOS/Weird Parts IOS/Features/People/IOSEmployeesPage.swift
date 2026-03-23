@@ -15,6 +15,19 @@ struct IOSEmployeesPage: View {
     @State private var searchText = ""
     @State private var statusFilter = "all"
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case addEmployee
+        case badgeScanner
+
+        var id: String {
+            switch self {
+            case .addEmployee: "addEmployee"
+            case .badgeScanner: "badgeScanner"
+            }
+        }
+    }
 
     private let statusOptions = ["all", "active", "inactive", "suspended"]
 
@@ -28,6 +41,30 @@ struct IOSEmployeesPage: View {
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button { activeSheet = .badgeScanner } label: {
+                    Image(systemName: "qrcode.viewfinder")
+                }
+                Button { activeSheet = .addEmployee } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .addEmployee:
+                AddEmployeeSheet { loadData() }
+                    .environmentObject(appCore)
+            case .badgeScanner:
+                QRScanSheet(expectedType: .employee) { result in
+                    if result.isFound {
+                        searchText = result.fields["display_name"] ?? result.code
+                    }
+                }
+                .environmentObject(appCore)
+            }
+        }
     }
 
     // MARK: - Status Picker
@@ -79,9 +116,7 @@ struct IOSEmployeesPage: View {
                     employeeRow(employee)
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -177,5 +212,88 @@ struct IOSEmployeesPage: View {
             loadError = error.localizedDescription
         }
         isLoading = false
+    }
+}
+
+// MARK: - Add Employee Sheet
+
+private struct AddEmployeeSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let onSave: () -> Void
+
+    @State private var displayName = ""
+    @State private var pin = ""
+    @State private var email = ""
+    @State private var phone = ""
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Required") {
+                    TextField("Display Name", text: $displayName)
+                        .textContentType(.name)
+                    SecureField("PIN (min 4 digits)", text: $pin)
+                        .keyboardType(.numberPad)
+                }
+                Section("Optional") {
+                    TextField("Email", text: $email)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .autocapitalization(.none)
+                    TextField("Phone", text: $phone)
+                        .textContentType(.telephoneNumber)
+                        .keyboardType(.phonePad)
+                }
+                if let error = errorMessage {
+                    Section {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Add Employee")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(displayName.trimmingCharacters(in: .whitespaces).isEmpty || pin.count < 4)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        guard let authService = appCore.authService else {
+            errorMessage = "Auth service unavailable"
+            return
+        }
+        let trimmedName = displayName.trimmingCharacters(in: .whitespaces)
+        guard !trimmedName.isEmpty else {
+            errorMessage = "Name is required."
+            return
+        }
+        guard pin.count >= 4 else {
+            errorMessage = "PIN must be at least 4 digits."
+            return
+        }
+        do {
+            try authService.createUser(
+                displayName: trimmedName,
+                pin: pin,
+                email: email.isEmpty ? nil : email,
+                phone: phone.isEmpty ? nil : phone
+            )
+            onSave()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }

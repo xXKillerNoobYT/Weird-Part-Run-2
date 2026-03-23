@@ -22,17 +22,11 @@ enum DeviceForm: String, Sendable {
 struct DeviceContext {
     /// Current device form factor.
     static var current: DeviceForm {
-        #if os(macOS)
-        return .mac
-        #elseif os(iOS)
         if UIDevice.current.userInterfaceIdiom == .pad {
             return .iPad
         } else {
             return .iPhone
         }
-        #else
-        return .iPhone
-        #endif
     }
 
     static var isiPhone: Bool { current == .iPhone }

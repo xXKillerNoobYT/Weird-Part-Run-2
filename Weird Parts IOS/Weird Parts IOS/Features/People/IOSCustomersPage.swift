@@ -14,6 +14,11 @@ struct IOSCustomersPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var loadError: String?
+    private enum ActiveSheet: String, Identifiable {
+        case addCustomer
+        var id: String { rawValue }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     var body: some View {
         customerList
@@ -22,6 +27,20 @@ struct IOSCustomersPage: View {
             .onChange(of: searchText) { loadData() }
             .refreshable { loadData() }
             .task { loadData() }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .addCustomer } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .addCustomer:
+                    AddCustomerSheet { loadData() }
+                        .environmentObject(appCore)
+                }
+            }
     }
 
     // MARK: - Customer List
@@ -45,9 +64,7 @@ struct IOSCustomersPage: View {
                     customerRow(customer)
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -98,7 +115,11 @@ struct IOSCustomersPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            isLoading = false
+            loadError = "People service unavailable"
+            return
+        }
         isLoading = customers.isEmpty
         loadError = nil
         do {
@@ -109,5 +130,81 @@ struct IOSCustomersPage: View {
             loadError = error.localizedDescription
         }
         isLoading = false
+    }
+}
+
+// MARK: - Add Customer Sheet
+
+private struct AddCustomerSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let onSave: () -> Void
+
+    @State private var name = ""
+    @State private var companyName = ""
+    @State private var email = ""
+    @State private var phone = ""
+    @State private var address = ""
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Required") {
+                    TextField("Contact Name", text: $name)
+                        .textContentType(.name)
+                }
+                Section("Details") {
+                    TextField("Company Name", text: $companyName)
+                        .textContentType(.organizationName)
+                    TextField("Email", text: $email)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .autocapitalization(.none)
+                    TextField("Phone", text: $phone)
+                        .textContentType(.telephoneNumber)
+                        .keyboardType(.phonePad)
+                    TextField("Address", text: $address)
+                        .textContentType(.fullStreetAddress)
+                }
+                if let error = errorMessage {
+                    Section {
+                        Text(error).foregroundStyle(.red).font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Add Customer")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        guard let service = appCore.peopleService else {
+            errorMessage = "People service unavailable"
+            return
+        }
+        do {
+            try service.createCustomer(
+                name: name.trimmingCharacters(in: .whitespaces),
+                companyName: companyName.isEmpty ? nil : companyName,
+                email: email.isEmpty ? nil : email,
+                phone: phone.isEmpty ? nil : phone,
+                address: address.isEmpty ? nil : address
+            )
+            onSave()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }

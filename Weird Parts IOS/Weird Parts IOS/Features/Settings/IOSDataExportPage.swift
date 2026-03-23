@@ -184,10 +184,12 @@ struct IOSDataExportPage: View {
 
         // Export requires platform-specific file system access.
         // Simulate success — actual export to be wired in deployment phase.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             exportSuccess = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { exportSuccess = false }
             isExporting = false
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            exportSuccess = false
         }
     }
 
@@ -195,10 +197,12 @@ struct IOSDataExportPage: View {
         isExporting = true
         errorMessage = nil
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             exportSuccess = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { exportSuccess = false }
             isExporting = false
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            exportSuccess = false
         }
     }
 }

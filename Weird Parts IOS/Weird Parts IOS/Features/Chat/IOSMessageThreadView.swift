@@ -29,9 +29,7 @@ struct IOSMessageThreadView: View {
             messageComposer
         }
         .navigationTitle(channelName)
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
-        #endif
         .task { loadMessages() }
         .alert("Send Failed", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
             Button("OK") { actionError = nil }
@@ -106,9 +104,7 @@ struct IOSMessageThreadView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        #if os(iOS)
         .background(Color(.secondarySystemBackground))
-        #endif
     }
 
     // MARK: - Actions

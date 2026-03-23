@@ -29,6 +29,72 @@ public struct ChatChannel: Codable, FetchableRecord, MutablePersistableRecord, S
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }
 
+// MARK: - SupplierChannelBridge
+
+/// A bridge linking a supplier to a chat channel.
+public struct SupplierChannelBridge: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+    public var id: Int64?
+    public var channelId: Int64
+    public var supplierId: Int64
+    public var contactId: Int64?
+    public var displayName: String
+    public var role: String?
+    public var inviteToken: String
+    public var isActive: Int
+    public var lastSeenAt: String?
+    public var createdAt: String?
+    public var deletedAt: String?
+
+    public static let databaseTableName = "supplier_channel_bridges"
+
+    enum CodingKeys: String, CodingKey {
+        case id, role
+        case channelId = "channel_id"
+        case supplierId = "supplier_id"
+        case contactId = "contact_id"
+        case displayName = "display_name"
+        case inviteToken = "invite_token"
+        case isActive = "is_active"
+        case lastSeenAt = "last_seen_at"
+        case createdAt = "created_at"
+        case deletedAt = "deleted_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) {
+        id = inserted.rowID
+    }
+}
+
+// MARK: - SupplierMessage
+
+/// A message with supplier context (direction tracking).
+public struct SupplierMessage: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+    public var id: Int64?
+    public var messageId: Int64
+    public var bridgeId: Int64
+    public var direction: String
+    public var attachmentType: String?
+    public var attachmentRef: String?
+    public var createdAt: String?
+    public var deletedAt: String?
+
+    public static let databaseTableName = "supplier_messages"
+
+    enum CodingKeys: String, CodingKey {
+        case id, direction
+        case messageId = "message_id"
+        case bridgeId = "bridge_id"
+        case attachmentType = "attachment_type"
+        case attachmentRef = "attachment_ref"
+        case createdAt = "created_at"
+        case deletedAt = "deleted_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) {
+        id = inserted.rowID
+    }
+}
+
 // MARK: - ChatChannelMember
 
 public struct ChatChannelMember: Codable, FetchableRecord, MutablePersistableRecord, Sendable {

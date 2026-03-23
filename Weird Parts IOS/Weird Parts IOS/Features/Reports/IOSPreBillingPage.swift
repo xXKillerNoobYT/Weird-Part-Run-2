@@ -92,9 +92,7 @@ struct IOSPreBillingPage: View {
                     }
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 

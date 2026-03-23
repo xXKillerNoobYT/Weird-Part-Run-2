@@ -259,6 +259,67 @@ public final class ToolsService: Sendable {
     }
 
     // =========================================================================
+    // MARK: - 3b. Tool Actions
+    // =========================================================================
+
+    /// Check out a tool to a user.
+    public func checkoutTool(toolId: Int64, userId: Int64, notes: String? = nil) throws {
+        try db.writer.write { dbConn in
+            // Update tool status
+            try dbConn.execute(
+                sql: """
+                    UPDATE tools SET status = 'checked_out', updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [toolId]
+            )
+            // Create checkout record
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO tool_checkouts (tool_id, checked_out_by, checked_out_at, notes, created_at)
+                    VALUES (?, ?, datetime('now'), ?, datetime('now'))
+                    """,
+                arguments: [toolId, userId, notes]
+            )
+        }
+    }
+
+    /// Return a checked-out tool.
+    public func returnTool(toolId: Int64, userId: Int64, notes: String? = nil) throws {
+        try db.writer.write { dbConn in
+            // Update tool status
+            try dbConn.execute(
+                sql: """
+                    UPDATE tools SET status = 'available', updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [toolId]
+            )
+            // Close the checkout record
+            try dbConn.execute(
+                sql: """
+                    UPDATE tool_checkouts SET checked_in_at = datetime('now'), checked_in_by = ?
+                    WHERE tool_id = ? AND checked_in_at IS NULL
+                    """,
+                arguments: [userId, toolId]
+            )
+        }
+    }
+
+    /// Mark a tool for maintenance.
+    public func markToolMaintenance(toolId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE tools SET status = 'maintenance', updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [toolId]
+            )
+        }
+    }
+
+    // =========================================================================
     // MARK: - 4. Tools Stats
     // =========================================================================
 
@@ -270,8 +331,15 @@ public final class ToolsService: Sendable {
 
         let checkedOut = try safeCount(
             sql: """
-                SELECT COUNT(*) FROM tool_movements
-                WHERE movement_type = 'checkout' AND deleted_at IS NULL
+                SELECT COUNT(DISTINCT tm.tool_id) FROM tool_movements tm
+                WHERE tm.movement_type = 'checkout' AND tm.deleted_at IS NULL
+                AND NOT EXISTS (
+                    SELECT 1 FROM tool_movements ret
+                    WHERE ret.tool_id = tm.tool_id
+                    AND ret.movement_type = 'return'
+                    AND ret.deleted_at IS NULL
+                    AND ret.created_at > tm.created_at
+                )
                 """
         )
 

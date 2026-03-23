@@ -22,7 +22,11 @@ struct PartsImportExportPage: View {
     // Import
     @State private var showFileImporter = false
     @State private var importPreview: ImportPreview?
-    @State private var showImportPreview = false
+    private enum ActiveSheet: String, Identifiable {
+        case importPreview
+        var id: String { rawValue }
+    }
+    @State private var activeSheet: ActiveSheet?
     @State private var importStatus: ImportStatus = .idle
 
     var body: some View {
@@ -73,16 +77,19 @@ struct PartsImportExportPage: View {
                 importStatus = .error("Failed to select file.")
             }
         }
-        .sheet(isPresented: $showImportPreview) {
-            ImportPreviewSheet(
-                preview: $importPreview,
-                onConfirm: { Task { await executeImport() } },
-                onCancel: {
-                    importPreview = nil
-                    showImportPreview = false
-                }
-            )
-            .environmentObject(appCore)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .importPreview:
+                ImportPreviewSheet(
+                    preview: $importPreview,
+                    onConfirm: { Task { await executeImport() } },
+                    onCancel: {
+                        importPreview = nil
+                        activeSheet = nil
+                    }
+                )
+                .environmentObject(appCore)
+            }
         }
         .background(DS.Background.page)
         .task { await loadStats() }
@@ -495,7 +502,7 @@ struct PartsImportExportPage: View {
 
             await MainActor.run {
                 self.importPreview = preview
-                self.showImportPreview = true
+                self.activeSheet = .importPreview
                 self.importStatus = .idle
             }
         } catch {
@@ -511,7 +518,7 @@ struct PartsImportExportPage: View {
         guard let preview = importPreview,
               let service = appCore.partsService else { return }
         await MainActor.run {
-            showImportPreview = false
+            activeSheet = nil
             importStatus = .importing
         }
         var created = 0, updated = 0, skipped = 0, errors = 0

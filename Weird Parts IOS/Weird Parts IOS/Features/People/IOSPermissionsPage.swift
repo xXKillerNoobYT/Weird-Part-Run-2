@@ -123,9 +123,7 @@ struct IOSPermissionsPage: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     private func permissionRow(key: String, hatId: Int64) -> some View {

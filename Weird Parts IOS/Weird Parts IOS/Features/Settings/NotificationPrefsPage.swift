@@ -58,21 +58,29 @@ struct NotificationPrefsPage: View {
     }
 
     private func loadPrefs() {
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service unavailable"
+            return
+        }
         do {
-            let map = try appCore.settingsService.getSettingsByCategory("notifications")
+            let map = try service.getSettingsByCategory("notifications")
             orderAlerts = map["order_alerts"] != "false"
             certExpiry = map["cert_expiry"] != "false"
             vehicleAlerts = map["vehicle_alerts"] != "false"
             syncStatus = map["sync_status"] != "false"
             soundEnabled = map["sound_enabled"] != "false"
         } catch {
-            print("[NotificationPrefsPage] Load error: \(error)")
+            errorMessage = "Failed to load: \(error.localizedDescription)"
         }
     }
 
     private func savePrefs() {
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service unavailable"
+            return
+        }
         do {
-            try appCore.settingsService.upsertSettingsMap([
+            try service.upsertSettingsMap([
                 "order_alerts": String(orderAlerts),
                 "cert_expiry": String(certExpiry),
                 "vehicle_alerts": String(vehicleAlerts),
@@ -80,7 +88,10 @@ struct NotificationPrefsPage: View {
                 "sound_enabled": String(soundEnabled),
             ], category: "notifications")
             saved = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                saved = false
+            }
         } catch {
             errorMessage = "Failed to save: \(error.localizedDescription)"
         }

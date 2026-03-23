@@ -2,7 +2,6 @@ import Foundation
 import Vision
 import WiredPartCore
 
-#if os(iOS)
 
 // MARK: - iOS Image Feature Adapter
 
@@ -69,4 +68,3 @@ final class IOSImageFeatureAdapter: ImageFeatureAdapter {
     }
 }
 
-#endif

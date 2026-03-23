@@ -97,9 +97,7 @@ struct IOSVehiclesPage: View {
                     vehicleRow(vehicle)
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 

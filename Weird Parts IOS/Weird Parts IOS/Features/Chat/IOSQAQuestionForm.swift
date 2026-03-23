@@ -64,9 +64,7 @@ struct IOSQAQuestionForm: View {
                 }
             }
             .navigationTitle("Ask a Question")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

@@ -29,6 +29,9 @@ struct IOSClockPage: View {
     @State private var linkedJobId: Int64?
     @State private var linkedJobName: String?
 
+    // Activity status (working, supply_run, etc.)
+    @State private var activityStatus: String = "working"
+
     // Sheets
     @State private var activeSheet: ActiveSheet?
     @State private var lastLaborEntryId: Int64?
@@ -36,11 +39,13 @@ struct IOSClockPage: View {
     private enum ActiveSheet: Identifiable {
         case questionnaire(Int64)
         case jobScanner
+        case help
 
         var id: String {
             switch self {
             case .questionnaire(let id): "questionnaire-\(id)"
             case .jobScanner: "jobScanner"
+            case .help: "help"
             }
         }
     }
@@ -73,6 +78,11 @@ struct IOSClockPage: View {
                         }
                     }
                 }
+                ToolbarItem(placement: .secondaryAction) {
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
             }
             .refreshable { loadData() }
             .task {
@@ -98,6 +108,15 @@ struct IOSClockPage: View {
                         }
                     }
                     .environmentObject(appCore)
+                case .help:
+                    PageHelpSheet(
+                        title: "Clock In/Out Help",
+                        sections: [
+                            ("Clocking In", "Select a job from the GPS-sorted list to clock in. Jobs closest to you appear first. 'Shop / Warehouse' is always pinned at the top."),
+                            ("Clocking Out", "When clocked in, tap the Clock Out button. You may be prompted to answer clock-out questions before the entry is saved."),
+                            ("QR Scan", "Use the QR scanner button in the toolbar to scan a job QR code and clock in directly.")
+                        ]
+                    )
                 }
             }
     }
@@ -131,9 +150,7 @@ struct IOSClockPage: View {
                     todayHoursSection
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -142,9 +159,10 @@ struct IOSClockPage: View {
     private func clockedInSection(_ entry: JobsService.LaborEntryRow) -> some View {
         Section("Current Status") {
             VStack(alignment: .leading, spacing: 8) {
-                Label("Clocked In", systemImage: "clock.fill")
+                Label(activityStatus == "supply_run" ? "On Supply Run" : "Clocked In",
+                      systemImage: activityStatus == "supply_run" ? "car.fill" : "clock.fill")
                     .font(.headline)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(activityStatus == "supply_run" ? .orange : .green)
 
                 HStack {
                     Text("Job:")
@@ -170,6 +188,36 @@ struct IOSClockPage: View {
                 .buttonStyle(.bordered)
                 .controlSize(.large)
                 .padding(.top, 4)
+
+                Divider()
+
+                // Lunch / Break / Supply Run buttons
+                HStack(spacing: 12) {
+                    Button {
+                        Task { await startBreak(type: "lunch", entryId: entry.id) }
+                    } label: {
+                        Label("Lunch", systemImage: "fork.knife")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        Task { await startBreak(type: "break", entryId: entry.id) }
+                    } label: {
+                        Label("Break", systemImage: "cup.and.saucer")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        Task { await toggleSupplyRun(entryId: entry.id) }
+                    } label: {
+                        Label(
+                            activityStatus == "supply_run" ? "End Run" : "Supply Run",
+                            systemImage: activityStatus == "supply_run" ? "checkmark.circle" : "car.fill"
+                        )
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(activityStatus == "supply_run" ? .green : .orange)
+                }
             }
             .padding(.vertical, 4)
         }
@@ -448,6 +496,92 @@ struct IOSClockPage: View {
         }
     }
 
+    /// Start a lunch or break — clocks the user out and triggers the questionnaire.
+    private func startBreak(type: String, entryId: Int64) async {
+        guard let service = appCore.jobsService,
+              let db = appCore.db else { return }
+
+        let location = await locationManager.getCurrentLocation()
+
+        do {
+            // Record the break type in the labor entry notes before clocking out
+            try db.writer.write { conn in
+                let existingNotes = try String.fetchOne(
+                    conn,
+                    sql: "SELECT notes FROM labor_entries WHERE id = ?",
+                    arguments: [entryId]
+                ) ?? ""
+                let breakNote = existingNotes.isEmpty
+                    ? "[\(type)]"
+                    : "\(existingNotes) [\(type)]"
+                try conn.execute(
+                    sql: "UPDATE labor_entries SET notes = ? WHERE id = ?",
+                    arguments: [breakNote, entryId]
+                )
+            }
+
+            // Clock out (same as normal clock-out, triggers questionnaire)
+            try service.clockOut(
+                laborEntryId: entryId,
+                gpsLat: location?.coordinate.latitude,
+                gpsLng: location?.coordinate.longitude
+            )
+            geofenceManager.stopMonitoring()
+            await MainActor.run {
+                errorMessage = nil
+                linkedJobId = nil
+                linkedJobName = nil
+                isShopClockIn = false
+                activityStatus = "working"
+                lastLaborEntryId = entryId
+                activeSheet = .questionnaire(entryId)
+            }
+            loadData()
+        } catch {
+            await MainActor.run {
+                errorMessage = "\(type.capitalized) failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Toggle supply run status — keeps the user clocked in, changes activity status.
+    private func toggleSupplyRun(entryId: Int64) async {
+        guard let db = appCore.db else { return }
+
+        let newStatus = activityStatus == "supply_run" ? "working" : "supply_run"
+
+        do {
+            try db.writer.write { conn in
+                let existingNotes = try String.fetchOne(
+                    conn,
+                    sql: "SELECT notes FROM labor_entries WHERE id = ?",
+                    arguments: [entryId]
+                ) ?? ""
+                let timestamp = ISO8601DateFormatter().string(from: Date())
+                let note: String
+                if newStatus == "supply_run" {
+                    note = existingNotes.isEmpty
+                        ? "[supply_run_start:\(timestamp)]"
+                        : "\(existingNotes) [supply_run_start:\(timestamp)]"
+                } else {
+                    note = "\(existingNotes) [supply_run_end:\(timestamp)]"
+                }
+                try conn.execute(
+                    sql: "UPDATE labor_entries SET notes = ? WHERE id = ?",
+                    arguments: [note, entryId]
+                )
+            }
+            await MainActor.run {
+                activityStatus = newStatus
+                errorMessage = nil
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = "Supply run toggle failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
     private func startJobLink(jobId: Int64, jobName: String) {
         linkedJobId = jobId
         linkedJobName = jobName
@@ -504,23 +638,14 @@ struct IOSClockPage: View {
             let todayE = entries.filter { $0.clockIn.hasPrefix(String(todayPrefix)) }
             let todayH = todayE.reduce(0.0) { $0 + $1.regularHours + $1.overtimeHours }
 
-            // Load active jobs
-            let jobRows = try db.writer.read { conn -> [Row] in
-                try Row.fetchAll(conn, sql: """
-                    SELECT id, job_name, job_number,
-                           COALESCE(address_line1, '') || CASE WHEN city IS NOT NULL THEN ', ' || city ELSE '' END AS address,
-                           gps_lat AS latitude, gps_lng AS longitude, status
-                    FROM jobs
-                    WHERE status IN ('active', 'in_progress') AND deleted_at IS NULL
-                    ORDER BY job_name ASC
-                    """)
-            }
+            // Load active jobs via JobsService (avoids raw SQL column issues)
+            let clockJobs = try service.listActiveJobsForClock()
 
             // Calculate distances and sort
             let userLoc = userLocation
-            var jobsWithDist: [JobWithDistance] = jobRows.map { row in
-                let lat: Double? = row["latitude"]
-                let lng: Double? = row["longitude"]
+            var jobsWithDist: [JobWithDistance] = clockJobs.map { job in
+                let lat = job.latitude
+                let lng = job.longitude
                 var dist: Double? = nil
 
                 if let userLoc, let lat, let lng,
@@ -530,14 +655,14 @@ struct IOSClockPage: View {
                 }
 
                 return JobWithDistance(
-                    id: row["id"] ?? 0,
-                    jobName: row["job_name"] ?? "",
-                    jobNumber: row["job_number"] ?? "",
-                    address: row["address"],
+                    id: job.id,
+                    jobName: job.jobName,
+                    jobNumber: job.jobNumber,
+                    address: job.address,
                     latitude: lat,
                     longitude: lng,
                     distanceMiles: dist,
-                    status: row["status"] ?? ""
+                    status: job.status
                 )
             }
 
@@ -551,11 +676,40 @@ struct IOSClockPage: View {
                 }
             }
 
+            // Check activity status from notes (supply_run tracking)
+            var currentActivity = "working"
+            if let entry {
+                let notes = try? db.writer.read { conn in
+                    try String.fetchOne(
+                        conn,
+                        sql: "SELECT notes FROM labor_entries WHERE id = ?",
+                        arguments: [entry.id]
+                    )
+                }
+                if let notes, notes.contains("[supply_run_start:") {
+                    // Check if the most recent supply_run marker is a start (not an end)
+                    let lastStart = notes.range(of: "[supply_run_start:", options: .backwards)
+                    let lastEnd = notes.range(of: "[supply_run_end:", options: .backwards)
+                    if let start = lastStart {
+                        if let end = lastEnd {
+                            // Both exist — supply run is active if start came after end
+                            if start.lowerBound > end.lowerBound {
+                                currentActivity = "supply_run"
+                            }
+                        } else {
+                            // Only start exists, no end — supply run is active
+                            currentActivity = "supply_run"
+                        }
+                    }
+                }
+            }
+
             await MainActor.run {
                 activeEntry = entry
                 todayEntries = todayE
                 todayHours = todayH
                 sortedJobs = jobsWithDist
+                activityStatus = currentActivity
                 isLoading = false
 
                 // Check if current clock-in is to shop

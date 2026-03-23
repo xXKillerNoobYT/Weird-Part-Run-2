@@ -22,9 +22,7 @@ struct IOSPeerBrowser: View {
                 }
             }
             .navigationTitle("Nearby Devices")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
@@ -131,7 +129,7 @@ struct IOSPeerBrowser: View {
 
                         if peer.state == "found" {
                             Button("Connect") {
-                                syncManager.errorMessage = "Peer connection requires sync infrastructure (Phase 16)."
+                                syncManager.errorMessage = "Peer connection requires a shop computer running WiredPart on your network."
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
@@ -147,9 +145,7 @@ struct IOSPeerBrowser: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     private func peerIcon(_ state: String) -> String {

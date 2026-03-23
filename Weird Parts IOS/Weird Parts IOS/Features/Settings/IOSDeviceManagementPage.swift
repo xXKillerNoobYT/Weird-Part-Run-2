@@ -41,9 +41,7 @@ struct IOSDeviceManagementPage: View {
                 .disabled(true) // Enabled in Phase 16
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
         .navigationTitle("Device Management")
     }
 }

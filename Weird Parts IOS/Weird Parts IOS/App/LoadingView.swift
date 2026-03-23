@@ -12,10 +12,6 @@ struct LoadingView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        #if os(iOS)
         .background(Color(.systemBackground))
-        #elseif os(macOS)
-        .background(DS.Background.page)
-        #endif
     }
 }

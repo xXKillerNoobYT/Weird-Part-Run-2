@@ -278,7 +278,7 @@ public final class FleetService: Sendable {
                     ORDER BY v.vehicle_number ASC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args as [Any])!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     VehicleListItem(
                         id: row["id"] ?? 0,
@@ -407,7 +407,7 @@ public final class FleetService: Sendable {
                     LIMIT ?
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args as [Any])!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     MaintenanceRow(
                         id: row["id"] ?? 0,
@@ -460,7 +460,7 @@ public final class FleetService: Sendable {
                     LIMIT ?
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args as [Any])!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     MileageRow(
                         id: row["id"] ?? 0,
@@ -508,7 +508,7 @@ public final class FleetService: Sendable {
                     LIMIT ?
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args as [Any])!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     FuelRow(
                         id: row["id"] ?? 0,
@@ -554,7 +554,7 @@ public final class FleetService: Sendable {
                     ORDER BY jt.trailer_code ASC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args as [Any])!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     TrailerListItem(
                         id: row["id"] ?? 0,

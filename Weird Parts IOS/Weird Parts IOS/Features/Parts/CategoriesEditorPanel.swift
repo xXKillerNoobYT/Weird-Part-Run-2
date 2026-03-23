@@ -19,6 +19,7 @@ struct CategoriesEditorPanel: View {
         case editStyle(PartStyle)
         case editType(PartType)
         case editColor(PartColor)
+        case smartDelete(entityType: String, entityId: Int64, entityName: String)
 
         var id: String {
             switch self {
@@ -29,6 +30,7 @@ struct CategoriesEditorPanel: View {
             case .editStyle(let s): return "editStyle-\(s.id ?? 0)"
             case .editType(let t): return "editType-\(t.id ?? 0)"
             case .editColor(let c): return "editColor-\(c.id ?? 0)"
+            case .smartDelete(let type, let id, _): return "smartDelete-\(type)-\(id)"
             }
         }
     }
@@ -64,6 +66,10 @@ struct CategoriesEditorPanel: View {
                 TypeFormSheet(type: t, styleId: t.styleId) { await onRefresh() }
             case .editColor(let c):
                 ColorFormSheet(color: c) { await onRefresh() }
+            case .smartDelete(let type, let id, let name):
+                SmartDeleteSheet(entityType: type, entityId: id, entityName: name) {
+                    await onRefresh()
+                }
             }
         }
     }
@@ -142,7 +148,7 @@ struct CategoriesEditorPanel: View {
                 // Actions
                 HStack(spacing: DS.Space.md) {
                     editCategoryButton(catNode.category)
-                    deleteCategoryButton(catId)
+                    deleteCategoryButton(catId, name: catNode.category.name)
                 }
 
                 Divider()
@@ -226,7 +232,7 @@ struct CategoriesEditorPanel: View {
 
                 HStack(spacing: DS.Space.md) {
                     editStyleButton(styleNode.style)
-                    deleteStyleButton(styleId)
+                    deleteStyleButton(styleId, name: styleNode.style.name)
                 }
 
                 Divider()
@@ -313,7 +319,7 @@ struct CategoriesEditorPanel: View {
 
                 HStack(spacing: DS.Space.md) {
                     editTypeButton(typeNode.type)
-                    deleteTypeButton(typeId)
+                    deleteTypeButton(typeId, name: typeNode.type.name)
                 }
 
                 Divider()
@@ -337,20 +343,15 @@ struct CategoriesEditorPanel: View {
     @ViewBuilder
     private func brandEditor(brandId: Int64, typeId: Int64) -> some View {
         if let (_, _, typeNode) = findType(typeId) {
+            let brandNode = typeNode.brandNodes.first(where: { $0.id == brandId })
             VStack(alignment: .leading, spacing: DS.Space.md) {
                 Label("Brand", systemImage: "tag.fill")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if let brand = typeNode.brands.first(where: { $0.id == brandId }) {
-                    Text(brand.name)
-                        .font(.title2)
-                        .fontWeight(.bold)
-                } else {
-                    Text("Brand")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                }
+                Text(brandNode?.name ?? "Brand")
+                    .font(.title2)
+                    .fontWeight(.bold)
 
                 HStack(spacing: DS.Space.xs) {
                     Text("on type")
@@ -362,8 +363,14 @@ struct CategoriesEditorPanel: View {
 
                 Divider()
 
+                if let brandNode {
+                    statPill(value: brandNode.colors.count, label: "Colors")
+
+                    Divider()
+                }
+
                 // Brand section focused on this specific brand
-                CategoriesBrandSection(typeId: typeId, focusedBrandId: brandId)
+                CategoriesBrandSection(typeId: typeId, focusedBrandId: brandId == 0 ? nil : brandId)
 
                 Divider()
 
@@ -380,7 +387,7 @@ struct CategoriesEditorPanel: View {
 
                     CategoriesColorPicker(
                         typeId: typeId,
-                        brandId: brandId,
+                        brandId: brandId == 0 ? nil : brandId,
                         hierarchy: hierarchy,
                         onRefresh: onRefresh
                     )
@@ -450,7 +457,7 @@ struct CategoriesEditorPanel: View {
                 // Action buttons
                 HStack(spacing: DS.Space.md) {
                     editColorButton(color)
-                    deleteColorButton(colorId)
+                    deleteColorButton(colorId, name: color.name)
                 }
 
                 Divider()
@@ -535,11 +542,6 @@ struct CategoriesEditorPanel: View {
 
     // MARK: - Action Buttons
 
-    @State private var showDeleteConfirm = false
-    @State private var deleteAction: (() async -> Void)?
-    @State private var deleteConfirmTitle = "Delete?"
-    @State private var deleteConfirmMessage = "This action cannot be undone."
-
     @ViewBuilder
     private func editCategoryButton(_ category: PartCategory) -> some View {
         Button {
@@ -551,35 +553,14 @@ struct CategoriesEditorPanel: View {
     }
 
     @ViewBuilder
-    private func deleteCategoryButton(_ catId: Int64) -> some View {
+    private func deleteCategoryButton(_ catId: Int64, name: String) -> some View {
         Button(role: .destructive) {
-            deleteAction = {
-                guard let service = appCore.partsService else { return }
-                do {
-                    try service.deleteCategory(id: catId)
-                    await onRefresh()
-                } catch {
-                    print("[EditorPanel] Delete category error: \(error)")
-                }
-            }
-            deleteConfirmTitle = "Delete Category?"
-            deleteConfirmMessage = "This will soft-delete the category. Styles and types under it will remain but become orphaned."
-            showDeleteConfirm = true
+            activeSheet = .smartDelete(entityType: "category", entityId: catId, entityName: name)
         } label: {
             Label("Delete", systemImage: "trash")
         }
         .buttonStyle(.bordered)
         .tint(.red)
-        .alert(deleteConfirmTitle, isPresented: $showDeleteConfirm) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) {
-                if let action = deleteAction {
-                    Task { await action() }
-                }
-            }
-        } message: {
-            Text(deleteConfirmMessage)
-        }
     }
 
     @ViewBuilder
@@ -593,20 +574,9 @@ struct CategoriesEditorPanel: View {
     }
 
     @ViewBuilder
-    private func deleteStyleButton(_ styleId: Int64) -> some View {
+    private func deleteStyleButton(_ styleId: Int64, name: String) -> some View {
         Button(role: .destructive) {
-            deleteAction = {
-                guard let service = appCore.partsService else { return }
-                do {
-                    try service.deleteStyle(id: styleId)
-                    await onRefresh()
-                } catch {
-                    print("[EditorPanel] Delete style error: \(error)")
-                }
-            }
-            deleteConfirmTitle = "Delete Style?"
-            deleteConfirmMessage = "This will soft-delete the style. Types under it will remain but become orphaned."
-            showDeleteConfirm = true
+            activeSheet = .smartDelete(entityType: "style", entityId: styleId, entityName: name)
         } label: {
             Label("Delete", systemImage: "trash")
         }
@@ -625,20 +595,9 @@ struct CategoriesEditorPanel: View {
     }
 
     @ViewBuilder
-    private func deleteTypeButton(_ typeId: Int64) -> some View {
+    private func deleteTypeButton(_ typeId: Int64, name: String) -> some View {
         Button(role: .destructive) {
-            deleteAction = {
-                guard let service = appCore.partsService else { return }
-                do {
-                    try service.deleteType(id: typeId)
-                    await onRefresh()
-                } catch {
-                    print("[EditorPanel] Delete type error: \(error)")
-                }
-            }
-            deleteConfirmTitle = "Delete Type?"
-            deleteConfirmMessage = "This will soft-delete the type and its associations."
-            showDeleteConfirm = true
+            activeSheet = .smartDelete(entityType: "type", entityId: typeId, entityName: name)
         } label: {
             Label("Delete", systemImage: "trash")
         }
@@ -657,20 +616,9 @@ struct CategoriesEditorPanel: View {
     }
 
     @ViewBuilder
-    private func deleteColorButton(_ colorId: Int64) -> some View {
+    private func deleteColorButton(_ colorId: Int64, name: String) -> some View {
         Button(role: .destructive) {
-            deleteAction = {
-                guard let service = appCore.partsService else { return }
-                do {
-                    try service.deleteColor(id: colorId)
-                    await onRefresh()
-                } catch {
-                    print("[EditorPanel] Delete color error: \(error)")
-                }
-            }
-            deleteConfirmTitle = "Delete Color?"
-            deleteConfirmMessage = "This will soft-delete the color. Parts using this color will no longer show it."
-            showDeleteConfirm = true
+            activeSheet = .smartDelete(entityType: "color", entityId: colorId, entityName: name)
         } label: {
             Label("Delete", systemImage: "trash")
         }

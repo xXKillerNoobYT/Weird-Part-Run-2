@@ -44,9 +44,7 @@ struct IOSToolAdminPage: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     private func toolRow(_ tool: ToolsService.ToolListItem) -> some View {
@@ -100,7 +98,11 @@ struct IOSToolAdminPage: View {
     }
 
     private func loadData() {
-        guard let service = appCore.toolsService else { return }
+        guard let service = appCore.toolsService else {
+            isLoading = false
+            loadError = "Tools service unavailable"
+            return
+        }
         isLoading = tools.isEmpty
         loadError = nil
         do {

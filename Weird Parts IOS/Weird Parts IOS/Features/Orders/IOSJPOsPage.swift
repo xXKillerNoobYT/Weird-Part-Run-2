@@ -205,11 +205,20 @@ struct IOSJPOsPage: View {
                 Label("\(jpo.lineCount) lines", systemImage: "list.bullet")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if jpo.holdCount > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "message.badge")
+                            .foregroundStyle(.yellow)
+                        Text("\(jpo.holdCount) question\(jpo.holdCount == 1 ? "" : "s")")
+                            .font(.caption2)
+                            .foregroundStyle(.yellow)
+                    }
+                }
             }
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("JPO number \(jpo.id), \(jpo.jobName), status \(jpo.status), \(jpo.lineCount) line items")
+        .accessibilityLabel("JPO number \(jpo.id), \(jpo.jobName), status \(jpo.status), \(jpo.lineCount) line items, \(jpo.holdCount) on hold")
     }
 
     // MARK: - Badges
@@ -351,7 +360,9 @@ private struct CreateJPOSheet: View {
         // Load active jobs
         do {
             jobs = try jobsService.listJobs(status: "active", limit: 100)
-        } catch { }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
 
         // Check if user is clocked in
         guard let userId = appCore.currentUser?.id else { return }
@@ -361,7 +372,9 @@ private struct CreateJPOSheet: View {
                 clockedInJobName = activeEntry.jobName
                 selectedJobId = activeEntry.jobId
             }
-        } catch { }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func createJPO() {

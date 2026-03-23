@@ -57,9 +57,7 @@ struct IOSTrailersPage: View {
                     trailerRow(trailer)
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -143,7 +141,6 @@ struct IOSTrailersPage: View {
         do {
             trailers = try service.listTrailers()
         } catch {
-            print("[IOSTrailersPage] Load error: \(error)")
             loadError = error.localizedDescription
         }
         isLoading = false

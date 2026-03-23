@@ -208,6 +208,37 @@ public final class ChatService: Sendable {
         }
     }
 
+    /// Creates a new chat channel.
+    @discardableResult
+    public func createChannel(
+        name: String,
+        channelType: String = "group",
+        jobId: Int64? = nil,
+        createdBy: Int64
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO chat_channels
+                    (channel_type, job_id, name, created_by, is_active, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, 1, datetime('now'), datetime('now'))
+                    """,
+                arguments: [channelType, jobId, name, createdBy]
+            )
+            let channelId = dbConn.lastInsertedRowID
+            // Add creator as member
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO chat_channel_members
+                    (channel_id, user_id, role, joined_at)
+                    VALUES (?, ?, 'admin', datetime('now'))
+                    """,
+                arguments: [channelId, createdBy]
+            )
+            return channelId
+        }
+    }
+
     // =========================================================================
     // MARK: - 3. Q&A Threads
     // =========================================================================
@@ -236,7 +267,7 @@ public final class ChatService: Sendable {
                     ORDER BY qa.created_at DESC
                     """
 
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args as [Any])!)
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
                     QAThreadRow(
                         id: row["id"] ?? 0,
@@ -324,5 +355,269 @@ public final class ChatService: Sendable {
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
         return message.contains("no such table")
+    }
+
+    // =========================================================================
+    // MARK: - Supplier Communication Bridge
+    // =========================================================================
+
+    /// Data for a supplier channel listing.
+    public struct SupplierChannelRow: Sendable {
+        public let channelId: Int64
+        public let channelName: String
+        public let supplierName: String
+        public let supplierId: Int64
+        public let bridgeDisplayName: String
+        public let role: String?
+        public let lastMessageAt: String?
+        public let unreadCount: Int
+    }
+
+    /// Create a supplier channel and bridge link, optionally linked to a job.
+    /// Returns the channel ID.
+    public func createSupplierChannel(
+        name: String,
+        supplierId: Int64,
+        supplierDisplayName: String,
+        contactId: Int64?,
+        role: String?,
+        createdBy: Int64,
+        jobId: Int64? = nil
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            // Create the channel with type "supplier" and optional job link
+            try dbConn.execute(sql: """
+                INSERT INTO chat_channels (channel_type, job_id, name, created_by, is_active, created_at)
+                VALUES ('supplier', ?, ?, ?, 1, datetime('now'))
+                """, arguments: [jobId, name, createdBy])
+            let channelId = dbConn.lastInsertedRowID
+
+            // Add the creator as a channel member (admin)
+            try dbConn.execute(sql: """
+                INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at)
+                VALUES (?, ?, 'admin', datetime('now'))
+                """, arguments: [channelId, createdBy])
+
+            // Create the bridge link
+            let token = UUID().uuidString
+            try dbConn.execute(sql: """
+                INSERT INTO supplier_channel_bridges
+                (channel_id, supplier_id, contact_id, display_name, role, invite_token, is_active, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 1, datetime('now'))
+                """, arguments: [channelId, supplierId, contactId, supplierDisplayName, role, token])
+
+            return channelId
+        }
+    }
+
+    /// List all supplier channels for the current user.
+    public func listSupplierChannels(userId: Int64) throws -> [SupplierChannelRow] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT cc.id AS channel_id, cc.name AS channel_name,
+                       s.name AS supplier_name, scb.supplier_id,
+                       scb.display_name, scb.role,
+                       (SELECT MAX(created_at) FROM chat_messages WHERE channel_id = cc.id AND deleted_at IS NULL) AS last_message_at,
+                       (SELECT COUNT(*) FROM chat_messages cm
+                        WHERE cm.channel_id = cc.id AND cm.deleted_at IS NULL
+                        AND cm.created_at > COALESCE(
+                            (SELECT read_at FROM chat_read_receipts WHERE channel_id = cc.id AND user_id = ?), '1970-01-01'
+                        )) AS unread_count
+                FROM chat_channels cc
+                JOIN chat_channel_members ccm ON ccm.channel_id = cc.id AND ccm.user_id = ?
+                JOIN supplier_channel_bridges scb ON scb.channel_id = cc.id AND scb.deleted_at IS NULL
+                JOIN suppliers s ON s.id = scb.supplier_id AND s.deleted_at IS NULL
+                WHERE cc.channel_type = 'supplier' AND cc.deleted_at IS NULL
+                ORDER BY last_message_at DESC NULLS LAST
+                """, arguments: [userId, userId])
+
+            return rows.map { row in
+                SupplierChannelRow(
+                    channelId: row["channel_id"],
+                    channelName: row["channel_name"] ?? "",
+                    supplierName: row["supplier_name"] ?? "",
+                    supplierId: row["supplier_id"],
+                    bridgeDisplayName: row["display_name"] ?? "",
+                    role: row["role"],
+                    lastMessageAt: row["last_message_at"],
+                    unreadCount: row["unread_count"] ?? 0
+                )
+            }
+        }
+    }
+
+    /// Send a message in a supplier channel with direction tracking.
+    public func sendSupplierMessage(
+        channelId: Int64,
+        senderId: Int64,
+        content: String,
+        direction: String,
+        attachmentType: String? = nil,
+        attachmentRef: String? = nil
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            // Send as regular chat message
+            try dbConn.execute(sql: """
+                INSERT INTO chat_messages (channel_id, sender_id, message_type, content, created_at)
+                VALUES (?, ?, 'text', ?, datetime('now'))
+                """, arguments: [channelId, senderId, content])
+            let messageId = dbConn.lastInsertedRowID
+
+            // Get bridge for this channel
+            let bridge = try Row.fetchOne(dbConn, sql: """
+                SELECT id FROM supplier_channel_bridges
+                WHERE channel_id = ? AND deleted_at IS NULL LIMIT 1
+                """, arguments: [channelId])
+
+            if let bridgeId: Int64 = bridge?["id"] {
+                try dbConn.execute(sql: """
+                    INSERT INTO supplier_messages
+                    (message_id, bridge_id, direction, attachment_type, attachment_ref, created_at)
+                    VALUES (?, ?, ?, ?, ?, datetime('now'))
+                    """, arguments: [messageId, bridgeId, direction, attachmentType, attachmentRef])
+            }
+
+            return messageId
+        }
+    }
+
+    /// Add an internal user to a supplier channel.
+    public func addUserToSupplierChannel(channelId: Int64, userId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT OR IGNORE INTO chat_channel_members (channel_id, user_id, role, joined_at)
+                VALUES (?, ?, 'member', datetime('now'))
+                """, arguments: [channelId, userId])
+        }
+    }
+
+    /// Get supplier bridge info for a channel.
+    public func getSupplierBridge(channelId: Int64) throws -> SupplierChannelBridge? {
+        try db.writer.read { dbConn in
+            try SupplierChannelBridge.fetchOne(dbConn, sql: """
+                SELECT * FROM supplier_channel_bridges
+                WHERE channel_id = ? AND deleted_at IS NULL
+                """, arguments: [channelId])
+        }
+    }
+
+    /// List supplier channels linked to a specific job.
+    public func listSupplierChannelsForJob(jobId: Int64, userId: Int64) throws -> [SupplierChannelRow] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT cc.id AS channel_id, cc.name AS channel_name,
+                       s.name AS supplier_name, scb.supplier_id,
+                       scb.display_name, scb.role,
+                       (SELECT MAX(created_at) FROM chat_messages WHERE channel_id = cc.id AND deleted_at IS NULL) AS last_message_at,
+                       (SELECT COUNT(*) FROM chat_messages cm
+                        WHERE cm.channel_id = cc.id AND cm.deleted_at IS NULL
+                        AND cm.created_at > COALESCE(
+                            (SELECT read_at FROM chat_read_receipts WHERE channel_id = cc.id AND user_id = ?), '1970-01-01'
+                        )) AS unread_count
+                FROM chat_channels cc
+                JOIN supplier_channel_bridges scb ON scb.channel_id = cc.id AND scb.deleted_at IS NULL
+                JOIN suppliers s ON s.id = scb.supplier_id AND s.deleted_at IS NULL
+                WHERE cc.channel_type = 'supplier' AND cc.job_id = ? AND cc.deleted_at IS NULL
+                ORDER BY last_message_at DESC NULLS LAST
+                """, arguments: [userId, jobId])
+
+            return rows.map { row in
+                SupplierChannelRow(
+                    channelId: row["channel_id"],
+                    channelName: row["channel_name"] ?? "",
+                    supplierName: row["supplier_name"] ?? "",
+                    supplierId: row["supplier_id"],
+                    bridgeDisplayName: row["display_name"] ?? "",
+                    role: row["role"],
+                    lastMessageAt: row["last_message_at"],
+                    unreadCount: row["unread_count"] ?? 0
+                )
+            }
+        }
+    }
+
+    /// Create a Q&A thread linked to a supplier channel for RFI purposes.
+    @discardableResult
+    public func createSupplierQuestion(
+        channelId: Int64,
+        jobId: Int64,
+        askedBy: Int64,
+        subject: String,
+        priority: String = "normal"
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO qa_threads (channel_id, job_id, asked_by, subject, current_level, status, priority, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'worker', 'open', ?, datetime('now'), datetime('now'))
+                """, arguments: [channelId, jobId, askedBy, subject, priority])
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// A supplier question row combining Q&A thread info with supplier context.
+    public struct SupplierQuestionRow: Sendable, Identifiable {
+        public let id: Int64
+        public let subject: String
+        public let supplierName: String
+        public let status: String
+        public let priority: String
+        public let askedByName: String
+        public let jobName: String?
+    }
+
+    /// List Q&A threads that belong to supplier channels.
+    public func listSupplierQuestions(status: String? = nil) throws -> [SupplierQuestionRow] {
+        do {
+            return try db.writer.read { dbConn -> [SupplierQuestionRow] in
+                var whereClauses = ["qa.deleted_at IS NULL", "cc.channel_type = 'supplier'"]
+                var args: [DatabaseValueConvertible?] = []
+
+                if let status, !status.isEmpty {
+                    whereClauses.append("qa.status = ?")
+                    args.append(status)
+                }
+
+                let sql = """
+                    SELECT qa.id, qa.subject, qa.status, qa.priority,
+                           COALESCE(ua.display_name, ua.email, 'Unknown') AS asked_by_name,
+                           s.name AS supplier_name,
+                           j.job_name
+                    FROM qa_threads qa
+                    JOIN chat_channels cc ON cc.id = qa.channel_id
+                    JOIN supplier_channel_bridges scb ON scb.channel_id = cc.id AND scb.deleted_at IS NULL
+                    JOIN suppliers s ON s.id = scb.supplier_id AND s.deleted_at IS NULL
+                    LEFT JOIN users ua ON ua.id = qa.asked_by
+                    LEFT JOIN jobs j ON j.id = qa.job_id
+                    WHERE \(whereClauses.joined(separator: " AND "))
+                    ORDER BY qa.created_at DESC
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
+                return rows.map { row in
+                    SupplierQuestionRow(
+                        id: row["id"] ?? 0,
+                        subject: row["subject"] ?? "",
+                        supplierName: row["supplier_name"] ?? "",
+                        status: row["status"] ?? "open",
+                        priority: row["priority"] ?? "normal",
+                        askedByName: row["asked_by_name"] ?? "Unknown",
+                        jobName: row["job_name"]
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Deactivate a supplier channel bridge (soft delete).
+    public func deactivateSupplierBridge(channelId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE supplier_channel_bridges SET is_active = 0, deleted_at = datetime('now')
+                WHERE channel_id = ?
+                """, arguments: [channelId])
+        }
     }
 }

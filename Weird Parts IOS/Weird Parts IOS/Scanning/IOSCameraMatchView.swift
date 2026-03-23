@@ -1,7 +1,6 @@
 import SwiftUI
 import WiredPartCore
 
-#if os(iOS)
 import UIKit
 import PhotosUI
 
@@ -218,4 +217,3 @@ struct CameraCapture: UIViewControllerRepresentable {
     }
 }
 
-#endif

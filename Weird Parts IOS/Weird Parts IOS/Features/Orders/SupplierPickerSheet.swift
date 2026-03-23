@@ -29,7 +29,8 @@ struct SupplierPickerSheet: View {
                 } else {
                     List(filteredSuppliers, id: \.supplier.id) { item in
                         Button {
-                            generatePO(supplierId: item.supplier.id!)
+                            guard let supplierId = item.supplier.id else { return }
+                            generatePO(supplierId: supplierId)
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -50,9 +51,7 @@ struct SupplierPickerSheet: View {
                         }
                         .disabled(isGenerating)
                     }
-                    #if os(iOS)
                     .listStyle(.insetGrouped)
-                    #endif
                 }
 
                 if let error = generateError {
@@ -63,9 +62,7 @@ struct SupplierPickerSheet: View {
                 }
             }
             .navigationTitle("Select Supplier")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .searchable(text: $searchText, prompt: "Search suppliers...")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -92,16 +89,22 @@ struct SupplierPickerSheet: View {
     }
 
     private func loadSuppliers() {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            generateError = "Parts service not available"
+            return
+        }
         do {
             suppliers = try service.listSuppliers()
         } catch {
-            print("[SupplierPickerSheet] Load error: \(error)")
+            generateError = error.localizedDescription
         }
     }
 
     private func generatePO(supplierId: Int64) {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            generateError = "Orders service not available"
+            return
+        }
         isGenerating = true
         generateError = nil
         do {

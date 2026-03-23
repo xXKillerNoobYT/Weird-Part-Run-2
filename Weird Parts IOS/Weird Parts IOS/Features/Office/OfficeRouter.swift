@@ -3,7 +3,8 @@ import WiredPartCore
 
 /// Routes an office tab ID to the appropriate office page view.
 ///
-/// Office is the hub for operations, finance/billing, and HR/admin.
+/// Office is the hub for operations and finance/billing.
+/// HR/admin pages (employees, hats, permissions) are in the People module.
 struct OfficeRouter: View {
     let tabId: String
     @EnvironmentObject private var appCore: AppCore
@@ -20,6 +21,8 @@ struct OfficeRouter: View {
             IOSManageJobsPage()
         case "office-warehouse-exec":
             IOSWarehouseExecPage()
+        case "office-deletion-approvals":
+            IOSDeletionApprovalsPage()
 
         // Finance & Billing
         case "office-spending":
@@ -37,16 +40,8 @@ struct OfficeRouter: View {
         case "office-daily-summary":
             IOSDailyReportsSummaryPage()
 
-        // HR & Admin
-        case "office-employees":
-            IOSEmployeesPage()
-        case "office-hats":
-            IOSHatsPage()
-        case "office-permissions":
-            IOSPermissionsPage()
-
         default:
-            OfficePlaceholderView(pageName: tabId.replacingOccurrences(of: "office-", with: "").replacingOccurrences(of: "-", with: " ").capitalized)
+            ErrorStateView(message: "Unknown office page: \(tabId)") { }
         }
     }
 }

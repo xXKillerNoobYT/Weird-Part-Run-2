@@ -82,22 +82,16 @@ struct IOSEditJobSheet: View {
                         TextField("State", text: $state)
                             .frame(width: 60)
                         TextField("ZIP", text: $zip)
-                            #if os(iOS)
                             .keyboardType(.numberPad)
-                            #endif
                             .frame(width: 70)
                     }
                 }
 
                 Section("Budget") {
                     TextField("Estimated Hours", text: $estimatedHours)
-                        #if os(iOS)
                         .keyboardType(.decimalPad)
-                        #endif
                     TextField("Budget Limit ($)", text: $budgetLimit)
-                        #if os(iOS)
                         .keyboardType(.decimalPad)
-                        #endif
                 }
 
                 Section("Notes") {
@@ -114,9 +108,7 @@ struct IOSEditJobSheet: View {
                 }
             }
             .navigationTitle("Edit Job")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

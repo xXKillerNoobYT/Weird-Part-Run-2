@@ -42,6 +42,27 @@ struct IOSPODetailPage: View {
     // Receipt history
     @State private var receiptBatches: [OrdersService.ReceiptBatch] = []
 
+    // Update ETA
+    @State private var etaDate = Date()
+
+    // Report Issue
+    @State private var issueDescription = ""
+    @State private var issueSeverity = "medium"
+
+    // Double Order
+    @State private var availableSuppliers: [PartsService.SupplierWithCount] = []
+    @State private var selectedSupplierId: Int64?
+
+    // Contact Supplier
+    @State private var supplierChannels: [ChatService.SupplierChannelRow] = []
+    @State private var newSupplierMessage = ""
+    @State private var channelMessages: [ChatService.MessageRow] = []
+    @State private var activeChannelId: Int64?
+
+    // Contact Creator
+    @State private var creatorName: String?
+    @State private var creatorId: Int64?
+
     private enum ActiveSheet: Identifiable {
         case receiveShipment
         case manageParts
@@ -152,41 +173,944 @@ struct IOSPODetailPage: View {
                     .environmentObject(appCore)
             }
         case .contactSupplier:
-            NavigationStack {
-                Text("Supplier Contact — Coming Soon")
-                    .navigationTitle("Contact Supplier")
-                    .navigationBarTitleDisplayMode(.inline)
-            }
+            contactSupplierSheet()
         case .updateETA:
-            NavigationStack {
-                Text("Update ETA — Coming Soon")
-                    .navigationTitle("Update ETA")
-                    .navigationBarTitleDisplayMode(.inline)
-            }
+            updateETASheet()
         case .doubleOrder:
-            NavigationStack {
-                Text("Double Order — Coming Soon")
-                    .navigationTitle("Double Order")
-                    .navigationBarTitleDisplayMode(.inline)
-            }
+            doubleOrderSheet()
         case .reportIssue:
-            NavigationStack {
-                Text("Report Issue — Coming Soon")
-                    .navigationTitle("Report Issue")
-                    .navigationBarTitleDisplayMode(.inline)
-            }
+            reportIssueSheet()
         case .receiptHistory:
-            NavigationStack {
-                Text("Receipt History — Coming Soon")
-                    .navigationTitle("Receipt History")
-                    .navigationBarTitleDisplayMode(.inline)
-            }
+            receiptHistorySheet()
         case .contactCreator:
-            NavigationStack {
-                Text("Contact Creator — Coming Soon")
-                    .navigationTitle("Contact Creator")
-                    .navigationBarTitleDisplayMode(.inline)
+            contactCreatorSheet()
+        }
+    }
+
+    // MARK: - 1. Contact Supplier Sheet
+
+    @ViewBuilder
+    private func contactSupplierSheet() -> some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                if let sup = supplier {
+                    // Supplier info header
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(sup.name)
+                                    .font(.headline)
+                                if let rep = sup.repName, !rep.isEmpty {
+                                    Text("Rep: \(rep)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            // Quick contact buttons
+                            HStack(spacing: 12) {
+                                if let phone = sup.phone, !phone.isEmpty,
+                                   let url = URL(string: "tel:\(phone)") {
+                                    Link(destination: url) {
+                                        Image(systemName: "phone.fill")
+                                            .font(.title3)
+                                            .foregroundStyle(.green)
+                                    }
+                                }
+                                if let email = sup.email, !email.isEmpty,
+                                   let url = URL(string: "mailto:\(email)") {
+                                    Link(destination: url) {
+                                        Image(systemName: "envelope.fill")
+                                            .font(.title3)
+                                            .foregroundStyle(.blue)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemGroupedBackground))
+                }
+
+                // Existing channels list
+                if !supplierChannels.isEmpty {
+                    List {
+                        Section("Existing Channels") {
+                            ForEach(supplierChannels, id: \.channelId) { channel in
+                                Button {
+                                    activeChannelId = channel.channelId
+                                    loadChannelMessages(channelId: channel.channelId)
+                                } label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(channel.channelName)
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                            if let lastMsg = channel.lastMessageAt {
+                                                Text("Last message: \(String(lastMsg.prefix(10)))")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+                                        Spacer()
+                                        if channel.unreadCount > 0 {
+                                            Text("\(channel.unreadCount)")
+                                                .font(.caption2)
+                                                .fontWeight(.bold)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(Color.red)
+                                                .foregroundStyle(.white)
+                                                .clipShape(Capsule())
+                                        }
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption)
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                }
+                                .foregroundStyle(.primary)
+                            }
+                        }
+
+                        // Active channel messages
+                        if let channelId = activeChannelId {
+                            Section("Messages") {
+                                if channelMessages.isEmpty {
+                                    Text("No messages yet. Send the first one below.")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                }
+                                ForEach(channelMessages) { msg in
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack {
+                                            Text(msg.senderName)
+                                                .font(.caption)
+                                                .fontWeight(.medium)
+                                            Spacer()
+                                            if let date = msg.createdAt {
+                                                Text(String(date.prefix(16)))
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.tertiary)
+                                            }
+                                        }
+                                        Text(msg.content)
+                                            .font(.subheadline)
+                                    }
+                                    .padding(.vertical, 2)
+                                }
+                            }
+
+                            Section {
+                                HStack {
+                                    TextField("Type a message...", text: $newSupplierMessage)
+                                        .textFieldStyle(.roundedBorder)
+                                    Button {
+                                        Task { await sendSupplierMessage(channelId: channelId) }
+                                    } label: {
+                                        Image(systemName: "arrow.up.circle.fill")
+                                            .font(.title3)
+                                            .foregroundStyle(Color.accentColor)
+                                    }
+                                    .disabled(newSupplierMessage.trimmingCharacters(in: .whitespaces).isEmpty)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // No existing channels — offer to create one
+                    VStack(spacing: 16) {
+                        Spacer()
+                        Image(systemName: "bubble.left.and.bubble.right")
+                            .font(.system(size: 48))
+                            .foregroundStyle(.secondary)
+                        Text("No supplier channel yet")
+                            .font(.headline)
+                        Text("Create a bridge channel to communicate with this supplier about PO \(po?.poNumber ?? "").")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                        Button {
+                            Task { await createSupplierChannel() }
+                        } label: {
+                            Label("Create Supplier Channel", systemImage: "plus.bubble")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color.accentColor.opacity(0.12))
+                                .foregroundStyle(Color.accentColor)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                        .padding(.horizontal, 32)
+                        Spacer()
+                    }
+                }
             }
+            .navigationTitle("Contact Supplier")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { activeSheet = nil }
+                }
+            }
+            .onAppear { loadSupplierChannels() }
+        }
+    }
+
+    // MARK: - 2. Update ETA Sheet
+
+    @ViewBuilder
+    private func updateETASheet() -> some View {
+        NavigationStack {
+            Form {
+                Section {
+                    if let current = po?.expectedDelivery, !current.isEmpty {
+                        HStack {
+                            Text("Current ETA")
+                            Spacer()
+                            Text(current)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        HStack {
+                            Text("Current ETA")
+                            Spacer()
+                            Text("Not set")
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+
+                Section("New Expected Delivery") {
+                    DatePicker(
+                        "Expected Delivery",
+                        selection: $etaDate,
+                        in: Date()...,
+                        displayedComponents: .date
+                    )
+                    .datePickerStyle(.graphical)
+                }
+
+                Section {
+                    Button {
+                        Task { await saveNewETA() }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Label("Save New ETA", systemImage: "calendar.badge.checkmark")
+                                .fontWeight(.semibold)
+                            Spacer()
+                        }
+                    }
+                    .tint(.blue)
+                }
+            }
+            .navigationTitle("Update ETA")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { activeSheet = nil }
+                }
+            }
+            .onAppear {
+                // Pre-populate with current ETA if available
+                if let current = po?.expectedDelivery {
+                    let fmt = ISO8601DateFormatter()
+                    fmt.formatOptions = [.withFullDate]
+                    if let date = fmt.date(from: String(current.prefix(10))) {
+                        etaDate = date
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - 3. Double Order Sheet
+
+    @ViewBuilder
+    private func doubleOrderSheet() -> some View {
+        NavigationStack {
+            Form {
+                if let po {
+                    Section("Current Order") {
+                        HStack {
+                            Text("PO")
+                            Spacer()
+                            Text(po.poNumber)
+                                .foregroundStyle(.secondary)
+                        }
+                        HStack {
+                            Text("Current Supplier")
+                            Spacer()
+                            Text(po.supplierName)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    // Remaining items summary
+                    let remainingLines = po.lines.filter { $0.quantityOrdered > $0.quantityReceived }
+                    Section("Remaining Items (\(remainingLines.count))") {
+                        if remainingLines.isEmpty {
+                            Text("All items have been received.")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        } else {
+                            ForEach(remainingLines, id: \.id) { line in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(line.partName ?? "Item")
+                                            .font(.subheadline)
+                                        Text("Remaining: \(line.quantityOrdered - line.quantityReceived)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if let price = line.unitPrice {
+                                        Text(formatCurrency(price))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Pick alternate supplier
+                    Section("Select Alternate Supplier") {
+                        if availableSuppliers.isEmpty {
+                            Text("No other suppliers available.")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        } else {
+                            ForEach(availableSuppliers, id: \.supplier.id) { swc in
+                                let sup = swc.supplier
+                                Button {
+                                    selectedSupplierId = sup.id
+                                } label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(sup.name)
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                            Text("\(swc.partCount) parts linked")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer()
+                                        if selectedSupplierId == sup.id {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundStyle(.green)
+                                        } else {
+                                            Image(systemName: "circle")
+                                                .foregroundStyle(.tertiary)
+                                        }
+                                    }
+                                }
+                                .foregroundStyle(.primary)
+                            }
+                        }
+                    }
+
+                    Section {
+                        Button {
+                            Task { await createDoubleOrder() }
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Label("Create Double Order", systemImage: "doc.on.doc.fill")
+                                    .fontWeight(.semibold)
+                                Spacer()
+                            }
+                        }
+                        .disabled(selectedSupplierId == nil || remainingLines.isEmpty)
+                        .tint(.blue)
+                    }
+                }
+            }
+            .navigationTitle("Double Order")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { activeSheet = nil }
+                }
+            }
+            .onAppear { loadAvailableSuppliers() }
+        }
+    }
+
+    // MARK: - 4. Report Issue Sheet
+
+    @ViewBuilder
+    private func reportIssueSheet() -> some View {
+        NavigationStack {
+            Form {
+                Section("PO Information") {
+                    HStack {
+                        Text("PO")
+                        Spacer()
+                        Text(po?.poNumber ?? "")
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack {
+                        Text("Supplier")
+                        Spacer()
+                        Text(po?.supplierName ?? "")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section("Issue Details") {
+                    Picker("Severity", selection: $issueSeverity) {
+                        Text("Low").tag("low")
+                        Text("Medium").tag("medium")
+                        Text("High").tag("high")
+                        Text("Critical").tag("critical")
+                    }
+
+                    TextField("Describe the issue...", text: $issueDescription, axis: .vertical)
+                        .lineLimit(4...8)
+                }
+
+                Section {
+                    Button {
+                        Task { await submitIssueReport() }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Label("Submit Issue Report", systemImage: "exclamationmark.triangle.fill")
+                                .fontWeight(.semibold)
+                            Spacer()
+                        }
+                    }
+                    .disabled(issueDescription.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .tint(.orange)
+                }
+
+                Section {
+                    Text("This will create a note on the PO and log the issue for supplier tracking.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Report Issue")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        issueDescription = ""
+                        issueSeverity = "medium"
+                        activeSheet = nil
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - 5. Receipt History Sheet
+
+    @ViewBuilder
+    private func receiptHistorySheet() -> some View {
+        NavigationStack {
+            Group {
+                if receiptBatches.isEmpty {
+                    VStack(spacing: 16) {
+                        Spacer()
+                        Image(systemName: "shippingbox")
+                            .font(.system(size: 48))
+                            .foregroundStyle(.secondary)
+                        Text("No receiving sessions recorded")
+                            .font(.headline)
+                        Text("Receiving sessions will appear here as shipments are checked in against this PO.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                        Spacer()
+                    }
+                } else {
+                    List {
+                        // Summary
+                        Section {
+                            let totalReceived = receiptBatches.reduce(0) { $0 + $1.totalReceived }
+                            let totalOrdered = po?.lines.reduce(0) { $0 + $1.quantityOrdered } ?? 0
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Total Received")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text("\(totalReceived) of \(totalOrdered) units")
+                                        .font(.title3)
+                                        .fontWeight(.semibold)
+                                }
+                                Spacer()
+                                VStack(alignment: .trailing, spacing: 4) {
+                                    Text("Sessions")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text("\(receiptBatches.count)")
+                                        .font(.title3)
+                                        .fontWeight(.semibold)
+                                }
+                            }
+                        }
+
+                        // Timeline
+                        Section("Receiving Timeline") {
+                            ForEach(receiptBatches) { batch in
+                                HStack(alignment: .top, spacing: 12) {
+                                    // Timeline dot and line
+                                    VStack(spacing: 0) {
+                                        Circle()
+                                            .fill(Color.green)
+                                            .frame(width: 10, height: 10)
+                                        if batch.id != receiptBatches.last?.id {
+                                            Rectangle()
+                                                .fill(Color.green.opacity(0.3))
+                                                .frame(width: 2, height: 40)
+                                        }
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(String(batch.receivedDate.prefix(10)))
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                        Text("\(batch.itemCount) items, \(batch.totalReceived) units received")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        if let by = batch.receivedBy {
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "person.circle")
+                                                    .font(.caption2)
+                                                Text(by)
+                                                    .font(.caption2)
+                                            }
+                                            .foregroundStyle(.tertiary)
+                                        }
+                                    }
+
+                                    Spacer()
+                                }
+                            }
+                        }
+
+                        // Per-line status
+                        if let po {
+                            let receivedLines = po.lines.filter { $0.quantityReceived > 0 }
+                            if !receivedLines.isEmpty {
+                                Section("Items Received") {
+                                    ForEach(receivedLines, id: \.id) { line in
+                                        HStack {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(line.partName ?? "Item")
+                                                    .font(.subheadline)
+                                                Text("Received \(line.quantityReceived) of \(line.quantityOrdered)")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            Spacer()
+                                            if line.quantityReceived >= line.quantityOrdered {
+                                                Image(systemName: "checkmark.circle.fill")
+                                                    .foregroundStyle(.green)
+                                            } else {
+                                                Text("\(line.quantityOrdered - line.quantityReceived) remaining")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.orange)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Receipt History")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { activeSheet = nil }
+                }
+            }
+        }
+    }
+
+    // MARK: - 6. Contact Creator Sheet
+
+    @ViewBuilder
+    private func contactCreatorSheet() -> some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                if let po, !po.linkedJPOIds.isEmpty {
+                    List {
+                        Section("Linked Job Part Orders") {
+                            ForEach(po.linkedJPOIds, id: \.self) { jpoId in
+                                let detail = try? appCore.ordersService?.getJPODetail(id: jpoId)
+                                if let detail {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        HStack {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text("JPO #\(detail.id)")
+                                                    .font(.subheadline)
+                                                    .fontWeight(.medium)
+                                                Text(detail.jobName)
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                            Spacer()
+                                            StatusBadge(text: detail.status.capitalized, color: statusColor(detail.status))
+                                        }
+
+                                        // Creator info
+                                        HStack(spacing: 8) {
+                                            Image(systemName: "person.circle.fill")
+                                                .font(.title2)
+                                                .foregroundStyle(.blue)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text("Created by")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.secondary)
+                                                Text(detail.requestedByName)
+                                                    .font(.subheadline)
+                                                    .fontWeight(.medium)
+                                            }
+                                            Spacer()
+                                        }
+
+                                        // Action buttons
+                                        HStack(spacing: 8) {
+                                            Button {
+                                                Task { await openDMWithCreator(userId: detail.requestedBy, name: detail.requestedByName) }
+                                            } label: {
+                                                Label("Send DM", systemImage: "message.fill")
+                                                    .font(.caption)
+                                                    .frame(maxWidth: .infinity)
+                                                    .padding(.vertical, 8)
+                                                    .background(Color.blue.opacity(0.12))
+                                                    .foregroundStyle(.blue)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                                            }
+                                            .buttonStyle(.plain)
+
+                                            if let notes = detail.notes, !notes.isEmpty {
+                                                VStack(alignment: .leading, spacing: 2) {
+                                                    Text("Notes:")
+                                                        .font(.caption2)
+                                                        .foregroundStyle(.secondary)
+                                                    Text(notes)
+                                                        .font(.caption)
+                                                        .lineLimit(2)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    .padding(.vertical, 4)
+                                } else {
+                                    HStack {
+                                        Text("JPO #\(jpoId)")
+                                            .font(.subheadline)
+                                        Spacer()
+                                        Text("Details unavailable")
+                                            .font(.caption)
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Submitted by info (if different from JPO creator)
+                        if let submitter = po.submittedByName {
+                            Section("PO Submitted By") {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "person.circle.fill")
+                                        .font(.title2)
+                                        .foregroundStyle(.green)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(submitter)
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                        Text("Submitted this PO")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    if let submittedById = po.submittedBy {
+                                        Button {
+                                            Task { await openDMWithCreator(userId: submittedById, name: submitter) }
+                                        } label: {
+                                            Label("DM", systemImage: "message.fill")
+                                                .font(.caption)
+                                                .padding(.horizontal, 12)
+                                                .padding(.vertical, 6)
+                                                .background(Color.blue.opacity(0.12))
+                                                .foregroundStyle(.blue)
+                                                .clipShape(Capsule())
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // No linked JPOs
+                    VStack(spacing: 16) {
+                        Spacer()
+                        Image(systemName: "person.fill.questionmark")
+                            .font(.system(size: 48))
+                            .foregroundStyle(.secondary)
+                        Text("No linked Job Part Orders")
+                            .font(.headline)
+                        Text("This PO was not generated from a JPO, so there is no job creator to contact.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+
+                        // Still show submitted by if available
+                        if let submitter = po?.submittedByName, let submittedById = po?.submittedBy {
+                            Divider()
+                                .padding(.horizontal, 32)
+                            VStack(spacing: 8) {
+                                Text("PO submitted by:")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(submitter)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Button {
+                                    Task { await openDMWithCreator(userId: submittedById, name: submitter) }
+                                } label: {
+                                    Label("Send DM to Submitter", systemImage: "message.fill")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                        .background(Color.blue.opacity(0.12))
+                                        .foregroundStyle(.blue)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                                .padding(.horizontal, 32)
+                            }
+                        }
+                        Spacer()
+                    }
+                }
+            }
+            .navigationTitle("Contact Creator")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { activeSheet = nil }
+                }
+            }
+        }
+    }
+
+    // MARK: - Sheet Actions
+
+    private func loadSupplierChannels() {
+        guard let chatService = appCore.chatService,
+              let userId = appCore.currentUser?.id,
+              let supplierId = po?.supplierId else { return }
+        do {
+            let allChannels = try chatService.listSupplierChannels(userId: userId)
+            supplierChannels = allChannels.filter { $0.supplierId == supplierId }
+            // Auto-select the first channel if only one exists
+            if supplierChannels.count == 1, let first = supplierChannels.first {
+                activeChannelId = first.channelId
+                loadChannelMessages(channelId: first.channelId)
+            }
+        } catch {
+            supplierChannels = []
+        }
+    }
+
+    private func loadChannelMessages(channelId: Int64) {
+        guard let chatService = appCore.chatService else { return }
+        channelMessages = (try? chatService.getMessages(channelId: channelId, limit: 50)) ?? []
+        // Reverse so oldest first
+        channelMessages = channelMessages.reversed()
+    }
+
+    private func createSupplierChannel() async {
+        guard let chatService = appCore.chatService,
+              let userId = appCore.currentUser?.id,
+              let po else { return }
+        do {
+            let channelName = "\(po.poNumber) — \(po.supplierName)"
+            let channelId = try chatService.createSupplierChannel(
+                name: channelName,
+                supplierId: po.supplierId,
+                supplierDisplayName: po.supplierName,
+                contactId: nil,
+                role: nil,
+                createdBy: userId
+            )
+            activeChannelId = channelId
+            loadSupplierChannels()
+        } catch {
+            actionMessage = "Failed to create channel: \(error.localizedDescription)"
+        }
+    }
+
+    private func sendSupplierMessage(channelId: Int64) async {
+        guard let chatService = appCore.chatService,
+              let userId = appCore.currentUser?.id else { return }
+        let text = newSupplierMessage.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return }
+        do {
+            try chatService.sendSupplierMessage(
+                channelId: channelId,
+                senderId: userId,
+                content: text,
+                direction: "outgoing"
+            )
+            newSupplierMessage = ""
+            loadChannelMessages(channelId: channelId)
+        } catch {
+            actionMessage = "Failed to send: \(error.localizedDescription)"
+        }
+    }
+
+    private func saveNewETA() async {
+        guard let service = appCore.ordersService else { return }
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withFullDate]
+        let dateStr = fmt.string(from: etaDate)
+        do {
+            try service.updatePOExpectedDelivery(id: poId, expectedDelivery: dateStr)
+            activeSheet = nil
+            loadData()
+            actionMessage = "ETA updated to \(dateStr)."
+        } catch {
+            actionMessage = "Failed to update ETA: \(error.localizedDescription)"
+        }
+    }
+
+    private func loadAvailableSuppliers() {
+        guard let partsService = appCore.partsService,
+              let currentSupplierId = po?.supplierId else { return }
+        do {
+            let all = try partsService.listSuppliers()
+            availableSuppliers = all.filter { $0.supplier.id != currentSupplierId }
+        } catch {
+            availableSuppliers = []
+        }
+    }
+
+    private func createDoubleOrder() async {
+        guard let service = appCore.ordersService,
+              let po,
+              let newSupplierId = selectedSupplierId else { return }
+
+        let remainingLines = po.lines.filter { $0.quantityOrdered > $0.quantityReceived }
+        guard !remainingLines.isEmpty else { return }
+
+        do {
+            // Generate a new PO number
+            let newPOs = try service.listPurchaseOrders(limit: 1)
+            let count = (newPOs.first?.id ?? 0) + 1
+            let poNumber = String(format: "PO-%05d", count)
+
+            // Create the new PO
+            let newPoId = try service.createPurchaseOrder(
+                poNumber: poNumber,
+                supplierId: newSupplierId,
+                notes: "Double order from \(po.poNumber). Remaining items re-ordered with alternate supplier."
+            )
+
+            // Add remaining line items
+            for line in remainingLines {
+                guard let partId = line.partId else { continue }
+                let remaining = line.quantityOrdered - line.quantityReceived
+                try service.addPOLineItem(
+                    poId: newPoId,
+                    partId: partId,
+                    quantity: remaining,
+                    unitPrice: line.unitPrice
+                )
+            }
+
+            // Add a note to the original PO
+            let author = appCore.currentUser?.displayName ?? "System"
+            try service.addPONote(
+                poId: poId,
+                note: "Double order created: \(poNumber) with alternate supplier for \(remainingLines.count) remaining items.",
+                author: author
+            )
+
+            activeSheet = nil
+            loadData()
+            actionMessage = "Double order \(poNumber) created successfully."
+        } catch {
+            actionMessage = "Failed to create double order: \(error.localizedDescription)"
+        }
+    }
+
+    private func submitIssueReport() async {
+        guard let service = appCore.ordersService,
+              let po else { return }
+        let description = issueDescription.trimmingCharacters(in: .whitespaces)
+        guard !description.isEmpty else { return }
+
+        let author = appCore.currentUser?.displayName ?? "System"
+        let noteText = "ISSUE REPORT [\(issueSeverity.uppercased())]: \(description)"
+
+        do {
+            // Add as a PO note with severity tag
+            try service.addPONote(poId: poId, note: noteText, author: author)
+
+            // Also try to create a notebook entry if notebooks service is available
+            if let notebooksService = appCore.notebooksService,
+               let userId = appCore.currentUser?.id {
+                // Try to find or create a quality issues notebook
+                let notebookId = try notebooksService.createNotebook(
+                    title: "Quality Issues — \(po.supplierName)",
+                    notebookType: "quality",
+                    createdBy: userId
+                )
+                try notebooksService.addNotebookEntry(
+                    notebookId: notebookId,
+                    title: "\(po.poNumber): \(issueSeverity.capitalized) Issue",
+                    content: description,
+                    entryType: "issue",
+                    createdBy: userId
+                )
+            }
+
+            issueDescription = ""
+            issueSeverity = "medium"
+            activeSheet = nil
+            loadData()
+            actionMessage = "Issue report submitted and logged."
+        } catch {
+            actionMessage = "Failed to submit issue: \(error.localizedDescription)"
+        }
+    }
+
+    private func openDMWithCreator(userId: Int64, name: String) async {
+        guard let chatService = appCore.chatService,
+              let myId = appCore.currentUser?.id else {
+            actionMessage = "Chat service not available."
+            return
+        }
+
+        do {
+            // Create a DM channel for this conversation
+            let channelName = "DM — \(name)"
+            let channelId = try chatService.createChannel(
+                name: channelName,
+                channelType: "dm",
+                createdBy: myId
+            )
+            // Add the other user to the channel
+            try chatService.addUserToSupplierChannel(channelId: channelId, userId: userId)
+
+            activeSheet = nil
+            actionMessage = "DM channel created with \(name). Open Chat to continue the conversation."
+        } catch {
+            actionMessage = "Failed to create DM: \(error.localizedDescription)"
         }
     }
 

@@ -16,6 +16,17 @@ struct AuditLogPage: View {
     @State private var entries: [AuditEntry] = []
     @State private var errorMessage: String?
     @State private var limit = 50
+    @State private var searchText = ""
+
+    private var filteredEntries: [AuditEntry] {
+        guard !searchText.isEmpty else { return entries }
+        let query = searchText.lowercased()
+        return entries.filter {
+            $0.entityType.lowercased().contains(query) ||
+            $0.action.lowercased().contains(query) ||
+            $0.timestamp.lowercased().contains(query)
+        }
+    }
 
     // MARK: - Body
 
@@ -32,7 +43,7 @@ struct AuditLogPage: View {
                 )
             } else {
                 List {
-                    ForEach(entries) { entry in
+                    ForEach(filteredEntries) { entry in
                         auditRow(entry)
                     }
 
@@ -57,6 +68,8 @@ struct AuditLogPage: View {
             }
         }
         .navigationTitle("Audit Log")
+        .searchable(text: $searchText, prompt: "Filter by table or action...")
+        .refreshable { loadData() }
         .task { loadData() }
     }
 

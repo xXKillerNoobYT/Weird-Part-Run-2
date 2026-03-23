@@ -26,13 +26,15 @@ struct IOSQuestionnairePage: View {
     @State private var isSubmitting = false
     @State private var errorMessage: String?
 
+    // Companion poll questions
+    @State private var companionPolls: [(pollId: Int64, questionText: String, hasVoted: Bool)] = []
+    @State private var companionVotes: [Int64: Bool] = [:]  // pollId -> true=accept, false=reject
+
     var body: some View {
         NavigationStack {
             questionnaireContent
                 .navigationTitle("Clock-Out Questions")
-                #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
-                #endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Skip") { dismiss() }
@@ -53,7 +55,7 @@ struct IOSQuestionnairePage: View {
         if isLoading {
             ProgressView("Loading questions...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if questions.isEmpty {
+        } else if questions.isEmpty && companionPolls.isEmpty {
             ContentUnavailableView {
                 Label("No Questions", systemImage: "questionmark.circle")
             } description: {
@@ -99,6 +101,40 @@ struct IOSQuestionnairePage: View {
                     }
                 }
 
+                // Companion poll questions (always optional)
+                if !companionPolls.isEmpty {
+                    Section {
+                        HStack {
+                            Image(systemName: "link.badge.plus")
+                                .foregroundStyle(.blue)
+                            Text("Companion Rule Votes")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text("Recommended")
+                                .font(.caption2)
+                                .foregroundStyle(.blue)
+                        }
+                    }
+
+                    ForEach(companionPolls, id: \.pollId) { poll in
+                        Section {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(poll.questionText)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+
+                                Toggle("Yes, link these", isOn: Binding<Bool>(
+                                    get: { companionVotes[poll.pollId] ?? false },
+                                    set: { companionVotes[poll.pollId] = $0 }
+                                ))
+                                .font(.subheadline)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+
                 // Submission info
                 if !allRequiredAnswered {
                     Section {
@@ -111,9 +147,7 @@ struct IOSQuestionnairePage: View {
                     }
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -136,9 +170,7 @@ struct IOSQuestionnairePage: View {
 
         case "number":
             TextField("Enter a number...", text: binding)
-                #if os(iOS)
                 .keyboardType(.decimalPad)
-                #endif
                 .textFieldStyle(.roundedBorder)
                 .font(.subheadline)
 
@@ -179,6 +211,19 @@ struct IOSQuestionnairePage: View {
                 laborEntryId: laborEntryId,
                 responses: responses
             )
+
+            // Save companion poll votes (separate from clock-out responses)
+            if let partsService = appCore.partsService,
+               let userId = appCore.currentUser?.id {
+                for (pollId, answeredYes) in companionVotes {
+                    try partsService.castVote(
+                        pollId: pollId,
+                        userId: userId,
+                        vote: answeredYes ? "accept" : "reject"
+                    )
+                }
+            }
+
             onComplete?()
             dismiss()
         } catch {
@@ -201,9 +246,21 @@ struct IOSQuestionnairePage: View {
         } catch {
             let msg = String(describing: error)
             if !msg.contains("no such table") {
-                print("[IOSQuestionnairePage] Load error: \(error)")
+                errorMessage = "Failed to load questions: \(error.localizedDescription)"
             }
         }
+
+        // Load companion poll questions (7+ days active, not yet voted)
+        if let partsService = appCore.partsService,
+           let userId = appCore.currentUser?.id {
+            do {
+                let pollQuestions = try partsService.getActivePollsForClockOut(userId: userId)
+                companionPolls = pollQuestions.filter { !$0.hasVoted }
+            } catch {
+                // Non-critical — don't block questionnaire
+            }
+        }
+
         isLoading = false
     }
 }

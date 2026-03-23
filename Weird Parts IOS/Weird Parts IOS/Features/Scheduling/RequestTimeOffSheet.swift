@@ -36,9 +36,7 @@ struct RequestTimeOffSheet: View {
                 }
             }
             .navigationTitle("Request Time Off")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

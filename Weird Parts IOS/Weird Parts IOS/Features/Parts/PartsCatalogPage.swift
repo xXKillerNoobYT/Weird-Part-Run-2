@@ -35,7 +35,6 @@ struct PartsCatalogPage: View {
     @State private var selectedColorId: Int64?
     @State private var selectedBrandId: Int64?
     @State private var lowStockOnly = false
-    @State private var showFilters = false
 
     // MARK: - Sorting
     @State private var sortField: SortField = .name
@@ -50,18 +49,31 @@ struct PartsCatalogPage: View {
         case addPart
         case partDetail(CatalogPartRow)
         case quickEdit(CatalogPartRow)
+        case editPricing(PricingDisplayRow)
+        case qrScanner
+        case printLabels
 
         var id: String {
             switch self {
             case .addPart: return "addPart"
             case .partDetail(let p): return "detail-\(p.id)"
             case .quickEdit(let p): return "quickEdit-\(p.id)"
+            case .editPricing(let r): return "pricing-\(r.id)"
+            case .qrScanner: return "qrScanner"
+            case .printLabels: return "printLabels"
             }
         }
     }
 
     @State private var activeSheet: ActiveSheet?
     @State private var loadError: String?
+    @State private var actionError: String?
+    @State private var partToDelete: CatalogPartRow?
+
+    // Pricing overlay
+    @State private var showPricing = false
+    @State private var partPricingCache: [Int64: PartsService.ResolvedPricing] = [:]
+    @State private var pricingMode: String = "markup"
 
     // MARK: - Cascading filter options
     private var filteredStyles: [PartStyle] {
@@ -75,10 +87,14 @@ struct PartsCatalogPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Filter chips bar
-            if showFilters {
-                filterBar
-            }
+            // Fixed search bar — always visible, never scrolls away
+            searchBar
+
+            // Smart search banner
+            nlFilterBanner
+
+            // Filter chips bar — always visible
+            filterBar
 
             // Sort header
             sortHeader
@@ -95,17 +111,40 @@ struct PartsCatalogPage: View {
                 paginationBar
             }
         }
-        .searchable(text: $searchText, prompt: "Search parts by name, code, or brand…")
-        .onChange(of: searchText) { _, _ in resetAndLoad() }
+        .onChange(of: searchText) { _, newValue in
+            let trimmed = newValue.trimmingCharacters(in: .whitespaces)
+            let parsed = parseNaturalLanguageSearch(trimmed)
+
+            if parsed.hasStructuredFilters {
+                selectedCategoryId = parsed.categoryId
+                selectedStyleId = parsed.styleId
+                selectedTypeId = parsed.typeId
+                selectedColorId = parsed.colorId
+                selectedBrandId = parsed.brandId
+                lowStockOnly = parsed.lowStock
+            }
+
+            resetAndLoad()
+        }
         .refreshable { await loadData() }
         .toolbar {
-            ToolbarItemGroup(placement: .automatic) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    withAnimation { showFilters.toggle() }
+                    showPricing.toggle()
                 } label: {
-                    Image(systemName: showFilters
-                          ? "line.3.horizontal.decrease.circle.fill"
-                          : "line.3.horizontal.decrease.circle")
+                    Image(systemName: showPricing ? "dollarsign.circle.fill" : "dollarsign.circle")
+                }
+            }
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    activeSheet = .printLabels
+                } label: {
+                    Image(systemName: "printer")
+                }
+                Button {
+                    activeSheet = .qrScanner
+                } label: {
+                    Image(systemName: "qrcode.viewfinder")
                 }
                 Button {
                     activeSheet = .addPart
@@ -113,6 +152,9 @@ struct PartsCatalogPage: View {
                     Image(systemName: "plus")
                 }
             }
+        }
+        .onChange(of: showPricing) {
+            Task { await loadPricingCache() }
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -122,10 +164,126 @@ struct PartsCatalogPage: View {
                 PartDetailSheet(partRow: partRow, categories: categories, brands: brands) { await loadData() }
             case .quickEdit(let partRow):
                 QuickEditSheet(part: partRow) { await loadData() }
+            case .editPricing(let row):
+                PricingEditSheet(row: row, pricingMode: pricingMode) {
+                    await loadData()
+                    await loadPricingCache()
+                }
+            case .qrScanner:
+                QRScanSheet(expectedType: nil) { result in
+                    if result.isFound, result.entityType == .part {
+                        // Set search text to filter catalog to the scanned part
+                        searchText = result.fields["code"] ?? result.fields["name"] ?? result.code
+                    } else if !result.isFound {
+                        // External barcode — search by raw code
+                        searchText = result.code
+                    }
+                }
+                .environmentObject(appCore)
+            case .printLabels:
+                QRLabelPrintSheet(items: parts.map { part in
+                    QRLabelContent(
+                        entityType: .part,
+                        entityId: part.id,
+                        code: part.code ?? "",
+                        title: part.name,
+                        subtitle: part.categoryName,
+                        detail: part.brandName
+                    )
+                })
             }
         }
         .background(DS.Background.page)
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .catalogPageActive,
+                object: nil,
+                userInfo: [
+                    "context": currentCatalogContext.description,
+                    "availableCategories": categories.map(\.name),
+                    "availableBrands": brands.map(\.name),
+                    "availableColors": colors.map(\.name)
+                ]
+            )
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .catalogPageInactive, object: nil)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aiSetCatalogFilters)) { notification in
+            if let userInfo = notification.userInfo {
+                if let categoryName = userInfo["category"] as? String {
+                    selectedCategoryId = categories.first(where: {
+                        $0.name.lowercased() == categoryName.lowercased()
+                    })?.id
+                }
+                if let styleName = userInfo["style"] as? String {
+                    selectedStyleId = styles.first(where: {
+                        $0.name.lowercased() == styleName.lowercased()
+                    })?.id
+                }
+                if let typeName = userInfo["type"] as? String {
+                    selectedTypeId = types.first(where: {
+                        $0.name.lowercased() == typeName.lowercased()
+                    })?.id
+                }
+                if let brandName = userInfo["brand"] as? String {
+                    selectedBrandId = brands.first(where: {
+                        $0.name.lowercased() == brandName.lowercased()
+                    })?.id
+                }
+                if let colorName = userInfo["color"] as? String {
+                    selectedColorId = colors.first(where: {
+                        $0.name.lowercased() == colorName.lowercased()
+                    })?.id
+                }
+                if let search = userInfo["search"] as? String {
+                    searchText = search
+                }
+                if let lowStock = userInfo["lowStock"] as? Bool {
+                    lowStockOnly = lowStock
+                }
+                if let clearAll = userInfo["clearAll"] as? Bool, clearAll {
+                    clearAllFilters()
+                }
+
+                resetAndLoad()
+            }
+        }
         .task { await loadLookups(); await loadData() }
+    }
+
+    // MARK: - Search Bar
+
+    @ViewBuilder
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+
+            TextField("Search parts by name, code, or brand...", text: $searchText)
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
+        .padding(.horizontal, DS.Space.lg)
+        .padding(.top, DS.Space.sm)
+        .padding(.bottom, DS.Space.xs)
     }
 
     // MARK: - Filter Bar
@@ -216,9 +374,16 @@ struct PartsCatalogPage: View {
                     Button {
                         clearAllFilters()
                     } label: {
-                        Text("Clear")
-                            .font(.subheadline)
-                            .foregroundStyle(.red)
+                        HStack(spacing: 4) {
+                            Image(systemName: "xmark")
+                                .font(.caption2)
+                            Text("Clear")
+                                .font(.caption)
+                        }
+                        .foregroundStyle(.red)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(Capsule().fill(Color.red.opacity(0.08)))
                     }
                 }
             }
@@ -256,21 +421,39 @@ struct PartsCatalogPage: View {
             Button("All \(label)s") { onChange(nil) }
             Divider()
             ForEach(options, id: \.0) { id, name in
-                Button(name) { onChange(id) }
+                Button {
+                    onChange(id)
+                } label: {
+                    if selection == id {
+                        Label(name, systemImage: "checkmark")
+                    } else {
+                        Text(name)
+                    }
+                }
             }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.caption)
+                    .font(.caption2)
                 Text(selection.flatMap { sel in options.first { $0.0 == sel }?.1 } ?? label)
-                    .font(.subheadline)
+                    .font(.caption)
+                    .fontWeight(selection != nil ? .semibold : .regular)
                     .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(selection != nil ? Color.accentColor.opacity(0.15) : Color.clear)
-            .clipShape(Capsule())
-            .overlay(Capsule().stroke(Color.accentColor.opacity(0.3), lineWidth: 1))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                Capsule().fill(selection != nil
+                    ? Color.accentColor.opacity(0.15)
+                    : Color(.tertiarySystemGroupedBackground))
+            )
+            .overlay(
+                Capsule().stroke(selection != nil
+                    ? Color.accentColor.opacity(0.4)
+                    : Color.clear, lineWidth: 1)
+            )
         }
     }
 
@@ -338,7 +521,7 @@ struct PartsCatalogPage: View {
                 .buttonStyle(.plain)
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     Button(role: .destructive) {
-                        Task { await deletePart(part) }
+                        partToDelete = part
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
@@ -352,6 +535,25 @@ struct PartsCatalogPage: View {
             }
         }
         .listStyle(.insetGrouped)
+        .confirmationDialog(
+            "Delete Part?",
+            isPresented: Binding(
+                get: { partToDelete != nil },
+                set: { if !$0 { partToDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let part = partToDelete {
+                    Task { await deletePart(part) }
+                }
+            }
+            Button("Cancel", role: .cancel) { partToDelete = nil }
+        } message: {
+            if let part = partToDelete {
+                Text("Are you sure you want to delete \"\(part.name)\"? This cannot be undone.")
+            }
+        }
     }
 
     @ViewBuilder
@@ -416,6 +618,41 @@ struct PartsCatalogPage: View {
                 Text("\(part.totalStock) in stock")
                     .font(.caption)
                     .foregroundStyle(part.totalStock > 0 ? .green : .red)
+
+                // Pricing overlay
+                if showPricing, let pricing = partPricingCache[part.id] {
+                    Button {
+                        let displayRow = PricingDisplayRow(
+                            id: part.id,
+                            name: part.name,
+                            code: part.code,
+                            categoryName: part.categoryName ?? "",
+                            weightedAvgCost: pricing.weightedAvgCost,
+                            effectiveMarkup: pricing.effectiveMarkup,
+                            effectiveMargin: pricing.effectiveMargin,
+                            sellPrice: pricing.sellPrice,
+                            tierLevel: pricing.tierLevel,
+                            isInherited: pricing.isInherited,
+                            costLastUpdated: nil,
+                            isStale: false
+                        )
+                        activeSheet = .editPricing(displayRow)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(String(format: "Sell: $%.2f", pricing.sellPrice))
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.green)
+                            Text(String(format: "+%.0f%%", pricing.effectiveMarkup))
+                                .font(.caption2)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Color.accentColor.opacity(0.1))
+                                .clipShape(Capsule())
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
             }
 
             Image(systemName: "chevron.right")
@@ -498,6 +735,190 @@ struct PartsCatalogPage: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Catalog Context for AI
+
+    /// Current catalog page state for AI context.
+    struct CatalogContext {
+        let activeFilters: [String: String]
+        let searchText: String
+        let resultCount: Int
+        let lowStockOnly: Bool
+
+        var description: String {
+            var parts: [String] = []
+            if !searchText.isEmpty { parts.append("searching for '\(searchText)'") }
+            for (key, value) in activeFilters {
+                parts.append("\(key): \(value)")
+            }
+            if lowStockOnly { parts.append("low stock only") }
+            parts.append("\(resultCount) parts found")
+            return parts.isEmpty ? "Showing all parts" : parts.joined(separator: ", ")
+        }
+    }
+
+    private var currentCatalogContext: CatalogContext {
+        var filters: [String: String] = [:]
+        if let catId = selectedCategoryId,
+           let name = categories.first(where: { $0.id == catId })?.name {
+            filters["category"] = name
+        }
+        if let styleId = selectedStyleId,
+           let name = styles.first(where: { $0.id == styleId })?.name {
+            filters["style"] = name
+        }
+        if let typeId = selectedTypeId,
+           let name = types.first(where: { $0.id == typeId })?.name {
+            filters["type"] = name
+        }
+        if let colorId = selectedColorId,
+           let name = colors.first(where: { $0.id == colorId })?.name {
+            filters["color"] = name
+        }
+        if let brandId = selectedBrandId,
+           let name = brands.first(where: { $0.id == brandId })?.name {
+            filters["brand"] = name
+        }
+
+        return CatalogContext(
+            activeFilters: filters,
+            searchText: searchText,
+            resultCount: totalCount,
+            lowStockOnly: lowStockOnly
+        )
+    }
+
+    // MARK: - NL Search Parser
+
+    struct NLSearchResult {
+        var categoryId: Int64?
+        var styleId: Int64?
+        var typeId: Int64?
+        var colorId: Int64?
+        var brandId: Int64?
+        var lowStock: Bool = false
+        var textSearch: String = ""
+
+        var hasStructuredFilters: Bool {
+            categoryId != nil || styleId != nil || typeId != nil ||
+            colorId != nil || brandId != nil || lowStock
+        }
+    }
+
+    /// Parse natural language search text into structured filters.
+    ///
+    /// Examples:
+    ///   "low stock white elbows from Lutron"
+    ///     → lowStock: true, color: "White", type matches "elbows", brand: "Lutron"
+    ///   "PVC fittings"
+    ///     → category matches "Fittings", style matches "PVC"
+    private func parseNaturalLanguageSearch(_ text: String) -> NLSearchResult {
+        let lower = text.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !lower.isEmpty else {
+            return NLSearchResult()
+        }
+
+        var result = NLSearchResult()
+
+        let fillerWords: Set<String> = ["from", "by", "in", "the", "a", "an", "with", "for", "all", "show", "find", "me", "get"]
+        let tokens = lower.components(separatedBy: .whitespaces).filter { !$0.isEmpty && !fillerWords.contains($0) }
+
+        if lower.contains("low stock") || lower.contains("lowstock") || lower.contains("low-stock") {
+            result.lowStock = true
+        }
+
+        var matchedTokenIndices: Set<Int> = []
+
+        // Match brands (can be multi-word)
+        for brand in brands {
+            if lower.contains(brand.name.lowercased()) {
+                result.brandId = brand.id
+                let brandTokens = brand.name.lowercased().components(separatedBy: .whitespaces)
+                for (i, token) in tokens.enumerated() {
+                    if brandTokens.contains(token) { matchedTokenIndices.insert(i) }
+                }
+                break
+            }
+        }
+
+        for cat in categories {
+            if lower.contains(cat.name.lowercased()) {
+                result.categoryId = cat.id
+                let catTokens = cat.name.lowercased().components(separatedBy: .whitespaces)
+                for (i, token) in tokens.enumerated() {
+                    if catTokens.contains(token) { matchedTokenIndices.insert(i) }
+                }
+                break
+            }
+        }
+
+        for style in styles {
+            if lower.contains(style.name.lowercased()) {
+                result.styleId = style.id
+                let styleTokens = style.name.lowercased().components(separatedBy: .whitespaces)
+                for (i, token) in tokens.enumerated() {
+                    if styleTokens.contains(token) { matchedTokenIndices.insert(i) }
+                }
+                break
+            }
+        }
+
+        for type in types {
+            if lower.contains(type.name.lowercased()) {
+                result.typeId = type.id
+                let typeTokens = type.name.lowercased().components(separatedBy: .whitespaces)
+                for (i, token) in tokens.enumerated() {
+                    if typeTokens.contains(token) { matchedTokenIndices.insert(i) }
+                }
+                break
+            }
+        }
+
+        for color in colors {
+            if lower.contains(color.name.lowercased()) {
+                result.colorId = color.id
+                let colorTokens = color.name.lowercased().components(separatedBy: .whitespaces)
+                for (i, token) in tokens.enumerated() {
+                    if colorTokens.contains(token) { matchedTokenIndices.insert(i) }
+                }
+                break
+            }
+        }
+
+        var remainingTerms: [String] = []
+        for (i, token) in tokens.enumerated() {
+            if !matchedTokenIndices.contains(i) && token != "low" && token != "stock" {
+                remainingTerms.append(token)
+            }
+        }
+        result.textSearch = remainingTerms.joined(separator: " ")
+
+        return result
+    }
+
+    @ViewBuilder
+    private var nlFilterBanner: some View {
+        let parsed = parseNaturalLanguageSearch(searchText)
+        if parsed.hasStructuredFilters {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.caption2)
+                    .foregroundStyle(.blue)
+                Text("Smart search applied filters")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Clear filters") {
+                    clearAllFilters()
+                    searchText = ""
+                }
+                .font(.caption2)
+                .foregroundStyle(.blue)
+            }
+            .padding(.horizontal, DS.Space.lg)
+            .padding(.vertical, 4)
+        }
     }
 
     // MARK: - Helpers
@@ -584,10 +1005,12 @@ struct PartsCatalogPage: View {
                 args.append(brandId)
             }
 
-            let trimmedSearch = searchText.trimmingCharacters(in: .whitespaces)
-            if !trimmedSearch.isEmpty {
+            let parsed = parseNaturalLanguageSearch(searchText)
+            let effectiveSearchText = parsed.hasStructuredFilters ? parsed.textSearch : searchText.trimmingCharacters(in: .whitespaces)
+
+            if !effectiveSearchText.isEmpty {
                 whereClauses.append("(p.name LIKE ? OR p.code LIKE ? OR COALESCE(b.name, '') LIKE ?)")
-                let like = "%\(trimmedSearch)%"
+                let like = "%\(effectiveSearchText)%"
                 args.append(like)
                 args.append(like)
                 args.append(like)
@@ -686,6 +1109,31 @@ struct PartsCatalogPage: View {
         }
     }
 
+    // MARK: - Pricing Cache
+
+    private func loadPricingCache() async {
+        guard showPricing else {
+            await MainActor.run { partPricingCache = [:] }
+            return
+        }
+        guard let service = appCore.partsService else { return }
+        var cache: [Int64: PartsService.ResolvedPricing] = [:]
+        for part in parts {
+            do {
+                let resolved = try service.resolvePartPricing(partId: part.id)
+                cache[part.id] = resolved
+            } catch {
+                // skip parts that fail to resolve
+            }
+        }
+        // Also load pricing mode
+        let mode = (try? service.getCompanyCostSetting(key: "pricing_mode")) ?? "markup"
+        await MainActor.run {
+            partPricingCache = cache
+            pricingMode = mode
+        }
+    }
+
     // MARK: - Delete
 
     private func deletePart(_ part: CatalogPartRow) async {
@@ -697,7 +1145,7 @@ struct PartsCatalogPage: View {
             }
             await loadData()
         } catch {
-            print("[PartsCatalogPage] Delete part error: \(error)")
+            actionError = error.localizedDescription
         }
     }
 }
@@ -866,6 +1314,7 @@ private struct PartFormSheet: View {
     @State private var partType = "standard"
     @State private var costPrice = ""
     @State private var markupPercent = ""
+    @State private var saveError: String?
 
     private let partTypes = ["standard", "special_order", "custom"]
 
@@ -987,7 +1436,7 @@ private struct PartFormSheet: View {
                 }
             }
         } catch {
-            print("[PartFormSheet] Save error: \(error)")
+            saveError = error.localizedDescription
         }
     }
 }
@@ -1003,6 +1452,7 @@ private struct PartDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var stockEntries: [StockEntry] = []
     @State private var showEditForm = false
+    @State private var loadError: String?
 
     var body: some View {
         NavigationStack {
@@ -1061,6 +1511,12 @@ private struct PartDetailSheet: View {
                         }
                     }
                 }
+
+                Section("Change History") {
+                    DisclosureGroup("View History") {
+                        PartHistoryView(partId: partRow.id)
+                    }
+                }
             }
             .navigationTitle("Part Details")
             .navigationBarTitleDisplayMode(.inline)
@@ -1097,7 +1553,7 @@ private struct PartDetailSheet: View {
             }
             await MainActor.run { stockEntries = entries }
         } catch {
-            print("[PartDetailSheet] Load stock error: \(error)")
+            loadError = error.localizedDescription
         }
     }
 }

@@ -1,5 +1,6 @@
 import SwiftUI
 import WiredPartCore
+import GRDB
 
 /// Employee detail page with tabs for profile, hats, teams, and activity.
 struct IOSEmployeeDetailPage: View {
@@ -10,6 +11,11 @@ struct IOSEmployeeDetailPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var selectedTab = "profile"
+    private enum ActiveSheet: String, Identifiable {
+        case editEmployee
+        var id: String { rawValue }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     private let tabs = ["profile", "hats", "teams"]
 
@@ -29,6 +35,21 @@ struct IOSEmployeeDetailPage: View {
         .navigationTitle(employee?.displayName ?? "Employee")
         .refreshable { loadData() }
         .task { loadData() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Edit") { activeSheet = .editEmployee }
+                    .disabled(employee == nil)
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .editEmployee:
+                if let emp = employee {
+                    EditEmployeeSheet(employee: emp) { loadData() }
+                        .environmentObject(appCore)
+                }
+            }
+        }
     }
 
     // MARK: - Tab Picker
@@ -97,9 +118,7 @@ struct IOSEmployeeDetailPage: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     // MARK: - Hats
@@ -132,9 +151,7 @@ struct IOSEmployeeDetailPage: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     // MARK: - Teams
@@ -170,9 +187,7 @@ struct IOSEmployeeDetailPage: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     // MARK: - Helpers
@@ -188,7 +203,11 @@ struct IOSEmployeeDetailPage: View {
     }
 
     private func loadData() {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            isLoading = false
+            loadError = "People service unavailable"
+            return
+        }
         isLoading = employee == nil
         loadError = nil
         do {
@@ -199,3 +218,83 @@ struct IOSEmployeeDetailPage: View {
         isLoading = false
     }
 }
+// MARK: - Edit Employee Sheet
+
+private struct EditEmployeeSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let employee: PeopleService.EmployeeDetail
+    let onSave: () -> Void
+
+    @State private var displayName: String
+    @State private var email: String
+    @State private var phone: String
+    @State private var errorMessage: String?
+
+    init(employee: PeopleService.EmployeeDetail, onSave: @escaping () -> Void) {
+        self.employee = employee
+        self.onSave = onSave
+        _displayName = State(initialValue: employee.displayName)
+        _email = State(initialValue: employee.email)
+        _phone = State(initialValue: employee.phone ?? "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Employee Info") {
+                    TextField("Display Name", text: $displayName)
+                        .textContentType(.name)
+                    TextField("Email", text: $email)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .autocapitalization(.none)
+                    TextField("Phone", text: $phone)
+                        .textContentType(.telephoneNumber)
+                        .keyboardType(.phonePad)
+                }
+                if let error = errorMessage {
+                    Section {
+                        Text(error).foregroundStyle(.red).font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Edit Employee")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(displayName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        guard let db = appCore.db else {
+            errorMessage = "Database unavailable"
+            return
+        }
+        let trimmedName = displayName.trimmingCharacters(in: .whitespaces)
+        do {
+            try db.writer.write { dbConn in
+                try dbConn.execute(
+                    sql: """
+                        UPDATE users SET display_name = ?, email = ?, phone = ?, updated_at = datetime('now')
+                        WHERE id = ?
+                        """,
+                    arguments: [trimmedName, email.isEmpty ? nil : email, phone.isEmpty ? nil : phone, employee.id]
+                )
+            }
+            onSave()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+

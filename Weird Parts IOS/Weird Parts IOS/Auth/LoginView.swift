@@ -56,9 +56,7 @@ struct LoginView: View {
 
                     SecureField("Enter PIN", text: $pin)
                         .textContentType(.password)
-                        #if os(iOS)
                         .keyboardType(.numberPad)
-                        #endif
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 200)
                         .multilineTextAlignment(.center)
@@ -140,11 +138,7 @@ struct LoginView: View {
                                     .padding(.vertical, 12)
                                     .background(
                                         RoundedRectangle(cornerRadius: 10)
-                                            #if os(iOS)
                                             .fill(Color(.secondarySystemBackground))
-                                            #elseif os(macOS)
-                                            .fill(Color(.controlBackgroundColor))
-                                            #endif
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -158,19 +152,20 @@ struct LoginView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        #if os(iOS)
         .background(Color(.systemBackground))
-        #elseif os(macOS)
-        .background(DS.Background.page)
-        #endif
         .onAppear { loadUsers() }
     }
 
     // MARK: - Actions
 
     private func loadUsers() {
+        guard let authService = appCore.authService else {
+            errorMessage = "App not ready. Please wait."
+            usersLoaded = true
+            return
+        }
         do {
-            users = try appCore.authService.getActiveUsers()
+            users = try authService.getActiveUsers()
         } catch {
             errorMessage = "Failed to load users: \(error.localizedDescription)"
         }
@@ -190,8 +185,9 @@ struct LoginView: View {
         errorMessage = nil
 
         // Small delay for UX feedback
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            let result = appCore.login(userId: userId, pin: pin)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(200))
+            let result = await appCore.login(userId: userId, pin: pin)
             isLoading = false
             if let err = result {
                 errorMessage = err

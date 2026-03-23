@@ -285,6 +285,9 @@ public actor SyncEngine {
             // Pre-compute SQL statements and arguments (Sendable)
             var stmts: [(String, [DatabaseValue])] = []
             for (tableName, rows) in tables {
+                // Validate table name against whitelist to prevent SQL injection
+                guard ConflictResolver.isAllowedTable(tableName) else { continue }
+
                 for row in rows {
                     let keys = row.keys.sorted()
                     guard !keys.isEmpty else { continue }
@@ -494,6 +497,11 @@ public actor SyncEngine {
     private func parseIncomingChange(_ dict: [String: Any]) -> IncomingChange? {
         guard let tableName = dict["table_name"] as? String,
               let operation = dict["operation"] as? String else {
+            return nil
+        }
+
+        // Reject changes with invalid table names
+        guard ConflictResolver.isAllowedTable(tableName) else {
             return nil
         }
         let recordId: String

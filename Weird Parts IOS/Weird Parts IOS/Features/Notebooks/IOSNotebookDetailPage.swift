@@ -10,6 +10,8 @@ struct IOSNotebookDetailPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var selectedTab = "entries"
+    @State private var showAddEntry = false
+    @State private var showAddTask = false
 
     private let tabs = ["entries", "tasks", "info"]
 
@@ -27,6 +29,32 @@ struct IOSNotebookDetailPage: View {
             }
         }
         .navigationTitle(notebook?.title ?? "Notebook")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button {
+                        showAddEntry = true
+                    } label: {
+                        Label("Add Entry", systemImage: "note.text.badge.plus")
+                    }
+                    Button {
+                        showAddTask = true
+                    } label: {
+                        Label("Add Task", systemImage: "checklist")
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(isPresented: $showAddEntry) {
+            AddNotebookEntrySheet(notebookId: notebookId, entryType: "note", onSave: { loadData() })
+                .environmentObject(appCore)
+        }
+        .sheet(isPresented: $showAddTask) {
+            AddNotebookEntrySheet(notebookId: notebookId, entryType: "task", onSave: { loadData() })
+                .environmentObject(appCore)
+        }
         .refreshable { loadData() }
         .task { loadData() }
     }
@@ -102,22 +130,16 @@ struct IOSNotebookDetailPage: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     private var tasksTab: some View {
-        List {
-            Section {
-                Text("Tasks will be loaded from NotebooksService")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
-        }
-        #if os(iOS)
+        EmptyStateView(
+            icon: "checklist",
+            title: "No Tasks",
+            message: "Add tasks to this notebook to track work items."
+        )
         .listStyle(.insetGrouped)
-        #endif
     }
 
     private var infoTab: some View {
@@ -135,9 +157,7 @@ struct IOSNotebookDetailPage: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     private func detailRow(_ label: String, _ value: String) -> some View {

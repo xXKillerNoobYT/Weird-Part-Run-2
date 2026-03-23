@@ -86,6 +86,95 @@ public struct ConflictStats: Sendable {
 /// 3. Every overwrite is logged to `_conflict_log` regardless of which side wins.
 public enum ConflictResolver {
 
+    // MARK: - Table Name Whitelist
+
+    /// Allowed table names for sync operations. Peer-supplied table names
+    /// must appear in this set to prevent SQL injection via crafted sync data.
+    static let allowedSyncTables: Set<String> = [
+        // Foundation
+        "users", "hats", "hat_permissions", "user_hats", "job_lead_elevations",
+        "devices", "settings", "activity_log", "notifications", "notification_preferences",
+        // Parts & Inventory
+        "part_categories", "part_styles", "part_types", "part_colors",
+        "brands", "suppliers", "parts", "brand_supplier_links", "part_supplier_links",
+        "stock", "stock_movements", "pulled_staging_tags", "bill_rate_types",
+        "type_color_links", "type_brand_links",
+        // Jobs & Labor
+        "jobs", "job_parts", "labor_entries", "clock_out_questions", "clock_out_responses",
+        "one_time_questions", "daily_reports", "job_team_members", "job_preferred_suppliers",
+        "job_customers", "job_general_contractors",
+        // Notebooks
+        "notebook_templates", "template_sections", "template_entries",
+        "notebooks", "notebook_sections", "notebook_entries",
+        "notebook_entry_permissions", "task_order_links", "notebook_entry_tools",
+        // Orders & Procurement
+        "job_parts_orders", "jpo_line_items", "purchase_orders", "po_line_items",
+        "returns", "return_line_items", "order_status_history",
+        "special_items", "job_preferences", "order_attachments",
+        "po_jpo_links", "po_conversations", "po_groups", "po_group_members",
+        "category_supplier_preferences", "job_supplier_preferences",
+        // Fleet & Vehicles
+        "vehicles", "vehicle_assignments", "vehicle_delivery_items",
+        "job_trailers", "trailer_location_events",
+        "maintenance_types", "maintenance_schedules", "maintenance_records",
+        "mileage_logs", "trip_legs", "mileage_reimbursements", "fuel_logs",
+        "trailer_stock_templates", "trailer_stock_template_lines",
+        // Tools
+        "tools", "kit_templates", "tool_movements",
+        "kit_verification_sessions", "kit_verification_items",
+        "tool_maintenance_types", "tool_maintenance_schedules", "tool_maintenance_records",
+        "tool_depreciation_entries",
+        // People
+        "customers", "general_contractors", "certifications", "wage_history",
+        "employee_notes", "user_skills", "employee_teams", "employee_team_members",
+        "entity_contacts",
+        // Scheduling
+        "employee_default_schedules", "schedule_exceptions", "job_dispatch",
+        "subcontractor_schedules", "dispatch_templates", "dispatch_template_members",
+        "shift_patterns", "shift_pattern_days",
+        // Chat
+        "chat_channels", "chat_channel_members", "qa_threads",
+        "chat_messages", "chat_read_receipts", "chat_mentions",
+        "rfi_objects", "qa_escalations",
+        // Reports & Billing
+        "billing_periods", "report_annotations", "report_share_tokens", "report_templates",
+        "pto_policies", "pto_transactions", "pto_balances",
+        // Warehouse
+        "receiving_sessions", "receiving_session_items",
+        "warehouse_locations", "stock_entries",
+        "staging_zones", "staging_items", "staging_boxes",
+        // Suppliers
+        "supplier_portal_tokens", "supplier_po_acknowledgments", "supplier_contact_ratings",
+        // Costs
+        "cost_layers", "company_cost_settings", "company_profiles",
+        "pricing_tiers", "price_history", "cost_layer_consumptions",
+        "scheduled_deletions",
+        // Business
+        "business_profiles",
+        // Companions
+        "companion_rules", "companion_rule_sources", "companion_rule_targets",
+        "companion_suggestions", "companion_suggestion_sources",
+        "co_occurrence_pairs", "companion_feedback", "part_alternatives",
+        "companion_polls", "companion_votes", "companion_poll_results",
+        "companion_auto_discovery_log",
+        // Supplier communication bridge
+        "supplier_channel_bridges", "supplier_messages",
+        // Per-location forecasting
+        "location_stock_targets", "forecast_settings", "location_free_space",
+        "target_recommendations",
+        // AI (not _text_history — that's local-only)
+        "part_image_features", "image_match_history",
+        // Sync infrastructure (these are managed by sync itself)
+        "_change_log", "_conflict_log", "_vector_clock", "_device_registry",
+        "_binary_attachments", "_sync_transfer_log",
+    ]
+
+    /// Validate that a table name is in the whitelist.
+    /// Returns false for unknown or potentially malicious table names.
+    public static func isAllowedTable(_ name: String) -> Bool {
+        allowedSyncTables.contains(name.lowercased())
+    }
+
     // MARK: - Public API
 
     /// Apply incoming peer changes with field-level LWW merge.
@@ -101,6 +190,12 @@ public enum ConflictResolver {
         let localDevice = localDeviceId ?? DeviceIdentity.current
 
         for change in changes {
+            // Reject changes with invalid/unknown table names to prevent SQL injection
+            guard isAllowedTable(change.tableName) else {
+                result.skipped += 1
+                continue
+            }
+
             do {
                 try db.writer.write { dbConn in
                     switch change.operation.uppercased() {
@@ -479,11 +574,10 @@ public enum ConflictResolver {
         }
     }
 
-    /// Current UTC timestamp in SQLite datetime format.
+    /// Current UTC timestamp in ISO 8601 format (consistent with SyncEngine).
     private static func currentTimestamp() -> String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        f.timeZone = TimeZone(identifier: "UTC")
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f.string(from: Date())
     }
 

@@ -1,7 +1,6 @@
 import SwiftUI
 import WiredPartCore
 
-#if os(iOS)
 
 // MARK: - iOS Auto-Fill Banner
 
@@ -190,4 +189,3 @@ struct IOSQRAutoFillBanner: View {
     }
 }
 
-#endif

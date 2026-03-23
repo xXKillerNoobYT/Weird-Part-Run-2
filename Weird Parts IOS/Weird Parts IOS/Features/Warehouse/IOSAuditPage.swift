@@ -242,16 +242,12 @@ struct IOSAuditPage: View {
         guard let service = appCore.warehouseService else { return }
         do {
             // Re-record the audit count to refresh the timestamp
-            // This effectively marks the item as "needs recount"
-            let stockRows = try service.getLocationStock()
-            if let stock = stockRows.first(where: {
-                $0.partId == item.partId &&
-                $0.locationType == item.locationType &&
-                $0.locationId == item.locationId
-            }) {
-                try service.recordAuditCount(stockId: stock.id, countedQty: item.systemQty)
-                loadData()
-            }
+            try service.recordAuditRecount(
+                partId: item.partId,
+                locationType: item.locationType,
+                locationId: item.locationId
+            )
+            loadData()
         } catch {
             actionError = error.localizedDescription
         }

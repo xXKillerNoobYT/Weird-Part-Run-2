@@ -38,9 +38,7 @@ struct AddNotebookEntrySheet: View {
                 }
             }
             .navigationTitle(isTask ? "New Task" : "New Entry")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

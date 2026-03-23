@@ -12,7 +12,12 @@ struct CategoriesColorPicker: View {
     @State private var allColors: [PartColor] = []
     @State private var linkedColorIds: Set<Int64> = []
     @State private var isLoading = true
-    @State private var showAddColor = false
+    @State private var loadError: String?
+    private enum ActiveSheet: String, Identifiable {
+        case addColor
+        var id: String { rawValue }
+    }
+    @State private var activeSheet: ActiveSheet?
     @State private var confirmColor: PartColor?
     @State private var showConfirmation = false
     @State private var recentlyAdded: Set<Int64> = []
@@ -27,14 +32,18 @@ struct CategoriesColorPicker: View {
                     .font(.headline)
                 Spacer()
                 Button {
-                    showAddColor = true
+                    activeSheet = .addColor
                 } label: {
                     Label("New Color", systemImage: "plus")
                         .font(.caption)
                 }
             }
 
-            if isLoading {
+            if let error = loadError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .font(.caption)
+            } else if isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity)
                     .padding()
@@ -60,10 +69,13 @@ struct CategoriesColorPicker: View {
             }
         }
         .task { await loadColors() }
-        .sheet(isPresented: $showAddColor) {
-            ColorFormSheet(color: nil) {
-                await loadColors()
-                await onRefresh()
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .addColor:
+                ColorFormSheet(color: nil) {
+                    await loadColors()
+                    await onRefresh()
+                }
             }
         }
         .alert("Add to Catalog?", isPresented: $showConfirmation) {
@@ -188,18 +200,33 @@ struct CategoriesColorPicker: View {
     private func loadColors() async {
         guard let service = appCore.partsService else { isLoading = false; return }
         do {
-            let colors = try service.listColors()
+            var colors = try service.listColors()
 
-            // Find which colors are already linked to this type
+            // Ensure a "None" color option is always available
+            if !colors.contains(where: { $0.name.lowercased() == "none" }) {
+                let noneColor = PartColor(name: "None", sortOrder: -1)
+                colors.insert(noneColor, at: 0)
+            }
+
+            // Find which colors are already linked to this brand+type via brandNodes
             var linked = Set<Int64>()
             let hierarchy = try service.getHierarchy()
             for catNode in hierarchy.categories {
                 for styleNode in catNode.styles {
                     for typeNode in styleNode.types {
                         if typeNode.type.id == typeId {
-                            for color in typeNode.colors {
-                                if let cid = color.id {
-                                    linked.insert(cid)
+                            // Find the matching brand node
+                            let matchingBrandNode: PartsService.BrandNode?
+                            if let bid = brandId {
+                                matchingBrandNode = typeNode.brandNodes.first(where: { $0.brand?.id == bid })
+                            } else {
+                                matchingBrandNode = typeNode.brandNodes.first(where: { $0.isGeneral })
+                            }
+                            if let brandNode = matchingBrandNode {
+                                for color in brandNode.colors {
+                                    if let cid = color.id {
+                                        linked.insert(cid)
+                                    }
                                 }
                             }
                         }
@@ -213,8 +240,10 @@ struct CategoriesColorPicker: View {
                 isLoading = false
             }
         } catch {
-            print("[CategoriesColorPicker] Load error: \(error)")
-            await MainActor.run { isLoading = false }
+            await MainActor.run {
+                loadError = error.localizedDescription
+                isLoading = false
+            }
         }
     }
 
@@ -258,7 +287,7 @@ struct CategoriesColorPicker: View {
             await MainActor.run {
                 errorMessage = "Failed to create catalog entry: \(error.localizedDescription)"
             }
-            print("[CategoriesColorPicker] Create part error: \(error)")
+            // errorMessage already set above for UI display
         }
     }
 }

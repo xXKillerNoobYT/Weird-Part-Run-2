@@ -29,9 +29,7 @@ struct FormSheet<Content: View>: View {
                 content
             }
             .navigationTitle(title)
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {

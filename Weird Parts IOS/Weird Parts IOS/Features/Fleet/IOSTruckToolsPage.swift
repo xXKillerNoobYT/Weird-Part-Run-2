@@ -61,9 +61,7 @@ struct IOSTruckToolsPage: View {
             }
             .padding(.vertical, 2)
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     private var filteredCheckouts: [ToolsService.CheckoutRow] {
@@ -82,7 +80,6 @@ struct IOSTruckToolsPage: View {
             // Get active checkouts (tools currently out on trucks)
             checkouts = try service.listCheckouts(active: true)
         } catch {
-            print("[IOSTruckToolsPage] Load error: \(error)")
             loadError = error.localizedDescription
         }
         isLoading = false

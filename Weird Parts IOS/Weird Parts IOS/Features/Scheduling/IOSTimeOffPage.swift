@@ -15,11 +15,36 @@ struct IOSTimeOffPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var searchText = ""
+    private enum ActiveSheet: String, Identifiable {
+        case requestTimeOff
+        var id: String { rawValue }
+    }
+    @State private var activeSheet: ActiveSheet?
+    @State private var actionError: String?
 
     var body: some View {
         timeOffContent
             .navigationTitle("Time Off")
             .searchable(text: $searchText, prompt: "Search requests...")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .requestTimeOff } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .requestTimeOff:
+                    RequestTimeOffSheet(onSave: { loadData() })
+                        .environmentObject(appCore)
+                }
+            }
+            .alert("Error", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
+                Button("OK") { actionError = nil }
+            } message: {
+                Text(actionError ?? "")
+            }
             .refreshable { loadData() }
             .task { loadData() }
     }
@@ -43,9 +68,7 @@ struct IOSTimeOffPage: View {
             List(filteredRequests, id: \.id) { request in
                 requestRow(request)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -61,39 +84,61 @@ struct IOSTimeOffPage: View {
     // MARK: - Row
 
     private func requestRow(_ request: SchedulingService.TimeOffRow) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "person.crop.circle.badge.clock")
-                .font(.title2)
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 36)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Image(systemName: "person.crop.circle.badge.clock")
+                    .font(.title2)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 36)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(request.userName)
-                    .fontWeight(.medium)
-                HStack(spacing: 4) {
-                    Text(formatDate(request.startDate))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if request.startDate != request.endDate {
-                        Image(systemName: "arrow.right")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                        Text(formatDate(request.endDate))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(request.userName)
+                        .fontWeight(.medium)
+                    HStack(spacing: 4) {
+                        Text(formatDate(request.startDate))
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        if request.startDate != request.endDate {
+                            Image(systemName: "arrow.right")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                            Text(formatDate(request.endDate))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    if let reason = request.reason, !reason.isEmpty {
+                        Text(reason)
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
                     }
                 }
-                if let reason = request.reason, !reason.isEmpty {
-                    Text(reason)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                }
+
+                Spacer()
+
+                statusBadge(request.status)
             }
 
-            Spacer()
+            if appCore.hasPermission("manage_scheduling") && request.status == "pending" {
+                HStack(spacing: 12) {
+                    Spacer()
+                    Button {
+                        denyTimeOff(requestId: request.id)
+                    } label: {
+                        Label("Deny", systemImage: "xmark")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
 
-            statusBadge(request.status)
+                    Button {
+                        approveTimeOff(requestId: request.id)
+                    } label: {
+                        Label("Approve", systemImage: "checkmark")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
         }
         .padding(.vertical, 4)
     }
@@ -127,6 +172,36 @@ struct IOSTimeOffPage: View {
             return f.string(from: date)
         }
         return String(dateString.prefix(10))
+    }
+
+    // MARK: - Actions
+
+    private func approveTimeOff(requestId: Int64) {
+        guard let service = appCore.schedulingService else { return }
+        do {
+            try service.updateTimeOffStatus(
+                id: requestId,
+                status: "approved",
+                approvedBy: appCore.currentUser?.id
+            )
+            loadData()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func denyTimeOff(requestId: Int64) {
+        guard let service = appCore.schedulingService else { return }
+        do {
+            try service.updateTimeOffStatus(
+                id: requestId,
+                status: "denied",
+                approvedBy: appCore.currentUser?.id
+            )
+            loadData()
+        } catch {
+            actionError = error.localizedDescription
+        }
     }
 
     // MARK: - Data Loading

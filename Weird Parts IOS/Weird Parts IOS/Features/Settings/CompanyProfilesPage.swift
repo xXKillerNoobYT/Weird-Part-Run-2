@@ -8,8 +8,18 @@ import WiredPartCore
 struct CompanyProfilesPage: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var profiles: [CompanyProfile] = []
-    @State private var showEditor = false
-    @State private var editingProfile: CompanyProfile?
+    private enum ActiveSheet: Identifiable {
+        case create
+        case edit(CompanyProfile)
+
+        var id: String {
+            switch self {
+            case .create: "create"
+            case .edit(let p): "edit-\(p.id ?? 0)"
+            }
+        }
+    }
+    @State private var activeSheet: ActiveSheet?
     @State private var errorMessage: String?
 
     var body: some View {
@@ -22,8 +32,7 @@ struct CompanyProfilesPage: View {
             } else {
                 ForEach(profiles, id: \.id) { profile in
                     Button {
-                        editingProfile = profile
-                        showEditor = true
+                        activeSheet = .edit(profile)
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
@@ -71,35 +80,52 @@ struct CompanyProfilesPage: View {
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 Button {
-                    editingProfile = nil
-                    showEditor = true
+                    activeSheet = .create
                 } label: {
                     Image(systemName: "plus")
                 }
             }
         }
-        .sheet(isPresented: $showEditor) {
-            CompanyProfileEditor(profile: editingProfile) { _ in
-                loadProfiles()
-                showEditor = false
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .create:
+                CompanyProfileEditor(profile: nil) { _ in
+                    loadProfiles()
+                    activeSheet = nil
+                }
+                .environmentObject(appCore)
+            case .edit(let profile):
+                CompanyProfileEditor(profile: profile) { _ in
+                    loadProfiles()
+                    activeSheet = nil
+                }
+                .environmentObject(appCore)
             }
-            .environmentObject(appCore)
         }
+        .refreshable { loadProfiles() }
         .onAppear { loadProfiles() }
     }
 
     private func loadProfiles() {
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service unavailable"
+            return
+        }
         do {
-            profiles = try appCore.settingsService.listCompanyProfiles()
+            profiles = try service.listCompanyProfiles()
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
     private func deleteProfile(_ profile: CompanyProfile) {
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service unavailable"
+            return
+        }
         guard let id = profile.id else { return }
         do {
-            try appCore.settingsService.deleteCompanyProfile(id)
+            try service.deleteCompanyProfile(id)
             loadProfiles()
         } catch {
             errorMessage = error.localizedDescription
@@ -163,9 +189,7 @@ private struct CompanyProfileEditor: View {
                 }
             }
             .navigationTitle(profile == nil ? "New Profile" : "Edit Profile")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -217,11 +241,15 @@ private struct CompanyProfileEditor: View {
             updatedAt: nil
         )
 
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service unavailable"
+            return
+        }
         do {
             if profile?.id != nil {
-                try appCore.settingsService.updateCompanyProfile(record)
+                try service.updateCompanyProfile(record)
             } else {
-                let newId = try appCore.settingsService.createCompanyProfile(record)
+                let newId = try service.createCompanyProfile(record)
                 record.id = newId
             }
             onSave(record)

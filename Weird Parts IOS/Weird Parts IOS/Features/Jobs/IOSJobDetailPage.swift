@@ -18,13 +18,29 @@ struct IOSJobDetailPage: View {
     @State private var laborSummary: JobsService.LaborSummary?
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var showHelp = false
 
     var body: some View {
         detailContent
             .navigationTitle(job?.jobName ?? "Job Detail")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
+            .toolbar {
+                ToolbarItem(placement: .secondaryAction) {
+                    Button { showHelp = true } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
+            }
+            .sheet(isPresented: $showHelp) {
+                PageHelpSheet(
+                    title: "Job Detail Help",
+                    sections: [
+                        ("Overview", "Full details for this job including status, priority, customer, address, dates, and notes."),
+                        ("Team & Labor", "See assigned team members and a summary of labor hours logged against this job."),
+                        ("Actions", "Pull down to refresh. Use the tab view for deeper access to team, labor, parts, and orders.")
+                    ]
+                )
+            }
             .refreshable { loadData() }
             .task { loadData() }
     }
@@ -173,9 +189,7 @@ struct IOSJobDetailPage: View {
                     }
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         } else {
             ContentUnavailableView {
                 Label("Job Not Found", systemImage: "hammer")

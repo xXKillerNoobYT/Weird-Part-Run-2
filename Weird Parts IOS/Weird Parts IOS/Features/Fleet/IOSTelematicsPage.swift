@@ -15,6 +15,7 @@ struct IOSTelematicsPage: View {
 
     @State private var locations: [VehicleLocationRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var searchText = ""
 
     var body: some View {
@@ -42,9 +43,7 @@ struct IOSTelematicsPage: View {
             List(filteredLocations, id: \.id) { location in
                 locationRow(location)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -128,7 +127,11 @@ struct IOSTelematicsPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else { return }
+        guard let db = appCore.db else {
+            loadError = "Database not available"
+            isLoading = false
+            return
+        }
         isLoading = locations.isEmpty
 
         do {
@@ -169,7 +172,7 @@ struct IOSTelematicsPage: View {
             if msg.contains("no such table") {
                 locations = []
             } else {
-                print("[IOSTelematicsPage] Error: \(error)")
+                loadError = error.localizedDescription
             }
         }
 

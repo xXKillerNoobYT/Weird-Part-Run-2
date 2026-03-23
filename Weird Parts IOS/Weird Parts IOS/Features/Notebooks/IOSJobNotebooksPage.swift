@@ -78,9 +78,7 @@ struct IOSJobNotebooksPage: View {
             List(filteredNotebooks, id: \.id) { notebook in
                 notebookRow(notebook)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 

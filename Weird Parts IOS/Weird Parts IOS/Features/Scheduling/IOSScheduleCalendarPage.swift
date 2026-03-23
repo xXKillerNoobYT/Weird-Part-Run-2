@@ -16,6 +16,11 @@ struct IOSScheduleCalendarPage: View {
     @State private var selectedDate = Date()
     @State private var searchText = ""
     @State private var loadError: String?
+    private enum ActiveSheet: String, Identifiable {
+        case createEntry
+        var id: String { rawValue }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     /// The date range for the current week view.
     private var weekStartDate: Date {
@@ -39,6 +44,20 @@ struct IOSScheduleCalendarPage: View {
         }
         .navigationTitle("My Schedule")
         .searchable(text: $searchText, prompt: "Search schedule...")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .createEntry } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .createEntry:
+                CreateScheduleEntrySheet(date: weekStart, onSave: { loadData() })
+                    .environmentObject(appCore)
+            }
+        }
         .refreshable { loadData() }
         .task { loadData() }
     }
@@ -92,9 +111,7 @@ struct IOSScheduleCalendarPage: View {
             List(filteredEntries, id: \.id) { entry in
                 scheduleRow(entry)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 

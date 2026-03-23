@@ -58,9 +58,7 @@ struct IOSContractorDetailPage: View {
                 Text("W-9 document management will be available in a future update.")
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
         .navigationTitle("\(contractor.firstName) \(contractor.lastName)")
     }
 

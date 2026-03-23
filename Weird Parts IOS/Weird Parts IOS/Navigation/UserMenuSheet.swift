@@ -124,7 +124,8 @@ struct UserMenuSheet: View {
                     Button(role: .destructive) {
                         dismiss()
                         // Small delay so the sheet dismisses before the confirmation shows
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        Task {
+                            try? await Task.sleep(nanoseconds: 300_000_000)
                             showLogoutConfirm = true
                         }
                     } label: {

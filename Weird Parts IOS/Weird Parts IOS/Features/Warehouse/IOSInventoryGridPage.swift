@@ -19,7 +19,7 @@ struct IOSInventoryGridPage: View {
     @State private var selectedFilter: StockFilter?
     @State private var actionError: String?
     @AppStorage("lastInventoryLocationType") private var lastLocationType = "warehouse"
-    @AppStorage("lastInventoryLocationId") private var lastLocationId: Int64 = 1
+    @AppStorage("lastInventoryLocationId") private var lastLocationId: Int = 1
 
     private struct LocationOption: Identifiable, Hashable {
         let locationType: String
@@ -80,12 +80,12 @@ struct IOSInventoryGridPage: View {
         }
         .onChange(of: selectedLocationId) {
             lastLocationType = selectedLocationType
-            lastLocationId = selectedLocationId
+            lastLocationId = Int(selectedLocationId)
             loadData()
         }
         .task {
             selectedLocationType = lastLocationType
-            selectedLocationId = lastLocationId
+            selectedLocationId = Int64(lastLocationId)
             loadLocations()
             loadData()
         }

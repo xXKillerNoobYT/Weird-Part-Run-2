@@ -18,6 +18,8 @@ struct CreatePOSheet: View {
     @State private var supplierSearch = ""
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var loadError: String?
+    @State private var showSupplierScanner = false
 
     var body: some View {
         NavigationStack {
@@ -28,8 +30,16 @@ struct CreatePOSheet: View {
                 }
 
                 Section("Supplier") {
-                    TextField("Search suppliers...", text: $supplierSearch)
-                        .onChange(of: supplierSearch) { loadSuppliers() }
+                    HStack {
+                        TextField("Search suppliers...", text: $supplierSearch)
+                            .onChange(of: supplierSearch) { loadSuppliers() }
+                        Button {
+                            showSupplierScanner = true
+                        } label: {
+                            Image(systemName: "qrcode.viewfinder")
+                                .frame(width: 44, height: 44)
+                        }
+                    }
 
                     if suppliers.isEmpty {
                         Text("No suppliers found")
@@ -68,9 +78,7 @@ struct CreatePOSheet: View {
                 }
             }
             .navigationTitle("New Purchase Order")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -84,6 +92,15 @@ struct CreatePOSheet: View {
             .task {
                 generatePONumber()
                 loadSuppliers()
+            }
+            .sheet(isPresented: $showSupplierScanner) {
+                QRScanSheet(expectedType: .supplier) { result in
+                    if let supplierId = result.entityId, result.isFound {
+                        selectedSupplierId = supplierId
+                        supplierSearch = result.fields["name"] ?? ""
+                    }
+                }
+                .environmentObject(appCore)
             }
         }
     }
@@ -105,7 +122,7 @@ struct CreatePOSheet: View {
                 search: supplierSearch.isEmpty ? nil : supplierSearch
             )
         } catch {
-            print("[CreatePOSheet] Load suppliers error: \(error)")
+            loadError = error.localizedDescription
         }
     }
 

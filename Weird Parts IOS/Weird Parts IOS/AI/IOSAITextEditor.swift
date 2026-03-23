@@ -72,11 +72,7 @@ struct IOSAITextEditor: View {
                 iosAIControls
                     .padding(8)
             }
-            #if os(iOS)
             .background(Color(uiColor: .secondarySystemBackground))
-            #else
-            .background(Color(.secondarySystemGroupedBackground))
-            #endif
             .clipShape(RoundedRectangle(cornerRadius: 10))
 
             // Suggestion accept bar
@@ -98,7 +94,7 @@ struct IOSAITextEditor: View {
             }
         }
         .task {
-            aiAvailability = await aiService.checkAvailability()
+            aiAvailability = aiService.checkAvailability()
         }
         .sheet(isPresented: $showEnhanceSheet) {
             enhanceSheet
@@ -175,9 +171,7 @@ struct IOSAITextEditor: View {
                 }
             }
             .navigationTitle("Enhance Text")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { showEnhanceSheet = false }

@@ -17,6 +17,14 @@ struct IOSToolCheckoutsPage: View {
     @State private var searchText = ""
     @State private var showActiveOnly = true
     @State private var loadError: String?
+    private enum ActiveSheet: String, Identifiable {
+        case toolScanner
+        var id: String { rawValue }
+    }
+    @State private var activeSheet: ActiveSheet?
+    @State private var scannedToolId: Int64?
+    @State private var scannedToolName: String?
+    @State private var showCheckoutConfirm = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,6 +33,39 @@ struct IOSToolCheckoutsPage: View {
         }
         .navigationTitle("Tool Checkouts")
         .searchable(text: $searchText, prompt: "Search checkouts...")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .toolScanner } label: {
+                    Image(systemName: "qrcode.viewfinder")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .toolScanner:
+                QRScanSheet(expectedType: .tool) { result in
+                    if let toolId = result.entityId, result.isFound {
+                        scannedToolId = toolId
+                        scannedToolName = result.fields["tool_name"] ?? result.fields["name"] ?? result.code
+                        showCheckoutConfirm = true
+                    }
+                }
+                .environmentObject(appCore)
+            }
+        }
+        .alert("Tool Scanned", isPresented: $showCheckoutConfirm) {
+            Button("View in Registry") {
+                // Navigate to tools registry with this tool's name as search
+                NotificationCenter.default.post(
+                    name: .navigateToModule,
+                    object: nil,
+                    userInfo: ["moduleId": "tools", "tabId": "tools-registry"]
+                )
+            }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(scannedToolName ?? "Unknown tool")
+        }
         .refreshable { loadData() }
         .task { loadData() }
     }
@@ -92,9 +133,7 @@ struct IOSToolCheckoutsPage: View {
             List(filteredCheckouts, id: \.id) { checkout in
                 checkoutRow(checkout)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -205,7 +244,11 @@ struct IOSToolCheckoutsPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.toolsService else { return }
+        guard let service = appCore.toolsService else {
+            isLoading = false
+            loadError = "Tools service unavailable"
+            return
+        }
         isLoading = checkouts.isEmpty
         loadError = nil
         do {

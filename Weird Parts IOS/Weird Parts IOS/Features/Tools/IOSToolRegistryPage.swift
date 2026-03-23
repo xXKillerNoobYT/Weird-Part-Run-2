@@ -16,6 +16,19 @@ struct IOSToolRegistryPage: View {
     @State private var searchText = ""
     @State private var statusFilter = "all"
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case toolScanner
+        case printLabels
+
+        var id: String {
+            switch self {
+            case .toolScanner: "toolScanner"
+            case .printLabels: "printLabels"
+            }
+        }
+    }
 
     private let statusOptions = ["all", "available", "checked_out", "maintenance", "lost"]
 
@@ -26,6 +39,42 @@ struct IOSToolRegistryPage: View {
         }
         .navigationTitle("Tool Registry")
         .searchable(text: $searchText, prompt: "Search tools...")
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button { activeSheet = .printLabels } label: {
+                    Image(systemName: "printer")
+                }
+                Button { activeSheet = .toolScanner } label: {
+                    Image(systemName: "qrcode.viewfinder")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .toolScanner:
+                QRScanSheet(expectedType: .tool) { result in
+                    if result.isFound {
+                        if let toolName = result.fields["tool_name"] ?? result.fields["name"] {
+                            searchText = toolName
+                        } else {
+                            searchText = result.code
+                        }
+                    }
+                }
+                .environmentObject(appCore)
+            case .printLabels:
+                QRLabelPrintSheet(items: filteredTools.map { tool in
+                    QRLabelContent(
+                        entityType: .tool,
+                        entityId: tool.id,
+                        code: tool.serialNumber ?? tool.toolNumber,
+                        title: tool.name,
+                        subtitle: tool.toolType.replacingOccurrences(of: "_", with: " ").capitalized,
+                        detail: tool.assignedToName
+                    )
+                })
+            }
+        }
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
@@ -78,9 +127,7 @@ struct IOSToolRegistryPage: View {
             List(filteredTools, id: \.id) { tool in
                 toolRow(tool)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -187,7 +234,11 @@ struct IOSToolRegistryPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.toolsService else { return }
+        guard let service = appCore.toolsService else {
+            isLoading = false
+            loadError = "Tools service unavailable"
+            return
+        }
         isLoading = tools.isEmpty
         loadError = nil
         do {

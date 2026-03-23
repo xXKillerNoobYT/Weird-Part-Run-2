@@ -16,6 +16,11 @@ struct IOSDispatchPage: View {
     @State private var selectedDate = Date()
     @State private var searchText = ""
     @State private var loadError: String?
+    private enum ActiveSheet: String, Identifiable {
+        case createDispatch
+        var id: String { rawValue }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     private var dateString: String {
         let f = DateFormatter()
@@ -36,6 +41,20 @@ struct IOSDispatchPage: View {
         }
         .navigationTitle("Dispatch Board")
         .searchable(text: $searchText, prompt: "Search dispatches...")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .createDispatch } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .createDispatch:
+                CreateDispatchSheet(date: dateString, onSave: { loadData() })
+                    .environmentObject(appCore)
+            }
+        }
         .refreshable { loadData() }
         .task { loadData() }
     }
@@ -89,9 +108,7 @@ struct IOSDispatchPage: View {
             List(filteredDispatches, id: \.id) { dispatch in
                 dispatchRow(dispatch)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 

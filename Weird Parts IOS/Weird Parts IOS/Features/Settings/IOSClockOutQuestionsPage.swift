@@ -15,8 +15,18 @@ struct IOSClockOutQuestionsPage: View {
     @State private var isLoading = true
     @State private var questions: [ClockOutQuestion] = []
     @State private var errorMessage: String?
-    @State private var showAddSheet = false
-    @State private var editingQuestion: ClockOutQuestion?
+    private enum ActiveSheet: Identifiable {
+        case add
+        case edit(ClockOutQuestion)
+
+        var id: String {
+            switch self {
+            case .add: "add"
+            case .edit(let q): "edit-\(q.id)"
+            }
+        }
+    }
+    @State private var activeSheet: ActiveSheet?
     @State private var newQuestionText = ""
     @State private var newQuestionType = "text"
     @State private var newQuestionRequired = true
@@ -60,22 +70,25 @@ struct IOSClockOutQuestionsPage: View {
             }
         }
         .navigationTitle("Clock-Out Questions")
+        .refreshable { loadData() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     resetForm()
-                    showAddSheet = true
+                    activeSheet = .add
                 } label: {
                     Image(systemName: "plus")
                 }
             }
         }
         .task { loadData() }
-        .sheet(isPresented: $showAddSheet) {
-            questionFormSheet
-        }
-        .sheet(item: $editingQuestion) { question in
-            questionEditSheet(question)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .add:
+                questionFormSheet
+            case .edit(let question):
+                questionEditSheet(question)
+            }
         }
         .alert("Delete Question", isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) { questionToDelete = nil }
@@ -92,7 +105,7 @@ struct IOSClockOutQuestionsPage: View {
             newQuestionText = question.text
             newQuestionType = question.type
             newQuestionRequired = question.isRequired
-            editingQuestion = question
+            activeSheet = .edit(question)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Text(question.text)
@@ -162,7 +175,7 @@ struct IOSClockOutQuestionsPage: View {
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showAddSheet = false }
+                    Button("Cancel") { activeSheet = nil }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { saveNewQuestion() }
@@ -200,7 +213,7 @@ struct IOSClockOutQuestionsPage: View {
             #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { editingQuestion = nil }
+                    Button("Cancel") { activeSheet = nil }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { saveEditedQuestion(question) }
@@ -260,7 +273,7 @@ struct IOSClockOutQuestionsPage: View {
                     VALUES (?, ?, ?, ?)
                 """, arguments: [newQuestionText.trimmingCharacters(in: .whitespaces), newQuestionType, newQuestionRequired ? 1 : 0, nextOrder])
             }
-            showAddSheet = false
+            activeSheet = nil
             Task { loadData() }
         } catch {
             errorMessage = "Failed to save: \(error.localizedDescription)"
@@ -277,7 +290,7 @@ struct IOSClockOutQuestionsPage: View {
                     WHERE id = ?
                 """, arguments: [newQuestionText.trimmingCharacters(in: .whitespaces), newQuestionType, newQuestionRequired ? 1 : 0, question.id])
             }
-            editingQuestion = nil
+            activeSheet = nil
             Task { loadData() }
         } catch {
             errorMessage = "Failed to update: \(error.localizedDescription)"

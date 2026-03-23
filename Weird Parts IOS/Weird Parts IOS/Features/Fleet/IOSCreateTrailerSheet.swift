@@ -40,9 +40,7 @@ struct IOSCreateTrailerSheet: View {
                 }
             }
             .navigationTitle("New Trailer")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

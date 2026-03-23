@@ -41,9 +41,7 @@ struct IOSFuelPage: View {
             List(filteredLogs, id: \.id) { log in
                 fuelRow(log)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -106,7 +104,6 @@ struct IOSFuelPage: View {
         do {
             fuelLogs = try service.listFuelLogs()
         } catch {
-            print("[IOSFuelPage] Load error: \(error)")
             loadError = error.localizedDescription
         }
         isLoading = false

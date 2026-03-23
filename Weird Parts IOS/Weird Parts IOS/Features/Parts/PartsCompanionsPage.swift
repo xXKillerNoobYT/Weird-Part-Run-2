@@ -42,7 +42,6 @@ struct PartsCompanionsPage: View {
         case addAlternative
         case testSandbox
         case adminDashboard
-        case aiAssistant
 
         var id: String {
             switch self {
@@ -51,7 +50,6 @@ struct PartsCompanionsPage: View {
             case .addAlternative: return "addAlternative"
             case .testSandbox: return "testSandbox"
             case .adminDashboard: return "adminDashboard"
-            case .aiAssistant: return "aiAssistant"
             }
         }
     }
@@ -108,10 +106,6 @@ struct PartsCompanionsPage: View {
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 HStack(spacing: 12) {
-                    Button { activeSheet = .aiAssistant } label: {
-                        Image(systemName: "sparkles")
-                    }
-
                     if appCore.hasPermission("manage_people") {
                         Button { activeSheet = .adminDashboard } label: {
                             Image(systemName: "chart.bar.xaxis")
@@ -806,8 +800,6 @@ struct PartsCompanionsPage: View {
             CompanionSandboxSheet()
         case .adminDashboard:
             CompanionAdminDashboardSheet()
-        case .aiAssistant:
-            IOSAIAssistantPanel(displayMode: .constant(.sheet), isVisible: .constant(true))
         }
     }
 

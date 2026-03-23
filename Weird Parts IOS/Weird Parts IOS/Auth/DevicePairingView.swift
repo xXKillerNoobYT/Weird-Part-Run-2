@@ -43,8 +43,7 @@ struct DevicePairingView: View {
             // QR Scan Option
             VStack(spacing: 12) {
                 Button {
-                    // QR scanning will be implemented in Phase 16 (Sync Infrastructure)
-                    errorMessage = "QR scanning will be available once sync is configured."
+                    // Will use IOSQRScanner when sync is implemented
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: "qrcode.viewfinder")
@@ -55,6 +54,12 @@ struct DevicePairingView: View {
                     .frame(maxWidth: 300)
                 }
                 .buttonStyle(.bordered)
+                .disabled(true)
+
+                Text("QR pairing requires a shop computer running WiredPart on your network.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 40)
 
                 // Divider
                 HStack {
@@ -118,15 +123,9 @@ struct DevicePairingView: View {
                 .padding(.bottom, 24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        #if os(iOS)
         .background(Color(.systemBackground))
-        #elseif os(macOS)
-        .background(Color(.windowBackgroundColor))
-        #endif
         .navigationTitle("Pair Device")
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
-        #endif
         .navigationDestination(isPresented: $navigateToSync) {
             SyncWaitingView()
                 .environmentObject(appCore)
@@ -136,15 +135,7 @@ struct DevicePairingView: View {
     // MARK: - Actions
 
     private func attemptPairing() {
-        isConnecting = true
-        errorMessage = nil
-
-        // Pairing logic will be fully implemented in Phase 16 (Sync Infrastructure).
-        // For now, show a placeholder message.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            isConnecting = false
-            errorMessage = "Sync infrastructure is not yet configured. Please use \"Create New Business\" for now, or check back after sync is set up."
-        }
+        errorMessage = "Device pairing requires sync infrastructure. Use \"Create New Business\" to get started, or wait for a future update."
     }
 }
 

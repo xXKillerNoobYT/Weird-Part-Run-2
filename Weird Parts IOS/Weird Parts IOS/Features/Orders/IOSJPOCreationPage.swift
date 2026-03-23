@@ -30,6 +30,36 @@ struct IOSJPOCreationPage: View {
     @State private var searchText = ""
     @State private var searchResults: [Part] = []
     @State private var isSearching = false
+    @State private var recentSearches: [String] = []
+    @State private var bestMatchName: String?
+    @State private var internetHelpEnabled = false
+
+    // MARK: - Suggestions
+
+    @State private var highlightedCartPartId: Int64?
+    @State private var lastAddedPartId: Int64?
+    @State private var companionSuggestions: [PartsService.CompanionSuggestion] = []
+    @State private var aiSuggestions: [AISuggestion] = []
+
+    struct AISuggestion: Identifiable {
+        let id = UUID()
+        let partName: String
+        let reason: String
+        let suggestedQty: Int
+        let partId: Int64?
+    }
+
+    private var suggestionContextPartId: Int64? {
+        highlightedCartPartId ?? lastAddedPartId ?? cartItems.first?.partId
+    }
+
+    // MARK: - Confirm Dialog
+
+    @State private var confirmingPart: Part?
+    @State private var confirmQty: Int = 1
+    @State private var confirmOriginalQty: Int = 1
+    @State private var confirmSource = ""  // "companion" or "ai"
+    @State private var showConfirmDialog = false
 
     // MARK: - State
 
@@ -37,6 +67,11 @@ struct IOSJPOCreationPage: View {
     @State private var isSubmitting = false
     @State private var submitError: String?
     @State private var showSuggestionsOnPhone = false
+    @State private var showJobVerification = false
+    @State private var showSuccessToast = false
+    @State private var successMessage = ""
+
+    private let aiService = FoundationModelsService()
 
     // MARK: - Model
 
@@ -106,9 +141,15 @@ struct IOSJPOCreationPage: View {
                         .disabled(isSubmitting)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Submit") { submitOrder() }
-                        .disabled(cartItems.isEmpty || selectedJobId == nil || isSubmitting)
-                        .fontWeight(.semibold)
+                    Button { submitOrder() } label: {
+                        if isSubmitting {
+                            ProgressView()
+                        } else {
+                            Text("Submit")
+                                .fontWeight(.semibold)
+                        }
+                    }
+                    .disabled(cartItems.isEmpty || selectedJobId == nil || isSubmitting)
                 }
             }
             .sheet(item: $activeSheet) { sheet in
@@ -128,7 +169,61 @@ struct IOSJPOCreationPage: View {
             } message: {
                 Text(submitError ?? "")
             }
+            .alert(
+                "Add \(confirmingPart?.name ?? "Part")?",
+                isPresented: $showConfirmDialog
+            ) {
+                TextField("Quantity", value: $confirmQty, format: .number)
+                    .keyboardType(.numberPad)
+                Button("Cancel", role: .cancel) { }
+                Button("Add to Cart") {
+                    if let part = confirmingPart {
+                        addToCart(part: part, quantity: confirmQty)
+                        recordSuggestionFeedback(
+                            partId: part.id ?? 0,
+                            suggestedQty: confirmOriginalQty,
+                            acceptedQty: confirmQty,
+                            source: confirmSource
+                        )
+                    }
+                }
+            } message: {
+                let stock = getShopStock(partId: confirmingPart?.id ?? 0)
+                Text("Suggested: \(confirmOriginalQty). Shop stock: \(stock). Adjust if needed.")
+            }
+            .alert("Different Job", isPresented: $showJobVerification) {
+                Button("Yes, for \(selectedJobName)") { }
+                Button("No, use clocked-in job", role: .cancel) {
+                    if let cId = clockedInJobId,
+                       let job = jobs.first(where: { $0.id == cId }) {
+                        selectedJobId = cId
+                        selectedJobName = job.jobName
+                    }
+                }
+            } message: {
+                Text("You're clocked in at a different job. Create this order for \(selectedJobName)?")
+            }
+            .overlay {
+                if showSuccessToast {
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                            Text(successMessage)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                        }
+                        .padding()
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .padding(.bottom, 32)
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .allowsHitTesting(false)
+                }
+            }
             .task { await loadJobContext() }
+            .onChange(of: cartItems.count) { loadSuggestions() }
         }
     }
 
@@ -166,6 +261,10 @@ struct IOSJPOCreationPage: View {
                     if let id = selectedJobId,
                        let job = jobs.first(where: { $0.id == id }) {
                         selectedJobName = job.jobName
+                        // Warn if user is clocked in at a different job
+                        if let cId = clockedInJobId, cId != id {
+                            showJobVerification = true
+                        }
                     }
                 }
             }
@@ -196,6 +295,15 @@ struct IOSJPOCreationPage: View {
                 Text("Search")
                     .font(.headline)
                 Spacer()
+
+                Toggle(isOn: $internetHelpEnabled) {
+                    Label("Internet", systemImage: "globe")
+                        .font(.caption2)
+                }
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .fixedSize()
+
                 Button { activeSheet = .qrScanner } label: {
                     Label("Scan", systemImage: "qrcode.viewfinder")
                         .font(.caption)
@@ -212,6 +320,7 @@ struct IOSJPOCreationPage: View {
                     Button {
                         searchText = ""
                         searchResults = []
+                        bestMatchName = nil
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
@@ -238,7 +347,30 @@ struct IOSJPOCreationPage: View {
                 }
             }
 
-            if searchText.isEmpty {
+            // Recent searches
+            if searchText.isEmpty && !recentSearches.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Recent")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    ForEach(recentSearches, id: \.self) { query in
+                        Button {
+                            searchText = query
+                            searchParts()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "clock")
+                                    .font(.caption2)
+                                Text(query)
+                                    .font(.caption)
+                            }
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            if searchText.isEmpty && recentSearches.isEmpty {
                 Text("Type at least 2 characters to search")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
@@ -248,15 +380,27 @@ struct IOSJPOCreationPage: View {
     }
 
     private func searchResultRow(_ part: Part) -> some View {
-        HStack(spacing: 8) {
+        let isBestMatch = bestMatchName != nil &&
+            part.name.lowercased().contains(bestMatchName!.lowercased())
+
+        return HStack(spacing: 8) {
+            // AI best match indicator
+            if isBestMatch {
+                Image(systemName: "bolt.fill")
+                    .foregroundStyle(.yellow)
+                    .font(.caption)
+            }
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(part.name)
                     .font(.subheadline)
+                    .fontWeight(isBestMatch ? .semibold : .regular)
                     .lineLimit(1)
                 HStack(spacing: 4) {
                     if let code = part.code, !code.isEmpty {
                         Text(code)
                             .font(.caption2)
+                            .monospaced()
                             .foregroundStyle(.secondary)
                     }
                     stockIndicator(for: part)
@@ -265,8 +409,8 @@ struct IOSJPOCreationPage: View {
 
             Spacer()
 
-            if let price = part.companyCostPrice as Double?, price > 0 {
-                Text(String(format: "$%.2f", price))
+            if part.companyCostPrice > 0 {
+                Text(String(format: "$%.2f", part.companyCostPrice))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -316,6 +460,16 @@ struct IOSJPOCreationPage: View {
             } else {
                 ForEach(Array(cartItems.enumerated()), id: \.element.id) { index, item in
                     cartRow(index: index)
+                        .onTapGesture {
+                            highlightedCartPartId = item.partId
+                            loadSuggestions()
+                        }
+                        .background(
+                            highlightedCartPartId == item.partId
+                                ? Color.accentColor.opacity(0.08)
+                                : Color.clear
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
 
                 Divider()
@@ -433,23 +587,126 @@ struct IOSJPOCreationPage: View {
 
     /// iPad: full panel. iPhone: collapsible section.
     private var suggestionsPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Suggestions")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Suggestions")
+                    .font(.headline)
+                Spacer()
+                if let contextId = suggestionContextPartId,
+                   let name = cartItems.first(where: { $0.partId == contextId })?.partName {
+                    Text("for: \(name)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
 
-            Text("Companion rules and AI suggestions will appear here.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            // Placeholder — 30C fills this in
             if cartItems.isEmpty {
                 Label("Add a part to see suggestions", systemImage: "lightbulb")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                     .padding(.vertical, 16)
+            } else {
+                // Top 5: Companion Rules
+                if !companionSuggestions.isEmpty {
+                    Label("Companion Rules", systemImage: "link")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    ForEach(companionSuggestions, id: \.partId) { suggestion in
+                        suggestionRow(
+                            icon: "link",
+                            partName: suggestion.partName,
+                            detail: suggestion.pattern,
+                            subDetail: "\(suggestion.points) pts · \(Int(suggestion.confidence))% conf",
+                            suggestedQty: suggestion.suggestedQty,
+                            partId: suggestion.partId
+                        )
+                    }
+                }
+
+                // Bottom 3: AI Picks
+                if !aiSuggestions.isEmpty {
+                    Label("AI Picks", systemImage: "sparkles")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    ForEach(aiSuggestions) { suggestion in
+                        suggestionRow(
+                            icon: "sparkles",
+                            partName: suggestion.partName,
+                            detail: suggestion.reason,
+                            subDetail: nil,
+                            suggestedQty: suggestion.suggestedQty,
+                            partId: suggestion.partId
+                        )
+                    }
+                }
+
+                if companionSuggestions.isEmpty && aiSuggestions.isEmpty {
+                    Text("No suggestions available for this part")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
         .padding(sizeClass == .regular ? 12 : 0)
+    }
+
+    @ViewBuilder
+    private func suggestionRow(icon: String, partName: String, detail: String,
+                               subDetail: String?, suggestedQty: Int, partId: Int64?) -> some View {
+        let isInCart = partId != nil && cartItems.contains(where: { $0.partId == partId })
+
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(partName)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                if let sub = subDetail {
+                    Text(sub)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            Spacer()
+
+            if isInCart {
+                Label("In cart", systemImage: "checkmark.circle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+            } else if let pid = partId {
+                Button {
+                    prepareSuggestionConfirm(
+                        partId: pid,
+                        suggestedQty: suggestedQty,
+                        source: icon == "link" ? "companion" : "ai"
+                    )
+                } label: {
+                    Text("+ Add \(suggestedQty)")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+            } else {
+                Text("Not in catalog")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 2)
     }
 
     /// iPhone: collapsible DisclosureGroup
@@ -461,6 +718,11 @@ struct IOSJPOCreationPage: View {
                 Image(systemName: "lightbulb")
                 Text("Suggestions")
                     .font(.headline)
+                if !companionSuggestions.isEmpty || !aiSuggestions.isEmpty {
+                    Text("(\(companionSuggestions.count + aiSuggestions.count))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -473,6 +735,7 @@ struct IOSJPOCreationPage: View {
         // Already in cart — increment
         if let idx = cartItems.firstIndex(where: { $0.partId == partId }) {
             cartItems[idx].quantity += quantity
+            lastAddedPartId = partId
             return
         }
 
@@ -491,20 +754,54 @@ struct IOSJPOCreationPage: View {
             shopStock: stock,
             stockStatus: status
         ))
+        lastAddedPartId = partId
     }
 
-    private func addPartById(_ partId: Int64) {
-        guard let service = appCore.partsService else { return }
+    private func addPartById(_ partId: Int64, quantity: Int = 1) {
+        guard let service = appCore.partsService else {
+            submitError = "Parts service not available"
+            return
+        }
         do {
-            if let part = try service.getPartById(partId) {
-                addToCart(part: part)
-            }
-        } catch { }
+            let details = try service.getPart(id: partId)
+            addToCart(part: details.part, quantity: quantity)
+        } catch {
+            submitError = error.localizedDescription
+        }
     }
 
     private func alreadyInCart(partId: Int64?) -> Bool {
         guard let id = partId else { return false }
         return cartItems.contains { $0.partId == id }
+    }
+
+    // MARK: - Suggestion Confirm + Feedback
+
+    private func prepareSuggestionConfirm(partId: Int64, suggestedQty: Int, source: String) {
+        guard let service = appCore.partsService,
+              let details = try? service.getPart(id: partId) else { return }
+        confirmingPart = details.part
+        confirmQty = suggestedQty
+        confirmOriginalQty = suggestedQty
+        confirmSource = source
+        showConfirmDialog = true
+    }
+
+    private func recordSuggestionFeedback(partId: Int64, suggestedQty: Int, acceptedQty: Int, source: String) {
+        guard let contextPartId = suggestionContextPartId,
+              let service = appCore.partsService else { return }
+        do {
+            try service.recordCompanionFeedback(
+                sourcePartId: contextPartId,
+                targetPartId: partId,
+                suggestedQty: suggestedQty,
+                acceptedQty: acceptedQty,
+                source: source,
+                userId: appCore.currentUser?.id
+            )
+        } catch {
+            // Non-critical — silently ignore feedback recording failures
+        }
     }
 
     // MARK: - Stock
@@ -524,26 +821,83 @@ struct IOSJPOCreationPage: View {
     private func searchParts() {
         guard let service = appCore.partsService, searchText.count >= 2 else {
             searchResults = []
+            bestMatchName = nil
             return
         }
         isSearching = true
+        bestMatchName = nil
+
+        // Standard search
         do {
             searchResults = try service.searchParts(query: searchText, limit: 20)
         } catch {
             searchResults = []
         }
         isSearching = false
+
+        // Track recent search
+        let trimmed = searchText.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty && !recentSearches.contains(trimmed) {
+            recentSearches.insert(trimmed, at: 0)
+            if recentSearches.count > 5 { recentSearches.removeLast() }
+        }
+
+        // AI re-ranking (if available and results exist)
+        if !searchResults.isEmpty && aiService.checkAvailability() == .available {
+            let currentQuery = searchText
+            let partNames = searchResults.prefix(10).map(\.name).joined(separator: ", ")
+            let context = buildSearchContext()
+            Task {
+                let result = await aiService.generatePreFill(
+                    fieldType: "best_match_part_name",
+                    contextData: [
+                        "search_query": currentQuery,
+                        "context": context,
+                        "available_parts": partNames,
+                        "instructions": "Return ONLY the exact part name of the most likely match. No explanation."
+                    ]
+                )
+                if result.success, let text = result.text {
+                    await MainActor.run {
+                        bestMatchName = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                }
+            }
+        }
+    }
+
+    private func buildSearchContext() -> String {
+        var context = "User is building a parts order."
+        if !cartItems.isEmpty {
+            let cartNames = cartItems.map(\.partName).joined(separator: ", ")
+            context += " Cart contains: \(cartNames)."
+        }
+        if !recentSearches.isEmpty {
+            context += " Recent searches: \(recentSearches.joined(separator: ", "))."
+        }
+        if !selectedJobName.isEmpty {
+            context += " Job: \(selectedJobName)."
+        }
+        if internetHelpEnabled {
+            context += " Internet help is enabled for part identification."
+        }
+        return context
     }
 
     // MARK: - Job Loading
 
     private func loadJobContext() async {
-        guard let jobsService = appCore.jobsService else { return }
+        guard let jobsService = appCore.jobsService else {
+            submitError = "Jobs service not available"
+            return
+        }
 
         // Load active jobs
         do {
             jobs = try jobsService.listJobs(status: "active", limit: 100)
-        } catch { }
+        } catch {
+            submitError = error.localizedDescription
+        }
 
         // Check if user is clocked in
         guard let userId = appCore.currentUser?.id else { return }
@@ -553,44 +907,110 @@ struct IOSJPOCreationPage: View {
                 selectedJobId = activeEntry.jobId
                 selectedJobName = activeEntry.jobName
             }
-        } catch { }
+        } catch {
+            submitError = error.localizedDescription
+        }
+    }
+
+    // MARK: - Suggestions Loading
+
+    private func loadSuggestions() {
+        guard let contextPartId = suggestionContextPartId,
+              let service = appCore.partsService else {
+            companionSuggestions = []
+            aiSuggestions = []
+            return
+        }
+
+        // Top 5: Companion Rules
+        do {
+            companionSuggestions = try service.getCompanionSuggestionsForPart(partId: contextPartId, limit: 5)
+        } catch {
+            companionSuggestions = []
+        }
+
+        // Bottom 3: AI Picks
+        guard aiService.checkAvailability() == .available else { return }
+
+        let cartNames = cartItems.map(\.partName).joined(separator: ", ")
+        let contextPart = cartItems.first(where: { $0.partId == contextPartId })?.partName ?? ""
+
+        Task {
+            let result = await aiService.generatePreFill(
+                fieldType: "parts_suggestions",
+                contextData: [
+                    "cart_contents": cartNames,
+                    "context_part": contextPart,
+                    "job": selectedJobName,
+                    "instructions": """
+                        Suggest 3 additional construction/electrical parts that are NOT in the cart.
+                        For each, return: partName|reason|qty (one per line, no numbering).
+                        """
+                ]
+            )
+            if result.success, let text = result.text {
+                let lines = text.components(separatedBy: "\n").filter { !$0.isEmpty }
+                let suggestions: [AISuggestion] = lines.prefix(3).compactMap { line in
+                    let parts = line.components(separatedBy: "|")
+                    guard parts.count >= 3 else { return nil }
+                    let name = parts[0].trimmingCharacters(in: .whitespaces)
+                    let reason = parts[1].trimmingCharacters(in: .whitespaces)
+                    let qty = Int(parts[2].trimmingCharacters(in: .whitespaces)) ?? 1
+                    // Try to match to a real part in catalog
+                    let matchedPart = try? service.searchParts(query: name, limit: 1).first
+                    return AISuggestion(
+                        partName: matchedPart?.name ?? name,
+                        reason: reason,
+                        suggestedQty: qty,
+                        partId: matchedPart?.id
+                    )
+                }
+                await MainActor.run {
+                    aiSuggestions = suggestions
+                }
+            }
+        }
     }
 
     // MARK: - Submit
 
     private func submitOrder() {
         guard let service = appCore.ordersService,
-              let jobId = selectedJobId,
+              let jobId = selectedJobId ?? clockedInJobId,
               let userId = appCore.currentUser?.id else {
-            submitError = "Cannot create order — missing job or user"
+            submitError = "Missing job or user info"
             return
         }
         isSubmitting = true
         submitError = nil
 
         do {
-            // Create the JPO
-            let jpoId = try service.createJPO(
+            let lines = cartItems.map { (partId: $0.partId, quantity: $0.quantity) }
+            let jpoId = try service.createJPOWithLines(
                 jobId: jobId,
                 requestedBy: userId,
                 priority: priority,
-                notes: notes.isEmpty ? nil : notes
+                deliveryOption: deliveryOption,
+                notes: notes.isEmpty ? nil : notes,
+                lines: lines
             )
 
-            // Add each cart item as a line
-            for item in cartItems {
-                try service.addJPOLine(
-                    jpoId: jpoId,
-                    partId: item.partId,
-                    quantity: item.quantity,
-                    notes: nil
-                )
-            }
+            // Show success toast with routing summary
+            let transfers = cartItems.filter { $0.stockStatus == .inStock }.count
+            let pending = cartItems.count - transfers
+            successMessage = "JPO #\(jpoId): \(transfers) auto-transfer, \(pending) pending approval"
+            isSubmitting = false
 
-            dismiss()
+            withAnimation {
+                showSuccessToast = true
+            }
+            Task {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                dismiss()
+            }
         } catch {
             submitError = error.localizedDescription
+            isSubmitting = false
         }
-        isSubmitting = false
     }
 }

@@ -45,17 +45,13 @@ struct IOSSpendingDashboardPage: View {
                 }
                 .padding(.top, 8)
 
-                // Note about charts
-                VStack(spacing: 8) {
-                    Image(systemName: "chart.bar.fill")
-                        .font(.title2)
-                        .foregroundStyle(.secondary)
-                    Text("Charts will be available in Phase 15")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 32)
+                // Charts placeholder
+                EmptyStateView(
+                    icon: "chart.bar",
+                    title: "No Spending Data",
+                    message: "Spending charts will appear once orders have cost data."
+                )
+                .padding(.vertical, 16)
             }
             .padding(.vertical)
         }

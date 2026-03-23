@@ -14,6 +14,11 @@ struct IOSHatsPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var loadError: String?
+    private enum ActiveSheet: String, Identifiable {
+        case addHat
+        var id: String { rawValue }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     var body: some View {
         hatList
@@ -22,6 +27,20 @@ struct IOSHatsPage: View {
             .onChange(of: searchText) { /* local filter only */ }
             .refreshable { loadData() }
             .task { loadData() }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .addHat } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .addHat:
+                    AddHatSheet { loadData() }
+                        .environmentObject(appCore)
+                }
+            }
     }
 
     // MARK: - Hat List
@@ -42,10 +61,15 @@ struct IOSHatsPage: View {
         } else {
             List(filteredHats, id: \.id) { hat in
                 hatRow(hat)
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            deleteHat(hat)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -103,8 +127,22 @@ struct IOSHatsPage: View {
 
     // MARK: - Data Loading
 
-    private func loadData() {
+    private func deleteHat(_ hat: PeopleService.HatListItem) {
         guard let service = appCore.peopleService else { return }
+        do {
+            try service.deleteHat(id: hat.id)
+            loadData()
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
+
+    private func loadData() {
+        guard let service = appCore.peopleService else {
+            isLoading = false
+            loadError = "People service unavailable"
+            return
+        }
         isLoading = hats.isEmpty
         loadError = nil
         do {
@@ -113,5 +151,65 @@ struct IOSHatsPage: View {
             loadError = error.localizedDescription
         }
         isLoading = false
+    }
+}
+
+// MARK: - Add Hat Sheet
+
+private struct AddHatSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let onSave: () -> Void
+
+    @State private var hatName = ""
+    @State private var hatDescription = ""
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Required") {
+                    TextField("Hat Name", text: $hatName)
+                }
+                Section("Optional") {
+                    TextField("Description", text: $hatDescription, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+                if let error = errorMessage {
+                    Section {
+                        Text(error).foregroundStyle(.red).font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Add Hat")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(hatName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        guard let service = appCore.peopleService else {
+            errorMessage = "People service unavailable"
+            return
+        }
+        do {
+            try service.createHat(
+                name: hatName.trimmingCharacters(in: .whitespaces),
+                description: hatDescription.isEmpty ? nil : hatDescription
+            )
+            onSave()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }

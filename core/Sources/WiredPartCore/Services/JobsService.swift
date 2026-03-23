@@ -615,6 +615,45 @@ public final class JobsService: Sendable {
         return JobStats(active: active, completed: completed, total: total)
     }
 
+    /// Get jobs linked to a specific customer via the `job_customers` join table.
+    public func getJobsForCustomer(customerId: Int64) throws -> [JobListItem] {
+        do {
+            return try db.writer.read { dbConn -> [JobListItem] in
+                let rows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT j.id, j.job_number, j.job_name, j.customer_name,
+                               j.status, j.priority, j.job_type, j.start_date, j.due_date,
+                               COALESCE((SELECT COUNT(*) FROM job_team_members jtm
+                                         WHERE jtm.job_id = j.id AND jtm.deleted_at IS NULL), 0) AS team_count
+                        FROM jobs j
+                        INNER JOIN job_customers jc ON jc.job_id = j.id AND jc.deleted_at IS NULL
+                        WHERE jc.customer_id = ? AND j.deleted_at IS NULL
+                        ORDER BY j.created_at DESC
+                        """,
+                    arguments: [customerId]
+                )
+                return rows.map { row in
+                    JobListItem(
+                        id: row["id"] ?? 0,
+                        jobNumber: row["job_number"] ?? "",
+                        jobName: row["job_name"] ?? "",
+                        customerName: row["customer_name"] as String?,
+                        status: row["status"] ?? "active",
+                        priority: row["priority"] ?? "normal",
+                        jobType: row["job_type"] ?? "service",
+                        teamCount: row["team_count"] ?? 0,
+                        startDate: row["start_date"] as String?,
+                        dueDate: row["due_date"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     // =========================================================================
     // MARK: - 2. Labor / Clock In-Out
     // =========================================================================
@@ -1375,6 +1414,68 @@ public final class JobsService: Sendable {
     }
 
     // =========================================================================
+    // MARK: - 10. Active Jobs for Clock Page
+    // =========================================================================
+
+    /// A lightweight job row for the clock-in GPS-sorted picker.
+    public struct ClockJobRow: Sendable, Identifiable {
+        public let id: Int64
+        public let jobName: String
+        public let jobNumber: String
+        public let address: String?
+        public let latitude: Double?
+        public let longitude: Double?
+        public let status: String
+
+        public init(
+            id: Int64, jobName: String, jobNumber: String,
+            address: String?, latitude: Double?, longitude: Double?, status: String
+        ) {
+            self.id = id
+            self.jobName = jobName
+            self.jobNumber = jobNumber
+            self.address = address
+            self.latitude = latitude
+            self.longitude = longitude
+            self.status = status
+        }
+    }
+
+    /// List active/in-progress jobs for the clock-in picker.
+    /// Returns lightweight rows with address and GPS coordinates.
+    /// Gracefully returns an empty array if the table or columns are missing.
+    public func listActiveJobsForClock() throws -> [ClockJobRow] {
+        do {
+            return try db.writer.read { dbConn -> [ClockJobRow] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT id, job_name, job_number,
+                           COALESCE(address_line1, '') ||
+                               CASE WHEN city IS NOT NULL AND city != ''
+                                    THEN ', ' || city ELSE '' END AS full_address,
+                           gps_lat, gps_lng, status
+                    FROM jobs
+                    WHERE status IN ('active', 'in_progress') AND deleted_at IS NULL
+                    ORDER BY job_name ASC
+                    """)
+                return rows.map { row in
+                    ClockJobRow(
+                        id: row["id"] ?? 0,
+                        jobName: row["job_name"] ?? "",
+                        jobNumber: row["job_number"] ?? "",
+                        address: row["full_address"] as String?,
+                        latitude: row["gps_lat"] as Double?,
+                        longitude: row["gps_lng"] as Double?,
+                        status: row["status"] ?? ""
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) || isColumnNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    // =========================================================================
     // MARK: - Internal Helpers
     // =========================================================================
 
@@ -1408,5 +1509,11 @@ public final class JobsService: Sendable {
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
         return message.contains("no such table")
+    }
+
+    /// Detect whether a GRDB/SQLite error indicates a missing column.
+    private func isColumnNotFoundError(_ error: Error) -> Bool {
+        let message = String(describing: error)
+        return message.contains("no such column")
     }
 }

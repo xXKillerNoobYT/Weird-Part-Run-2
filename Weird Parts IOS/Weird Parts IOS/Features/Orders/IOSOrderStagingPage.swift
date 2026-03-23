@@ -329,7 +329,9 @@ struct IOSOrderStagingPage: View {
         guard let jobsService = appCore.jobsService else { return }
         do {
             jobs = try jobsService.listJobs(status: "active", limit: 100)
-        } catch { }
+        } catch {
+            loadError = error.localizedDescription
+        }
 
         // Auto-select if user is clocked into a job
         if let userId = appCore.currentUser?.id {

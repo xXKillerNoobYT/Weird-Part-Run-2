@@ -45,6 +45,7 @@ struct PricingTierSetSheet: View {
 
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var loadError: String?
 
     enum FlowStep {
         case selectLevel
@@ -261,7 +262,7 @@ struct PricingTierSetSheet: View {
                     .fontWeight(.medium)
             }
 
-            Section("Sample of Affected Parts (\(previewParts.count))") {
+            Section {
                 ForEach(previewParts, id: \.partId) { part in
                     HStack {
                         Text(part.partName)
@@ -280,6 +281,8 @@ struct PricingTierSetSheet: View {
                     }
                     .frame(minHeight: 40)
                 }
+            } header: {
+                Text("Sample of Affected Parts (\(previewParts.count))")
             } footer: {
                 Text("This is a random sample for preview only. The actual price will apply to ALL parts at this level without an existing override.")
                     .font(.caption2)
@@ -514,7 +517,7 @@ struct PricingTierSetSheet: View {
                 brands = results.map(\.brand)
             }
         } catch {
-            print("[PricingTierSetSheet] Load error: \(error)")
+            loadError = error.localizedDescription
         }
     }
 

@@ -13,7 +13,7 @@ struct IOSToolsRouter: View {
         case "tools-dashboard": IOSToolsDashboardPage()
         case "tools-admin": IOSToolAdminPage()
         case "tools-maintenance": IOSToolMaintenancePage()
-        default: Text("Unknown tools page: \(tabId)").foregroundStyle(.secondary)
+        default: ErrorStateView(message: "Unknown tools page: \(tabId)") { }
         }
     }
 }

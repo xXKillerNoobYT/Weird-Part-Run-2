@@ -90,7 +90,8 @@ public actor FoundationModelsService {
     // MARK: - Availability
 
     /// Check whether the on-device AI model is available.
-    public func checkAvailability() -> AIAvailability {
+    /// This is nonisolated because it only reads immutable system state.
+    public nonisolated func checkAvailability() -> AIAvailability {
         #if canImport(FoundationModels)
         if #available(macOS 26.0, iOS 26.0, *) {
             let model = SystemLanguageModel.default
@@ -115,7 +116,7 @@ public actor FoundationModelsService {
     }
 
     /// Convenience: returns true only when the model is fully available.
-    public func isAvailable() -> Bool {
+    public nonisolated func isAvailable() -> Bool {
         checkAvailability() == .available
     }
 
@@ -296,6 +297,11 @@ public actor FoundationModelsService {
                     SearchContactsTool(db: db, permissions: permissions),
                     SearchJobsTool(db: db, permissions: permissions),
                     GetSupplierInfoTool(db: db, permissions: permissions),
+                    ListCompanionRulesTool(db: db, permissions: permissions),
+                    GetActiveCompanionPollsTool(db: db, permissions: permissions),
+                    ExplainCoOccurrenceTool(db: db, permissions: permissions),
+                    GetVotingSummaryTool(db: db, permissions: permissions),
+                    GetForecastDataTool(db: db, permissions: permissions),
                 ]
 
                 let chatInstructions = domainInstructions + "\n\n" + """

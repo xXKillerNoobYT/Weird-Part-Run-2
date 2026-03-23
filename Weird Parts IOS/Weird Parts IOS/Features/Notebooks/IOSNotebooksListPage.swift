@@ -16,6 +16,7 @@ struct IOSNotebooksListPage: View {
     @State private var searchText = ""
     @State private var typeFilter = "all"
     @State private var loadError: String?
+    @State private var showCreateNotebook = false
 
     private let typeOptions = ["all", "general", "job", "daily_report", "checklist"]
 
@@ -26,6 +27,17 @@ struct IOSNotebooksListPage: View {
         }
         .navigationTitle("Notebooks")
         .searchable(text: $searchText, prompt: "Search notebooks...")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { showCreateNotebook = true } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(isPresented: $showCreateNotebook) {
+            CreateNotebookSheet(onSave: { loadData() })
+                .environmentObject(appCore)
+        }
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
@@ -78,9 +90,7 @@ struct IOSNotebooksListPage: View {
             List(filteredNotebooks, id: \.id) { notebook in
                 notebookRow(notebook)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 

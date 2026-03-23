@@ -41,9 +41,7 @@ struct IOSMileagePage: View {
             List(filteredLogs, id: \.id) { log in
                 mileageRow(log)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -104,7 +102,6 @@ struct IOSMileagePage: View {
         do {
             mileageLogs = try service.listMileageLogs()
         } catch {
-            print("[IOSMileagePage] Load error: \(error)")
             loadError = error.localizedDescription
         }
         isLoading = false

@@ -167,7 +167,11 @@ struct IOSSpendingPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.reportsService else { return }
+        guard let service = appCore.reportsService else {
+            isLoading = false
+            loadError = "Reports service unavailable"
+            return
+        }
         isLoading = summary == nil
         loadError = nil
         do {

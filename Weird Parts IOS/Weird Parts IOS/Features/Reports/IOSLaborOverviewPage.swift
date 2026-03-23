@@ -71,9 +71,7 @@ struct IOSLaborOverviewPage: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     private func statRow(_ label: String, _ value: String, icon: String, color: Color) -> some View {
@@ -119,7 +117,6 @@ struct IOSLaborOverviewPage: View {
             uniqueWorkers = timesheetRows.count
         } catch {
             loadError = "Failed to load labor data: \(error.localizedDescription)"
-            print("[IOSLaborOverviewPage] Load error: \(error)")
         }
         isLoading = false
     }

@@ -25,6 +25,13 @@ struct DashboardView: View {
     // KPI detail sheet
     @State private var activeKPIDetail: KPIDetailType?
 
+    // Clock status
+    @State private var isCurrentlyClockedIn = false
+    @State private var clockedInJobName: String?
+    @State private var clockedInJobNumber: String?
+    @State private var clockInTime: Date?
+    @State private var clockDurationText: String = "0m"
+
     // Dashboard sub-page navigation
     enum DashboardDestination: Hashable {
         case scanner
@@ -34,8 +41,10 @@ struct DashboardView: View {
 
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var showHelp = false
 
     private let refreshTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
+    private let clockTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     var body: some View {
         NavigationStack {
@@ -43,6 +52,9 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: DS.Space.xl) {
                     // Greeting
                     greeting
+                        .padding(.horizontal, DS.Space.lg)
+
+                    clockStatusBanner
                         .padding(.horizontal, DS.Space.lg)
 
                     if isLoading {
@@ -65,6 +77,26 @@ struct DashboardView: View {
             .task { await loadData() }
             .onReceive(refreshTimer) { _ in
                 Task { await loadData() }
+            }
+            .onReceive(clockTimer) { _ in
+                updateClockDuration()
+            }
+            .toolbar {
+                ToolbarItem(placement: .secondaryAction) {
+                    Button { showHelp = true } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
+            }
+            .sheet(isPresented: $showHelp) {
+                PageHelpSheet(
+                    title: "Dashboard Help",
+                    sections: [
+                        ("Overview", "Your daily command center. See clock status, KPI stats, charts, alerts, and quick actions all in one place."),
+                        ("KPI Cards", "Tap any KPI card to see detailed breakdowns. Cards show part types, total stock, active jobs, pending orders, and low stock warnings."),
+                        ("Quick Actions", "Use the quick action buttons at the bottom to scan QR codes, clock in/out, view the daily report, move stock, or create new orders.")
+                    ]
+                )
             }
             .sheet(item: $activeKPIDetail) { detail in
                 KPIDetailSheet(type: detail)
@@ -111,6 +143,94 @@ struct DashboardView: View {
         let formatter = DateFormatter()
         formatter.dateStyle = .full
         return formatter.string(from: Date())
+    }
+
+    // MARK: - Clock Status Banner
+
+    @ViewBuilder
+    private var clockStatusBanner: some View {
+        NavigationLink(value: DashboardDestination.clock) {
+            HStack(spacing: DS.Space.md) {
+                // Status dot
+                Circle()
+                    .fill(isCurrentlyClockedIn ? Color.green : Color.gray)
+                    .frame(width: 10, height: 10)
+
+                if isCurrentlyClockedIn {
+                    VStack(alignment: .leading, spacing: DS.Space.xxxs) {
+                        Text("Clocked In")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.green)
+
+                        if let jobName = clockedInJobName {
+                            Text(jobName)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                        }
+                    }
+
+                    Spacer()
+
+                    // Live duration
+                    Text(clockDurationText)
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .monospacedDigit()
+                        .foregroundStyle(.green)
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                } else {
+                    Text("Not clocked in")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+
+                    Text("Clock In")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color.accentColor)
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(DS.Space.md)
+            .background(
+                RoundedRectangle(cornerRadius: DS.Radius.md)
+                    .fill(isCurrentlyClockedIn
+                        ? Color.green.opacity(0.08)
+                        : Color(.secondarySystemGroupedBackground))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.Radius.md)
+                    .stroke(isCurrentlyClockedIn ? Color.green.opacity(0.2) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Duration Update
+
+    private func updateClockDuration() {
+        guard let startTime = clockInTime else {
+            clockDurationText = "0m"
+            return
+        }
+        let elapsed = Date().timeIntervalSince(startTime)
+        let hours = Int(elapsed) / 3600
+        let minutes = (Int(elapsed) % 3600) / 60
+        if hours > 0 {
+            clockDurationText = "\(hours)h \(minutes)m"
+        } else {
+            clockDurationText = "\(minutes)m"
+        }
     }
 
     private struct DashboardChartData: Sendable {
@@ -307,6 +427,7 @@ struct DashboardView: View {
             }
 
             let cutoffDate = dashboardDateString(daysFromNow: 30)
+            let currentUserId = appCore.currentUser?.id
 
             let result = try await db.writer.read { dbConnection -> DashboardLoadResult in
                 // KPI counts
@@ -381,10 +502,35 @@ struct DashboardView: View {
                     return nil
                 }
 
+                // Clock status for current user
+                var clockedIn = false
+                var clockJobName: String?
+                var clockJobNumber: String?
+                var clockInTimestamp: String?
+
+                if let userId = currentUserId {
+                    if let clockRow = try Row.fetchOne(dbConnection, sql: """
+                        SELECT le.clock_in, j.job_name, j.job_number
+                        FROM labor_entries le
+                        LEFT JOIN jobs j ON j.id = le.job_id
+                        WHERE le.user_id = ? AND le.clock_out IS NULL AND le.deleted_at IS NULL
+                        ORDER BY le.clock_in DESC LIMIT 1
+                        """, arguments: [userId]) {
+                        clockedIn = true
+                        clockJobName = clockRow["job_name"] as String?
+                        clockJobNumber = clockRow["job_number"] as String?
+                        clockInTimestamp = clockRow["clock_in"] as String?
+                    }
+                }
+
                 return DashboardLoadResult(
                     stats: newStats,
                     certAlerts: certs,
-                    vehicleAlerts: vAlerts
+                    vehicleAlerts: vAlerts,
+                    isClockedIn: clockedIn,
+                    clockJobName: clockJobName,
+                    clockJobNumber: clockJobNumber,
+                    clockInTime: clockInTimestamp
                 )
             }
 
@@ -392,6 +538,18 @@ struct DashboardView: View {
                 stats = result.stats
                 certAlerts = result.certAlerts
                 vehicleAlerts = result.vehicleAlerts
+                isCurrentlyClockedIn = result.isClockedIn
+                clockedInJobName = result.clockJobName
+                clockedInJobNumber = result.clockJobNumber
+                if let timeStr = result.clockInTime {
+                    let isoFull = ISO8601DateFormatter()
+                    isoFull.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                    clockInTime = isoFull.date(from: timeStr)
+                        ?? ISO8601DateFormatter().date(from: timeStr)
+                    updateClockDuration()
+                } else {
+                    clockInTime = nil
+                }
                 isLoading = false
             }
 
@@ -487,7 +645,7 @@ struct DashboardView: View {
                 stockChartData = charts.stock
                 spendingChartData = charts.spending
             }
-        } catch { print("[DashboardView] Chart data load failed: \(error)") }
+        } catch { loadError = error.localizedDescription }
     }
 }
 
@@ -514,6 +672,10 @@ private struct DashboardLoadResult: Sendable {
     let stats: DashboardStats
     let certAlerts: [CertAlert]
     let vehicleAlerts: [VehicleAlert]
+    let isClockedIn: Bool
+    let clockJobName: String?
+    let clockJobNumber: String?
+    let clockInTime: String?
 }
 
 private struct CertAlert: Sendable {

@@ -16,6 +16,25 @@ struct LaborPage: View {
     @State private var isLoading = true
     @State private var showClockIn = false
     @State private var errorMessage: String?
+    @State private var searchText = ""
+
+    private var filteredActiveEntries: [JobsService.LaborEntryRow] {
+        guard !searchText.isEmpty else { return activeEntries }
+        let query = searchText.lowercased()
+        return activeEntries.filter {
+            $0.userName.lowercased().contains(query) ||
+            $0.jobName.lowercased().contains(query)
+        }
+    }
+
+    private var filteredRecentEntries: [JobsService.LaborEntryRow] {
+        guard !searchText.isEmpty else { return recentEntries }
+        let query = searchText.lowercased()
+        return recentEntries.filter {
+            $0.userName.lowercased().contains(query) ||
+            $0.jobName.lowercased().contains(query)
+        }
+    }
 
     // Clock-in form state
     @State private var selectedUserId: Int64?
@@ -27,6 +46,7 @@ struct LaborPage: View {
     var body: some View {
         laborContent
             .navigationTitle("Labor")
+            .searchable(text: $searchText, prompt: "Search by employee or job...")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -61,12 +81,12 @@ struct LaborPage: View {
                 }
 
                 // Active entries section
-                Section("Active (\(activeEntries.count))") {
-                    if activeEntries.isEmpty {
+                Section("Active (\(filteredActiveEntries.count))") {
+                    if filteredActiveEntries.isEmpty {
                         Text("Nobody is currently clocked in")
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(activeEntries, id: \.id) { entry in
+                        ForEach(filteredActiveEntries, id: \.id) { entry in
                             activeEntryRow(entry)
                         }
                     }
@@ -74,19 +94,17 @@ struct LaborPage: View {
 
                 // Recent entries section
                 Section("Recent") {
-                    if recentEntries.isEmpty {
+                    if filteredRecentEntries.isEmpty {
                         Text("No recent labor entries")
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(recentEntries, id: \.id) { entry in
+                        ForEach(filteredRecentEntries, id: \.id) { entry in
                             recentEntryRow(entry)
                         }
                     }
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -172,9 +190,7 @@ struct LaborPage: View {
                 }
             }
             .navigationTitle("Clock In")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { showClockIn = false }

@@ -162,11 +162,13 @@ struct IOSBackupsPage: View {
 
         // Backup functionality requires platform-specific file system access.
         // Simulate success for now — actual backup to be wired in deployment phase.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             backupSuccess = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { backupSuccess = false }
             loadData()
             isCreatingBackup = false
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            backupSuccess = false
         }
     }
 }

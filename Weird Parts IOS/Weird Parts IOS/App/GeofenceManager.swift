@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import CoreLocation
 
 @MainActor
@@ -67,12 +68,14 @@ final class GeofenceManager: NSObject, ObservableObject, CLLocationManagerDelega
     // MARK: - CLLocationManagerDelegate
 
     nonisolated func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
+        let regionId = region.identifier
+        let coordinate = manager.location?.coordinate
         Task { @MainActor in
-            guard region.identifier == monitoredRegion?.identifier else { return }
+            guard regionId == monitoredRegion?.identifier else { return }
             didExitJobRegion = true
             exitTime = Date()
-            if let loc = manager.location?.coordinate {
-                exitLocation = loc
+            if let coordinate {
+                exitLocation = coordinate
             }
         }
     }

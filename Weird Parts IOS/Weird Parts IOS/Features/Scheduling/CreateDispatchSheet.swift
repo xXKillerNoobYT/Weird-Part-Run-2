@@ -10,7 +10,7 @@ struct CreateDispatchSheet: View {
     var onSave: () -> Void
 
     @State private var jobs: [JobsService.JobListItem] = []
-    @State private var employees: [AuthService.UserListItem] = []
+    @State private var employees: [PeopleService.EmployeeListItem] = []
     @State private var selectedJobId: Int64?
     @State private var selectedUserId: Int64?
     @State private var notes = ""
@@ -67,9 +67,7 @@ struct CreateDispatchSheet: View {
                 }
             }
             .navigationTitle("New Dispatch")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -88,8 +86,8 @@ struct CreateDispatchSheet: View {
         if let jobService = appCore.jobsService {
             jobs = (try? jobService.listJobs(status: "active", limit: 200)) ?? []
         }
-        if let authService = appCore.authService {
-            employees = (try? authService.listUsers()) ?? []
+        if let peopleService = appCore.peopleService {
+            employees = (try? peopleService.listEmployees()) ?? []
         }
     }
 

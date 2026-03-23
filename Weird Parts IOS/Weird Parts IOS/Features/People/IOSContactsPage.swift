@@ -15,6 +15,11 @@ struct IOSContactsPage: View {
     @State private var searchText = ""
     @State private var typeFilter = "all"
     @State private var loadError: String?
+    private enum ActiveSheet: String, Identifiable {
+        case addContact
+        var id: String { rawValue }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     private let typeOptions = ["all", "gc", "contractor", "supplier", "vendor", "other"]
 
@@ -28,6 +33,20 @@ struct IOSContactsPage: View {
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .addContact } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .addContact:
+                AddContactSheet { loadData() }
+                    .environmentObject(appCore)
+            }
+        }
     }
 
     // MARK: - Type Picker
@@ -77,9 +96,7 @@ struct IOSContactsPage: View {
             List(filteredContacts, id: \.id) { contact in
                 contactRow(contact)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -153,7 +170,11 @@ struct IOSContactsPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            isLoading = false
+            loadError = "People service unavailable"
+            return
+        }
         isLoading = contacts.isEmpty
         loadError = nil
         do {
@@ -167,3 +188,86 @@ struct IOSContactsPage: View {
         isLoading = false
     }
 }
+// MARK: - Add Contact Sheet
+
+private struct AddContactSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let onSave: () -> Void
+
+    @State private var firstName = ""
+    @State private var lastName = ""
+    @State private var phone = ""
+    @State private var email = ""
+    @State private var contactType = "other"
+    @State private var errorMessage: String?
+
+    private let typeOptions = ["gc", "contractor", "supplier", "vendor", "other"]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Required") {
+                    TextField("First Name", text: $firstName)
+                        .textContentType(.givenName)
+                    TextField("Phone", text: $phone)
+                        .textContentType(.telephoneNumber)
+                        .keyboardType(.phonePad)
+                }
+                Section("Details") {
+                    TextField("Last Name", text: $lastName)
+                        .textContentType(.familyName)
+                    TextField("Email", text: $email)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .autocapitalization(.none)
+                    Picker("Type", selection: $contactType) {
+                        ForEach(typeOptions, id: \.self) { type in
+                            Text(type.uppercased()).tag(type)
+                        }
+                    }
+                }
+                if let error = errorMessage {
+                    Section {
+                        Text(error).foregroundStyle(.red).font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Add Contact")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(firstName.trimmingCharacters(in: .whitespaces).isEmpty || phone.isEmpty)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        guard let service = appCore.peopleService else {
+            errorMessage = "People service unavailable"
+            return
+        }
+        do {
+            try service.createContact(
+                entityType: contactType,
+                entityId: 0,
+                firstName: firstName.trimmingCharacters(in: .whitespaces),
+                lastName: lastName.trimmingCharacters(in: .whitespaces),
+                role: "contact",
+                phone: phone,
+                email: email.isEmpty ? nil : email
+            )
+            onSave()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+

@@ -8,6 +8,7 @@ struct IOSToolMaintenancePage: View {
     @State private var tools: [ToolsService.ToolListItem] = []
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var searchText = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,12 +28,19 @@ struct IOSToolMaintenancePage: View {
             }
         }
         .navigationTitle("Tool Maintenance")
+        .searchable(text: $searchText, prompt: "Search by tool name or serial...")
         .refreshable { loadData() }
         .task { loadData() }
     }
 
     private var maintenanceTools: [ToolsService.ToolListItem] {
-        tools.filter { $0.status == "maintenance" }
+        let filtered = tools.filter { $0.status == "maintenance" }
+        guard !searchText.isEmpty else { return filtered }
+        let query = searchText.lowercased()
+        return filtered.filter {
+            $0.name.lowercased().contains(query) ||
+            ($0.serialNumber?.lowercased().contains(query) ?? false)
+        }
     }
 
     private var maintenanceList: some View {
@@ -55,13 +63,15 @@ struct IOSToolMaintenancePage: View {
                 StatusBadge(text: "Maintenance", color: .orange)
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     private func loadData() {
-        guard let service = appCore.toolsService else { return }
+        guard let service = appCore.toolsService else {
+            isLoading = false
+            loadError = "Tools service unavailable"
+            return
+        }
         isLoading = tools.isEmpty
         loadError = nil
         do {

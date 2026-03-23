@@ -58,11 +58,7 @@ struct OnboardingCompleteView: View {
             .padding(.bottom, 48)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        #if os(iOS)
         .background(Color(.systemBackground))
-        #elseif os(macOS)
-        .background(Color(.windowBackgroundColor))
-        #endif
         .navigationBarBackButtonHidden(true)
         .onAppear {
             showCheckmark = true

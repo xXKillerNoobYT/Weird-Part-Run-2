@@ -15,6 +15,7 @@ struct IOSSubSchedulePage: View {
 
     @State private var rows: [SubScheduleRow] = []
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var selectedDate = Date()
 
     private var dateString: String {
@@ -80,6 +81,8 @@ struct IOSSubSchedulePage: View {
         if isLoading {
             ProgressView("Loading sub schedule...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if rows.isEmpty {
             ContentUnavailableView {
                 Label("No Subs Scheduled", systemImage: "person.badge.clock")
@@ -90,9 +93,7 @@ struct IOSSubSchedulePage: View {
             List(rows) { row in
                 subRow(row)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -175,6 +176,7 @@ struct IOSSubSchedulePage: View {
     private func loadData() {
         guard let db = appCore.db else { return }
         isLoading = rows.isEmpty
+        loadError = nil
         do {
             rows = try db.writer.read { db in
                 let sql = """
@@ -204,7 +206,7 @@ struct IOSSubSchedulePage: View {
         } catch {
             let msg = String(describing: error)
             if !msg.contains("no such table") {
-                print("[IOSSubSchedulePage] Load error: \(error)")
+                loadError = error.localizedDescription
             }
         }
         isLoading = false

@@ -9,6 +9,7 @@ struct PartHistoryView: View {
 
     @State private var entries: [PartsService.PartChangeEntry] = []
     @State private var isLoading = true
+    @State private var loadError: String?
 
     var body: some View {
         Group {
@@ -137,7 +138,9 @@ struct PartHistoryView: View {
         }
         do {
             entries = try service.getPartChangeLog(partId: partId)
-        } catch { }
+        } catch {
+            loadError = error.localizedDescription
+        }
         isLoading = false
     }
 }

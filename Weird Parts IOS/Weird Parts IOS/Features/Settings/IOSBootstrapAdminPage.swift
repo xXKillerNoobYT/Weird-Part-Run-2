@@ -42,6 +42,7 @@ struct IOSBootstrapAdminPage: View {
             }
         }
         .navigationTitle("Bootstrap Admin")
+        .refreshable { loadData() }
         .task { loadData() }
         .overlay {
             if let errorMessage {

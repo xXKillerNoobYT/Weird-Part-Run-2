@@ -7,14 +7,19 @@ import WiredPartCore
 /// for specific jobs or destinations. Shows part name, quantity, destination,
 /// and the person who tagged them.
 ///
+/// Now also includes **physical box management** — creating labeled boxes,
+/// marking them full (auto-creates next box), and tracking box contents.
+///
 /// Features swipe-to-load with confirmation, batch selection mode,
-/// smart card filters by destination type, and pull-to-refresh.
+/// smart card filters by destination type, box management, and pull-to-refresh.
 struct IOSStagingPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     // MARK: - State
 
     @State private var stagedItems: [WarehouseService.StagedItem] = []
+    @State private var stagingBoxes: [WarehouseService.StagingBox] = []
+    @State private var jobs: [JobsService.JobListItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var loadError: String?
@@ -31,6 +36,19 @@ struct IOSStagingPage: View {
 
     // Smart card filter
     @State private var selectedFilter: DestinationFilter?
+
+    // Box creation
+    @State private var showCreateBox = false
+    @State private var newBoxJobId: Int64?
+    @State private var newBoxSize: String = "normal"
+
+    // Active view tab
+    @State private var activeTab: StagingTab = .items
+
+    private enum StagingTab: String, CaseIterable {
+        case items = "Staged Items"
+        case boxes = "Boxes"
+    }
 
     private enum DestinationFilter: String, CaseIterable {
         case job = "Jobs"
@@ -50,33 +68,35 @@ struct IOSStagingPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Smart card filters
-            if !stagedItems.isEmpty {
-                smartCardFilters
+            // Tab picker
+            Picker("View", selection: $activeTab) {
+                ForEach(StagingTab.allCases, id: \.self) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
             }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
 
-            stagingList
+            switch activeTab {
+            case .items:
+                itemsContent
+            case .boxes:
+                boxesContent
+            }
         }
         .navigationTitle("Staging Area")
-        .searchable(text: $searchText, prompt: "Search staged parts...")
+        .searchable(text: $searchText, prompt: activeTab == .items ? "Search staged parts..." : "Search boxes...")
         .refreshable { loadData() }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                if isSelecting {
-                    Button("Clear \(selectedItems.count)") {
-                        showBatchConfirm = true
-                    }
-                    .disabled(selectedItems.isEmpty)
-
-                    Button("Cancel") {
-                        isSelecting = false
-                        selectedItems.removeAll()
-                    }
-                } else if !stagedItems.isEmpty {
+                if activeTab == .items {
+                    itemsToolbar
+                } else {
                     Button {
-                        isSelecting = true
+                        showCreateBox = true
                     } label: {
-                        Image(systemName: "checklist")
+                        Image(systemName: "plus")
                     }
                 }
             }
@@ -104,7 +124,45 @@ struct IOSStagingPage: View {
         } message: {
             Text(actionError ?? "")
         }
+        .sheet(isPresented: $showCreateBox) {
+            createBoxSheet
+        }
         .task { loadData() }
+    }
+
+    // MARK: - Items Tab Toolbar
+
+    @ViewBuilder
+    private var itemsToolbar: some View {
+        if isSelecting {
+            Button("Clear \(selectedItems.count)") {
+                showBatchConfirm = true
+            }
+            .disabled(selectedItems.isEmpty)
+
+            Button("Cancel") {
+                isSelecting = false
+                selectedItems.removeAll()
+            }
+        } else if !stagedItems.isEmpty {
+            Button {
+                isSelecting = true
+            } label: {
+                Image(systemName: "checklist")
+            }
+        }
+    }
+
+    // MARK: - Items Content
+
+    @ViewBuilder
+    private var itemsContent: some View {
+        // Smart card filters
+        if !stagedItems.isEmpty {
+            smartCardFilters
+        }
+
+        stagingList
     }
 
     // MARK: - Smart Card Filters
@@ -314,6 +372,276 @@ struct IOSStagingPage: View {
         .padding(.vertical, 4)
     }
 
+    // MARK: - Boxes Content
+
+    @ViewBuilder
+    private var boxesContent: some View {
+        if isLoading {
+            ProgressView("Loading boxes...")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if filteredBoxes.isEmpty {
+            EmptyStateView(
+                icon: "shippingbox",
+                title: "No Staging Boxes",
+                message: "Create a box to start organizing pulled parts by job. Tap + to create one."
+            )
+        } else {
+            List {
+                ForEach(boxJobGroups, id: \.jobId) { group in
+                    Section {
+                        ForEach(group.boxes, id: \.id) { box in
+                            boxRow(box)
+                                .swipeActions(edge: .trailing) {
+                                    Button(role: .destructive) {
+                                        deleteBox(boxId: box.id)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
+                                .swipeActions(edge: .leading) {
+                                    if box.isFull {
+                                        Button {
+                                            reopenBox(boxId: box.id)
+                                        } label: {
+                                            Label("Reopen", systemImage: "arrow.uturn.backward")
+                                        }
+                                        .tint(.orange)
+                                    } else {
+                                        Button {
+                                            markFull(boxId: box.id)
+                                        } label: {
+                                            Label("Full", systemImage: "checkmark.circle")
+                                        }
+                                        .tint(.green)
+                                    }
+                                }
+                        }
+                    } header: {
+                        HStack {
+                            Image(systemName: "hammer.fill")
+                                .foregroundStyle(.purple)
+                            Text(group.jobLabel)
+                                .fontWeight(.semibold)
+                            Spacer()
+                            Text("\(group.boxes.count) box\(group.boxes.count == 1 ? "" : "es")")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+        }
+    }
+
+    /// Boxes grouped by job for display.
+    private struct BoxJobGroup {
+        let jobId: Int64
+        let jobLabel: String
+        let boxes: [WarehouseService.StagingBox]
+    }
+
+    private var filteredBoxes: [WarehouseService.StagingBox] {
+        guard !searchText.isEmpty else { return stagingBoxes }
+        let query = searchText.lowercased()
+        return stagingBoxes.filter {
+            $0.labelText.lowercased().contains(query) ||
+            $0.boxNumber.lowercased().contains(query) ||
+            ($0.jobName?.lowercased().contains(query) ?? false) ||
+            ($0.jobNumber?.lowercased().contains(query) ?? false)
+        }
+    }
+
+    private var boxJobGroups: [BoxJobGroup] {
+        let grouped = Dictionary(grouping: filteredBoxes) { $0.jobId }
+        return grouped.map { (jobId, boxes) in
+            let first = boxes.first
+            let label = [first?.jobNumber, first?.jobName]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty }
+                .joined(separator: " - ")
+            return BoxJobGroup(
+                jobId: jobId,
+                jobLabel: label.isEmpty ? "Job #\(jobId)" : label,
+                boxes: boxes.sorted { $0.boxNumber < $1.boxNumber }
+            )
+        }
+        .sorted { $0.jobLabel < $1.jobLabel }
+    }
+
+    private func boxRow(_ box: WarehouseService.StagingBox) -> some View {
+        HStack(spacing: 12) {
+            // Status icon: checkmark for full, half-circle for open
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(box.isFull ? Color.green.opacity(0.15) : Color.orange.opacity(0.15))
+                    .frame(width: 40, height: 40)
+                Image(systemName: box.isFull ? "checkmark.circle.fill" : "circle.bottomhalf.filled")
+                    .font(.title3)
+                    .foregroundStyle(box.isFull ? .green : .orange)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                // Label guidance — the text to write on the box
+                Text(box.labelText)
+                    .font(.system(.headline, design: .monospaced))
+                    .fontWeight(.bold)
+                    .foregroundStyle(box.isFull ? .secondary : .primary)
+
+                HStack(spacing: 8) {
+                    // Size badge
+                    boxSizeBadge(box.boxSize)
+
+                    Text(box.isFull ? "FULL" : "OPEN")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(box.isFull ? .green : .orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(box.isFull ? Color.green.opacity(0.12) : Color.orange.opacity(0.12))
+                        )
+                }
+
+                if let created = box.createdAt {
+                    Text("Created \(formatDate(created))")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            Spacer()
+
+            // Quick full/open toggle
+            Button {
+                if box.isFull {
+                    reopenBox(boxId: box.id)
+                } else {
+                    markFull(boxId: box.id)
+                }
+            } label: {
+                Image(systemName: box.isFull ? "arrow.uturn.backward.circle" : "checkmark.circle")
+                    .font(.title2)
+                    .foregroundStyle(box.isFull ? .orange : .green)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 4)
+        .opacity(box.isFull ? 0.7 : 1.0)
+    }
+
+    private func boxSizeBadge(_ size: String) -> some View {
+        let icon: String
+        let color: Color
+        switch size {
+        case "small":
+            icon = "s.square.fill"
+            color = .blue
+        case "large":
+            icon = "l.square.fill"
+            color = .purple
+        default:
+            icon = "n.square.fill"
+            color = .gray
+        }
+        return Label {
+            Text(size.capitalized)
+                .font(.caption2)
+        } icon: {
+            Image(systemName: icon)
+                .font(.caption2)
+        }
+        .foregroundStyle(color)
+    }
+
+    // MARK: - Create Box Sheet
+
+    private var createBoxSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Job") {
+                    if jobs.isEmpty {
+                        Text("No active jobs found")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Picker("Select Job", selection: $newBoxJobId) {
+                            Text("Select a job...").tag(nil as Int64?)
+                            ForEach(jobs, id: \.id) { job in
+                                Text("\(job.jobNumber) - \(job.jobName)")
+                                    .tag(job.id as Int64?)
+                            }
+                        }
+                    }
+                }
+
+                Section("Box Size") {
+                    Picker("Size", selection: $newBoxSize) {
+                        Label("Small", systemImage: "s.square.fill")
+                            .tag("small")
+                        Label("Normal", systemImage: "n.square.fill")
+                            .tag("normal")
+                        Label("Large", systemImage: "l.square.fill")
+                            .tag("large")
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                if let jobId = newBoxJobId,
+                   let job = jobs.first(where: { $0.id == jobId }) {
+                    Section("Label Preview") {
+                        let existingCount = stagingBoxes.filter { $0.jobId == jobId }.count
+                        let seqStr = String(format: "%02d", existingCount + 1)
+                        let boxNum = "\(job.jobNumber)-\(seqStr)"
+                        let shortName = buildShortLabel(jobName: job.jobName)
+                        let preview = "\(shortName) \(boxNum)"
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Write this on the box:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            Text(preview)
+                                .font(.system(.title2, design: .monospaced))
+                                .fontWeight(.bold)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding()
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color.yellow.opacity(0.15))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [6, 3]))
+                                                .foregroundStyle(.orange)
+                                        )
+                                )
+
+                            Text("Size: \(newBoxSize.capitalized)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("New Staging Box")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showCreateBox = false
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") {
+                        createBox()
+                    }
+                    .disabled(newBoxJobId == nil)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
     // MARK: - Helpers
 
     private func formatDate(_ dateStr: String) -> String {
@@ -327,6 +655,25 @@ struct IOSStagingPage: View {
         } else {
             selectedItems.insert(id)
         }
+    }
+
+    /// Build a short label from a job name (mirrors service logic for preview).
+    private func buildShortLabel(jobName: String) -> String {
+        let words = jobName.split(separator: " ")
+        guard !words.isEmpty else { return "JOB" }
+
+        var label = ""
+        for word in words {
+            let candidate = label.isEmpty ? String(word) : "\(label) \(word)"
+            if candidate.count > 15 {
+                if label.isEmpty {
+                    label = String(word.prefix(12))
+                }
+                break
+            }
+            label = candidate
+        }
+        return label.uppercased()
     }
 
     // MARK: - Actions
@@ -359,14 +706,62 @@ struct IOSStagingPage: View {
         }
     }
 
+    private func createBox() {
+        guard let service = appCore.warehouseService,
+              let jobId = newBoxJobId else { return }
+        do {
+            _ = try service.createStagingBox(jobId: jobId, size: newBoxSize)
+            showCreateBox = false
+            newBoxJobId = nil
+            newBoxSize = "normal"
+            loadData()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func markFull(boxId: Int64) {
+        guard let service = appCore.warehouseService else { return }
+        do {
+            _ = try service.markBoxFull(boxId: boxId)
+            loadData()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func reopenBox(boxId: Int64) {
+        guard let service = appCore.warehouseService else { return }
+        do {
+            try service.markBoxOpen(boxId: boxId)
+            loadData()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func deleteBox(boxId: Int64) {
+        guard let service = appCore.warehouseService else { return }
+        do {
+            try service.deleteStagingBox(boxId: boxId)
+            loadData()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
     // MARK: - Data Loading
 
     private func loadData() {
         guard let service = appCore.warehouseService else { return }
-        isLoading = stagedItems.isEmpty
+        isLoading = stagedItems.isEmpty && stagingBoxes.isEmpty
         loadError = nil
         do {
             stagedItems = try service.getStagedItems()
+            stagingBoxes = try service.listStagingBoxes()
+            if let jobsService = appCore.jobsService {
+                jobs = try jobsService.listJobs(status: "active", limit: 200)
+            }
         } catch {
             loadError = error.localizedDescription
         }

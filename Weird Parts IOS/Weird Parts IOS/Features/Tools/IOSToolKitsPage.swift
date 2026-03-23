@@ -44,9 +44,7 @@ struct IOSToolKitsPage: View {
             List(filteredKits) { kit in
                 kitRow(kit)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 

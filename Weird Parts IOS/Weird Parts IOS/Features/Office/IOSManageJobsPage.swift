@@ -121,9 +121,7 @@ struct IOSManageJobsPage: View {
                     jobRow(job)
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
             .navigationDestination(for: Int64.self) { jobId in
                 IOSJobDetailTabView(jobId: jobId)
                     .environmentObject(appCore)

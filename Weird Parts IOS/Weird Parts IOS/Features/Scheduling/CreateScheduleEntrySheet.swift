@@ -58,9 +58,7 @@ struct CreateScheduleEntrySheet: View {
                 }
             }
             .navigationTitle("New Schedule Entry")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -76,14 +74,20 @@ struct CreateScheduleEntrySheet: View {
     }
 
     private func loadJobs() {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            saveError = "Jobs service not available"
+            return
+        }
         jobs = (try? service.listJobs(status: "active", limit: 200)) ?? []
     }
 
     private func saveEntry() {
         guard let service = appCore.schedulingService,
               let jobId = selectedJobId,
-              let userId = appCore.currentUser?.id else { return }
+              let userId = appCore.currentUser?.id else {
+            saveError = "Service not available"
+            return
+        }
         isSaving = true
         saveError = nil
         let fmt = DateFormatter()

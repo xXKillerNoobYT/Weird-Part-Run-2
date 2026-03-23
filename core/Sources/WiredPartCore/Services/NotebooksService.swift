@@ -280,7 +280,54 @@ public final class NotebooksService: Sendable {
     }
 
     // =========================================================================
-    // MARK: - 5. Notebooks Stats
+    // MARK: - 5. Add Notebook Entry
+    // =========================================================================
+
+    /// Adds a new entry to a notebook section.
+    /// If no section exists yet, creates a default "General" section first.
+    @discardableResult
+    public func addNotebookEntry(
+        notebookId: Int64,
+        title: String,
+        content: String? = nil,
+        entryType: String = "note",
+        createdBy: Int64
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            // Get or create a default section
+            var sectionId: Int64
+            if let existing = try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM notebook_sections WHERE notebook_id = ? AND deleted_at IS NULL LIMIT 1",
+                arguments: [notebookId]
+            ) {
+                sectionId = existing
+            } else {
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO notebook_sections (notebook_id, title, sort_order, created_at)
+                        VALUES (?, 'General', 0, datetime('now'))
+                        """,
+                    arguments: [notebookId]
+                )
+                sectionId = dbConn.lastInsertedRowID
+            }
+
+            // Insert the entry
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO notebook_entries
+                    (section_id, title, content, entry_type, created_by, sort_order, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
+                    """,
+                arguments: [sectionId, title, content, entryType, createdBy]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 6. Notebooks Stats
     // =========================================================================
 
     /// Get aggregate notebooks statistics: total, job-linked, and general counts.

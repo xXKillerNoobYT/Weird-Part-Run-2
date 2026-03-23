@@ -16,6 +16,11 @@ struct IOSQuestionsPage: View {
     @State private var searchText = ""
     @State private var statusFilter = "all"
     @State private var loadError: String?
+    private enum ActiveSheet: String, Identifiable {
+        case askQuestion
+        var id: String { rawValue }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     private let statusOptions = ["all", "open", "answered", "escalated", "closed"]
 
@@ -26,6 +31,20 @@ struct IOSQuestionsPage: View {
         }
         .navigationTitle("Q&A")
         .searchable(text: $searchText, prompt: "Search questions...")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .askQuestion } label: {
+                    Label("Ask", systemImage: "plus")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .askQuestion:
+                IOSQAQuestionForm(onSubmitted: { loadData() })
+                    .environmentObject(appCore)
+            }
+        }
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
@@ -78,9 +97,7 @@ struct IOSQuestionsPage: View {
             List(filteredThreads, id: \.id) { thread in
                 threadRow(thread)
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 

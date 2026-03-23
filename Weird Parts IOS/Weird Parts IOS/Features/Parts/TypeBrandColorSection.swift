@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Combined brand selection + per-brand color picker for a Type.
@@ -21,6 +20,7 @@ struct TypeBrandColorSection: View {
     @State private var linkedBrandIds: Set<Int64> = []
     @State private var isGeneralLinked = false
     @State private var isLoading = true
+    @State private var loadError: String?
     @State private var expandedBrandId: Int64? // Which brand's color picker is open
     @State private var mfrPartNumbers: [Int64: String] = [:]
 
@@ -33,7 +33,11 @@ struct TypeBrandColorSection: View {
                 Spacer()
             }
 
-            if isLoading {
+            if let error = loadError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .font(.caption)
+            } else if isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity)
                     .padding()
@@ -278,8 +282,10 @@ struct TypeBrandColorSection: View {
                 }
             }
         } catch {
-            print("[TypeBrandColorSection] Load error: \(error)")
-            await MainActor.run { isLoading = false }
+            await MainActor.run {
+                loadError = error.localizedDescription
+                isLoading = false
+            }
         }
     }
 
@@ -289,14 +295,7 @@ struct TypeBrandColorSection: View {
         guard let service = appCore.partsService else { return }
         do {
             if isLinked {
-                guard let db = appCore.db else { return }
-                let linkId = try await db.writer.read { dbConn -> Int64? in
-                    try Int64.fetchOne(
-                        dbConn,
-                        sql: "SELECT id FROM type_brand_links WHERE type_id = ? AND brand_id = ?",
-                        arguments: [typeId, brandId]
-                    )
-                }
+                let linkId = try service.getTypeBrandLinkId(typeId: typeId, brandId: brandId)
                 if let linkId {
                     try service.unlinkTypeBrand(linkId: linkId)
                 }
@@ -315,7 +314,7 @@ struct TypeBrandColorSection: View {
             }
             await onRefresh()
         } catch {
-            print("[TypeBrandColorSection] Toggle brand error: \(error)")
+            loadError = "Toggle failed: \(error.localizedDescription)"
         }
     }
 }

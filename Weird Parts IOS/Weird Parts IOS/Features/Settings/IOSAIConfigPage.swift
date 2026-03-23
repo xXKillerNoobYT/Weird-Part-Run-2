@@ -78,7 +78,8 @@ struct IOSAIConfigPage: View {
     private func checkAvailability() {
         isCheckingAvailability = true
         // Check Foundation Models availability
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+        Task {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
             isCheckingAvailability = false
             // Foundation Models availability check would go here
             modelAvailable = false

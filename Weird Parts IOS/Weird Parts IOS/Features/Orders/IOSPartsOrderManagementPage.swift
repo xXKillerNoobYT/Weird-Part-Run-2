@@ -30,6 +30,9 @@ struct IOSPartsOrderManagementPage: View {
     @State private var showBackorder = true
     @State private var showReceivedParts = false
 
+    // Search
+    @State private var searchText = ""
+
     // Multi-selection
     @State private var selectedPartIds: Set<Int64> = []
 
@@ -61,6 +64,7 @@ struct IOSPartsOrderManagementPage: View {
             }
         }
         .navigationTitle("Parts Management")
+        .searchable(text: $searchText, prompt: "Search parts by name, code, or job...")
         .task {
             loadSuppliers()
             if let pre = preSelectedSupplierId {
@@ -179,7 +183,16 @@ struct IOSPartsOrderManagementPage: View {
                 }
             }()
 
-            return poPass && partPass
+            let searchPass: Bool = {
+                guard !searchText.isEmpty else { return true }
+                let query = searchText.lowercased()
+                return row.partName.lowercased().contains(query) ||
+                    (row.partCode?.lowercased().contains(query) ?? false) ||
+                    (row.jobName?.lowercased().contains(query) ?? false) ||
+                    row.poNumber.lowercased().contains(query)
+            }()
+
+            return poPass && partPass && searchPass
         }
     }
 
@@ -216,6 +229,7 @@ struct IOSPartsOrderManagementPage: View {
             }
         }
         .listStyle(.insetGrouped)
+        .refreshable { loadData() }
     }
 
     @ViewBuilder

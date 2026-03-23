@@ -60,10 +60,8 @@ struct IOSWarehouseReturnsPage: View {
             }
         }
         .sheet(item: $activeSheet) { _ in
-            NavigationStack {
-                CreateReturnSheet { loadData() }
-                    .environmentObject(appCore)
-            }
+            CreateReturnSheet(onSave: { loadData() })
+                .environmentObject(appCore)
         }
         .alert("Error", isPresented: .constant(actionError != nil)) {
             Button("OK") { actionError = nil }
@@ -315,73 +313,4 @@ struct IOSWarehouseReturnsPage: View {
     }
 }
 
-// MARK: - Create Return Sheet
 
-private struct CreateReturnSheet: View {
-    @EnvironmentObject private var appCore: AppCore
-    @Environment(\.dismiss) private var dismiss
-    let onSave: () -> Void
-
-    @State private var returnType = "defective"
-    @State private var reason = ""
-    @State private var errorMessage: String?
-    @State private var isSaving = false
-
-    private let returnTypes = ["defective", "wrong_item", "overstock", "damaged", "other"]
-
-    var body: some View {
-        Form {
-            Section("Return Type") {
-                Picker("Type", selection: $returnType) {
-                    ForEach(returnTypes, id: \.self) { type in
-                        Text(type.replacingOccurrences(of: "_", with: " ").capitalized).tag(type)
-                    }
-                }
-            }
-
-            Section("Reason") {
-                TextField("Describe the reason for return...", text: $reason, axis: .vertical)
-                    .lineLimit(3...6)
-            }
-
-            if let error = errorMessage {
-                Section {
-                    Text(error)
-                        .foregroundStyle(.red)
-                        .font(.caption)
-                }
-            }
-        }
-        .navigationTitle("New Return")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { dismiss() }
-            }
-            ToolbarItem(placement: .confirmationAction) {
-                if isSaving {
-                    ProgressView()
-                } else {
-                    Button("Create") { createReturn() }
-                        .disabled(reason.isEmpty)
-                }
-            }
-        }
-    }
-
-    private func createReturn() {
-        guard let service = appCore.ordersService else {
-            errorMessage = "Orders service not available"
-            return
-        }
-        isSaving = true
-        do {
-            _ = try service.createReturn(returnType: returnType, reason: reason)
-            onSave()
-            dismiss()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        isSaving = false
-    }
-}

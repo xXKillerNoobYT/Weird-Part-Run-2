@@ -11,6 +11,7 @@ public struct User: Codable, FetchableRecord, MutablePersistableRecord, Sendable
     public var email: String?
     public var phone: String?
     public var pinHash: String?
+    public var pinSalt: String?
     public var defaultTruckId: Int64?
     public var emergencyContactName: String?
     public var emergencyContactPhone: String?
@@ -28,6 +29,7 @@ public struct User: Codable, FetchableRecord, MutablePersistableRecord, Sendable
         case displayName = "display_name"
         case email, phone
         case pinHash = "pin_hash"
+        case pinSalt = "pin_salt"
         case defaultTruckId = "default_truck_id"
         case emergencyContactName = "emergency_contact_name"
         case emergencyContactPhone = "emergency_contact_phone"

@@ -31,6 +31,122 @@ public struct BillingPeriod: Codable, FetchableRecord, MutablePersistableRecord,
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }
 
+// MARK: - PricingTier
+
+public struct PricingTier: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+    public static let databaseTableName = "pricing_tiers"
+    public var id: Int64?
+    public var categoryId: Int64?
+    public var styleId: Int64?
+    public var typeId: Int64?
+    public var brandId: Int64?
+    public var partId: Int64?
+    public var markupPercent: Double?
+    public var marginPercent: Double?
+    public var fixedSellPrice: Double?
+    public var setBy: Int64?
+    public var notes: String?
+    public var deletedAt: String?
+    public var createdAt: String?
+    public var updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, notes
+        case categoryId = "category_id"
+        case styleId = "style_id"
+        case typeId = "type_id"
+        case brandId = "brand_id"
+        case partId = "part_id"
+        case markupPercent = "markup_percent"
+        case marginPercent = "margin_percent"
+        case fixedSellPrice = "fixed_sell_price"
+        case setBy = "set_by"
+        case deletedAt = "deleted_at"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+
+    /// Human-readable tier level name
+    public var tierLevel: String {
+        if partId != nil { return "Part" }
+        if brandId != nil { return "Brand" }
+        if typeId != nil { return "Type" }
+        if styleId != nil { return "Style" }
+        if categoryId != nil { return "Category" }
+        return "Unknown"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+// MARK: - PriceHistory
+
+public struct PriceHistory: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+    public static let databaseTableName = "price_history"
+    public var id: Int64?
+    public var partId: Int64?
+    public var pricingTierId: Int64?
+    public var changeType: String
+    public var oldValue: Double?
+    public var newValue: Double?
+    public var oldSellPrice: Double?
+    public var newSellPrice: Double?
+    public var source: String?
+    public var sourceId: Int64?
+    public var changedBy: Int64?
+    public var createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case partId = "part_id"
+        case pricingTierId = "pricing_tier_id"
+        case changeType = "change_type"
+        case oldValue = "old_value"
+        case newValue = "new_value"
+        case oldSellPrice = "old_sell_price"
+        case newSellPrice = "new_sell_price"
+        case source
+        case sourceId = "source_id"
+        case changedBy = "changed_by"
+        case createdAt = "created_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+// MARK: - CostLayerConsumption
+
+public struct CostLayerConsumption: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+    public static let databaseTableName = "cost_layer_consumptions"
+    public var id: Int64?
+    public var costLayerId: Int64
+    public var partId: Int64
+    public var jobId: Int64?
+    public var qtyConsumed: Int
+    public var unitCostAtSale: Double
+    public var sellPriceCharged: Double?
+    public var supplierId: Int64?
+    public var isReturned: Int
+    public var returnedAt: String?
+    public var createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case costLayerId = "cost_layer_id"
+        case partId = "part_id"
+        case jobId = "job_id"
+        case qtyConsumed = "qty_consumed"
+        case unitCostAtSale = "unit_cost_at_sale"
+        case sellPriceCharged = "sell_price_charged"
+        case supplierId = "supplier_id"
+        case isReturned = "is_returned"
+        case returnedAt = "returned_at"
+        case createdAt = "created_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
 // MARK: - ReceivingSession
 
 public struct ReceivingSession: Codable, FetchableRecord, MutablePersistableRecord, Sendable {

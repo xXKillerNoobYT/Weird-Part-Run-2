@@ -48,17 +48,13 @@ struct BootstrapView: View {
                 SecureField("PIN (4+ digits)", text: $pin)
                     .textFieldStyle(.roundedBorder)
                     .textContentType(.newPassword)
-                    #if os(iOS)
                     .keyboardType(.numberPad)
-                    #endif
                     .frame(maxWidth: 300)
 
                 SecureField("Confirm PIN", text: $confirmPin)
                     .textFieldStyle(.roundedBorder)
                     .textContentType(.newPassword)
-                    #if os(iOS)
                     .keyboardType(.numberPad)
-                    #endif
                     .frame(maxWidth: 300)
 
                 if let error = errorMessage {
@@ -93,11 +89,7 @@ struct BootstrapView: View {
                 .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        #if os(iOS)
         .background(Color(.systemBackground))
-        #elseif os(macOS)
-        .background(DS.Background.page)
-        #endif
     }
 
     // MARK: - Actions
@@ -106,8 +98,9 @@ struct BootstrapView: View {
         isLoading = true
         errorMessage = nil
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            let result = appCore.seedFirstAdmin(
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(200))
+            let result = await appCore.seedFirstAdmin(
                 displayName: displayName.trimmingCharacters(in: .whitespaces),
                 pin: pin
             )

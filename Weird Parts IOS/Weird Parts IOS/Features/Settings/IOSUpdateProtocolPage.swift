@@ -194,7 +194,8 @@ struct IOSUpdateProtocolPage: View {
 
         // Simulate update check — actual implementation requires
         // network service not yet available on iOS.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        Task {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             loadData()
             isCheckingUpdate = false
         }

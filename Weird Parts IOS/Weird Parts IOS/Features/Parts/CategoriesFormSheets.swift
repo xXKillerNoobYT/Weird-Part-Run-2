@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 // MARK: - Identifiable Conformances for .sheet(item:)
@@ -42,9 +41,7 @@ struct CategoryFormSheet: View {
                 }
             }
             .navigationTitle(category == nil ? "New Category" : "Edit Category")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -135,9 +132,7 @@ struct StyleFormSheet: View {
                 }
             }
             .navigationTitle(style == nil ? "New Style" : "Edit Style")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -228,9 +223,7 @@ struct TypeFormSheet: View {
                 }
             }
             .navigationTitle(type == nil ? "New Type" : "Edit Type")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -295,7 +288,7 @@ struct ColorFormSheet: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
-    @State private var hasColor = true
+    @State private var hasColor = false
     @State private var selectedColor: Color = .gray
     @State private var sortOrder = 0
     @State private var saveError: String?
@@ -414,9 +407,7 @@ struct ColorFormSheet: View {
                 }
             }
             .navigationTitle(color == nil ? "New Color" : "Edit Color")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

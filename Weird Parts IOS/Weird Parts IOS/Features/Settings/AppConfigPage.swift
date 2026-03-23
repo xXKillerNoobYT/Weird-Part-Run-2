@@ -22,9 +22,7 @@ struct AppConfigPage: View {
                     Text("Auto-Lock (minutes)")
                     Spacer()
                     TextField("15", text: $autoLockMinutes)
-                        #if os(iOS)
                         .keyboardType(.numberPad)
-                        #endif
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
                 }
@@ -35,9 +33,7 @@ struct AppConfigPage: View {
                     Text("Stale Data Warning (hours)")
                     Spacer()
                     TextField("4", text: $staleDataHours)
-                        #if os(iOS)
                         .keyboardType(.numberPad)
-                        #endif
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
                 }
@@ -48,9 +44,7 @@ struct AppConfigPage: View {
                     Text("Archive Completed Jobs (days)")
                     Spacer()
                     TextField("90", text: $archiveDays)
-                        #if os(iOS)
                         .keyboardType(.numberPad)
-                        #endif
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
                 }
@@ -58,9 +52,7 @@ struct AppConfigPage: View {
                     Text("Default Warranty (days)")
                     Spacer()
                     TextField("365", text: $warrantyDays)
-                        #if os(iOS)
                         .keyboardType(.numberPad)
-                        #endif
                         .multilineTextAlignment(.trailing)
                         .frame(width: 80)
                 }
@@ -89,11 +81,15 @@ struct AppConfigPage: View {
     }
 
     private func loadConfig() {
+        guard let service = appCore.settingsService else {
+            loadError = "Settings service unavailable"
+            return
+        }
         do {
-            autoLockMinutes = try appCore.settingsService.getSetting("auto_lock_minutes") ?? "15"
-            staleDataHours = try appCore.settingsService.getSetting("stale_data_hours") ?? "4"
-            archiveDays = try appCore.settingsService.getSetting("archive_completed_days") ?? "90"
-            let warranty = try appCore.settingsService.getWarrantyLengthDays()
+            autoLockMinutes = try service.getSetting("auto_lock_minutes") ?? "15"
+            staleDataHours = try service.getSetting("stale_data_hours") ?? "4"
+            archiveDays = try service.getSetting("archive_completed_days") ?? "90"
+            let warranty = try service.getWarrantyLengthDays()
             warrantyDays = String(warranty)
         } catch {
             loadError = error.localizedDescription
@@ -101,15 +97,22 @@ struct AppConfigPage: View {
     }
 
     private func saveConfig() {
+        guard let service = appCore.settingsService else {
+            actionError = "Settings service unavailable"
+            return
+        }
         do {
-            try appCore.settingsService.updateSetting(key: "auto_lock_minutes", value: autoLockMinutes, category: "security")
-            try appCore.settingsService.updateSetting(key: "stale_data_hours", value: staleDataHours, category: "sync")
-            try appCore.settingsService.updateSetting(key: "archive_completed_days", value: archiveDays, category: "data")
+            try service.updateSetting(key: "auto_lock_minutes", value: autoLockMinutes, category: "security")
+            try service.updateSetting(key: "stale_data_hours", value: staleDataHours, category: "sync")
+            try service.updateSetting(key: "archive_completed_days", value: archiveDays, category: "data")
             if let days = Int(warrantyDays) {
-                try appCore.settingsService.updateWarrantyLengthDays(days)
+                try service.updateWarrantyLengthDays(days)
             }
             saved = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                saved = false
+            }
         } catch {
             actionError = error.localizedDescription
         }

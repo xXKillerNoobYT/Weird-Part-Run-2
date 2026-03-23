@@ -76,8 +76,12 @@ struct PDFSettingsPage: View {
     }
 
     private func loadPDFSettings() {
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service unavailable"
+            return
+        }
         do {
-            let pdf = try appCore.settingsService.getPDFSettings()
+            let pdf = try service.getPDFSettings()
             accentColor = pdf.accentColor
             showUnitPrices = pdf.showUnitPrices
             showExtended = pdf.showExtended
@@ -85,11 +89,15 @@ struct PDFSettingsPage: View {
             paymentTerms = pdf.paymentTerms
             deliveryNotes = pdf.deliveryNotes
         } catch {
-            print("[PDFSettingsPage] Load error: \(error)")
+            errorMessage = "Failed to load: \(error.localizedDescription)"
         }
     }
 
     private func savePDFSettings() {
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service unavailable"
+            return
+        }
         let settings = SettingsService.PDFSettings(
             accentColor: accentColor,
             showUnitPrices: showUnitPrices,
@@ -99,9 +107,12 @@ struct PDFSettingsPage: View {
             deliveryNotes: deliveryNotes
         )
         do {
-            _ = try appCore.settingsService.updatePDFSettings(settings)
+            _ = try service.updatePDFSettings(settings)
             saved = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                saved = false
+            }
         } catch {
             errorMessage = "Failed to save: \(error.localizedDescription)"
         }

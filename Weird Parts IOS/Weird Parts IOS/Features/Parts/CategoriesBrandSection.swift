@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Brand editing section for a selected Type.
@@ -23,6 +22,7 @@ struct CategoriesBrandSection: View {
     @State private var supplierPartNumbers: [String: String] = [:] // "brandId-supplierId" -> supplier part number
     @State private var isGeneralLinked = false
     @State private var isLoading = true
+    @State private var loadError: String?
 
     /// Key constant for the "General" pseudo-brand
     private static let generalBrandName = "General"
@@ -33,7 +33,11 @@ struct CategoriesBrandSection: View {
                 .font(.headline)
                 .padding(.bottom, DS.Space.xxs)
 
-            if isLoading {
+            if let error = loadError {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .font(.caption)
+            } else if isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity)
                     .padding()
@@ -218,8 +222,10 @@ struct CategoriesBrandSection: View {
                 isLoading = false
             }
         } catch {
-            print("[CategoriesBrandSection] Load error: \(error)")
-            await MainActor.run { isLoading = false }
+            await MainActor.run {
+                loadError = error.localizedDescription
+                isLoading = false
+            }
         }
     }
 
@@ -229,16 +235,7 @@ struct CategoriesBrandSection: View {
         guard let service = appCore.partsService else { return }
         do {
             if isLinked {
-                // Need to find the link ID to unlink.
-                // Fetch all type_brand_links and find the matching one.
-                guard let db = appCore.db else { return }
-                let linkId = try await db.writer.read { dbConn -> Int64? in
-                    try Int64.fetchOne(
-                        dbConn,
-                        sql: "SELECT id FROM type_brand_links WHERE type_id = ? AND brand_id = ?",
-                        arguments: [typeId, brandId]
-                    )
-                }
+                let linkId = try service.getTypeBrandLinkId(typeId: typeId, brandId: brandId)
                 if let linkId {
                     try service.unlinkTypeBrand(linkId: linkId)
                 }
@@ -248,7 +245,7 @@ struct CategoriesBrandSection: View {
                 linkedBrandIds.insert(brandId)
             }
         } catch {
-            print("[CategoriesBrandSection] Toggle brand error: \(error)")
+            loadError = "Toggle failed: \(error.localizedDescription)"
         }
     }
 }

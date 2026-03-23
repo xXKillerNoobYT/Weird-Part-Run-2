@@ -24,6 +24,50 @@ public struct PartCategory: Codable, FetchableRecord, MutablePersistableRecord, 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }
 
+// MARK: - LocationStockTarget
+
+/// Per-location stock level targets and forecast data.
+/// Overrides the part's global min/target/max for a specific location.
+public struct LocationStockTarget: Codable, FetchableRecord, MutablePersistableRecord, Sendable, Identifiable {
+    public static let databaseTableName = "location_stock_targets"
+
+    public var id: Int64?
+    public var partId: Int64
+    public var locationType: String       // "warehouse", "truck", "trailer"
+    public var locationId: Int64
+    public var minStock: Int
+    public var targetStock: Int
+    public var maxStock: Int
+    public var forecastAdu30: Double?
+    public var forecastAdu90: Double?
+    public var forecastDaysUntilLow: Int?
+    public var forecastSuggestedOrder: Int?
+    public var forecastLastRun: String?
+    public var certaintyRating: Double?
+    public var deletedAt: String?
+    public var updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case partId = "part_id"
+        case locationType = "location_type"
+        case locationId = "location_id"
+        case minStock = "min_stock"
+        case targetStock = "target_stock"
+        case maxStock = "max_stock"
+        case forecastAdu30 = "forecast_adu_30"
+        case forecastAdu90 = "forecast_adu_90"
+        case forecastDaysUntilLow = "forecast_days_until_low"
+        case forecastSuggestedOrder = "forecast_suggested_order"
+        case forecastLastRun = "forecast_last_run"
+        case certaintyRating = "certainty_rating"
+        case deletedAt = "deleted_at"
+        case updatedAt = "updated_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
 // MARK: - PartStyle
 
 public struct PartStyle: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
@@ -85,6 +129,16 @@ public struct PartColor: Codable, FetchableRecord, MutablePersistableRecord, Sen
     public var isActive: Int
     public var deletedAt: String?
     public var createdAt: String?
+
+    public init(id: Int64? = nil, name: String = "", hexCode: String? = nil, sortOrder: Int = 0, isActive: Int = 1, deletedAt: String? = nil, createdAt: String? = nil) {
+        self.id = id
+        self.name = name
+        self.hexCode = hexCode
+        self.sortOrder = sortOrder
+        self.isActive = isActive
+        self.deletedAt = deletedAt
+        self.createdAt = createdAt
+    }
 
     enum CodingKeys: String, CodingKey {
         case id, name
@@ -189,6 +243,7 @@ public struct Supplier: Codable, FetchableRecord, MutablePersistableRecord, Send
     public var avgLeadDays: Int?
     public var reliabilityScore: Double?
     public var communicationScore: Double?
+    public var accountNumber: String?
     public var isActive: Int?
     public var deletedAt: String?
     public var createdAt: String?
@@ -196,6 +251,7 @@ public struct Supplier: Codable, FetchableRecord, MutablePersistableRecord, Send
 
     enum CodingKeys: String, CodingKey {
         case id, name, email, phone, address, website, notes
+        case accountNumber = "account_number"
         case contactName = "contact_name"
         case repName = "rep_name"
         case repEmail = "rep_email"
@@ -408,6 +464,11 @@ public struct CompanionRule: Codable, FetchableRecord, MutablePersistableRecord,
     public var qtyMode: String?
     public var qtyRatio: Double?
     public var isActive: Int
+    public var tryMatchBrand: Int
+    public var autoColorMatch: Int
+    public var parentRuleId: Int64?
+    public var autoDeleteAt: String?
+    public var deletedAt: String?
     public var createdBy: Int64?
     public var createdAt: String?
     public var updatedAt: String?
@@ -418,6 +479,11 @@ public struct CompanionRule: Codable, FetchableRecord, MutablePersistableRecord,
         case qtyMode = "qty_mode"
         case qtyRatio = "qty_ratio"
         case isActive = "is_active"
+        case tryMatchBrand = "try_match_brand"
+        case autoColorMatch = "auto_color_match"
+        case parentRuleId = "parent_rule_id"
+        case autoDeleteAt = "auto_delete_at"
+        case deletedAt = "deleted_at"
         case createdBy = "created_by"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -445,6 +511,276 @@ public struct PartAlternative: Codable, FetchableRecord, MutablePersistableRecor
         case alternativePartId = "alternative_part_id"
         case createdBy = "created_by"
         case createdAt = "created_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+// MARK: - CompanionPoll
+
+public struct CompanionPoll: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+    public static let databaseTableName = "companion_polls"
+    public var id: Int64?
+    public var coOccurrenceId: Int64
+    public var proposedRuleName: String
+    public var proposedRuleDescription: String?
+    public var sourceCategoryId: Int64?
+    public var sourceStyleId: Int64?
+    public var sourceTypeId: Int64?
+    public var targetCategoryId: Int64?
+    public var targetStyleId: Int64?
+    public var targetTypeId: Int64?
+    public var matchLevel: String
+    public var tryMatchBrand: Int
+    public var autoColorMatch: Int
+    public var status: String
+    public var adminLockedResult: String?
+    public var adminLockedBy: Int64?
+    public var adminLockedAt: String?
+    public var result: String?
+    public var createdRuleId: Int64?
+    public var startDate: String
+    public var endDate: String
+    public var completedAt: String?
+    public var createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, status, result
+        case coOccurrenceId = "co_occurrence_id"
+        case proposedRuleName = "proposed_rule_name"
+        case proposedRuleDescription = "proposed_rule_description"
+        case sourceCategoryId = "source_category_id"
+        case sourceStyleId = "source_style_id"
+        case sourceTypeId = "source_type_id"
+        case targetCategoryId = "target_category_id"
+        case targetStyleId = "target_style_id"
+        case targetTypeId = "target_type_id"
+        case matchLevel = "match_level"
+        case tryMatchBrand = "try_match_brand"
+        case autoColorMatch = "auto_color_match"
+        case adminLockedResult = "admin_locked_result"
+        case adminLockedBy = "admin_locked_by"
+        case adminLockedAt = "admin_locked_at"
+        case createdRuleId = "created_rule_id"
+        case startDate = "start_date"
+        case endDate = "end_date"
+        case completedAt = "completed_at"
+        case createdAt = "created_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+// MARK: - CompanionVote
+
+public struct CompanionVote: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+    public static let databaseTableName = "companion_votes"
+    public var id: Int64?
+    public var pollId: Int64
+    public var userId: Int64
+    public var vote: String
+    public var hasPower: Int
+    public var votedAt: String?
+    public var updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, vote
+        case pollId = "poll_id"
+        case userId = "user_id"
+        case hasPower = "has_power"
+        case votedAt = "voted_at"
+        case updatedAt = "updated_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+// MARK: - CompanionPollResult
+
+public struct CompanionPollResult: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+    public static let databaseTableName = "companion_poll_results"
+    public var id: Int64?
+    public var pollId: Int64
+    public var passed: Int
+    public var totalVotes: Int
+    public var poweredAccept: Int
+    public var poweredReject: Int
+    public var allAccept: Int
+    public var allReject: Int
+    public var wasAdminLocked: Int
+    public var finalizedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, passed
+        case pollId = "poll_id"
+        case totalVotes = "total_votes"
+        case poweredAccept = "powered_accept"
+        case poweredReject = "powered_reject"
+        case allAccept = "all_accept"
+        case allReject = "all_reject"
+        case wasAdminLocked = "was_admin_locked"
+        case finalizedAt = "finalized_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+// MARK: - CompanionAutoDiscoveryLog
+
+public struct CompanionAutoDiscoveryLog: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+    public static let databaseTableName = "companion_auto_discovery_log"
+    public var id: Int64?
+    public var analysisDate: String
+    public var matchLevel: String
+    public var dataWindowMonths: Int
+    public var pairsAnalyzed: Int
+    public var newPairsFound: Int
+    public var pollCreatedId: Int64?
+    public var createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case analysisDate = "analysis_date"
+        case matchLevel = "match_level"
+        case dataWindowMonths = "data_window_months"
+        case pairsAnalyzed = "pairs_analyzed"
+        case newPairsFound = "new_pairs_found"
+        case pollCreatedId = "poll_created_id"
+        case createdAt = "created_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+// MARK: - ForecastSettings
+
+/// Per-location-type (or per-individual-location) forecast calculation settings.
+/// Shop uses ADU (parts/day). Trucks use APW (parts/X-weeks).
+public struct ForecastSettings: Codable, FetchableRecord, MutablePersistableRecord, Sendable, Identifiable {
+    public static let databaseTableName = "forecast_settings"
+
+    public var id: Int64?
+    public var locationType: String
+    public var locationId: Int64?
+    public var usageUnit: String
+    public var aduLookbackDays: Int
+    public var windowWeeks: Int
+    public var minDataDays: Int
+    public var commonMinMultiplier: Double
+    public var commonTargetMultiplier: Double
+    public var commonMaxMultiplier: Double
+    public var criticalMinMultiplier: Double
+    public var criticalTargetMultiplier: Double
+    public var criticalMaxMultiplier: Double
+    public var freeSpaceSuppressThreshold: Int
+    public var updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case locationType = "location_type"
+        case locationId = "location_id"
+        case usageUnit = "usage_unit"
+        case aduLookbackDays = "adu_lookback_days"
+        case windowWeeks = "window_weeks"
+        case minDataDays = "min_data_days"
+        case commonMinMultiplier = "common_min_multiplier"
+        case commonTargetMultiplier = "common_target_multiplier"
+        case commonMaxMultiplier = "common_max_multiplier"
+        case criticalMinMultiplier = "critical_min_multiplier"
+        case criticalTargetMultiplier = "critical_target_multiplier"
+        case criticalMaxMultiplier = "critical_max_multiplier"
+        case freeSpaceSuppressThreshold = "free_space_suppress_threshold"
+        case updatedAt = "updated_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+// MARK: - LocationFreeSpace
+
+/// Physical free space rating for a location (1=nearly full, 10=lots of room).
+/// Updated monthly by notification prompt.
+public struct LocationFreeSpace: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+    public static let databaseTableName = "location_free_space"
+
+    public var id: Int64?
+    public var locationType: String
+    public var locationId: Int64
+    public var freeSpaceRating: Int
+    public var updatedBy: Int64?
+    public var updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case locationType = "location_type"
+        case locationId = "location_id"
+        case freeSpaceRating = "free_space_rating"
+        case updatedBy = "updated_by"
+        case updatedAt = "updated_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+// MARK: - TargetRecommendation
+
+/// A system-generated recommendation to change stock levels at a location.
+public struct TargetRecommendation: Codable, FetchableRecord, MutablePersistableRecord, Sendable, Identifiable {
+    public static let databaseTableName = "target_recommendations"
+
+    public var id: Int64?
+    public var partId: Int64
+    public var locationType: String
+    public var locationId: Int64
+    public var recommendationType: String   // adjust, add, remove, category_change
+    public var currentMin: Int?
+    public var currentTarget: Int?
+    public var currentMax: Int?
+    public var recommendedMin: Int?
+    public var recommendedTarget: Int?
+    public var recommendedMax: Int?
+    public var currentCategory: String?
+    public var recommendedCategory: String?
+    public var usageValue: Double
+    public var usageUnit: String
+    public var dataDays: Int
+    public var impactScore: Double
+    public var reason: String?
+    public var status: String
+    public var approvedBy: Int64?
+    public var approvedAt: String?
+    public var dismissedBy: Int64?
+    public var dismissedReason: String?
+    public var cooldownUntil: String?
+    public var createdAt: String?
+    public var deletedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case partId = "part_id"
+        case locationType = "location_type"
+        case locationId = "location_id"
+        case recommendationType = "recommendation_type"
+        case currentMin = "current_min"
+        case currentTarget = "current_target"
+        case currentMax = "current_max"
+        case recommendedMin = "recommended_min"
+        case recommendedTarget = "recommended_target"
+        case recommendedMax = "recommended_max"
+        case currentCategory = "current_category"
+        case recommendedCategory = "recommended_category"
+        case usageValue = "usage_value"
+        case usageUnit = "usage_unit"
+        case dataDays = "data_days"
+        case impactScore = "impact_score"
+        case reason, status
+        case approvedBy = "approved_by"
+        case approvedAt = "approved_at"
+        case dismissedBy = "dismissed_by"
+        case dismissedReason = "dismissed_reason"
+        case cooldownUntil = "cooldown_until"
+        case createdAt = "created_at"
+        case deletedAt = "deleted_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }

@@ -18,6 +18,16 @@ struct IOSProcurementPage: View {
     @State private var selectedSupplier: [Int64: Int64] = [:]  // [partId: supplierId]
     @State private var splitByJPOPartId: Int64? = nil           // expanded part for per-JPO split
     @State private var perJPOSupplier: [String: Int64] = [:]    // [sourceId: supplierId] for split mode
+    @State private var checkedParts: Set<Int64> = []            // parts included in generation
+    @State private var generateError: String?
+    @State private var generateSuccess: String?
+    @State private var isGenerating = false
+
+    // Pull action tracking: partId -> (pullQty, orderQty)
+    @State private var pullDecisions: [Int64: (pullQty: Int, orderQty: Int)] = [:]
+    @State private var pullActionError: String?
+    @State private var pullActionSuccess: String?
+    @State private var isPulling: Set<Int64> = []  // parts currently being pulled
 
     var body: some View {
         VStack(spacing: 0) {
@@ -40,6 +50,32 @@ struct IOSProcurementPage: View {
         .navigationTitle("Procurement")
         .refreshable { loadData() }
         .task { loadData() }
+        .alert("Error", isPresented: .constant(generateError != nil)) {
+            Button("OK") { generateError = nil }
+        } message: {
+            Text(generateError ?? "")
+        }
+        .alert("POs Generated", isPresented: .constant(generateSuccess != nil)) {
+            Button("OK") {
+                generateSuccess = nil
+                loadData() // Refresh to remove generated items
+            }
+        } message: {
+            Text(generateSuccess ?? "")
+        }
+        .alert("Pull Error", isPresented: .constant(pullActionError != nil)) {
+            Button("OK") { pullActionError = nil }
+        } message: {
+            Text(pullActionError ?? "")
+        }
+        .alert("Pull Complete", isPresented: .constant(pullActionSuccess != nil)) {
+            Button("OK") {
+                pullActionSuccess = nil
+                loadData() // Refresh stock levels
+            }
+        } message: {
+            Text(pullActionSuccess ?? "")
+        }
     }
 
     // MARK: - Smart Card Filters
@@ -111,20 +147,64 @@ struct IOSProcurementPage: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
+                    // Select/deselect all
+                    Button(checkedParts.count == filteredItems.count ? "Deselect All" : "Select All") {
+                        if checkedParts.count == filteredItems.count {
+                            checkedParts.removeAll()
+                        } else {
+                            checkedParts = Set(filteredItems.map(\.id))
+                        }
+                    }
+                    .font(.caption)
                 }
             }
 
             ForEach(filteredItems) { item in
                 procurementRow(item)
             }
+
+            // Preview + Generate section
+            if !readyToGenerateItems.isEmpty {
+                poPreviewSection
+            }
         }
         .listStyle(.insetGrouped)
     }
 
+    /// Items that have both a supplier selected AND are checked, with order qty > 0.
+    private var readyToGenerateItems: [OrdersService.ProcurementItem] {
+        items.filter { item in
+            checkedParts.contains(item.id) &&
+            selectedSupplier[item.id] != nil &&
+            effectiveOrderQty(for: item) > 0
+        }
+    }
+
+    /// The effective order quantity for a part, accounting for any pull decision.
+    private func effectiveOrderQty(for item: OrdersService.ProcurementItem) -> Int {
+        if let decision = pullDecisions[item.id] {
+            return decision.orderQty
+        }
+        return item.totalDemand
+    }
+
     private func procurementRow(_ item: OrdersService.ProcurementItem) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Part header
+            // Part header with checkbox
             HStack {
+                // Checkbox for generation
+                Button {
+                    if checkedParts.contains(item.id) {
+                        checkedParts.remove(item.id)
+                    } else {
+                        checkedParts.insert(item.id)
+                    }
+                } label: {
+                    Image(systemName: checkedParts.contains(item.id) ? "checkmark.square.fill" : "square")
+                        .foregroundStyle(checkedParts.contains(item.id) ? Color.accentColor : Color.secondary)
+                }
+                .buttonStyle(.plain)
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.partName)
                         .font(.subheadline)
@@ -143,9 +223,22 @@ struct IOSProcurementPage: View {
                 }
                 Spacer()
                 if item.totalDemand > 0 {
-                    Text("Need: \(item.totalDemand)")
-                        .font(.subheadline)
-                        .fontWeight(.bold)
+                    let orderQty = effectiveOrderQty(for: item)
+                    if let decision = pullDecisions[item.id], decision.pullQty > 0 {
+                        VStack(alignment: .trailing, spacing: 1) {
+                            Text("Order: \(orderQty)")
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundStyle(orderQty > 0 ? Color.primary : Color.green)
+                            Text("(\(decision.pullQty) pulled)")
+                                .font(.caption2)
+                                .foregroundStyle(.green)
+                        }
+                    } else {
+                        Text("Need: \(item.totalDemand)")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                    }
                 }
             }
 
@@ -237,6 +330,170 @@ struct IOSProcurementPage: View {
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(item.partName), need \(item.totalDemand), stock \(item.shopStock), target \(item.targetStock), \(item.urgency), \(item.suppliers.count) suppliers")
+    }
+
+    // MARK: - PO Preview + Generation
+
+    private var poPreviewSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                // Header
+                HStack {
+                    Image(systemName: "doc.badge.plus")
+                        .foregroundStyle(Color.accentColor)
+                    Text("Ready to Generate")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    Spacer()
+                    Text("\(poPreviewGroups.count) PO\(poPreviewGroups.count == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                // Grouped by supplier
+                ForEach(poPreviewGroups, id: \.supplierId) { group in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(group.supplierName)
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                        ForEach(group.parts, id: \.partId) { part in
+                            HStack {
+                                Text(part.partName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                // Show pull badge if this part had stock pulled
+                                if let decision = pullDecisions[part.partId], decision.pullQty > 0 {
+                                    Text("pulled \(decision.pullQty)")
+                                        .font(.system(.caption2, weight: .medium))
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .background(Capsule().fill(Color.green.opacity(0.15)))
+                                        .foregroundStyle(.green)
+                                }
+                                Spacer()
+                                Text("x\(part.quantity)")
+                                    .font(.caption)
+                                    .monospaced()
+                                if let cost = part.unitCost {
+                                    Text(String(format: "$%.2f", cost * Double(part.quantity)))
+                                        .font(.caption)
+                                        .monospaced()
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        let totalCost = group.parts.compactMap { p in
+                            p.unitCost.map { $0 * Double(p.quantity) }
+                        }.reduce(0, +)
+                        if totalCost > 0 {
+                            HStack {
+                                Spacer()
+                                Text(String(format: "Subtotal: $%.2f", totalCost))
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+
+                // Action buttons
+                HStack(spacing: 12) {
+                    Button {
+                        generatePOs()
+                    } label: {
+                        Label(
+                            isGenerating ? "Generating..." : "Generate \(poPreviewGroups.count) PO\(poPreviewGroups.count == 1 ? "" : "s")",
+                            systemImage: "doc.badge.plus"
+                        )
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isGenerating)
+
+                    Button {
+                        // Save for Later — just keep selections, they persist in state
+                    } label: {
+                        Text("Save for Later")
+                            .font(.subheadline)
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        } header: {
+            Text("PO Preview")
+        }
+    }
+
+    private struct POPreviewGroup {
+        let supplierId: Int64
+        let supplierName: String
+        let parts: [POPreviewPart]
+    }
+
+    private struct POPreviewPart {
+        let partId: Int64
+        let partName: String
+        let quantity: Int
+        let unitCost: Double?
+        let jpoLineIds: [Int64]
+    }
+
+    private var poPreviewGroups: [POPreviewGroup] {
+        var groups: [Int64: (name: String, parts: [POPreviewPart])] = [:]
+        for item in readyToGenerateItems {
+            guard let supplierId = selectedSupplier[item.id] else { continue }
+            let supplierName = item.suppliers.first(where: { $0.id == supplierId })?.name ?? "Unknown"
+            let unitCost = item.suppliers.first(where: { $0.id == supplierId })?.unitPrice
+            let allLineIds = item.sources.flatMap(\.lineIds)
+            let orderQty = effectiveOrderQty(for: item)
+
+            let part = POPreviewPart(
+                partId: item.id,
+                partName: item.partName,
+                quantity: orderQty,
+                unitCost: unitCost,
+                jpoLineIds: allLineIds
+            )
+            groups[supplierId, default: (name: supplierName, parts: [])].parts.append(part)
+        }
+        return groups.map { POPreviewGroup(supplierId: $0.key, supplierName: $0.value.name, parts: $0.value.parts) }
+            .sorted { $0.supplierName < $1.supplierName }
+    }
+
+    private func generatePOs() {
+        guard let service = appCore.ordersService else {
+            generateError = "Orders service not available"
+            return
+        }
+        isGenerating = true
+        defer { isGenerating = false }
+
+        let generateItems = poPreviewGroups.flatMap { group in
+            group.parts.map { part in
+                OrdersService.ProcurementGenerateItem(
+                    partId: part.partId,
+                    supplierId: group.supplierId,
+                    quantity: part.quantity,
+                    unitCost: part.unitCost,
+                    jpoLineIds: part.jpoLineIds
+                )
+            }
+        }
+
+        do {
+            let result = try service.generatePOsFromProcurement(items: generateItems)
+            let poNumbers = result.createdPOs.map(\.poNumber).joined(separator: ", ")
+            generateSuccess = "Created \(result.createdPOs.count) PO(s): \(poNumbers) with \(result.totalLineItems) line items"
+            // Clear checked items that were generated
+            for item in readyToGenerateItems {
+                checkedParts.remove(item.id)
+            }
+        } catch {
+            generateError = error.localizedDescription
+        }
     }
 
     // MARK: - Supplier Selection
@@ -396,49 +653,250 @@ struct IOSProcurementPage: View {
     @ViewBuilder
     private func pullOptionsView(_ item: OrdersService.ProcurementItem) -> some View {
         if item.shopStock > 0 && item.totalDemand > 0 {
+            let hasPullDecision = pullDecisions[item.id] != nil
+            let currentlyPulling = isPulling.contains(item.id)
+
             VStack(spacing: 4) {
-                // Option 1: Pull to Target + order remaining (RECOMMENDED)
-                let pullToTarget = max(0, item.shopStock - item.targetStock)
-                let orderAfterPull = max(0, item.totalDemand - pullToTarget)
-                if pullToTarget > 0 {
-                    pullButton(
-                        label: "Pull \(pullToTarget) to target" + (orderAfterPull > 0 ? " + order \(orderAfterPull)" : ""),
-                        isRecommended: true
-                    )
-                }
-
-                // Option 2: Pull all + order remaining
-                let orderAfterAll = max(0, item.totalDemand - item.shopStock)
-                if item.shopStock >= item.totalDemand {
-                    pullButton(
-                        label: "Pull \(item.totalDemand) from shelf (no order needed)",
-                        isRecommended: pullToTarget == 0
-                    )
+                if hasPullDecision {
+                    // Show the active pull decision
+                    let decision = pullDecisions[item.id]!
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+                        VStack(alignment: .leading, spacing: 1) {
+                            if decision.pullQty > 0 {
+                                Text("Pulling \(decision.pullQty) from shelf")
+                                    .font(.caption)
+                                    .foregroundStyle(.green)
+                            }
+                            if decision.orderQty > 0 {
+                                Text("Ordering \(decision.orderQty)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("No order needed")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Button {
+                            pullDecisions.removeValue(forKey: item.id)
+                        } label: {
+                            Text("Change")
+                                .font(.caption2)
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 8)
+                    .background(Color.green.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
                 } else {
+                    // Option 1: Pull to Target + order remaining (RECOMMENDED)
+                    let pullToTarget = max(0, item.shopStock - item.targetStock)
+                    let orderAfterPull = max(0, item.totalDemand - pullToTarget)
+                    if pullToTarget > 0 {
+                        pullButton(
+                            item: item,
+                            label: "Pull \(pullToTarget) to target" + (orderAfterPull > 0 ? " + order \(orderAfterPull)" : ""),
+                            pullQty: pullToTarget,
+                            orderQty: orderAfterPull,
+                            style: .recommended,
+                            isLoading: currentlyPulling
+                        )
+                    }
+
+                    // Option 2: Pull all + order remaining
+                    let orderAfterAll = max(0, item.totalDemand - item.shopStock)
+                    if item.shopStock >= item.totalDemand {
+                        pullButton(
+                            item: item,
+                            label: "Pull \(item.totalDemand) from shelf (no order needed)",
+                            pullQty: item.totalDemand,
+                            orderQty: 0,
+                            style: pullToTarget == 0 ? .recommended : .normal,
+                            isLoading: currentlyPulling
+                        )
+                    } else {
+                        pullButton(
+                            item: item,
+                            label: "Pull all \(item.shopStock) + order \(orderAfterAll)",
+                            pullQty: item.shopStock,
+                            orderQty: orderAfterAll,
+                            style: .normal,
+                            isLoading: currentlyPulling
+                        )
+                    }
+
+                    // Option 3: Pull to MIN + order remaining (only if different from target)
+                    if item.minStock > 0 && item.minStock != item.targetStock {
+                        let pullToMin = max(0, item.shopStock - item.minStock)
+                        let orderAfterMin = max(0, item.totalDemand - pullToMin)
+                        if pullToMin > 0 && pullToMin != pullToTarget {
+                            pullButton(
+                                item: item,
+                                label: "Pull \(pullToMin) to MIN + order \(orderAfterMin)",
+                                pullQty: pullToMin,
+                                orderQty: orderAfterMin,
+                                style: .normal,
+                                isLoading: currentlyPulling
+                            )
+                        }
+                    }
+
+                    // Option 4: Order all (no pull)
                     pullButton(
-                        label: "Pull all \(item.shopStock) + order \(orderAfterAll)",
-                        isRecommended: false
+                        item: item,
+                        label: "Order all \(item.totalDemand)",
+                        pullQty: 0,
+                        orderQty: item.totalDemand,
+                        style: .subdued,
+                        isLoading: false
                     )
                 }
 
-                // Option 3: Order all
-                pullButton(label: "Order all \(item.totalDemand)", isRecommended: false)
+                // Over MAX: force pull at least enough to bring below MAX
+                if item.maxStock > 0 && item.shopStock > item.maxStock {
+                    let forcePull = item.shopStock - item.maxStock
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.caption2)
+                        Text("Over MAX by \(forcePull) — must pull at least \(forcePull)")
+                            .font(.caption2)
+                            .foregroundStyle(.red)
+                    }
+                    .padding(.vertical, 4)
+                }
             }
         }
     }
 
-    private func pullButton(label: String, isRecommended: Bool) -> some View {
-        Button { /* TODO: execute pull/order action — wired in 28C */ } label: {
-            Text(label)
-                .font(.caption)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 6)
-                .padding(.horizontal, 10)
-                .background(isRecommended ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.08))
-                .foregroundStyle(isRecommended ? Color.accentColor : Color.secondary)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+    private enum PullButtonStyle {
+        case recommended, normal, subdued
+    }
+
+    private func pullButton(
+        item: OrdersService.ProcurementItem,
+        label: String,
+        pullQty: Int,
+        orderQty: Int,
+        style: PullButtonStyle,
+        isLoading: Bool
+    ) -> some View {
+        Button {
+            executePullAction(item: item, pullQty: pullQty, orderQty: orderQty)
+        } label: {
+            HStack(spacing: 6) {
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.mini)
+                }
+                Text(label)
+                    .font(.caption)
+                Spacer()
+                if style == .recommended {
+                    Text("RECOMMENDED")
+                        .font(.system(.caption2, weight: .bold))
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .background(pullButtonBackground(style))
+            .foregroundStyle(pullButtonForeground(style))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
+        .disabled(isLoading)
+    }
+
+    private func pullButtonBackground(_ style: PullButtonStyle) -> Color {
+        switch style {
+        case .recommended: Color.accentColor.opacity(0.15)
+        case .normal: Color.secondary.opacity(0.08)
+        case .subdued: Color.secondary.opacity(0.04)
+        }
+    }
+
+    private func pullButtonForeground(_ style: PullButtonStyle) -> Color {
+        switch style {
+        case .recommended: Color.accentColor
+        case .normal: Color.primary
+        case .subdued: Color.secondary
+        }
+    }
+
+    // MARK: - Pull Action Execution
+
+    /// Executes a pull from warehouse shelf to pulled-staging and records the decision.
+    private func executePullAction(item: OrdersService.ProcurementItem, pullQty: Int, orderQty: Int) {
+        // If no pull needed (order-all), just record the decision
+        if pullQty == 0 {
+            pullDecisions[item.id] = (pullQty: 0, orderQty: orderQty)
+            return
+        }
+
+        guard let warehouseService = appCore.warehouseService else {
+            pullActionError = "Warehouse service not available"
+            return
+        }
+        let userId = appCore.currentUser?.id ?? 1
+
+        isPulling.insert(item.id)
+        defer { isPulling.remove(item.id) }
+
+        do {
+            // Verify stock is still available before pulling
+            let currentStock = try warehouseService.getStockQty(
+                partId: item.id,
+                locationType: "warehouse",
+                locationId: 1
+            )
+
+            let actualPull = min(pullQty, currentStock)
+            if actualPull <= 0 {
+                pullActionError = "No stock available on shelf for \(item.partName)"
+                return
+            }
+
+            // Create the warehouse -> pulled movement
+            try warehouseService.createMovement(
+                partId: item.id,
+                qty: actualPull,
+                fromLocationType: "warehouse",
+                fromLocationId: 1,
+                toLocationType: "pulled",
+                toLocationId: 1,
+                movementType: "transfer",
+                reason: "Procurement pull",
+                notes: "Pulled \(actualPull) for procurement demand of \(item.totalDemand)",
+                performedBy: userId
+            )
+
+            // Calculate adjusted order quantity
+            let adjustedOrder = max(0, item.totalDemand - actualPull)
+
+            // Record the decision
+            pullDecisions[item.id] = (pullQty: actualPull, orderQty: adjustedOrder)
+
+            // Show confirmation
+            if actualPull < pullQty {
+                pullActionSuccess = "Pulled \(actualPull) of \(pullQty) for \(item.partName) (stock limited). Order \(adjustedOrder) remaining."
+            } else if adjustedOrder > 0 {
+                pullActionSuccess = "Pulled \(actualPull) \(item.partName) to staging. Order \(adjustedOrder) remaining."
+            } else {
+                pullActionSuccess = "Pulled \(actualPull) \(item.partName) to staging. No order needed."
+            }
+
+            // Reload to reflect updated stock levels
+            loadData()
+        } catch {
+            pullActionError = "Pull failed for \(item.partName): \(error.localizedDescription)"
+        }
     }
 
     // MARK: - Source Icons
@@ -480,7 +938,11 @@ struct IOSProcurementPage: View {
         isLoading = items.isEmpty
         loadError = nil
         do {
-            items = try service.getProcurementDemand()
+            let newItems = try service.getProcurementDemand()
+            // Clean up pull decisions for parts no longer in the list
+            let currentIds = Set(newItems.map(\.id))
+            pullDecisions = pullDecisions.filter { currentIds.contains($0.key) }
+            items = newItems
             // Auto-select preferred suppliers
             for item in items {
                 if selectedSupplier[item.id] == nil,

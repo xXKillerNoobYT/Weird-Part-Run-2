@@ -280,17 +280,59 @@ public final class SchedulingService: Sendable {
         endDate: String,
         reason: String? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
-            try dbConn.execute(
-                sql: """
-                    INSERT INTO schedule_exceptions
-                    (user_id, exception_date, exception_type, reason, is_approved, created_at)
-                    VALUES (?, ?, 'time_off', ?, 0, datetime('now'))
-                    """,
-                arguments: [userId, startDate, reason]
-            )
-            return dbConn.lastInsertedRowID
+        // Generate all dates in the range [startDate, endDate]
+        let dates = Self.datesInRange(from: startDate, to: endDate)
+        guard !dates.isEmpty else {
+            // Fallback: at least insert the start date
+            return try db.writer.write { dbConn in
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO schedule_exceptions
+                        (user_id, exception_date, exception_type, reason, is_approved, created_at)
+                        VALUES (?, ?, 'time_off', ?, 0, datetime('now'))
+                        """,
+                    arguments: [userId, startDate, reason]
+                )
+                return dbConn.lastInsertedRowID
+            }
         }
+
+        return try db.writer.write { dbConn in
+            var firstId: Int64 = 0
+            for (i, date) in dates.enumerated() {
+                try dbConn.execute(
+                    sql: """
+                        INSERT OR IGNORE INTO schedule_exceptions
+                        (user_id, exception_date, exception_type, reason, is_approved, created_at)
+                        VALUES (?, ?, 'time_off', ?, 0, datetime('now'))
+                        """,
+                    arguments: [userId, date, reason]
+                )
+                if i == 0 { firstId = dbConn.lastInsertedRowID }
+            }
+            return firstId
+        }
+    }
+
+    /// Generate an array of date strings from start to end (inclusive), format "YYYY-MM-DD".
+    private static func datesInRange(from start: String, to end: String) -> [String] {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        fmt.timeZone = TimeZone(identifier: "UTC")
+
+        guard let startDate = fmt.date(from: String(start.prefix(10))),
+              let endDate = fmt.date(from: String(end.prefix(10))) else {
+            return []
+        }
+
+        var dates: [String] = []
+        var current = startDate
+        while current <= endDate {
+            dates.append(fmt.string(from: current))
+            guard let next = Calendar.current.date(byAdding: .day, value: 1, to: current) else { break }
+            current = next
+        }
+        return dates
     }
 
     /// Update the status of a time-off request (e.g. approve or deny).
@@ -371,7 +413,59 @@ public final class SchedulingService: Sendable {
     }
 
     // =========================================================================
-    // MARK: - 5. Scheduling Stats
+    // MARK: - 5. Dispatch Creation
+    // =========================================================================
+
+    /// Creates a new dispatch entry (assign user to job on a date).
+    @discardableResult
+    public func createDispatch(
+        jobId: Int64,
+        userId: Int64,
+        date: String,
+        notes: String? = nil
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO job_dispatch
+                    (job_id, user_id, dispatch_date, notes, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, 'scheduled', datetime('now'), datetime('now'))
+                    """,
+                arguments: [jobId, userId, date, notes]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 6. Schedule Entry Creation
+    // =========================================================================
+
+    /// Creates a new schedule entry (schedule a user for a job on a date with optional times).
+    @discardableResult
+    public func createScheduleEntry(
+        userId: Int64,
+        jobId: Int64,
+        date: String,
+        startTime: String? = nil,
+        endTime: String? = nil,
+        notes: String? = nil
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO job_dispatch
+                    (job_id, user_id, dispatch_date, shift_start, shift_end, notes, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'scheduled', datetime('now'), datetime('now'))
+                    """,
+                arguments: [jobId, userId, date, startTime, endTime, notes]
+            )
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 7. Scheduling Stats
     // =========================================================================
 
     /// Get scheduling dashboard stats: scheduled today, dispatched today, pending time-off.

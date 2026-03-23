@@ -15,8 +15,13 @@ struct IOSJobDetailTabView: View {
     @State private var loadError: String?
     @State private var selectedTab = "overview"
     @State private var showEditSheet = false
+    @State private var showHelp = false
     @State private var jobJPOs: [OrdersService.JPOListItem] = []
     @State private var jobQAThreads: [ChatService.QAThreadRow] = []
+    @State private var teamMembers: [JobsService.TeamMemberRow] = []
+    @State private var jobParts: [JobsService.JobPartRow] = []
+    @State private var jobSupplierChannels: [ChatService.SupplierChannelRow] = []
+    @State private var showCreateSupplierChannel = false
 
     private let tabs: [(id: String, label: String, icon: String)] = [
         ("overview", "Overview", "doc.text"),
@@ -46,9 +51,7 @@ struct IOSJobDetailTabView: View {
             }
         }
         .navigationTitle(job?.jobName ?? "Job Detail")
-        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
-        #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -58,6 +61,21 @@ struct IOSJobDetailTabView: View {
                 }
                 .requiresPermission("manage_jobs")
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showHelp) {
+            PageHelpSheet(
+                title: "Job Detail Help",
+                sections: [
+                    ("Tabs", "Use the scrollable tab bar to switch between Overview, Team, Labor, Parts, Orders, Notebooks, Chat, Q&A, and Costs."),
+                    ("Editing", "Tap the pencil icon to edit job details like name, status, priority, and address."),
+                    ("Collaboration", "The Chat and Q&A tabs let you communicate with your team. Notebooks track notes and to-dos for this job.")
+                ]
+            )
         }
         .sheet(isPresented: $showEditSheet) {
             if let job {
@@ -197,12 +215,12 @@ struct IOSJobDetailTabView: View {
                 Text("Team Members")
                     .font(.headline)
                 Spacer()
-                Text("\(job.teamCount) members")
+                Text("\(teamMembers.count) members")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            if job.teamCount == 0 {
+            if teamMembers.isEmpty {
                 EmptyStateView(
                     icon: "person.2",
                     title: "No Team Members",
@@ -210,12 +228,33 @@ struct IOSJobDetailTabView: View {
                 )
                 .frame(height: 200)
             } else {
-                Text("Team member list will show assigned users with roles.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                ForEach(teamMembers) { member in
+                    HStack(spacing: 12) {
+                        Image(systemName: "person.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(member.userName)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text(member.role.capitalized)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if let date = member.joinedAt {
+                            Text(date)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(10)
+                    .dsCard()
+                }
             }
         }
         .padding()
+        .task { loadTeamMembers() }
     }
 
     // MARK: - Labor Tab
@@ -282,11 +321,50 @@ struct IOSJobDetailTabView: View {
                     .hideWithoutPermission("show_dollar_values")
             }
 
-            Text("Parts assigned to this job will be listed here with quantities and costs.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            if jobParts.isEmpty {
+                EmptyStateView(
+                    icon: "wrench.and.screwdriver",
+                    title: "No Parts",
+                    message: "Parts used on this job will appear here."
+                )
+                .frame(height: 200)
+            } else {
+                ForEach(jobParts) { part in
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(part.partName)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            if let code = part.partCode, !code.isEmpty {
+                                Text(code)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("Qty: \(part.qtyConsumed)")
+                                .font(.caption)
+                            if part.qtyReturned > 0 {
+                                Text("Returned: \(part.qtyReturned)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        if let cost = part.unitCost {
+                            Text(formatCurrency(cost * Double(part.qtyConsumed)))
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .hideWithoutPermission("show_dollar_values")
+                        }
+                    }
+                    .padding(10)
+                    .dsCard()
+                }
+            }
         }
         .padding()
+        .task { loadJobParts() }
     }
 
     // MARK: - Costs Tab
@@ -406,8 +484,79 @@ struct IOSJobDetailTabView: View {
                 Label("Open Chat", systemImage: "bubble.left.fill")
             }
             .buttonStyle(.bordered)
+
+            // Supplier Channels for this job
+            supplierChannelsSection
         }
         .padding()
+        .task { loadJobSupplierChannels() }
+    }
+
+    // MARK: - Supplier Channels Section
+
+    private var supplierChannelsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Supplier Channels")
+                .font(.headline)
+
+            if jobSupplierChannels.isEmpty {
+                Button {
+                    showCreateSupplierChannel = true
+                } label: {
+                    Label("Add Supplier Channel", systemImage: "plus.bubble")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minHeight: 44)
+                }
+            } else {
+                ForEach(jobSupplierChannels, id: \.channelId) { channel in
+                    NavigationLink {
+                        IOSMessageThreadView(
+                            channelId: channel.channelId,
+                            channelName: channel.channelName
+                        )
+                        .environmentObject(appCore)
+                    } label: {
+                        HStack {
+                            Image(systemName: "building.2")
+                                .foregroundStyle(.orange)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(channel.supplierName)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                if let role = channel.role {
+                                    Text(role)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            if channel.unreadCount > 0 {
+                                Text("\(channel.unreadCount)")
+                                    .font(.caption2)
+                                    .fontWeight(.bold)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.red)
+                                    .foregroundStyle(.white)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        .frame(minHeight: 44)
+                    }
+                }
+
+                Button {
+                    showCreateSupplierChannel = true
+                } label: {
+                    Label("Add Another", systemImage: "plus.circle")
+                        .font(.subheadline)
+                }
+            }
+        }
+        .sheet(isPresented: $showCreateSupplierChannel) {
+            CreateJobSupplierChannelSheet(jobId: jobId, onCreated: { loadJobSupplierChannels() })
+                .environmentObject(appCore)
+        }
     }
 
     // MARK: - Q&A Tab
@@ -498,13 +647,31 @@ struct IOSJobDetailTabView: View {
         isLoading = false
     }
 
+    private func loadTeamMembers() {
+        guard let service = appCore.jobsService else { return }
+        do {
+            teamMembers = try service.getTeamMembers(jobId: jobId)
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
+
+    private func loadJobParts() {
+        guard let service = appCore.jobsService else { return }
+        do {
+            jobParts = try service.getJobParts(jobId: jobId)
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
+
     private func loadJobOrders() {
         guard let service = appCore.ordersService else { return }
         do {
             let all = try service.listJPOs(status: nil)
             jobJPOs = all.filter { $0.jobId == jobId }
         } catch {
-            print("[IOSJobDetailTabView] Failed to load JPOs: \(error)")
+            loadError = error.localizedDescription
         }
     }
 
@@ -514,7 +681,17 @@ struct IOSJobDetailTabView: View {
             let all = try service.listQAThreads(status: nil)
             jobQAThreads = all.filter { $0.jobId == jobId }
         } catch {
-            print("[IOSJobDetailTabView] Failed to load Q&A: \(error)")
+            loadError = error.localizedDescription
+        }
+    }
+
+    private func loadJobSupplierChannels() {
+        guard let service = appCore.chatService else { return }
+        guard let userId = appCore.currentUser?.id else { return }
+        do {
+            jobSupplierChannels = try service.listSupplierChannelsForJob(jobId: jobId, userId: userId)
+        } catch {
+            loadError = error.localizedDescription
         }
     }
 
@@ -580,5 +757,112 @@ private struct CostRow: View {
                 .font(.subheadline)
                 .fontWeight(.medium)
         }
+    }
+}
+
+// MARK: - Create Job Supplier Channel Sheet
+
+private struct CreateJobSupplierChannelSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let jobId: Int64
+    let onCreated: () -> Void
+
+    @State private var suppliers: [PartsService.SupplierWithCount] = []
+    @State private var selectedSupplierId: Int64 = 0
+    @State private var channelName = ""
+    @State private var errorMessage: String?
+    @State private var isSaving = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Supplier") {
+                    if suppliers.isEmpty {
+                        Text("No suppliers available")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Picker("Select Supplier", selection: $selectedSupplierId) {
+                            Text("Choose...").tag(Int64(0))
+                            ForEach(suppliers, id: \.supplier.id) { item in
+                                Text(item.supplier.name)
+                                    .tag(item.supplier.id ?? Int64(0))
+                            }
+                        }
+                    }
+                }
+                Section("Channel Name (Optional)") {
+                    TextField("Auto-generated if empty", text: $channelName)
+                }
+                if let error = errorMessage {
+                    Section {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Supplier Channel")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") { save() }
+                        .disabled(selectedSupplierId == 0 || isSaving)
+                }
+            }
+            .task { loadSuppliers() }
+        }
+    }
+
+    private func loadSuppliers() {
+        guard let service = appCore.partsService else { return }
+        do {
+            suppliers = try service.listSuppliers()
+        } catch {
+            errorMessage = "Failed to load suppliers."
+        }
+    }
+
+    private func save() {
+        guard let service = appCore.chatService else {
+            errorMessage = "Chat service unavailable"
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            errorMessage = "Not logged in"
+            return
+        }
+        guard selectedSupplierId > 0 else {
+            errorMessage = "Please select a supplier."
+            return
+        }
+
+        isSaving = true
+        errorMessage = nil
+
+        let supplier = suppliers.first(where: { ($0.supplier.id ?? 0) == selectedSupplierId })
+        let displayName = supplier?.supplier.contactName ?? supplier?.supplier.name ?? "Supplier"
+        let name = channelName.isEmpty ? "Channel: \(supplier?.supplier.name ?? "Supplier")" : channelName
+
+        do {
+            _ = try service.createSupplierChannel(
+                name: name,
+                supplierId: selectedSupplierId,
+                supplierDisplayName: displayName,
+                contactId: nil,
+                role: nil,
+                createdBy: userId,
+                jobId: jobId
+            )
+            onCreated()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isSaving = false
     }
 }

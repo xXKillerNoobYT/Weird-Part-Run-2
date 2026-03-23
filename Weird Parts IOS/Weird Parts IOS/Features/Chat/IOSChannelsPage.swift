@@ -15,11 +15,62 @@ struct IOSChannelsPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case createChannel
+        case newDM
+        case supplierChannel
+
+        var id: String {
+            switch self {
+            case .createChannel: "createChannel"
+            case .newDM: "newDM"
+            case .supplierChannel: "supplierChannel"
+            }
+        }
+    }
 
     var body: some View {
         channelList
             .navigationTitle("Channels")
             .searchable(text: $searchText, prompt: "Search channels...")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button {
+                            activeSheet = .createChannel
+                        } label: {
+                            Label("New Channel", systemImage: "number")
+                        }
+                        Button {
+                            activeSheet = .newDM
+                        } label: {
+                            Label("New Message", systemImage: "envelope")
+                        }
+                        Button {
+                            activeSheet = .supplierChannel
+                        } label: {
+                            Label("Supplier Channel", systemImage: "shippingbox")
+                        }
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .createChannel:
+                    CreateChannelSheet(channelType: "group", onSave: { loadData() })
+                        .environmentObject(appCore)
+                case .newDM:
+                    CreateChannelSheet(channelType: "dm", onSave: { loadData() })
+                        .environmentObject(appCore)
+                case .supplierChannel:
+                    CreateChannelSheet(channelType: "supplier", onSave: { loadData() })
+                        .environmentObject(appCore)
+                }
+            }
             .refreshable { loadData() }
             .task { loadData() }
     }
@@ -51,9 +102,7 @@ struct IOSChannelsPage: View {
                     channelRow(channel)
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -81,7 +130,7 @@ struct IOSChannelsPage: View {
                     channelTypeBadge(channel.channelType)
                 }
                 if let jobName = channel.jobName, channel.name != nil {
-                    Label(jobName, systemImage: "hammer")
+                    Label(jobName, systemImage: channel.channelType == "supplier" ? "building.2" : "hammer")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -112,6 +161,7 @@ struct IOSChannelsPage: View {
         case "job": return "hammer.circle"
         case "dm": return "person.circle"
         case "group": return "person.3"
+        case "supplier": return "shippingbox.circle"
         default: return "bubble.left.and.bubble.right"
         }
     }
@@ -121,6 +171,7 @@ struct IOSChannelsPage: View {
         case "job": .blue
         case "dm": .purple
         case "group": .green
+        case "supplier": .orange
         default: .secondary
         }
         return Text(type.uppercased())

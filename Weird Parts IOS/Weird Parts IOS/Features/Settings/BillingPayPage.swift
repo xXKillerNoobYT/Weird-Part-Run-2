@@ -65,29 +65,40 @@ struct BillingPayPage: View {
     }
 
     private func loadSettings() {
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service unavailable"
+            return
+        }
         do {
-            let billing = try appCore.settingsService.getBillingCycle()
+            let billing = try service.getBillingCycle()
             billingCycleType = billing.cycleType
             billingStartDay = billing.startDay
 
-            let pay = try appCore.settingsService.getPayPeriod()
+            let pay = try service.getPayPeriod()
             payPeriodType = pay.periodType
             payStartDay = pay.startDay
         } catch {
-            print("[BillingPayPage] Load error: \(error)")
+            errorMessage = "Failed to load: \(error.localizedDescription)"
         }
     }
 
     private func saveSettings() {
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service unavailable"
+            return
+        }
         do {
-            _ = try appCore.settingsService.updateBillingCycle(
+            _ = try service.updateBillingCycle(
                 SettingsService.BillingCycleSettings(cycleType: billingCycleType, startDay: billingStartDay)
             )
-            _ = try appCore.settingsService.updatePayPeriod(
+            _ = try service.updatePayPeriod(
                 SettingsService.PayPeriodSettings(periodType: payPeriodType, startDay: payStartDay)
             )
             saved = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                saved = false
+            }
         } catch {
             errorMessage = "Failed to save: \(error.localizedDescription)"
         }

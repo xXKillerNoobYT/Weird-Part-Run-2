@@ -79,6 +79,9 @@ struct WarehouseDashboardPage: View {
                 // Smart Card Filters
                 smartCardFilters
 
+                // KPI Summary
+                kpiRow
+
                 // Quick Actions
                 quickActionsSection
 

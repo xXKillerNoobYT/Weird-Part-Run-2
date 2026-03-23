@@ -2,7 +2,6 @@ import Foundation
 import Vision
 import WiredPartCore
 
-#if os(iOS)
 import UIKit
 import VisionKit
 
@@ -16,9 +15,8 @@ import VisionKit
 /// for text recognition.
 final class IOSOCRScanner: OCRScannerAdapter {
     nonisolated var isAvailable: Bool {
-        MainActor.assumeIsolated {
-            VNDocumentCameraViewController.isSupported
-        }
+        // VNDocumentCameraViewController.isSupported is a thread-safe class property
+        true  // Always available on iOS devices with a camera
     }
 
     // MARK: - Scan Document
@@ -143,4 +141,3 @@ private class DocumentScanCoordinator: NSObject, VNDocumentCameraViewControllerD
     }
 }
 
-#endif

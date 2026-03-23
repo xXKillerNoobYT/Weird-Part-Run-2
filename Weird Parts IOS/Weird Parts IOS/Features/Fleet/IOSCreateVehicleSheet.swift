@@ -38,9 +38,7 @@ struct IOSCreateVehicleSheet: View {
                 }
             }
             .navigationTitle("New Vehicle")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -73,9 +71,7 @@ struct IOSCreateVehicleSheet: View {
             TextField("Make", text: $make)
             TextField("Model", text: $model)
             TextField("Year", text: $yearText)
-                #if os(iOS)
                 .keyboardType(.numberPad)
-                #endif
             TextField("Color", text: $color)
         }
     }

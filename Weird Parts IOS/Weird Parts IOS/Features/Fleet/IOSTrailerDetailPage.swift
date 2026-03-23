@@ -30,9 +30,7 @@ struct IOSTrailerDetailPage: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
         .navigationTitle("Trailer \(trailer.trailerNumber)")
     }
 

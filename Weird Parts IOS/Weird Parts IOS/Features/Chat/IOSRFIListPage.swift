@@ -9,10 +9,16 @@ struct IOSRFIListPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     @State private var threads: [ChatService.QAThreadRow] = []
+    @State private var supplierQuestions: [ChatService.SupplierQuestionRow] = []
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
     @State private var loadError: String?
+    private enum ActiveSheet: String, Identifiable {
+        case createRFI
+        var id: String { rawValue }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     private let statusOptions = ["all", "open", "answered", "escalated"]
 
@@ -23,6 +29,20 @@ struct IOSRFIListPage: View {
         }
         .navigationTitle("RFIs")
         .searchable(text: $searchText, prompt: "Search RFIs...")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .createRFI } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .createRFI:
+                IOSQAQuestionForm(onSubmitted: { loadData() })
+                    .environmentObject(appCore)
+            }
+        }
         .refreshable { loadData() }
         .task { loadData() }
     }
@@ -64,24 +84,59 @@ struct IOSRFIListPage: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
-        } else if filteredThreads.isEmpty {
+        } else if filteredThreads.isEmpty && supplierQuestions.isEmpty {
             EmptyStateView(
                 icon: "doc.questionmark",
                 title: "No RFIs",
                 message: "No requests for information at this time."
             )
         } else {
-            List(filteredThreads) { thread in
-                NavigationLink {
-                    IOSEscalationTimeline(thread: thread)
-                        .navigationTitle("RFI Detail")
-                } label: {
-                    rfiRow(thread)
+            List {
+                if !supplierQuestions.isEmpty {
+                    Section("Supplier Questions") {
+                        ForEach(supplierQuestions) { question in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Image(systemName: "building.2")
+                                        .foregroundStyle(.orange)
+                                    Text(question.subject)
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                }
+                                HStack {
+                                    Text(question.supplierName)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Text(question.status.capitalized)
+                                        .font(.caption2)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(statusColor(question.status).opacity(0.1))
+                                        .foregroundStyle(statusColor(question.status))
+                                        .clipShape(Capsule())
+                                }
+                                Text("Asked by \(question.askedByName)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+
+                Section("RFIs") {
+                    ForEach(filteredThreads) { thread in
+                        NavigationLink {
+                            IOSEscalationTimeline(thread: thread)
+                                .navigationTitle("RFI Detail")
+                        } label: {
+                            rfiRow(thread)
+                        }
+                    }
                 }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
@@ -161,12 +216,12 @@ struct IOSRFIListPage: View {
 
     private func loadData() {
         guard let service = appCore.chatService else { return }
-        isLoading = threads.isEmpty
+        isLoading = threads.isEmpty && supplierQuestions.isEmpty
         loadError = nil
         do {
-            threads = try service.listQAThreads(
-                status: statusFilter == "all" ? nil : statusFilter
-            )
+            let statusArg = statusFilter == "all" ? nil : statusFilter
+            threads = try service.listQAThreads(status: statusArg)
+            supplierQuestions = try service.listSupplierQuestions(status: statusArg)
         } catch {
             loadError = error.localizedDescription
         }

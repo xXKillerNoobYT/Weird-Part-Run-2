@@ -27,6 +27,7 @@ struct IOSDashboardQRScannerPage: View {
 
     // Manual entry
     @State private var manualCode = ""
+    @State private var showHelp = false
 
     #if os(iOS) && !targetEnvironment(macCatalyst)
     @State private var scanner: IOSQRScanner?
@@ -52,6 +53,23 @@ struct IOSDashboardQRScannerPage: View {
         .background(Color.black)
         .navigationTitle("QR Scanner")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showHelp) {
+            PageHelpSheet(
+                title: "QR Scanner Help",
+                sections: [
+                    ("Scanning", "Point the camera at any WiredPart QR code. The scanner runs continuously and shows item info in real time as you scan."),
+                    ("Lock & Actions", "Tap the lock button to freeze on a result and see quick actions. Tap Resume Scanning to continue. Quick actions auto-lock the camera."),
+                    ("Manual Entry", "No camera? Type or paste a code in the manual entry field below the camera view to look up items directly.")
+                ]
+            )
+        }
         .onAppear {
             #if os(iOS) && !targetEnvironment(macCatalyst)
             if DataScannerViewController.isSupported {
@@ -324,7 +342,7 @@ struct IOSDashboardQRScannerPage: View {
                 }
                 .padding(.horizontal, DS.Space.lg)
 
-                if let result = currentResult {
+                if currentResult != nil {
                     resultOverlay
                         .dsCard()
                         .padding(.horizontal, DS.Space.lg)
