@@ -141,6 +141,8 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 35B | Job Detail Tab Fixes | 5 print() catches → state, client-side→server-side filtering, dead code | |
 | 35C | Scheduling Raw SQL | IOSSubSchedulePage + IOSWeeklyAvailabilityPage: GRDB removal + error states | |
 | 35D | GeofenceAlertView Fix | Remove GRDB + raw SQL, fix silent clock-in/out errors, show error feedback | |
+| 35E | Fleet GRDB + ErrorStateView | Remove GRDB from 2 pages, wire ErrorStateView in 6 pages, remove print() | |
+| 35F | Audit Session ID + PO Delete Nav | Fix hardcoded session ID 0, navigate back after draft delete, save reject reason | |
 
 ## Prompt 01 Results (2026-03-18)
 
