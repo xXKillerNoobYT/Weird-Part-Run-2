@@ -30,20 +30,20 @@
 | QR System (cross-cutting) | multiple | ✅ | 20A-20D, 21A-21B (6) | All queued |
 | Supplier Bridge (cross-cutting) | multiple | ✅ | 22A-22C (3) | All queued |
 | Review Cleanup (cross-cutting) | multiple | ✅ | 18A (1) | Queued |
-| Jobs | 11 files | ❌ | — | Not started |
-| People | 11 files | ❌ | — | Not started |
+| Jobs | 11 files | ✅ Design | — | Design complete, prompts pending |
+| People | 11 files | ✅ Design | — | Design complete, prompts pending |
 | Orders | 14 files | ❌ | — | Not started |
 | Warehouse | 15 files | ❌ | — | Not started |
-| Scheduling | 12 files | ❌ | — | Not started |
-| Chat | 9 files | ❌ | — | Not started |
+| Scheduling | 12 files | ✅ Design | — | Design complete, prompts pending |
+| Chat | 9 files | ✅ Design | — | Design complete, prompts pending |
 | Tools | 7 files | ❌ | — | Not started |
 | Fleet | 17 files | ❌ | — | Not started |
 | Reports | 9 files | ❌ | — | Not started |
 | Office | 6 files | ❌ | — | Not started |
-| Notebooks | 7 files | ❌ | — | Not started |
+| Notebooks | 7 files | ✅ Design | — | Design complete, prompts pending |
 | Settings | 23 files | ❌ | — | Not started |
 
-**Totals:** 81 prompts written · 32 DONE · 49 queued · ~12 feature areas unreviewed
+**Totals:** 81 prompts written · 32 DONE · 49 queued · 5 areas designed (prompts pending) · ~7 feature areas unreviewed
 
 ---
 
@@ -263,6 +263,89 @@ Companion rules: "when you buy X, you probably also need Y."
 
 ---
 
+## Designed Pages — Design Complete, Prompts Pending
+
+These areas have comprehensive design plans saved in `docs/plans/`. Next step: read current code, write Xcode AI prompts.
+
+### Jobs (Design: 2026-03-23)
+
+**Plan file:** `docs/plans/ios-jobs-pages.md`
+**Files:** `JobsListPage`, `IOSJobDetailPage`, `IOSJobDetailTabView`, `IOSCreateJobSheet`, `IOSEditJobSheet`, `IOSClockPage`, `IOSDailyReportsPage`, `IOSQuestionnairePage`, `JobReportsPage`, `LaborPage`
+
+**Key design decisions:**
+- 7 job statuses: Active, On Hold, Payment Hold (workers see "On Hold", managers see "$"), Completed, Cancelled, Warranty, Continuous
+- Smart cards on list page with AI summary per card (cached 1hr), stage progression bar, dual progress bars (hours + budget, only if data exists)
+- Per-job dashboard with stage progression, smart cards, AI summary, today's activity, quick actions (hat-gated), warranty info, financial summary
+- Continuous jobs: to-do driven, per-to-do warranty, only qualified workers, light gray appearance
+- Payment hold: red banner, workers can't clock in, resume hat-locked
+- Clock integration: to-do picker on clock-in, mark done + pick next, switch to-do, work type (New/Warranty), live timer, one-action job switch
+- Warranty: default 1 year adjustable, continuous jobs get per-to-do warranty, warranty work classification with manager review
+- Swipe actions: AI summary (right), status change (left, managers only)
+
+### Chat (Design: 2026-03-23)
+
+**Plan file:** `docs/plans/ios-chat-pages.md`
+**Files:** `IOSChannelsPage`, `IOSMessageThreadView`, `CreateChannelSheet`, `IOSQuestionsPage`, `IOSQAQuestionForm`, `IOSRFIListPage`
+
+**Key design decisions:**
+- Unified inbox: all messages/Q&A/RFI/supplier/DM in one sorted stream, unread float to top
+- Smart cards: Unread, Messages, Q&A, RFI, Supplier, DMs, Job, All
+- Thread info: iMessage-style inline expandable (tap header inside thread), shows source context, escalation ladder, quick actions
+- Escalation: bidirectional up AND down chain (Worker <-> Lead <-> Manager <-> Office)
+- Attachments: photos, PDFs, part/PO/job references (tappable links), auto-save to job notebook, mobile offload 3mo, auto-delete 5yr
+- JPO Hold threads show in BOTH JPO detail AND Channels page (dual-homed)
+- Auto-fill job context when clocked in (program-wide rule)
+- Real-time via sync engine (no polling)
+
+### Notebooks (Design: 2026-03-23)
+
+**Plan file:** `docs/plans/ios-notebooks-pages.md`
+**Files:** `IOSNotebooksListPage`, `IOSNotebookDetailPage`, `IOSJobNotebooksPage`, `IOSNotebookTemplatesPage`, `AddNotebookEntrySheet`, `CreateNotebookSheet`
+
+**Key design decisions:**
+- Hierarchy: Section Groups -> Sections -> Pages (OneNote-style)
+- Block-based editing: each block = one type (text, heading, photo, checklist, etc.), Notion-style
+- Sync conflicts: per-block resolution, AI merge with Apple AI glow, version comparison, manual rewrite option
+- Shortcut commands: /h1, /h2, /checklist, /photo, /part, /panel, /divider, etc.
+- Two to-do types: Regular Work + Warranty Work. Question is a tag (not separate type).
+- Panel Schedule Builder: dedicated tool, drag-drop circuits, dual breakers, multiple panel types (MDP to 2-space disconnect), custom paper sizes, company header with drag-drop designer
+- Daily Report: system-generated from clock/to-do data, AI compiled + self-verified, template-driven (Office configures), user adds notes below system section
+- Templates: job starter templates, page templates, report templates, configurable per job type/status in Office
+
+### People (Design: 2026-03-23)
+
+**Plan file:** `docs/plans/ios-people-pages.md`
+**Files:** `IOSEmployeesPage`, `IOSEmployeeDetailPage`, `IOSCustomersPage`, `IOSCustomerDetailPage`, `IOSContractorsPage`, `IOSContractorDetailPage`, `IOSContactsPage`, `IOSHatsPage`, `IOSPermissionsPage`, `IOSTeamsPage`, `PeopleRouter`
+
+**Key design decisions:**
+- People Dashboard: working today, off today, certs expiring, team assignments
+- Employee detail: hat visibility (employees see own hats read-only, managers can toggle), GRDB removal needed
+- Customer detail: full page with contact info, additional contacts, business info, billing & payment (hat-gated), job history, communication history, documents, stats
+- Payment tracking: company setting (enable/disable), green-to-red bar showing on-time %, overdue alerts
+- Contractor detail: subcontractors get full ratings (quality/on-time/reliability), GC and contractors get notes only
+- Contacts: unified list with active/inactive sections, smart cards by type, sort by recently updated
+- Teams: full detail page with member management, job assignments, team stats
+
+### Scheduling (Design: 2026-03-23)
+
+**Plan file:** `docs/plans/ios-scheduling-pages.md`
+**Files:** `IOSScheduleCalendarPage`, `IOSDispatchPage`, `IOSTimeOffPage`, `IOSWeeklyAvailabilityPage`, `IOSSubSchedulePage`, `IOSDispatchTemplatesPage`, `IOSTemplateBuilderSheet`, `CreateScheduleEntrySheet`, `CreateDispatchSheet`, `RequestTimeOffSheet`
+
+**Key design decisions:**
+- Calendar: week + month views, half-day support
+- Dispatch: drag-and-drop Gantt-style board, job stage shown, crew history (3mo), crew continuity tracking, time-off conflict popup
+- Short-Term Pipeline: Start Anytime (target 3+), Schedule Needed (target 2+), Favorite GC (target 1+), Small Jobs pool
+- Long-Term Pipeline: 3-year timeline view, capacity bars by month, callback tracking, bid tracking (simple)
+- AI dispatch: 3 options with points-based reasoning, dedicated AI chat for modifications, learns from dispatcher picks
+- Flex pool: unassigned jobs for self-assign (hat-gated), ready-to-start vs needs-contact types
+- Capacity: work-days (person-days), based on historical job averages not estimates
+- Job estimation questionnaire: grouped questions, stage-aware, "?" for unknowns, AI learns which questions matter
+- Weekly reviews: delay factors, unanswered questions, on-track check
+- End-of-job reviews: estimate vs actual, categorized delays, crew feedback, GC rating
+- AI Smart Question System: suggests new questions after 15+ jobs, stage-specific, rejected questions log with AI reconsideration, history-based suggestions (GC/area/type)
+
+---
+
 ## Unreviewed Pages — What Still Needs Review
 
 Each area below needs: (1) read every file, (2) identify issues, (3) record design decisions, (4) write prompts.
@@ -271,13 +354,6 @@ Each area below needs: (1) read every file, (2) identify issues, (3) record desi
 **Files:** `PartsImportExportPage.swift`
 **Expected issues:** Raw SQL, service layer violations, error handling, file picker UX
 
-### Jobs (11 files)
-**Files:** `JobsListPage`, `IOSJobDetailPage`, `IOSJobDetailTabView`, `IOSCreateJobSheet`, `IOSEditJobSheet`, `IOSClockPage`, `IOSDailyReportsPage`, `IOSQuestionnairePage`, `JobReportsPage`, `LaborPage`, `JobsRouter`
-**Expected issues:** Raw SQL, service layer, CRUD completeness, detail view tabs, report generation
-
-### People (11 files)
-**Files:** `IOSEmployeesPage`, `IOSEmployeeDetailPage`, `IOSCustomersPage`, `IOSCustomerDetailPage`, `IOSContractorsPage`, `IOSContractorDetailPage`, `IOSContactsPage`, `IOSHatsPage`, `IOSPermissionsPage`, `IOSTeamsPage`, `PeopleRouter`
-**Expected issues:** Detail view completeness, cross-references (employee→jobs, customer→jobs), permission gating
 
 ### Orders (14 files)
 **Files:** `IOSPurchaseOrdersPage`, `IOSPODetailPage`, `CreatePOSheet`, `IOSJPOsPage`, `IOSJPODetailPage`, `IOSUnifiedOrderPage`, `IOSProcurementPage`, `IOSReceiveShipmentPage`, `IOSOrderStagingPage`, `IOSApprovalsPage`, `IOSReturnsPage`, `CreateReturnSheet`, `SupplierPickerSheet`, `OrdersRouter`
@@ -287,13 +363,6 @@ Each area below needs: (1) read every file, (2) identify issues, (3) record desi
 **Files:** `WarehouseDashboardPage`, `IOSMovementWizard`, `WarehouseMovementsPage`, `WarehouseLocationsPage`, `IOSStagingPage`, `IOSReceivingPage`, `IOSAuditPage`, `IOSAuditSetupView`, `IOSAuditSummaryView`, `IOSInventoryGridPage`, `IOSWarehouseReturnsPage`, `IOSWarehouseToolsPage`, `IOSWarehouseNetworkPage`, `IOSWarehouseSettingsPage`, `WarehouseRouter`
 **Expected issues:** Movement wizard flow, location management, audit workflow, dashboard KPIs
 
-### Scheduling (12 files)
-**Files:** `IOSScheduleCalendarPage`, `IOSDispatchPage`, `IOSTimeOffPage`, `IOSWeeklyAvailabilityPage`, `IOSSubSchedulePage`, `IOSScheduleConfigPage`, `IOSDispatchTemplatesPage`, `IOSTemplateBuilderSheet`, `CreateScheduleEntrySheet`, `CreateDispatchSheet`, `RequestTimeOffSheet`, `SchedulingRouter`
-**Expected issues:** Calendar interaction, dispatch workflow, time-off approval flow, template builder
-
-### Chat (9 files)
-**Files:** `IOSChannelsPage`, `IOSMessageThreadView`, `IOSMessageBubble`, `CreateChannelSheet`, `IOSQuestionsPage`, `IOSQAQuestionForm`, `IOSRFIListPage`, `IOSEscalationTimeline`, `IOSChatRouter`
-**Expected issues:** Message threading, channel types, Q&A escalation, RFI workflow, real-time updates
 
 ### Tools (7 files)
 **Files:** `IOSToolsDashboardPage`, `IOSToolRegistryPage`, `IOSToolCheckoutsPage`, `IOSToolMaintenancePage`, `IOSToolKitsPage`, `IOSToolAdminPage`, `IOSToolsRouter`
@@ -311,9 +380,6 @@ Each area below needs: (1) read every file, (2) identify issues, (3) record desi
 **Files:** `IOSManageJobsPage`, `IOSSpendingDashboardPage`, `IOSWarehouseExecPage`, `IOSDeletionApprovalsPage`, `OfficePlaceholderView`, `OfficeRouter`
 **Expected issues:** Manager-level views, approval workflows, executive summaries
 
-### Notebooks (7 files)
-**Files:** `IOSNotebooksListPage`, `IOSNotebookDetailPage`, `IOSJobNotebooksPage`, `IOSNotebookTemplatesPage`, `AddNotebookEntrySheet`, `CreateNotebookSheet`, `IOSNotebooksRouter`
-**Expected issues:** Entry types (text, photo, checklist), template system, job-notebook linking
 
 ### Settings (23 files)
 **Files:** `AppConfigPage`, `ThemesPage`, `NotificationPrefsPage`, `CompanyProfilesPage`, `SyncPage`, `BluetoothPage`, `SecurityAdminPage`, `AuditLogPage`, `IOSAIConfigPage`, `IOSBackupsPage`, `IOSDataExportPage`, `IOSDatabaseResetPage`, `IOSDeviceManagementPage`, `IOSIntegrationsPage`, `IOSKeyManagementPage`, `IOSRemoteSyncPage`, `IOSSharedChannelsPage`, `IOSSupplierBridgePage`, `IOSUpdateProtocolPage`, `IOSBootstrapAdminPage`, `IOSClockOutQuestionsPage`, `PDFSettingsPage`, `BillingPayPage`, `AboutPage`, `SettingsRouter`
@@ -355,9 +421,17 @@ THEN:  20A-D (QR per-module)
 THEN:  21A-B (QR labels)
 THEN:  22A-C (supplier bridge)
 THEN:  23A-B (forecasting)
-THEN:  Page-by-page reviews for remaining 12 feature areas
+
+DESIGNED (need prompts written):
+  - Jobs (see docs/plans/ios-jobs-pages.md)
+  - Chat (see docs/plans/ios-chat-pages.md)
+  - Notebooks (see docs/plans/ios-notebooks-pages.md)
+  - People (see docs/plans/ios-people-pages.md)
+  - Scheduling (see docs/plans/ios-scheduling-pages.md)
+
+THEN:  Page-by-page reviews for remaining 7 feature areas (Orders, Warehouse, Tools, Fleet, Reports, Office, Settings)
 ```
 
 ---
 
-*Last updated: 2026-03-20*
+*Last updated: 2026-03-23*

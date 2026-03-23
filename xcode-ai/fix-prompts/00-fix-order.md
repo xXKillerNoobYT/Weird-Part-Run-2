@@ -156,6 +156,35 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 37D | User Ratings + Leaderboard | Leaderboard for all, detail for managers, multi-user consensus, training suggestions | |
 | 38A | Break/Lunch Compliance | 4-tier policy (state+company), break_records, auto-fill, 15-min rounding, state presets | |
 | 38B | Break/Lunch UI | Clock page buttons, settings page, clock-out questionnaire, bonus tracking | |
+| 39A | Hats Permission Audit | Cross-cutting: replace hardcoded role checks with hasPermission(), seed new permission keys | |
+| 40A | Clock To-Do Integration | Clock-in to-do picker, Mark Done + Pick Next, work type selector (New/Warranty) | |
+| 40B | Clock Live Timer | Live elapsed timer, today's hours per job/to-do, Switch Job one-action button | |
+| 41A | Teams Detail Page | IOSTeamDetailPage with members/roles/jobs, smart cards on list page, add/remove members | |
+| 42A | Chat Unified Inbox | Unified inbox all message types, smart cards, unread badges, message preview | |
+| 42B | Chat Thread Info | iMessage-style expandable info panel: source context, escalation, people, quick actions | |
+| 42C | Chat Attachments | Photo/file/part-ref attachments, composer buttons, auto-save to job notebook | |
+| 42D | Q&A Escalation | Visual escalation ladder (Worker⇄Lead⇄Manager⇄Office), push back, smart cards on Q&A/RFI | |
+| 43A | Notebook Structure | Migration: section_groups, sections, block-based entries (9 block types), hierarchy service | |
+| 43B | Notebook Detail Rebuild | Hierarchical layout, collapsible sections, block rendering, shortcut commands (/h1, /checklist) | |
+| 43C | Notebook Templates | Job starter templates, page templates, template editor, "Create from Template" | |
+| 43D | Panel Schedule | Panel schedule builder: circuit grid, breaker types, 240V spanning, PDF export | |
+| 43E | Daily Report System | Auto-generated daily report from clock/to-do data, AI verification, user notes, templates | |
+| 44A | People Dashboard | Who's working (live), who's off, expiring certs, team assignments, smart cards | |
+| 44B | Employee Detail Rebuild | Remove GRDB/raw SQL, service layer edits, hat visibility rules, edit contact sheet | |
+| 44C | Customer Detail Full | Contacts, billing (hat-gated), job history, communication log, lifetime stats | |
+| 44D | Contractor Detail | Qualifications, rating (subs only), job history, notes, ActiveSheet fix | |
+| 44E | Contacts Redesign | Smart cards by type, active/inactive sections, sort options, type badges | |
+| 44F | Payment Tracking | Company setting enable/disable, green-to-red status bar, overdue alerts, payment records | |
+| 45A | Jobs List Redesign | Smart cards (8 statuses), AI summary, stage bar, dual progress, payment hold privacy | |
+| 45B | Job Detail Dashboard | Overview tab as dashboard: metrics, AI summary, today's activity, quick actions, warranty | |
+| 45C | Job Types & Status | Migration: warranty fields, continuous job, payment hold, clock-in blocking | |
+| 45D | Warranty To-Do | Work classification (regular/warranty), manager review, reclassification tracking, warranty timer | |
+| 46A | Scheduling Calendar | Month view, day dots/badges, tap detail, half-day scheduling (AM/PM) | |
+| 46B | Dispatch Board | Gantt-style board, employee bars, half-day, unassigned pool, time-off conflict warnings | |
+| 46C | Short-Term Pipeline | Start Anytime/Schedule Needed/Favorite GC/Small Jobs, callback snooze, AI crew suggestions | |
+| 46D | Long-Term Pipeline | 3-year timeline, monthly capacity bars, bid tracker, AI capacity warnings | |
+| 46E | AI Dispatch | 3 suggestions with points scoring, dedicated AI chat, learning from picks, early finish | |
+| 46F | Job Estimation | Questionnaire system, stage-aware, "?" unknowns, AI learning after 15+ jobs, capacity calc | |
 
 ## Prompt 01 Results (2026-03-18)
 
