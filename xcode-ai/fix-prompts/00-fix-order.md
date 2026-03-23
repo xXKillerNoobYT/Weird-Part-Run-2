@@ -140,6 +140,7 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 35A | Daily Report Submit Stubs | Wire 2 TODO submit buttons + remove service bypass + raw SQL in Dashboard | |
 | 35B | Job Detail Tab Fixes | 5 print() catches → state, client-side→server-side filtering, dead code | |
 | 35C | Scheduling Raw SQL | IOSSubSchedulePage + IOSWeeklyAvailabilityPage: GRDB removal + error states | |
+| 35D | GeofenceAlertView Fix | Remove GRDB + raw SQL, fix silent clock-in/out errors, show error feedback | |
 
 ## Prompt 01 Results (2026-03-18)
 
