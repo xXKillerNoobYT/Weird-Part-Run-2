@@ -118,10 +118,10 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 31G | Warehouse Inventory Grid | Location picker, group by type, low-stock styling, actions, smart cards | DONE |
 | 31H | Warehouse Returns+Tools+Network+Settings | Actions for display-only pages, remove dummy data, fix errors | DONE |
 | 31I | Warehouse Router | Fix unknown route → ErrorStateView, verify all 11 routes | DONE |
-| 32A | Navigation Restructure | Sidebar order (daily→work→admin), tab reorder, rename, People consolidation | |
-| 32B | Empty Catch Blocks | Fix all empty catch {} and catch { print() } blocks (5+ files) | |
-| 32C | Guard Without Error | Fix 42 files with guard-let-service that silently returns | |
-| 32D | Platform Guards Batch 1 | Remove #if os(iOS) from all Features/ files (~50 files) | |
+| 32A | Navigation Restructure | Sidebar order (daily→work→admin), tab reorder, rename, People consolidation | DONE |
+| 32B | Empty Catch Blocks | Fix all empty catch {} and catch { print() } blocks (5+ files) | DONE |
+| 32C | Guard Without Error | Fix 42 files with guard-let-service that silently returns | DONE |
+| 32D | Platform Guards Batch 1 | Remove #if os(iOS) from all Features/ files (~50 files) | DONE |
 | 32E | Platform Guards Batch 2 | Remove #if os(iOS) from AI/Auth/App/Nav/Scanning/Sync/Shared (~57 files) | |
 | 32F | ActiveSheet Conversion | Convert 19 files from showXxx Bool to ActiveSheet enum | |
 | 32G | Print-to-State Errors | Replace print() error logging with UI state in 25+ files | |
@@ -146,6 +146,16 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 35G | Settings GRDB Removal | Remove GRDB + raw SQL from 10 Settings pages, replace DispatchQueue | |
 | 35H | Companion GRDB + Hats Delete | Remove GRDB from 2 Companion sheets, add hat delete confirmation | |
 | 35I | Reports + Tools GRDB | Remove GRDB from PreBilling, BookkeeperExport, ToolKits | |
+| 36A | Floor Plan Migration | 7 tables: floor_plans, features, units, levels, areas, bins, assignments + 15 service methods | |
+| 36B | Floor Plan Editor UI | Grid view, drag-drop units, drill-in levels→areas→bins, sticker checklist, movable section | |
+| 36C | Floor Plan Navigation | Warehouse GPS directions, QR scan full location view, user position tracking | |
+| 36D | Onboarding Wizard | 6-step progressive setup, Quick Count mode, Save & Exit, AI suggestions | |
+| 37A | Audit Confidence Migration | 8 tables: confidence, sessions, counts, misplaced, user ratings, org ratings, consolidation | |
+| 37B | Audit Count Tab UI | Hidden counts, speed mode, misplaced cart, quick audit prompts, walking path queue | |
+| 37C | Organization Tab | Consolidation voting, org checklist, rating rollup area→unit→row→warehouse | |
+| 37D | User Ratings + Leaderboard | Leaderboard for all, detail for managers, multi-user consensus, training suggestions | |
+| 38A | Break/Lunch Compliance | 4-tier policy (state+company), break_records, auto-fill, 15-min rounding, state presets | |
+| 38B | Break/Lunch UI | Clock page buttons, settings page, clock-out questionnaire, bonus tracking | |
 
 ## Prompt 01 Results (2026-03-18)
 
@@ -248,3 +258,29 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 - Stale badge on PO detail line items (orange triangle)
 - Removed #if os(iOS) platform guard from PO detail
 - Build: SUCCESS
+
+## Prompt 32A Results (2026-03-22)
+- Reordered 13 modules in sidebar (daily use → work tools → management)
+- Reordered tabs in Orders (Job Orders first, Wishlist last), Tools (Dashboard first, Admin last), Warehouse (Dashboard → Sorting → Staging flow)
+- Moved Employees/Hats & Roles/Permissions from Office → People module
+- Renamed 4 tabs: Requests→Job Orders, Registry→All Tools, Receiving→Sorting, Deletion Approvals→Deletions
+- Created IOSWishlistPage placeholder
+- Updated 4 routers: PeopleRouter (employees first, fixed em-dash typo), OfficeRouter (removed HR routes), OrdersRouter (+wishlist, ErrorStateView), IOSToolsRouter (ErrorStateView)
+- Build: PASS
+
+## Prompt 32B Results (2026-03-22)
+- Fixed 8 empty catch blocks across 6 files (IOSJPOsPage, IOSJPOCreationPage, PartHistoryView, CompanionSandboxSheet, IOSOrderStagingPage, PartsCatalogPage)
+- Fixed 13 print-only catch blocks across 7 files (GeofenceAlertView, DashboardView, IOSJobDetailTabView×5, CreatePOSheet, PartsPricingPage, PricingOverrideFlow, PartsCatalogPage×3)
+- Added loadError/actionError/saveError state to 9 sub-structs that lacked them
+- Build: PASS
+
+## Prompt 32C Results (2026-03-22)
+- Fixed 11 guard-let-service silent returns across 9 files
+- Added loadError state to 4 files (IOSInspectionsPage, IOSTelematicsPage, CompanionAdminDashboardSheet, PricingBulkEditSheet via saveError)
+- Files: IOSInspectionsPage, IOSTelematicsPage, CreateNotebookSheet, IOSJPOCreationPage, SupplierPickerSheet, CompanionAdminDashboardSheet, PricingBulkEditSheet, PricingSettingsSheet, CreateScheduleEntrySheet
+- Build: PASS
+
+## Prompt 32D Results (2026-03-22)
+- Removed 119 platform guards (#if os(iOS)/#elseif os(macOS)/#endif) from 80 files in Features/
+- Kept 9 compound guards (#if os(iOS) && !targetEnvironment(macCatalyst)) in QR scanner
+- Build: PASS
