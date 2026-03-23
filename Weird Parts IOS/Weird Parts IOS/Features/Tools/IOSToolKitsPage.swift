@@ -1,18 +1,17 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Tool kits list page for iOS.
 ///
 /// Displays a searchable list of tool kits showing kit name, tool count,
-/// and status badge. Uses direct SQL queries against the tool_kits and
-/// tool_kit_items tables. Supports pull-to-refresh and search filtering.
+/// and status badge. Uses `ToolsService.listToolKits()` for data access.
+/// Supports pull-to-refresh and search filtering.
 struct IOSToolKitsPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     // MARK: - State
 
-    @State private var kits: [ToolKitRow] = []
+    @State private var kits: [ToolsService.ToolKitListItem] = []
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var searchText = ""
@@ -33,7 +32,7 @@ struct IOSToolKitsPage: View {
             ProgressView("Loading tool kits...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
-            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+            ErrorStateView(message: error) { loadData() }
         } else if filteredKits.isEmpty {
             ContentUnavailableView {
                 Label("No Kits", systemImage: "bag")
@@ -48,7 +47,7 @@ struct IOSToolKitsPage: View {
         }
     }
 
-    private var filteredKits: [ToolKitRow] {
+    private var filteredKits: [ToolsService.ToolKitListItem] {
         guard !searchText.isEmpty else { return kits }
         let query = searchText.lowercased()
         return kits.filter {
@@ -59,7 +58,7 @@ struct IOSToolKitsPage: View {
 
     // MARK: - Row
 
-    private func kitRow(_ kit: ToolKitRow) -> some View {
+    private func kitRow(_ kit: ToolsService.ToolKitListItem) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "bag.fill")
                 .font(.title2)
@@ -106,48 +105,18 @@ struct IOSToolKitsPage: View {
             .foregroundStyle(color)
     }
 
-    // MARK: - Data Model
-
-    struct ToolKitRow: Identifiable {
-        let id: Int64
-        let name: String
-        let description: String?
-        let toolCount: Int
-        let status: String
-    }
-
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else {
+        guard let service = appCore.toolsService else {
             isLoading = false
-            loadError = "Database unavailable"
+            loadError = "Tools service is not available."
             return
         }
         isLoading = kits.isEmpty
+        loadError = nil
         do {
-            kits = try db.writer.read { db in
-                let sql = """
-                    SELECT tk.id, tk.name,
-                           tk.description,
-                           COALESCE(tk.status, 'available') AS status,
-                           COUNT(tki.id) AS tool_count
-                    FROM tool_kits tk
-                    LEFT JOIN tool_kit_items tki ON tki.kit_id = tk.id AND tki.deleted_at IS NULL
-                    WHERE tk.deleted_at IS NULL
-                    GROUP BY tk.id
-                    ORDER BY tk.name
-                    """
-                return try Row.fetchAll(db, sql: sql).map { row in
-                    ToolKitRow(
-                        id: row["id"],
-                        name: row["name"],
-                        description: row["description"],
-                        toolCount: row["tool_count"],
-                        status: row["status"]
-                    )
-                }
-            }
+            kits = try service.listToolKits()
         } catch {
             loadError = error.localizedDescription
         }

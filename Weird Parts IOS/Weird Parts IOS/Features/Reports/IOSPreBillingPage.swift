@@ -1,19 +1,17 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Pre-billing review page for iOS.
 ///
 /// Displays job summaries with regular hours, overtime hours, and totals
-/// for the selected date range. Uses direct SQL queries against the
-/// labor_entries and jobs tables. Supports date range selection and
-/// pull-to-refresh.
+/// for the selected date range. Uses `ReportsService.getPreBillingData()`
+/// for data access. Supports date range selection and pull-to-refresh.
 struct IOSPreBillingPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     // MARK: - State
 
-    @State private var rows: [PreBillingRow] = []
+    @State private var rows: [ReportsService.PreBillingRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var startDate = Calendar.current.date(byAdding: .day, value: -13, to: Date()) ?? Date()
@@ -68,7 +66,7 @@ struct IOSPreBillingPage: View {
             ProgressView("Loading pre-billing data...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
-            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+            ErrorStateView(message: error) { loadData() }
         } else if rows.isEmpty {
             ContentUnavailableView {
                 Label("No Billing Data", systemImage: "doc.text")
@@ -113,7 +111,7 @@ struct IOSPreBillingPage: View {
 
     // MARK: - Billing Row
 
-    private func billingRow(_ row: PreBillingRow) -> some View {
+    private func billingRow(_ row: ReportsService.PreBillingRow) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(row.jobName)
@@ -150,48 +148,21 @@ struct IOSPreBillingPage: View {
     private var totalRegular: Double { rows.reduce(0) { $0 + $1.regularHours } }
     private var totalOvertime: Double { rows.reduce(0) { $0 + $1.overtimeHours } }
 
-    // MARK: - Data Model
-
-    struct PreBillingRow: Identifiable {
-        let id: Int64
-        let jobName: String
-        let regularHours: Double
-        let overtimeHours: Double
-    }
-
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else {
+        guard let service = appCore.reportsService else {
             isLoading = false
-            loadError = "Database unavailable"
+            loadError = "Reports service is not available."
             return
         }
         isLoading = rows.isEmpty
+        loadError = nil
         do {
-            rows = try db.writer.read { db in
-                let sql = """
-                    SELECT j.id, j.job_name,
-                           COALESCE(SUM(le.regular_hours), 0) AS regular_hours,
-                           COALESCE(SUM(le.overtime_hours), 0) AS overtime_hours
-                    FROM jobs j
-                    LEFT JOIN labor_entries le ON le.job_id = j.id
-                        AND date(le.clock_in) >= ? AND date(le.clock_in) <= ?
-                        AND le.deleted_at IS NULL
-                    WHERE j.deleted_at IS NULL
-                    GROUP BY j.id
-                    HAVING regular_hours > 0 OR overtime_hours > 0
-                    ORDER BY j.job_name
-                    """
-                return try Row.fetchAll(db, sql: sql, arguments: [startDateString, endDateString]).map { row in
-                    PreBillingRow(
-                        id: row["id"],
-                        jobName: row["job_name"],
-                        regularHours: row["regular_hours"],
-                        overtimeHours: row["overtime_hours"]
-                    )
-                }
-            }
+            rows = try service.getPreBillingData(
+                startDate: startDateString,
+                endDate: endDateString
+            )
         } catch {
             loadError = error.localizedDescription
         }

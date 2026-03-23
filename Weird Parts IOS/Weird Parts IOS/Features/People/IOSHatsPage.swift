@@ -14,6 +14,7 @@ struct IOSHatsPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var loadError: String?
+    @State private var hatToDelete: PeopleService.HatListItem?
     private enum ActiveSheet: String, Identifiable {
         case addHat
         var id: String { rawValue }
@@ -41,6 +42,23 @@ struct IOSHatsPage: View {
                         .environmentObject(appCore)
                 }
             }
+            .alert(
+                "Delete Hat?",
+                isPresented: Binding(
+                    get: { hatToDelete != nil },
+                    set: { if !$0 { hatToDelete = nil } }
+                )
+            ) {
+                Button("Cancel", role: .cancel) { hatToDelete = nil }
+                Button("Delete", role: .destructive) {
+                    if let hat = hatToDelete {
+                        deleteHat(hat)
+                        hatToDelete = nil
+                    }
+                }
+            } message: {
+                Text("This will remove the role and all its permissions. This cannot be undone.")
+            }
     }
 
     // MARK: - Hat List
@@ -63,7 +81,7 @@ struct IOSHatsPage: View {
                 hatRow(hat)
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
-                            deleteHat(hat)
+                            hatToDelete = hat
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }

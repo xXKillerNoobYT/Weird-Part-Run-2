@@ -1,19 +1,17 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Vehicle inspections list page for iOS.
 ///
 /// Displays a searchable list of inspection records with vehicle name,
 /// inspector, date, and result badge (pass=green, fail=red).
-/// Queries `vehicle_inspections` table directly via raw SQL since
-/// FleetService doesn't have a dedicated inspections method.
+/// Uses FleetService.listInspections() for data access.
 struct IOSInspectionsPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     // MARK: - State
 
-    @State private var inspections: [InspectionRow] = []
+    @State private var inspections: [FleetService.InspectionRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var searchText = ""
@@ -33,6 +31,8 @@ struct IOSInspectionsPage: View {
         if isLoading {
             ProgressView("Loading inspections...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredInspections.isEmpty {
             ContentUnavailableView {
                 Label("No Inspections", systemImage: "checklist")
@@ -47,7 +47,7 @@ struct IOSInspectionsPage: View {
         }
     }
 
-    private var filteredInspections: [InspectionRow] {
+    private var filteredInspections: [FleetService.InspectionRow] {
         guard !searchText.isEmpty else { return inspections }
         let query = searchText.lowercased()
         return inspections.filter {
@@ -57,7 +57,7 @@ struct IOSInspectionsPage: View {
         }
     }
 
-    private func inspectionRow(_ inspection: InspectionRow) -> some View {
+    private func inspectionRow(_ inspection: FleetService.InspectionRow) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "checklist.checked")
                 .font(.title3)
@@ -111,61 +111,20 @@ struct IOSInspectionsPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else {
-            loadError = "Database not available"
+        guard let service = appCore.fleetService else {
+            loadError = "Fleet service not available"
             isLoading = false
             return
         }
         isLoading = inspections.isEmpty
+        loadError = nil
 
         do {
-            try db.writer.read { dbConn in
-                let sql = """
-                    SELECT vi.id, vi.inspection_date, vi.result, vi.notes, vi.odometer_reading,
-                           COALESCE(v.vehicle_name, v.vehicle_number, 'Unknown') AS vehicle_name,
-                           COALESCE(u.display_name, u.email, 'Unknown') AS inspector_name
-                    FROM vehicle_inspections vi
-                    LEFT JOIN vehicles v ON v.id = vi.vehicle_id
-                    LEFT JOIN users u ON u.id = vi.inspector_id
-                    WHERE vi.deleted_at IS NULL
-                    ORDER BY vi.inspection_date DESC
-                    LIMIT 100
-                    """
-
-                let rows = try Row.fetchAll(dbConn, sql: sql)
-                inspections = rows.map { row in
-                    InspectionRow(
-                        id: row["id"] ?? 0,
-                        vehicleName: row["vehicle_name"] ?? "Unknown",
-                        inspectorName: row["inspector_name"] ?? "Unknown",
-                        inspectionDate: row["inspection_date"] ?? "",
-                        result: row["result"] ?? "pending",
-                        odometerReading: row["odometer_reading"] as Int?,
-                        notes: row["notes"] as String?
-                    )
-                }
-            }
+            inspections = try service.listInspections()
         } catch {
-            let msg = String(describing: error)
-            if msg.contains("no such table") {
-                inspections = []
-            } else {
-                loadError = error.localizedDescription
-            }
+            loadError = error.localizedDescription
         }
 
         isLoading = false
     }
-}
-
-// MARK: - Supporting Types
-
-private struct InspectionRow: Identifiable {
-    let id: Int64
-    let vehicleName: String
-    let inspectorName: String
-    let inspectionDate: String
-    let result: String
-    let odometerReading: Int?
-    let notes: String?
 }

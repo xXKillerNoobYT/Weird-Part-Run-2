@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 // MARK: - Shared KPI Detail Sheet Pattern
@@ -58,6 +57,7 @@ enum KPIDetailType: Identifiable {
 /// Dispatches to the correct detail view based on which KPI card was tapped.
 struct KPIDetailSheet: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
     let type: KPIDetailType
 
     var body: some View {
@@ -79,10 +79,8 @@ struct KPIDetailSheet: View {
             .navigationTitle(type.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        // Dismissed by the sheet binding
-                    }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
                 }
             }
         }
@@ -128,26 +126,16 @@ private struct PartTypesDetailView: View {
     }
 
     private func loadCategories() async {
-        guard let db = appCore.db else { isLoading = false; return }
+        guard let service = appCore.dashboardService else {
+            loadError = "Dashboard service not available"
+            isLoading = false
+            return
+        }
         do {
-            let rows = try db.writer.read { conn -> [Row] in
-                try Row.fetchAll(conn, sql: """
-                    SELECT pc.id, pc.name,
-                           COUNT(p.id) AS part_count
-                    FROM part_categories pc
-                    LEFT JOIN parts p ON p.category_id = pc.id AND p.deleted_at IS NULL
-                    WHERE pc.deleted_at IS NULL
-                    GROUP BY pc.id
-                    ORDER BY part_count DESC, pc.name
-                    """)
-            }
+            let rows = try service.getCategoriesWithCounts()
             await MainActor.run {
                 categories = rows.map { row in
-                    CategoryCount(
-                        id: row["id"] ?? 0,
-                        name: row["name"] ?? "Uncategorized",
-                        count: row["part_count"] ?? 0
-                    )
+                    CategoryCount(id: row.id, name: row.name, count: row.count)
                 }
                 isLoading = false
             }

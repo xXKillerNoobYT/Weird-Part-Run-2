@@ -22,6 +22,7 @@ struct IOSReceivingPage: View {
     private enum ActiveSheet: Identifiable {
         case startReceiving
         case continueSession(Int64)
+        case help
 
         var id: String { String(describing: self) }
     }
@@ -58,6 +59,11 @@ struct IOSReceivingPage: View {
                     Image(systemName: "plus")
                 }
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
@@ -81,6 +87,15 @@ struct IOSReceivingPage: View {
                 IOSReceiveShipmentPage()
                     .environmentObject(appCore)
             }
+        case .help:
+            PageHelpSheet(
+                title: "Receiving Help",
+                sections: [
+                    ("Overview", "Track incoming shipments from suppliers. Each receiving session records what was ordered vs. what actually arrived."),
+                    ("Starting a Session", "Tap + to start receiving against a purchase order. Scan or manually enter received quantities."),
+                    ("Status Filters", "Use the smart cards to filter by active, completed, or cancelled sessions. Pull down to refresh.")
+                ]
+            )
         }
     }
 

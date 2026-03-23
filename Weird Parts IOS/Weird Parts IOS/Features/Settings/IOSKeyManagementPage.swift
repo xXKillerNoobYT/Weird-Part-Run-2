@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Encryption key management page for iOS.
@@ -108,30 +107,18 @@ struct IOSKeyManagementPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else {
-            errorMessage = "Database not available."
+        guard let settingsService = appCore.settingsService else {
+            errorMessage = "Settings service not available."
             isLoading = false
             return
         }
         do {
-            let keyInfo = try db.writer.read { db -> (String?, String?, String?) in
-                let row = try Row.fetchOne(db, sql: """
-                    SELECT fingerprint, created_at, rotated_at
-                    FROM device_keys WHERE is_active = 1 LIMIT 1
-                """)
-                return (
-                    row?["fingerprint"] as? String,
-                    row?["created_at"] as? String,
-                    row?["rotated_at"] as? String
-                )
-            }
-            keyFingerprint = keyInfo.0
-            keyCreatedAt = keyInfo.1
-            keyRotatedAt = keyInfo.2
+            let keyInfo = try settingsService.getActiveDeviceKey()
+            keyFingerprint = keyInfo.fingerprint
+            keyCreatedAt = keyInfo.createdAt
+            keyRotatedAt = keyInfo.rotatedAt
         } catch {
-            if !error.localizedDescription.contains("no such table") {
-                errorMessage = "Failed to load key info: \(error.localizedDescription)"
-            }
+            errorMessage = "Failed to load key info: \(error.localizedDescription)"
         }
         isLoading = false
     }

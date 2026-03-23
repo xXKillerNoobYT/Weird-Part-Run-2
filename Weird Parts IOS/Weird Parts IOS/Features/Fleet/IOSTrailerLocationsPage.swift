@@ -15,6 +15,8 @@ struct IOSTrailerLocationsPage: View {
             if isLoading {
                 ProgressView("Loading trailer locations...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { loadData() }
             } else if filteredTrailers.isEmpty {
                 EmptyStateView(
                     icon: "box.truck.fill",
@@ -111,8 +113,13 @@ struct IOSTrailerLocationsPage: View {
     }
 
     private func loadData() {
-        guard let fleet = appCore.fleetService else { return }
+        guard let fleet = appCore.fleetService else {
+            loadError = "Fleet service not available"
+            isLoading = false
+            return
+        }
         isLoading = trailers.isEmpty
+        loadError = nil
         do {
             trailers = try fleet.listTrailers()
         } catch {

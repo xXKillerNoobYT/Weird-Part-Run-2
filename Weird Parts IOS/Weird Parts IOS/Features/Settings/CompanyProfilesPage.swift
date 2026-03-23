@@ -21,6 +21,8 @@ struct CompanyProfilesPage: View {
     }
     @State private var activeSheet: ActiveSheet?
     @State private var errorMessage: String?
+    @State private var profileToDelete: CompanyProfile?
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         List {
@@ -61,7 +63,8 @@ struct CompanyProfilesPage: View {
                     }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
-                            deleteProfile(profile)
+                            profileToDelete = profile
+                            showDeleteConfirm = true
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
@@ -104,6 +107,17 @@ struct CompanyProfilesPage: View {
         }
         .refreshable { loadProfiles() }
         .onAppear { loadProfiles() }
+        .alert("Delete Profile", isPresented: $showDeleteConfirm) {
+            Button("Cancel", role: .cancel) { profileToDelete = nil }
+            Button("Delete", role: .destructive) {
+                if let profile = profileToDelete { deleteProfile(profile) }
+                profileToDelete = nil
+            }
+        } message: {
+            if let profile = profileToDelete {
+                Text("Are you sure you want to delete \"\(profile.companyName)\"? This cannot be undone.")
+            }
+        }
     }
 
     private func loadProfiles() {

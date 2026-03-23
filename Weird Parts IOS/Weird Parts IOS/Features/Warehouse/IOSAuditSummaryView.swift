@@ -9,6 +9,9 @@ import WiredPartCore
 struct IOSAuditSummaryView: View {
     @EnvironmentObject private var appCore: AppCore
 
+    /// The audit session ID passed from the parent (e.g. IOSAuditPage after setup).
+    let sessionId: Int64
+
     @State private var summary: WarehouseService.AuditSummary?
     @State private var discrepancies: [WarehouseService.AuditDiscrepancy] = []
     @State private var isLoading = true
@@ -200,8 +203,7 @@ struct IOSAuditSummaryView: View {
     private func finalizeAudit() {
         guard let service = appCore.warehouseService else { return }
         do {
-            // Use session ID 0 as a general finalize — in production this would track the active session
-            try service.finalizeAuditSession(sessionId: 0)
+            try service.finalizeAuditSession(sessionId: sessionId)
             loadData()
         } catch {
             actionError = error.localizedDescription

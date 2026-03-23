@@ -202,6 +202,65 @@ public final class ToolsService: Sendable {
     }
 
     // =========================================================================
+    // MARK: - 2b. Tool Kits List
+    // =========================================================================
+
+    /// A tool kit row for list views showing kit info and tool count.
+    public struct ToolKitListItem: Sendable, Identifiable {
+        public let id: Int64
+        public let name: String
+        public let description: String?
+        public let toolCount: Int
+        public let status: String
+
+        public init(id: Int64, name: String, description: String?, toolCount: Int, status: String) {
+            self.id = id
+            self.name = name
+            self.description = description
+            self.toolCount = toolCount
+            self.status = status
+        }
+    }
+
+    /// List all tool kits with their item counts.
+    ///
+    /// Queries the `tool_kits` table with a LEFT JOIN to `tool_kit_items`
+    /// to count tools per kit. Returns kits sorted by name ascending.
+    ///
+    /// - Returns: An array of `ToolKitListItem` rows.
+    public func listToolKits() throws -> [ToolKitListItem] {
+        do {
+            return try db.writer.read { dbConn -> [ToolKitListItem] in
+                let sql = """
+                    SELECT tk.id, tk.name,
+                           tk.description,
+                           COALESCE(tk.status, 'available') AS status,
+                           COUNT(tki.id) AS tool_count
+                    FROM tool_kits tk
+                    LEFT JOIN tool_kit_items tki ON tki.kit_id = tk.id AND tki.deleted_at IS NULL
+                    WHERE tk.deleted_at IS NULL
+                    GROUP BY tk.id
+                    ORDER BY tk.name
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql)
+                return rows.map { row in
+                    ToolKitListItem(
+                        id: row["id"] ?? 0,
+                        name: row["name"] ?? "",
+                        description: row["description"] as String?,
+                        toolCount: row["tool_count"] ?? 0,
+                        status: row["status"] ?? "available"
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    // =========================================================================
     // MARK: - 3. Checkouts List
     // =========================================================================
 

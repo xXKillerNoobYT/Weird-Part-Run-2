@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Admin voting analytics dashboard for companion rule polls.
@@ -131,90 +130,59 @@ struct CompanionAdminDashboardSheet: View {
     }
 
     private func loadData() async {
-        guard let service = appCore.partsService, let db = appCore.db else {
+        guard let service = appCore.partsService else {
             loadError = "Service not available"
             isLoading = false
             return
         }
         do {
-            // Load user voting stats
-            let users: [Row] = try await db.writer.read { dbConn -> [Row] in
-                try Row.fetchAll(dbConn, sql: """
-                    SELECT u.id, u.display_name,
-                           EXISTS(SELECT 1 FROM user_hats uh
-                                  JOIN hat_permissions hp ON hp.hat_id = uh.hat_id
-                                  WHERE uh.user_id = u.id AND uh.is_active = 1
-                                  AND hp.permission_key = 'companion_vote_power') AS has_power
-                    FROM users u WHERE u.is_active = 1 AND u.deleted_at IS NULL
-                    ORDER BY u.display_name ASC
-                    """)
-            }
+            // Load active users with vote power, then enrich with accuracy
+            let users = try service.getActiveUsersWithVotePower()
 
             var stats: [UserVotingStat] = []
             for user in users {
-                let userId: Int64 = user["id"]
-                let accuracy = try service.getUserVotingAccuracy(userId: userId)
+                let accuracy = try service.getUserVotingAccuracy(userId: user.id)
                 stats.append(UserVotingStat(
-                    id: userId,
-                    displayName: user["display_name"] ?? "Unknown",
+                    id: user.id,
+                    displayName: user.displayName,
                     totalVotes: accuracy.totalVotes,
                     correctVotes: accuracy.correctVotes,
                     accuracy: accuracy.accuracy,
-                    hasPower: (user["has_power"] as Int?) == 1
+                    hasPower: user.hasPower
                 ))
             }
             // Sort by accuracy descending, then by total votes
             stats.sort { $0.accuracy > $1.accuracy }
 
-            // Load poll history
-            let historyRows: [Row] = try await db.writer.read { dbConn -> [Row] in
-                try Row.fetchAll(dbConn, sql: """
-                    SELECT cp.id, cp.proposed_rule_name, cp.result,
-                           cpr.total_votes, cpr.powered_accept, cpr.powered_reject,
-                           cpr.was_admin_locked, cpr.finalized_at
-                    FROM companion_polls cp
-                    JOIN companion_poll_results cpr ON cpr.poll_id = cp.id
-                    ORDER BY cpr.finalized_at DESC
-                    LIMIT 20
-                    """)
-            }
-
+            // Load poll history via service
+            let historyRows = try service.getPollHistory(limit: 20)
             let history = historyRows.map { row in
                 PollHistoryRow(
-                    id: row["id"] ?? 0,
-                    name: row["proposed_rule_name"] ?? "Unknown",
-                    result: row["result"] ?? "unknown",
-                    totalVotes: row["total_votes"] ?? 0,
-                    poweredAccept: row["powered_accept"] ?? 0,
-                    poweredReject: row["powered_reject"] ?? 0,
-                    wasLocked: (row["was_admin_locked"] as Int?) == 1,
-                    finalizedAt: row["finalized_at"] ?? ""
+                    id: row.id,
+                    name: row.name,
+                    result: row.result,
+                    totalVotes: row.totalVotes,
+                    poweredAccept: row.poweredAccept,
+                    poweredReject: row.poweredReject,
+                    wasLocked: row.wasLocked,
+                    finalizedAt: row.finalizedAt
                 )
             }
 
-            // Load rule stats
-            let manualCount: Int = try await db.writer.read { dbConn -> Int in
-                try Int.fetchOne(dbConn, sql: """
-                    SELECT COUNT(*) FROM companion_rules
-                    WHERE deleted_at IS NULL AND id NOT IN (
-                        SELECT COALESCE(created_rule_id, 0) FROM companion_polls WHERE created_rule_id IS NOT NULL
-                    )
-                    """) ?? 0
-            }
-            let autoCount: Int = try await db.writer.read { dbConn -> Int in
-                try Int.fetchOne(dbConn, sql: """
-                    SELECT COUNT(*) FROM companion_polls WHERE created_rule_id IS NOT NULL
-                    """) ?? 0
-            }
+            // Load rule stats via service
+            let ruleStatsResult = try service.getCompanionRuleStats()
 
             await MainActor.run {
                 userStats = stats
                 pollHistory = history
-                ruleStats = (manual: manualCount, autoDiscovered: autoCount)
+                ruleStats = (manual: ruleStatsResult.manual, autoDiscovered: ruleStatsResult.autoDiscovered)
                 isLoading = false
             }
         } catch {
-            await MainActor.run { isLoading = false }
+            await MainActor.run {
+                loadError = error.localizedDescription
+                isLoading = false
+            }
         }
     }
 }

@@ -1,7 +1,6 @@
 import SwiftUI
 import Charts
 import Combine
-import GRDB
 import WiredPartCore
 
 /// Main dashboard view with KPI cards, charts, alerts, and quick actions.
@@ -233,13 +232,7 @@ struct DashboardView: View {
         }
     }
 
-    private struct DashboardChartData: Sendable {
-    let labor: [LaborDayData]
-    let stock: [StockLevelData]
-    let spending: [SpendingCategory]
-}
-
-// MARK: - KPI Cards
+    // MARK: - KPI Cards
 
     @ViewBuilder
     private var kpiSection: some View {
@@ -418,130 +411,52 @@ struct DashboardView: View {
         isLoading = true
         loadError = nil
         do {
-            guard let db = appCore.db else {
+            guard let service = appCore.dashboardService else {
                 await MainActor.run {
-                    loadError = "Database not available"
+                    loadError = "Dashboard service not available"
                     isLoading = false
                 }
                 return
             }
 
-            let cutoffDate = dashboardDateString(daysFromNow: 30)
             let currentUserId = appCore.currentUser?.id
 
-            let result = try await db.writer.read { dbConnection -> DashboardLoadResult in
-                // KPI counts
-                let totalParts = try Int.fetchOne(dbConnection, sql: "SELECT COUNT(*) FROM parts WHERE deleted_at IS NULL") ?? 0
-                let activeJobs = try Int.fetchOne(dbConnection, sql: "SELECT COUNT(*) FROM jobs WHERE status IN ('active','in_progress') AND deleted_at IS NULL") ?? 0
-                let pendingOrders = try Int.fetchOne(dbConnection, sql: "SELECT COUNT(*) FROM purchase_orders WHERE status IN ('pending','draft') AND deleted_at IS NULL") ?? 0
-                let lowStockCount = try Int.fetchOne(dbConnection, sql: """
-                    SELECT COUNT(*) FROM parts p
-                    WHERE p.deleted_at IS NULL
-                      AND p.min_stock_level > 0
-                      AND (
-                        SELECT COALESCE(SUM(s.qty), 0)
-                        FROM stock s
-                        WHERE s.part_id = p.id
-                          AND s.deleted_at IS NULL
-                      ) < p.min_stock_level
-                    """) ?? 0
+            // KPI summary via DashboardService
+            let kpi = try service.getKPISummary()
+            let newStats = DashboardStats(
+                partTypes: kpi.partTypes,
+                totalStock: kpi.totalStock,
+                activeJobs: kpi.activeJobs,
+                pendingOrders: kpi.pendingOrders,
+                lowStockCount: kpi.lowStockAlerts
+            )
 
-                // Total physical stock units across all locations
-                let totalStock = try Int.fetchOne(dbConnection, sql: "SELECT COALESCE(SUM(qty), 0) FROM stock WHERE deleted_at IS NULL") ?? 0
+            // Alerts via DashboardService
+            let certResults = try service.getCertificationExpiryAlerts()
+            let certs = certResults.map { a in
+                CertAlert(userName: a.displayName, certName: a.certName, expiryDate: a.expiryDate)
+            }
 
-                let newStats = DashboardStats(
-                    partTypes: totalParts,
-                    totalStock: totalStock,
-                    activeJobs: activeJobs,
-                    pendingOrders: pendingOrders,
-                    lowStockCount: lowStockCount
-                )
+            let vehicleResults = try service.getVehicleExpiryAlerts()
+            let vAlerts = vehicleResults.map { a in
+                VehicleAlert(vehicleNumber: a.vehicleNumber,
+                             alertMessage: "\(a.expiryType.capitalized) expires \(a.expiryDate)")
+            }
 
-                // Certification alerts (expiring within 30 days)
-                let certRows = try Row.fetchAll(dbConnection, sql: """
-                    SELECT c.cert_name, c.expiry_date, u.display_name
-                    FROM certifications c
-                    JOIN users u ON u.id = c.user_id
-                    WHERE c.expiry_date IS NOT NULL
-                      AND c.expiry_date <= date('now', '+30 days')
-                      AND c.expiry_date >= date('now')
-                      AND c.deleted_at IS NULL
-                    ORDER BY c.expiry_date ASC
-                    LIMIT 10
-                    """)
-                let certs = certRows.map { row in
-                    CertAlert(
-                        userName: row["display_name"] as String,
-                        certName: row["cert_name"] as String,
-                        expiryDate: row["expiry_date"] as String
-                    )
-                }
-
-                // Vehicle alerts (insurance/registration expiring within 30 days)
-                let vehicleRows = try Row.fetchAll(dbConnection, sql: """
-                    SELECT vehicle_number, insurance_expiry, registration_expiry
-                    FROM vehicles
-                    WHERE deleted_at IS NULL AND status = 'active'
-                      AND (
-                        (insurance_expiry IS NOT NULL AND insurance_expiry <= date('now', '+30 days'))
-                        OR (registration_expiry IS NOT NULL AND registration_expiry <= date('now', '+30 days'))
-                      )
-                    ORDER BY COALESCE(insurance_expiry, registration_expiry) ASC
-                    LIMIT 10
-                    """)
-                let vAlerts = vehicleRows.compactMap { row -> VehicleAlert? in
-                    let num: String = row["vehicle_number"]
-                    let ins: String? = row["insurance_expiry"]
-                    let reg: String? = row["registration_expiry"]
-                    if let ins, ins <= cutoffDate {
-                        return VehicleAlert(vehicleNumber: num, alertMessage: "Insurance expires \(ins)")
-                    }
-                    if let reg, reg <= cutoffDate {
-                        return VehicleAlert(vehicleNumber: num, alertMessage: "Registration expires \(reg)")
-                    }
-                    return nil
-                }
-
-                // Clock status for current user
-                var clockedIn = false
-                var clockJobName: String?
-                var clockJobNumber: String?
-                var clockInTimestamp: String?
-
-                if let userId = currentUserId {
-                    if let clockRow = try Row.fetchOne(dbConnection, sql: """
-                        SELECT le.clock_in, j.job_name, j.job_number
-                        FROM labor_entries le
-                        LEFT JOIN jobs j ON j.id = le.job_id
-                        WHERE le.user_id = ? AND le.clock_out IS NULL AND le.deleted_at IS NULL
-                        ORDER BY le.clock_in DESC LIMIT 1
-                        """, arguments: [userId]) {
-                        clockedIn = true
-                        clockJobName = clockRow["job_name"] as String?
-                        clockJobNumber = clockRow["job_number"] as String?
-                        clockInTimestamp = clockRow["clock_in"] as String?
-                    }
-                }
-
-                return DashboardLoadResult(
-                    stats: newStats,
-                    certAlerts: certs,
-                    vehicleAlerts: vAlerts,
-                    isClockedIn: clockedIn,
-                    clockJobName: clockJobName,
-                    clockJobNumber: clockJobNumber,
-                    clockInTime: clockInTimestamp
-                )
+            // Clock status
+            var clockStatus = DashboardService.ClockStatus(isClockedIn: false, jobName: nil, jobNumber: nil, clockInTimestamp: nil)
+            if let userId = currentUserId {
+                clockStatus = try service.getClockStatus(userId: userId)
             }
 
             await MainActor.run {
-                stats = result.stats
-                certAlerts = result.certAlerts
-                vehicleAlerts = result.vehicleAlerts
-                isCurrentlyClockedIn = result.isClockedIn
-                clockedInJobName = result.clockJobName
-                clockedInJobNumber = result.clockJobNumber
-                if let timeStr = result.clockInTime {
+                stats = newStats
+                certAlerts = certs
+                vehicleAlerts = vAlerts
+                isCurrentlyClockedIn = clockStatus.isClockedIn
+                clockedInJobName = clockStatus.jobName
+                clockedInJobNumber = clockStatus.jobNumber
+                if let timeStr = clockStatus.clockInTimestamp {
                     let isoFull = ISO8601DateFormatter()
                     isoFull.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
                     clockInTime = isoFull.date(from: timeStr)
@@ -566,95 +481,52 @@ struct DashboardView: View {
     /// Loads chart data for the dashboard visualizations.
     @Sendable
     private func loadChartData() async {
-        guard let db = appCore.db else { return }
+        guard let service = appCore.dashboardService else { return }
         do {
-            let charts = try await db.writer.read { conn -> DashboardChartData in
-                // Labor hours for past 7 days
-                let dayFormatter = DateFormatter()
-                dayFormatter.dateFormat = "EEE"
-                let isoFormatter = DateFormatter()
-                isoFormatter.dateFormat = "yyyy-MM-dd"
+            // Labor hours for past 7 days
+            let laborRows = try service.getLaborChartData()
+            let dayFormatter = DateFormatter()
+            dayFormatter.dateFormat = "EEE"
+            let isoFormatter = DateFormatter()
+            isoFormatter.dateFormat = "yyyy-MM-dd"
+            let laborDays = laborRows.map { row in
+                let date = isoFormatter.date(from: row.dateString) ?? Date()
+                return LaborDayData(
+                    dayLabel: dayFormatter.string(from: date),
+                    date: row.dateString,
+                    regularHours: row.regularHours,
+                    overtimeHours: row.overtimeHours
+                )
+            }
 
-                var laborDays: [LaborDayData] = []
-                for i in (0..<7).reversed() {
-                    let date = Calendar.current.date(byAdding: .day, value: -i, to: Date()) ?? Date()
-                    let dateStr = isoFormatter.string(from: date)
-                    let regular = try Double.fetchOne(conn, sql: """
-                        SELECT COALESCE(SUM(regular_hours), 0) FROM labor_entries
-                        WHERE date(clock_in) = ? AND deleted_at IS NULL
-                        """, arguments: [dateStr]) ?? 0
-                    let overtime = try Double.fetchOne(conn, sql: """
-                        SELECT COALESCE(SUM(overtime_hours), 0) FROM labor_entries
-                        WHERE date(clock_in) = ? AND deleted_at IS NULL
-                        """, arguments: [dateStr]) ?? 0
-                    laborDays.append(LaborDayData(
-                        dayLabel: dayFormatter.string(from: date),
-                        date: dateStr,
-                        regularHours: regular,
-                        overtimeHours: overtime
-                    ))
-                }
+            // Stock levels
+            let stockRows = try service.getStockChartData()
+            let stockLevels = stockRows.map { row in
+                StockLevelData(
+                    partName: row.partName,
+                    quantity: row.quantity,
+                    minLevel: row.minLevel
+                )
+            }
 
-                // Top 8 parts by stock level (show low stock prominently)
-                let stockRows = try Row.fetchAll(conn, sql: """
-                    SELECT p.name,
-                           COALESCE((SELECT SUM(s.qty) FROM stock s
-                                     WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) AS qty,
-                           COALESCE(p.min_stock_level, 0) AS min_level
-                    FROM parts p
-                    WHERE p.deleted_at IS NULL AND p.min_stock_level > 0
-                    ORDER BY (COALESCE((SELECT SUM(s.qty) FROM stock s
-                              WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) * 1.0
-                              / NULLIF(p.min_stock_level, 0)) ASC
-                    LIMIT 8
-                    """)
-                let stockLevels = stockRows.map { row in
-                    StockLevelData(
-                        partName: String((row["name"] as String? ?? "").prefix(20)),
-                        quantity: row["qty"] ?? 0,
-                        minLevel: row["min_level"] ?? 0
-                    )
-                }
-
-                // Spending breakdown (labor vs parts vs fuel)
-                let laborSpend = try Double.fetchOne(conn, sql: """
-                    SELECT COALESCE(SUM(le.regular_hours * COALESCE(u.pay_rate, 0)), 0)
-                    FROM labor_entries le
-                    LEFT JOIN users u ON u.id = le.user_id
-                    WHERE le.deleted_at IS NULL
-                    """) ?? 0
-                let partsSpend = try Double.fetchOne(conn, sql: """
-                    SELECT COALESCE(SUM(total_cost), 0) FROM purchase_orders
-                    WHERE status NOT IN ('cancelled') AND deleted_at IS NULL
-                    """) ?? 0
-                let fuelSpend = try Double.fetchOne(conn, sql: """
-                    SELECT COALESCE(SUM(total_cost), 0) FROM fuel_logs
-                    WHERE deleted_at IS NULL
-                    """) ?? 0
-
-                var spending: [SpendingCategory] = []
-                if laborSpend > 0 { spending.append(SpendingCategory(name: "Labor", amount: laborSpend, color: .blue)) }
-                if partsSpend > 0 { spending.append(SpendingCategory(name: "Parts", amount: partsSpend, color: .orange)) }
-                if fuelSpend > 0 { spending.append(SpendingCategory(name: "Fuel", amount: fuelSpend, color: .green)) }
-
-                return DashboardChartData(labor: laborDays, stock: stockLevels, spending: spending)
+            // Spending breakdown
+            let spendingRows = try service.getSpendingChartData()
+            let colorMap: [String: Color] = ["Labor": .blue, "Parts": .orange, "Fuel": .green]
+            let spending = spendingRows.map { row in
+                SpendingCategory(
+                    name: row.name,
+                    amount: row.amount,
+                    color: colorMap[row.name] ?? .gray
+                )
             }
 
             await MainActor.run {
-                laborChartData = charts.labor
-                stockChartData = charts.stock
-                spendingChartData = charts.spending
+                laborChartData = laborDays
+                stockChartData = stockLevels
+                spendingChartData = spending
             }
         } catch { loadError = error.localizedDescription }
     }
-}
-
-/// Format a date N days from now as "yyyy-MM-dd" — free function to avoid actor isolation.
-private func dashboardDateString(daysFromNow days: Int) -> String {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "yyyy-MM-dd"
-    let date = Calendar.current.date(byAdding: .day, value: days, to: Date()) ?? Date()
-    return formatter.string(from: date)
 }
 
 // MARK: - Data Types
@@ -665,17 +537,6 @@ private struct DashboardStats: Sendable {
     var activeJobs = 0
     var pendingOrders = 0
     var lowStockCount = 0
-}
-
-/// Result object to transfer all data out of the database read closure.
-private struct DashboardLoadResult: Sendable {
-    let stats: DashboardStats
-    let certAlerts: [CertAlert]
-    let vehicleAlerts: [VehicleAlert]
-    let isClockedIn: Bool
-    let clockJobName: String?
-    let clockJobNumber: String?
-    let clockInTime: String?
 }
 
 private struct CertAlert: Sendable {

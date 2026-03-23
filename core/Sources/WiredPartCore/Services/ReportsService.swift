@@ -337,7 +337,173 @@ public final class ReportsService: Sendable {
     }
 
     // =========================================================================
-    // MARK: - 5. Reports Stats
+    // MARK: - 5. Pre-Billing Data
+    // =========================================================================
+
+    /// A pre-billing row showing per-job labor hours in a date range.
+    public struct PreBillingRow: Sendable, Identifiable {
+        public let id: Int64
+        public let jobName: String
+        public let regularHours: Double
+        public let overtimeHours: Double
+
+        public init(id: Int64, jobName: String, regularHours: Double, overtimeHours: Double) {
+            self.id = id
+            self.jobName = jobName
+            self.regularHours = regularHours
+            self.overtimeHours = overtimeHours
+        }
+    }
+
+    /// Get pre-billing data: per-job labor hours for a date range.
+    ///
+    /// Only includes jobs that had labor entries (regular or overtime > 0)
+    /// during the specified period.
+    ///
+    /// - Parameters:
+    ///   - startDate: Start date in ISO-8601 format (e.g., "2026-03-01").
+    ///   - endDate: End date in ISO-8601 format (e.g., "2026-03-15").
+    /// - Returns: An array of `PreBillingRow` sorted by job name ascending.
+    public func getPreBillingData(startDate: String, endDate: String) throws -> [PreBillingRow] {
+        do {
+            return try db.writer.read { dbConn -> [PreBillingRow] in
+                let sql = """
+                    SELECT j.id, j.job_name,
+                           COALESCE(SUM(le.regular_hours), 0) AS regular_hours,
+                           COALESCE(SUM(le.overtime_hours), 0) AS overtime_hours
+                    FROM jobs j
+                    LEFT JOIN labor_entries le ON le.job_id = j.id
+                        AND date(le.clock_in) >= ? AND date(le.clock_in) <= ?
+                        AND le.deleted_at IS NULL
+                    WHERE j.deleted_at IS NULL
+                    GROUP BY j.id
+                    HAVING regular_hours > 0 OR overtime_hours > 0
+                    ORDER BY j.job_name
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [startDate, endDate])
+                return rows.map { row in
+                    PreBillingRow(
+                        id: row["id"] ?? 0,
+                        jobName: row["job_name"] ?? "",
+                        regularHours: row["regular_hours"] ?? 0.0,
+                        overtimeHours: row["overtime_hours"] ?? 0.0
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 6. Bookkeeper Export Data
+    // =========================================================================
+
+    /// A bookkeeper labor summary row aggregated per employee.
+    public struct BookkeeperLaborRow: Sendable, Identifiable {
+        public let id: Int64
+        public let employeeName: String
+        public let regularHours: Double
+        public let overtimeHours: Double
+
+        public init(id: Int64, employeeName: String, regularHours: Double, overtimeHours: Double) {
+            self.id = id
+            self.employeeName = employeeName
+            self.regularHours = regularHours
+            self.overtimeHours = overtimeHours
+        }
+    }
+
+    /// A bookkeeper material purchase order row.
+    public struct BookkeeperMaterialRow: Sendable, Identifiable {
+        public let id: Int64
+        public let poNumber: String
+        public let supplierName: String
+        public let totalAmount: Double
+
+        public init(id: Int64, poNumber: String, supplierName: String, totalAmount: Double) {
+            self.id = id
+            self.poNumber = poNumber
+            self.supplierName = supplierName
+            self.totalAmount = totalAmount
+        }
+    }
+
+    /// Get bookkeeper labor summary: per-employee hours for a date range.
+    ///
+    /// - Parameters:
+    ///   - startDate: Start date in ISO-8601 format (e.g., "2026-03-01").
+    ///   - endDate: End date in ISO-8601 format (e.g., "2026-03-15").
+    /// - Returns: An array of `BookkeeperLaborRow` sorted by employee name ascending.
+    public func getBookkeeperLaborSummary(startDate: String, endDate: String) throws -> [BookkeeperLaborRow] {
+        do {
+            return try db.writer.read { dbConn -> [BookkeeperLaborRow] in
+                let sql = """
+                    SELECT u.id, COALESCE(u.display_name, u.email) AS name,
+                           COALESCE(SUM(le.regular_hours), 0) AS regular_hours,
+                           COALESCE(SUM(le.overtime_hours), 0) AS overtime_hours
+                    FROM users u
+                    JOIN labor_entries le ON le.user_id = u.id
+                    WHERE date(le.clock_in) >= ? AND date(le.clock_in) <= ?
+                      AND le.deleted_at IS NULL
+                    GROUP BY u.id
+                    ORDER BY name
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [startDate, endDate])
+                return rows.map { row in
+                    BookkeeperLaborRow(
+                        id: row["id"] ?? 0,
+                        employeeName: row["name"] ?? "Unknown",
+                        regularHours: row["regular_hours"] ?? 0.0,
+                        overtimeHours: row["overtime_hours"] ?? 0.0
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get bookkeeper material purchase orders for a date range.
+    ///
+    /// - Parameters:
+    ///   - startDate: Start date in ISO-8601 format (e.g., "2026-03-01").
+    ///   - endDate: End date in ISO-8601 format (e.g., "2026-03-15").
+    /// - Returns: An array of `BookkeeperMaterialRow` sorted by PO number ascending.
+    public func getBookkeeperMaterialPOs(startDate: String, endDate: String) throws -> [BookkeeperMaterialRow] {
+        do {
+            return try db.writer.read { dbConn -> [BookkeeperMaterialRow] in
+                let sql = """
+                    SELECT po.id, po.po_number, COALESCE(s.name, 'Unknown') AS supplier_name,
+                           COALESCE(po.total_cost, 0) AS total_amount
+                    FROM purchase_orders po
+                    LEFT JOIN suppliers s ON s.id = po.supplier_id
+                    WHERE date(po.created_at) >= ? AND date(po.created_at) <= ?
+                    ORDER BY po.po_number
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [startDate, endDate])
+                return rows.map { row in
+                    BookkeeperMaterialRow(
+                        id: row["id"] ?? 0,
+                        poNumber: row["po_number"] ?? "",
+                        supplierName: row["supplier_name"] ?? "Unknown",
+                        totalAmount: row["total_amount"] ?? 0.0
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 7. Reports Stats
     // =========================================================================
 
     /// Get high-level reporting stats: open billing periods, pending timesheets,

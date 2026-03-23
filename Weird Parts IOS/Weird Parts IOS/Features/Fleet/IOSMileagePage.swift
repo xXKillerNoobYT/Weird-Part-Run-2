@@ -31,6 +31,8 @@ struct IOSMileagePage: View {
         if isLoading {
             ProgressView("Loading mileage logs...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredLogs.isEmpty {
             ContentUnavailableView {
                 Label("No Mileage Logs", systemImage: "road.lanes")
@@ -97,8 +99,13 @@ struct IOSMileagePage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.fleetService else { return }
+        guard let service = appCore.fleetService else {
+            loadError = "Fleet service not available"
+            isLoading = false
+            return
+        }
         isLoading = mileageLogs.isEmpty
+        loadError = nil
         do {
             mileageLogs = try service.listMileageLogs()
         } catch {

@@ -1802,7 +1802,7 @@ public final class WarehouseService: Sendable {
     }
 
     // =========================================================================
-    // MARK: - 10. Receiving Routing
+    // MARK: - 11. Receiving Routing
     // =========================================================================
 
     /// Stock level info for a part, used during receiving routing decisions.
@@ -1813,6 +1813,15 @@ public final class WarehouseService: Sendable {
         public let minStock: Int
         public let targetStock: Int
         public let maxStock: Int
+
+        public init(partId: Int64, partName: String, currentShelfQty: Int, minStock: Int, targetStock: Int, maxStock: Int) {
+            self.partId = partId
+            self.partName = partName
+            self.currentShelfQty = currentShelfQty
+            self.minStock = minStock
+            self.targetStock = targetStock
+            self.maxStock = maxStock
+        }
 
         /// True when shelf stock is below target level.
         public var isBelowTarget: Bool { currentShelfQty < targetStock }

@@ -613,7 +613,142 @@ public final class FleetService: Sendable {
     }
 
     // =========================================================================
-    // MARK: - 7. Create / Mutate
+    // MARK: - 7. Inspections
+    // =========================================================================
+
+    /// An inspection record row with vehicle and inspector names.
+    public struct InspectionRow: Sendable, Identifiable {
+        public let id: Int64
+        public let vehicleName: String
+        public let inspectorName: String
+        public let inspectionDate: String
+        public let result: String
+        public let odometerReading: Int?
+        public let notes: String?
+
+        public init(
+            id: Int64, vehicleName: String, inspectorName: String,
+            inspectionDate: String, result: String,
+            odometerReading: Int?, notes: String?
+        ) {
+            self.id = id
+            self.vehicleName = vehicleName
+            self.inspectorName = inspectorName
+            self.inspectionDate = inspectionDate
+            self.result = result
+            self.odometerReading = odometerReading
+            self.notes = notes
+        }
+    }
+
+    /// List vehicle inspections, most recent first.
+    public func listInspections(limit: Int = 100) throws -> [InspectionRow] {
+        do {
+            return try db.writer.read { dbConn -> [InspectionRow] in
+                let sql = """
+                    SELECT vi.id, vi.inspection_date, vi.result, vi.notes, vi.odometer_reading,
+                           COALESCE(v.vehicle_name, v.vehicle_number, 'Unknown') AS vehicle_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS inspector_name
+                    FROM vehicle_inspections vi
+                    LEFT JOIN vehicles v ON v.id = vi.vehicle_id
+                    LEFT JOIN users u ON u.id = vi.inspector_id
+                    WHERE vi.deleted_at IS NULL
+                    ORDER BY vi.inspection_date DESC
+                    LIMIT ?
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [limit])
+                return rows.map { row in
+                    InspectionRow(
+                        id: row["id"] ?? 0,
+                        vehicleName: row["vehicle_name"] ?? "Unknown",
+                        inspectorName: row["inspector_name"] ?? "Unknown",
+                        inspectionDate: row["inspection_date"] ?? "",
+                        result: row["result"] ?? "pending",
+                        odometerReading: row["odometer_reading"] as Int?,
+                        notes: row["notes"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 8. Telematics / GPS
+    // =========================================================================
+
+    /// A vehicle location row for telematics display.
+    public struct VehicleLocationRow: Sendable, Identifiable {
+        public let id: Int64
+        public let vehicleName: String
+        public let driverName: String
+        public let latitude: Double?
+        public let longitude: Double?
+        public let speed: Double?
+        public let status: String
+        public let lastUpdated: String
+
+        public init(
+            id: Int64, vehicleName: String, driverName: String,
+            latitude: Double?, longitude: Double?, speed: Double?,
+            status: String, lastUpdated: String
+        ) {
+            self.id = id
+            self.vehicleName = vehicleName
+            self.driverName = driverName
+            self.latitude = latitude
+            self.longitude = longitude
+            self.speed = speed
+            self.status = status
+            self.lastUpdated = lastUpdated
+        }
+    }
+
+    /// List latest GPS/telematics data — one row per vehicle, most recent position.
+    public func listTelematicsData() throws -> [VehicleLocationRow] {
+        do {
+            return try db.writer.read { dbConn -> [VehicleLocationRow] in
+                let sql = """
+                    SELECT vll.id, vll.latitude, vll.longitude, vll.speed,
+                           vll.status, vll.recorded_at,
+                           COALESCE(v.vehicle_name, v.vehicle_number, 'Unknown') AS vehicle_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS driver_name
+                    FROM vehicle_location_logs vll
+                    LEFT JOIN vehicles v ON v.id = vll.vehicle_id
+                    LEFT JOIN users u ON u.id = vll.user_id
+                    WHERE vll.id IN (
+                        SELECT MAX(id) FROM vehicle_location_logs
+                        WHERE deleted_at IS NULL
+                        GROUP BY vehicle_id
+                    )
+                    ORDER BY vll.recorded_at DESC
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql)
+                return rows.map { row in
+                    VehicleLocationRow(
+                        id: row["id"] ?? 0,
+                        vehicleName: row["vehicle_name"] ?? "Unknown",
+                        driverName: row["driver_name"] ?? "Unknown",
+                        latitude: row["latitude"] as Double?,
+                        longitude: row["longitude"] as Double?,
+                        speed: row["speed"] as Double?,
+                        status: row["status"] ?? "unknown",
+                        lastUpdated: row["recorded_at"] ?? ""
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 9. Create / Mutate
     // =========================================================================
 
     /// Create a new vehicle. Returns the inserted row ID.

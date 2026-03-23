@@ -36,12 +36,14 @@ struct WarehouseMovementsPage: View {
         case movementDetail(WarehouseService.MovementRow)
         case newMovement
         case qrScanner
+        case help
 
         var id: String {
             switch self {
             case .movementDetail(let m): "detail-\(m.id)"
             case .newMovement: "newMovement"
             case .qrScanner: "qrScanner"
+            case .help: "help"
             }
         }
     }
@@ -72,6 +74,11 @@ struct WarehouseMovementsPage: View {
                     Image(systemName: "plus")
                 }
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
@@ -95,6 +102,15 @@ struct WarehouseMovementsPage: View {
                 activeSheet = nil
             }
             .environmentObject(appCore)
+        case .help:
+            PageHelpSheet(
+                title: "Movements Help",
+                sections: [
+                    ("Overview", "Track all stock movements: transfers between locations, receiving from suppliers, returns, and adjustments."),
+                    ("Creating Movements", "Tap + to start a new guided movement. The wizard walks you through selecting parts, quantities, and locations."),
+                    ("Filtering", "Use the smart card chips to filter by movement type. Search by part name. Tap any movement for details.")
+                ]
+            )
         }
     }
 

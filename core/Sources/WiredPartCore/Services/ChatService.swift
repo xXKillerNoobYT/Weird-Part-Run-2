@@ -288,6 +288,51 @@ public final class ChatService: Sendable {
         }
     }
 
+    /// List Q&A threads for a specific job with optional status filter.
+    public func listQAThreads(jobId: Int64, status: String? = nil) throws -> [QAThreadRow] {
+        do {
+            return try db.writer.read { dbConn -> [QAThreadRow] in
+                var whereClauses = ["qa.deleted_at IS NULL", "qa.job_id = ?"]
+                var args: [DatabaseValueConvertible?] = [jobId]
+
+                if let status, !status.isEmpty {
+                    whereClauses.append("qa.status = ?")
+                    args.append(status)
+                }
+
+                let sql = """
+                    SELECT qa.id, COALESCE(qa.job_id, 0) AS job_id, qa.subject, qa.current_level, qa.status, qa.priority,
+                           qa.answer_text,
+                           COALESCE(ua.display_name, ua.email, 'Unknown') AS asked_by_name,
+                           COALESCE(ub.display_name, ub.email) AS answered_by_name
+                    FROM qa_threads qa
+                    LEFT JOIN users ua ON ua.id = qa.asked_by
+                    LEFT JOIN users ub ON ub.id = qa.answered_by
+                    WHERE \(whereClauses.joined(separator: " AND "))
+                    ORDER BY qa.created_at DESC
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
+                return rows.map { row in
+                    QAThreadRow(
+                        id: row["id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
+                        question: row["subject"] ?? "",
+                        askedByName: row["asked_by_name"] ?? "Unknown",
+                        currentLevel: row["current_level"] ?? "field",
+                        status: row["status"] ?? "open",
+                        priority: row["priority"] ?? "normal",
+                        answer: row["answer_text"] as String?,
+                        answeredByName: row["answered_by_name"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     /// Create a new Q&A thread. Returns the inserted row ID.
     @discardableResult
     public func createQAThread(
@@ -618,6 +663,44 @@ public final class ChatService: Sendable {
                 UPDATE supplier_channel_bridges SET is_active = 0, deleted_at = datetime('now')
                 WHERE channel_id = ?
                 """, arguments: [channelId])
+        }
+    }
+
+    // MARK: - Supplier Bridge Settings
+
+    /// Row data for a supplier communication bridge (settings page).
+    public struct SupplierBridgeRow: Sendable, Identifiable {
+        public let id: String
+        public let supplierName: String
+        public let status: String
+        public let protocol_: String
+        public let lastSyncAt: String?
+    }
+
+    /// List all supplier communication bridges with supplier names.
+    public func listSupplierBridges() throws -> [SupplierBridgeRow] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT sb.id, sb.status, sb.protocol, sb.last_sync_at,
+                           COALESCE(s.name, 'Unknown Supplier') AS supplier_name
+                    FROM supplier_bridges sb
+                    LEFT JOIN suppliers s ON s.id = sb.supplier_id
+                    ORDER BY s.name ASC
+                """)
+                return rows.map { row in
+                    SupplierBridgeRow(
+                        id: "\(row["id"] as Int64? ?? 0)",
+                        supplierName: row["supplier_name"] as? String ?? "Unknown",
+                        status: row["status"] as? String ?? "unknown",
+                        protocol_: row["protocol"] as? String ?? "HTTP",
+                        lastSyncAt: row["last_sync_at"] as? String
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 }

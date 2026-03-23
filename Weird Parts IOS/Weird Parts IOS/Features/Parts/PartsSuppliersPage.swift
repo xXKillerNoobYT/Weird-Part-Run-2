@@ -16,12 +16,14 @@ struct PartsSuppliersPage: View {
         case addSupplier
         case supplierDetail(SupplierListRow)
         case editSupplier(SupplierListRow)
+        case help
 
         var id: String {
             switch self {
             case .addSupplier: return "addSupplier"
             case .supplierDetail(let s): return "detail-\(s.id)"
             case .editSupplier(let s): return "edit-\(s.id)"
+            case .help: return "help"
             }
         }
     }
@@ -95,6 +97,11 @@ struct PartsSuppliersPage: View {
                     Image(systemName: "plus")
                 }
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -106,6 +113,15 @@ struct PartsSuppliersPage: View {
                 }, onUpdate: { await loadData() })
             case .editSupplier(let supplier):
                 SupplierFormSheet(supplier: supplier) { await loadData() }
+            case .help:
+                PageHelpSheet(
+                    title: "Suppliers Help",
+                    sections: [
+                        ("Overview", "Manage your supplier directory. View quality ratings, on-time delivery scores, and the number of parts each supplier provides."),
+                        ("Adding Suppliers", "Tap + to add a new supplier with contact info, terms, and delivery preferences."),
+                        ("Sorting & Filtering", "Sort by name, quality, on-time rate, or reliability. Use search to find specific suppliers quickly.")
+                    ]
+                )
             }
         }
         .background(DS.Background.page)
@@ -616,6 +632,8 @@ private struct SupplierDetailSheet: View {
     @State private var isLoading = true
     @State private var showAddContact = false
     @State private var supplierChannelId: Int64?
+    @State private var contactToRemove: PartsService.SupplierContact?
+    @State private var showRemoveContactConfirm = false
 
     var body: some View {
         NavigationStack {

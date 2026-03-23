@@ -116,6 +116,42 @@ public final class SchedulingService: Sendable {
         }
     }
 
+    /// A subcontractor schedule row for the sub-schedule list.
+    public struct SubScheduleRow: Sendable, Identifiable {
+        public let id: Int64
+        public let subName: String
+        public let companyName: String
+        public let jobName: String
+        public let scheduleDate: String
+        public let status: String
+
+        public init(
+            id: Int64, subName: String, companyName: String,
+            jobName: String, scheduleDate: String, status: String
+        ) {
+            self.id = id
+            self.subName = subName
+            self.companyName = companyName
+            self.jobName = jobName
+            self.scheduleDate = scheduleDate
+            self.status = status
+        }
+    }
+
+    /// A weekly-availability row: one employee and their 7-day availability flags (Mon-Sun).
+    public struct WeeklyAvailabilityRow: Sendable, Identifiable {
+        public let id: Int64
+        public let employeeName: String
+        /// Mon-Sun, 7 entries; `true` = available.
+        public let days: [Bool]
+
+        public init(id: Int64, employeeName: String, days: [Bool]) {
+            self.id = id
+            self.employeeName = employeeName
+            self.days = days
+        }
+    }
+
     /// Dashboard-level scheduling stats.
     public struct SchedulingStats: Sendable {
         public let scheduledToday: Int
@@ -413,7 +449,87 @@ public final class SchedulingService: Sendable {
     }
 
     // =========================================================================
-    // MARK: - 5. Dispatch Creation
+    // MARK: - 5. Sub Schedule
+    // =========================================================================
+
+    /// Get subcontractor schedule rows for a given date.
+    public func getSubSchedule(date: String) throws -> [SubScheduleRow] {
+        do {
+            return try db.writer.read { dbConn -> [SubScheduleRow] in
+                let sql = """
+                    SELECT ss.id,
+                           COALESCE(gc.contact_name, gc.company_name, 'Unknown') AS sub_name,
+                           COALESCE(gc.company_name, '') AS company_name,
+                           COALESCE(j.job_name, 'Unknown Job') AS job_name,
+                           ss.scheduled_date AS schedule_date,
+                           COALESCE(ss.status, 'scheduled') AS status
+                    FROM subcontractor_schedules ss
+                    LEFT JOIN general_contractors gc ON gc.id = ss.gc_id
+                    LEFT JOIN jobs j ON j.id = ss.job_id
+                    WHERE ss.scheduled_date = ?
+                    ORDER BY sub_name
+                    """
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [date])
+                return rows.map { row in
+                    SubScheduleRow(
+                        id: row["id"] ?? 0,
+                        subName: row["sub_name"] ?? "Unknown",
+                        companyName: row["company_name"] ?? "",
+                        jobName: row["job_name"] ?? "Unknown Job",
+                        scheduleDate: row["schedule_date"] ?? date,
+                        status: row["status"] ?? "scheduled"
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 6. Weekly Availability
+    // =========================================================================
+
+    /// Get employee weekly availability for the week starting at `weekStartDate`.
+    /// Returns one row per employee with a 7-element `days` array (Mon-Sun).
+    /// `true` = available (no schedule exception on that day).
+    public func getWeeklyAvailability(weekStartDate: Date) throws -> [WeeklyAvailabilityRow] {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "UTC")
+        let dateStrings = (0..<7).map { offset -> String in
+            let d = Calendar.current.date(byAdding: .day, value: offset, to: weekStartDate) ?? weekStartDate
+            return f.string(from: d)
+        }
+
+        do {
+            return try db.writer.read { dbConn -> [WeeklyAvailabilityRow] in
+                let empSql = "SELECT id, COALESCE(display_name, email) AS name FROM users WHERE deleted_at IS NULL ORDER BY name"
+                let employees = try Row.fetchAll(dbConn, sql: empSql)
+
+                return try employees.map { emp -> WeeklyAvailabilityRow in
+                    let empId: Int64 = emp["id"] ?? 0
+                    let name: String = emp["name"] ?? "Unknown"
+
+                    let days = try dateStrings.map { dateStr -> Bool in
+                        let countSql = "SELECT COUNT(*) FROM schedule_exceptions WHERE user_id = ? AND exception_date = ? AND deleted_at IS NULL"
+                        let count = try Int.fetchOne(dbConn, sql: countSql, arguments: [empId, dateStr]) ?? 0
+                        return count == 0
+                    }
+
+                    return WeeklyAvailabilityRow(id: empId, employeeName: name, days: days)
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 7. Dispatch Creation
+
     // =========================================================================
 
     /// Creates a new dispatch entry (assign user to job on a date).
@@ -438,7 +554,7 @@ public final class SchedulingService: Sendable {
     }
 
     // =========================================================================
-    // MARK: - 6. Schedule Entry Creation
+    // MARK: - 8. Schedule Entry Creation
     // =========================================================================
 
     /// Creates a new schedule entry (schedule a user for a job on a date with optional times).
@@ -465,7 +581,7 @@ public final class SchedulingService: Sendable {
     }
 
     // =========================================================================
-    // MARK: - 7. Scheduling Stats
+    // MARK: - 9. Scheduling Stats
     // =========================================================================
 
     /// Get scheduling dashboard stats: scheduled today, dispatched today, pending time-off.

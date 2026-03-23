@@ -52,6 +52,7 @@ struct PartsCatalogPage: View {
         case editPricing(PricingDisplayRow)
         case qrScanner
         case printLabels
+        case help
 
         var id: String {
             switch self {
@@ -61,6 +62,7 @@ struct PartsCatalogPage: View {
             case .editPricing(let r): return "pricing-\(r.id)"
             case .qrScanner: return "qrScanner"
             case .printLabels: return "printLabels"
+            case .help: return "help"
             }
         }
     }
@@ -135,6 +137,11 @@ struct PartsCatalogPage: View {
                     Image(systemName: showPricing ? "dollarsign.circle.fill" : "dollarsign.circle")
                 }
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
                     activeSheet = .printLabels
@@ -191,6 +198,15 @@ struct PartsCatalogPage: View {
                         detail: part.brandName
                     )
                 })
+            case .help:
+                PageHelpSheet(
+                    title: "Parts Catalog Help",
+                    sections: [
+                        ("Overview", "Browse all parts in your inventory. Search by name or code, filter by category, brand, or stock status using the chips."),
+                        ("Actions", "Tap the + button to add a new part. Use the QR scanner to find parts by code. The printer icon lets you print QR labels."),
+                        ("Pricing", "Toggle the $ icon to show pricing overlays on each part. Tap a part for full details, long-press for quick edit.")
+                    ]
+                )
             }
         }
         .background(DS.Background.page)

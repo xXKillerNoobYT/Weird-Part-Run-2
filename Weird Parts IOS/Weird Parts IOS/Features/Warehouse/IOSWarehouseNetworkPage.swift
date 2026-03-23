@@ -7,6 +7,7 @@ import WiredPartCore
 /// which will be available when sync infrastructure is implemented.
 struct IOSWarehouseNetworkPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @State private var showHelp = false
 
     var body: some View {
         List {
@@ -57,6 +58,23 @@ struct IOSWarehouseNetworkPage: View {
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Network")
+        .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showHelp) {
+            PageHelpSheet(
+                title: "Network Help",
+                sections: [
+                    ("Overview", "View the network status of your device and connected shop computers, tablets, and phones."),
+                    ("Sync", "When network sync is available, this page will show real-time connectivity and sync status for all devices on your local network."),
+                    ("Planned", "Features coming soon include LAN HTTP sync, Bluetooth P2P pairing, encrypted sync, and conflict resolution.")
+                ]
+            )
+        }
     }
 
     private func featureRow(icon: String, label: String, description: String) -> some View {

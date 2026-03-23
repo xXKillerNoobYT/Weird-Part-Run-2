@@ -9,6 +9,7 @@ import WiredPartCore
 /// and tabbed notes (PO + Supplier).
 struct IOSPODetailPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     let poId: Int64
 
@@ -1785,7 +1786,7 @@ struct IOSPODetailPage: View {
         guard let service = appCore.ordersService else { return }
         do {
             try service.deletePO(id: poId)
-            actionMessage = "Draft deleted."
+            dismiss()
         } catch {
             actionMessage = "Failed to delete draft: \(error.localizedDescription)"
         }

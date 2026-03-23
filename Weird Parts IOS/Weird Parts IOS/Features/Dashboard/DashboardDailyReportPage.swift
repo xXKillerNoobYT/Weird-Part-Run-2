@@ -1,6 +1,5 @@
 import SwiftUI
 import Combine
-import GRDB
 import WiredPartCore
 
 /// Standalone Daily Report page, pushed as a sub-page from the Dashboard.
@@ -150,9 +149,9 @@ struct DashboardDailyReportPage: View {
 
     @Sendable
     private func loadData() async {
-        guard let db = appCore.db else {
+        guard let service = appCore.dashboardService else {
             await MainActor.run {
-                loadError = "Database not available"
+                loadError = "Dashboard service not available"
                 isLoading = false
             }
             return
@@ -161,249 +160,88 @@ struct DashboardDailyReportPage: View {
         let currentUserId = appCore.currentUser?.id
 
         do {
-            let result = try await db.writer.read { conn -> DailyReportData in
-                let pJPOs = try Int.fetchOne(conn, sql: "SELECT COUNT(*) FROM job_parts_orders WHERE status = 'submitted' AND deleted_at IS NULL") ?? 0
-                let pPOs = try Int.fetchOne(conn, sql: "SELECT COUNT(*) FROM purchase_orders WHERE status = 'submitted' AND deleted_at IS NULL") ?? 0
-                let rSort = try Int.fetchOne(conn, sql: "SELECT COUNT(*) FROM returns WHERE status = 'submitted' AND deleted_at IS NULL") ?? 0
-                let oDeliv = try Int.fetchOne(conn, sql: """
-                    SELECT COUNT(*) FROM purchase_orders
-                    WHERE expected_delivery IS NOT NULL
-                      AND date(expected_delivery) < date('now')
-                      AND status NOT IN ('received', 'cancelled')
-                      AND deleted_at IS NULL
-                    """) ?? 0
+            // Fetch daily report counters via DashboardService
+            let report = try service.getDailyReport()
+            let expDeliv = try service.getExpectedDeliveries()
+            let bAlerts = try service.getBudgetAlerts()
 
-                let tOrders = try Int.fetchOne(conn, sql: "SELECT COUNT(*) FROM purchase_orders WHERE date(created_at) = date('now') AND deleted_at IS NULL") ?? 0
-                let tReceived = try Int.fetchOne(conn, sql: "SELECT COUNT(*) FROM receiving_sessions WHERE date(created_at) = date('now') AND deleted_at IS NULL") ?? 0
-                let tReturns = try Int.fetchOne(conn, sql: "SELECT COUNT(*) FROM returns WHERE date(created_at) = date('now') AND deleted_at IS NULL") ?? 0
+            // My hours today
+            var myHoursResult: DashboardService.MyHoursToday?
+            if let userId = currentUserId {
+                myHoursResult = try service.getMyHoursToday(userId: userId)
+            }
 
-                let deliveryRows = try Row.fetchAll(conn, sql: """
-                    SELECT po.id, po.po_number, po.expected_delivery,
-                           COALESCE(s.name, 'Unknown') AS supplier_name,
-                           (SELECT COUNT(*) FROM po_line_items pl WHERE pl.po_id = po.id AND pl.deleted_at IS NULL) AS line_count,
-                           CASE WHEN date(po.expected_delivery) < date('now') THEN 1 ELSE 0 END AS is_overdue
-                    FROM purchase_orders po
-                    LEFT JOIN suppliers s ON s.id = po.supplier_id
-                    WHERE po.expected_delivery IS NOT NULL
-                      AND po.status NOT IN ('received', 'cancelled')
-                      AND po.deleted_at IS NULL
-                      AND date(po.expected_delivery) BETWEEN date('now', '-7 days') AND date('now', '+7 days')
-                    ORDER BY po.expected_delivery ASC
-                    LIMIT 20
-                    """)
-                let expDeliv = deliveryRows.map { row in
+            // Team clocked in
+            let teamResult = try service.getTeamClockedIn()
+
+            await MainActor.run {
+                pendingJPOs = report.pendingJPOs
+                pendingPOs = report.pendingPOs
+                returnsToSort = report.returnsToSort
+                overdueDeliveries = report.overdueDeliveries
+                todayCreatedOrders = report.todayCreatedOrders
+                todayReceivedItems = report.todayReceivedItems
+                todayReturns = report.todayReturns
+
+                expectedDeliveries = expDeliv.map { row in
                     ExpectedDelivery(
-                        id: row["id"] ?? 0,
-                        poNumber: row["po_number"] ?? "",
-                        supplierName: row["supplier_name"] ?? "Unknown",
-                        expectedDate: String((row["expected_delivery"] as String? ?? "").prefix(10)),
-                        lineCount: row["line_count"] ?? 0,
-                        isOverdue: (row["is_overdue"] as Int? ?? 0) == 1
+                        id: row.id,
+                        poNumber: row.poNumber,
+                        supplierName: row.supplierName,
+                        expectedDate: row.expectedDate,
+                        lineCount: row.lineCount,
+                        isOverdue: row.isOverdue
                     )
                 }
 
-                let budgetRows = try Row.fetchAll(conn, sql: """
-                    SELECT * FROM (
-                        SELECT j.id, j.job_name, j.budget_limit AS budget,
-                               COALESCE(
-                                 (SELECT SUM(le.regular_hours * COALESCE(u.pay_rate, 0))
-                                  FROM labor_entries le
-                                  LEFT JOIN users u ON u.id = le.user_id
-                                  WHERE le.job_id = j.id AND le.deleted_at IS NULL), 0
-                               ) +
-                               COALESCE(
-                                 (SELECT SUM(po.total_cost)
-                                  FROM purchase_orders po
-                                  JOIN po_jpo_links pjl ON pjl.po_id = po.id
-                                  JOIN job_parts_orders jpo ON jpo.id = pjl.jpo_id
-                                  WHERE jpo.job_id = j.id
-                                    AND po.status NOT IN ('cancelled')
-                                    AND po.deleted_at IS NULL), 0
-                               ) AS current_spend
-                        FROM jobs j
-                        WHERE j.budget_limit IS NOT NULL AND j.budget_limit > 0
-                          AND j.status = 'active'
-                          AND j.deleted_at IS NULL
-                    ) sub
-                    WHERE current_spend >= budget * 0.8
-                    ORDER BY (current_spend * 1.0 / budget) DESC
-                    LIMIT 10
-                    """)
-                let bAlerts = budgetRows.map { row in
-                    let budget: Double = row["budget"] ?? 0
-                    let spend: Double = row["current_spend"] ?? 0
-                    return JobBudgetAlert(
-                        id: row["id"] ?? 0,
-                        jobName: row["job_name"] ?? "",
-                        currentSpend: spend,
-                        budgetLimit: budget,
-                        pctUsed: budget > 0 ? (spend / budget) * 100 : 0
+                budgetAlerts = bAlerts.map { row in
+                    JobBudgetAlert(
+                        id: row.id,
+                        jobName: row.jobName,
+                        currentSpend: row.currentSpend,
+                        budgetLimit: row.budgetLimit,
+                        pctUsed: row.pctUsed
                     )
                 }
 
-                // --- My Hours Today ---
-                var myHoursVal: Double = 0
-                var myClockInVal: String?
-                var myJobVal: String?
-                var myBreaksVal: Int = 0
-                var myBreakdownVal: [JobTimeEntry] = []
-
-                if let userId = currentUserId {
-                    // Total completed hours today
-                    myHoursVal = try Double.fetchOne(conn, sql: """
-                        SELECT COALESCE(SUM(regular_hours + overtime_hours), 0)
-                        FROM labor_entries
-                        WHERE user_id = ? AND date(clock_in) = date('now') AND deleted_at IS NULL
-                        """, arguments: [userId]) ?? 0
-
-                    // Current active clock-in
-                    if let activeRow = try Row.fetchOne(conn, sql: """
-                        SELECT le.clock_in, COALESCE(j.job_name, 'Shop / Warehouse') AS job_name
-                        FROM labor_entries le
-                        LEFT JOIN jobs j ON j.id = le.job_id
-                        WHERE le.user_id = ? AND le.clock_out IS NULL AND le.deleted_at IS NULL
-                        ORDER BY le.clock_in DESC LIMIT 1
-                        """, arguments: [userId]) {
-                        let rawClockIn: String = activeRow["clock_in"] ?? ""
-                        // Extract HH:mm from ISO timestamp
-                        if rawClockIn.count >= 16 {
-                            myClockInVal = String(rawClockIn.suffix(from: rawClockIn.index(rawClockIn.startIndex, offsetBy: 11)).prefix(5))
-                        } else {
-                            myClockInVal = rawClockIn
-                        }
-                        myJobVal = activeRow["job_name"]
-
-                        // Add active session elapsed time
-                        let activeHours = try Double.fetchOne(conn, sql: """
-                            SELECT (julianday('now') - julianday(clock_in)) * 24
-                            FROM labor_entries
-                            WHERE user_id = ? AND clock_out IS NULL AND deleted_at IS NULL
-                            ORDER BY clock_in DESC LIMIT 1
-                            """, arguments: [userId]) ?? 0
-                        myHoursVal += max(0, activeHours)
-                    }
-
-                    // Job breakdown
-                    let breakdownRows = try Row.fetchAll(conn, sql: """
-                        SELECT COALESCE(j.job_name, 'Shop / Warehouse') AS job_name,
-                               SUM(
-                                 CASE WHEN le.clock_out IS NOT NULL THEN le.regular_hours + le.overtime_hours
-                                      ELSE (julianday('now') - julianday(le.clock_in)) * 24
-                                 END
-                               ) AS total_hours
-                        FROM labor_entries le
-                        LEFT JOIN jobs j ON j.id = le.job_id
-                        WHERE le.user_id = ? AND date(le.clock_in) = date('now') AND le.deleted_at IS NULL
-                        GROUP BY le.job_id
-                        ORDER BY total_hours DESC
-                        """, arguments: [userId])
-                    myBreakdownVal = breakdownRows.map { row in
+                if let myHours = myHoursResult {
+                    myTodayHours = myHours.totalHours
+                    myClockInTime = myHours.clockInTime
+                    myCurrentJob = myHours.currentJobName
+                    myBreakMinutes = myHours.breakMinutes
+                    myJobBreakdown = myHours.jobBreakdown.map { entry in
                         JobTimeEntry(
-                            id: row["job_name"] ?? "unknown",
-                            jobName: row["job_name"] ?? "Shop / Warehouse",
-                            hours: max(0, row["total_hours"] ?? 0)
+                            id: entry.jobName,
+                            jobName: entry.jobName,
+                            hours: entry.hours
                         )
                     }
-
-                    // Break minutes: gaps between consecutive entries today
-                    let gapMinutes = try Int.fetchOne(conn, sql: """
-                        SELECT COALESCE(SUM(gap_minutes), 0) FROM (
-                            SELECT CAST((julianday(le2.clock_in) - julianday(le1.clock_out)) * 1440 AS INTEGER) AS gap_minutes
-                            FROM labor_entries le1
-                            JOIN labor_entries le2
-                                ON le2.user_id = le1.user_id
-                                AND le2.clock_in > le1.clock_out
-                                AND le2.deleted_at IS NULL
-                                AND date(le2.clock_in) = date('now')
-                            WHERE le1.user_id = ? AND le1.clock_out IS NOT NULL AND le1.deleted_at IS NULL
-                                AND date(le1.clock_in) = date('now')
-                                AND NOT EXISTS (
-                                    SELECT 1 FROM labor_entries le3
-                                    WHERE le3.user_id = le1.user_id
-                                        AND le3.clock_in > le1.clock_out
-                                        AND le3.clock_in < le2.clock_in
-                                        AND le3.deleted_at IS NULL
-                                        AND date(le3.clock_in) = date('now')
-                                )
-                        )
-                        """, arguments: [userId]) ?? 0
-                    myBreaksVal = max(0, gapMinutes)
                 }
 
-                // --- Who's Clocked In (team) ---
-                let teamRows = try Row.fetchAll(conn, sql: """
-                    SELECT u.id, u.display_name,
-                           COALESCE(j.job_name, 'Shop / Warehouse') AS job_name,
-                           le.clock_in
-                    FROM labor_entries le
-                    JOIN users u ON u.id = le.user_id
-                    LEFT JOIN jobs j ON j.id = le.job_id
-                    WHERE le.clock_out IS NULL AND le.deleted_at IS NULL AND u.deleted_at IS NULL
-                    ORDER BY le.clock_in ASC
-                    """)
-                let teamVal = teamRows.map { row in
-                    let rawClockIn: String = row["clock_in"] ?? ""
-                    // Calculate duration text
+                teamClockedIn = teamResult.map { member in
+                    // Calculate duration text from raw clock-in timestamp
                     let durationText: String = {
-                        guard rawClockIn.count >= 19 else { return "—" }
+                        guard member.clockInRaw.count >= 19 else { return "—" }
                         let formatter = ISO8601DateFormatter()
                         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
                         let formatterBasic = ISO8601DateFormatter()
                         formatterBasic.formatOptions = [.withInternetDateTime]
-                        if let date = formatter.date(from: rawClockIn) ?? formatterBasic.date(from: rawClockIn) {
+                        if let date = formatter.date(from: member.clockInRaw) ?? formatterBasic.date(from: member.clockInRaw) {
                             let mins = Int(Date().timeIntervalSince(date) / 60)
                             if mins < 60 { return "\(mins)m" }
                             return "\(mins / 60)h \(mins % 60)m"
                         }
                         return "—"
                     }()
-                    let timeText: String = rawClockIn.count >= 16
-                        ? String(rawClockIn.suffix(from: rawClockIn.index(rawClockIn.startIndex, offsetBy: 11)).prefix(5))
-                        : rawClockIn
                     return TeamMemberStatus(
-                        id: row["id"] ?? 0,
-                        displayName: row["display_name"] ?? "",
-                        jobName: row["job_name"] ?? "",
-                        clockInTime: timeText,
+                        id: member.id,
+                        displayName: member.displayName,
+                        jobName: member.jobName,
+                        clockInTime: member.clockInTime,
                         durationText: durationText
                     )
                 }
 
-                return DailyReportData(
-                    pendingJPOs: pJPOs,
-                    pendingPOs: pPOs,
-                    returnsToSort: rSort,
-                    overdueDeliveries: oDeliv,
-                    todayCreatedOrders: tOrders,
-                    todayReceivedItems: tReceived,
-                    todayReturns: tReturns,
-                    expectedDeliveries: expDeliv,
-                    budgetAlerts: bAlerts,
-                    myHours: myHoursVal,
-                    myClockIn: myClockInVal,
-                    myJob: myJobVal,
-                    myBreaks: myBreaksVal,
-                    jobBreakdown: myBreakdownVal,
-                    team: teamVal
-                )
-            }
-
-            await MainActor.run {
-                pendingJPOs = result.pendingJPOs
-                pendingPOs = result.pendingPOs
-                returnsToSort = result.returnsToSort
-                overdueDeliveries = result.overdueDeliveries
-                todayCreatedOrders = result.todayCreatedOrders
-                todayReceivedItems = result.todayReceivedItems
-                todayReturns = result.todayReturns
-                expectedDeliveries = result.expectedDeliveries
-                budgetAlerts = result.budgetAlerts
-                myTodayHours = result.myHours
-                myClockInTime = result.myClockIn
-                myCurrentJob = result.myJob
-                myBreakMinutes = result.myBreaks
-                myJobBreakdown = result.jobBreakdown
-                teamClockedIn = result.team
                 isLoading = false
             }
         } catch {
@@ -781,28 +619,6 @@ struct DashboardDailyReportPage: View {
 
 // MARK: - Local Model Types
 
-private struct DailyReportData: Sendable {
-    let pendingJPOs: Int
-    let pendingPOs: Int
-    let returnsToSort: Int
-    let overdueDeliveries: Int
-    let todayCreatedOrders: Int
-    let todayReceivedItems: Int
-    let todayReturns: Int
-    let expectedDeliveries: [ExpectedDelivery]
-    let budgetAlerts: [JobBudgetAlert]
-
-    // My Hours
-    let myHours: Double
-    let myClockIn: String?
-    let myJob: String?
-    let myBreaks: Int
-    let jobBreakdown: [JobTimeEntry]
-
-    // Team
-    let team: [TeamMemberStatus]
-}
-
 private struct ExpectedDelivery: Identifiable, Sendable {
     let id: Int64
     let poNumber: String
@@ -842,6 +658,8 @@ private struct ReportProblemSheet: View {
     @State private var selectedJobId: Int64?
     @State private var description = ""
     @State private var jobs: [(id: Int64, name: String)] = []
+    @State private var saveError: String?
+    @State private var isSaving = false
 
     var body: some View {
         NavigationStack {
@@ -858,6 +676,12 @@ private struct ReportProblemSheet: View {
                     TextField("Describe the problem...", text: $description, axis: .vertical)
                         .lineLimit(3...8)
                 }
+                if let error = saveError {
+                    Section {
+                        Text(error)
+                            .foregroundStyle(.red)
+                    }
+                }
             }
             .navigationTitle("Report Problem")
             .navigationBarTitleDisplayMode(.inline)
@@ -865,27 +689,41 @@ private struct ReportProblemSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Submit") {
-                        // TODO: Create notebook entry tagged as 'problem'
-                        dismiss()
+                        submitProblem()
                     }
-                    .disabled(description.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(description.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
             }
             .task { loadJobs() }
         }
     }
 
-    private func loadJobs() {
-        guard let db = appCore.db else { return }
+    private func submitProblem() {
+        guard let service = appCore.dashboardService,
+              let userId = appCore.currentUser?.id else {
+            saveError = "Service not available"
+            return
+        }
+        isSaving = true
+        saveError = nil
         do {
-            let rows = try db.writer.read { conn in
-                try Row.fetchAll(conn, sql: """
-                    SELECT id, job_name FROM jobs
-                    WHERE status = 'active' AND deleted_at IS NULL
-                    ORDER BY job_name ASC
-                    """)
-            }
-            jobs = rows.map { (id: $0["id"] ?? 0, name: $0["job_name"] ?? "") }
+            try service.reportProblem(
+                userId: userId,
+                jobId: selectedJobId,
+                description: description.trimmingCharacters(in: .whitespaces)
+            )
+            dismiss()
+        } catch {
+            saveError = error.localizedDescription
+            isSaving = false
+        }
+    }
+
+    private func loadJobs() {
+        guard let service = appCore.dashboardService else { return }
+        do {
+            let activeJobs = try service.getActiveJobsForPicker()
+            jobs = activeJobs.map { (id: $0.id, name: $0.jobName) }
         } catch {
             // Non-critical — picker will just be empty
         }
@@ -900,6 +738,8 @@ private struct SubmitDailyReportSheet: View {
     @State private var accomplishments = ""
     @State private var issues = ""
     @State private var tomorrowNotes = ""
+    @State private var saveError: String?
+    @State private var isSaving = false
 
     var body: some View {
         NavigationStack {
@@ -916,6 +756,12 @@ private struct SubmitDailyReportSheet: View {
                     TextField("What needs to happen next...", text: $tomorrowNotes, axis: .vertical)
                         .lineLimit(2...4)
                 }
+                if let error = saveError {
+                    Section {
+                        Text(error)
+                            .foregroundStyle(.red)
+                    }
+                }
             }
             .navigationTitle("Daily Report")
             .navigationBarTitleDisplayMode(.inline)
@@ -923,12 +769,33 @@ private struct SubmitDailyReportSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Submit") {
-                        // TODO: Save daily report via JobsService
-                        dismiss()
+                        submitReport()
                     }
-                    .disabled(accomplishments.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(accomplishments.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
             }
+        }
+    }
+
+    private func submitReport() {
+        guard let service = appCore.dashboardService,
+              let userId = appCore.currentUser?.id else {
+            saveError = "Service not available"
+            return
+        }
+        isSaving = true
+        saveError = nil
+        do {
+            try service.submitDailyReport(
+                userId: userId,
+                accomplishments: accomplishments.trimmingCharacters(in: .whitespaces),
+                issues: issues.trimmingCharacters(in: .whitespaces),
+                tomorrowNotes: tomorrowNotes.trimmingCharacters(in: .whitespaces)
+            )
+            dismiss()
+        } catch {
+            saveError = error.localizedDescription
+            isSaving = false
         }
     }
 }

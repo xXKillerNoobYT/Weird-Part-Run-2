@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Activity and audit log viewer.
@@ -13,12 +12,12 @@ struct AuditLogPage: View {
     // MARK: - State
 
     @State private var isLoading = true
-    @State private var entries: [AuditEntry] = []
+    @State private var entries: [SettingsService.AuditLogEntry] = []
     @State private var errorMessage: String?
     @State private var limit = 50
     @State private var searchText = ""
 
-    private var filteredEntries: [AuditEntry] {
+    private var filteredEntries: [SettingsService.AuditLogEntry] {
         guard !searchText.isEmpty else { return entries }
         let query = searchText.lowercased()
         return entries.filter {
@@ -75,7 +74,7 @@ struct AuditLogPage: View {
 
     // MARK: - Row View
 
-    private func auditRow(_ entry: AuditEntry) -> some View {
+    private func auditRow(_ entry: SettingsService.AuditLogEntry) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Image(systemName: iconForAction(entry.action))
@@ -129,48 +128,16 @@ struct AuditLogPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else {
-            errorMessage = "Database not available."
+        guard let settingsService = appCore.settingsService else {
+            errorMessage = "Settings service not available."
             isLoading = false
             return
         }
         do {
-            entries = try db.writer.read { dbConn in
-                let rows = try Row.fetchAll(dbConn, sql: """
-                    SELECT cl.id, cl.table_name, cl.operation, cl.timestamp AS changed_at,
-                           cl.device_id
-                    FROM _change_log cl
-                    ORDER BY cl.timestamp DESC
-                    LIMIT ?
-                """, arguments: [limit])
-                return rows.map { row in
-                    AuditEntry(
-                        id: "\(row["id"] as Int64? ?? 0)",
-                        entityType: row["table_name"] as? String ?? "unknown",
-                        action: row["operation"] as? String ?? "unknown",
-                        timestamp: row["changed_at"] as? String ?? "",
-                        deviceId: row["device_id"] as? String
-                    )
-                }
-            }
+            entries = try settingsService.listAuditLog(limit: limit)
         } catch {
-            let msg = String(describing: error)
-            if msg.contains("no such table") {
-                entries = []
-            } else {
-                errorMessage = "Failed to load audit log: \(error.localizedDescription)"
-            }
+            errorMessage = "Failed to load audit log: \(error.localizedDescription)"
         }
         isLoading = false
-    }
-
-    // MARK: - Model
-
-    private struct AuditEntry: Identifiable {
-        let id: String
-        let entityType: String
-        let action: String
-        let timestamp: String
-        let deviceId: String?
     }
 }

@@ -17,6 +17,8 @@ struct IOSTruckToolsPage: View {
             if isLoading {
                 ProgressView("Loading truck tools...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { loadData() }
             } else if filteredCheckouts.isEmpty {
                 EmptyStateView(
                     icon: "wrench.and.screwdriver",
@@ -74,8 +76,13 @@ struct IOSTruckToolsPage: View {
     }
 
     private func loadData() {
-        guard let service = appCore.toolsService else { return }
+        guard let service = appCore.toolsService else {
+            loadError = "Tools service not available"
+            isLoading = false
+            return
+        }
         isLoading = checkouts.isEmpty
+        loadError = nil
         do {
             // Get active checkouts (tools currently out on trucks)
             checkouts = try service.listCheckouts(active: true)

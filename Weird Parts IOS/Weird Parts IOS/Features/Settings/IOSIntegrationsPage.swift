@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Integration settings page for iOS.
@@ -93,31 +92,23 @@ struct IOSIntegrationsPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else {
-            errorMessage = "Database not available."
+        guard let settingsService = appCore.settingsService else {
+            errorMessage = "Settings service not available."
             isLoading = false
             return
         }
         do {
-            integrations = try db.writer.read { db in
-                let rows = try Row.fetchAll(db, sql: """
-                    SELECT id, name, description, is_enabled, last_sync_at
-                    FROM integrations ORDER BY name ASC
-                """)
-                return rows.map { row in
-                    Integration(
-                        id: "\(row["id"] as Int64? ?? 0)",
-                        name: row["name"] as? String ?? "Unknown",
-                        description: row["description"] as? String ?? "",
-                        isEnabled: (row["is_enabled"] as? Int64 ?? 0) == 1,
-                        lastSyncAt: row["last_sync_at"] as? String
-                    )
-                }
+            integrations = try settingsService.listIntegrations().map { row in
+                Integration(
+                    id: row.id,
+                    name: row.name,
+                    description: row.description,
+                    isEnabled: row.isEnabled,
+                    lastSyncAt: row.lastSyncAt
+                )
             }
         } catch {
-            if !error.localizedDescription.contains("no such table") {
-                errorMessage = "Failed to load integrations: \(error.localizedDescription)"
-            }
+            errorMessage = "Failed to load integrations: \(error.localizedDescription)"
             integrations = []
         }
         isLoading = false
@@ -126,14 +117,9 @@ struct IOSIntegrationsPage: View {
     // MARK: - Toggle
 
     private func toggleIntegration(_ id: String, enabled: Bool) {
-        guard let db = appCore.db else { return }
+        guard let settingsService = appCore.settingsService else { return }
         do {
-            try db.writer.write { db in
-                try db.execute(
-                    sql: "UPDATE integrations SET is_enabled = ? WHERE id = ?",
-                    arguments: [enabled ? 1 : 0, id]
-                )
-            }
+            try settingsService.toggleIntegration(id, enabled: enabled)
         } catch {
             errorMessage = "Failed to update: \(error.localizedDescription)"
         }

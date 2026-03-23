@@ -39,6 +39,7 @@ struct IOSStagingPage: View {
 
     // Box creation
     @State private var showCreateBox = false
+    @State private var showHelp = false
     @State private var newBoxJobId: Int64?
     @State private var newBoxSize: String = "normal"
 
@@ -89,6 +90,11 @@ struct IOSStagingPage: View {
         .searchable(text: $searchText, prompt: activeTab == .items ? "Search staged parts..." : "Search boxes...")
         .refreshable { loadData() }
         .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
             ToolbarItemGroup(placement: .primaryAction) {
                 if activeTab == .items {
                     itemsToolbar
@@ -126,6 +132,16 @@ struct IOSStagingPage: View {
         }
         .sheet(isPresented: $showCreateBox) {
             createBoxSheet
+        }
+        .sheet(isPresented: $showHelp) {
+            PageHelpSheet(
+                title: "Staging Area Help",
+                sections: [
+                    ("Overview", "The staging area holds parts that have been pulled from warehouse stock and tagged for specific jobs or destinations."),
+                    ("Boxes", "Switch to the Boxes tab to manage physical staging boxes. Mark a box as full to auto-create the next one."),
+                    ("Loading", "Swipe an item or use batch selection to confirm items are loaded onto a truck or delivered to a job site.")
+                ]
+            )
         }
         .task { loadData() }
     }

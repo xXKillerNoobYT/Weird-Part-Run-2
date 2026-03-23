@@ -5796,6 +5796,236 @@ public final class PartsService: Sendable {
     }
 
     // =========================================================================
+    // MARK: - Admin Dashboard Queries
+    // =========================================================================
+
+    /// A user row for the admin voting dashboard, including vote-power status.
+    public struct AdminUserRow: Sendable {
+        public let id: Int64
+        public let displayName: String
+        public let hasPower: Bool
+    }
+
+    /// A finalized poll row for the admin dashboard history section.
+    public struct AdminPollHistoryRow: Sendable {
+        public let id: Int64
+        public let name: String
+        public let result: String
+        public let totalVotes: Int
+        public let poweredAccept: Int
+        public let poweredReject: Int
+        public let wasLocked: Bool
+        public let finalizedAt: String
+    }
+
+    /// Rule stats: manual (hand-created) vs auto-discovered (from polls).
+    public struct CompanionRuleStats: Sendable {
+        public let manual: Int
+        public let autoDiscovered: Int
+    }
+
+    /// Get all active users with their companion-vote-power status.
+    public func getActiveUsersWithVotePower() throws -> [AdminUserRow] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT u.id, u.display_name,
+                           EXISTS(SELECT 1 FROM user_hats uh
+                                  JOIN hat_permissions hp ON hp.hat_id = uh.hat_id
+                                  WHERE uh.user_id = u.id AND uh.is_active = 1
+                                  AND hp.permission_key = 'companion_vote_power') AS has_power
+                    FROM users u WHERE u.is_active = 1 AND u.deleted_at IS NULL
+                    ORDER BY u.display_name ASC
+                    """)
+                return rows.map { row in
+                    AdminUserRow(
+                        id: row["id"],
+                        displayName: row["display_name"] ?? "Unknown",
+                        hasPower: (row["has_power"] as Int?) == 1
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get finalized poll history for the admin dashboard.
+    public func getPollHistory(limit: Int = 20) throws -> [AdminPollHistoryRow] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT cp.id, cp.proposed_rule_name, cp.result,
+                           cpr.total_votes, cpr.powered_accept, cpr.powered_reject,
+                           cpr.was_admin_locked, cpr.finalized_at
+                    FROM companion_polls cp
+                    JOIN companion_poll_results cpr ON cpr.poll_id = cp.id
+                    ORDER BY cpr.finalized_at DESC
+                    LIMIT ?
+                    """, arguments: [limit])
+                return rows.map { row in
+                    AdminPollHistoryRow(
+                        id: row["id"] ?? 0,
+                        name: row["proposed_rule_name"] ?? "Unknown",
+                        result: row["result"] ?? "unknown",
+                        totalVotes: row["total_votes"] ?? 0,
+                        poweredAccept: row["powered_accept"] ?? 0,
+                        poweredReject: row["powered_reject"] ?? 0,
+                        wasLocked: (row["was_admin_locked"] as Int?) == 1,
+                        finalizedAt: row["finalized_at"] ?? ""
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get manual vs auto-discovered companion rule counts.
+    public func getCompanionRuleStats() throws -> CompanionRuleStats {
+        do {
+            return try db.writer.read { dbConn in
+                let manualCount = try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM companion_rules
+                    WHERE deleted_at IS NULL AND id NOT IN (
+                        SELECT COALESCE(created_rule_id, 0) FROM companion_polls WHERE created_rule_id IS NOT NULL
+                    )
+                    """) ?? 0
+                let autoCount = try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM companion_polls WHERE created_rule_id IS NOT NULL
+                    """) ?? 0
+                return CompanionRuleStats(manual: manualCount, autoDiscovered: autoCount)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return CompanionRuleStats(manual: 0, autoDiscovered: 0) }
+            throw error
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Sandbox / Co-occurrence Queries
+    // =========================================================================
+
+    /// A job row where multiple selected categories co-occurred.
+    public struct SandboxJobRow: Sendable {
+        public let jobId: Int64
+        public let jobName: String
+        public let jobNumber: String
+    }
+
+    /// A part row used in a job (for sandbox examples).
+    public struct SandboxJobPartRow: Sendable {
+        public let name: String
+        public let categoryName: String
+        public let qty: Int
+    }
+
+    /// A deeper-level co-occurrence pair for sandbox "next level" preview.
+    public struct SandboxNextLevelRow: Sendable {
+        public let catAName: String
+        public let catBName: String
+        public let matchLevel: String
+        public let points: Int
+        public let confidence: Double
+    }
+
+    /// Find jobs where at least 2 of the given categories co-occurred on ordered parts.
+    public func getJobsWithCategoryCoOccurrence(categoryIds: [Int64], limit: Int = 3) throws -> [SandboxJobRow] {
+        guard !categoryIds.isEmpty else { return [] }
+        do {
+            return try db.writer.read { dbConn in
+                let placeholders = categoryIds.map { _ in "?" }.joined(separator: ", ")
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT DISTINCT j.id, j.job_name, j.job_number
+                    FROM jobs j
+                    JOIN job_parts jp ON jp.job_id = j.id
+                    JOIN parts p ON p.id = jp.part_id
+                    WHERE p.category_id IN (\(placeholders))
+                      AND jp.deleted_at IS NULL AND p.deleted_at IS NULL
+                    GROUP BY j.id
+                    HAVING COUNT(DISTINCT p.category_id) >= 2
+                    ORDER BY j.created_at DESC
+                    LIMIT ?
+                    """, arguments: StatementArguments(categoryIds + [limit]))
+                return rows.map { row in
+                    SandboxJobRow(
+                        jobId: row["id"],
+                        jobName: row["job_name"] ?? "Unknown",
+                        jobNumber: row["job_number"] ?? ""
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get parts consumed on a specific job (for sandbox real examples).
+    public func getJobPartsForSandbox(jobId: Int64, limit: Int = 10) throws -> [SandboxJobPartRow] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT p.name, pc.name AS cat_name, jp.qty_consumed
+                    FROM job_parts jp
+                    JOIN parts p ON p.id = jp.part_id
+                    LEFT JOIN part_categories pc ON pc.id = p.category_id
+                    WHERE jp.job_id = ? AND jp.deleted_at IS NULL
+                    ORDER BY jp.qty_consumed DESC
+                    LIMIT ?
+                    """, arguments: [jobId, limit])
+                return rows.map { row in
+                    SandboxJobPartRow(
+                        name: (row["name"] as String?) ?? "",
+                        categoryName: (row["cat_name"] as String?) ?? "",
+                        qty: (row["qty_consumed"] as Int?) ?? 0
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get deeper-level co-occurrence pairs for categories that matched companion rules.
+    public func getNextLevelCoOccurrences(categoryIds: [Int64], limit: Int = 5) throws -> [SandboxNextLevelRow] {
+        guard !categoryIds.isEmpty else { return [] }
+        do {
+            return try db.writer.read { dbConn in
+                let placeholders = categoryIds.map { _ in "?" }.joined(separator: ", ")
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT cop.id, cop.category_a_id, cop.category_b_id, cop.points,
+                           cop.match_level, cop.confidence,
+                           ca.name AS cat_a_name, cb.name AS cat_b_name
+                    FROM co_occurrence_pairs cop
+                    LEFT JOIN part_categories ca ON ca.id = cop.category_a_id
+                    LEFT JOIN part_categories cb ON cb.id = cop.category_b_id
+                    WHERE (cop.category_a_id IN (\(placeholders)) OR cop.category_b_id IN (\(placeholders)))
+                      AND cop.match_level IN ('style', 'type')
+                      AND cop.is_blocked = 0
+                    ORDER BY cop.points DESC
+                    LIMIT ?
+                    """, arguments: StatementArguments(categoryIds + categoryIds + [limit]))
+                return rows.map { row in
+                    SandboxNextLevelRow(
+                        catAName: row["cat_a_name"] ?? "Unknown",
+                        catBName: row["cat_b_name"] ?? "Unknown",
+                        matchLevel: row["match_level"] ?? "style",
+                        points: row["points"] ?? 0,
+                        confidence: row["confidence"] ?? 0.0
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    // =========================================================================
     // MARK: - Internal Helpers
     // =========================================================================
 

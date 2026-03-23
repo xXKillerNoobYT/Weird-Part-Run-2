@@ -14,6 +14,7 @@ struct IOSWarehouseToolsPage: View {
     @State private var loadError: String?
     @State private var actionError: String?
     @State private var selectedFilter: ToolFilter?
+    @State private var showHelp = false
 
     private enum ToolFilter: String, CaseIterable {
         case available = "Available"
@@ -40,6 +41,23 @@ struct IOSWarehouseToolsPage: View {
         }
         .navigationTitle("Warehouse Tools")
         .searchable(text: $searchText, prompt: "Search tools...")
+        .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showHelp) {
+            PageHelpSheet(
+                title: "Warehouse Tools Help",
+                sections: [
+                    ("Overview", "View all tools assigned to the warehouse. Filter by status: available, checked out, or in maintenance."),
+                    ("Actions", "Swipe a tool row to check it out, return it, or mark it for maintenance."),
+                    ("Search", "Use the search bar to find tools by name or serial number. Pull down to refresh the list.")
+                ]
+            )
+        }
         .refreshable { loadData() }
         .alert("Error", isPresented: .constant(actionError != nil)) {
             Button("OK") { actionError = nil }

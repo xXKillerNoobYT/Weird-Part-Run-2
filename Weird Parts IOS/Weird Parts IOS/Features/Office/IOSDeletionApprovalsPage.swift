@@ -12,6 +12,7 @@ struct IOSDeletionApprovalsPage: View {
     @State private var drainingItems: [PartsService.ScheduledDeletion] = []
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var showHelp = false
     @State private var processingId: Int64?
 
     var body: some View {
@@ -36,6 +37,23 @@ struct IOSDeletionApprovalsPage: View {
             }
         }
         .navigationTitle("Deletion Approvals")
+        .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showHelp) {
+            PageHelpSheet(
+                title: "Deletion Approvals Help",
+                sections: [
+                    ("Overview", "Review parts and categories scheduled for deletion. Items appear here after their stock reaches zero and the 30-day grace period expires."),
+                    ("Approving", "Approve a deletion to permanently remove the item. Reject to cancel the scheduled deletion and keep the item."),
+                    ("Draining", "Items marked as 'draining' still have stock remaining. They will move to pending approval once stock reaches zero.")
+                ]
+            )
+        }
         .refreshable { await loadData() }
         .task { await loadData() }
     }

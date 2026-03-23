@@ -15,11 +15,13 @@ struct PartsBrandsPage: View {
     enum ActiveSheet: Identifiable {
         case addBrand
         case detailBrand(BrandListRow)
+        case help
 
         var id: String {
             switch self {
             case .addBrand: return "addBrand"
             case .detailBrand(let b): return "detail-\(b.id)"
+            case .help: return "help"
             }
         }
     }
@@ -50,6 +52,11 @@ struct PartsBrandsPage: View {
                     Image(systemName: "plus")
                 }
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -59,6 +66,15 @@ struct PartsBrandsPage: View {
             case .detailBrand(let brandRow):
                 BrandDetailSheet(brand: brandRow) { await loadData() }
                     .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(
+                    title: "Brands Help",
+                    sections: [
+                        ("Overview", "Manage all brands in your parts catalog. Each brand can be linked to multiple parts and suppliers."),
+                        ("Adding Brands", "Tap the + button to create a new brand. Specify the name, description, and linked suppliers."),
+                        ("Details", "Tap a brand to view its detail sheet showing linked parts, suppliers, and usage statistics.")
+                    ]
+                )
             }
         }
         .background(DS.Background.page)

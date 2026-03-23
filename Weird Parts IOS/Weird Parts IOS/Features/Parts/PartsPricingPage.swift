@@ -60,6 +60,11 @@ struct PartsPricingPage: View {
                     Image(systemName: viewMode.icon)
                 }
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button {
@@ -550,6 +555,15 @@ struct PartsPricingPage: View {
             PricingBulkEditSheet { await loadData() }
         case .pricingSettings:
             PricingSettingsSheet { await loadData() }
+        case .help:
+            PageHelpSheet(
+                title: "Pricing Help",
+                sections: [
+                    ("Overview", "View and manage pricing for all parts. See cost, markup percentage, and sell price at a glance. Tier badges show where each price comes from."),
+                    ("Editing", "Tap a part to edit its pricing. Use the menu for bulk edits, tier pricing setup, or global pricing settings."),
+                    ("Views", "Switch between List, Cards, and Table views using the view mode icon. Filter by category and sort by name, cost, or margin.")
+                ]
+            )
         }
     }
 
@@ -737,6 +751,7 @@ private enum PricingActiveSheet: Identifiable {
     case setTierPricing
     case bulkEdit
     case pricingSettings
+    case help
 
     var id: String {
         switch self {
@@ -744,6 +759,7 @@ private enum PricingActiveSheet: Identifiable {
         case .setTierPricing: return "tier"
         case .bulkEdit: return "bulk"
         case .pricingSettings: return "settings"
+        case .help: return "help"
         }
     }
 }

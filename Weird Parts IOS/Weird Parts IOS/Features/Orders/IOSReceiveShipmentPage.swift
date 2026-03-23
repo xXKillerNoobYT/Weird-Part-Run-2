@@ -123,6 +123,7 @@ struct IOSReceiveShipmentPage: View {
                 sessionItems = []
                 priceVerifications = [:]
                 receivedQtys = [:]
+                routingResults = [:]
                 loadData()
             }
         } message: {
@@ -432,7 +433,6 @@ struct IOSReceiveShipmentPage: View {
     @ViewBuilder
     private func routingSection(item: WarehouseService.ReceivingItemInfo) -> some View {
         let qty = receivedQtys[item.id] ?? item.receivedQty
-        let isRouted = routingResults[item.id] != nil
 
         VStack(alignment: .leading, spacing: 8) {
             if let result = routingResults[item.id] {

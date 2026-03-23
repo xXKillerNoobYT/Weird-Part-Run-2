@@ -18,6 +18,7 @@ struct IOSInventoryGridPage: View {
     @State private var selectedLocationId: Int64 = 1
     @State private var selectedFilter: StockFilter?
     @State private var actionError: String?
+    @State private var showHelp = false
     @AppStorage("lastInventoryLocationType") private var lastLocationType = "warehouse"
     @AppStorage("lastInventoryLocationId") private var lastLocationId: Int = 1
 
@@ -72,6 +73,23 @@ struct IOSInventoryGridPage: View {
         }
         .navigationTitle("Inventory")
         .searchable(text: $searchText, prompt: "Search parts...")
+        .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showHelp) {
+            PageHelpSheet(
+                title: "Inventory Help",
+                sections: [
+                    ("Overview", "View stock levels at any warehouse location. Color-coded indicators show low stock, out of stock, and healthy levels."),
+                    ("Location Picker", "Use the picker at the top to switch between warehouse locations, trucks, trailers, and job sites."),
+                    ("Actions", "Swipe a part row to quickly transfer stock or start an audit. Use the filter chips to focus on problem areas.")
+                ]
+            )
+        }
         .refreshable { loadData() }
         .alert("Error", isPresented: .constant(actionError != nil)) {
             Button("OK") { actionError = nil }

@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Update protocol settings page for iOS.
@@ -154,30 +153,15 @@ struct IOSUpdateProtocolPage: View {
         currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
         buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
 
-        guard let db = appCore.db else {
+        guard let settingsService = appCore.settingsService else {
             isLoading = false
             return
         }
         do {
-            let settings = try db.writer.read { db -> (String?, String?, String) in
-                let channelRow = try Row.fetchOne(db, sql: """
-                    SELECT value FROM settings WHERE key = 'update_channel' LIMIT 1
-                """)
-                let lastCheckRow = try Row.fetchOne(db, sql: """
-                    SELECT value FROM settings WHERE key = 'last_update_check' LIMIT 1
-                """)
-                let availableRow = try Row.fetchOne(db, sql: """
-                    SELECT value FROM settings WHERE key = 'available_version' LIMIT 1
-                """)
-                return (
-                    lastCheckRow?["value"] as? String,
-                    availableRow?["value"] as? String,
-                    channelRow?["value"] as? String ?? "stable"
-                )
-            }
-            lastCheckTime = settings.0
-            availableVersion = settings.1
-            updateChannel = settings.2
+            let settings = try settingsService.getUpdateSettings()
+            lastCheckTime = settings.lastCheckTime
+            availableVersion = settings.availableVersion
+            updateChannel = settings.updateChannel
         } catch {
             if !error.localizedDescription.contains("no such table") {
                 errorMessage = "Failed to load update settings: \(error.localizedDescription)"
@@ -202,14 +186,9 @@ struct IOSUpdateProtocolPage: View {
     }
 
     private func saveChannel() {
-        guard let db = appCore.db else { return }
+        guard let settingsService = appCore.settingsService else { return }
         do {
-            try db.writer.write { db in
-                try db.execute(sql: """
-                    INSERT OR REPLACE INTO settings (key, value, category)
-                    VALUES ('update_channel', ?, 'updates')
-                """, arguments: [updateChannel])
-            }
+            try settingsService.saveUpdateChannel(updateChannel)
         } catch {
             errorMessage = "Failed to save channel: \(error.localizedDescription)"
         }

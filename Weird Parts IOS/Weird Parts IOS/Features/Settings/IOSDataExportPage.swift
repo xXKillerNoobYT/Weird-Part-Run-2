@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Data export page for iOS.
@@ -154,20 +153,13 @@ struct IOSDataExportPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else {
-            errorMessage = "Database not available."
+        guard let settingsService = appCore.settingsService else {
+            errorMessage = "Settings service not available."
             isLoading = false
             return
         }
         do {
-            availableTables = try db.writer.read { dbConn in
-                let rows = try Row.fetchAll(dbConn, sql: """
-                    SELECT name FROM sqlite_master
-                    WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-                    ORDER BY name ASC
-                """)
-                return rows.compactMap { $0["name"] as? String }
-            }
+            availableTables = try settingsService.listDatabaseTables()
             dbSizeText = "N/A"
         } catch {
             errorMessage = "Failed to load tables: \(error.localizedDescription)"

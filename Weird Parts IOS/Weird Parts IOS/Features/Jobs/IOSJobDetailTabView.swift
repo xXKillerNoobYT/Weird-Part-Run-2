@@ -22,6 +22,7 @@ struct IOSJobDetailTabView: View {
     @State private var jobParts: [JobsService.JobPartRow] = []
     @State private var jobSupplierChannels: [ChatService.SupplierChannelRow] = []
     @State private var showCreateSupplierChannel = false
+    @State private var tabError: String?
 
     private let tabs: [(id: String, label: String, icon: String)] = [
         ("overview", "Overview", "doc.text"),
@@ -39,6 +40,28 @@ struct IOSJobDetailTabView: View {
         VStack(spacing: 0) {
             // Tab picker
             tabPicker
+
+            // Tab error banner
+            if let tabError {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(tabError)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        self.tabError = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 6)
+                .background(Color.orange.opacity(0.1))
+            }
 
             // Content
             if isLoading {
@@ -613,26 +636,6 @@ struct IOSJobDetailTabView: View {
         .task { loadJobQA() }
     }
 
-    // MARK: - Placeholder Tab
-
-    private func placeholderTab(_ title: String, icon: String, message: String) -> some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: icon)
-                .font(.system(size: 40))
-                .foregroundStyle(.secondary)
-            Text(title)
-                .font(.headline)
-            Text(message)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-        .padding()
-    }
-
     // MARK: - Data
 
     private func loadData() {
@@ -652,7 +655,7 @@ struct IOSJobDetailTabView: View {
         do {
             teamMembers = try service.getTeamMembers(jobId: jobId)
         } catch {
-            loadError = error.localizedDescription
+            tabError = error.localizedDescription
         }
     }
 
@@ -661,27 +664,25 @@ struct IOSJobDetailTabView: View {
         do {
             jobParts = try service.getJobParts(jobId: jobId)
         } catch {
-            loadError = error.localizedDescription
+            tabError = error.localizedDescription
         }
     }
 
     private func loadJobOrders() {
         guard let service = appCore.ordersService else { return }
         do {
-            let all = try service.listJPOs(status: nil)
-            jobJPOs = all.filter { $0.jobId == jobId }
+            jobJPOs = try service.listJPOs(jobId: jobId)
         } catch {
-            loadError = error.localizedDescription
+            tabError = error.localizedDescription
         }
     }
 
     private func loadJobQA() {
         guard let service = appCore.chatService else { return }
         do {
-            let all = try service.listQAThreads(status: nil)
-            jobQAThreads = all.filter { $0.jobId == jobId }
+            jobQAThreads = try service.listQAThreads(jobId: jobId)
         } catch {
-            loadError = error.localizedDescription
+            tabError = error.localizedDescription
         }
     }
 
@@ -691,7 +692,7 @@ struct IOSJobDetailTabView: View {
         do {
             jobSupplierChannels = try service.listSupplierChannelsForJob(jobId: jobId, userId: userId)
         } catch {
-            loadError = error.localizedDescription
+            tabError = error.localizedDescription
         }
     }
 

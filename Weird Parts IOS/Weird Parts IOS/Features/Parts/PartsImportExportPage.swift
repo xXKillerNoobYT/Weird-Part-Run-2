@@ -24,6 +24,7 @@ struct PartsImportExportPage: View {
     @State private var importPreview: ImportPreview?
     private enum ActiveSheet: String, Identifiable {
         case importPreview
+        case help
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
@@ -89,6 +90,22 @@ struct PartsImportExportPage: View {
                     }
                 )
                 .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(
+                    title: "Import/Export Help",
+                    sections: [
+                        ("Exporting", "Export your parts catalog to CSV. Select which field groups to include: hierarchy, pricing, stock levels, and more."),
+                        ("Importing", "Import parts from a CSV file. Preview changes before committing. Conflicts are highlighted for review."),
+                        ("Tips", "Exported files can be edited in Excel or Google Sheets and re-imported. Use the same column headers for a smooth import.")
+                    ]
+                )
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
             }
         }
         .background(DS.Background.page)

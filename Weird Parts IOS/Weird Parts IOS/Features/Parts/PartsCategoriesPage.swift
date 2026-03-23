@@ -13,6 +13,7 @@ struct PartsCategoriesPage: View {
     @State private var selection: TreeSelection?
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var showHelp = false
 
     var body: some View {
         Group {
@@ -30,6 +31,23 @@ struct PartsCategoriesPage: View {
             }
         }
         .background(DS.Background.page)
+        .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showHelp) {
+            PageHelpSheet(
+                title: "Categories Help",
+                sections: [
+                    ("Hierarchy", "Parts are organized in a 5-level hierarchy: Category > Style > Type > Brand > Color. Tap any level to drill down."),
+                    ("Editing", "Select an item in the tree to view and edit its details in the editor panel. On iPad, the editor appears side-by-side."),
+                    ("Managing", "Add new categories, styles, types, brands, and colors from the editor panel. Changes apply immediately to all parts using that classification.")
+                ]
+            )
+        }
         .task { await loadHierarchy() }
         .refreshable { await loadHierarchy() }
     }

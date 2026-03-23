@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Backup management page for iOS.
@@ -122,27 +121,15 @@ struct IOSBackupsPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else {
-            errorMessage = "Database not available."
+        guard let settingsService = appCore.settingsService else {
+            errorMessage = "Settings service not available."
             isLoading = false
             return
         }
         do {
-            let info = try db.writer.read { dbConn -> (String?, Int) in
-                let lastRow = try Row.fetchOne(dbConn, sql: """
-                    SELECT value FROM settings
-                    WHERE key = 'last_backup_time' LIMIT 1
-                """)
-                let countRow = try Row.fetchOne(dbConn, sql: """
-                    SELECT value FROM settings
-                    WHERE key = 'backup_count' LIMIT 1
-                """)
-                let lastTime = lastRow?["value"] as? String
-                let count = Int(countRow?["value"] as? String ?? "0") ?? 0
-                return (lastTime, count)
-            }
-            lastBackupTime = info.0
-            backupCount = info.1
+            let info = try settingsService.getBackupInfo()
+            lastBackupTime = info.lastBackupTime
+            backupCount = info.backupCount
             backupSizeText = "N/A"
         } catch {
             let msg = String(describing: error)

@@ -21,7 +21,13 @@ struct IOSWarehouseReturnsPage: View {
 
     private enum ActiveSheet: Identifiable {
         case createReturn
-        var id: String { "createReturn" }
+        case help
+        var id: String {
+            switch self {
+            case .createReturn: "createReturn"
+            case .help: "help"
+            }
+        }
     }
 
     private enum StatusFilter: String, CaseIterable {
@@ -58,10 +64,27 @@ struct IOSWarehouseReturnsPage: View {
                     Image(systemName: "plus")
                 }
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
-        .sheet(item: $activeSheet) { _ in
-            CreateReturnSheet(onSave: { loadData() })
-                .environmentObject(appCore)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .createReturn:
+                CreateReturnSheet(onSave: { loadData() })
+                    .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(
+                    title: "Returns Help",
+                    sections: [
+                        ("Overview", "Manage return requests to suppliers. Track items through the full return lifecycle: pending, approved, shipped, and completed."),
+                        ("Creating Returns", "Tap + to create a new return. Select the supplier, parts, and reason for return."),
+                        ("Status Tracking", "Use the smart card filters to view returns by status. Tap any return for full details and actions.")
+                    ]
+                )
+            }
         }
         .alert("Error", isPresented: .constant(actionError != nil)) {
             Button("OK") { actionError = nil }

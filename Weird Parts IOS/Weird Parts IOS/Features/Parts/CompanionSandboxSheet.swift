@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// "What If" sandbox for testing how companion rules fire when ordering parts.
@@ -236,7 +235,7 @@ struct CompanionSandboxSheet: View {
                             Text(part.name)
                                 .font(.caption)
                             Spacer()
-                            Text("×\(part.qty)")
+                            Text("\u{00d7}\(part.qty)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -281,7 +280,7 @@ struct CompanionSandboxSheet: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(preview.pairName)
                             .font(.subheadline)
-                        Text("\(preview.currentLevel.capitalized) → \(preview.nextLevel.capitalized)")
+                        Text("\(preview.currentLevel.capitalized) \u{2192} \(preview.nextLevel.capitalized)")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -310,8 +309,7 @@ struct CompanionSandboxSheet: View {
     }
 
     private func analyze() async {
-        guard !selectedCategories.isEmpty, let service = appCore.partsService,
-              let db = appCore.db else {
+        guard !selectedCategories.isEmpty, let service = appCore.partsService else {
             matchedRules = []; realExamples = []; nextLevelPreview = []
             return
         }
@@ -320,7 +318,7 @@ struct CompanionSandboxSheet: View {
         do {
             let selectedCatIds = selectedCategories.map { $0.categoryId }
 
-            // 1. Find matching rules
+            // 1. Find matching rules via service
             let allRules = try service.listCompanionRulesHierarchy()
             matchedRules = allRules.compactMap { rule in
                 // Check if any source category matches a selected category
@@ -346,95 +344,44 @@ struct CompanionSandboxSheet: View {
                 )
             }
 
-            // 2. Find real job examples (up to 3 jobs where these categories co-occurred)
-            let catIds = selectedCatIds
+            // 2. Find real job examples via service
             let targetNames = matchedRules.map { $0.targetName }
-            realExamples = try await db.writer.read { dbConn in
-                let placeholders = catIds.map { _ in "?" }.joined(separator: ", ")
-                let rows = try Row.fetchAll(dbConn, sql: """
-                    SELECT DISTINCT j.id, j.job_name, j.job_number
-                    FROM jobs j
-                    JOIN job_parts jp ON jp.job_id = j.id
-                    JOIN parts p ON p.id = jp.part_id
-                    WHERE p.category_id IN (\(placeholders))
-                      AND jp.deleted_at IS NULL AND p.deleted_at IS NULL
-                    GROUP BY j.id
-                    HAVING COUNT(DISTINCT p.category_id) >= 2
-                    ORDER BY j.created_at DESC
-                    LIMIT 3
-                    """, arguments: StatementArguments(catIds))
+            let jobRows = try service.getJobsWithCategoryCoOccurrence(categoryIds: selectedCatIds, limit: 3)
 
-                var examples: [RealExample] = []
-                for jobRow in rows {
-                    let jobId: Int64 = jobRow["id"]
-                    let parts = try Row.fetchAll(dbConn, sql: """
-                        SELECT p.name, pc.name AS cat_name, jp.qty_consumed
-                        FROM job_parts jp
-                        JOIN parts p ON p.id = jp.part_id
-                        LEFT JOIN part_categories pc ON pc.id = p.category_id
-                        WHERE jp.job_id = ? AND jp.deleted_at IS NULL
-                        ORDER BY jp.qty_consumed DESC
-                        LIMIT 10
-                        """, arguments: [jobId])
-
-                    examples.append(RealExample(
-                        jobName: jobRow["job_name"] ?? "Unknown",
-                        jobNumber: jobRow["job_number"] ?? "",
-                        partsOrdered: parts.map {
-                            (name: ($0["name"] as String?) ?? "",
-                             category: ($0["cat_name"] as String?) ?? "",
-                             qty: ($0["qty_consumed"] as Int?) ?? 0)
-                        },
-                        companionsThatWouldFire: targetNames
-                    ))
-                }
-                return examples
+            var examples: [RealExample] = []
+            for jobRow in jobRows {
+                let parts = try service.getJobPartsForSandbox(jobId: jobRow.jobId, limit: 10)
+                examples.append(RealExample(
+                    jobName: jobRow.jobName,
+                    jobNumber: jobRow.jobNumber,
+                    partsOrdered: parts.map { (name: $0.name, category: $0.categoryName, qty: $0.qty) },
+                    companionsThatWouldFire: targetNames
+                ))
             }
+            realExamples = examples
 
-            // 3. Next level preview — check if deeper pairings exist in co_occurrence_pairs
+            // 3. Next level preview via service
             let matchedCatIds = matchedRules.flatMap { rule in
                 [categories.first(where: { $0.name == rule.sourceName })?.id,
                  categories.first(where: { $0.name == rule.targetName })?.id]
             }.compactMap { $0 }
 
             if !matchedCatIds.isEmpty {
-                nextLevelPreview = try await db.writer.read { dbConn in
-                    let placeholders = matchedCatIds.map { _ in "?" }.joined(separator: ", ")
-                    let rows = try Row.fetchAll(dbConn, sql: """
-                        SELECT cop.id, cop.category_a_id, cop.category_b_id, cop.points,
-                               cop.match_level, cop.confidence,
-                               ca.name AS cat_a_name, cb.name AS cat_b_name
-                        FROM co_occurrence_pairs cop
-                        LEFT JOIN part_categories ca ON ca.id = cop.category_a_id
-                        LEFT JOIN part_categories cb ON cb.id = cop.category_b_id
-                        WHERE (cop.category_a_id IN (\(placeholders)) OR cop.category_b_id IN (\(placeholders)))
-                          AND cop.match_level IN ('style', 'type')
-                          AND cop.is_blocked = 0
-                        ORDER BY cop.points DESC
-                        LIMIT 5
-                        """, arguments: StatementArguments(matchedCatIds + matchedCatIds))
-
-                    return rows.map { row in
-                        let catAName: String = row["cat_a_name"] ?? "Unknown"
-                        let catBName: String = row["cat_b_name"] ?? "Unknown"
-                        let matchLevel: String = row["match_level"] ?? "style"
-                        let pts: Int = row["points"] ?? 0
-                        let conf: Double = row["confidence"] ?? 0.0
-                        let nextLevel = matchLevel == "category" ? "style" : (matchLevel == "style" ? "type" : "type")
-
-                        return NextLevelPreview(
-                            currentLevel: matchLevel,
-                            nextLevel: nextLevel,
-                            pairName: "\(catAName) + \(catBName)",
-                            points: pts,
-                            wouldQualify: conf >= 0.7
-                        )
-                    }
+                let nlRows = try service.getNextLevelCoOccurrences(categoryIds: matchedCatIds, limit: 5)
+                nextLevelPreview = nlRows.map { row in
+                    let nextLevel = row.matchLevel == "category" ? "style" : (row.matchLevel == "style" ? "type" : "type")
+                    return NextLevelPreview(
+                        currentLevel: row.matchLevel,
+                        nextLevel: nextLevel,
+                        pairName: "\(row.catAName) + \(row.catBName)",
+                        points: row.points,
+                        wouldQualify: row.confidence >= 0.7
+                    )
                 }
             }
 
         } catch {
-            // Sandbox is read-only best-effort — silently handle
+            loadError = error.localizedDescription
         }
 
         isAnalyzing = false

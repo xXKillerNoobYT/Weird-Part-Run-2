@@ -505,7 +505,7 @@ struct IOSClockPage: View {
 
         do {
             // Record the break type in the labor entry notes before clocking out
-            try db.writer.write { conn in
+            try await db.writer.write { conn in
                 let existingNotes = try String.fetchOne(
                     conn,
                     sql: "SELECT notes FROM labor_entries WHERE id = ?",
@@ -551,7 +551,7 @@ struct IOSClockPage: View {
         let newStatus = activityStatus == "supply_run" ? "working" : "supply_run"
 
         do {
-            try db.writer.write { conn in
+            try await db.writer.write { conn in
                 let existingNotes = try String.fetchOne(
                     conn,
                     sql: "SELECT notes FROM labor_entries WHERE id = ?",
@@ -679,7 +679,7 @@ struct IOSClockPage: View {
             // Check activity status from notes (supply_run tracking)
             var currentActivity = "working"
             if let entry {
-                let notes = try? db.writer.read { conn in
+                let notes = try? await db.writer.read { conn in
                     try String.fetchOne(
                         conn,
                         sql: "SELECT notes FROM labor_entries WHERE id = ?",

@@ -1,19 +1,17 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Subcontractor schedule list page for iOS.
 ///
 /// Displays a date-picker-driven list of subcontractor assignments
-/// showing sub name, company, job, date, and status. Uses direct SQL
-/// queries against the subcontractor_schedules, subcontractors, and
-/// jobs tables. Supports date navigation and pull-to-refresh.
+/// showing sub name, company, job, date, and status. Data is loaded
+/// via `SchedulingService`. Supports date navigation and pull-to-refresh.
 struct IOSSubSchedulePage: View {
     @EnvironmentObject private var appCore: AppCore
 
     // MARK: - State
 
-    @State private var rows: [SubScheduleRow] = []
+    @State private var rows: [SchedulingService.SubScheduleRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var selectedDate = Date()
@@ -99,7 +97,7 @@ struct IOSSubSchedulePage: View {
 
     // MARK: - Row
 
-    private func subRow(_ row: SubScheduleRow) -> some View {
+    private func subRow(_ row: SchedulingService.SubScheduleRow) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "person.crop.rectangle.stack")
                 .font(.title2)
@@ -160,54 +158,16 @@ struct IOSSubSchedulePage: View {
         return String(dateString.prefix(10))
     }
 
-    // MARK: - Data Model
-
-    struct SubScheduleRow: Identifiable {
-        let id: Int64
-        let subName: String
-        let companyName: String
-        let jobName: String
-        let scheduleDate: String
-        let status: String
-    }
-
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else { return }
+        guard let service = appCore.schedulingService else { return }
         isLoading = rows.isEmpty
         loadError = nil
         do {
-            rows = try db.writer.read { db in
-                let sql = """
-                    SELECT ss.id,
-                           COALESCE(gc.contact_name, gc.company_name, 'Unknown') AS sub_name,
-                           COALESCE(gc.company_name, '') AS company_name,
-                           COALESCE(j.job_name, 'Unknown Job') AS job_name,
-                           ss.scheduled_date AS schedule_date,
-                           COALESCE(ss.status, 'scheduled') AS status
-                    FROM subcontractor_schedules ss
-                    LEFT JOIN general_contractors gc ON gc.id = ss.gc_id
-                    LEFT JOIN jobs j ON j.id = ss.job_id
-                    WHERE ss.scheduled_date = ?
-                    ORDER BY sub_name
-                    """
-                return try Row.fetchAll(db, sql: sql, arguments: [dateString]).map { row in
-                    SubScheduleRow(
-                        id: row["id"],
-                        subName: row["sub_name"],
-                        companyName: row["company_name"],
-                        jobName: row["job_name"],
-                        scheduleDate: row["schedule_date"],
-                        status: row["status"]
-                    )
-                }
-            }
+            rows = try service.getSubSchedule(date: dateString)
         } catch {
-            let msg = String(describing: error)
-            if !msg.contains("no such table") {
-                loadError = error.localizedDescription
-            }
+            loadError = error.localizedDescription
         }
         isLoading = false
     }

@@ -1505,6 +1505,54 @@ public final class JobsService: Sendable {
         }
     }
 
+    /// List active/in-progress jobs, optionally excluding a specific job ID.
+    /// Used by the geofence alert to let workers pick another job to clock into.
+    public func listActiveJobs(excludingJobId: Int64? = nil) throws -> [JobListItem] {
+        do {
+            return try db.writer.read { dbConn -> [JobListItem] in
+                var whereClauses = [
+                    "j.deleted_at IS NULL",
+                    "j.status IN ('active', 'in_progress')"
+                ]
+                var args: [DatabaseValueConvertible?] = []
+
+                if let excludeId = excludingJobId {
+                    whereClauses.append("j.id != ?")
+                    args.append(excludeId)
+                }
+
+                let sql = """
+                    SELECT j.id, j.job_number, j.job_name, j.customer_name,
+                           j.status, j.priority, j.job_type, j.start_date, j.due_date,
+                           COALESCE((SELECT COUNT(*) FROM job_team_members jtm
+                                     WHERE jtm.job_id = j.id AND jtm.deleted_at IS NULL), 0) AS team_count
+                    FROM jobs j
+                    WHERE \(whereClauses.joined(separator: " AND "))
+                    ORDER BY j.job_name ASC
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
+                return rows.map { row in
+                    JobListItem(
+                        id: row["id"] ?? 0,
+                        jobNumber: row["job_number"] ?? "",
+                        jobName: row["job_name"] ?? "",
+                        customerName: row["customer_name"] as String?,
+                        status: row["status"] ?? "active",
+                        priority: row["priority"] ?? "normal",
+                        jobType: row["job_type"] ?? "service",
+                        teamCount: row["team_count"] ?? 0,
+                        startDate: row["start_date"] as String?,
+                        dueDate: row["due_date"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     /// Detect whether a GRDB/SQLite error indicates a missing table.
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)

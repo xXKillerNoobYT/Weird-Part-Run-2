@@ -31,6 +31,8 @@ struct IOSMaintenancePage: View {
         if isLoading {
             ProgressView("Loading maintenance records...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredRecords.isEmpty {
             ContentUnavailableView {
                 Label("No Maintenance Records", systemImage: "wrench.and.screwdriver")
@@ -103,8 +105,13 @@ struct IOSMaintenancePage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.fleetService else { return }
+        guard let service = appCore.fleetService else {
+            loadError = "Fleet service not available"
+            isLoading = false
+            return
+        }
         isLoading = records.isEmpty
+        loadError = nil
         do {
             records = try service.listMaintenanceRecords()
         } catch {

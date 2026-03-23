@@ -13,6 +13,7 @@ struct IOSManageJobsPage: View {
     @State private var stats: JobsService.JobStats?
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var showHelp = false
     @State private var statusFilter = "all"
     @State private var showCreateJob = false
     @State private var loadError: String?
@@ -33,6 +34,23 @@ struct IOSManageJobsPage: View {
             jobContent
         }
         .navigationTitle("Manage Jobs")
+        .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showHelp) {
+            PageHelpSheet(
+                title: "Manage Jobs Help",
+                sections: [
+                    ("Overview", "Admin-level job management with bulk actions, status changes, and advanced filtering by assignee, date, and type."),
+                    ("Bulk Actions", "Select multiple jobs to update their status, reassign team members, or archive completed jobs at once."),
+                    ("Permissions", "This page requires the 'manage jobs' permission. Standard users should use the regular Jobs page.")
+                ]
+            )
+        }
         .searchable(text: $searchText, prompt: "Search jobs...")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

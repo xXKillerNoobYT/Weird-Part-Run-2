@@ -26,11 +26,13 @@ struct IOSAuditPage: View {
     private enum ActiveSheet: Identifiable {
         case auditSetup
         case adjustDiscrepancy(WarehouseService.AuditDiscrepancy)
+        case help
 
         var id: String {
             switch self {
             case .auditSetup: "setup"
             case .adjustDiscrepancy(let d): "adjust-\(d.partId)-\(d.locationId)"
+            case .help: "help"
             }
         }
     }
@@ -54,6 +56,11 @@ struct IOSAuditPage: View {
                     activeSheet = .auditSetup
                 } label: {
                     Label("Start Audit", systemImage: "plus")
+                }
+            }
+            ToolbarItem(placement: .secondaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
                 }
             }
         }
@@ -84,6 +91,15 @@ struct IOSAuditPage: View {
                 loadData()
             }
             .environmentObject(appCore)
+        case .help:
+            PageHelpSheet(
+                title: "Warehouse Audit Help",
+                sections: [
+                    ("Overview", "Run physical inventory audits to verify stock counts match the system. Discrepancies are highlighted for resolution."),
+                    ("Starting an Audit", "Tap + to set up a new audit. Choose which locations and parts to audit, then count items physically."),
+                    ("Resolving Discrepancies", "Tap any discrepancy to adjust the count. All adjustments are logged for accountability.")
+                ]
+            )
         }
     }
 

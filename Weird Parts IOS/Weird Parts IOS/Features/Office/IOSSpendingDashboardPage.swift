@@ -10,6 +10,7 @@ struct IOSSpendingDashboardPage: View {
 
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var showHelp = false
     @State private var totalJobs = 0
     @State private var totalPartsCost: Double = 0
     @State private var totalLaborHours: Double = 0
@@ -56,6 +57,23 @@ struct IOSSpendingDashboardPage: View {
             .padding(.vertical)
         }
         .navigationTitle("Spending Dashboard")
+        .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showHelp) {
+            PageHelpSheet(
+                title: "Spending Dashboard Help",
+                sections: [
+                    ("Overview", "Aggregate spending data across all jobs. See total parts costs, labor costs, and budget utilization at a glance."),
+                    ("Breakdown", "Cards show spending by category. Tap for detailed breakdowns by job, supplier, or time period."),
+                    ("Permissions", "This page requires the 'show dollar values' permission. Contact your admin if you cannot see cost data.")
+                ]
+            )
+        }
         .refreshable { loadData() }
         .task { loadData() }
         .overlay {

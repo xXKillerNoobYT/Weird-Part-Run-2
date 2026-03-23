@@ -364,6 +364,277 @@ public final class SettingsService: Sendable {
         }
     }
 
+    // MARK: - Backup Info
+
+    /// Summary of last backup time and backup count.
+    public struct BackupInfo: Sendable {
+        public let lastBackupTime: String?
+        public let backupCount: Int
+    }
+
+    /// Get backup metadata from the settings table.
+    public func getBackupInfo() throws -> BackupInfo {
+        let lastTime = try getSettingValue("last_backup_time")
+        let countStr = try getSettingValue("backup_count")
+        let count = Int(countStr ?? "0") ?? 0
+        return BackupInfo(lastBackupTime: lastTime, backupCount: count)
+    }
+
+    // MARK: - Database Tables
+
+    /// List all user-created table names in the database (excludes sqlite internals).
+    public func listDatabaseTables() throws -> [String] {
+        try db.writer.read { dbConnection in
+            let rows = try Row.fetchAll(dbConnection, sql: """
+                SELECT name FROM sqlite_master
+                WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                ORDER BY name ASC
+            """)
+            return rows.compactMap { $0["name"] as? String }
+        }
+    }
+
+    // MARK: - Update Protocol
+
+    /// Settings for the update protocol page.
+    public struct UpdateSettings: Sendable {
+        public let updateChannel: String
+        public let lastCheckTime: String?
+        public let availableVersion: String?
+    }
+
+    /// Get update protocol settings.
+    public func getUpdateSettings() throws -> UpdateSettings {
+        let channel = try getSettingValue("update_channel") ?? "stable"
+        let lastCheck = try getSettingValue("last_update_check")
+        let available = try getSettingValue("available_version")
+        return UpdateSettings(updateChannel: channel, lastCheckTime: lastCheck, availableVersion: available)
+    }
+
+    /// Save the selected update channel.
+    public func saveUpdateChannel(_ channel: String) throws {
+        try upsertSetting(key: "update_channel", value: channel, category: "updates")
+    }
+
+    // MARK: - Integrations
+
+    /// Row data for an integration entry.
+    public struct IntegrationRow: Sendable, Identifiable {
+        public let id: String
+        public let name: String
+        public let description: String
+        public let isEnabled: Bool
+        public let lastSyncAt: String?
+    }
+
+    /// List all integrations.
+    public func listIntegrations() throws -> [IntegrationRow] {
+        do {
+            return try db.writer.read { dbConnection in
+                let rows = try Row.fetchAll(dbConnection, sql: """
+                    SELECT id, name, description, is_enabled, last_sync_at
+                    FROM integrations ORDER BY name ASC
+                """)
+                return rows.map { row in
+                    IntegrationRow(
+                        id: "\(row["id"] as Int64? ?? 0)",
+                        name: row["name"] as? String ?? "Unknown",
+                        description: row["description"] as? String ?? "",
+                        isEnabled: (row["is_enabled"] as? Int64 ?? 0) == 1,
+                        lastSyncAt: row["last_sync_at"] as? String
+                    )
+                }
+            }
+        } catch {
+            if String(describing: error).contains("no such table") { return [] }
+            throw error
+        }
+    }
+
+    /// Toggle an integration on or off.
+    public func toggleIntegration(_ id: String, enabled: Bool) throws {
+        try db.writer.write { dbConnection in
+            try dbConnection.execute(
+                sql: "UPDATE integrations SET is_enabled = ? WHERE id = ?",
+                arguments: [enabled ? 1 : 0, id]
+            )
+        }
+    }
+
+    // MARK: - Device Keys
+
+    /// Active device encryption key info.
+    public struct DeviceKeyInfo: Sendable {
+        public let fingerprint: String?
+        public let createdAt: String?
+        public let rotatedAt: String?
+    }
+
+    /// Get the active device encryption key info.
+    public func getActiveDeviceKey() throws -> DeviceKeyInfo {
+        do {
+            return try db.writer.read { dbConnection in
+                let row = try Row.fetchOne(dbConnection, sql: """
+                    SELECT fingerprint, created_at, rotated_at
+                    FROM device_keys WHERE is_active = 1 LIMIT 1
+                """)
+                return DeviceKeyInfo(
+                    fingerprint: row?["fingerprint"] as? String,
+                    createdAt: row?["created_at"] as? String,
+                    rotatedAt: row?["rotated_at"] as? String
+                )
+            }
+        } catch {
+            if String(describing: error).contains("no such table") {
+                return DeviceKeyInfo(fingerprint: nil, createdAt: nil, rotatedAt: nil)
+            }
+            throw error
+        }
+    }
+
+    // MARK: - Audit Log
+
+    /// A single audit log entry.
+    public struct AuditLogEntry: Sendable, Identifiable {
+        public let id: String
+        public let entityType: String
+        public let action: String
+        public let timestamp: String
+        public let deviceId: String?
+    }
+
+    /// Fetch recent entries from the change log.
+    public func listAuditLog(limit: Int = 50) throws -> [AuditLogEntry] {
+        do {
+            return try db.writer.read { dbConnection in
+                let rows = try Row.fetchAll(dbConnection, sql: """
+                    SELECT cl.id, cl.table_name, cl.operation, cl.timestamp AS changed_at,
+                           cl.device_id
+                    FROM _change_log cl
+                    ORDER BY cl.timestamp DESC
+                    LIMIT ?
+                """, arguments: [limit])
+                return rows.map { row in
+                    AuditLogEntry(
+                        id: "\(row["id"] as Int64? ?? 0)",
+                        entityType: row["table_name"] as? String ?? "unknown",
+                        action: row["operation"] as? String ?? "unknown",
+                        timestamp: row["changed_at"] as? String ?? "",
+                        deviceId: row["device_id"] as? String
+                    )
+                }
+            }
+        } catch {
+            if String(describing: error).contains("no such table") { return [] }
+            throw error
+        }
+    }
+
+    // MARK: - Bootstrap Devices
+
+    /// A device registered through the bootstrap process.
+    public struct BootstrapDeviceRow: Sendable, Identifiable {
+        public let id: String
+        public let name: String
+        public let deviceType: String
+        public let status: String
+        public let appVersion: String?
+        public let lastCheckin: String?
+    }
+
+    /// List all bootstrap-registered devices.
+    public func listBootstrapDevices() throws -> [BootstrapDeviceRow] {
+        do {
+            return try db.writer.read { dbConnection in
+                let rows = try Row.fetchAll(dbConnection, sql: """
+                    SELECT id, name, device_type, status, app_version,
+                           last_checkin_at
+                    FROM bootstrap_devices
+                    ORDER BY last_checkin_at DESC
+                """)
+                return rows.map { row in
+                    BootstrapDeviceRow(
+                        id: "\(row["id"] as Int64? ?? 0)",
+                        name: row["name"] as? String ?? "Unknown",
+                        deviceType: row["device_type"] as? String ?? "unknown",
+                        status: row["status"] as? String ?? "pending",
+                        appVersion: row["app_version"] as? String,
+                        lastCheckin: row["last_checkin_at"] as? String
+                    )
+                }
+            }
+        } catch {
+            if String(describing: error).contains("no such table") { return [] }
+            throw error
+        }
+    }
+
+    // MARK: - Clock-Out Questions
+
+    /// A clock-out question row.
+    public struct ClockOutQuestionRow: Sendable, Identifiable {
+        public let id: String
+        public let text: String
+        public let type: String
+        public let isRequired: Bool
+        public let sortOrder: Int
+    }
+
+    /// List all clock-out questions ordered by sort_order.
+    public func listClockOutQuestions() throws -> [ClockOutQuestionRow] {
+        do {
+            return try db.writer.read { dbConnection in
+                let rows = try Row.fetchAll(dbConnection, sql: """
+                    SELECT id, question_text, answer_type, is_required, sort_order
+                    FROM clock_out_questions
+                    ORDER BY sort_order ASC, id ASC
+                """)
+                return rows.map { row in
+                    ClockOutQuestionRow(
+                        id: "\(row["id"] as Int64? ?? 0)",
+                        text: row["question_text"] as? String ?? "",
+                        type: row["answer_type"] as? String ?? "text",
+                        isRequired: (row["is_required"] as? Int64 ?? 1) == 1,
+                        sortOrder: Int(row["sort_order"] as? Int64 ?? 0)
+                    )
+                }
+            }
+        } catch {
+            if String(describing: error).contains("no such table") { return [] }
+            throw error
+        }
+    }
+
+    /// Add a new clock-out question. Returns the inserted row ID.
+    @discardableResult
+    public func addClockOutQuestion(text: String, type: String, isRequired: Bool, sortOrder: Int) throws -> Int64 {
+        try db.writer.write { dbConnection in
+            try dbConnection.execute(sql: """
+                INSERT INTO clock_out_questions (question_text, answer_type, is_required, sort_order)
+                VALUES (?, ?, ?, ?)
+            """, arguments: [text, type, isRequired ? 1 : 0, sortOrder])
+            return dbConnection.lastInsertedRowID
+        }
+    }
+
+    /// Update an existing clock-out question.
+    public func updateClockOutQuestion(id: String, text: String, type: String, isRequired: Bool) throws {
+        try db.writer.write { dbConnection in
+            try dbConnection.execute(sql: """
+                UPDATE clock_out_questions
+                SET question_text = ?, answer_type = ?, is_required = ?
+                WHERE id = ?
+            """, arguments: [text, type, isRequired ? 1 : 0, id])
+        }
+    }
+
+    /// Delete a clock-out question by ID.
+    public func deleteClockOutQuestion(id: String) throws {
+        try db.writer.write { dbConnection in
+            try dbConnection.execute(sql: "DELETE FROM clock_out_questions WHERE id = ?", arguments: [id])
+        }
+    }
+
     // MARK: - Errors
 
     public enum SettingsError: Error, Sendable {

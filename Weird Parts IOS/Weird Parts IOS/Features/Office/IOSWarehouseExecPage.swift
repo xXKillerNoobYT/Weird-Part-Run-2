@@ -10,6 +10,7 @@ struct IOSWarehouseExecPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     @State private var isLoading = true
+    @State private var showHelp = false
     @State private var totalStock = 0
     @State private var shortfallCount = 0
     @State private var todayMovements = 0
@@ -81,6 +82,23 @@ struct IOSWarehouseExecPage: View {
             .padding(.vertical)
         }
         .navigationTitle("Warehouse Exec")
+        .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showHelp) {
+            PageHelpSheet(
+                title: "Warehouse Executive Help",
+                sections: [
+                    ("Overview", "High-level warehouse operations dashboard for managers. See pending movements, low stock alerts, receiving sessions, and audit schedules."),
+                    ("KPIs", "Cards show total stock units, shortfalls, today's movements, and pending approvals. Tap for details."),
+                    ("Quick Actions", "Use the action buttons to navigate directly to movements, receiving, audits, or settings.")
+                ]
+            )
+        }
         .refreshable { loadData() }
         .task { loadData() }
         .overlay {

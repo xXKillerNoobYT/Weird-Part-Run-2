@@ -1,6 +1,5 @@
 import SwiftUI
 import CoreLocation
-import GRDB
 import WiredPartCore
 
 /// Full-screen modal shown when worker leaves the 1-mile radius of their clocked-in job.
@@ -17,6 +16,8 @@ struct GeofenceAlertView: View {
     @State private var activeJobs: [JobOption] = []
     @State private var isProcessing = false
     @State private var loadError: String?
+    @State private var errorMessage: String?
+    @State private var showError = false
 
     private var currentJobName: String {
         geofenceManager.currentJobName ?? "Unknown Job"
@@ -157,6 +158,18 @@ struct GeofenceAlertView: View {
                         .padding(.horizontal, 20)
                     }
 
+                    // Load error display
+                    if let loadError, selectedReason == .anotherJob {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                            Text(loadError)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 20)
+                    }
+
                     // Notes (if "Other" selected)
                     if selectedReason == .other {
                         TextField("What happened?", text: $otherNotes, axis: .vertical)
@@ -190,6 +203,11 @@ struct GeofenceAlertView: View {
             .interactiveDismissDisabled(true)
             .navigationTitle("Location Alert")
             .navigationBarTitleDisplayMode(.inline)
+            .alert("Error", isPresented: $showError) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(errorMessage ?? "An unknown error occurred.")
+            }
         }
     }
 
@@ -201,15 +219,27 @@ struct GeofenceAlertView: View {
 
         guard let service = appCore.jobsService,
               let userId = appCore.currentUser?.id else {
-            isProcessing = false
+            await MainActor.run {
+                errorMessage = "App services not available. Please restart the app."
+                showError = true
+                isProcessing = false
+            }
             return
         }
 
         // Get active labor entry for clock-out
-        let activeEntryId: Int64? = {
-            guard let entry = try? service.getActiveClockEntry(userId: userId) else { return nil }
-            return entry.id
-        }()
+        let activeEntryId: Int64?
+        do {
+            let entry = try service.getActiveClockEntry(userId: userId)
+            activeEntryId = entry?.id
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to load clock entry: \(error.localizedDescription)"
+                showError = true
+                isProcessing = false
+            }
+            return
+        }
 
         let exitLat = geofenceManager.exitLocation?.latitude
         let exitLng = geofenceManager.exitLocation?.longitude
@@ -243,6 +273,8 @@ struct GeofenceAlertView: View {
             }
         } catch {
             await MainActor.run {
+                errorMessage = "Failed to process response: \(error.localizedDescription)"
+                showError = true
                 isProcessing = false
             }
         }
@@ -251,20 +283,18 @@ struct GeofenceAlertView: View {
     // MARK: - Load Jobs
 
     private func loadActiveJobs() {
-        guard let db = appCore.db else { return }
+        guard let service = appCore.jobsService else {
+            loadError = "Jobs service not available."
+            return
+        }
         do {
-            let rows = try db.writer.read { conn in
-                try Row.fetchAll(conn, sql: """
-                    SELECT id, job_name, job_number FROM jobs
-                    WHERE status IN ('active', 'in_progress') AND deleted_at IS NULL AND id != ?
-                    ORDER BY job_name ASC
-                    """, arguments: [currentJobId])
+            let jobs = try service.listActiveJobs(excludingJobId: currentJobId)
+            activeJobs = jobs.map { job in
+                JobOption(id: job.id, name: job.jobName, number: job.jobNumber)
             }
-            activeJobs = rows.map { row in
-                JobOption(id: row["id"] ?? 0, name: row["job_name"] ?? "", number: row["job_number"] ?? "")
-            }
+            loadError = nil
         } catch {
-            loadError = error.localizedDescription
+            loadError = "Failed to load jobs: \(error.localizedDescription)"
         }
     }
 

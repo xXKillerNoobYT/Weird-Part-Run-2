@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Supplier communication bridge settings page for iOS.
@@ -13,7 +12,7 @@ struct IOSSupplierBridgePage: View {
     // MARK: - State
 
     @State private var isLoading = true
-    @State private var bridges: [SupplierBridge] = []
+    @State private var bridges: [ChatService.SupplierBridgeRow] = []
     @State private var errorMessage: String?
 
     // MARK: - Body
@@ -94,46 +93,17 @@ struct IOSSupplierBridgePage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else {
-            errorMessage = "Database not available."
+        guard let chatService = appCore.chatService else {
+            errorMessage = "Chat service not available."
             isLoading = false
             return
         }
         do {
-            bridges = try db.writer.read { db in
-                let rows = try Row.fetchAll(db, sql: """
-                    SELECT sb.id, sb.status, sb.protocol, sb.last_sync_at,
-                           COALESCE(s.name, 'Unknown Supplier') AS supplier_name
-                    FROM supplier_bridges sb
-                    LEFT JOIN suppliers s ON s.id = sb.supplier_id
-                    ORDER BY s.name ASC
-                """)
-                return rows.map { row in
-                    SupplierBridge(
-                        id: "\(row["id"] as Int64? ?? 0)",
-                        supplierName: row["supplier_name"] as? String ?? "Unknown",
-                        status: row["status"] as? String ?? "unknown",
-                        protocol_: row["protocol"] as? String ?? "HTTP",
-                        lastSyncAt: row["last_sync_at"] as? String
-                    )
-                }
-            }
+            bridges = try chatService.listSupplierBridges()
         } catch {
-            if !error.localizedDescription.contains("no such table") {
-                errorMessage = "Failed to load: \(error.localizedDescription)"
-            }
+            errorMessage = "Failed to load: \(error.localizedDescription)"
             bridges = []
         }
         isLoading = false
-    }
-
-    // MARK: - Model
-
-    private struct SupplierBridge: Identifiable {
-        let id: String
-        let supplierName: String
-        let status: String
-        let protocol_: String
-        let lastSyncAt: String?
     }
 }

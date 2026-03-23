@@ -31,6 +31,8 @@ struct IOSFuelPage: View {
         if isLoading {
             ProgressView("Loading fuel logs...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredLogs.isEmpty {
             ContentUnavailableView {
                 Label("No Fuel Logs", systemImage: "fuelpump")
@@ -99,8 +101,13 @@ struct IOSFuelPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.fleetService else { return }
+        guard let service = appCore.fleetService else {
+            loadError = "Fleet service not available"
+            isLoading = false
+            return
+        }
         isLoading = fuelLogs.isEmpty
+        loadError = nil
         do {
             fuelLogs = try service.listFuelLogs()
         } catch {

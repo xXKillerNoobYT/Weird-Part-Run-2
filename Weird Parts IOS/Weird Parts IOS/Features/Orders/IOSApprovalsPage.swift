@@ -468,7 +468,7 @@ struct IOSApprovalsPage: View {
         }
         processingId = "jpo-\(id)"
         do {
-            try service.updateJPOStatus(id: id, status: "rejected")
+            try service.updateJPOStatus(id: id, status: "rejected", reason: reason)
             pendingJPOs.removeAll { $0.id == id }
         } catch {
             actionError = error.localizedDescription

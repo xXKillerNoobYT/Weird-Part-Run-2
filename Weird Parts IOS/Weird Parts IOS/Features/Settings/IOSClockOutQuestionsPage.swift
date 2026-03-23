@@ -1,23 +1,22 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Clock-out questionnaire management page for iOS.
 ///
 /// Lists the questions that employees answer when clocking out.
 /// Supports viewing, adding, editing, and deleting questions.
-/// Questions are stored in the `clock_out_questions` table.
+/// Questions are managed through SettingsService.
 struct IOSClockOutQuestionsPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     // MARK: - State
 
     @State private var isLoading = true
-    @State private var questions: [ClockOutQuestion] = []
+    @State private var questions: [SettingsService.ClockOutQuestionRow] = []
     @State private var errorMessage: String?
     private enum ActiveSheet: Identifiable {
         case add
-        case edit(ClockOutQuestion)
+        case edit(SettingsService.ClockOutQuestionRow)
 
         var id: String {
             switch self {
@@ -31,7 +30,7 @@ struct IOSClockOutQuestionsPage: View {
     @State private var newQuestionType = "text"
     @State private var newQuestionRequired = true
     @State private var showDeleteConfirm = false
-    @State private var questionToDelete: ClockOutQuestion?
+    @State private var questionToDelete: SettingsService.ClockOutQuestionRow?
 
     private let questionTypes = ["text", "yes_no", "rating", "multiple_choice"]
 
@@ -100,7 +99,7 @@ struct IOSClockOutQuestionsPage: View {
 
     // MARK: - Question Row
 
-    private func questionRow(_ question: ClockOutQuestion) -> some View {
+    private func questionRow(_ question: SettingsService.ClockOutQuestionRow) -> some View {
         Button {
             newQuestionText = question.text
             newQuestionType = question.type
@@ -170,9 +169,7 @@ struct IOSClockOutQuestionsPage: View {
                 }
             }
             .navigationTitle("Add Question")
-            #if !os(macOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { activeSheet = nil }
@@ -187,7 +184,7 @@ struct IOSClockOutQuestionsPage: View {
 
     // MARK: - Edit Sheet
 
-    private func questionEditSheet(_ question: ClockOutQuestion) -> some View {
+    private func questionEditSheet(_ question: SettingsService.ClockOutQuestionRow) -> some View {
         NavigationStack {
             Form {
                 Section("Question Text") {
@@ -208,9 +205,7 @@ struct IOSClockOutQuestionsPage: View {
                 }
             }
             .navigationTitle("Edit Question")
-            #if !os(macOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { activeSheet = nil }
@@ -232,47 +227,30 @@ struct IOSClockOutQuestionsPage: View {
     }
 
     private func loadData() {
-        guard let db = appCore.db else {
-            errorMessage = "Database not available."
+        guard let settingsService = appCore.settingsService else {
+            errorMessage = "Settings service not available."
             isLoading = false
             return
         }
         do {
-            questions = try db.writer.read { db in
-                let rows = try Row.fetchAll(db, sql: """
-                    SELECT id, question_text, answer_type, is_required, sort_order
-                    FROM clock_out_questions
-                    ORDER BY sort_order ASC, id ASC
-                """)
-                return rows.map { row in
-                    ClockOutQuestion(
-                        id: "\(row["id"] as Int64? ?? 0)",
-                        text: row["question_text"] as? String ?? "",
-                        type: row["answer_type"] as? String ?? "text",
-                        isRequired: (row["is_required"] as? Int64 ?? 1) == 1,
-                        sortOrder: Int(row["sort_order"] as? Int64 ?? 0)
-                    )
-                }
-            }
+            questions = try settingsService.listClockOutQuestions()
         } catch {
-            if !error.localizedDescription.contains("no such table") {
-                errorMessage = "Failed to load questions: \(error.localizedDescription)"
-            }
+            errorMessage = "Failed to load questions: \(error.localizedDescription)"
             questions = []
         }
         isLoading = false
     }
 
     private func saveNewQuestion() {
-        guard let db = appCore.db else { return }
+        guard let settingsService = appCore.settingsService else { return }
         let nextOrder = (questions.last?.sortOrder ?? 0) + 1
         do {
-            try db.writer.write { db in
-                try db.execute(sql: """
-                    INSERT INTO clock_out_questions (question_text, answer_type, is_required, sort_order)
-                    VALUES (?, ?, ?, ?)
-                """, arguments: [newQuestionText.trimmingCharacters(in: .whitespaces), newQuestionType, newQuestionRequired ? 1 : 0, nextOrder])
-            }
+            try settingsService.addClockOutQuestion(
+                text: newQuestionText.trimmingCharacters(in: .whitespaces),
+                type: newQuestionType,
+                isRequired: newQuestionRequired,
+                sortOrder: nextOrder
+            )
             activeSheet = nil
             Task { loadData() }
         } catch {
@@ -280,16 +258,15 @@ struct IOSClockOutQuestionsPage: View {
         }
     }
 
-    private func saveEditedQuestion(_ question: ClockOutQuestion) {
-        guard let db = appCore.db else { return }
+    private func saveEditedQuestion(_ question: SettingsService.ClockOutQuestionRow) {
+        guard let settingsService = appCore.settingsService else { return }
         do {
-            try db.writer.write { db in
-                try db.execute(sql: """
-                    UPDATE clock_out_questions
-                    SET question_text = ?, answer_type = ?, is_required = ?
-                    WHERE id = ?
-                """, arguments: [newQuestionText.trimmingCharacters(in: .whitespaces), newQuestionType, newQuestionRequired ? 1 : 0, question.id])
-            }
+            try settingsService.updateClockOutQuestion(
+                id: question.id,
+                text: newQuestionText.trimmingCharacters(in: .whitespaces),
+                type: newQuestionType,
+                isRequired: newQuestionRequired
+            )
             activeSheet = nil
             Task { loadData() }
         } catch {
@@ -304,25 +281,13 @@ struct IOSClockOutQuestionsPage: View {
     }
 
     private func confirmDelete() {
-        guard let db = appCore.db, let question = questionToDelete else { return }
+        guard let settingsService = appCore.settingsService, let question = questionToDelete else { return }
         do {
-            try db.writer.write { db in
-                try db.execute(sql: "DELETE FROM clock_out_questions WHERE id = ?", arguments: [question.id])
-            }
+            try settingsService.deleteClockOutQuestion(id: question.id)
             questionToDelete = nil
             Task { loadData() }
         } catch {
             errorMessage = "Failed to delete: \(error.localizedDescription)"
         }
-    }
-
-    // MARK: - Model
-
-    private struct ClockOutQuestion: Identifiable {
-        let id: String
-        let text: String
-        let type: String
-        let isRequired: Bool
-        let sortOrder: Int
     }
 }

@@ -33,6 +33,7 @@ struct IOSWarehouseSettingsPage: View {
     @State private var isSaving = false
     @State private var showSaveConfirmation = false
     @State private var errorMessage: String?
+    @State private var showHelp = false
 
     var body: some View {
         Group {
@@ -44,6 +45,23 @@ struct IOSWarehouseSettingsPage: View {
             }
         }
         .navigationTitle("Warehouse Settings")
+        .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showHelp) {
+            PageHelpSheet(
+                title: "Warehouse Settings Help",
+                sections: [
+                    ("Locations", "Configure default receiving and staging locations used when new shipments arrive or parts are pulled."),
+                    ("Thresholds", "Set low stock and critical stock thresholds. Enable alerts to be notified when parts drop below these levels."),
+                    ("Policies", "Control whether movements require notes or approval, and set thresholds for auto-confirming small moves.")
+                ]
+            )
+        }
         .task { loadSettings() }
         .alert("Settings Saved", isPresented: $showSaveConfirmation) {
             Button("OK", role: .cancel) { }

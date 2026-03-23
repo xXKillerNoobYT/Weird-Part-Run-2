@@ -1,11 +1,10 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// GPS / Telematics list page for iOS.
 ///
-/// Shows the last known position of each vehicle by querying
-/// `vehicle_location_logs` directly via raw SQL. Displays vehicle name,
+/// Shows the last known position of each vehicle using
+/// FleetService.listTelematicsData(). Displays vehicle name,
 /// driver, last updated time, and coordinates.
 /// Includes an empty state explaining that GPS data comes from mobile devices.
 struct IOSTelematicsPage: View {
@@ -13,7 +12,7 @@ struct IOSTelematicsPage: View {
 
     // MARK: - State
 
-    @State private var locations: [VehicleLocationRow] = []
+    @State private var locations: [FleetService.VehicleLocationRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var searchText = ""
@@ -33,6 +32,8 @@ struct IOSTelematicsPage: View {
         if isLoading {
             ProgressView("Loading GPS data...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let error = loadError {
+            ErrorStateView(message: error) { loadData() }
         } else if filteredLocations.isEmpty {
             ContentUnavailableView {
                 Label("No GPS Data", systemImage: "location.slash")
@@ -47,7 +48,7 @@ struct IOSTelematicsPage: View {
         }
     }
 
-    private var filteredLocations: [VehicleLocationRow] {
+    private var filteredLocations: [FleetService.VehicleLocationRow] {
         guard !searchText.isEmpty else { return locations }
         let query = searchText.lowercased()
         return locations.filter {
@@ -56,7 +57,7 @@ struct IOSTelematicsPage: View {
         }
     }
 
-    private func locationRow(_ location: VehicleLocationRow) -> some View {
+    private func locationRow(_ location: FleetService.VehicleLocationRow) -> some View {
         HStack(spacing: 12) {
             ZStack {
                 Circle()
@@ -127,68 +128,20 @@ struct IOSTelematicsPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else {
-            loadError = "Database not available"
+        guard let service = appCore.fleetService else {
+            loadError = "Fleet service not available"
             isLoading = false
             return
         }
         isLoading = locations.isEmpty
+        loadError = nil
 
         do {
-            try db.writer.read { dbConn in
-                // Get latest location per vehicle
-                let sql = """
-                    SELECT vll.id, vll.latitude, vll.longitude, vll.speed,
-                           vll.status, vll.recorded_at,
-                           COALESCE(v.vehicle_name, v.vehicle_number, 'Unknown') AS vehicle_name,
-                           COALESCE(u.display_name, u.email, 'Unknown') AS driver_name
-                    FROM vehicle_location_logs vll
-                    LEFT JOIN vehicles v ON v.id = vll.vehicle_id
-                    LEFT JOIN users u ON u.id = vll.user_id
-                    WHERE vll.id IN (
-                        SELECT MAX(id) FROM vehicle_location_logs
-                        WHERE deleted_at IS NULL
-                        GROUP BY vehicle_id
-                    )
-                    ORDER BY vll.recorded_at DESC
-                    """
-
-                let rows = try Row.fetchAll(dbConn, sql: sql)
-                locations = rows.map { row in
-                    VehicleLocationRow(
-                        id: row["id"] ?? 0,
-                        vehicleName: row["vehicle_name"] ?? "Unknown",
-                        driverName: row["driver_name"] ?? "Unknown",
-                        latitude: row["latitude"] as Double?,
-                        longitude: row["longitude"] as Double?,
-                        speed: row["speed"] as Double?,
-                        status: row["status"] ?? "unknown",
-                        lastUpdated: row["recorded_at"] ?? ""
-                    )
-                }
-            }
+            locations = try service.listTelematicsData()
         } catch {
-            let msg = String(describing: error)
-            if msg.contains("no such table") {
-                locations = []
-            } else {
-                loadError = error.localizedDescription
-            }
+            loadError = error.localizedDescription
         }
 
         isLoading = false
     }
-}
-
-// MARK: - Supporting Types
-
-private struct VehicleLocationRow: Identifiable {
-    let id: Int64
-    let vehicleName: String
-    let driverName: String
-    let latitude: Double?
-    let longitude: Double?
-    let speed: Double?
-    let status: String
-    let lastUpdated: String
 }

@@ -29,6 +29,7 @@ struct WarehouseDashboardPage: View {
     private enum ActiveSheet: Identifiable {
         case newMovement
         case qrScanner
+        case help
 
         var id: String { String(describing: self) }
     }
@@ -46,6 +47,13 @@ struct WarehouseDashboardPage: View {
         }
         .refreshable { loadData() }
         .background(DS.Background.page)
+        .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
         }
@@ -67,6 +75,15 @@ struct WarehouseDashboardPage: View {
                 activeSheet = nil
             }
             .environmentObject(appCore)
+        case .help:
+            PageHelpSheet(
+                title: "Warehouse Dashboard Help",
+                sections: [
+                    ("Overview", "Monitor warehouse operations at a glance. Smart cards show today's movements, active receiving sessions, audits due, and staging status."),
+                    ("Filters", "Tap a smart card to filter the activity feed to that category. Tap again to clear the filter."),
+                    ("Quick Actions", "Use the quick action buttons to start a new movement or scan QR codes for bin lookups.")
+                ]
+            )
         }
     }
 

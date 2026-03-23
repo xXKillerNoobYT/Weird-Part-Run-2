@@ -470,6 +470,62 @@ public final class OrdersService: Sendable {
         }
     }
 
+    /// List JPOs for a specific job with optional status filter.
+    public func listJPOs(
+        jobId: Int64,
+        status: String? = nil,
+        limit: Int = 50
+    ) throws -> [JPOListItem] {
+        do {
+            return try db.writer.read { dbConn -> [JPOListItem] in
+                var whereClauses = ["jp.deleted_at IS NULL", "jp.job_id = ?"]
+                var args: [DatabaseValueConvertible?] = [jobId]
+
+                if let status, !status.isEmpty {
+                    whereClauses.append("jp.status = ?")
+                    args.append(status)
+                }
+
+                args.append(limit)
+
+                let sql = """
+                    SELECT jp.id, jp.job_id, jp.status, jp.priority, jp.created_at,
+                           COALESCE(j.job_name, 'Unknown Job') AS job_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS requested_by_name,
+                           COALESCE((SELECT COUNT(*) FROM jpo_line_items jl
+                                     WHERE jl.jpo_id = jp.id AND jl.deleted_at IS NULL), 0) AS line_count,
+                           COALESCE((SELECT COUNT(*) FROM jpo_line_items jl2
+                                     WHERE jl2.jpo_id = jp.id AND jl2.line_status = 'on_hold'
+                                     AND jl2.deleted_at IS NULL), 0) AS hold_count
+                    FROM job_parts_orders jp
+                    LEFT JOIN jobs j ON j.id = jp.job_id
+                    LEFT JOIN users u ON u.id = jp.requested_by
+                    WHERE \(whereClauses.joined(separator: " AND "))
+                    ORDER BY jp.created_at DESC
+                    LIMIT ?
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
+                return rows.map { row in
+                    JPOListItem(
+                        id: row["id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
+                        jobName: row["job_name"] ?? "Unknown Job",
+                        requestedByName: row["requested_by_name"] ?? "Unknown",
+                        status: row["status"] ?? "draft",
+                        priority: row["priority"] ?? "normal",
+                        lineCount: row["line_count"] ?? 0,
+                        holdCount: row["hold_count"] ?? 0,
+                        createdAt: row["created_at"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     /// Get a single JPO by ID with full detail and nested lines.
     public func getJPODetail(id: Int64) throws -> JPODetail {
         let result: JPODetail? = try db.writer.read { dbConn -> JPODetail? in
@@ -566,7 +622,11 @@ public final class OrdersService: Sendable {
     }
 
     /// Update the status of a JPO and record the transition in status_history.
-    public func updateJPOStatus(id: Int64, status: String) throws {
+    /// - Parameters:
+    ///   - id: The JPO row ID.
+    ///   - status: New status string (e.g. "approved", "rejected").
+    ///   - reason: Optional reason stored in `order_status_history.notes` (e.g. rejection reason).
+    public func updateJPOStatus(id: Int64, status: String, reason: String? = nil) throws {
         try db.writer.write { dbConn in
             // Verify the JPO exists
             guard let row = try Row.fetchOne(
@@ -594,10 +654,10 @@ public final class OrdersService: Sendable {
                 try dbConn.execute(
                     sql: """
                         INSERT INTO order_status_history
-                        (entity_type, entity_id, old_status, new_status, created_at)
-                        VALUES ('jpo', ?, ?, ?, datetime('now'))
+                        (entity_type, entity_id, old_status, new_status, notes, created_at)
+                        VALUES ('jpo', ?, ?, ?, ?, datetime('now'))
                         """,
-                    arguments: [id, oldStatus, status]
+                    arguments: [id, oldStatus, status, reason]
                 )
             } catch {
                 // order_status_history table may not exist; status update still succeeds

@@ -15,6 +15,7 @@ struct WarehouseLocationsPage: View {
     @State private var loadError: String?
     @State private var searchText = ""
     @State private var selectedLocation: LocationGroup?
+    @State private var showHelp = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +31,23 @@ struct WarehouseLocationsPage: View {
             }
         }
         .searchable(text: $searchText, prompt: "Search parts across all locations...")
+        .toolbar {
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showHelp) {
+            PageHelpSheet(
+                title: "Locations Help",
+                sections: [
+                    ("Overview", "View all stock organized by physical location: warehouses, trucks, trailers, job sites, and staging areas."),
+                    ("Browsing", "Tap a location section to expand it and see all parts stored there. Search across all locations at once."),
+                    ("Details", "Tap a specific location for detailed actions including transfers, audits, and inventory grid views.")
+                ]
+            )
+        }
         .refreshable { loadData() }
         .sheet(item: $selectedLocation) { group in
             LocationDetailSheet(group: group)

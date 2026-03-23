@@ -934,7 +934,7 @@ struct ReceivingRoutingFlow: View {
 
     @MainActor
     private func checkJobLink() async {
-        guard let partId = item.partId else {
+        guard item.partId != nil else {
             // No part ID, skip to stock levels
             await advanceToStockLevelCheck()
             return

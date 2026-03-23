@@ -56,6 +56,21 @@ struct LaborPage: View {
                         Label("Clock In", systemImage: "play.circle.fill")
                     }
                 }
+                ToolbarItem(placement: .secondaryAction) {
+                    Button { showHelp = true } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
+            }
+            .sheet(isPresented: $showHelp) {
+                PageHelpSheet(
+                    title: "Labor Help",
+                    sections: [
+                        ("Overview", "Track all labor entries across jobs. Active clock-ins appear at the top with clock-out buttons. Recent history is shown below."),
+                        ("Clock In", "Tap the play button in the toolbar to start a new clock-in for any employee and job."),
+                        ("Search", "Use the search bar to filter entries by employee name or job name. Pull down to refresh.")
+                    ]
+                )
             }
             .refreshable { loadData() }
             .task { loadData() }

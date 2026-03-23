@@ -405,6 +405,108 @@ public final class AuthService: Sendable {
         case userNotFound
     }
 
+    // MARK: - Security & Device Administration
+
+    /// Summary of a registered device.
+    public struct RegisteredDevice: Sendable {
+        public let id: String
+        public let name: String
+        public let deviceType: String
+        public let assignedUser: String
+        public let lastSeenAt: String?
+        public let status: String
+    }
+
+    /// Summary of an active (trusted) session.
+    public struct ActiveSession: Sendable {
+        public let id: String
+        public let userId: String
+        public let userName: String
+        public let createdAt: String
+    }
+
+    /// List registered devices with assigned user names.
+    public func listRegisteredDevices() throws -> [RegisteredDevice] {
+        do {
+            return try db.writer.read { dbConnection in
+                let rows = try Row.fetchAll(dbConnection, sql: """
+                    SELECT d.id, d.device_name, d.device_fingerprint, d.last_seen,
+                           COALESCE(u.display_name, 'Unassigned') AS assigned_user
+                    FROM devices d
+                    LEFT JOIN users u ON u.id = d.assigned_user_id
+                    WHERE d.deleted_at IS NULL
+                    ORDER BY d.last_seen DESC
+                """)
+                return rows.map { row in
+                    let lastSeen = row["last_seen"] as? String
+                    return RegisteredDevice(
+                        id: "\(row["id"] as Int64? ?? 0)",
+                        name: row["device_name"] as? String ?? "Unknown",
+                        deviceType: row["device_fingerprint"] as? String ?? "unknown",
+                        assignedUser: row["assigned_user"] as? String ?? "Unassigned",
+                        lastSeenAt: lastSeen,
+                        status: Self.isRecentlyOnline(lastSeen) ? "online" : "offline"
+                    )
+                }
+            }
+        } catch {
+            if String(describing: error).contains("no such table") { return [] }
+            throw error
+        }
+    }
+
+    /// List active (trusted, non-deactivated) sessions from the device registry.
+    public func listActiveSessions() throws -> [ActiveSession] {
+        do {
+            return try db.writer.read { dbConnection in
+                let rows = try Row.fetchAll(dbConnection, sql: """
+                    SELECT dr.rowid AS id, dr.device_id, dr.created_at,
+                           COALESCE(dr.device_name, 'Unknown') AS user_name
+                    FROM _device_registry dr
+                    WHERE dr.is_trusted = 1 AND dr.is_deactivated = 0
+                    ORDER BY dr.last_seen_at DESC
+                """)
+                return rows.map { row in
+                    ActiveSession(
+                        id: "\(row["id"] as Int64? ?? 0)",
+                        userId: "\(row["device_id"] as Int64? ?? 0)",
+                        userName: row["user_name"] as? String ?? "Unknown",
+                        createdAt: row["created_at"] as? String ?? "Unknown"
+                    )
+                }
+            }
+        } catch {
+            if String(describing: error).contains("no such table") { return [] }
+            throw error
+        }
+    }
+
+    /// Force-deactivate a session by its rowid in the device registry.
+    public func deactivateSession(sessionId: String) throws {
+        try db.writer.write { dbConnection in
+            try dbConnection.execute(
+                sql: "UPDATE _device_registry SET is_deactivated = 1 WHERE rowid = ?",
+                arguments: [sessionId]
+            )
+        }
+    }
+
+    /// Check if a last_seen timestamp is within the last 5 minutes.
+    private static func isRecentlyOnline(_ lastSeen: String?) -> Bool {
+        guard let lastSeen, !lastSeen.isEmpty else { return false }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: lastSeen) {
+            return Date().timeIntervalSince(date) < 300
+        }
+        let simple = DateFormatter()
+        simple.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        if let date = simple.date(from: lastSeen) {
+            return Date().timeIntervalSince(date) < 300
+        }
+        return false
+    }
+
     // MARK: - User Management
 
     /// Create a new user (employee). Returns the new user's ID.

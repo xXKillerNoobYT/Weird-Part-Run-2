@@ -1,20 +1,18 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Bookkeeper export summary page for iOS.
 ///
 /// Displays labor totals per employee and a list of material purchase orders
 /// for the selected date range. Designed for quick bookkeeper review before
-/// exporting. Uses direct SQL queries against employees, labor_entries,
-/// and purchase_orders tables.
+/// exporting. Uses `ReportsService` for data access.
 struct IOSBookkeeperExportPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     // MARK: - State
 
-    @State private var laborRows: [LaborSummaryRow] = []
-    @State private var materialRows: [MaterialPORow] = []
+    @State private var laborRows: [ReportsService.BookkeeperLaborRow] = []
+    @State private var materialRows: [ReportsService.BookkeeperMaterialRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var startDate = Calendar.current.date(byAdding: .day, value: -13, to: Date()) ?? Date()
@@ -69,7 +67,7 @@ struct IOSBookkeeperExportPage: View {
             ProgressView("Loading bookkeeper data...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
-            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+            ErrorStateView(message: error) { loadData() }
         } else if laborRows.isEmpty && materialRows.isEmpty {
             ContentUnavailableView {
                 Label("No Data", systemImage: "doc.richtext")
@@ -100,7 +98,7 @@ struct IOSBookkeeperExportPage: View {
 
     // MARK: - Labor Row
 
-    private func laborRow(_ row: LaborSummaryRow) -> some View {
+    private func laborRow(_ row: ReportsService.BookkeeperLaborRow) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "person.circle")
                 .font(.title2)
@@ -133,7 +131,7 @@ struct IOSBookkeeperExportPage: View {
 
     // MARK: - Material Row
 
-    private func materialRow(_ row: MaterialPORow) -> some View {
+    private func materialRow(_ row: ReportsService.BookkeeperMaterialRow) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "doc.text.fill")
                 .font(.title2)
@@ -158,22 +156,6 @@ struct IOSBookkeeperExportPage: View {
         .padding(.vertical, 2)
     }
 
-    // MARK: - Data Models
-
-    struct LaborSummaryRow: Identifiable {
-        let id: Int64
-        let employeeName: String
-        let regularHours: Double
-        let overtimeHours: Double
-    }
-
-    struct MaterialPORow: Identifiable {
-        let id: Int64
-        let poNumber: String
-        let supplierName: String
-        let totalAmount: Double
-    }
-
     // MARK: - Helpers
 
     private func formatCurrency(_ value: Double) -> String {
@@ -187,53 +169,22 @@ struct IOSBookkeeperExportPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else {
+        guard let service = appCore.reportsService else {
             isLoading = false
-            loadError = "Database unavailable"
+            loadError = "Reports service is not available."
             return
         }
         isLoading = laborRows.isEmpty && materialRows.isEmpty
+        loadError = nil
         do {
-            laborRows = try db.writer.read { db in
-                let sql = """
-                    SELECT u.id, COALESCE(u.display_name, u.email) AS name,
-                           COALESCE(SUM(le.regular_hours), 0) AS regular_hours,
-                           COALESCE(SUM(le.overtime_hours), 0) AS overtime_hours
-                    FROM users u
-                    JOIN labor_entries le ON le.user_id = u.id
-                    WHERE date(le.clock_in) >= ? AND date(le.clock_in) <= ?
-                      AND le.deleted_at IS NULL
-                    GROUP BY u.id
-                    ORDER BY name
-                    """
-                return try Row.fetchAll(db, sql: sql, arguments: [startDateString, endDateString]).map { row in
-                    LaborSummaryRow(
-                        id: row["id"],
-                        employeeName: row["name"],
-                        regularHours: row["regular_hours"],
-                        overtimeHours: row["overtime_hours"]
-                    )
-                }
-            }
-
-            materialRows = try db.writer.read { db in
-                let sql = """
-                    SELECT po.id, po.po_number, COALESCE(s.name, 'Unknown') AS supplier_name,
-                           COALESCE(po.total_cost, 0) AS total_amount
-                    FROM purchase_orders po
-                    LEFT JOIN suppliers s ON s.id = po.supplier_id
-                    WHERE date(po.created_at) >= ? AND date(po.created_at) <= ?
-                    ORDER BY po.po_number
-                    """
-                return try Row.fetchAll(db, sql: sql, arguments: [startDateString, endDateString]).map { row in
-                    MaterialPORow(
-                        id: row["id"],
-                        poNumber: row["po_number"],
-                        supplierName: row["supplier_name"],
-                        totalAmount: row["total_amount"]
-                    )
-                }
-            }
+            laborRows = try service.getBookkeeperLaborSummary(
+                startDate: startDateString,
+                endDate: endDateString
+            )
+            materialRows = try service.getBookkeeperMaterialPOs(
+                startDate: startDateString,
+                endDate: endDateString
+            )
         } catch {
             loadError = error.localizedDescription
         }

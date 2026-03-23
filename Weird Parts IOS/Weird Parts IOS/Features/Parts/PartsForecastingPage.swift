@@ -16,6 +16,7 @@ struct PartsForecastingPage: View {
     @State private var filterUrgency: UrgencyFilter = .all
     @State private var selectedRow: PartsService.ForecastDataRow?
     @State private var isRecalculating = false
+    @State private var showHelp = false
 
     // Location picker
     @State private var selectedLocationType: String = "all"
@@ -80,6 +81,21 @@ struct PartsForecastingPage: View {
                     }
                 }
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showHelp) {
+            PageHelpSheet(
+                title: "Forecasting Help",
+                sections: [
+                    ("Overview", "Demand forecasting shows predicted usage for each part based on historical consumption. Color-coded urgency helps prioritize reorders."),
+                    ("Metrics", "ADU is Average Daily Usage. The trend arrow compares 30-day vs 90-day ADU. Reorder points are calculated from lead times and safety stock."),
+                    ("Actions", "Tap Recalculate to refresh all forecasts. Use the lightbulb icon to see AI-generated reorder recommendations.")
+                ]
+            )
         }
         .alert("Dismiss Recommendation", isPresented: $showDismissAlert) {
             TextField("Reason (required)", text: $dismissReason)

@@ -123,19 +123,19 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 32C | Guard Without Error | Fix 42 files with guard-let-service that silently returns | DONE |
 | 32D | Platform Guards Batch 1 | Remove #if os(iOS) from all Features/ files (~50 files) | DONE |
 | 32E | Platform Guards Batch 2 | Remove #if os(iOS) from AI/Auth/App/Nav/Scanning/Sync/Shared (~57 files) | DONE |
-| 32F | ActiveSheet Conversion | Convert 19 files from showXxx Bool to ActiveSheet enum | |
-| 32G | Print-to-State Errors | Replace print() error logging with UI state in 25+ files | |
-| 32H | Refreshable + Searchable | Add missing .refreshable and .searchable to 58 list pages | |
-| 32I | AI Button Dedup | Remove duplicate AI buttons from page toolbars — one global button only | |
-| 32J | Force Unwrap + DispatchQueue | Fix force unwraps in services, replace DispatchQueue with async/await | |
-| 33A | Help/Info Buttons | Add PageHelpSheet component + help button to ALL pages (program standard) | |
-| 33B | Clock Page Fix | Fix "no such column: address" SQL error + add Lunch/Break/Supply Run buttons | |
-| 33C | JPO Smart Routing | Stock check before approval — transfer from shelf vs send to procurement | |
-| 33D | Procurement Pull Actions | Wire TODO pull option buttons to actual warehouse movements | |
-| 33E | PO Detail Placeholders | Wire 6 "Coming Soon" sheet stubs to real functionality | |
-| 33F | Receiving Routing Flow | Full condition check + smart routing (used/damaged/good → staging/shelf/returns) | |
-| 33G | Staging Box Management | Physical box system: sizes, labels, full/open, contents view, move-all | |
-| 33H | Duplicate Wizard Cleanup | Delete inline wizard from WarehouseMovementsPage, use IOSMovementWizard | |
+| 32F | ActiveSheet Conversion | Convert 19 files from showXxx Bool to ActiveSheet enum | DONE |
+| 32G | Print-to-State Errors | Replace print() error logging with UI state in 25+ files | DONE |
+| 32H | Refreshable + Searchable | Add missing .refreshable and .searchable to 58 list pages | DONE |
+| 32I | AI Button Dedup | Remove duplicate AI buttons from page toolbars — one global button only | DONE |
+| 32J | Force Unwrap + DispatchQueue | Fix force unwraps in services, replace DispatchQueue with async/await | DONE |
+| 33A | Help/Info Buttons | Add PageHelpSheet component + help button to ALL pages (program standard) | DONE |
+| 33B | Clock Page Fix | Fix "no such column: address" SQL error + add Lunch/Break/Supply Run buttons | DONE |
+| 33C | JPO Smart Routing | Stock check before approval — transfer from shelf vs send to procurement | DONE |
+| 33D | Procurement Pull Actions | Wire TODO pull option buttons to actual warehouse movements | DONE |
+| 33E | PO Detail Placeholders | Wire 6 "Coming Soon" sheet stubs to real functionality | DONE |
+| 33F | Receiving Routing Flow | Full condition check + smart routing (used/damaged/good → staging/shelf/returns) | DONE |
+| 33G | Staging Box Management | Physical box system: sizes, labels, full/open, contents view, move-all | DONE |
+| 33H | Duplicate Wizard Cleanup | Delete inline wizard from WarehouseMovementsPage, use IOSMovementWizard | DONE |
 | 34A | UI Quality Audit | Sheet dismiss, sticky buttons, navigation links, data display, form validation | |
 | 35A | Daily Report Submit Stubs | Wire 2 TODO submit buttons + remove service bypass + raw SQL in Dashboard | |
 | 35B | Job Detail Tab Fixes | 5 print() catches → state, client-side→server-side filtering, dead code | |
@@ -319,4 +319,24 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 - IOSQRScanner: kept #if !targetEnvironment(macCatalyst) guard (DataScannerViewController unavailable on Catalyst), added Catalyst stub
 - QRScanSheet: replaced direct DataScannerViewController.isSupported with computed property guarded for Catalyst
 - WebFallback: removed macOS NSViewRepresentable branch, kept iOS UIViewRepresentable
+- Build: PASS
+
+## Prompts 32F-32J Results (2026-03-22)
+- 32F: Converted 19 files from showXxx Bool to ActiveSheet enum pattern
+- 32G: Replaced print() error logging with @State error UI in 25+ files
+- 32H: Added .refreshable and .searchable to 58 list pages
+- 32I: Removed duplicate AI toolbar buttons — one global button per page
+- 32J: Fixed force unwraps in services, replaced DispatchQueue with async/await
+- Build: PASS
+
+## Prompts 33A-33H Results (2026-03-22)
+- 33A: Added PageHelpSheet component + help toolbar button to ALL feature pages (Jobs, Parts, Warehouse, Orders, etc.)
+- 33B: Fixed "no such column: address" in IOSClockPage, added Lunch/Break/Supply Run activity buttons with note markers, added listActiveJobsForClock() to JobsService
+- 33C: Added stock-check-first flow for JPO line approval in IOSJPODetailPage — transfer from shelf vs send to procurement
+- 33D: Wired 4 pull option buttons (Pull to target/Pull all/Pull to MIN/Order all) in IOSProcurementPage to actual warehouse movements
+- 33E: Replaced all 6 "Coming Soon" stubs in IOSPODetailPage with working sheets (Contact Supplier, Update ETA, Double Order, Report Issue, Receipt History, Contact Creator)
+- 33F: Created ReceivingRoutingFlow.swift (1149 lines) — 6-step receiving routing wizard (condition check → wrong part → job link → JPO demand → stock level → confirmed), added routing types/methods to WarehouseService
+- 33G: Added migration #035 for staging_boxes table, StagingBox model + CRUD in WarehouseService, rewrote IOSStagingPage with Items/Boxes tabs and box management UI
+- 33H: Consolidated duplicate wizard — rewrote IOSMovementWizard.swift to full 994-line wizard, reduced WarehouseMovementsPage from 1364→369 lines
+- Cross-agent fixes: 3 async/await errors in IOSClockPage, MARK numbering conflict in WarehouseService, public init for PartStockLevels
 - Build: PASS

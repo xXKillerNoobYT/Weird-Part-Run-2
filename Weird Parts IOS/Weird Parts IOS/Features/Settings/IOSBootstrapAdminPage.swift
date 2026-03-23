@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Device bootstrap administration page for iOS.
@@ -13,7 +12,7 @@ struct IOSBootstrapAdminPage: View {
     // MARK: - State
 
     @State private var isLoading = true
-    @State private var bootstrapDevices: [BootstrapDevice] = []
+    @State private var bootstrapDevices: [SettingsService.BootstrapDeviceRow] = []
     @State private var errorMessage: String?
 
     // MARK: - Body
@@ -60,7 +59,7 @@ struct IOSBootstrapAdminPage: View {
 
     // MARK: - Device Row
 
-    private func deviceRow(_ device: BootstrapDevice) -> some View {
+    private func deviceRow(_ device: SettingsService.BootstrapDeviceRow) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(device.name)
@@ -128,47 +127,17 @@ struct IOSBootstrapAdminPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let db = appCore.db else {
-            errorMessage = "Database not available."
+        guard let settingsService = appCore.settingsService else {
+            errorMessage = "Settings service not available."
             isLoading = false
             return
         }
         do {
-            bootstrapDevices = try db.writer.read { db in
-                let rows = try Row.fetchAll(db, sql: """
-                    SELECT id, name, device_type, status, app_version,
-                           last_checkin_at
-                    FROM bootstrap_devices
-                    ORDER BY last_checkin_at DESC
-                """)
-                return rows.map { row in
-                    BootstrapDevice(
-                        id: "\(row["id"] as Int64? ?? 0)",
-                        name: row["name"] as? String ?? "Unknown",
-                        deviceType: row["device_type"] as? String ?? "unknown",
-                        status: row["status"] as? String ?? "pending",
-                        appVersion: row["app_version"] as? String,
-                        lastCheckin: row["last_checkin_at"] as? String
-                    )
-                }
-            }
+            bootstrapDevices = try settingsService.listBootstrapDevices()
         } catch {
-            if !error.localizedDescription.contains("no such table") {
-                errorMessage = "Failed to load: \(error.localizedDescription)"
-            }
+            errorMessage = "Failed to load: \(error.localizedDescription)"
             bootstrapDevices = []
         }
         isLoading = false
-    }
-
-    // MARK: - Model
-
-    private struct BootstrapDevice: Identifiable {
-        let id: String
-        let name: String
-        let deviceType: String
-        let status: String
-        let appVersion: String?
-        let lastCheckin: String?
     }
 }

@@ -42,6 +42,7 @@ struct PartsCompanionsPage: View {
         case addAlternative
         case testSandbox
         case adminDashboard
+        case help
 
         var id: String {
             switch self {
@@ -50,6 +51,7 @@ struct PartsCompanionsPage: View {
             case .addAlternative: return "addAlternative"
             case .testSandbox: return "testSandbox"
             case .adminDashboard: return "adminDashboard"
+            case .help: return "help"
             }
         }
     }
@@ -127,6 +129,11 @@ struct PartsCompanionsPage: View {
                             Image(systemName: "plus")
                         }
                     }
+                }
+            }
+            ToolbarItem(placement: .secondaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
                 }
             }
         }
@@ -800,6 +807,15 @@ struct PartsCompanionsPage: View {
             CompanionSandboxSheet()
         case .adminDashboard:
             CompanionAdminDashboardSheet()
+        case .help:
+            PageHelpSheet(
+                title: "Companions Help",
+                sections: [
+                    ("Rules", "Companion rules define which parts should always be ordered together. When one part is added to an order, companions are suggested automatically."),
+                    ("Alternatives", "Alternative parts can substitute for each other. When a part is out of stock, alternatives are suggested as replacements."),
+                    ("Polls", "Companion polls let the team vote on proposed companion pairings before they become active rules.")
+                ]
+            )
         }
     }
 
