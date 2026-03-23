@@ -137,6 +137,9 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 33G | Staging Box Management | Physical box system: sizes, labels, full/open, contents view, move-all | |
 | 33H | Duplicate Wizard Cleanup | Delete inline wizard from WarehouseMovementsPage, use IOSMovementWizard | |
 | 34A | UI Quality Audit | Sheet dismiss, sticky buttons, navigation links, data display, form validation | |
+| 35A | Daily Report Submit Stubs | Wire 2 TODO submit buttons + remove service bypass + raw SQL in Dashboard | |
+| 35B | Job Detail Tab Fixes | 5 print() catches → state, client-side→server-side filtering, dead code | |
+| 35C | Scheduling Raw SQL | IOSSubSchedulePage + IOSWeeklyAvailabilityPage: GRDB removal + error states | |
 
 ## Prompt 01 Results (2026-03-18)
 
