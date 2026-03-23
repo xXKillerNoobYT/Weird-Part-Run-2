@@ -261,3 +261,87 @@ For a part to have auto-add to wishlist ENABLED:
 - Each unit: name, dimensions, levels, areas per level
 - Sticker checklist generated automatically after configuration
 - Row assignment for physical navigation
+- Long press / right click to rotate unit 90° or show front face
+
+---
+
+## Daily Audit Flow (Count Audit Tab)
+
+### Audit Page Layout — Two Tabs
+- **Count Audit tab:** Pure counting. Smart cards, queue, speed mode. No organization questions.
+- **Organization tab:** Separate process. Labels, consolidation, voting, monthly triggers.
+
+### Audit Queue Sorting
+1. AREA with lowest confidence part → go there first
+2. Count ALL parts in that area that are below 85% (not just the triggered one)
+3. Then next area on same shelf (if any need audit)
+4. Then next shelf in same row
+5. Then next row
+- **Walking path:** Area → Shelf → Row → Next Row. Never bouncing between rows.
+
+### Count Flow — System Count HIDDEN
+- User CANNOT see the system's expected count during counting (prevents copying)
+- After submission, system reveals: "You counted: X · System expected: Y · Variance: Z"
+- System count = last verified count + all tracked movements since then
+
+### Speed Mode (Auto-Triggered, Not User-Selected)
+- Activates automatically when area has QR code sticker
+- User scans area QR → parts list loads → counts are hidden → submit → next area
+- Camera pops up ready for next QR after each area completes
+- No organization questions in speed mode — pure counting
+- Some areas may qualify for speed mode while others are still manual (mixed session OK)
+- After area completes: shows next area/shelf/row with camera ready to scan
+
+### Speed Mode — Misplaced Parts
+- [+ Found Misplaced Part Here] button available during speed audit
+- Options: image match against catalog, search, or scan barcode
+- Two resolution paths:
+  - **Add to cart** — sort all misplaced parts after audit session
+  - **Quick fix** — user knows where it goes, scans QR at correct spot
+- Quick fix: enter qty ADDED + full count of that part at destination
+  - Both numbers captured: addition amount (tracked as movement) + full count (updates confidence)
+  - If user's count rating is high, full count carries more weight
+
+### Quick Audit — "While You're Here" (Movement-Triggered)
+- Triggers whenever user is physically at ANY area for ANY reason
+- Only shows for parts at that area with confidence ≤ 85%
+- Only asks once per area per day (no nagging)
+- Prompt: "2 parts here need a quick count. Want to do a quick audit?"
+- [Yes — Count Now] → shows parts below 85% at that area → enter counts → submit
+- [Not Right Now] → no further prompts for this area today
+- **This is the secret weapon:** continuous micro-audits during normal work. Workers who pull 10 parts/day might quick-audit 5-6 parts along the way. Multiply by team size = constant audit coverage.
+
+### Misplaced Part Quick Fix — Full Flow
+1. Found misplaced part at wrong area
+2. Identify part: search, scan barcode, or image match against catalog
+3. Enter qty found
+4. Choose: cart (later) or quick fix (now)
+5. Quick fix: scan QR at correct area
+6. Enter: qty adding + full count at destination
+7. System records: misplacement event (affects part confidence + organization rating + user who last moved it)
+
+### Multi-User Count Verification (Consensus)
+- Triggers when: part has very low confidence (<60%), high dollar value, or history of mismatches
+- System assigns 2-3 users to count independently (they don't see each other's counts)
+- Results:
+  - All match each other → all get count accuracy BOOST, system updates, confidence 100%
+  - All different → all get LOWERED, manager recount flagged, confidence stays low
+  - 2 match, 1 off → 2 get BOOST, 1 gets LOWERED + training suggestion
+
+### Organization Audit (Separate Tab)
+- Separate from count audit — different purpose, different process
+- Organization questions: labels accurate? Parts in right spots? Overcrowded? Misplaced parts?
+- Triggers: monthly schedule, manager-initiated, or system-suggested
+- Consolidation suggestions with user voting (pick best home for duplicate-location parts)
+- Manager can override votes
+- Soft enforcement: suggest → vote → apply → if ignored 3x → escalate to manager with required reason
+- Movement suggestions for parts found in multiple areas
+- Results feed organization rating per area/shelf/unit
+
+### "While You're Here" Organization Questions (Movement-Triggered)
+- Pop up when user is physically at an area doing other work (movements, receiving, staging)
+- Different from count audit quick prompts — these are organization questions
+- Only if area hasn't been org-checked in X days
+- Quick Yes/No format: Labels good? Parts in right spots? Overcrowded? Misplaced?
+- Takes 10 seconds. Feeds organization rating.
+- NOT shown during dedicated count audits (keep those pure counting)
