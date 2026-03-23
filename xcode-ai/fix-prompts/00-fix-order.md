@@ -143,6 +143,9 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 35D | GeofenceAlertView Fix | Remove GRDB + raw SQL, fix silent clock-in/out errors, show error feedback | |
 | 35E | Fleet GRDB + ErrorStateView | Remove GRDB from 2 pages, wire ErrorStateView in 6 pages, remove print() | |
 | 35F | Audit Session ID + PO Delete Nav | Fix hardcoded session ID 0, navigate back after draft delete, save reject reason | |
+| 35G | Settings GRDB Removal | Remove GRDB + raw SQL from 10 Settings pages, replace DispatchQueue | |
+| 35H | Companion GRDB + Hats Delete | Remove GRDB from 2 Companion sheets, add hat delete confirmation | |
+| 35I | Reports + Tools GRDB | Remove GRDB from PreBilling, BookkeeperExport, ToolKits | |
 
 ## Prompt 01 Results (2026-03-18)
 
