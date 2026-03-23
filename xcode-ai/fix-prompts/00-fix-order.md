@@ -89,35 +89,54 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 26B | PO List Swipe + Sort | Swipe actions with AI summary, sort options, awaiting delivery KPI | DONE |
 | 26C | PO Detail Lifecycle | Status-based actions (7 states), Drafting status, cancel confirmations | DONE |
 | 26D | PO Detail Supplier CRM | Supplier contact info, score bars, tabbed notes (PO + Supplier) | DONE |
-| 26E | Parts Order Management | NEW page: supplier-centric cross-PO view, dual filters, multi-select actions | |
-| 26F | PO Detail Jobs + Timeline | Job grouping, delivery timeline bars, inline draft editing, receipt history | |
-| 27A | JPO List Cleanup | ActiveSheet, QR scan, count badges, Create JPO with clock auto-fill | |
-| 27B | JPO Per-Part Status | Migration: line_status + delivery_option, smart routing (stock → transfer vs approval) | |
-| 27C | JPO Detail Redesign | Per-part approve/hold/reject, bulk actions, delivery options, PO linkage | |
-| 27D | JPO Hold + Chat | Per-part chat thread, question prompt, auto-membership, chat indicator on list | |
-| 27E | Full Audit Trail | part_change_log table, who-did-what logging, PartHistoryView component (cross-cutting) | |
-| 28A | Procurement Redesign | Demand consolidation, stock logic, pull options, smart cards, bring-to-target buttons | |
-| 28B | Procurement Suppliers | Per-part supplier pick, cheapest/rated/fastest highlight, 2PM cutoff, split by JPO | |
-| 28C | Procurement PO Preview | Supplier-grouped preview, partial generation, save for later | |
-| 28D | Job Stage Planner | Stage model, category mapping, held/released parts, auto-release, stage settings | |
-| 29A | Receiving Fix | Hardcoded user ID, ActiveSheet pattern, platform guard | |
-| 29B | Returns Fix | ErrorStateView, console→UI errors, platform guard, smart cards | |
-| 29C | Approvals Dashboard | Smart cards, reject reason, actionError display, multi-type approvals | |
-| 29D | Orders Cleanup | Remove UnifiedOrderPage, update router tab order, consolidate SupplierPicker | |
-| 30A | JPO Creation Layout | 3-panel (search/cart/suggestions), job auto-fill, delivery options, stock indicators | |
-| 30B | JPO Creation Search | AI-powered search (cart + last 5 context), QR scan, ⚡ best match, internet toggle | |
-| 30C | JPO Creation Suggestions | Companion rules (5) + AI picks (3), context switch on cart selection | |
-| 30D | JPO Creation Feedback | Qty confirm dialog, companion points, ratio learning, AI→rule promotion | |
-| 30E | JPO Creation Submit | Create JPO + lines, smart routing, replace IOSUnifiedOrderPage | |
-| 31A | Warehouse Dashboard | Remove GRDB, smart cards, fix quick actions, ActiveSheet, platform guard | |
-| 31B | Warehouse Movements | Remove GRDB, ActiveSheet, smart cards, platform guard | |
-| 31C | Warehouse Locations | Remove GRDB, action buttons in detail sheet, platform guard | |
-| 31D | Warehouse Staging | Swipe confirmation, batch clear, smart cards, platform guard | |
-| 31E | Warehouse Receiving | Start/continue session actions, smart cards, platform guard | |
-| 31F | Warehouse Audit | Fix setup stub, finalize/adjust actions, certainty tie-in TODO, platform guards | |
-| 31G | Warehouse Inventory Grid | Location picker, group by type, low-stock styling, actions, smart cards | |
-| 31H | Warehouse Returns+Tools+Network+Settings | Actions for display-only pages, remove dummy data, fix errors | |
-| 31I | Warehouse Router | Fix unknown route → ErrorStateView, verify all 11 routes | |
+| 26E | Parts Order Management | NEW page: supplier-centric cross-PO view, dual filters, multi-select actions | DONE |
+| 26F | PO Detail Jobs + Timeline | Job grouping, delivery timeline bars, inline draft editing, receipt history | DONE |
+| 27A | JPO List Cleanup | ActiveSheet, QR scan, count badges, Create JPO with clock auto-fill | DONE |
+| 27B | JPO Per-Part Status | Migration: line_status + delivery_option, smart routing (stock → transfer vs approval) | DONE |
+| 27C | JPO Detail Redesign | Per-part approve/hold/reject, bulk actions, delivery options, PO linkage | DONE |
+| 27D | JPO Hold + Chat | Per-part chat thread, question prompt, auto-membership, chat indicator on list | DONE |
+| 27E | Full Audit Trail | part_change_log table, who-did-what logging, PartHistoryView component (cross-cutting) | DONE |
+| 28A | Procurement Redesign | Demand consolidation, stock logic, pull options, smart cards, bring-to-target buttons | DONE |
+| 28B | Procurement Suppliers | Per-part supplier pick, cheapest/rated/fastest highlight, 2PM cutoff, split by JPO | DONE |
+| 28C | Procurement PO Preview | Supplier-grouped preview, partial generation, save for later | DONE |
+| 28D | Job Stage Planner | Stage model, category mapping, held/released parts, auto-release, stage settings | DONE |
+| 29A | Receiving Fix | Hardcoded user ID, ActiveSheet pattern, platform guard | DONE |
+| 29B | Returns Fix | ErrorStateView, console→UI errors, platform guard, smart cards | DONE |
+| 29C | Approvals Dashboard | Smart cards, reject reason, actionError display, multi-type approvals | DONE |
+| 29D | Orders Cleanup | Remove UnifiedOrderPage, update router tab order, consolidate SupplierPicker | DONE |
+| 30A | JPO Creation Layout | 3-panel (search/cart/suggestions), job auto-fill, delivery options, stock indicators | DONE |
+| 30B | JPO Creation Search | AI-powered search (cart + last 5 context), QR scan, ⚡ best match, internet toggle | DONE |
+| 30C | JPO Creation Suggestions | Companion rules (5) + AI picks (3), context switch on cart selection | DONE |
+| 30D | JPO Creation Feedback | Qty confirm dialog, companion points, ratio learning, AI→rule promotion | DONE |
+| 30E | JPO Creation Submit | Create JPO + lines, smart routing, replace IOSUnifiedOrderPage | DONE |
+| 31A | Warehouse Dashboard | Remove GRDB, smart cards, fix quick actions, ActiveSheet, platform guard | DONE |
+| 31B | Warehouse Movements | Remove GRDB, ActiveSheet, smart cards, platform guard | DONE |
+| 31C | Warehouse Locations | Remove GRDB, action buttons in detail sheet, platform guard | DONE |
+| 31D | Warehouse Staging | Swipe confirmation, batch clear, smart cards, platform guard | DONE |
+| 31E | Warehouse Receiving | Start/continue session actions, smart cards, platform guard | DONE |
+| 31F | Warehouse Audit | Fix setup stub, finalize/adjust actions, certainty tie-in TODO, platform guards | DONE |
+| 31G | Warehouse Inventory Grid | Location picker, group by type, low-stock styling, actions, smart cards | DONE |
+| 31H | Warehouse Returns+Tools+Network+Settings | Actions for display-only pages, remove dummy data, fix errors | DONE |
+| 31I | Warehouse Router | Fix unknown route → ErrorStateView, verify all 11 routes | DONE |
+| 32A | Navigation Restructure | Sidebar order (daily→work→admin), tab reorder, rename, People consolidation | |
+| 32B | Empty Catch Blocks | Fix all empty catch {} and catch { print() } blocks (5+ files) | |
+| 32C | Guard Without Error | Fix 42 files with guard-let-service that silently returns | |
+| 32D | Platform Guards Batch 1 | Remove #if os(iOS) from all Features/ files (~50 files) | |
+| 32E | Platform Guards Batch 2 | Remove #if os(iOS) from AI/Auth/App/Nav/Scanning/Sync/Shared (~57 files) | |
+| 32F | ActiveSheet Conversion | Convert 19 files from showXxx Bool to ActiveSheet enum | |
+| 32G | Print-to-State Errors | Replace print() error logging with UI state in 25+ files | |
+| 32H | Refreshable + Searchable | Add missing .refreshable and .searchable to 58 list pages | |
+| 32I | AI Button Dedup | Remove duplicate AI buttons from page toolbars — one global button only | |
+| 32J | Force Unwrap + DispatchQueue | Fix force unwraps in services, replace DispatchQueue with async/await | |
+| 33A | Help/Info Buttons | Add PageHelpSheet component + help button to ALL pages (program standard) | |
+| 33B | Clock Page Fix | Fix "no such column: address" SQL error + add Lunch/Break/Supply Run buttons | |
+| 33C | JPO Smart Routing | Stock check before approval — transfer from shelf vs send to procurement | |
+| 33D | Procurement Pull Actions | Wire TODO pull option buttons to actual warehouse movements | |
+| 33E | PO Detail Placeholders | Wire 6 "Coming Soon" sheet stubs to real functionality | |
+| 33F | Receiving Routing Flow | Full condition check + smart routing (used/damaged/good → staging/shelf/returns) | |
+| 33G | Staging Box Management | Physical box system: sizes, labels, full/open, contents view, move-all | |
+| 33H | Duplicate Wizard Cleanup | Delete inline wizard from WarehouseMovementsPage, use IOSMovementWizard | |
+| 34A | UI Quality Audit | Sheet dismiss, sticky buttons, navigation links, data display, form validation | |
 
 ## Prompt 01 Results (2026-03-18)
 

@@ -6,6 +6,10 @@ import WiredPartCore
 /// Shows audit summary KPIs (total parts, counted, discrepancies) and
 /// a list of discrepancy records with part name, expected vs. counted
 /// quantities, and variance. Uses `WarehouseService` for audit data.
+/// Supports recount action on discrepancies and audit setup.
+///
+/// // TODO: When certainty drops below 80% for a part, auto-add to audit queue
+/// // This ties into the forecasting system (see docs/plans/ios-warehouse-pages.md)
 struct IOSAuditPage: View {
     @EnvironmentObject private var appCore: AppCore
 
@@ -16,6 +20,20 @@ struct IOSAuditPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var loadError: String?
+    @State private var actionError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case auditSetup
+        case adjustDiscrepancy(WarehouseService.AuditDiscrepancy)
+
+        var id: String {
+            switch self {
+            case .auditSetup: "setup"
+            case .adjustDiscrepancy(let d): "adjust-\(d.partId)-\(d.locationId)"
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,9 +48,43 @@ struct IOSAuditPage: View {
         }
         .navigationTitle("Warehouse Audit")
         .searchable(text: $searchText, prompt: "Search discrepancies...")
-        .onChange(of: searchText) { /* local filter only */ }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    activeSheet = .auditSetup
+                } label: {
+                    Label("Start Audit", systemImage: "plus")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            sheetContent(for: sheet)
+        }
+        .alert("Error", isPresented: .constant(actionError != nil)) {
+            Button("OK") { actionError = nil }
+        } message: {
+            Text(actionError ?? "")
+        }
         .refreshable { loadData() }
         .task { loadData() }
+    }
+
+    // MARK: - Sheet Content
+
+    @ViewBuilder
+    private func sheetContent(for sheet: ActiveSheet) -> some View {
+        switch sheet {
+        case .auditSetup:
+            IOSAuditSetupView(onAuditCreated: { _ in
+                loadData()
+            })
+            .environmentObject(appCore)
+        case .adjustDiscrepancy(let disc):
+            AdjustDiscrepancySheetFromAudit(discrepancy: disc) {
+                loadData()
+            }
+            .environmentObject(appCore)
+        }
     }
 
     // MARK: - Content
@@ -55,23 +107,44 @@ struct IOSAuditPage: View {
             // Discrepancies section
             if filteredDiscrepancies.isEmpty {
                 Section("Discrepancies") {
-                    ContentUnavailableView {
-                        Label("No Discrepancies", systemImage: "checkmark.seal")
-                    } description: {
+                    VStack(spacing: 12) {
+                        Image(systemName: "checkmark.seal")
+                            .font(.title)
+                            .foregroundStyle(.green)
+                        Text("No Discrepancies")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
                         Text("All counts match expected quantities.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
                 }
             } else {
                 Section("Discrepancies (\(filteredDiscrepancies.count))") {
                     ForEach(filteredDiscrepancies, id: \.partId) { item in
                         discrepancyRow(item)
+                            .swipeActions(edge: .trailing) {
+                                Button {
+                                    recountItem(item)
+                                } label: {
+                                    Label("Recount", systemImage: "arrow.clockwise")
+                                }
+                                .tint(.blue)
+
+                                Button {
+                                    activeSheet = .adjustDiscrepancy(item)
+                                } label: {
+                                    Label("Adjust", systemImage: "slider.horizontal.3")
+                                }
+                                .tint(.orange)
+                            }
                     }
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     private func summaryRow(label: String, value: String, icon: String, color: Color) -> some View {
@@ -163,6 +236,27 @@ struct IOSAuditPage: View {
             .foregroundStyle(color)
     }
 
+    // MARK: - Actions
+
+    private func recountItem(_ item: WarehouseService.AuditDiscrepancy) {
+        guard let service = appCore.warehouseService else { return }
+        do {
+            // Re-record the audit count to refresh the timestamp
+            // This effectively marks the item as "needs recount"
+            let stockRows = try service.getLocationStock()
+            if let stock = stockRows.first(where: {
+                $0.partId == item.partId &&
+                $0.locationType == item.locationType &&
+                $0.locationId == item.locationId
+            }) {
+                try service.recordAuditCount(stockId: stock.id, countedQty: item.systemQty)
+                loadData()
+            }
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
     // MARK: - Helpers
 
     private func formatDate(_ dateStr: String) -> String {
@@ -183,5 +277,95 @@ struct IOSAuditPage: View {
             loadError = error.localizedDescription
         }
         isLoading = false
+    }
+}
+
+// MARK: - Adjust Discrepancy Sheet (from Audit Page)
+
+private struct AdjustDiscrepancySheetFromAudit: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let discrepancy: WarehouseService.AuditDiscrepancy
+    let onAdjust: () -> Void
+
+    @State private var newQty: Int = 0
+    @State private var reason = ""
+    @State private var isSaving = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Part Info") {
+                    LabeledContent("Part", value: discrepancy.partName)
+                    if let code = discrepancy.partCode {
+                        LabeledContent("Code", value: code)
+                    }
+                    LabeledContent("Location", value: "\(discrepancy.locationType.capitalized) #\(discrepancy.locationId)")
+                }
+
+                Section("Quantities") {
+                    LabeledContent("System Qty", value: "\(discrepancy.systemQty)")
+                    LabeledContent("Counted Qty", value: "\(discrepancy.countedQty)")
+                }
+
+                Section("Adjust To") {
+                    Stepper("New Quantity: \(newQty)", value: $newQty, in: 0...9999)
+                    TextField("Reason for adjustment...", text: $reason, axis: .vertical)
+                        .lineLimit(2...4)
+                }
+
+                if let error = errorMessage {
+                    Section {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Adjust Count")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Apply") { applyAdjustment() }
+                            .fontWeight(.semibold)
+                    }
+                }
+            }
+            .onAppear {
+                newQty = discrepancy.countedQty
+            }
+        }
+    }
+
+    private func applyAdjustment() {
+        guard let service = appCore.warehouseService else {
+            errorMessage = "Warehouse service not available"
+            return
+        }
+        isSaving = true
+        errorMessage = nil
+        do {
+            try service.adjustAuditCount(
+                partId: discrepancy.partId,
+                locationType: discrepancy.locationType,
+                locationId: discrepancy.locationId,
+                newQty: newQty,
+                reason: reason.isEmpty ? nil : reason,
+                performedBy: appCore.currentUser?.id
+            )
+            onAdjust()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isSaving = false
     }
 }

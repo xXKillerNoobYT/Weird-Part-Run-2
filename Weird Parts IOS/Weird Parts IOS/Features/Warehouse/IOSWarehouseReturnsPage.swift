@@ -4,58 +4,140 @@ import WiredPartCore
 /// Warehouse return processing page for iOS.
 ///
 /// Displays pending returns with type, reason, status, supplier name,
-/// and credit amount. Supports status-based filtering and pull-to-refresh.
-/// Uses `OrdersService.listReturns(status:)` for return data.
+/// and credit amount. Supports smart card filters by status, action buttons
+/// per return (approve/reject/ship/complete), and pull-to-refresh.
 struct IOSWarehouseReturnsPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     // MARK: - State
 
-    @State private var returns: [OrdersService.ReturnListItem] = []
+    @State private var allReturns: [OrdersService.ReturnListItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
-    @State private var statusFilter = "all"
     @State private var loadError: String?
+    @State private var actionError: String?
+    @State private var selectedFilter: StatusFilter?
+    @State private var activeSheet: ActiveSheet?
 
-    private let statusOptions = ["all", "pending", "requested", "approved", "shipped", "completed"]
+    private enum ActiveSheet: Identifiable {
+        case createReturn
+        var id: String { "createReturn" }
+    }
+
+    private enum StatusFilter: String, CaseIterable {
+        case pending = "Pending"
+        case approved = "Approved"
+        case shipped = "Shipped"
+        case completed = "Completed"
+
+        var matchStatuses: [String] {
+            switch self {
+            case .pending: ["pending", "requested"]
+            case .approved: ["approved"]
+            case .shipped: ["shipped"]
+            case .completed: ["completed"]
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            statusPicker
+            // Smart card filters
+            if !allReturns.isEmpty {
+                smartCardFilters
+            }
+
             returnsList
         }
         .navigationTitle("Returns")
         .searchable(text: $searchText, prompt: "Search returns...")
-        .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .createReturn } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            NavigationStack {
+                CreateReturnSheet { loadData() }
+                    .environmentObject(appCore)
+            }
+        }
+        .alert("Error", isPresented: .constant(actionError != nil)) {
+            Button("OK") { actionError = nil }
+        } message: {
+            Text(actionError ?? "")
+        }
         .task { loadData() }
     }
 
-    // MARK: - Status Picker
+    // MARK: - Smart Card Filters
 
-    private var statusPicker: some View {
+    private var smartCardFilters: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(statusOptions, id: \.self) { status in
-                    Button {
-                        statusFilter = status
-                        loadData()
-                    } label: {
-                        Text(status == "all" ? "All" : status.capitalized)
-                            .font(.caption)
-                            .fontWeight(statusFilter == status ? .bold : .regular)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(statusFilter == status ? Color.accentColor : Color.secondary.opacity(0.2))
-                            )
-                            .foregroundStyle(statusFilter == status ? .white : .primary)
-                    }
-                    .buttonStyle(.plain)
+            HStack(spacing: 10) {
+                ForEach(StatusFilter.allCases, id: \.self) { filter in
+                    let count = allReturns.filter { ret in filter.matchStatuses.contains(ret.status) }.count
+                    smartCard(filter: filter, count: count)
                 }
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
+        }
+    }
+
+    private func smartCard(filter: StatusFilter, count: Int) -> some View {
+        let isSelected = selectedFilter == filter
+        let color = filterColor(filter)
+
+        return Button {
+            selectedFilter = isSelected ? nil : filter
+        } label: {
+            VStack(spacing: 4) {
+                HStack(spacing: 4) {
+                    Image(systemName: filterIcon(filter))
+                        .font(.caption)
+                    Text("\(count)")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                }
+                Text(filter.rawValue)
+                    .font(.caption2)
+                    .lineLimit(1)
+            }
+            .frame(minWidth: 80)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected ? color.opacity(0.15) : Color.secondary.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isSelected ? color : Color.clear, lineWidth: 1.5)
+            )
+            .foregroundStyle(isSelected ? color : .primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func filterIcon(_ filter: StatusFilter) -> String {
+        switch filter {
+        case .pending: "clock.fill"
+        case .approved: "checkmark.circle.fill"
+        case .shipped: "shippingbox.fill"
+        case .completed: "checkmark.seal.fill"
+        }
+    }
+
+    private func filterColor(_ filter: StatusFilter) -> Color {
+        switch filter {
+        case .pending: .orange
+        case .approved: .blue
+        case .shipped: .purple
+        case .completed: .green
         }
     }
 
@@ -69,28 +151,66 @@ struct IOSWarehouseReturnsPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredReturns.isEmpty {
-            ContentUnavailableView {
-                Label("No Returns", systemImage: "arrow.uturn.left.circle")
-            } description: {
-                Text("No returns match your criteria.")
-            }
+            EmptyStateView(
+                icon: "arrow.uturn.left.circle",
+                title: "No Returns",
+                message: searchText.isEmpty && selectedFilter == nil
+                    ? "No returns found. Tap + to create a new return."
+                    : "No returns match your criteria."
+            )
         } else {
             List(filteredReturns, id: \.id) { ret in
                 returnRow(ret)
+                    .swipeActions(edge: .trailing) {
+                        swipeActions(for: ret)
+                    }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
     private var filteredReturns: [OrdersService.ReturnListItem] {
-        guard !searchText.isEmpty else { return returns }
-        let query = searchText.lowercased()
-        return returns.filter {
-            $0.returnType.lowercased().contains(query) ||
-            ($0.supplierName?.lowercased().contains(query) ?? false) ||
-            ($0.reason?.lowercased().contains(query) ?? false)
+        var result = allReturns
+
+        if let filter = selectedFilter {
+            result = result.filter { filter.matchStatuses.contains($0.status) }
+        }
+
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            result = result.filter {
+                $0.returnType.lowercased().contains(query) ||
+                ($0.supplierName?.lowercased().contains(query) ?? false) ||
+                ($0.reason?.lowercased().contains(query) ?? false)
+            }
+        }
+
+        return result
+    }
+
+    @ViewBuilder
+    private func swipeActions(for ret: OrdersService.ReturnListItem) -> some View {
+        switch ret.status {
+        case "pending", "requested":
+            Button { updateStatus(returnId: ret.id, status: "approved") } label: {
+                Label("Approve", systemImage: "checkmark.circle")
+            }
+            .tint(.green)
+            Button(role: .destructive) { updateStatus(returnId: ret.id, status: "cancelled") } label: {
+                Label("Reject", systemImage: "xmark.circle")
+            }
+        case "approved":
+            Button { updateStatus(returnId: ret.id, status: "shipped") } label: {
+                Label("Mark Shipped", systemImage: "shippingbox")
+            }
+            .tint(.purple)
+        case "shipped":
+            Button { updateStatus(returnId: ret.id, status: "completed") } label: {
+                Label("Complete", systemImage: "checkmark.seal")
+            }
+            .tint(.green)
+        default:
+            EmptyView()
         }
     }
 
@@ -153,12 +273,12 @@ struct IOSWarehouseReturnsPage: View {
 
     private func statusColor(_ status: String) -> Color {
         switch status {
-        case "pending", "requested": return .orange
-        case "approved": return .blue
-        case "shipped": return .purple
-        case "completed": return .green
-        case "cancelled": return .red
-        default: return .secondary
+        case "pending", "requested": .orange
+        case "approved": .blue
+        case "shipped": .purple
+        case "completed": .green
+        case "cancelled": .red
+        default: .secondary
         }
     }
 
@@ -168,19 +288,100 @@ struct IOSWarehouseReturnsPage: View {
             .foregroundStyle(.purple)
     }
 
+    // MARK: - Actions
+
+    private func updateStatus(returnId: Int64, status: String) {
+        guard let service = appCore.ordersService else { return }
+        do {
+            try service.updateReturnStatus(returnId: returnId, status: status)
+            loadData()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
     // MARK: - Data Loading
 
     private func loadData() {
         guard let service = appCore.ordersService else { return }
-        isLoading = returns.isEmpty
+        isLoading = allReturns.isEmpty
         loadError = nil
         do {
-            returns = try service.listReturns(
-                status: statusFilter == "all" ? nil : statusFilter
-            )
+            allReturns = try service.listReturns(status: nil)
         } catch {
             loadError = error.localizedDescription
         }
         isLoading = false
+    }
+}
+
+// MARK: - Create Return Sheet
+
+private struct CreateReturnSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+    let onSave: () -> Void
+
+    @State private var returnType = "defective"
+    @State private var reason = ""
+    @State private var errorMessage: String?
+    @State private var isSaving = false
+
+    private let returnTypes = ["defective", "wrong_item", "overstock", "damaged", "other"]
+
+    var body: some View {
+        Form {
+            Section("Return Type") {
+                Picker("Type", selection: $returnType) {
+                    ForEach(returnTypes, id: \.self) { type in
+                        Text(type.replacingOccurrences(of: "_", with: " ").capitalized).tag(type)
+                    }
+                }
+            }
+
+            Section("Reason") {
+                TextField("Describe the reason for return...", text: $reason, axis: .vertical)
+                    .lineLimit(3...6)
+            }
+
+            if let error = errorMessage {
+                Section {
+                    Text(error)
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                }
+            }
+        }
+        .navigationTitle("New Return")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { dismiss() }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                if isSaving {
+                    ProgressView()
+                } else {
+                    Button("Create") { createReturn() }
+                        .disabled(reason.isEmpty)
+                }
+            }
+        }
+    }
+
+    private func createReturn() {
+        guard let service = appCore.ordersService else {
+            errorMessage = "Orders service not available"
+            return
+        }
+        isSaving = true
+        do {
+            _ = try service.createReturn(returnType: returnType, reason: reason)
+            onSave()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isSaving = false
     }
 }

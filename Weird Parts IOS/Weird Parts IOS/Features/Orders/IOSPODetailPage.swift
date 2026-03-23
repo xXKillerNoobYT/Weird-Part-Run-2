@@ -4,9 +4,9 @@ import WiredPartCore
 /// Purchase Order detail page.
 ///
 /// Shows PO header, supplier CRM section with contact info and scores,
-/// status-based action buttons, line items with stale price warnings,
-/// shipping/tracking, cost breakdown, and tabbed notes (PO + Supplier).
-/// Actions change based on the PO's lifecycle state.
+/// status-based action buttons, job-grouped line items with delivery timelines,
+/// inline draft editing, receipt history, shipping/tracking, cost breakdown,
+/// and tabbed notes (PO + Supplier).
 struct IOSPODetailPage: View {
     @EnvironmentObject private var appCore: AppCore
 
@@ -32,6 +32,15 @@ struct IOSPODetailPage: View {
     @State private var newNoteText = ""
     @State private var poNotes: [PONoteEntry] = []
     @State private var supplierNotes: [PONoteEntry] = []
+
+    // Inline edit (draft POs)
+    @State private var editingLineId: Int64?
+    @State private var editQty = ""
+    @State private var editPrice = ""
+    @State private var showInlineEdit = false
+
+    // Receipt history
+    @State private var receiptBatches: [OrdersService.ReceiptBatch] = []
 
     private enum ActiveSheet: Identifiable {
         case receiveShipment
@@ -105,6 +114,19 @@ struct IOSPODetailPage: View {
         } message: {
             Text("This will cancel all unreceived items. Contact the supplier first to confirm. A reason is required.")
         }
+        // Inline edit alert for draft POs
+        .alert("Edit Line Item", isPresented: $showInlineEdit) {
+            TextField("Quantity", text: $editQty)
+                .keyboardType(.numberPad)
+            TextField("Unit Price", text: $editPrice)
+                .keyboardType(.decimalPad)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") {
+                Task { await saveLineEdit() }
+            }
+        } message: {
+            Text("Update quantity and unit price for this item.")
+        }
         // Action message
         .alert("Notice", isPresented: .constant(actionMessage != nil)) {
             Button("OK") { actionMessage = nil }
@@ -126,9 +148,8 @@ struct IOSPODetailPage: View {
             }
         case .manageParts:
             NavigationStack {
-                Text("Parts Management — Coming Soon")
-                    .navigationTitle("Manage Parts")
-                    .navigationBarTitleDisplayMode(.inline)
+                IOSPartsOrderManagementPage(preSelectedSupplierId: po?.supplierId)
+                    .environmentObject(appCore)
             }
         case .contactSupplier:
             NavigationStack {
@@ -212,44 +233,12 @@ struct IOSPODetailPage: View {
                     }
                 }
 
-                // Line Items
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Line Items (\(po.lines.count))")
-                        .font(.headline)
+                // Job-Grouped Line Items
+                lineItemsSection(po)
 
-                    ForEach(po.lines, id: \.id) { line in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(line.partName ?? "Item")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                // Stale price warning
-                                if let partId = line.partId,
-                                   let service = appCore.partsService,
-                                   (try? service.isPartPriceStale(partId: partId)) == true {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "exclamationmark.triangle.fill")
-                                            .font(.caption2)
-                                            .foregroundStyle(.orange)
-                                        Text("Price not verified recently")
-                                            .font(.caption2)
-                                            .foregroundStyle(.orange)
-                                    }
-                                }
-                                Text("Qty: \(line.quantityOrdered) | Received: \(line.quantityReceived)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if let price = line.unitPrice {
-                                Text(formatCurrency(price * Double(line.quantityOrdered)))
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                            }
-                        }
-                        .padding(10)
-                        .dsCard()
-                    }
+                // Receipt History (for received/partial POs)
+                if po.status == "received" || po.status == "partial" {
+                    receiptHistorySection()
                 }
 
                 // Cost Summary
@@ -277,6 +266,276 @@ struct IOSPODetailPage: View {
                 notesTabSection(po)
             }
             .padding()
+        }
+    }
+
+    // MARK: - Job-Grouped Line Items
+
+    @ViewBuilder
+    private func lineItemsSection(_ po: OrdersService.PODetail) -> some View {
+        let grouped = Dictionary(grouping: po.lines) { $0.jobName ?? "General" }
+        let sortedKeys = grouped.keys.sorted()
+
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Line Items (\(po.lines.count))")
+                .font(.headline)
+
+            ForEach(sortedKeys, id: \.self) { jobName in
+                if let lines = grouped[jobName] {
+                    VStack(alignment: .leading, spacing: 4) {
+                        // Job header
+                        HStack {
+                            Image(systemName: jobGroupIcon(jobName))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(jobName)
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Spacer()
+                            Text("\(lines.count) items")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(.top, 4)
+
+                        // Lines for this job
+                        ForEach(lines, id: \.id) { line in
+                            lineItemRow(line, isDraft: po.status == "draft",
+                                        expectedDelivery: po.expectedDelivery)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Icon for job group header based on source type.
+    private func jobGroupIcon(_ jobName: String) -> String {
+        switch jobName {
+        case "Forecast Restock": "chart.line.uptrend.xyaxis"
+        case "Wishlist": "heart"
+        case "General": "shippingbox"
+        default: "wrench.and.screwdriver"
+        }
+    }
+
+    // MARK: - Line Item Row
+
+    @ViewBuilder
+    private func lineItemRow(_ line: OrdersService.POLineRow, isDraft: Bool, expectedDelivery: String?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                // Status icon
+                lineStatusIcon(line.lineStatus)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(line.partName ?? "Item")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+
+                    // Stale price warning
+                    if let partId = line.partId,
+                       let service = appCore.partsService,
+                       (try? service.isPartPriceStale(partId: partId)) == true {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                            Text("Price not verified recently")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+
+                    HStack(spacing: 8) {
+                        Text("Qty: \(line.quantityOrdered)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if line.quantityReceived > 0 {
+                            Text("Received: \(line.quantityReceived)")
+                                .font(.caption)
+                                .foregroundStyle(.green)
+                        }
+                    }
+                }
+
+                Spacer()
+
+                if let price = line.unitPrice {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(formatCurrency(price))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(formatCurrency(price * Double(line.quantityOrdered)))
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                }
+            }
+
+            // Delivery timeline bar (for waiting/ordered parts)
+            if line.lineStatus == "pending" || line.lineStatus == "ordered" {
+                deliveryTimelineBar(orderDate: line.createdAt, expectedDelivery: expectedDelivery)
+            }
+
+            // Backorder actions (per line item)
+            if line.lineStatus == "backorder" {
+                HStack(spacing: 8) {
+                    Button {
+                        activeSheet = .updateETA
+                    } label: {
+                        Label("Update ETA", systemImage: "calendar.badge.clock")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.orange)
+
+                    Button {
+                        activeSheet = .doubleOrder
+                    } label: {
+                        Label("Double Order", systemImage: "doc.on.doc")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.blue)
+                }
+                .padding(.top, 2)
+            }
+
+            // Inline editing (for draft POs only)
+            if isDraft {
+                HStack(spacing: 8) {
+                    Button {
+                        editingLineId = line.id
+                        editQty = "\(line.quantityOrdered)"
+                        editPrice = line.unitPrice.map { String(format: "%.2f", $0) } ?? ""
+                        showInlineEdit = true
+                    } label: {
+                        Label("Quick Edit", systemImage: "pencil")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(Color.accentColor)
+                }
+                .padding(.top, 2)
+            }
+        }
+        .padding(10)
+        .dsCard()
+    }
+
+    // MARK: - Line Status Icon
+
+    @ViewBuilder
+    private func lineStatusIcon(_ status: String) -> some View {
+        switch status {
+        case "received":
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .font(.body)
+        case "backorder":
+            Image(systemName: "clock.badge.exclamationmark.fill")
+                .foregroundStyle(.red)
+                .font(.body)
+        case "pending", "ordered":
+            Image(systemName: "hourglass")
+                .foregroundStyle(.blue)
+                .font(.body)
+        case "cancelled":
+            Image(systemName: "xmark.circle.fill")
+                .foregroundStyle(.red)
+                .font(.body)
+        default:
+            Image(systemName: "circle")
+                .foregroundStyle(.secondary)
+                .font(.body)
+        }
+    }
+
+    // MARK: - Delivery Timeline Bar
+
+    @ViewBuilder
+    private func deliveryTimelineBar(orderDate: String?, expectedDelivery: String?) -> some View {
+        let daysElapsed = daysSince(orderDate)
+        let daysExpected = daysUntil(expectedDelivery) ?? 7
+        let totalDays = max(daysElapsed + max(daysExpected, 0), 1)
+        let progress = min(Double(daysElapsed) / Double(totalDays), 1.0)
+
+        let barColor: Color = {
+            if daysExpected > 2 { return .green }
+            if daysExpected > 0 { return .yellow }
+            if daysExpected > -2 { return .orange }
+            return .red
+        }()
+
+        VStack(alignment: .leading, spacing: 2) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(barColor.opacity(0.15))
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(barColor)
+                        .frame(width: geo.size.width * progress)
+                }
+            }
+            .frame(height: 4)
+
+            HStack {
+                Text("Day \(daysElapsed)")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if daysExpected > 0 {
+                    Text("\(daysExpected)d remaining")
+                        .font(.system(size: 9))
+                        .foregroundStyle(barColor)
+                } else if daysExpected == 0 {
+                    Text("Due today")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.orange)
+                } else {
+                    Text("\(-daysExpected)d LATE")
+                        .font(.system(size: 9))
+                        .fontWeight(.bold)
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+    }
+
+    // MARK: - Receipt History Section
+
+    @ViewBuilder
+    private func receiptHistorySection() -> some View {
+        if !receiptBatches.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Receipt History")
+                    .font(.headline)
+
+                ForEach(receiptBatches) { batch in
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 8, height: 8)
+                            .padding(.top, 6)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Received \(String(batch.receivedDate.prefix(10)))")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                            Text("\(batch.itemCount) items, \(batch.totalReceived) total units")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            if let by = batch.receivedBy {
+                                Text("By: \(by)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding()
+            .dsCard()
         }
     }
 
@@ -413,7 +672,7 @@ struct IOSPODetailPage: View {
                     } label: {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.title3)
-                            .foregroundStyle(.accentColor)
+                            .foregroundStyle(Color.accentColor)
                     }
                     .disabled(newNoteText.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
@@ -608,6 +867,21 @@ struct IOSPODetailPage: View {
         }
     }
 
+    // MARK: - Inline Line Edit
+
+    private func saveLineEdit() async {
+        guard let lineId = editingLineId,
+              let qty = Int(editQty), qty > 0,
+              let service = appCore.ordersService else { return }
+        let price = Double(editPrice)
+        do {
+            try service.updatePOLineItem(lineId: lineId, quantity: qty, unitPrice: price)
+            loadData()
+        } catch {
+            actionMessage = "Failed to update: \(error.localizedDescription)"
+        }
+    }
+
     // MARK: - Notes Actions
 
     private func addPONote() async {
@@ -622,7 +896,25 @@ struct IOSPODetailPage: View {
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - Date Helpers
+
+    private func daysSince(_ dateStr: String?) -> Int {
+        guard let str = dateStr else { return 0 }
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withFullDate]
+        guard let date = fmt.date(from: String(str.prefix(10))) else { return 0 }
+        return max(0, Calendar.current.dateComponents([.day], from: date, to: Date()).day ?? 0)
+    }
+
+    private func daysUntil(_ dateStr: String?) -> Int? {
+        guard let str = dateStr else { return nil }
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withFullDate]
+        guard let date = fmt.date(from: String(str.prefix(10))) else { return nil }
+        return Calendar.current.dateComponents([.day], from: Date(), to: date).day
+    }
+
+    // MARK: - General Helpers
 
     private func statusColor(_ status: String) -> Color {
         switch status {
@@ -674,6 +966,9 @@ struct IOSPODetailPage: View {
             } else {
                 supplierNotes = []
             }
+
+            // Load receipt history
+            receiptBatches = (try? service.getReceiptHistory(poId: poId)) ?? []
         } catch {
             loadError = error.localizedDescription
         }

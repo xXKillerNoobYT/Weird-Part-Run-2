@@ -3,57 +3,23 @@ import WiredPartCore
 
 /// Warehouse network status page showing device connectivity.
 ///
-/// Displays mesh relay / device network status for devices connected
-/// to the warehouse. Shows paired devices, connection status, and
-/// last sync times. Full implementation in Phase 16 (Sync Infrastructure).
+/// Displays an honest placeholder for the network discovery feature,
+/// which will be available when sync infrastructure is implemented.
 struct IOSWarehouseNetworkPage: View {
     @EnvironmentObject private var appCore: AppCore
 
-    @State private var isScanning = false
-
-    /// Placeholder device info for the network display
-    private struct NetworkDevice: Identifiable {
-        let id = UUID()
-        let name: String
-        let type: String
-        let status: ConnectionStatus
-        let lastSeen: String
-
-        enum ConnectionStatus: String {
-            case connected = "Connected"
-            case disconnected = "Disconnected"
-            case syncing = "Syncing"
-
-            var color: Color {
-                switch self {
-                case .connected: return .green
-                case .disconnected: return .secondary
-                case .syncing: return .orange
-                }
-            }
-
-            var icon: String {
-                switch self {
-                case .connected: return "wifi"
-                case .disconnected: return "wifi.slash"
-                case .syncing: return "arrow.triangle.2.circlepath"
-                }
-            }
-        }
-    }
-
     var body: some View {
         List {
-            // Network status
-            Section("Network Status") {
+            // This device status
+            Section("This Device") {
                 HStack(spacing: 12) {
                     Image(systemName: "antenna.radiowaves.left.and.right")
                         .foregroundStyle(.green)
                         .font(.title2)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("This Device")
+                        Text("Online")
                             .fontWeight(.medium)
-                        Text("Online — Local network active")
+                        Text("Local database active")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -64,62 +30,47 @@ struct IOSWarehouseNetworkPage: View {
                 }
             }
 
-            // Connected devices
-            Section {
-                ContentUnavailableView {
-                    Label("No Other Devices", systemImage: "desktopcomputer")
-                } description: {
-                    Text("Pair devices to see them here. LAN sync and Multipeer Connectivity will be available in a future update.")
+            // Network discovery placeholder
+            Section("Connected Devices") {
+                VStack(spacing: 16) {
+                    Image(systemName: "network")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.secondary)
+                    Text("Network Discovery")
+                        .font(.headline)
+                    Text("Device network discovery will be available in a future update. This page will show connected shop computers, tablets, and phones on your local network.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
-            } header: {
-                HStack {
-                    Text("Devices")
-                    Spacer()
-                    Button {
-                        scanForDevices()
-                    } label: {
-                        HStack(spacing: 4) {
-                            if isScanning {
-                                ProgressView()
-                                    .controlSize(.mini)
-                            }
-                            Text(isScanning ? "Scanning..." : "Scan")
-                                .font(.caption)
-                        }
-                    }
-                    .disabled(isScanning)
-                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
             }
 
-            // Network info
-            Section("Network Info") {
-                infoRow(label: "Protocol", value: "LAN HTTP + Multipeer")
-                infoRow(label: "Sync Mode", value: "LWW (Last Write Wins)")
-                infoRow(label: "Encryption", value: "TLS / PGP")
-                infoRow(label: "Status", value: "Pending Phase 16")
+            // Planned features
+            Section("Planned Features") {
+                featureRow(icon: "wifi", label: "LAN HTTP Sync", description: "Sync with shop computer over Wi-Fi")
+                featureRow(icon: "dot.radiowaves.left.and.right", label: "Multipeer Connectivity", description: "Bluetooth and Wi-Fi P2P device pairing")
+                featureRow(icon: "lock.shield", label: "Encrypted Sync", description: "TLS transport with field-level encryption")
+                featureRow(icon: "arrow.triangle.2.circlepath", label: "Conflict Resolution", description: "Last-write-wins with field-level merge")
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
         .navigationTitle("Network")
     }
 
-    private func infoRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .fontWeight(.medium)
-        }
-    }
-
-    private func scanForDevices() {
-        isScanning = true
-        // Placeholder — actual Multipeer/LAN discovery in Phase 16
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            isScanning = false
+    private func featureRow(icon: String, label: String, description: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(.blue)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .fontWeight(.medium)
+                Text(description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

@@ -1,36 +1,60 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
-/// Warehouse movements listing with search, segment filter, detail sheet,
+/// Warehouse movements listing with search, smart card filters, detail sheet,
 /// and a multi-step movement wizard.
 ///
 /// Shows a chronological list of stock movements with from/to locations,
-/// part names, quantities, and movement types. The "+" toolbar button
-/// opens a guided 5-step wizard (matching the Windows flow).
+/// part names, quantities, and movement types. Quick actions open the
+/// movement wizard and QR scanner via ActiveSheet.
 struct WarehouseMovementsPage: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var movements: [WarehouseService.MovementRow] = []
     @State private var isLoading = true
     @State private var searchText = ""
-    @State private var selectedFilter = "all"
-    @State private var selectedMovement: WarehouseService.MovementRow?
-    @State private var showNewMovement = false
-    @State private var showDetail = false
+    @State private var selectedFilter: MovementFilter?
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
 
-    private let filters = ["all", "transfer", "return_to_supplier"]
-    private let filterLabels = ["All", "Transfers", "Returns"]
+    private enum MovementFilter: String, CaseIterable {
+        case transfers = "Transfers"
+        case receives = "Receives"
+        case returns = "Returns"
+        case adjustments = "Adjustments"
+
+        var movementType: String {
+            switch self {
+            case .transfers: "transfer"
+            case .receives: "receive"
+            case .returns: "return_to_supplier"
+            case .adjustments: "adjustment"
+            }
+        }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case movementDetail(WarehouseService.MovementRow)
+        case newMovement
+        case qrScanner
+
+        var id: String {
+            switch self {
+            case .movementDetail(let m): "detail-\(m.id)"
+            case .newMovement: "newMovement"
+            case .qrScanner: "qrScanner"
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            filterBar
+            smartCardFilters
 
             if isLoading {
                 ProgressView("Loading movements…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = loadError {
-                ErrorStateView(message: error) { Task { await loadData() } }
+                ErrorStateView(message: error) { loadData() }
             } else if filteredMovements.isEmpty {
                 emptyState
             } else {
@@ -38,50 +62,95 @@ struct WarehouseMovementsPage: View {
             }
         }
         .searchable(text: $searchText, prompt: "Search by part name…")
-        .refreshable { await loadData() }
+        .refreshable { loadData() }
         .toolbar {
-            ToolbarItemGroup(placement: .automatic) {
-                Button {
-                    showNewMovement = true
-                } label: {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button { activeSheet = .qrScanner } label: {
+                    Image(systemName: "qrcode.viewfinder")
+                }
+                Button { activeSheet = .newMovement } label: {
                     Image(systemName: "plus")
                 }
             }
         }
-        .fullScreenCover(isPresented: $showNewMovement) {
-            MovementWizard { await loadData() }
-                .environmentObject(appCore)
-        }
-        .sheet(isPresented: $showDetail) {
-            if let movement = selectedMovement {
-                MovementDetailSheet(movement: movement)
-            }
+        .sheet(item: $activeSheet) { sheet in
+            sheetContent(for: sheet)
         }
         .background(DS.Background.page)
-        .task { await loadData() }
+        .task { loadData() }
     }
 
-    // MARK: - Filter Bar
+    // MARK: - Sheet Content
 
     @ViewBuilder
-    private var filterBar: some View {
-        Picker("Filter", selection: $selectedFilter) {
-            ForEach(Array(zip(filters, filterLabels)), id: \.0) { value, label in
-                Text(label).tag(value)
+    private func sheetContent(for sheet: ActiveSheet) -> some View {
+        switch sheet {
+        case .movementDetail(let movement):
+            MovementDetailSheet(movement: movement)
+        case .newMovement:
+            MovementWizard { loadData() }
+                .environmentObject(appCore)
+        case .qrScanner:
+            QRScanSheet(expectedType: .part) { result in
+                activeSheet = nil
             }
+            .environmentObject(appCore)
         }
-        .pickerStyle(.segmented)
-        .padding(.horizontal)
-        .padding(.vertical, 8)
+    }
+
+    // MARK: - Smart Card Filters
+
+    private var smartCardFilters: some View {
+        let transferCount = movements.filter { $0.movementType == "transfer" }.count
+        let receiveCount = movements.filter { $0.movementType == "receive" }.count
+        let returnCount = movements.filter { $0.movementType == "return_to_supplier" }.count
+        let adjustCount = movements.filter { $0.movementType == "adjustment" }.count
+
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                filterCard(.transfers, count: transferCount, icon: "arrow.left.arrow.right", color: .blue)
+                filterCard(.receives, count: receiveCount, icon: "arrow.down.circle", color: .green)
+                filterCard(.returns, count: returnCount, icon: "arrow.uturn.left", color: .purple)
+                filterCard(.adjustments, count: adjustCount, icon: "plus.forwardslash.minus", color: .gray)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
         .background(Color(.secondarySystemGroupedBackground))
+    }
+
+    private func filterCard(_ filter: MovementFilter, count: Int, icon: String, color: Color) -> some View {
+        let isSelected = selectedFilter == filter
+
+        return Button {
+            selectedFilter = isSelected ? nil : filter
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.caption)
+                Text("\(filter.rawValue) (\(count))")
+                    .font(.caption)
+                    .fontWeight(isSelected ? .bold : .regular)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(
+                Capsule().fill(isSelected ? color.opacity(0.15) : Color.secondary.opacity(0.08))
+            )
+            .overlay(
+                Capsule().stroke(isSelected ? color : Color.clear, lineWidth: 1.5)
+            )
+            .foregroundStyle(isSelected ? color : .primary)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Filtered Movements
 
     private var filteredMovements: [WarehouseService.MovementRow] {
         var result = movements
-        if selectedFilter != "all" {
-            result = result.filter { $0.movementType == selectedFilter }
+        if let filter = selectedFilter {
+            result = result.filter { $0.movementType == filter.movementType }
         }
         if !searchText.isEmpty {
             let query = searchText.lowercased()
@@ -103,8 +172,7 @@ struct WarehouseMovementsPage: View {
 
             ForEach(filteredMovements, id: \.id) { movement in
                 Button {
-                    selectedMovement = movement
-                    showDetail = true
+                    activeSheet = .movementDetail(movement)
                 } label: {
                     movementRow(movement)
                 }
@@ -166,87 +234,69 @@ struct WarehouseMovementsPage: View {
 
     // MARK: - Empty State
 
-    @ViewBuilder
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "arrow.left.arrow.right")
-                .font(.system(size: 48))
-                .foregroundStyle(.secondary)
-            Text("No Movements Found")
-                .font(.title3)
-                .fontWeight(.semibold)
-            Text("Stock movements will appear here as parts are transferred between locations.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-            Button {
-                showNewMovement = true
-            } label: {
-                Label("New Movement", systemImage: "plus.circle.fill")
-            }
-            .buttonStyle(.borderedProminent)
+        EmptyStateView(
+            icon: "arrow.left.arrow.right",
+            title: "No Movements Found",
+            message: searchText.isEmpty && selectedFilter == nil
+                ? "Stock movements will appear here as parts are transferred."
+                : "No movements match your criteria.",
+            actionLabel: "New Movement"
+        ) {
+            activeSheet = .newMovement
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Data Loading
 
-    @Sendable
-    private func loadData() async {
-        isLoading = movements.isEmpty
-        do {
-            guard let service = appCore.warehouseService else {
-                await MainActor.run { isLoading = false }
-                return
-            }
-            let fetched = try service.listMovements(limit: 200)
-            await MainActor.run {
-                movements = fetched
-                loadError = nil
-                isLoading = false
-            }
-        } catch {
-            print("[WarehouseMovementsPage] Load error: \(error)")
-            await MainActor.run {
-                loadError = "Failed to load movements: \(error.localizedDescription)"
-                isLoading = false
-            }
+    private func loadData() {
+        guard let service = appCore.warehouseService else {
+            loadError = "Warehouse service not available"
+            isLoading = false
+            return
         }
+        isLoading = movements.isEmpty
+        loadError = nil
+        do {
+            movements = try service.listMovements(limit: 200)
+        } catch {
+            loadError = error.localizedDescription
+        }
+        isLoading = false
     }
 
     // MARK: - Helpers
 
     private func movementIcon(_ type: String) -> String {
         switch type {
-        case "transfer": return "arrow.left.arrow.right"
-        case "receive": return "arrow.down.circle"
-        case "consume": return "flame"
-        case "return_to_supplier": return "arrow.uturn.left"
-        case "adjustment": return "plus.forwardslash.minus"
-        default: return "arrow.left.arrow.right"
+        case "transfer": "arrow.left.arrow.right"
+        case "receive": "arrow.down.circle"
+        case "consume": "flame"
+        case "return_to_supplier": "arrow.uturn.left"
+        case "adjustment": "plus.forwardslash.minus"
+        default: "arrow.left.arrow.right"
         }
     }
 
     private func movementColor(_ type: String) -> Color {
         switch type {
-        case "transfer": return .blue
-        case "receive": return .green
-        case "consume": return .orange
-        case "return_to_supplier": return .purple
-        case "adjustment": return .gray
-        default: return .blue
+        case "transfer": .blue
+        case "receive": .green
+        case "consume": .orange
+        case "return_to_supplier": .purple
+        case "adjustment": .gray
+        default: .blue
         }
     }
 
     private func movementLabel(_ type: String) -> String {
         switch type {
-        case "transfer": return "Transfer"
-        case "receive": return "Received"
-        case "consume": return "Consumed"
-        case "return_to_supplier": return "Returned"
-        case "adjustment": return "Adjustment"
-        default: return type.capitalized
+        case "transfer": "Transfer"
+        case "receive": "Received"
+        case "consume": "Consumed"
+        case "return_to_supplier": "Returned"
+        case "adjustment": "Adjustment"
+        default: type.capitalized
         }
     }
 
@@ -307,12 +357,12 @@ private struct MovementDetailSheet: View {
 
     private func movementLabel(_ type: String) -> String {
         switch type {
-        case "transfer": return "Transfer"
-        case "receive": return "Received"
-        case "consume": return "Consumed"
-        case "return_to_supplier": return "Returned"
-        case "adjustment": return "Adjustment"
-        default: return type.capitalized
+        case "transfer": "Transfer"
+        case "receive": "Received"
+        case "consume": "Consumed"
+        case "return_to_supplier": "Returned"
+        case "adjustment": "Adjustment"
+        default: type.capitalized
         }
     }
 }
@@ -329,11 +379,8 @@ private struct MovementDetailSheet: View {
 /// 3. **Quantities** — set qty per part with +/- controls
 /// 4. **Notes** — reason, notes, reference number
 /// 5. **Preview & Execute** — summary table, confirm, execute
-///
-/// Verification (photos) from the Windows wizard is deferred to a
-/// future update since iOS camera integration requires additional setup.
 private struct MovementWizard: View {
-    let onComplete: () async -> Void
+    let onComplete: () -> Void
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
 
@@ -364,6 +411,9 @@ private struct MovementWizard: View {
     @State private var executeError: String?
     @State private var executeSuccess = false
 
+    // QR scanning
+    @State private var showPartScanner = false
+
     // Derived
     private var movementType: String {
         switch (fromLocationType, toLocationType) {
@@ -387,20 +437,13 @@ private struct MovementWizard: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Step indicator
                 wizardStepper
-
                 Divider()
-
-                // Step content
                 ScrollView {
                     stepContent
                         .padding()
                 }
-
                 Divider()
-
-                // Navigation buttons
                 navigationBar
             }
             .navigationTitle("New Movement")
@@ -410,6 +453,14 @@ private struct MovementWizard: View {
                     Button("Cancel") { dismiss() }
                         .disabled(isExecuting)
                 }
+            }
+            .sheet(isPresented: $showPartScanner) {
+                QRScanSheet(expectedType: .part) { result in
+                    if let partId = result.entityId, result.isFound {
+                        addScannedPart(partId: partId, name: result.fields["name"] ?? result.code, code: result.fields["code"])
+                    }
+                }
+                .environmentObject(appCore)
             }
         }
     }
@@ -459,12 +510,12 @@ private struct MovementWizard: View {
 
     private func stepLabel(_ step: Int) -> String {
         switch step {
-        case 1: return "Location"
-        case 2: return "Parts"
-        case 3: return "Qty"
-        case 4: return "Notes"
-        case 5: return "Confirm"
-        default: return ""
+        case 1: "Location"
+        case 2: "Parts"
+        case 3: "Qty"
+        case 4: "Notes"
+        case 5: "Confirm"
+        default: ""
         }
     }
 
@@ -499,7 +550,6 @@ private struct MovementWizard: View {
                 .font(.title3)
                 .fontWeight(.semibold)
 
-            // Flow indicator
             if !fromLocationType.isEmpty && !toLocationType.isEmpty {
                 HStack {
                     Spacer()
@@ -513,7 +563,6 @@ private struct MovementWizard: View {
                 .padding(.vertical, 8)
             }
 
-            // From
             VStack(alignment: .leading, spacing: 8) {
                 Text("FROM")
                     .font(.caption)
@@ -524,7 +573,6 @@ private struct MovementWizard: View {
                     ForEach(locationTypes, id: \.0) { type, label, icon in
                         locationButton(type: type, label: label, icon: icon, selected: fromLocationType == type) {
                             fromLocationType = type
-                            // Reset TO if same as FROM
                             if toLocationType == type { toLocationType = "" }
                         }
                     }
@@ -540,7 +588,6 @@ private struct MovementWizard: View {
 
             Divider()
 
-            // To
             VStack(alignment: .leading, spacing: 8) {
                 Text("TO")
                     .font(.caption)
@@ -567,7 +614,6 @@ private struct MovementWizard: View {
                 }
             }
 
-            // Movement type indicator
             if !fromLocationType.isEmpty && !toLocationType.isEmpty {
                 HStack(spacing: 8) {
                     Image(systemName: "info.circle.fill")
@@ -631,9 +677,19 @@ private struct MovementWizard: View {
     @ViewBuilder
     private var stepSelectParts: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Which parts are moving?")
-                .font(.title3)
-                .fontWeight(.semibold)
+            HStack {
+                Text("Which parts are moving?")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                Spacer()
+                Button {
+                    showPartScanner = true
+                } label: {
+                    Label("Scan", systemImage: "qrcode.viewfinder")
+                        .font(.subheadline)
+                }
+                .buttonStyle(.bordered)
+            }
 
             partSearchBar
             partSearchResultsList
@@ -654,8 +710,8 @@ private struct MovementWizard: View {
                 .foregroundStyle(.secondary)
             TextField("Search by name or code…", text: $partSearchText)
                 .textInputAutocapitalization(.never)
-                .onChange(of: partSearchText) { _, newValue in
-                    Task { await searchParts(query: newValue) }
+                .onChange(of: partSearchText) {
+                    searchParts(query: partSearchText)
                 }
             if !partSearchText.isEmpty {
                 Button {
@@ -713,7 +769,7 @@ private struct MovementWizard: View {
                         .foregroundStyle(.secondary)
                 }
                 Image(systemName: alreadyAdded ? "checkmark.circle.fill" : "plus.circle")
-                    .foregroundStyle(alreadyAdded ? .green : .accentColor)
+                    .foregroundStyle(alreadyAdded ? .green : Color.accentColor)
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 12)
@@ -778,7 +834,6 @@ private struct MovementWizard: View {
                 quantityCard(part: $part)
             }
 
-            // Total
             let totalQty = selectedParts.reduce(0) { $0 + $1.qty }
             HStack {
                 Spacer()
@@ -915,7 +970,6 @@ private struct MovementWizard: View {
     private var stepPreview: some View {
         VStack(alignment: .leading, spacing: 16) {
             if executeSuccess {
-                // Success state
                 VStack(spacing: 16) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 56))
@@ -941,17 +995,14 @@ private struct MovementWizard: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
 
                     Button("Done") {
-                        Task {
-                            await onComplete()
-                            dismiss()
-                        }
+                        onComplete()
+                        dismiss()
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                 }
                 .frame(maxWidth: .infinity)
             } else if let error = executeError {
-                // Error state
                 VStack(spacing: 16) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 56))
@@ -970,12 +1021,10 @@ private struct MovementWizard: View {
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                // Preview
                 Text("Review & Confirm")
                     .font(.title3)
                     .fontWeight(.semibold)
 
-                // Route
                 HStack {
                     flowBadge(fromLocationType, color: .blue)
                     Image(systemName: "arrow.right")
@@ -991,7 +1040,6 @@ private struct MovementWizard: View {
                         .clipShape(Capsule())
                 }
 
-                // Parts table
                 VStack(spacing: 0) {
                     HStack {
                         Text("Part")
@@ -1033,7 +1081,6 @@ private struct MovementWizard: View {
                 .background(Color(.secondarySystemGroupedBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
 
-                // Summary
                 let totalQty = selectedParts.reduce(0) { $0 + $1.qty }
                 Text("\(totalQty) unit\(totalQty == 1 ? "" : "s") across \(selectedParts.count) part\(selectedParts.count == 1 ? "" : "s")")
                     .font(.subheadline)
@@ -1057,7 +1104,6 @@ private struct MovementWizard: View {
                     }
                 }
 
-                // Warning
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
@@ -1107,7 +1153,7 @@ private struct MovementWizard: View {
                 .disabled(!canAdvance)
             } else if !executeSuccess && executeError == nil {
                 Button {
-                    Task { await executeMovement() }
+                    executeMovement()
                 } label: {
                     HStack(spacing: 4) {
                         if isExecuting {
@@ -1129,43 +1175,33 @@ private struct MovementWizard: View {
         .background(Color(.secondarySystemGroupedBackground))
     }
 
-    // MARK: - Part Search
+    // MARK: - Part Search (via service layer)
 
-    @Sendable
-    private func searchParts(query: String) async {
-        guard !query.isEmpty, query.count >= 1 else {
-            await MainActor.run { partSearchResults = [] }
+    private func searchParts(query: String) {
+        guard !query.isEmpty, query.count >= 1,
+              let service = appCore.partsService else {
+            partSearchResults = []
             return
         }
-        guard let db = appCore.db else { return }
 
         do {
-            let pattern = "%\(query)%"
-            let rows = try await db.writer.read { conn -> [PartSearchRow] in
-                let results = try Row.fetchAll(
-                    conn,
-                    sql: """
-                        SELECT p.id, p.name, p.code,
-                               COALESCE((SELECT SUM(s.qty) FROM stock s
-                                         WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) AS available_qty
-                        FROM parts p
-                        WHERE p.deleted_at IS NULL AND (p.name LIKE ? OR p.code LIKE ?)
-                        ORDER BY p.name ASC LIMIT 15
-                        """,
-                    arguments: [pattern, pattern]
-                )
-                return results.map { row in
-                    PartSearchRow(
-                        id: row["id"] as Int64,
-                        name: row["name"] as String,
-                        code: row["code"] as String?,
-                        availableQty: row["available_qty"] as Int?
-                    )
+            let parts = try service.searchParts(query: query, limit: 15)
+            partSearchResults = parts.map { part in
+                let stock: Int
+                if let pid = part.id {
+                    stock = (try? service.getPartStockSummary(partId: pid).total) ?? 0
+                } else {
+                    stock = 0
                 }
+                return PartSearchRow(
+                    id: part.id ?? 0,
+                    name: part.name,
+                    code: part.code,
+                    availableQty: stock
+                )
             }
-            await MainActor.run { partSearchResults = rows }
         } catch {
-            await MainActor.run { partSearchResults = [] }
+            partSearchResults = []
         }
     }
 
@@ -1185,17 +1221,32 @@ private struct MovementWizard: View {
         selectedParts.removeAll { $0.partId == partId }
     }
 
+    private func addScannedPart(partId: Int64, name: String, code: String?) {
+        guard !selectedParts.contains(where: { $0.partId == partId }) else { return }
+        guard selectedParts.count < 20 else { return }
+
+        var availableQty = 999
+        if let service = appCore.partsService {
+            availableQty = (try? service.getPartStockSummary(partId: partId).total) ?? 999
+        }
+
+        selectedParts.append(WizardPart(
+            partId: partId,
+            name: name,
+            code: code,
+            qty: 1,
+            availableQty: availableQty
+        ))
+    }
+
     // MARK: - Execute
 
-    @Sendable
-    private func executeMovement() async {
+    private func executeMovement() {
         guard let service = appCore.warehouseService else { return }
         guard let userId = appCore.currentUser?.id else { return }
 
-        await MainActor.run {
-            isExecuting = true
-            executeError = nil
-        }
+        isExecuting = true
+        executeError = nil
 
         let fromType: String? = fromLocationType.isEmpty ? nil : fromLocationType
         let toType: String? = toLocationType.isEmpty ? nil : toLocationType
@@ -1203,7 +1254,8 @@ private struct MovementWizard: View {
         let fromId: Int64?
         if fromType != nil {
             guard let parsed = Int64(fromLocationId) else {
-                await MainActor.run { executeError = "Invalid From location ID"; isExecuting = false }
+                executeError = "Invalid From location ID"
+                isExecuting = false
                 return
             }
             fromId = parsed
@@ -1212,7 +1264,8 @@ private struct MovementWizard: View {
         let toId: Int64?
         if toType != nil {
             guard let parsed = Int64(toLocationId) else {
-                await MainActor.run { executeError = "Invalid To location ID"; isExecuting = false }
+                executeError = "Invalid To location ID"
+                isExecuting = false
                 return
             }
             toId = parsed
@@ -1240,15 +1293,11 @@ private struct MovementWizard: View {
                     performedBy: userId
                 )
             }
-            await MainActor.run {
-                isExecuting = false
-                executeSuccess = true
-            }
+            isExecuting = false
+            executeSuccess = true
         } catch {
-            await MainActor.run {
-                isExecuting = false
-                executeError = error.localizedDescription
-            }
+            isExecuting = false
+            executeError = error.localizedDescription
         }
     }
 }

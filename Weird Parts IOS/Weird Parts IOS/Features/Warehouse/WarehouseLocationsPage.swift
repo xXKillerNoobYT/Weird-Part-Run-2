@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Inventory by location — shows all stock grouped by location type and ID.
@@ -7,8 +6,10 @@ import WiredPartCore
 /// Presents sections for each location type (Warehouse, Trucks, Trailers,
 /// Jobs, Staged/Pulled). Each section lists parts with their quantities.
 /// Supports search across all locations and pull-to-refresh.
+/// Detail sheet includes action buttons: Transfer, Start Audit, View Grid.
 struct WarehouseLocationsPage: View {
     @EnvironmentObject private var appCore: AppCore
+
     @State private var locationStock: [WarehouseService.LocationStock] = []
     @State private var isLoading = true
     @State private var loadError: String?
@@ -21,8 +22,7 @@ struct WarehouseLocationsPage: View {
                 ProgressView("Loading locations...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = loadError {
-                ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ErrorStateView(message: error) { loadData() }
             } else if groupedLocations.isEmpty {
                 emptyState
             } else {
@@ -30,16 +30,13 @@ struct WarehouseLocationsPage: View {
             }
         }
         .searchable(text: $searchText, prompt: "Search parts across all locations...")
-        .refreshable { await loadData() }
+        .refreshable { loadData() }
         .sheet(item: $selectedLocation) { group in
             LocationDetailSheet(group: group)
+                .environmentObject(appCore)
         }
-        #if os(iOS)
         .background(DS.Background.page)
-        #elseif os(macOS)
-        .background(DS.Background.page)
-        #endif
-        .task { await loadData() }
+        .task { loadData() }
     }
 
     // MARK: - Grouped Locations
@@ -116,26 +113,19 @@ struct WarehouseLocationsPage: View {
                 }
             }
         }
-        #if os(iOS)
         .listStyle(.insetGrouped)
-        #endif
     }
 
     @ViewBuilder
     private func locationGroupRow(_ group: LocationGroup) -> some View {
         HStack(spacing: 12) {
-            // Location icon
             VStack {
                 Image(systemName: locationIcon(group.locationType))
                     .font(.title3)
                     .foregroundStyle(locationColor(group.locationType))
             }
             .frame(width: 40, height: 40)
-            #if os(iOS)
             .background(locationColor(group.locationType).opacity(0.12))
-            #elseif os(macOS)
-            .background(locationColor(group.locationType).opacity(0.12))
-            #endif
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 3) {
@@ -169,81 +159,74 @@ struct WarehouseLocationsPage: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "map.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(.secondary)
-            Text("No Stock Found")
-                .font(.title3)
-                .fontWeight(.semibold)
-            Text("Stock entries will appear here grouped by their storage location.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
+        if searchText.isEmpty {
+            EmptyStateView(
+                icon: "map.fill",
+                title: "No Stock Found",
+                message: "No stock at any location. Use the Movement Wizard to transfer parts to a location."
+            )
+        } else {
+            EmptyStateView(
+                icon: "magnifyingglass",
+                title: "No Results",
+                message: "No parts match \"\(searchText)\" across any location."
+            )
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Data Loading
 
-    @Sendable
-    private func loadData() async {
-        isLoading = true
-        do {
-            guard let service = appCore.warehouseService else {
-                await MainActor.run {
-                    loadError = "Warehouse service unavailable"
-                    isLoading = false
-                }
-                return
-            }
-            let fetched = try service.getLocationStock()
-            await MainActor.run {
-                locationStock = fetched
-                isLoading = false
-            }
-        } catch {
-            await MainActor.run {
-                loadError = error.localizedDescription
-                isLoading = false
-            }
+    private func loadData() {
+        guard let service = appCore.warehouseService else {
+            loadError = "Warehouse service unavailable"
+            isLoading = false
+            return
         }
+
+        isLoading = locationStock.isEmpty
+        loadError = nil
+
+        do {
+            locationStock = try service.getLocationStock()
+        } catch {
+            loadError = error.localizedDescription
+        }
+        isLoading = false
     }
 
     // MARK: - Helpers
 
     private func locationIcon(_ type: String) -> String {
         switch type {
-        case "warehouse": return "building.fill"
-        case "truck": return "truck.box.fill"
-        case "trailer": return "truck.box.badge.clock.fill"
-        case "job": return "hammer.fill"
-        case "staging", "pulled": return "tray.full.fill"
-        default: return "mappin.circle.fill"
+        case "warehouse": "building.fill"
+        case "truck": "truck.box.fill"
+        case "trailer": "truck.box.badge.clock.fill"
+        case "job": "hammer.fill"
+        case "staging", "pulled": "tray.full.fill"
+        default: "mappin.circle.fill"
         }
     }
 
     private func locationColor(_ type: String) -> Color {
         switch type {
-        case "warehouse": return .blue
-        case "truck": return .green
-        case "trailer": return .orange
-        case "job": return .purple
-        case "staging", "pulled": return .yellow
-        default: return .gray
+        case "warehouse": .blue
+        case "truck": .green
+        case "trailer": .orange
+        case "job": .purple
+        case "staging", "pulled": .yellow
+        default: .gray
         }
     }
 
     private func locationTypeLabel(_ type: String) -> String {
         switch type {
-        case "warehouse": return "Warehouse"
-        case "truck": return "Truck"
-        case "trailer": return "Trailer"
-        case "job": return "Job"
-        case "staging": return "Staged"
-        case "pulled": return "Pulled"
-        default: return type.capitalized
+        case "warehouse": "Warehouse"
+        case "truck": "Truck"
+        case "trailer": "Trailer"
+        case "job": "Job"
+        case "staging": "Staged"
+        case "pulled": "Pulled"
+        default: type.capitalized
         }
     }
 }
@@ -268,12 +251,14 @@ struct LocationGroup: Identifiable {
 // MARK: - Location Detail Sheet
 
 private struct LocationDetailSheet: View {
+    @EnvironmentObject private var appCore: AppCore
     let group: LocationGroup
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             List {
+                // Summary
                 Section {
                     LabeledContent("Type", value: locationTypeLabel(group.locationType))
                     LabeledContent("ID", value: "#\(group.locationId)")
@@ -281,33 +266,102 @@ private struct LocationDetailSheet: View {
                     LabeledContent("Total Quantity", value: "\(group.totalQty)")
                 }
 
-                Section("Parts") {
-                    ForEach(group.items, id: \.partId) { item in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.partName)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                                if let code = item.partCode, !code.isEmpty {
-                                    Text(code)
-                                        .font(.caption)
-                                        .monospaced()
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                            Text("\(item.qty)")
-                                .font(.headline)
-                                .foregroundStyle(item.qty > 0 ? .green : .red)
+                // Action Buttons
+                Section("Actions") {
+                    Button {
+                        dismiss()
+                        // Post notification to open movement wizard with this location pre-selected
+                        NotificationCenter.default.post(
+                            name: .navigateToModule,
+                            object: nil,
+                            userInfo: [
+                                "moduleId": "warehouse-movements",
+                                "sourceLocationType": group.locationType,
+                                "sourceLocationId": group.locationId
+                            ]
+                        )
+                    } label: {
+                        Label("Transfer From Here", systemImage: "arrow.left.arrow.right.circle.fill")
+                            .foregroundStyle(.blue)
+                    }
+
+                    Button {
+                        dismiss()
+                        NotificationCenter.default.post(
+                            name: .navigateToModule,
+                            object: nil,
+                            userInfo: [
+                                "moduleId": "warehouse-audit",
+                                "locationType": group.locationType,
+                                "locationId": group.locationId
+                            ]
+                        )
+                    } label: {
+                        Label("Start Audit", systemImage: "clipboard.fill")
+                            .foregroundStyle(.orange)
+                    }
+
+                    Button {
+                        dismiss()
+                        NotificationCenter.default.post(
+                            name: .navigateToModule,
+                            object: nil,
+                            userInfo: [
+                                "moduleId": "warehouse-inventory",
+                                "locationType": group.locationType,
+                                "locationId": group.locationId
+                            ]
+                        )
+                    } label: {
+                        Label("View in Inventory Grid", systemImage: "square.grid.3x3.fill")
+                            .foregroundStyle(.purple)
+                    }
+                }
+
+                // Parts List
+                if group.items.isEmpty {
+                    Section("Parts") {
+                        VStack(spacing: 8) {
+                            Image(systemName: "shippingbox")
+                                .font(.title2)
+                                .foregroundStyle(.secondary)
+                            Text("No stock at this location.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Text("Use the Movement Wizard to transfer parts here.")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
                         }
-                        .frame(minHeight: 44)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                    }
+                } else {
+                    Section("Parts") {
+                        ForEach(group.items, id: \.partId) { item in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.partName)
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                    if let code = item.partCode, !code.isEmpty {
+                                        Text(code)
+                                            .font(.caption)
+                                            .monospaced()
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                                Text("\(item.qty)")
+                                    .font(.headline)
+                                    .foregroundStyle(item.qty > 0 ? .green : .red)
+                            }
+                            .frame(minHeight: 44)
+                        }
                     }
                 }
             }
             .navigationTitle("\(locationTypeLabel(group.locationType)) #\(group.locationId)")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
@@ -318,13 +372,13 @@ private struct LocationDetailSheet: View {
 
     private func locationTypeLabel(_ type: String) -> String {
         switch type {
-        case "warehouse": return "Warehouse"
-        case "truck": return "Truck"
-        case "trailer": return "Trailer"
-        case "job": return "Job"
-        case "staging": return "Staged"
-        case "pulled": return "Pulled"
-        default: return type.capitalized
+        case "warehouse": "Warehouse"
+        case "truck": "Truck"
+        case "trailer": "Trailer"
+        case "job": "Job"
+        case "staging": "Staged"
+        case "pulled": "Pulled"
+        default: type.capitalized
         }
     }
 }

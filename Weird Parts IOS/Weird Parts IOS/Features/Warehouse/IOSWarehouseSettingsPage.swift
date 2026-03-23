@@ -4,7 +4,8 @@ import WiredPartCore
 /// Warehouse-specific configuration page.
 ///
 /// Manages warehouse settings including default locations, stock thresholds,
-/// movement policies, and audit preferences.
+/// movement policies, and audit preferences. Uses `.task` for initial load
+/// and `.alert` for error display.
 struct IOSWarehouseSettingsPage: View {
     @EnvironmentObject private var appCore: AppCore
 
@@ -28,11 +29,38 @@ struct IOSWarehouseSettingsPage: View {
     @State private var requirePhotoOnDiscrepancy = false
 
     // State
+    @State private var isLoadingSettings = true
     @State private var isSaving = false
     @State private var showSaveConfirmation = false
     @State private var errorMessage: String?
 
     var body: some View {
+        Group {
+            if isLoadingSettings {
+                ProgressView("Loading settings...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                settingsForm
+            }
+        }
+        .navigationTitle("Warehouse Settings")
+        .task { loadSettings() }
+        .alert("Settings Saved", isPresented: $showSaveConfirmation) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Warehouse settings have been updated.")
+        }
+        .alert("Error", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { errorMessage = nil }
+        } message: {
+            if let msg = errorMessage { Text(msg) }
+        }
+    }
+
+    private var settingsForm: some View {
         Form {
             // Default locations
             Section("Default Locations") {
@@ -99,27 +127,16 @@ struct IOSWarehouseSettingsPage: View {
                 .disabled(isSaving)
             }
         }
-        .navigationTitle("Warehouse Settings")
-        .onAppear { loadSettings() }
-        .alert("Settings Saved", isPresented: $showSaveConfirmation) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("Warehouse settings have been updated.")
-        }
-        .alert("Error", isPresented: Binding(
-            get: { errorMessage != nil },
-            set: { if !$0 { errorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) { errorMessage = nil }
-        } message: {
-            if let msg = errorMessage { Text(msg) }
-        }
     }
 
     private func saveSettings() {
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service unavailable"
+            return
+        }
         isSaving = true
         do {
-            try appCore.settingsService.upsertSettingsMap([
+            try service.upsertSettingsMap([
                 "default_receiving_location": defaultReceivingLocation,
                 "default_staging_location": defaultStagingLocation,
                 "low_stock_threshold": "\(lowStockThreshold)",
@@ -135,15 +152,19 @@ struct IOSWarehouseSettingsPage: View {
             isSaving = false
             showSaveConfirmation = true
         } catch {
-            print("[IOSWarehouseSettingsPage] Save error: \(error)")
             errorMessage = "Failed to save: \(error.localizedDescription)"
             isSaving = false
         }
     }
 
     private func loadSettings() {
+        guard let service = appCore.settingsService else {
+            errorMessage = "Settings service unavailable"
+            isLoadingSettings = false
+            return
+        }
         do {
-            let s = try appCore.settingsService.getSettingsByCategory("warehouse")
+            let s = try service.getSettingsByCategory("warehouse")
             if let v = s["default_receiving_location"] { defaultReceivingLocation = v }
             if let v = s["default_staging_location"] { defaultStagingLocation = v }
             if let v = s["low_stock_threshold"], let n = Int(v) { lowStockThreshold = n }
@@ -156,7 +177,8 @@ struct IOSWarehouseSettingsPage: View {
             if let v = s["audit_frequency_days"], let n = Int(v) { auditFrequencyDays = n }
             if let v = s["require_photo_on_discrepancy"] { requirePhotoOnDiscrepancy = v == "1" }
         } catch {
-            print("[IOSWarehouseSettingsPage] Load error: \(error)")
+            errorMessage = "Failed to load: \(error.localizedDescription)"
         }
+        isLoadingSettings = false
     }
 }

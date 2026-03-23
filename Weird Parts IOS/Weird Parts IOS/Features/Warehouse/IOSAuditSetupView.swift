@@ -9,12 +9,15 @@ struct IOSAuditSetupView: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
 
+    var onAuditCreated: ((Int64) -> Void)?
+
     @State private var auditScope: AuditScope = .fullWarehouse
     @State private var selectedZone = ""
     @State private var spotCheckCount = 20
     @State private var includeZeroStock = false
     @State private var notes = ""
-    @State private var isStarting = false
+    @State private var isSaving = false
+    @State private var errorMessage: String?
     @State private var auditSummary: WarehouseService.AuditSummary?
 
     enum AuditScope: String, CaseIterable, Identifiable {
@@ -26,17 +29,25 @@ struct IOSAuditSetupView: View {
 
         var description: String {
             switch self {
-            case .fullWarehouse: return "Count every part in the warehouse"
-            case .specificZone: return "Focus on a particular area"
-            case .spotCheck: return "Random sample of items"
+            case .fullWarehouse: "Count every part in the warehouse"
+            case .specificZone: "Focus on a particular area"
+            case .spotCheck: "Random sample of items"
             }
         }
 
         var icon: String {
             switch self {
-            case .fullWarehouse: return "building.2.fill"
-            case .specificZone: return "map.fill"
-            case .spotCheck: return "dice.fill"
+            case .fullWarehouse: "building.2.fill"
+            case .specificZone: "map.fill"
+            case .spotCheck: "dice.fill"
+            }
+        }
+
+        var scopeKey: String {
+            switch self {
+            case .fullWarehouse: "full"
+            case .specificZone: "zone"
+            case .spotCheck: "spot_check"
             }
         }
     }
@@ -49,21 +60,31 @@ struct IOSAuditSetupView: View {
                 optionsSection
                 notesSection
                 summarySection
+
+                if let error = errorMessage {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.red)
+                            .font(.caption)
+                    }
+                }
             }
             .navigationTitle("Setup Audit")
-            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
-            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Start Audit") {
-                        startAudit()
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Start Audit") {
+                            startAudit()
+                        }
+                        .disabled(auditScope == .specificZone && selectedZone.isEmpty)
+                        .fontWeight(.semibold)
                     }
-                    .disabled(isStarting || (auditScope == .specificZone && selectedZone.isEmpty))
-                    .fontWeight(.semibold)
                 }
             }
             .task { loadSummary() }
@@ -164,13 +185,30 @@ struct IOSAuditSetupView: View {
         do {
             auditSummary = try service.getAuditSummary()
         } catch {
-            print("[IOSAuditSetupView] Load summary error: \(error)")
+            // Non-critical — summary display is informational
         }
     }
 
     private func startAudit() {
-        isStarting = true
-        // Audit session creation — transitions to the main audit counting page
-        dismiss()
+        guard let service = appCore.warehouseService else {
+            errorMessage = "Warehouse service not available"
+            return
+        }
+        isSaving = true
+        errorMessage = nil
+        do {
+            let sessionId = try service.createAuditSession(
+                scope: auditScope.scopeKey,
+                zone: selectedZone.isEmpty ? nil : selectedZone,
+                sampleSize: auditScope == .spotCheck ? spotCheckCount : nil,
+                includeZeroStock: includeZeroStock,
+                notes: notes.isEmpty ? nil : notes
+            )
+            onAuditCreated?(sessionId)
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+        isSaving = false
     }
 }

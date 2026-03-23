@@ -5,7 +5,8 @@ import WiredPartCore
 ///
 /// Shows active and recent receiving sessions for purchase orders.
 /// Displays PO ID, started-by name, mode, status, and item count.
-/// Supports pull-to-refresh and status-based filtering.
+/// Supports pull-to-refresh, smart card filters by status,
+/// start new session, and continue active sessions.
 struct IOSReceivingPage: View {
     @EnvironmentObject private var appCore: AppCore
 
@@ -15,14 +16,144 @@ struct IOSReceivingPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+    @State private var selectedFilter: StatusFilter?
+
+    private enum ActiveSheet: Identifiable {
+        case startReceiving
+        case continueSession(Int64)
+
+        var id: String { String(describing: self) }
+    }
+
+    private enum StatusFilter: String, CaseIterable {
+        case active = "Active"
+        case completed = "Completed"
+        case cancelled = "Cancelled"
+
+        var matchStatuses: [String] {
+            switch self {
+            case .active: ["in_progress", "active"]
+            case .completed: ["completed"]
+            case .cancelled: ["cancelled"]
+            }
+        }
+    }
 
     var body: some View {
-        sessionList
-            .navigationTitle("Receiving")
-            .searchable(text: $searchText, prompt: "Search receiving sessions...")
-            .onChange(of: searchText) { /* local filter only */ }
-            .refreshable { loadData() }
-            .task { loadData() }
+        VStack(spacing: 0) {
+            // Smart card filters
+            if !sessions.isEmpty {
+                smartCardFilters
+            }
+
+            sessionList
+        }
+        .navigationTitle("Receiving")
+        .searchable(text: $searchText, prompt: "Search receiving sessions...")
+        .refreshable { loadData() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .startReceiving } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            sheetContent(for: sheet)
+        }
+        .task { loadData() }
+    }
+
+    // MARK: - Sheet Content
+
+    @ViewBuilder
+    private func sheetContent(for sheet: ActiveSheet) -> some View {
+        switch sheet {
+        case .startReceiving:
+            NavigationStack {
+                IOSReceiveShipmentPage()
+                    .environmentObject(appCore)
+            }
+        case .continueSession:
+            // IOSReceiveShipmentPage shows PO list; user picks the PO to continue
+            NavigationStack {
+                IOSReceiveShipmentPage()
+                    .environmentObject(appCore)
+            }
+        }
+    }
+
+    // MARK: - Smart Card Filters
+
+    private var smartCardFilters: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(StatusFilter.allCases, id: \.self) { filter in
+                    let count = countForFilter(filter)
+                    smartCard(filter: filter, count: count)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+    }
+
+    private func countForFilter(_ filter: StatusFilter) -> Int {
+        sessions.filter { session in
+            filter.matchStatuses.contains(session.status)
+        }.count
+    }
+
+    private func smartCard(filter: StatusFilter, count: Int) -> some View {
+        let isSelected = selectedFilter == filter
+        let color = filterColor(filter)
+
+        return Button {
+            selectedFilter = isSelected ? nil : filter
+        } label: {
+            VStack(spacing: 4) {
+                HStack(spacing: 4) {
+                    Image(systemName: filterIcon(filter))
+                        .font(.caption)
+                    Text("\(count)")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                }
+                Text(filter.rawValue)
+                    .font(.caption2)
+                    .lineLimit(1)
+            }
+            .frame(minWidth: 90)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected ? color.opacity(0.15) : Color.secondary.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isSelected ? color : Color.clear, lineWidth: 1.5)
+            )
+            .foregroundStyle(isSelected ? color : .primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func filterIcon(_ filter: StatusFilter) -> String {
+        switch filter {
+        case .active: "arrow.down.circle.fill"
+        case .completed: "checkmark.circle.fill"
+        case .cancelled: "xmark.circle.fill"
+        }
+    }
+
+    private func filterColor(_ filter: StatusFilter) -> Color {
+        switch filter {
+        case .active: .blue
+        case .completed: .green
+        case .cancelled: .red
+        }
     }
 
     // MARK: - Session List
@@ -35,29 +166,58 @@ struct IOSReceivingPage: View {
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
         } else if filteredSessions.isEmpty {
-            ContentUnavailableView {
-                Label("No Receiving Sessions", systemImage: "shippingbox.and.arrow.backward")
-            } description: {
-                Text("No active receiving sessions found.")
+            if searchText.isEmpty && selectedFilter == nil {
+                EmptyStateView(
+                    icon: "shippingbox.and.arrow.backward",
+                    title: "No Receiving Sessions",
+                    message: "No active receiving sessions found. Tap + to start receiving a shipment."
+                )
+            } else {
+                EmptyStateView(
+                    icon: "magnifyingglass",
+                    title: "No Results",
+                    message: "No receiving sessions match your current filters."
+                )
             }
         } else {
             List(filteredSessions, id: \.id) { session in
-                sessionRow(session)
+                let isActive = session.status == "in_progress" || session.status == "active"
+                if isActive {
+                    Button {
+                        activeSheet = .continueSession(session.id)
+                    } label: {
+                        sessionRow(session)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    sessionRow(session)
+                }
             }
-            #if os(iOS)
             .listStyle(.insetGrouped)
-            #endif
         }
     }
 
     private var filteredSessions: [WarehouseService.ReceivingSessionInfo] {
-        guard !searchText.isEmpty else { return sessions }
-        let query = searchText.lowercased()
-        return sessions.filter {
-            $0.startedByName.lowercased().contains(query) ||
-            $0.mode.lowercased().contains(query) ||
-            String($0.poId).contains(query)
+        var result = sessions
+
+        // Status filter
+        if let filter = selectedFilter {
+            result = result.filter { session in
+                filter.matchStatuses.contains(session.status)
+            }
         }
+
+        // Search filter
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            result = result.filter {
+                $0.startedByName.lowercased().contains(query) ||
+                $0.mode.lowercased().contains(query) ||
+                String($0.poId).contains(query)
+            }
+        }
+
+        return result
     }
 
     private func sessionRow(_ session: WarehouseService.ReceivingSessionInfo) -> some View {
@@ -65,7 +225,9 @@ struct IOSReceivingPage: View {
             Image(systemName: "shippingbox.fill")
                 .font(.title3)
                 .foregroundStyle(statusColor(session.status))
-                .frame(width: 32)
+                .frame(width: 32, height: 32)
+                .background(statusColor(session.status).opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -89,6 +251,11 @@ struct IOSReceivingPage: View {
                 Label("\(session.itemCount) items", systemImage: "cube.box")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if session.status == "in_progress" || session.status == "active" {
+                    Text("Tap to continue")
+                        .font(.caption2)
+                        .foregroundStyle(.blue)
+                }
             }
         }
         .padding(.vertical, 4)
@@ -98,7 +265,7 @@ struct IOSReceivingPage: View {
 
     private func statusBadge(_ status: String) -> some View {
         let color = statusColor(status)
-        return Text(status.capitalized)
+        return Text(status.replacingOccurrences(of: "_", with: " ").capitalized)
             .font(.system(.caption2, weight: .semibold))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
@@ -108,10 +275,10 @@ struct IOSReceivingPage: View {
 
     private func statusColor(_ status: String) -> Color {
         switch status {
-        case "in_progress", "active": return .blue
-        case "completed": return .green
-        case "cancelled": return .red
-        default: return .secondary
+        case "in_progress", "active": .blue
+        case "completed": .green
+        case "cancelled": .red
+        default: .secondary
         }
     }
 
