@@ -185,6 +185,32 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 46D | Long-Term Pipeline | 3-year timeline, monthly capacity bars, bid tracker, AI capacity warnings | |
 | 46E | AI Dispatch | 3 suggestions with points scoring, dedicated AI chat, learning from picks, early finish | |
 | 46F | Job Estimation | Questionnaire system, stage-aware, "?" unknowns, AI learning after 15+ jobs, capacity calc | |
+| 47A | Tools Dashboard Redesign | Smart cards (Total/Checked Out/Maint Due/Missing), QR-first quick actions, recent checkouts | |
+| 47B | Tool Detail Rebuild | Contents checklist, REQUIRED condition check, 2yr version history, edit-without-permission | |
+| 47C | Kit Management | 4 kit types, missing tools status, full inspection checklist, restock consumables, kit history | |
+| 47D | Tool Trade | Trade flow with condition checks, 7-day timeout, lost/stolen reporting (company vs personal) | |
+| 47E | Tool Maintenance Types | 5 maintenance types: time/usage/schedule/decay/condition, confidence decay math | |
+| 47F | Tool Management Page | Rename Admin→Management, bulk ops, categories, policies, locations, audit trail | |
+| 48A | My Vehicle Primary | Smart cards, Truck Stock vs Transfer Area (MIN/TARGET/MAX), quick actions, trailer | |
+| 48B | Vehicle Detail Tabs | 7 tabs: Overview, Parts, Tools, Assignments, Maintenance, Usage, Inspections | |
+| 48C | Trailer Mini Warehouse | Storage units, own MIN/TARGET/MAX, shop vs field rules, location history | |
+| 48D | Pre-Trip Inspection | Customizable checklist per vehicle type, 4 sections, Pass/Fail/Conditional, clock-in tie | |
+| 48E | Fleet Dashboard KPIs | Smart cards (vehicles/active/maint/inspect/trailers), cost summary (hat-gated), maintenance | |
+| 49A | Reports Categories | Reorganize: Labor, Financial, Fleet, Warehouse, Scheduling, Custom, Shared categories | |
+| 49B | Reports Export | [Export PDF] + [Export CSV] toolbar on every report page, UIGraphicsPDFRenderer | |
+| 49C | Fleet/Warehouse/Scheduling Reports | 10 new report pages: fuel, maint trends, mileage, utilization, inventory, backorders, etc. | |
+| 49D | Report Builder | Pick type→fields→filters→generate, save configs, run saved reports with new dates | |
+| 50A | Office Dashboard | AI daily briefing (cached 1hr), Needs Attention (priority colors), schedule, financials | |
+| 50B | Unified Approvals | JPO + deletion + tool edit + warranty + time-off in one queue, inline actions, sorted by age | |
+| 50C | Office Chat Channel | Auto-created Office channel, hat-gated membership, "Office" badge in inbox | |
+| 50D | Office Router Cleanup | Remove report routes, add Dashboard/Approvals/Pipeline/Teams/Reports tabs | |
+| 51A | Standard Filter Bar | Reusable StandardFilterBar: quick date filters + custom range + page-specific filters, apply to all pages | |
+| 52A | Settings Grouped Nav | Reorganize SettingsRouter into 10 grouped sections with search | |
+| 52B | Settings Operations Pages | Break/Lunch Policy, Tool Policies, Pre-Trip Checklists, Dispatch Preferences | |
+| 52C | Settings Warehouse Pages | Forecast Config, Organization Thresholds, Audit Settings | |
+| 52D | Settings Template Pages | Daily Report Templates, Job Estimation Questions, Report Templates | |
+| 52E | Settings Functional Features | Wire Backups, Export, Update Check, AI Config, Sync Now to real code | |
+| 52F | Settings Sync Classification | Sync scope indicators (company/personal/device) on all settings | | |
 
 ## Prompt 01 Results (2026-03-18)
 

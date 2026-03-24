@@ -5,7 +5,7 @@
 > **Workflow:** Claude reviews each page → identifies issues → records design decisions → writes Xcode AI prompts → user implements via Xcode AI → user reports results → Claude audits.
 >
 > **Prompt files:** `xcode-ai/fix-prompts/` (active) · `xcode-ai/fix-prompts/done/` (archived)
-> **Prompt tracking:** `xcode-ai/fix-prompts/00-fix-order.md` (81 prompt entries)
+> **Prompt tracking:** `xcode-ai/fix-prompts/00-fix-order.md` (194 prompt entries)
 > **Results log:** `xcode-ai/prompt-results-log.md`
 
 ---
@@ -22,28 +22,38 @@
 | Parts → Catalog | 1 page | ✅ | 13A-13E (5) | All DONE |
 | Parts → Categories | 6 files | ✅ | 14A-14G (7) | All DONE |
 | Parts → Brands | 1 page | ✅ | 11A-11C, 15A-15C (6) | All DONE |
-| Parts → Suppliers | 1 page | ✅ | 15A-15C, 17A-17H (11) | 15A-C DONE; 17A-H queued |
-| Parts → Pricing | 1 page | ✅ | 16A-16I (9) | 16A-D DONE; 16E-I queued |
-| Parts → Companions | 1 page | ✅ | 19A-19K (11) | All queued |
-| Parts → Forecasting | 1 page | ✅ | 23A-23B (2) | All queued |
-| Parts → Import/Export | 1 page | ✅ | 24A (1) | Queued |
-| QR System (cross-cutting) | multiple | ✅ | 20A-20D, 21A-21B (6) | All queued |
-| Supplier Bridge (cross-cutting) | multiple | ✅ | 22A-22C (3) | All queued |
-| Review Cleanup (cross-cutting) | multiple | ✅ | 18A (1) | Queued |
-| Jobs | 11 files | ✅ Design | — | Design complete, prompts pending |
-| People | 11 files | ✅ Design | — | Design complete, prompts pending |
-| Orders | 14 files | ❌ | — | Not started |
-| Warehouse | 15 files | ❌ | — | Not started |
-| Scheduling | 12 files | ✅ Design | — | Design complete, prompts pending |
-| Chat | 9 files | ✅ Design | — | Design complete, prompts pending |
+| Parts → Suppliers | 1 page | ✅ | 15A-15C, 17A-17H (11) | All DONE |
+| Parts → Pricing | 1 page | ✅ | 16A-16I (9) | All DONE |
+| Parts → Companions | 1 page | ✅ | 19A-19K (11) | All DONE |
+| Parts → Forecasting | 1 page | ✅ | 23A-23H (8) | All DONE |
+| Parts → Import/Export | 1 page | ✅ | 24A (1) | DONE |
+| QR System (cross-cutting) | multiple | ✅ | 20A-20D, 21A-21B (6) | All DONE |
+| Supplier Bridge (cross-cutting) | multiple | ✅ | 22A-22C (3) | All DONE |
+| Review Cleanup (cross-cutting) | multiple | ✅ | 18A (1) | DONE |
+| Orders | 14 files | ✅ | 26A-30E (22) | All DONE |
+| Warehouse | 15 files | ✅ | 31A-31I (9) | All DONE |
+| Cross-cutting Cleanup | multiple | ✅ | 32A-32J (10) | All DONE |
+| Cross-cutting Polish | multiple | ✅ | 33A-33H (8) | All DONE |
+| UI Quality Audit | multiple | ✅ | 34A (1) | Queued |
+| Targeted Fixes | multiple | ✅ | 35A-35I (9) | Queued |
+| Floor Plan System | warehouse | ✅ | 36A-36D (4) | Queued |
+| Audit Confidence System | warehouse | ✅ | 37A-37D (4) | Queued |
+| Break/Lunch Compliance | clock | ✅ | 38A-38B (2) | Queued |
+| Hats Permission Audit | cross-cutting | ✅ | 39A (1) | Queued |
+| Clock To-Do Integration | clock | ✅ | 40A-40B (2) | Queued |
+| Teams Detail | people | ✅ | 41A (1) | Queued |
+| Chat | 9 files | ✅ Design | 42A-42D (4) | Prompts written, queued |
+| Notebooks | 7 files | ✅ Design | 43A-43E (5) | Prompts written, queued |
+| People | 11 files | ✅ Design | 44A-44F (6) | Prompts written, queued |
+| Jobs | 11 files | ✅ Design | 45A-45D (4) | Prompts written, queued |
+| Scheduling | 12 files | ✅ Design | 46A-46F (6) | Prompts written, queued |
 | Tools | 7 files | ✅ Design | — | Design complete, prompts pending |
 | Fleet | 17 files | ✅ Design | — | Design complete, prompts pending |
-| Reports | 9 files | ❌ | — | Not started |
-| Office | 6 files | ❌ | — | Not started |
-| Notebooks | 7 files | ✅ Design | — | Design complete, prompts pending |
-| Settings | 23 files | ❌ | — | Not started |
+| Reports | 9 files | ✅ Design | — | Design complete, prompts pending |
+| Office | 6 files | ✅ Design | — | Design complete, prompts pending |
+| Settings | 23 files | ✅ Design | — | Design complete, prompts pending |
 
-**Totals:** 81 prompts written · 32 DONE · 49 queued · 7 areas designed (prompts pending) · ~5 feature areas unreviewed
+**Totals:** 188 prompts written · 133 DONE · 55 queued · 5 areas designed (prompts pending) · 0 feature areas unreviewed
 
 ---
 
@@ -148,7 +158,7 @@ Full redesign of the Dashboard tab with 4 sub-tabs.
 | 15B | Delete confirmations, save error feedback on both pages |
 | 15C | Fixed nested .sheet conflict in SupplierDetailSheet |
 
-### Parts → Pricing (Prompts 16A-16I) — 16A-D DONE, 16E-I QUEUED
+### Parts → Pricing (Prompts 16A-16I) — ALL DONE
 
 | Prompt | Feature | Status |
 |--------|---------|--------|
@@ -156,11 +166,11 @@ Full redesign of the Dashboard tab with 4 sub-tabs.
 | 16B | FIFO/LIFO cost engine: 9 service methods | ✅ DONE |
 | 16C | Hierarchical pricing: Category→Style→Type→Brand→Part resolution | ✅ DONE |
 | 16D | Pricing page UI rebuild: raw SQL removed, full rewrite (389→733 lines) | ✅ DONE |
-| 16E | Price override flow: set tier pricing, confirm conflicts | ⏳ Queued |
-| 16F | Bulk markup + settings: bulk edit, markup/margin toggle, stale threshold | ⏳ Queued |
-| 16G | Stale alerts + receiving: price age warnings, verification during receive | ⏳ Queued |
-| 16H | Catalog pricing + view modes: pricing columns on catalog, layout options | ⏳ Queued |
-| 16I | Pricing AI integration: read-only AI for pricing questions | ⏳ Queued |
+| 16E | Price override flow: set tier pricing, confirm conflicts | ✅ DONE |
+| 16F | Bulk markup + settings: bulk edit, markup/margin toggle, stale threshold | ✅ DONE |
+| 16G | Stale alerts + receiving: price age warnings, verification during receive | ✅ DONE |
+| 16H | Catalog pricing + view modes: pricing columns on catalog, layout options | ✅ DONE |
+| 16I | Pricing AI integration: read-only AI for pricing questions | ✅ DONE |
 
 **Key decisions:**
 - **FIFO for consumption:** Oldest cost batches consumed first when parts go to jobs
@@ -170,7 +180,7 @@ Full redesign of the Dashboard tab with 4 sub-tabs.
 - **Markup vs Margin:** Company-wide setting (toggle in Settings). Markup default. Minimum margin = 0%.
 - **Stale alerts:** Parts not price-updated in X days (default 90) flagged during ordering.
 
-### Parts → Companions (Prompts 19A-19K) — ALL QUEUED
+### Parts → Companions (Prompts 19A-19K) — ALL DONE
 
 Companion rules: "when you buy X, you probably also need Y."
 
@@ -198,18 +208,18 @@ Companion rules: "when you buy X, you probably also need Y."
 - **Tied polls:** Don't re-ask for 2 months (`tied_cooldown_until`).
 - **Rejection:** -100 points AND -100 likelihood per rejection. 5 rejections = permanently blocked (admin can reset).
 
-### Parts → Forecasting (Prompts 23A-23H) — 23A DONE, 23B-H QUEUED
+### Parts → Forecasting (Prompts 23A-23H) — ALL DONE
 
 | Prompt | Feature | Status |
 |--------|---------|--------|
 | 23A | Cleanup: raw SQL → service, platform guards, recalculate button, trend indicators | ✅ DONE |
-| 23B | AI integration: GetForecastDataTool, page context notifications, read-only | ⏳ Queued |
-| 23C | Stat cards as toggle filters (replace chip bar) | ⏳ Queued |
-| 23D | Per-location backbone: migration, per-location forecast service methods | ⏳ Queued |
-| 23E | Forecast settings: per-location-type defaults + per-truck overrides, ADU vs APW, free space | ⏳ Queued |
-| 23F | Target recommendation engine: daily pick, all 3 values, cooldown, category changes | ⏳ Queued |
-| 23G | Location picker UI, recommendation cards with approve/dismiss | ⏳ Queued |
-| 23H | Detail panel redesign: full part editor, stock health bars per location | ⏳ Queued |
+| 23B | AI integration: GetForecastDataTool, page context notifications, read-only | ✅ DONE |
+| 23C | Stat cards as toggle filters (replace chip bar) | ✅ DONE |
+| 23D | Per-location backbone: migration, per-location forecast service methods | ✅ DONE |
+| 23E | Forecast settings: per-location-type defaults + per-truck overrides, ADU vs APW, free space | ✅ DONE |
+| 23F | Target recommendation engine: daily pick, all 3 values, cooldown, category changes | ✅ DONE |
+| 23G | Location picker UI, recommendation cards with approve/dismiss | ✅ DONE |
+| 23H | Detail panel redesign: full part editor, stock health bars per location | ✅ DONE |
 
 **Key decisions:**
 - **Trend indicators:** ADU-30 vs ADU-90 comparison. >15% = trending up (red arrow), <85% = trending down (green arrow), else stable.
@@ -224,7 +234,7 @@ Companion rules: "when you buy X, you probably also need Y."
 - **Common vs Critical** per part per location. Auto-suggest category changes at 6 months.
 - **Full plan:** See `docs/plans/inventory-intelligence-system.md`
 
-### QR System (Prompts 20A-20D, 21A-21B) — ALL QUEUED
+### QR System (Prompts 20A-20D, 21A-21B) — ALL DONE
 
 | Prompt | Feature |
 |--------|---------|
@@ -242,7 +252,7 @@ Companion rules: "when you buy X, you probably also need Y."
 - **Partial sheet printing:** `usedPositions: Set<Int>` — user taps visual grid to mark used sticker positions
 - **Barcode support:** Catalog scan accepts manufacturer UPC/EAN in addition to WiredPart QR codes
 
-### Supplier Communication Bridge (Prompts 22A-22C) — ALL QUEUED
+### Supplier Communication Bridge (Prompts 22A-22C) — ALL DONE
 
 | Prompt | Feature |
 |--------|---------|
@@ -255,7 +265,7 @@ Companion rules: "when you buy X, you probably also need Y."
 - **`invite_token`:** Reserved for future direct supplier access without full accounts.
 - **Job context:** Supplier channels can be linked to specific jobs for job-scoped communication.
 
-### Review Cleanup (Prompt 18A) — QUEUED
+### Review Cleanup (Prompt 18A) — DONE
 
 | Prompt | Feature |
 |--------|---------|
@@ -374,38 +384,269 @@ These areas have comprehensive design plans saved in `docs/plans/`. Next step: r
 - Fleet reports live in Reports section (not Fleet)
 - Code quality: cleanest section — zero GRDB imports, zero raw SQL, design enhancement only
 
+### Reports (Design: 2026-03-23)
+
+**Plan file:** `docs/plans/ios-reports-pages.md`
+**Files:** `IOSTimesheetsPage`, `IOSLaborOverviewPage`, `IOSPreBillingPage`, `IOSBookkeeperExportPage`, `IOSSpendingPage`, `IOSProfitabilityPage`, `IOSDailyReportsSummaryPage`, `IOSPublicReportView`, `IOSReportsRouter`
+
+**Key design decisions:**
+- Every report page gets smart cards, Export PDF + Export CSV toolbar buttons, help button, standard filter bar
+- Standard filter bar (PROGRAM-WIDE): This Week, Last Week, This Period, Last Period, This Month, Custom + page-specific filters
+- 15-minute rounding on timesheets: company setting, shows actual AND rounded side by side
+- Report Builder (V1): pick type, pick fields, pick filters, generate — not a full BI tool
+- Fleet reports (NEW): fuel costs, maintenance trends, mileage/cost per mile, vehicle utilization — live in Reports, not Fleet
+- Warehouse reports (NEW): inventory value, backorders by supplier/brand, turnover rates
+- Scheduling reports (NEW): crew utilization, dispatch efficiency, pipeline status
+- Code quality: architecturally clean — zero GRDB imports, all using ReportsService, design enhancement only
+
+### Office (Design: 2026-03-23)
+
+**Plan file:** `docs/plans/ios-office-pages.md`
+**Files:** `IOSManageJobsPage`, `IOSSpendingDashboardPage`, `IOSWarehouseExecPage`, `IOSDeletionApprovalsPage`, `OfficePlaceholderView`, `OfficeRouter`
+
+**Key design decisions:**
+- Office = manager/admin command center, not a report viewer — surfaces decisions, approvals, oversight
+- Dashboard daily briefing: smart cards (Approvals Pending, Working Today, JPOs Pending, Payment Overdue, Parts Below MIN, etc.), AI summary cached 1hr, push notification at 7 AM
+- Priority color timeline (PROGRAM-WIDE): Green (ok), Yellow (4 days), Orange (24 hrs), Red (overdue), Gray (resolved)
+- Unified approvals page: ALL approval types in one sorted queue (oldest first) — JPO, deletion, tool edit, warranty, schedule, time-off
+- Spending summary: week-over-week AND month-over-month with trend arrows, full detail in Reports
+- Office chat channel: auto-created for admin staff coordination, separate from job chats
+- Other features: pending callbacks, expiring certs, insurance renewals, contract deadlines, audit confidence, overdue inspections, period close status, unread Q&A escalations
+- Code quality: clean — no GRDB, all service-based, design enhancement only
+
+### Settings (Design: 2026-03-23)
+
+**Plan file:** `docs/plans/ios-settings-pages.md`
+**Files:** `AppConfigPage`, `ThemesPage`, `NotificationPrefsPage`, `CompanyProfilesPage`, `SyncPage`, `BluetoothPage`, `SecurityAdminPage`, `AuditLogPage`, `IOSAIConfigPage`, `IOSBackupsPage`, `IOSDataExportPage`, `IOSDatabaseResetPage`, `IOSDeviceManagementPage`, `IOSIntegrationsPage`, `IOSKeyManagementPage`, `IOSRemoteSyncPage`, `IOSSharedChannelsPage`, `IOSSupplierBridgePage`, `IOSUpdateProtocolPage`, `IOSBootstrapAdminPage`, `IOSClockOutQuestionsPage`, `PDFSettingsPage`, `BillingPayPage`, `AboutPage`, `SettingsRouter`
+
+**Key design decisions:**
+- Grouped navigation: 10 iOS-style groups (General, Company, Operations, Warehouse, Sync & Devices, Security, Data, AI & Integrations, Templates, Advanced)
+- Settings search: iOS-style search at top, searches page names + key setting labels
+- Sync scope classification: Company (🌐 syncs to all), Personal (👤 syncs to user's devices), Device (📱 never syncs)
+- 11 new settings pages: Break/Lunch Policy, Tool Policies, Pre-Trip Checklists, Dispatch Preferences, Forecast Config, Organization Thresholds, Audit Settings, Daily Report Templates, Job Estimation Questions, Report Templates, Payment Tracking
+- 5 simulated features made functional: Backups (real file I/O), Data Export (real CSV/JSON + share sheet), Update Check (real version comparison), AI Config (real Foundation Models detection), Sync Now (real sync attempt)
+- Code quality: architecturally clean — no GRDB, all service-based, no bugs to fix, design enhancement and new pages only
+
+---
+
+## Completed Reviews — Orders (Prompts 26A-30E) — ALL DONE
+
+### PO System (Prompts 26A-26F) — ALL DONE
+
+| Prompt | Feature |
+|--------|---------|
+| 26A | PO list cleanup: platform guard, count badges, date formatting, loadError guard |
+| 26B | PO list swipe + sort: swipe actions with AI summary, sort options, awaiting delivery KPI |
+| 26C | PO detail lifecycle: status-based actions (7 states), Drafting status, cancel confirmations |
+| 26D | PO detail supplier CRM: supplier contact info, score bars, tabbed notes (PO + Supplier) |
+| 26E | Parts Order Management: NEW page — supplier-centric cross-PO view, dual filters, multi-select actions |
+| 26F | PO detail jobs + timeline: job grouping, delivery timeline bars, inline draft editing, receipt history |
+
+### JPO System (Prompts 27A-27E) — ALL DONE
+
+| Prompt | Feature |
+|--------|---------|
+| 27A | JPO list cleanup: ActiveSheet, QR scan, count badges, Create JPO with clock auto-fill |
+| 27B | JPO per-part status: migration (line_status + delivery_option), smart routing (stock → transfer vs approval) |
+| 27C | JPO detail redesign: per-part approve/hold/reject, bulk actions, delivery options, PO linkage |
+| 27D | JPO hold + chat: per-part chat thread, question prompt, auto-membership, chat indicator on list |
+| 27E | Full audit trail: part_change_log table (migration 033), who-did-what logging, PartHistoryView component (cross-cutting) |
+
+### Procurement (Prompts 28A-28D) — ALL DONE
+
+| Prompt | Feature |
+|--------|---------|
+| 28A | Procurement redesign: demand consolidation, stock logic, pull options, smart cards, bring-to-target buttons |
+| 28B | Procurement suppliers: per-part supplier pick, cheapest/rated/fastest highlight, 2PM cutoff, split by JPO |
+| 28C | Procurement PO preview: supplier-grouped preview, partial generation, save for later |
+| 28D | Job stage planner: stage model (migration 034), category mapping, held/released parts, auto-release, stage settings |
+
+### Orders Cleanup (Prompts 29A-29D) — ALL DONE
+
+| Prompt | Feature |
+|--------|---------|
+| 29A | Receiving fix: hardcoded user ID, ActiveSheet pattern, platform guard |
+| 29B | Returns fix: ErrorStateView, console→UI errors, platform guard, smart cards |
+| 29C | Approvals dashboard: smart cards, reject reason, actionError display, multi-type approvals |
+| 29D | Orders cleanup: remove UnifiedOrderPage, update router tab order, consolidate SupplierPicker |
+
+### JPO Creation (Prompts 30A-30E) — ALL DONE
+
+| Prompt | Feature |
+|--------|---------|
+| 30A | JPO creation layout: 3-panel (search/cart/suggestions), job auto-fill, delivery options, stock indicators |
+| 30B | JPO creation search: AI-powered search (cart + last 5 context), QR scan, best match, internet toggle |
+| 30C | JPO creation suggestions: companion rules (5) + AI picks (3), context switch on cart selection |
+| 30D | JPO creation feedback: qty confirm dialog, companion points, ratio learning, AI→rule promotion |
+| 30E | JPO creation submit: create JPO + lines, smart routing, replace IOSUnifiedOrderPage |
+
+## Completed Reviews — Warehouse (Prompts 31A-31I) — ALL DONE
+
+| Prompt | Feature |
+|--------|---------|
+| 31A | Warehouse dashboard: remove GRDB, smart cards, fix quick actions, ActiveSheet, platform guard |
+| 31B | Warehouse movements: remove GRDB, ActiveSheet, smart cards, platform guard |
+| 31C | Warehouse locations: remove GRDB, action buttons in detail sheet, platform guard |
+| 31D | Warehouse staging: swipe confirmation, batch clear, smart cards, platform guard |
+| 31E | Warehouse receiving: start/continue session actions, smart cards, platform guard |
+| 31F | Warehouse audit: fix setup stub, finalize/adjust actions, certainty tie-in TODO, platform guards |
+| 31G | Warehouse inventory grid: location picker, group by type, low-stock styling, actions, smart cards |
+| 31H | Warehouse returns+tools+network+settings: actions for display-only pages, remove dummy data, fix errors |
+| 31I | Warehouse router: fix unknown route → ErrorStateView, verify all 11 routes |
+
+## Completed Reviews — Cross-Cutting Cleanup (Prompts 32A-33H) — ALL DONE
+
+### Navigation & Code Quality (Prompts 32A-32J) — ALL DONE
+
+| Prompt | Feature |
+|--------|---------|
+| 32A | Navigation restructure: sidebar order (daily→work→admin), tab reorder, People consolidation |
+| 32B | Empty catch blocks: fix all empty catch {} and catch { print() } blocks |
+| 32C | Guard without error: fix 42 files with guard-let-service that silently returns |
+| 32D | Platform guards batch 1: remove #if os(iOS) from all Features/ files (~50 files) |
+| 32E | Platform guards batch 2: remove #if os(iOS) from AI/Auth/App/Nav/Scanning/Sync/Shared (~57 files) |
+| 32F | ActiveSheet conversion: convert 19 files from showXxx Bool to ActiveSheet enum |
+| 32G | Print-to-state errors: replace print() error logging with UI state in 25+ files |
+| 32H | Refreshable + searchable: add missing .refreshable and .searchable to 58 list pages |
+| 32I | AI button dedup: remove duplicate AI toolbar buttons — one global button per page |
+| 32J | Force unwrap + DispatchQueue: fix force unwraps in services, replace DispatchQueue with async/await |
+
+### Feature Polish (Prompts 33A-33H) — ALL DONE
+
+| Prompt | Feature |
+|--------|---------|
+| 33A | Help/Info buttons: PageHelpSheet component + help button on ALL pages (program standard) |
+| 33B | Clock page fix: "no such column: address" SQL error + Lunch/Break/Supply Run buttons |
+| 33C | JPO smart routing: stock-check-first flow for JPO line approval — transfer vs procurement |
+| 33D | Procurement pull actions: wire pull option buttons to actual warehouse movements |
+| 33E | PO detail placeholders: wire 6 "Coming Soon" stubs to real functionality |
+| 33F | Receiving routing flow: 6-step condition check + smart routing (used/damaged/good) |
+| 33G | Staging box management: physical box system — sizes, labels, full/open, contents, move-all |
+| 33H | Duplicate wizard cleanup: delete inline wizard, use IOSMovementWizard (1364→369 lines) |
+
+## Queued Prompt Chains — Written But Not Yet Implemented
+
+### UI Quality Audit (Prompt 34A) — QUEUED
+
+| Prompt | Feature |
+|--------|---------|
+| 34A | Sheet dismiss, sticky buttons, navigation links, data display, form validation |
+
+### Targeted Fixes (Prompts 35A-35I) — QUEUED
+
+| Prompt | Feature |
+|--------|---------|
+| 35A | Daily report submit stubs: wire TODO buttons + remove service bypass + raw SQL |
+| 35B | Job detail tab fixes: print() catches → state, client-side→server-side filtering, dead code |
+| 35C | Scheduling raw SQL: IOSSubSchedulePage + IOSWeeklyAvailabilityPage GRDB removal |
+| 35D | GeofenceAlertView fix: remove GRDB + raw SQL, fix silent clock-in/out errors |
+| 35E | Fleet GRDB + ErrorStateView: remove GRDB from 2 pages, wire ErrorStateView in 6 pages |
+| 35F | Audit session ID + PO delete nav: fix hardcoded session ID, navigate back after draft delete |
+| 35G | Settings GRDB removal: remove GRDB + raw SQL from 10 Settings pages |
+| 35H | Companion GRDB + hats delete: remove GRDB from 2 sheets, add hat delete confirmation |
+| 35I | Reports + tools GRDB: remove GRDB from PreBilling, BookkeeperExport, ToolKits |
+
+### Floor Plan System (Prompts 36A-36D) — QUEUED
+
+| Prompt | Feature |
+|--------|---------|
+| 36A | Floor plan migration: 7 tables (floor_plans, features, units, levels, areas, bins, assignments) + 15 service methods |
+| 36B | Floor plan editor UI: grid view, drag-drop units, drill-in levels→areas→bins, sticker checklist |
+| 36C | Floor plan navigation: warehouse GPS directions, QR scan full location view, user position tracking |
+| 36D | Onboarding wizard: 6-step progressive setup, Quick Count mode, Save & Exit, AI suggestions |
+
+### Audit Confidence System (Prompts 37A-37D) — QUEUED
+
+See `docs/plans/warehouse-audit-intelligence.md` for full design.
+
+| Prompt | Feature |
+|--------|---------|
+| 37A | Audit confidence migration: 8 tables (confidence, sessions, counts, misplaced, user ratings, org ratings, consolidation) |
+| 37B | Audit count tab UI: hidden counts, speed mode, misplaced cart, quick audit prompts, walking path queue |
+| 37C | Organization tab: consolidation voting, org checklist, rating rollup area→unit→row→warehouse |
+| 37D | User ratings + leaderboard: leaderboard for all, detail for managers, multi-user consensus, training suggestions |
+
+### Break/Lunch Compliance (Prompts 38A-38B) — QUEUED
+
+| Prompt | Feature |
+|--------|---------|
+| 38A | 4-tier policy (state+company), break_records, auto-fill, 15-min rounding, state presets |
+| 38B | Clock page buttons, settings page, clock-out questionnaire, bonus tracking |
+
+### Hats Permission Audit (Prompt 39A) — QUEUED
+
+| Prompt | Feature |
+|--------|---------|
+| 39A | Cross-cutting: replace hardcoded role checks with hasPermission(), seed new permission keys |
+
+### Clock To-Do Integration (Prompts 40A-40B) — QUEUED
+
+| Prompt | Feature |
+|--------|---------|
+| 40A | Clock-in to-do picker, Mark Done + Pick Next, work type selector (New/Warranty) |
+| 40B | Live elapsed timer, today's hours per job/to-do, Switch Job one-action button |
+
+### Teams Detail (Prompt 41A) — QUEUED
+
+| Prompt | Feature |
+|--------|---------|
+| 41A | IOSTeamDetailPage with members/roles/jobs, smart cards on list page, add/remove members |
+
+### Chat (Prompts 42A-42D) — QUEUED
+
+| Prompt | Feature |
+|--------|---------|
+| 42A | Unified inbox: all message types, smart cards, unread badges, message preview |
+| 42B | Thread info: iMessage-style expandable info panel, source context, escalation, quick actions |
+| 42C | Attachments: photo/file/part-ref attachments, composer buttons, auto-save to job notebook |
+| 42D | Q&A escalation: visual escalation ladder (Worker⇄Lead⇄Manager⇄Office), push back, smart cards |
+
+### Notebooks (Prompts 43A-43E) — QUEUED
+
+| Prompt | Feature |
+|--------|---------|
+| 43A | Structure migration: section_groups, sections, block-based entries (9 types), hierarchy service |
+| 43B | Detail rebuild: hierarchical layout, collapsible sections, block rendering, shortcut commands |
+| 43C | Templates: job starter templates, page templates, template editor, "Create from Template" |
+| 43D | Panel schedule: circuit grid, breaker types, 240V spanning, PDF export |
+| 43E | Daily report system: auto-generated from clock/to-do data, AI verification, user notes, templates |
+
+### People (Prompts 44A-44F) — QUEUED
+
+| Prompt | Feature |
+|--------|---------|
+| 44A | People dashboard: who's working (live), who's off, expiring certs, team assignments, smart cards |
+| 44B | Employee detail rebuild: remove GRDB/raw SQL, service layer edits, hat visibility rules |
+| 44C | Customer detail full: contacts, billing (hat-gated), job history, communication log, lifetime stats |
+| 44D | Contractor detail: qualifications, rating (subs only), job history, notes, ActiveSheet fix |
+| 44E | Contacts redesign: smart cards by type, active/inactive sections, sort options, type badges |
+| 44F | Payment tracking: company setting, green-to-red status bar, overdue alerts, payment records |
+
+### Jobs (Prompts 45A-45D) — QUEUED
+
+| Prompt | Feature |
+|--------|---------|
+| 45A | Jobs list redesign: smart cards (8 statuses), AI summary, stage bar, dual progress, payment hold privacy |
+| 45B | Job detail dashboard: overview tab as dashboard, metrics, AI summary, today's activity, quick actions, warranty |
+| 45C | Job types & status: migration (warranty fields, continuous job, payment hold, clock-in blocking) |
+| 45D | Warranty to-do: work classification (regular/warranty), manager review, reclassification tracking |
+
+### Scheduling (Prompts 46A-46F) — QUEUED
+
+| Prompt | Feature |
+|--------|---------|
+| 46A | Scheduling calendar: month view, day dots/badges, tap detail, half-day scheduling (AM/PM) |
+| 46B | Dispatch board: Gantt-style board, employee bars, half-day, unassigned pool, time-off conflicts |
+| 46C | Short-term pipeline: Start Anytime/Schedule Needed/Favorite GC/Small Jobs, callback snooze, AI crew |
+| 46D | Long-term pipeline: 3-year timeline, monthly capacity bars, bid tracker, AI capacity warnings |
+| 46E | AI dispatch: 3 suggestions with points scoring, dedicated AI chat, learning from picks, early finish |
+| 46F | Job estimation: questionnaire system, stage-aware, "?" unknowns, AI learning, capacity calc |
+
 ---
 
 ## Unreviewed Pages — What Still Needs Review
 
-Each area below needs: (1) read every file, (2) identify issues, (3) record design decisions, (4) write prompts.
-
-### Parts → Import/Export
-**Files:** `PartsImportExportPage.swift`
-**Expected issues:** Raw SQL, service layer violations, error handling, file picker UX
-
-
-### Orders (14 files)
-**Files:** `IOSPurchaseOrdersPage`, `IOSPODetailPage`, `CreatePOSheet`, `IOSJPOsPage`, `IOSJPODetailPage`, `IOSUnifiedOrderPage`, `IOSProcurementPage`, `IOSReceiveShipmentPage`, `IOSOrderStagingPage`, `IOSApprovalsPage`, `IOSReturnsPage`, `CreateReturnSheet`, `SupplierPickerSheet`, `OrdersRouter`
-**Expected issues:** PO lifecycle completeness, JPO→PO flow, receiving UX, approval workflow, return flow
-
-### Warehouse (15 files)
-**Files:** `WarehouseDashboardPage`, `IOSMovementWizard`, `WarehouseMovementsPage`, `WarehouseLocationsPage`, `IOSStagingPage`, `IOSReceivingPage`, `IOSAuditPage`, `IOSAuditSetupView`, `IOSAuditSummaryView`, `IOSInventoryGridPage`, `IOSWarehouseReturnsPage`, `IOSWarehouseToolsPage`, `IOSWarehouseNetworkPage`, `IOSWarehouseSettingsPage`, `WarehouseRouter`
-**Expected issues:** Movement wizard flow, location management, audit workflow, dashboard KPIs
-
-
-### Reports (9 files)
-**Files:** `IOSTimesheetsPage`, `IOSLaborOverviewPage`, `IOSPreBillingPage`, `IOSBookkeeperExportPage`, `IOSSpendingPage`, `IOSProfitabilityPage`, `IOSDailyReportsSummaryPage`, `IOSPublicReportView`, `IOSReportsRouter`
-**Expected issues:** Date range pickers, export functionality, period locking, data accuracy
-
-### Office (6 files)
-**Files:** `IOSManageJobsPage`, `IOSSpendingDashboardPage`, `IOSWarehouseExecPage`, `IOSDeletionApprovalsPage`, `OfficePlaceholderView`, `OfficeRouter`
-**Expected issues:** Manager-level views, approval workflows, executive summaries
-
-
-### Settings (23 files)
-**Files:** `AppConfigPage`, `ThemesPage`, `NotificationPrefsPage`, `CompanyProfilesPage`, `SyncPage`, `BluetoothPage`, `SecurityAdminPage`, `AuditLogPage`, `IOSAIConfigPage`, `IOSBackupsPage`, `IOSDataExportPage`, `IOSDatabaseResetPage`, `IOSDeviceManagementPage`, `IOSIntegrationsPage`, `IOSKeyManagementPage`, `IOSRemoteSyncPage`, `IOSSharedChannelsPage`, `IOSSupplierBridgePage`, `IOSUpdateProtocolPage`, `IOSBootstrapAdminPage`, `IOSClockOutQuestionsPage`, `PDFSettingsPage`, `BillingPayPage`, `AboutPage`, `SettingsRouter`
-**Expected issues:** Settings persistence, sync configuration, security admin completeness, AI config
+All feature areas have been reviewed and designed. No unreviewed areas remain.
 
 ---
 
@@ -413,9 +654,10 @@ Each area below needs: (1) read every file, (2) identify issues, (3) record desi
 
 These patterns recur and should be checked on every page:
 
+### Code Quality Issues (Fix These)
 1. **`import GRDB` in UI files** — must use service layer, not raw SQL
 2. **Multiple `.sheet()` modifiers** — only one per view, use `ActiveSheet` enum
-3. **Missing error visibility** — `loadError` state + UI display in every page
+3. **Missing error visibility** — `loadError` state + `ErrorStateView` UI display in every page
 4. **`#if os(iOS)` / `#elseif os(macOS)` guards** — app is iOS-only, remove
 5. **Missing delete confirmations** — every delete needs `.alert` confirmation
 6. **Missing save/edit error feedback** — form sheets need `saveError` + `isSaving` state
@@ -423,6 +665,22 @@ These patterns recur and should be checked on every page:
 8. **Missing `.searchable`** — lists with 10+ items need search
 9. **Hardcoded zero counts** — badges showing 0 instead of querying real data
 10. **No AI integration** — each page should post context notifications for the AI panel
+11. **Empty catch blocks** — all catches must set error state, not print() or ignore
+12. **Guard-let-service silent returns** — must set loadError when service init fails
+13. **Force unwraps** — use safe optionals, never force unwrap
+14. **DispatchQueue.main.asyncAfter** — use async/await instead
+
+### Program-Wide Standards (ALL Pages Must Have These)
+15. **Smart cards as filters** — stat card filters replace horizontal chip bars on ALL list pages
+16. **Help/Info button** — every page gets a toolbar help button using `PageHelpSheet`
+17. **Standard filter bar on date-relevant pages** — This Week / Last Week / This Period / Last Period / This Month / Custom
+18. **Priority color timeline** — Green (ok), Yellow (4 days), Orange (24 hrs), Red (overdue), Gray (resolved)
+19. **44px touch targets** — all tappable elements use `.frame(minHeight: 44)`
+20. **One AI button per page** — bottom right floating orange circle, no duplicate toolbar buttons
+21. **Full audit trail on ALL parts** — `part_change_log` table via `PartHistoryView`
+22. **Hat-based permissions** — use `hasPermission()`, NEVER hardcode role names
+23. **Auto-fill job context when clocked in** — all relevant forms auto-fill with current job context
+24. **Block-based sync for notebooks** — per-block conflict resolution with AI merge
 
 ---
 
@@ -433,29 +691,39 @@ The prompt chains should be implemented in this order (dependencies flow downwar
 ```
 DONE:  01-05 (foundation) → 06-10 (CRUD + security)
 DONE:  11A-C (brands-suppliers) → 12A-F (dashboard) → 13A-E (catalog) → 14A-G (categories)
-DONE:  15A-C (brands+suppliers cleanup) → 16A-D (pricing foundation)
+DONE:  15A-C (brands+suppliers cleanup) → 16A-I (pricing full)
+DONE:  17A-H (suppliers) → 18A (cleanup) → 19A-K (companions)
+DONE:  20A-D (QR per-module) → 21A-B (QR labels) → 22A-C (supplier bridge) → 23A-H (forecasting)
+DONE:  24A (import/export)
+DONE:  26A-F (PO system) → 27A-E (JPO system) → 28A-D (procurement)
+DONE:  29A-D (orders cleanup) → 30A-E (JPO creation)
+DONE:  31A-I (warehouse full)
+DONE:  32A-J (cross-cutting cleanup) → 33A-H (feature polish)
 
-NEXT:  16E-I (pricing advanced)
-THEN:  17A-H (suppliers)
-THEN:  18A (cleanup pass)
-THEN:  19A-K (companion rules)
-THEN:  20A-D (QR per-module)
-THEN:  21A-B (QR labels)
-THEN:  22A-C (supplier bridge)
-THEN:  23A-B (forecasting)
+NEXT:  34A (UI quality audit)
+THEN:  35A-I (targeted fixes — GRDB removal, error states, service layer gaps)
+THEN:  36A-D (floor plan system)
+THEN:  37A-D (audit confidence system)
+THEN:  38A-B (break/lunch compliance)
+THEN:  39A (hats permission audit — cross-cutting)
+THEN:  40A-B (clock to-do integration)
+THEN:  41A (teams detail page)
+THEN:  42A-D (chat)
+THEN:  43A-E (notebooks)
+THEN:  44A-F (people)
+THEN:  45A-D (jobs)
+THEN:  46A-F (scheduling)
 
 DESIGNED (need prompts written):
-  - Jobs (see docs/plans/ios-jobs-pages.md)
-  - Chat (see docs/plans/ios-chat-pages.md)
-  - Notebooks (see docs/plans/ios-notebooks-pages.md)
-  - People (see docs/plans/ios-people-pages.md)
-  - Scheduling (see docs/plans/ios-scheduling-pages.md)
   - Tools (see docs/plans/ios-tools-pages.md)
   - Fleet (see docs/plans/ios-fleet-pages.md)
+  - Reports (see docs/plans/ios-reports-pages.md)
+  - Office (see docs/plans/ios-office-pages.md)
+  - Settings (see docs/plans/ios-settings-pages.md)
 
-THEN:  Page-by-page reviews for remaining 5 feature areas (Orders, Warehouse, Reports, Office, Settings)
+ALL 12 feature areas designed. 0 unreviewed.
 ```
 
 ---
 
-*Last updated: 2026-03-23*
+*Last updated: 2026-03-23 (Settings design complete — all 12 areas designed, 0 unreviewed)*

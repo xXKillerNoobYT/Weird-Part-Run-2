@@ -54,12 +54,18 @@ extension AppDatabase {
         registerMigration037ChatAttachments(&migrator)
         registerMigration038NotebookHierarchy(&migrator)
         registerMigration039NotebookTemplates(&migrator)
+        registerMigration040WarehouseFloorPlans(&migrator)
+        registerMigration041AuditConfidence(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
 
     private static func registerMigration039NotebookTemplates(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("039_notebook_templates") { db in
+            // Drop the old notebook_templates from migration 004 and recreate with new schema
+            try? db.drop(table: "template_entries")
+            try? db.drop(table: "template_sections")
+            try? db.drop(table: "notebook_templates")
             try db.create(table: "notebook_templates") { t in
                 t.autoIncrementedPrimaryKey("id")
                 t.column("name", .text).notNull()
@@ -72,6 +78,299 @@ extension AppDatabase {
                 t.column("created_at", .text).defaults(sql: "datetime('now')")
                 t.column("updated_at", .text).defaults(sql: "datetime('now')")
                 t.column("deleted_at", .text)
+            }
+        }
+    }
+
+    // MARK: - Migration 040: Warehouse Floor Plans
+
+    private static func registerMigration040WarehouseFloorPlans(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("040_warehouse_floor_plans") { db in
+            // Floor plans
+            try db.create(table: "warehouse_floor_plans") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("width_inches", .integer).notNull()
+                t.column("length_inches", .integer).notNull()
+                t.column("is_active", .integer).notNull().defaults(to: 1)
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+            }
+
+            // Non-storage features on the floor plan (doors, walkways, etc.)
+            try db.create(table: "warehouse_floor_features") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("floor_plan_id", .integer).notNull()
+                    .references("warehouse_floor_plans", onDelete: .cascade)
+                t.column("feature_type", .text).notNull()
+                t.column("label", .text)
+                t.column("grid_x", .integer).notNull()
+                t.column("grid_y", .integer).notNull()
+                t.column("grid_width", .integer).notNull().defaults(to: 1)
+                t.column("grid_height", .integer).notNull().defaults(to: 1)
+                t.column("rotation", .integer).notNull().defaults(to: 0)
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+            }
+
+            // Physical storage units placed on the floor plan
+            try db.create(table: "warehouse_storage_units") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("floor_plan_id", .integer).notNull()
+                    .references("warehouse_floor_plans", onDelete: .cascade)
+                t.column("name", .text).notNull()
+                t.column("unit_type", .text).notNull()
+                t.column("row_number", .text)
+                t.column("unit_number", .text)
+                t.column("width_inches", .integer)
+                t.column("depth_inches", .integer)
+                t.column("height_inches", .integer)
+                t.column("grid_x", .integer)
+                t.column("grid_y", .integer)
+                t.column("grid_width", .integer).defaults(to: 1)
+                t.column("grid_height", .integer).defaults(to: 1)
+                t.column("rotation", .integer).notNull().defaults(to: 0)
+                t.column("front_face", .text).defaults(to: "south")
+                t.column("is_movable", .integer).notNull().defaults(to: 0)
+                t.column("is_job_ready", .integer).notNull().defaults(to: 0)
+                t.column("home_area_id", .integer)
+                t.column("current_location_type", .text)
+                t.column("current_location_id", .integer)
+                t.column("assigned_to", .integer).references("users")
+                t.column("is_configured", .integer).notNull().defaults(to: 0)
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+            }
+
+            // Levels within a storage unit (shelves, trays, drawers)
+            try db.create(table: "warehouse_storage_levels") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("unit_id", .integer).notNull()
+                    .references("warehouse_storage_units", onDelete: .cascade)
+                t.column("level_code", .text).notNull()
+                t.column("level_name", .text)
+                t.column("level_order", .integer).notNull().defaults(to: 0)
+                t.column("height_inches", .integer)
+                t.column("area_count", .integer).notNull().defaults(to: 1)
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+            }
+
+            // Individual areas within a level — where parts live
+            try db.create(table: "warehouse_storage_areas") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("level_id", .integer).notNull()
+                    .references("warehouse_storage_levels", onDelete: .cascade)
+                t.column("area_code", .text).notNull()
+                t.column("area_number", .integer).notNull()
+                t.column("width_inches", .integer)
+                t.column("has_qr_code", .integer).notNull().defaults(to: 0)
+                t.column("has_sticker", .integer).notNull().defaults(to: 0)
+                t.column("full_location_code", .text)
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+            }
+
+            // Optional bins within areas — one part type per bin
+            try db.create(table: "warehouse_bins") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("area_id", .integer).notNull()
+                    .references("warehouse_storage_areas", onDelete: .cascade)
+                t.column("bin_code", .text).notNull()
+                t.column("bin_number", .integer).notNull()
+                t.column("is_fixed", .integer).notNull().defaults(to: 0)
+                t.column("assigned_part_id", .integer).references("parts")
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+            }
+
+            // Links parts to their home storage area
+            try db.create(table: "warehouse_part_assignments") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("part_id", .integer).notNull()
+                    .references("parts", onDelete: .cascade)
+                t.column("area_id", .integer).notNull()
+                    .references("warehouse_storage_areas", onDelete: .cascade)
+                t.column("is_home", .integer).notNull().defaults(to: 0)
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+                t.uniqueKey(["part_id", "area_id"])
+            }
+
+            // User position tracking for warehouse navigation
+            try db.create(table: "warehouse_user_positions") { t in
+                t.column("user_id", .integer).notNull().primaryKey()
+                    .references("users", onDelete: .cascade)
+                t.column("area_id", .integer).notNull()
+                    .references("warehouse_storage_areas", onDelete: .cascade)
+                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+            }
+
+            // Onboarding wizard progress tracking
+            try db.create(table: "warehouse_onboarding_progress") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("floor_plan_id", .integer)
+                    .references("warehouse_floor_plans")
+                t.column("current_step", .integer).notNull().defaults(to: 1)
+                t.column("step1_complete", .integer).notNull().defaults(to: 0)
+                t.column("step2_complete", .integer).notNull().defaults(to: 0)
+                t.column("step3_complete", .integer).notNull().defaults(to: 0)
+                t.column("step4_progress", .text)
+                t.column("step5_progress", .text)
+                t.column("step6_progress", .text)
+                t.column("started_at", .text).defaults(sql: "datetime('now')")
+                t.column("completed_at", .text)
+                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+            }
+        }
+    }
+
+    // MARK: - Migration 041: Audit Confidence System
+
+    private static func registerMigration041AuditConfidence(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("041_audit_confidence") { db in
+            // Part confidence tracking — per part+area confidence scores
+            try db.create(table: "part_confidence") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("part_id", .integer).notNull()
+                    .references("parts", onDelete: .cascade)
+                t.column("area_id", .integer).notNull()
+                    .references("warehouse_storage_areas", onDelete: .cascade)
+                t.column("confidence_percent", .double).notNull().defaults(to: 0.0)
+                t.column("reliability_level", .integer).notNull().defaults(to: 0)
+                t.column("last_audit_date", .text)
+                t.column("last_audit_by", .integer).references("users")
+                t.column("last_audit_count", .integer)
+                t.column("system_count", .integer).notNull().defaults(to: 0)
+                t.column("decay_rate", .double).notNull().defaults(to: 0.066)
+                t.column("movement_decay_factor", .double).notNull().defaults(to: 1.0)
+                t.column("clean_audit_streak", .integer).notNull().defaults(to: 0)
+                t.column("misplacement_count", .integer).notNull().defaults(to: 0)
+                t.column("last_misplacement_date", .text)
+                t.column("total_audit_count", .integer).notNull().defaults(to: 0)
+                t.column("total_variance_dollars", .double).notNull().defaults(to: 0.0)
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.uniqueKey(["part_id", "area_id"])
+            }
+
+            // Audit sessions v2 — supports multiple session types
+            try db.create(table: "audit_sessions_v2") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("session_type", .text).notNull().defaults(to: "count")
+                t.column("started_by", .integer).notNull().references("users")
+                t.column("floor_plan_id", .integer).references("warehouse_floor_plans")
+                t.column("target_area_id", .integer).references("warehouse_storage_areas")
+                t.column("target_unit_id", .integer).references("warehouse_storage_units")
+                t.column("status", .text).notNull().defaults(to: "active")
+                t.column("parts_counted", .integer).notNull().defaults(to: 0)
+                t.column("discrepancies_found", .integer).notNull().defaults(to: 0)
+                t.column("misplaced_found", .integer).notNull().defaults(to: 0)
+                t.column("started_at", .text).defaults(sql: "datetime('now')")
+                t.column("completed_at", .text)
+                t.column("deleted_at", .text)
+            }
+
+            // Individual audit counts within a session
+            try db.create(table: "audit_counts") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("session_id", .integer).notNull()
+                    .references("audit_sessions_v2", onDelete: .cascade)
+                t.column("part_id", .integer).notNull().references("parts")
+                t.column("area_id", .integer).notNull()
+                    .references("warehouse_storage_areas")
+                t.column("system_count", .integer).notNull()
+                t.column("user_count", .integer).notNull()
+                t.column("variance", .integer).notNull()
+                t.column("variance_dollars", .double).notNull().defaults(to: 0.0)
+                t.column("variance_percent", .double).notNull().defaults(to: 0.0)
+                t.column("result", .text).notNull()
+                t.column("counted_by", .integer).notNull().references("users")
+                t.column("counted_at", .text).defaults(sql: "datetime('now')")
+            }
+
+            // Log of parts found in wrong locations
+            try db.create(table: "misplaced_parts_log") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("part_id", .integer).notNull().references("parts")
+                t.column("found_at_area_id", .integer).notNull()
+                    .references("warehouse_storage_areas")
+                t.column("home_area_id", .integer)
+                    .references("warehouse_storage_areas")
+                t.column("qty_found", .integer).notNull()
+                t.column("resolution", .text).notNull().defaults(to: "pending")
+                t.column("resolved_by", .integer).references("users")
+                t.column("resolved_at", .text)
+                t.column("found_by", .integer).notNull().references("users")
+                t.column("found_at", .text).defaults(sql: "datetime('now')")
+            }
+
+            // Per-user warehouse reliability ratings
+            try db.create(table: "user_warehouse_ratings") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("user_id", .integer).notNull()
+                    .references("users", onDelete: .cascade)
+                t.column("overall_rating", .double).notNull().defaults(to: 5.0)
+                t.column("accuracy_rating", .double).notNull().defaults(to: 5.0)
+                t.column("effort_rating", .double).notNull().defaults(to: 5.0)
+                t.column("placement_rating", .double).notNull().defaults(to: 5.0)
+                t.column("wizard_compliance", .double).notNull().defaults(to: 5.0)
+                t.column("speed_rating", .double).notNull().defaults(to: 5.0)
+                t.column("proactive_rating", .double).notNull().defaults(to: 5.0)
+                t.column("total_audits", .integer).notNull().defaults(to: 0)
+                t.column("total_accurate", .integer).notNull().defaults(to: 0)
+                t.column("total_misplacements_found", .integer).notNull().defaults(to: 0)
+                t.column("total_proactive_fixes", .integer).notNull().defaults(to: 0)
+                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.uniqueKey(["user_id"])
+            }
+
+            // Per-area organization quality ratings
+            try db.create(table: "organization_ratings") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("area_id", .integer).notNull()
+                    .references("warehouse_storage_areas", onDelete: .cascade)
+                t.column("overall_rating", .double).notNull().defaults(to: 5.0)
+                t.column("labels_accurate", .integer).notNull().defaults(to: 0)
+                t.column("parts_in_home", .integer).notNull().defaults(to: 0)
+                t.column("no_duplicates", .integer).notNull().defaults(to: 0)
+                t.column("not_overcrowded", .integer).notNull().defaults(to: 0)
+                t.column("bins_assigned", .integer).notNull().defaults(to: 0)
+                t.column("similar_parts_nearby", .integer).notNull().defaults(to: 0)
+                t.column("clean_audit_count", .integer).notNull().defaults(to: 0)
+                t.column("last_org_check", .text)
+                t.column("last_org_check_by", .integer).references("users")
+                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.uniqueKey(["area_id"])
+            }
+
+            // Consolidation suggestions when parts are spread across multiple areas
+            try db.create(table: "consolidation_votes") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("part_id", .integer).notNull().references("parts")
+                t.column("current_areas", .text).notNull()
+                t.column("chosen_area_id", .integer)
+                    .references("warehouse_storage_areas")
+                t.column("status", .text).notNull().defaults(to: "voting")
+                t.column("manager_override", .integer).notNull().defaults(to: 0)
+                t.column("dismiss_reason", .text)
+                t.column("ignore_count", .integer).notNull().defaults(to: 0)
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("decided_at", .text)
+                t.column("deleted_at", .text)
+            }
+
+            // Individual votes on consolidation suggestions
+            try db.create(table: "consolidation_vote_entries") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("vote_id", .integer).notNull()
+                    .references("consolidation_votes", onDelete: .cascade)
+                t.column("user_id", .integer).notNull().references("users")
+                t.column("chosen_area_id", .integer).notNull()
+                    .references("warehouse_storage_areas")
+                t.column("voted_at", .text).defaults(sql: "datetime('now')")
             }
         }
     }
