@@ -1,21 +1,42 @@
 import SwiftUI
 import WiredPartCore
 
-/// Chat channels list page for iOS.
+/// Unified chat inbox for iOS.
 ///
-/// Displays the current user's chat channels with channel name, type badge,
-/// job name, member count, and last message time. Supports pull-to-refresh
-/// and search filtering.
+/// Shows all channel types (group, DM, job, supplier, Q&A, RFI) in one
+/// sorted stream. Unread channels float to the top. Smart card filters
+/// let users narrow by type.
 struct IOSChannelsPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     // MARK: - State
 
-    @State private var channels: [ChatService.ChannelListItem] = []
+    @State private var inboxItems: [ChatService.InboxItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var loadError: String?
+    @State private var typeFilter: ChannelTypeFilter = .all
     @State private var activeSheet: ActiveSheet?
+
+    private enum ChannelTypeFilter: String, CaseIterable {
+        case all = "All"
+        case messages = "Messages"
+        case dm = "DMs"
+        case job = "Job"
+        case qa = "Q&A"
+        case supplier = "Supplier"
+
+        var matchTypes: [String] {
+            switch self {
+            case .all: return []
+            case .messages: return ["group", "message"]
+            case .dm: return ["dm"]
+            case .job: return ["job"]
+            case .qa: return ["qa", "rfi"]
+            case .supplier: return ["supplier"]
+            }
+        }
+    }
 
     private enum ActiveSheet: Identifiable {
         case createChannel
@@ -33,8 +54,8 @@ struct IOSChannelsPage: View {
 
     var body: some View {
         channelList
-            .navigationTitle("Channels")
-            .searchable(text: $searchText, prompt: "Search channels...")
+            .navigationTitle("Chat")
+            .searchable(text: $searchText, prompt: "Search conversations...")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
@@ -75,6 +96,107 @@ struct IOSChannelsPage: View {
             .task { loadData() }
     }
 
+    // MARK: - Smart Card Filters
+
+    private var smartCardFilters: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(ChannelTypeFilter.allCases, id: \.self) { filter in
+                    let count = countForFilter(filter)
+                    smartCard(filter.rawValue, count: count, icon: iconForFilter(filter),
+                              isActive: typeFilter == filter, color: colorForFilter(filter)) {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            typeFilter = typeFilter == filter ? .all : filter
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+    }
+
+    private func smartCard(_ label: String, count: Int, icon: String, isActive: Bool,
+                           color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                HStack(spacing: 4) {
+                    Image(systemName: icon)
+                        .font(.caption2)
+                    Text("\(count)")
+                        .font(.system(.title3, weight: .bold))
+                        .monospacedDigit()
+                }
+                Text(label)
+                    .font(.caption2)
+            }
+            .frame(minWidth: 70)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isActive ? color.opacity(0.15) : Color(.systemGray6))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isActive ? color : Color.clear, lineWidth: 1.5)
+            )
+            .foregroundStyle(isActive ? color : .primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func countForFilter(_ filter: ChannelTypeFilter) -> Int {
+        if filter == .all { return inboxItems.count }
+        return inboxItems.filter { filter.matchTypes.contains($0.channelType) }.count
+    }
+
+    private func iconForFilter(_ filter: ChannelTypeFilter) -> String {
+        switch filter {
+        case .all: return "tray.full"
+        case .messages: return "bubble.left"
+        case .dm: return "person.2"
+        case .job: return "wrench.and.screwdriver"
+        case .qa: return "questionmark.circle"
+        case .supplier: return "building.2"
+        }
+    }
+
+    private func colorForFilter(_ filter: ChannelTypeFilter) -> Color {
+        switch filter {
+        case .all: return .accentColor
+        case .messages: return .green
+        case .dm: return .purple
+        case .job: return .blue
+        case .qa: return .orange
+        case .supplier: return .teal
+        }
+    }
+
+    // MARK: - Filtered Items
+
+    private var filteredItems: [ChatService.InboxItem] {
+        var items = inboxItems
+
+        // Type filter
+        if typeFilter != .all {
+            items = items.filter { typeFilter.matchTypes.contains($0.channelType) }
+        }
+
+        // Search filter
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            items = items.filter {
+                $0.channelName.lowercased().contains(query) ||
+                $0.lastMessagePreview.lowercased().contains(query) ||
+                ($0.jobName?.lowercased().contains(query) ?? false) ||
+                ($0.lastMessageBy?.lowercased().contains(query) ?? false)
+            }
+        }
+
+        return items
+    }
+
     // MARK: - Channel List
 
     @ViewBuilder
@@ -84,113 +206,160 @@ struct IOSChannelsPage: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
-        } else if filteredChannels.isEmpty {
+        } else if filteredItems.isEmpty {
             EmptyStateView(
                 icon: "bubble.left.and.bubble.right",
                 title: "No Channels",
-                message: "You haven't joined any channels yet."
+                message: typeFilter == .all
+                    ? "You haven't joined any channels yet."
+                    : "No channels match this filter."
             )
         } else {
-            List(filteredChannels, id: \.id) { channel in
-                NavigationLink {
-                    IOSMessageThreadView(
-                        channelId: channel.id,
-                        channelName: channel.name ?? channel.jobName ?? "Chat"
-                    )
-                    .environmentObject(appCore)
-                } label: {
-                    channelRow(channel)
+            List {
+                Section {
+                    smartCardFilters
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                }
+
+                ForEach(filteredItems) { item in
+                    NavigationLink {
+                        IOSMessageThreadView(
+                            channelId: item.id,
+                            channelName: item.channelName
+                        )
+                        .environmentObject(appCore)
+                    } label: {
+                        inboxRow(item)
+                    }
                 }
             }
             .listStyle(.insetGrouped)
         }
     }
 
-    private var filteredChannels: [ChatService.ChannelListItem] {
-        guard !searchText.isEmpty else { return channels }
-        let query = searchText.lowercased()
-        return channels.filter {
-            ($0.name?.lowercased().contains(query) ?? false) ||
-            ($0.jobName?.lowercased().contains(query) ?? false) ||
-            $0.channelType.lowercased().contains(query)
-        }
-    }
+    // MARK: - Inbox Row
 
-    private func channelRow(_ channel: ChatService.ChannelListItem) -> some View {
+    private func inboxRow(_ item: ChatService.InboxItem) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: channelIcon(channel.channelType))
+            // Type icon
+            Image(systemName: iconForChannelType(item.channelType))
                 .font(.title2)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(colorForChannelType(item.channelType))
                 .frame(width: 36)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(channel.name ?? channel.jobName ?? "Direct Message")
-                        .fontWeight(.medium)
-                    channelTypeBadge(channel.channelType)
+                    Text(item.channelName)
+                        .font(.body)
+                        .fontWeight(item.unreadCount > 0 ? .bold : .regular)
+                        .lineLimit(1)
+
+                    if let jobName = item.jobName, !jobName.isEmpty, item.channelType != "job" {
+                        Text(jobName)
+                            .font(.caption2)
+                            .foregroundStyle(.blue)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(.blue.opacity(0.1))
+                            .clipShape(Capsule())
+                            .lineLimit(1)
+                    }
                 }
-                if let jobName = channel.jobName, channel.name != nil {
-                    Label(jobName, systemImage: channel.channelType == "supplier" ? "building.2" : "hammer")
-                        .font(.caption)
+
+                HStack(spacing: 4) {
+                    if let sender = item.lastMessageBy {
+                        Text("\(sender):")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fontWeight(.medium)
+                    }
+                    Text(item.lastMessagePreview)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
-                }
-                if let lastMessage = channel.lastMessageAt, !lastMessage.isEmpty {
-                    Text(lastMessage)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
                 }
             }
 
             Spacer()
 
             VStack(alignment: .trailing, spacing: 4) {
-                Label("\(channel.memberCount)", systemImage: "person.2")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if let dateStr = item.lastMessageDate, !dateStr.isEmpty {
+                    Text(formatRelativeDate(dateStr))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if item.unreadCount > 0 {
+                    Text("\(item.unreadCount)")
+                        .font(.caption2).bold()
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.red)
+                        .clipShape(Capsule())
+                }
             }
         }
         .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(channel.name ?? channel.jobName ?? "Direct Message"), \(channel.channelType) channel, \(channel.memberCount) members")
     }
 
     // MARK: - Helpers
 
-    private func channelIcon(_ type: String) -> String {
+    private func iconForChannelType(_ type: String) -> String {
         switch type {
-        case "job": return "hammer.circle"
         case "dm": return "person.circle"
-        case "group": return "person.3"
+        case "job": return "hammer.circle"
+        case "group", "message": return "person.3"
         case "supplier": return "shippingbox.circle"
+        case "qa": return "questionmark.circle"
+        case "rfi": return "doc.text"
         default: return "bubble.left.and.bubble.right"
         }
     }
 
-    private func channelTypeBadge(_ type: String) -> some View {
-        let color: Color = switch type {
-        case "job": .blue
-        case "dm": .purple
-        case "group": .green
-        case "supplier": .orange
-        default: .secondary
+    private func colorForChannelType(_ type: String) -> Color {
+        switch type {
+        case "dm": return .purple
+        case "job": return .blue
+        case "group", "message": return .green
+        case "supplier": return .teal
+        case "qa": return .orange
+        case "rfi": return .orange
+        default: return .accentColor
         }
-        return Text(type.uppercased())
-            .font(.system(.caption2, weight: .semibold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(color.opacity(0.15)))
-            .foregroundStyle(color)
+    }
+
+    private func formatRelativeDate(_ iso: String) -> String {
+        // Simplified: show time if today, date if older
+        guard iso.count >= 16 else { return iso }
+        let todayPrefix = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+        if iso.hasPrefix(todayPrefix) {
+            let start = iso.index(iso.startIndex, offsetBy: 11)
+            let end = iso.index(iso.startIndex, offsetBy: 16)
+            return String(iso[start..<end])
+        } else if iso.count >= 10 {
+            return String(iso.prefix(10))
+        }
+        return iso
     }
 
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.chatService else { return }
-        guard let userId = appCore.currentUser?.id else { return }
-        isLoading = channels.isEmpty
+        guard let service = appCore.chatService else {
+            loadError = "Chat service unavailable"
+            isLoading = false
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            loadError = "Not logged in"
+            isLoading = false
+            return
+        }
+        isLoading = inboxItems.isEmpty
         loadError = nil
         do {
-            channels = try service.listChannels(userId: userId)
+            inboxItems = try service.getUnifiedInbox(userId: userId)
         } catch {
             loadError = error.localizedDescription
         }

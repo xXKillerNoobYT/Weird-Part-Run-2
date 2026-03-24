@@ -50,6 +50,8 @@ extension AppDatabase {
         registerMigration033PartChangeLog(&migrator)
         registerMigration034JobStages(&migrator)
         registerMigration035StagingBoxes(&migrator)
+        registerMigration036ClockTodoIntegration(&migrator)
+        registerMigration037ChatAttachments(&migrator)
     }
 }
 
@@ -3217,6 +3219,45 @@ extension AppDatabase {
 
             try db.create(index: "idx_staging_boxes_job", on: "staging_boxes", columns: ["job_id"])
             try db.create(index: "idx_staging_boxes_full", on: "staging_boxes", columns: ["is_full"])
+        }
+    }
+
+    // MARK: - 036: Clock + To-Do Integration
+
+    private static func registerMigration036ClockTodoIntegration(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("036_clock_todo_integration") { db in
+            // Add linked_todo_id and work_type to labor_entries
+            // so workers can track what they're doing + classify work type
+            try db.alter(table: "labor_entries") { t in
+                t.add(column: "linked_todo_id", .integer)
+                    .references("notebook_entries", onDelete: .setNull)
+                t.add(column: "work_type", .text)
+                    .defaults(to: "new_work")  // "new_work" or "warranty"
+            }
+        }
+    }
+}
+
+// MARK: - 037: Chat Message Attachments
+
+extension AppDatabase {
+    private static func registerMigration037ChatAttachments(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("037_chat_attachments") { db in
+            try db.create(table: "message_attachments") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("message_id", .integer).notNull()
+                    .references("chat_messages", onDelete: .cascade)
+                t.column("attachment_type", .text).notNull()  // "photo", "file", "part_ref", "po_ref", "job_ref", "jpo_ref"
+                t.column("file_path", .text)       // local file path for photos/files
+                t.column("file_name", .text)       // display name
+                t.column("file_size", .integer)    // bytes
+                t.column("mime_type", .text)       // "image/jpeg", "application/pdf", etc.
+                t.column("reference_id", .integer) // ID of the referenced entity (part, PO, job, JPO)
+                t.column("reference_label", .text) // Display label for the reference
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_msg_attach_message", on: "message_attachments", columns: ["message_id"])
         }
     }
 }

@@ -168,6 +168,8 @@ public final class JobsService: Sendable {
         public let gpsInLng: Double?
         public let gpsOutLat: Double?
         public let gpsOutLng: Double?
+        public let linkedTodoId: Int64?
+        public let workType: String?
 
         public init(
             id: Int64, userId: Int64, userName: String,
@@ -175,7 +177,8 @@ public final class JobsService: Sendable {
             clockIn: String, clockOut: String?, status: String,
             regularHours: Double, overtimeHours: Double,
             gpsInLat: Double?, gpsInLng: Double?,
-            gpsOutLat: Double?, gpsOutLng: Double?
+            gpsOutLat: Double?, gpsOutLng: Double?,
+            linkedTodoId: Int64? = nil, workType: String? = nil
         ) {
             self.id = id
             self.userId = userId
@@ -191,6 +194,8 @@ public final class JobsService: Sendable {
             self.gpsInLng = gpsInLng
             self.gpsOutLat = gpsOutLat
             self.gpsOutLng = gpsOutLng
+            self.linkedTodoId = linkedTodoId
+            self.workType = workType
         }
     }
 
@@ -767,7 +772,9 @@ public final class JobsService: Sendable {
                     gpsInLat: row["clock_in_gps_lat"] as Double?,
                     gpsInLng: row["clock_in_gps_lng"] as Double?,
                     gpsOutLat: row["clock_out_gps_lat"] as Double?,
-                    gpsOutLng: row["clock_out_gps_lng"] as Double?
+                    gpsOutLng: row["clock_out_gps_lng"] as Double?,
+                    linkedTodoId: row["linked_todo_id"] as Int64?,
+                    workType: row["work_type"] as String?
                 )
             }
         } catch {
@@ -826,13 +833,193 @@ public final class JobsService: Sendable {
                         gpsInLat: row["clock_in_gps_lat"] as Double?,
                         gpsInLng: row["clock_in_gps_lng"] as Double?,
                         gpsOutLat: row["clock_out_gps_lat"] as Double?,
-                        gpsOutLng: row["clock_out_gps_lng"] as Double?
+                        gpsOutLng: row["clock_out_gps_lng"] as Double?,
+                        linkedTodoId: row["linked_todo_id"] as Int64?,
+                        workType: row["work_type"] as String?
                     )
                 }
             }
         } catch {
             if isTableNotFoundError(error) { return [] }
             throw error
+        }
+    }
+
+    // MARK: - Clock + To-Do Integration
+
+    /// A lightweight to-do item for the clock page picker.
+    public struct ClockTodoItem: Sendable, Identifiable {
+        public let id: Int64
+        public let title: String
+        public let content: String?
+        public let taskStatus: String?
+
+        public init(id: Int64, title: String, content: String?, taskStatus: String?) {
+            self.id = id
+            self.title = title
+            self.content = content
+            self.taskStatus = taskStatus
+        }
+    }
+
+    /// Get active (incomplete) to-dos for a job from its notebooks.
+    public func getActiveJobTodos(jobId: Int64) throws -> [ClockTodoItem] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT ne.id, ne.title, ne.content, ne.task_status
+                    FROM notebook_entries ne
+                    JOIN notebook_sections ns ON ns.id = ne.section_id
+                    JOIN notebooks n ON n.id = ns.notebook_id
+                    WHERE n.job_id = ?
+                      AND ne.entry_type = 'todo'
+                      AND COALESCE(ne.task_status, 'pending') != 'complete'
+                      AND ne.deleted_at IS NULL
+                      AND ne.is_deleted = 0
+                    ORDER BY ne.sort_order ASC
+                    """, arguments: [jobId])
+                return rows.map { row in
+                    ClockTodoItem(
+                        id: row["id"] ?? 0,
+                        title: row["title"] ?? "",
+                        content: row["content"] as String?,
+                        taskStatus: row["task_status"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Link a clock entry to a specific to-do.
+    public func linkClockEntryToTodo(clockEntryId: Int64, todoId: Int64?) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE labor_entries SET linked_todo_id = ?, updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                arguments: [todoId, clockEntryId]
+            )
+        }
+    }
+
+    /// Set work type for a clock entry ("new_work" or "warranty").
+    public func setClockEntryWorkType(clockEntryId: Int64, workType: String) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE labor_entries SET work_type = ?, updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                arguments: [workType, clockEntryId]
+            )
+        }
+    }
+
+    // MARK: - Today's Clock Entries (Grouped)
+
+    /// Summary of a clock entry for today's hours breakdown.
+    public struct ClockEntrySummary: Sendable, Identifiable {
+        public let id: Int64
+        public let jobId: Int64
+        public let jobName: String
+        public let todoName: String?
+        public let startTime: Date
+        public let endTime: Date?  // nil = still clocked in
+        public let workType: String
+
+        public var duration: TimeInterval {
+            (endTime ?? Date()).timeIntervalSince(startTime)
+        }
+    }
+
+    /// Group of clock entries for a single job (used in today's breakdown).
+    public struct JobClockGroup: Sendable, Identifiable {
+        public let jobId: Int64
+        public let jobName: String
+        public let entries: [ClockEntrySummary]
+        public var id: Int64 { jobId }
+
+        public var totalDuration: TimeInterval {
+            entries.reduce(0) { $0 + $1.duration }
+        }
+    }
+
+    /// Get today's clock entries for a user, grouped by job with optional to-do names.
+    public func getTodaysClockEntries(userId: Int64) throws -> [JobClockGroup] {
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoBasic = ISO8601DateFormatter()
+        isoBasic.formatOptions = [.withInternetDateTime]
+
+        return try db.writer.read { dbConn -> [JobClockGroup] in
+            let todayPrefix = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT le.id, le.job_id, j.job_name, le.clock_in, le.clock_out,
+                       le.linked_todo_id, le.work_type,
+                       ne.title AS todo_name
+                FROM labor_entries le
+                LEFT JOIN jobs j ON j.id = le.job_id
+                LEFT JOIN notebook_entries ne ON ne.id = le.linked_todo_id
+                WHERE le.user_id = ?
+                  AND le.clock_in LIKE ?
+                  AND le.deleted_at IS NULL
+                ORDER BY le.clock_in ASC
+                """, arguments: [userId, "\(todayPrefix)%"])
+
+            var groupMap: [Int64: [ClockEntrySummary]] = [:]
+            var groupOrder: [Int64] = []
+            var jobNames: [Int64: String] = [:]
+
+            for row in rows {
+                let entryId: Int64 = row["id"] ?? 0
+                let jobId: Int64 = row["job_id"] ?? 0
+                let jobName: String = row["job_name"] ?? "Unknown"
+                let clockInStr: String = row["clock_in"] ?? ""
+                let clockOutStr: String? = row["clock_out"] as String?
+                let todoName: String? = row["todo_name"] as String?
+                let wType: String = row["work_type"] ?? "new_work"
+
+                let startDate = isoFormatter.date(from: clockInStr)
+                    ?? isoBasic.date(from: clockInStr)
+                    ?? Date()
+                let endDate: Date?
+                if let outStr = clockOutStr {
+                    endDate = isoFormatter.date(from: outStr)
+                        ?? isoBasic.date(from: outStr)
+                } else {
+                    endDate = nil
+                }
+
+                let summary = ClockEntrySummary(
+                    id: entryId,
+                    jobId: jobId,
+                    jobName: jobName,
+                    todoName: todoName,
+                    startTime: startDate,
+                    endTime: endDate,
+                    workType: wType
+                )
+
+                if groupMap[jobId] == nil {
+                    groupOrder.append(jobId)
+                    jobNames[jobId] = jobName
+                }
+                groupMap[jobId, default: []].append(summary)
+            }
+
+            return groupOrder.compactMap { jobId in
+                guard let entries = groupMap[jobId] else { return nil }
+                return JobClockGroup(
+                    jobId: jobId,
+                    jobName: jobNames[jobId] ?? "Unknown",
+                    entries: entries
+                )
+            }
         }
     }
 

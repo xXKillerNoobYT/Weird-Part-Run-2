@@ -51,6 +51,124 @@ public final class ChatService: Sendable {
         }
     }
 
+    // MARK: - Unified Inbox
+
+    /// An inbox item representing a channel with last message info and unread count.
+    public struct InboxItem: Sendable, Identifiable {
+        public let id: Int64       // channel ID
+        public let channelName: String
+        public let channelType: String
+        public let lastMessagePreview: String
+        public let lastMessageDate: String?
+        public let lastMessageBy: String?
+        public let unreadCount: Int
+        public let jobId: Int64?
+        public let jobName: String?
+        public let memberCount: Int
+    }
+
+    /// Get unified inbox showing all channels with last message info and unread counts.
+    /// Sorted by unread first, then most recent activity.
+    public func getUnifiedInbox(userId: Int64) throws -> [InboxItem] {
+        do {
+            return try db.writer.read { dbConn -> [InboxItem] in
+                let sql = """
+                    SELECT
+                        cc.id AS channel_id,
+                        COALESCE(cc.name, j.job_name, 'Direct Message') AS channel_name,
+                        cc.channel_type,
+                        cc.job_id,
+                        j.job_name,
+                        COALESCE(last_msg.content, 'No messages yet') AS last_message,
+                        last_msg.created_at AS last_message_date,
+                        COALESCE(last_msg_user.display_name, last_msg_user.email) AS last_message_by,
+                        COALESCE(unread.cnt, 0) AS unread_count,
+                        COALESCE(mem_count.cnt, 0) AS member_count
+                    FROM chat_channels cc
+                    INNER JOIN chat_channel_members my_mem
+                        ON my_mem.channel_id = cc.id
+                        AND my_mem.user_id = ?
+                        AND my_mem.left_at IS NULL
+                        AND my_mem.deleted_at IS NULL
+                    LEFT JOIN jobs j ON j.id = cc.job_id
+                    LEFT JOIN (
+                        SELECT cm.channel_id, cm.content, cm.created_at, cm.sender_id,
+                               ROW_NUMBER() OVER (PARTITION BY cm.channel_id ORDER BY cm.created_at DESC) AS rn
+                        FROM chat_messages cm
+                        WHERE cm.deleted_at IS NULL
+                    ) last_msg ON last_msg.channel_id = cc.id AND last_msg.rn = 1
+                    LEFT JOIN users last_msg_user ON last_msg_user.id = last_msg.sender_id
+                    LEFT JOIN (
+                        SELECT cm.channel_id, COUNT(*) AS cnt
+                        FROM chat_messages cm
+                        WHERE cm.deleted_at IS NULL
+                          AND cm.id > COALESCE(
+                            (SELECT crr.last_read_message_id FROM chat_read_receipts crr
+                             WHERE crr.channel_id = cm.channel_id AND crr.user_id = ?),
+                            0
+                          )
+                        GROUP BY cm.channel_id
+                    ) unread ON unread.channel_id = cc.id
+                    LEFT JOIN (
+                        SELECT channel_id, COUNT(*) AS cnt
+                        FROM chat_channel_members
+                        WHERE left_at IS NULL AND deleted_at IS NULL
+                        GROUP BY channel_id
+                    ) mem_count ON mem_count.channel_id = cc.id
+                    WHERE cc.is_active = 1 AND cc.deleted_at IS NULL
+                    ORDER BY unread_count DESC, last_msg.created_at DESC NULLS LAST
+                    """
+
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [userId, userId])
+                return rows.map { row in
+                    InboxItem(
+                        id: row["channel_id"] ?? 0,
+                        channelName: row["channel_name"] ?? "Chat",
+                        channelType: row["channel_type"] ?? "group",
+                        lastMessagePreview: row["last_message"] ?? "No messages yet",
+                        lastMessageDate: row["last_message_date"] as String?,
+                        lastMessageBy: row["last_message_by"] as String?,
+                        unreadCount: row["unread_count"] ?? 0,
+                        jobId: row["job_id"] as Int64?,
+                        jobName: row["job_name"] as String?,
+                        memberCount: row["member_count"] ?? 0
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get total unread message count across all channels for the current user.
+    public func getTotalUnreadCount(userId: Int64) throws -> Int {
+        do {
+            return try db.writer.read { dbConn in
+                let count = try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM chat_messages cm
+                    INNER JOIN chat_channel_members ccm
+                        ON ccm.channel_id = cm.channel_id
+                        AND ccm.user_id = ?
+                        AND ccm.left_at IS NULL AND ccm.deleted_at IS NULL
+                    INNER JOIN chat_channels cc
+                        ON cc.id = cm.channel_id
+                        AND cc.is_active = 1 AND cc.deleted_at IS NULL
+                    WHERE cm.deleted_at IS NULL
+                      AND cm.id > COALESCE(
+                        (SELECT crr.last_read_message_id FROM chat_read_receipts crr
+                         WHERE crr.channel_id = cm.channel_id AND crr.user_id = ?),
+                        0
+                      )
+                    """, arguments: [userId, userId])
+                return count ?? 0
+            }
+        } catch {
+            if isTableNotFoundError(error) { return 0 }
+            throw error
+        }
+    }
+
     /// A message row enriched with sender name.
     public struct MessageRow: Sendable, Identifiable {
         public let id: Int64
@@ -400,6 +518,367 @@ public final class ChatService: Sendable {
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
         return message.contains("no such table")
+    }
+
+    // =========================================================================
+    // MARK: - Attachments
+    // =========================================================================
+
+    /// A message attachment (photo, file, or entity reference).
+    public struct MessageAttachment: Sendable, Identifiable {
+        public let id: Int64
+        public let messageId: Int64
+        public let attachmentType: String  // "photo", "file", "part_ref", "po_ref", "job_ref", "jpo_ref"
+        public let filePath: String?
+        public let fileName: String?
+        public let fileSize: Int64?
+        public let mimeType: String?
+        public let referenceId: Int64?
+        public let referenceLabel: String?
+    }
+
+    /// A pending attachment before the message is sent.
+    public struct PendingAttachment: Sendable {
+        public let type: String  // "photo", "file", "part_ref", "po_ref", "job_ref", "jpo_ref"
+        public let filePath: String?
+        public let fileName: String?
+        public let fileSize: Int64?
+        public let mimeType: String?
+        public let referenceId: Int64?
+        public let referenceLabel: String?
+
+        public init(type: String, filePath: String? = nil, fileName: String? = nil,
+                    fileSize: Int64? = nil, mimeType: String? = nil,
+                    referenceId: Int64? = nil, referenceLabel: String? = nil) {
+            self.type = type
+            self.filePath = filePath
+            self.fileName = fileName
+            self.fileSize = fileSize
+            self.mimeType = mimeType
+            self.referenceId = referenceId
+            self.referenceLabel = referenceLabel
+        }
+    }
+
+    /// Send a message with attachments. Returns the new message row ID.
+    @discardableResult
+    public func sendMessageWithAttachments(
+        channelId: Int64,
+        content: String,
+        userId: Int64,
+        attachments: [PendingAttachment]
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            // Insert message
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO chat_messages
+                    (channel_id, sender_id, message_type, content, created_at)
+                    VALUES (?, ?, 'text', ?, datetime('now'))
+                    """,
+                arguments: [channelId, userId, content]
+            )
+            let messageId = dbConn.lastInsertedRowID
+
+            // Insert each attachment
+            for att in attachments {
+                try dbConn.execute(
+                    sql: """
+                        INSERT INTO message_attachments
+                        (message_id, attachment_type, file_path, file_name, file_size,
+                         mime_type, reference_id, reference_label)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                    arguments: [messageId, att.type, att.filePath, att.fileName,
+                                att.fileSize, att.mimeType, att.referenceId, att.referenceLabel]
+                )
+            }
+
+            return messageId
+        }
+    }
+
+    /// Get attachments for a message.
+    public func getMessageAttachments(messageId: Int64) throws -> [MessageAttachment] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT id, message_id, attachment_type, file_path, file_name,
+                           file_size, mime_type, reference_id, reference_label
+                    FROM message_attachments
+                    WHERE message_id = ? AND deleted_at IS NULL
+                    ORDER BY id ASC
+                    """, arguments: [messageId])
+                return rows.map { row in
+                    MessageAttachment(
+                        id: row["id"] ?? 0,
+                        messageId: row["message_id"] ?? 0,
+                        attachmentType: row["attachment_type"] ?? "file",
+                        filePath: row["file_path"],
+                        fileName: row["file_name"],
+                        fileSize: row["file_size"],
+                        mimeType: row["mime_type"],
+                        referenceId: row["reference_id"],
+                        referenceLabel: row["reference_label"]
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get attachments for multiple messages at once (for batch loading in thread view).
+    public func getAttachmentsForMessages(messageIds: [Int64]) throws -> [Int64: [MessageAttachment]] {
+        guard !messageIds.isEmpty else { return [:] }
+        do {
+            return try db.writer.read { dbConn in
+                let placeholders = messageIds.map { _ in "?" }.joined(separator: ",")
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT id, message_id, attachment_type, file_path, file_name,
+                           file_size, mime_type, reference_id, reference_label
+                    FROM message_attachments
+                    WHERE message_id IN (\(placeholders)) AND deleted_at IS NULL
+                    ORDER BY id ASC
+                    """, arguments: StatementArguments(messageIds))
+
+                var result: [Int64: [MessageAttachment]] = [:]
+                for row in rows {
+                    let att = MessageAttachment(
+                        id: row["id"] ?? 0,
+                        messageId: row["message_id"] ?? 0,
+                        attachmentType: row["attachment_type"] ?? "file",
+                        filePath: row["file_path"],
+                        fileName: row["file_name"],
+                        fileSize: row["file_size"],
+                        mimeType: row["mime_type"],
+                        referenceId: row["reference_id"],
+                        referenceLabel: row["reference_label"]
+                    )
+                    result[att.messageId, default: []].append(att)
+                }
+                return result
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [:] }
+            throw error
+        }
+    }
+
+    /// Auto-save photo/file attachments from a job-linked channel to the job's notebook.
+    /// Best-effort — failures are silently ignored to not block message sending.
+    public func autoSaveToJobNotebook(channelId: Int64, attachment: MessageAttachment) throws {
+        try db.writer.write { dbConn in
+            // Get job ID from channel
+            guard let row = try Row.fetchOne(dbConn, sql: """
+                SELECT job_id FROM chat_channels WHERE id = ? AND job_id IS NOT NULL AND deleted_at IS NULL
+                """, arguments: [channelId]),
+                  let jobId: Int64 = row["job_id"] else {
+                return
+            }
+
+            // Get or create the job's notebook
+            let notebookId: Int64
+            if let existing = try Row.fetchOne(dbConn, sql: """
+                SELECT id FROM notebooks WHERE job_id = ? AND deleted_at IS NULL LIMIT 1
+                """, arguments: [jobId]) {
+                notebookId = existing["id"] ?? 0
+            } else {
+                try dbConn.execute(sql: """
+                    INSERT INTO notebooks (job_id, title, notebook_type, status, created_at, updated_at)
+                    VALUES (?, 'Job Notebook', 'job', 'active', datetime('now'), datetime('now'))
+                    """, arguments: [jobId])
+                notebookId = dbConn.lastInsertedRowID
+            }
+
+            // Save as notebook entry
+            let title = attachment.fileName ?? "Chat attachment"
+            let content = attachment.filePath ?? attachment.referenceLabel ?? ""
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_entries
+                (notebook_id, entry_type, title, content, status, created_at, updated_at)
+                VALUES (?, 'attachment', ?, ?, 'active', datetime('now'), datetime('now'))
+                """, arguments: [notebookId, title, content])
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Thread Info
+    // =========================================================================
+
+    /// A member of a channel for display in the thread info panel.
+    public struct ChannelMemberInfo: Sendable, Identifiable {
+        public let id: Int64          // membership row ID
+        public let userId: Int64
+        public let name: String
+        public let role: String?      // "admin", "member"
+    }
+
+    /// Actions available in the thread info panel.
+    public enum ThreadAction: String, CaseIterable, Identifiable, Sendable {
+        case approve
+        case reject
+        case escalate
+        case pushBack
+        case markResolved
+        case addPeople
+
+        public var id: String { rawValue }
+    }
+
+    /// Full thread info for the inline expandable panel.
+    public struct ThreadInfo: Sendable {
+        public let channelType: String
+        public let channelName: String
+
+        // Source context
+        public let sourceType: String?   // "jpo", "po", "job", "supplier", nil for general
+        public let sourceId: Int64?
+        public let sourceName: String?
+
+        // Escalation (for Q&A/RFI)
+        public let escalationLevel: String?  // "worker", "lead", "manager", "office"
+        public let canEscalate: Bool
+        public let canPushBack: Bool
+
+        // People
+        public let members: [ChannelMemberInfo]
+
+        // Quick actions based on type
+        public let availableActions: [ThreadAction]
+    }
+
+    /// Get thread info for a channel, including source context, members, and available actions.
+    public func getThreadInfo(channelId: Int64) throws -> ThreadInfo? {
+        do {
+            return try db.writer.read { dbConn -> ThreadInfo? in
+                // Get channel info
+                guard let channelRow = try Row.fetchOne(dbConn, sql: """
+                    SELECT cc.id, cc.name, cc.channel_type, cc.job_id,
+                           j.job_name, j.job_number
+                    FROM chat_channels cc
+                    LEFT JOIN jobs j ON j.id = cc.job_id
+                    WHERE cc.id = ? AND cc.deleted_at IS NULL
+                    """, arguments: [channelId]) else {
+                    return nil
+                }
+
+                let channelType: String = channelRow["channel_type"] ?? "group"
+                let channelName: String = channelRow["name"] ?? channelRow["job_name"] ?? "Chat"
+                let jobId: Int64? = channelRow["job_id"]
+                let jobName: String? = channelRow["job_name"]
+
+                // Determine source context
+                var sourceType: String? = nil
+                var sourceId: Int64? = nil
+                var sourceName: String? = nil
+
+                if channelType == "supplier" {
+                    // Get supplier info from bridge
+                    if let bridge = try Row.fetchOne(dbConn, sql: """
+                        SELECT scb.supplier_id, s.name AS supplier_name
+                        FROM supplier_channel_bridges scb
+                        JOIN suppliers s ON s.id = scb.supplier_id
+                        WHERE scb.channel_id = ? AND scb.deleted_at IS NULL
+                        LIMIT 1
+                        """, arguments: [channelId]) {
+                        sourceType = "supplier"
+                        sourceId = bridge["supplier_id"]
+                        sourceName = bridge["supplier_name"]
+                    }
+                } else if channelType == "job", let jId = jobId {
+                    sourceType = "job"
+                    sourceId = jId
+                    sourceName = jobName
+                }
+
+                // Get escalation info for Q&A/RFI channels
+                var escalationLevel: String? = nil
+                var canEscalate = false
+                var canPushBack = false
+
+                if channelType == "qa" || channelType == "rfi" {
+                    if let qa = try Row.fetchOne(dbConn, sql: """
+                        SELECT current_level, status FROM qa_threads
+                        WHERE channel_id = ? AND deleted_at IS NULL
+                        ORDER BY created_at DESC LIMIT 1
+                        """, arguments: [channelId]) {
+                        let level: String = qa["current_level"] ?? "worker"
+                        let status: String = qa["status"] ?? "open"
+                        escalationLevel = level
+                        if status == "open" {
+                            canEscalate = level != "office"
+                            canPushBack = level != "worker"
+                        }
+                    }
+                }
+
+                // Get channel members
+                let memberRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT ccm.id, ccm.user_id, ccm.role,
+                           COALESCE(u.display_name, u.first_name || ' ' || u.last_name, u.email, 'Unknown') AS name
+                    FROM chat_channel_members ccm
+                    LEFT JOIN users u ON u.id = ccm.user_id
+                    WHERE ccm.channel_id = ? AND ccm.left_at IS NULL AND ccm.deleted_at IS NULL
+                    ORDER BY ccm.role DESC, name ASC
+                    """, arguments: [channelId])
+
+                let members = memberRows.map { row in
+                    ChannelMemberInfo(
+                        id: row["id"] ?? 0,
+                        userId: row["user_id"] ?? 0,
+                        name: row["name"] ?? "Unknown",
+                        role: row["role"]
+                    )
+                }
+
+                // Determine available actions
+                var actions: [ThreadAction] = []
+                switch channelType {
+                case "dm":
+                    actions = [.addPeople]
+                case "job":
+                    actions = [.markResolved, .addPeople]
+                case "qa", "rfi":
+                    if canEscalate { actions.append(.escalate) }
+                    if canPushBack { actions.append(.pushBack) }
+                    actions.append(.markResolved)
+                    actions.append(.addPeople)
+                case "supplier":
+                    actions = [.addPeople]
+                default:
+                    actions = [.addPeople]
+                }
+
+                return ThreadInfo(
+                    channelType: channelType,
+                    channelName: channelName,
+                    sourceType: sourceType,
+                    sourceId: sourceId,
+                    sourceName: sourceName,
+                    escalationLevel: escalationLevel,
+                    canEscalate: canEscalate,
+                    canPushBack: canPushBack,
+                    members: members,
+                    availableActions: actions
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) { return nil }
+            throw error
+        }
+    }
+
+    /// Mark a Q&A thread as resolved.
+    public func resolveQAThread(threadId: Int64, resolvedBy: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE qa_threads SET status = 'resolved', answered_by = ?, answered_at = datetime('now'),
+                    closed_at = datetime('now'), updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [resolvedBy, threadId])
+        }
     }
 
     // =========================================================================

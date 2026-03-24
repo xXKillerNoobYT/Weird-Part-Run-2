@@ -3,8 +3,8 @@ import WiredPartCore
 
 /// Team management page for iOS.
 ///
-/// Displays a searchable list of teams with team name, member count,
-/// and lead name. Supports pull-to-refresh and search filtering.
+/// Displays a searchable list of teams with smart card filters,
+/// member counts, and navigation to team detail pages.
 struct IOSTeamsPage: View {
     @EnvironmentObject private var appCore: AppCore
 
@@ -14,6 +14,12 @@ struct IOSTeamsPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var loadError: String?
+    @State private var filter: TeamFilter = .all
+
+    private enum TeamFilter {
+        case all, active, mine
+    }
+
     private enum ActiveSheet: String, Identifiable {
         case addTeam
         var id: String { rawValue }
@@ -24,7 +30,6 @@ struct IOSTeamsPage: View {
         teamList
             .navigationTitle("Teams")
             .searchable(text: $searchText, prompt: "Search teams...")
-            .onChange(of: searchText) { /* local filter only */ }
             .refreshable { loadData() }
             .task { loadData() }
             .toolbar {
@@ -43,6 +48,83 @@ struct IOSTeamsPage: View {
             }
     }
 
+    // MARK: - Smart Card Filters
+
+    private var smartCardFilters: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                smartCard("All", count: teams.count, icon: "person.3", filterType: .all, color: .accentColor)
+                smartCard("Active", count: activeTeams.count, icon: "checkmark.circle", filterType: .active, color: .green)
+                smartCard("My Teams", count: myTeams.count, icon: "person.crop.circle", filterType: .mine, color: .blue)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+    }
+
+    private func smartCard(_ label: String, count: Int, icon: String, filterType: TeamFilter, color: Color) -> some View {
+        let isActive = filter == filterType
+        return Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                filter = isActive ? .all : filterType
+            }
+        } label: {
+            VStack(spacing: 4) {
+                HStack(spacing: 4) {
+                    Image(systemName: icon)
+                        .font(.caption2)
+                    Text("\(count)")
+                        .font(.system(.title3, weight: .bold))
+                        .monospacedDigit()
+                }
+                Text(label)
+                    .font(.caption2)
+            }
+            .frame(minWidth: 80)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isActive ? color.opacity(0.15) : Color(.systemGray6))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isActive ? color : Color.clear, lineWidth: 1.5)
+            )
+            .foregroundStyle(isActive ? color : .primary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Filter Helpers
+
+    private var activeTeams: [PeopleService.TeamListItem] {
+        teams.filter { $0.memberCount > 0 }
+    }
+
+    private var myTeams: [PeopleService.TeamListItem] {
+        // For now, show all teams — would need current user's team membership to filter
+        // This is a placeholder; ideally we'd filter by current user's teams
+        teams
+    }
+
+    private var filteredTeams: [PeopleService.TeamListItem] {
+        var result: [PeopleService.TeamListItem]
+        switch filter {
+        case .all: result = teams
+        case .active: result = activeTeams
+        case .mine: result = myTeams
+        }
+
+        guard !searchText.isEmpty else { return result }
+        let query = searchText.lowercased()
+        return result.filter {
+            $0.name.lowercased().contains(query) ||
+            ($0.description?.lowercased().contains(query) ?? false) ||
+            ($0.leaderName?.lowercased().contains(query) ?? false)
+        }
+    }
+
     // MARK: - Team List
 
     @ViewBuilder
@@ -59,20 +141,23 @@ struct IOSTeamsPage: View {
                 Text("No teams have been created yet.")
             }
         } else {
-            List(filteredTeams, id: \.id) { team in
-                teamRow(team)
+            List {
+                Section {
+                    smartCardFilters
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                }
+
+                ForEach(filteredTeams, id: \.id) { team in
+                    NavigationLink(value: team.id) {
+                        teamRow(team)
+                    }
+                }
             }
             .listStyle(.insetGrouped)
-        }
-    }
-
-    private var filteredTeams: [PeopleService.TeamListItem] {
-        guard !searchText.isEmpty else { return teams }
-        let query = searchText.lowercased()
-        return teams.filter {
-            $0.name.lowercased().contains(query) ||
-            ($0.description?.lowercased().contains(query) ?? false) ||
-            ($0.leaderName?.lowercased().contains(query) ?? false)
+            .navigationDestination(for: Int64.self) { teamId in
+                IOSTeamDetailPage(teamId: teamId)
+            }
         }
     }
 

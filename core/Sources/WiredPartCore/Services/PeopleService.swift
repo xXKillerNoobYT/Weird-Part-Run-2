@@ -338,8 +338,8 @@ public final class PeopleService: Sendable {
                     dbConn,
                     sql: """
                         SELECT tm.id, tm.team_id, t.name AS team_name, tm.role, tm.joined_at
-                        FROM team_members tm
-                        JOIN teams t ON t.id = tm.team_id AND t.deleted_at IS NULL
+                        FROM employee_team_members tm
+                        JOIN employee_teams t ON t.id = tm.team_id AND t.deleted_at IS NULL
                         WHERE tm.user_id = ? AND tm.deleted_at IS NULL
                         ORDER BY t.name ASC
                         """,
@@ -534,10 +534,10 @@ public final class PeopleService: Sendable {
                 let sql = """
                     SELECT t.id, t.name, t.description,
                            COALESCE(u.display_name, u.email) AS leader_name,
-                           COALESCE((SELECT COUNT(*) FROM team_members tm
+                           COALESCE((SELECT COUNT(*) FROM employee_team_members tm
                                      WHERE tm.team_id = t.id AND tm.deleted_at IS NULL), 0) AS member_count
-                    FROM teams t
-                    LEFT JOIN users u ON u.id = t.leader_id
+                    FROM employee_teams t
+                    LEFT JOIN users u ON u.id = t.lead_user_id
                     WHERE t.deleted_at IS NULL
                     ORDER BY t.name ASC
                     """
@@ -707,6 +707,214 @@ public final class PeopleService: Sendable {
                 arguments: [name, description]
             )
             return dbConn.lastInsertedRowID
+        }
+    }
+
+    // MARK: - Team Detail + Member Management
+
+    /// Team detail info (lightweight).
+    public struct TeamDetail: Sendable {
+        public let id: Int64
+        public let name: String
+        public let description: String?
+        public let leaderName: String?
+        public let isActive: Bool
+        public let createdAt: String?
+    }
+
+    /// A team member with their last work date.
+    public struct TeamMemberDetail: Sendable, Identifiable {
+        public let id: Int64          // user id
+        public let membershipId: Int64 // employee_team_members.id
+        public let name: String
+        public let role: String
+        public let lastWorkDate: Date?
+    }
+
+    /// A lightweight job summary for team assignments.
+    public struct TeamJobSummary: Sendable, Identifiable {
+        public let id: Int64
+        public let jobName: String
+        public let jobNumber: String
+        public let status: String
+    }
+
+    /// Get team detail by ID.
+    public func getTeamDetail(teamId: Int64) throws -> TeamDetail? {
+        try db.writer.read { dbConn in
+            guard let row = try Row.fetchOne(dbConn, sql: """
+                SELECT t.id, t.name, t.description, t.is_active, t.created_at,
+                       COALESCE(u.display_name, u.email) AS leader_name
+                FROM employee_teams t
+                LEFT JOIN users u ON u.id = t.lead_user_id
+                WHERE t.id = ? AND t.deleted_at IS NULL
+                """, arguments: [teamId]) else { return nil }
+
+            return TeamDetail(
+                id: row["id"] ?? 0,
+                name: row["name"] ?? "",
+                description: row["description"] as String?,
+                leaderName: row["leader_name"] as String?,
+                isActive: (row["is_active"] as Int? ?? 1) == 1,
+                createdAt: row["created_at"] as String?
+            )
+        }
+    }
+
+    /// Get team members with their most recent clock entry date.
+    public func getTeamMembers(teamId: Int64) throws -> [TeamMemberDetail] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT tm.id AS membership_id, u.id AS user_id,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS name,
+                           tm.role,
+                           (SELECT MAX(le.clock_in) FROM labor_entries le
+                            WHERE le.user_id = u.id AND le.deleted_at IS NULL) AS last_work
+                    FROM employee_team_members tm
+                    JOIN users u ON u.id = tm.user_id
+                    WHERE tm.team_id = ? AND tm.deleted_at IS NULL
+                    ORDER BY u.display_name ASC
+                    """, arguments: [teamId])
+
+                let isoFormatter = ISO8601DateFormatter()
+                isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                let isoBasic = ISO8601DateFormatter()
+                isoBasic.formatOptions = [.withInternetDateTime]
+
+                return rows.map { row in
+                    let lastWorkStr: String? = row["last_work"] as String?
+                    let lastWork: Date? = lastWorkStr.flatMap {
+                        isoFormatter.date(from: $0) ?? isoBasic.date(from: $0)
+                    }
+                    return TeamMemberDetail(
+                        id: row["user_id"] ?? 0,
+                        membershipId: row["membership_id"] ?? 0,
+                        name: row["name"] ?? "Unknown",
+                        role: row["role"] ?? "member",
+                        lastWorkDate: lastWork
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get jobs that members of this team are assigned to.
+    public func getTeamJobs(teamId: Int64) throws -> [TeamJobSummary] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT DISTINCT j.id, j.job_name, j.job_number, j.status
+                    FROM job_team_members jtm
+                    JOIN employee_team_members etm ON etm.user_id = jtm.user_id AND etm.deleted_at IS NULL
+                    JOIN jobs j ON j.id = jtm.job_id AND j.deleted_at IS NULL
+                    WHERE etm.team_id = ?
+                      AND jtm.deleted_at IS NULL
+                      AND j.status IN ('active', 'in_progress', 'pending')
+                    ORDER BY j.job_name ASC
+                    """, arguments: [teamId])
+
+                return rows.map { row in
+                    TeamJobSummary(
+                        id: row["id"] ?? 0,
+                        jobName: row["job_name"] ?? "",
+                        jobNumber: row["job_number"] ?? "",
+                        status: row["status"] ?? "active"
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Add a user to a team.
+    public func addTeamMember(teamId: Int64, userId: Int64, role: String = "member") throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT OR IGNORE INTO employee_team_members (team_id, user_id, role)
+                    VALUES (?, ?, ?)
+                    """,
+                arguments: [teamId, userId, role]
+            )
+        }
+    }
+
+    /// Remove a user from a team (soft delete).
+    public func removeTeamMember(membershipId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE employee_team_members SET deleted_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                arguments: [membershipId]
+            )
+        }
+    }
+
+    /// Update team name and description.
+    public func updateTeam(teamId: Int64, name: String, description: String?) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE employee_teams SET name = ?, description = ?, updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                arguments: [name, description, teamId]
+            )
+        }
+    }
+
+    /// Soft-delete a team.
+    public func deleteTeam(teamId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE employee_teams SET deleted_at = datetime('now'), updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                arguments: [teamId]
+            )
+        }
+    }
+
+    /// Get employees not already on a given team (for the add-member picker).
+    public func getAvailableEmployeesForTeam(teamId: Int64) throws -> [EmployeeListItem] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT u.id, COALESCE(u.display_name, u.email) AS display_name,
+                           u.email, u.phone, u.status
+                    FROM users u
+                    WHERE u.status = 'active' AND u.deleted_at IS NULL
+                      AND u.id NOT IN (
+                        SELECT tm.user_id FROM employee_team_members tm
+                        WHERE tm.team_id = ? AND tm.deleted_at IS NULL
+                      )
+                    ORDER BY u.display_name ASC
+                    """, arguments: [teamId])
+
+                return rows.map { row in
+                    EmployeeListItem(
+                        id: row["id"] ?? 0,
+                        displayName: row["display_name"] ?? "",
+                        email: row["email"] ?? "",
+                        phone: row["phone"] as String?,
+                        status: row["status"] ?? "active",
+                        role: "user",
+                        hatNames: nil
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 

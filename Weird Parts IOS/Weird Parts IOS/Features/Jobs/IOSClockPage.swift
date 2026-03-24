@@ -33,6 +33,18 @@ struct IOSClockPage: View {
     // Activity status (working, supply_run, etc.)
     @State private var activityStatus: String = "working"
 
+    // To-do integration
+    @State private var activeTodos: [JobsService.ClockTodoItem] = []
+    @State private var currentTodo: JobsService.ClockTodoItem?
+    @State private var workType: String = "new_work"
+
+    // Live elapsed timer
+    @State private var elapsedTimer: Timer?
+    @State private var elapsedText: String = "0h 0m"
+
+    // Today's grouped breakdown
+    @State private var todayJobGroups: [JobsService.JobClockGroup] = []
+
     // Sheets
     @State private var activeSheet: ActiveSheet?
     @State private var lastLaborEntryId: Int64?
@@ -41,12 +53,16 @@ struct IOSClockPage: View {
         case questionnaire(Int64)
         case jobScanner
         case help
+        case todoPicker
+        case switchJobPicker
 
         var id: String {
             switch self {
             case .questionnaire(let id): "questionnaire-\(id)"
             case .jobScanner: "jobScanner"
             case .help: "help"
+            case .todoPicker: "todoPicker"
+            case .switchJobPicker: "switchJobPicker"
             }
         }
     }
@@ -90,6 +106,7 @@ struct IOSClockPage: View {
                 locationManager.requestPermission()
                 loadData()
             }
+            .onDisappear { elapsedTimer?.invalidate(); elapsedTimer = nil }
             .fullScreenCover(isPresented: $geofenceManager.didExitJobRegion) {
                 GeofenceAlertView(
                     geofenceManager: geofenceManager,
@@ -115,9 +132,24 @@ struct IOSClockPage: View {
                         sections: [
                             ("Clocking In", "Select a job from the GPS-sorted list to clock in. Jobs closest to you appear first. 'Shop / Warehouse' is always pinned at the top."),
                             ("Clocking Out", "When clocked in, tap the Clock Out button. You may be prompted to answer clock-out questions before the entry is saved."),
+                            ("Elapsed Timer", "The large timer shows how long you've been on the current job. It updates every minute automatically."),
+                            ("Switch Job", "Use the Switch Job button to clock out of the current job and immediately clock into a different one — no need to find the job list again."),
+                            ("To-Do Tracking", "After clocking in, you can optionally pick a to-do to track what you're working on. Use 'Mark Done' to complete it and pick the next one."),
+                            ("Today's Hours", "The hours breakdown shows your total time per job with optional per-to-do detail. Warranty entries are marked with a 'W' badge."),
                             ("QR Scan", "Use the QR scanner button in the toolbar to scan a job QR code and clock in directly.")
                         ]
                     )
+                case .todoPicker:
+                    TodoPickerSheet(todos: activeTodos) { todo in
+                        selectTodo(todo)
+                        activeSheet = nil
+                    }
+                case .switchJobPicker:
+                    SwitchJobPickerSheet(jobs: sortedJobs) { jobId, isShop in
+                        activeSheet = nil
+                        clockIn(jobId: jobId, isShop: isShop)
+                    }
+                    .environmentObject(appCore)
                 }
             }
     }
@@ -143,6 +175,7 @@ struct IOSClockPage: View {
                 if let entry = activeEntry {
                     // CLOCKED IN — show status + clock out button
                     clockedInSection(entry)
+                    currentTaskSection(entry)
                     shopJobLinkSection
                     todayHoursSection
                 } else {
@@ -165,13 +198,17 @@ struct IOSClockPage: View {
                     .font(.headline)
                     .foregroundStyle(activityStatus == "supply_run" ? .orange : .green)
 
-                HStack {
-                    Text("Job:")
+                // Live elapsed timer — large, readable display
+                VStack(spacing: 2) {
+                    Text(elapsedText)
+                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                    Text("on \(entry.jobName)")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    Text(entry.jobName)
-                        .fontWeight(.medium)
                 }
-                .font(.subheadline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
 
                 HStack {
                     Text("Since:")
@@ -180,14 +217,27 @@ struct IOSClockPage: View {
                         .font(.system(.subheadline, design: .monospaced))
                 }
 
-                Button(role: .destructive) {
-                    clockOut(entryId: entry.id)
-                } label: {
-                    Label("Clock Out", systemImage: "stop.circle.fill")
-                        .frame(maxWidth: .infinity)
+                // Clock Out + Switch Job buttons
+                HStack(spacing: 12) {
+                    Button(role: .destructive) {
+                        clockOut(entryId: entry.id)
+                    } label: {
+                        Label("Clock Out", systemImage: "stop.circle.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+
+                    Button {
+                        Task { await switchJob(entryId: entry.id) }
+                    } label: {
+                        Label("Switch Job", systemImage: "arrow.triangle.swap")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .tint(.blue)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
                 .padding(.top, 4)
 
                 Divider()
@@ -387,42 +437,72 @@ struct IOSClockPage: View {
         }
     }
 
-    // MARK: - Today's Hours
+    // MARK: - Today's Hours (Per-Job + Per-Todo Breakdown)
 
     private var todayHoursSection: some View {
-        Section("Today's Hours") {
-            HStack {
-                Label("Total", systemImage: "chart.bar.fill")
-                    .foregroundStyle(.primary)
-                Spacer()
-                Text(String(format: "%.1f hrs", todayHours))
-                    .font(.system(.body, design: .monospaced))
-                    .fontWeight(.semibold)
-            }
-
-            if todayEntries.isEmpty {
-                Text("No time entries recorded today.")
+        Section {
+            if todayJobGroups.isEmpty {
+                Text("No hours logged today.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(todayEntries, id: \.id) { entry in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(entry.jobName)
-                                .font(.subheadline)
-                            Text("\(formatTime(entry.clockIn)) - \(entry.clockOut.map { formatTime($0) } ?? "now")")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                // Per-job breakdown
+                ForEach(todayJobGroups) { jobGroup in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(jobGroup.jobName).font(.headline)
+                            Spacer()
+                            Text(formatDuration(jobGroup.totalDuration))
+                                .font(.headline).monospacedDigit()
                         }
-                        Spacer()
-                        Text(String(format: "%.1f", entry.regularHours + entry.overtimeHours))
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                        statusDot(entry.clockOut == nil)
+                        // Per-entry breakdown within job (shows to-do if linked)
+                        ForEach(jobGroup.entries) { entry in
+                            HStack {
+                                if let todo = entry.todoName {
+                                    Text("  \(todo)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Text("  General")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                }
+                                if entry.workType == "warranty" {
+                                    Text("W")
+                                        .font(.caption2)
+                                        .fontWeight(.bold)
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 1)
+                                        .background(Color.orange.opacity(0.2))
+                                        .clipShape(Capsule())
+                                }
+                                Spacer()
+                                Text(formatDuration(entry.duration))
+                                    .font(.caption).monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                                statusDot(entry.endTime == nil)
+                            }
+                        }
                     }
                 }
+
+                // Total
+                HStack {
+                    Text("Today Total").font(.headline).bold()
+                    Spacer()
+                    Text(formatDuration(todaysTotal))
+                        .font(.headline).bold().monospacedDigit()
+                }
+                .padding(.top, 4)
             }
+        } header: {
+            Text("Today's Hours")
         }
+    }
+
+    /// Total duration across all today's entries.
+    private var todaysTotal: TimeInterval {
+        todayJobGroups.reduce(0) { $0 + $1.totalDuration }
     }
 
     // MARK: - Status Dot
@@ -431,6 +511,73 @@ struct IOSClockPage: View {
         Circle()
             .fill(isActive ? Color.green : Color.secondary.opacity(0.3))
             .frame(width: 8, height: 8)
+    }
+
+    // MARK: - Current Task Section
+
+    @ViewBuilder
+    private func currentTaskSection(_ entry: JobsService.LaborEntryRow) -> some View {
+        // Only show if this job has to-dos
+        if !activeTodos.isEmpty || currentTodo != nil {
+            Section {
+                // Work type picker
+                Picker("Work Type", selection: $workType) {
+                    Text("New Work").tag("new_work")
+                    Text("Warranty").tag("warranty")
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: workType) { _, newValue in
+                    guard let service = appCore.jobsService else { return }
+                    try? service.setClockEntryWorkType(clockEntryId: entry.id, workType: newValue)
+                }
+
+                if let todo = currentTodo {
+                    // Current to-do display
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Image(systemName: "checkmark.circle")
+                                .foregroundStyle(.blue)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(todo.title)
+                                    .font(.headline)
+                                Text("Working on this")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+
+                        HStack(spacing: 12) {
+                            Button {
+                                Task { await markTodoDoneAndPickNext(entry: entry) }
+                            } label: {
+                                Label("Mark Done", systemImage: "checkmark.circle.fill")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.green)
+                            .controlSize(.small)
+
+                            Button {
+                                activeSheet = .todoPicker
+                            } label: {
+                                Label("Switch", systemImage: "arrow.triangle.swap")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                } else {
+                    // No to-do selected
+                    Button {
+                        activeSheet = .todoPicker
+                    } label: {
+                        Label("Pick a To-Do", systemImage: "checklist")
+                    }
+                }
+            } header: {
+                Text("Current Task")
+            }
+        }
     }
 
     // MARK: - Actions
@@ -593,6 +740,115 @@ struct IOSClockPage: View {
         linkedJobName = nil
     }
 
+    // MARK: - Switch Job
+
+    /// Clock out of current job and immediately show job picker for new clock-in.
+    private func switchJob(entryId: Int64) async {
+        guard let service = appCore.jobsService else { return }
+        let location = await locationManager.getCurrentLocation()
+
+        do {
+            try service.clockOut(
+                laborEntryId: entryId,
+                gpsLat: location?.coordinate.latitude,
+                gpsLng: location?.coordinate.longitude
+            )
+            geofenceManager.stopMonitoring()
+            await MainActor.run {
+                errorMessage = nil
+                linkedJobId = nil
+                linkedJobName = nil
+                isShopClockIn = false
+                activeEntry = nil
+                currentTodo = nil
+                elapsedTimer?.invalidate()
+                elapsedTimer = nil
+                // Show job picker immediately for new clock-in
+                activeSheet = .switchJobPicker
+            }
+            loadData()
+        } catch {
+            await MainActor.run {
+                errorMessage = "Switch failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    // MARK: - Elapsed Timer
+
+    private func startElapsedTimer(clockInISO: String) {
+        updateElapsedText(clockInISO: clockInISO)
+        elapsedTimer?.invalidate()
+        elapsedTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
+            Task { @MainActor in
+                updateElapsedText(clockInISO: clockInISO)
+            }
+        }
+    }
+
+    private func updateElapsedText(clockInISO: String) {
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoBasic = ISO8601DateFormatter()
+        isoBasic.formatOptions = [.withInternetDateTime]
+
+        guard let clockInDate = isoFormatter.date(from: clockInISO)
+                ?? isoBasic.date(from: clockInISO) else {
+            elapsedText = "0h 0m"
+            return
+        }
+        let elapsed = Date().timeIntervalSince(clockInDate)
+        let hours = Int(elapsed) / 3600
+        let minutes = (Int(elapsed) % 3600) / 60
+        elapsedText = "\(hours)h \(minutes)m"
+    }
+
+    // MARK: - To-Do Actions
+
+    private func selectTodo(_ todo: JobsService.ClockTodoItem) {
+        guard let service = appCore.jobsService,
+              let entry = activeEntry else { return }
+        currentTodo = todo
+        try? service.linkClockEntryToTodo(clockEntryId: entry.id, todoId: todo.id)
+    }
+
+    private func markTodoDoneAndPickNext(entry: JobsService.LaborEntryRow) async {
+        guard let todo = currentTodo,
+              let notebooksService = appCore.notebooksService,
+              let jobsService = appCore.jobsService else { return }
+
+        do {
+            try notebooksService.completeEntry(entryId: todo.id)
+            let remaining = try jobsService.getActiveJobTodos(jobId: entry.jobId)
+
+            await MainActor.run {
+                activeTodos = remaining
+                currentTodo = nil
+                // Unlink the completed to-do
+                try? jobsService.linkClockEntryToTodo(clockEntryId: entry.id, todoId: nil)
+            }
+
+            if !remaining.isEmpty {
+                await MainActor.run {
+                    activeSheet = .todoPicker
+                }
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = "Failed to complete to-do: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func loadTodosForJob(jobId: Int64) {
+        guard let service = appCore.jobsService else { return }
+        do {
+            activeTodos = try service.getActiveJobTodos(jobId: jobId)
+        } catch {
+            activeTodos = []
+        }
+    }
+
     // MARK: - Helpers
 
     private func formatTime(_ iso: String) -> String {
@@ -600,6 +856,12 @@ struct IOSClockPage: View {
         let start = iso.index(iso.startIndex, offsetBy: 11)
         let end = iso.index(iso.startIndex, offsetBy: 16)
         return String(iso[start..<end])
+    }
+
+    private func formatDuration(_ interval: TimeInterval) -> String {
+        let hours = Int(interval) / 3600
+        let minutes = (Int(interval) % 3600) / 60
+        return "\(hours)h \(minutes)m"
     }
 
     // MARK: - Data Loading
@@ -705,13 +967,41 @@ struct IOSClockPage: View {
                 }
             }
 
+            // Load to-dos for the active job
+            var todos: [JobsService.ClockTodoItem] = []
+            var linkedTodo: JobsService.ClockTodoItem?
+            var currentWorkType = "new_work"
+            if let entry {
+                todos = try service.getActiveJobTodos(jobId: entry.jobId)
+                currentWorkType = entry.workType ?? "new_work"
+                if let todoId = entry.linkedTodoId {
+                    linkedTodo = todos.first(where: { $0.id == todoId })
+                }
+            }
+
+            // Load today's grouped clock entries
+            let groups = try service.getTodaysClockEntries(userId: userId)
+
             await MainActor.run {
                 activeEntry = entry
                 todayEntries = todayE
                 todayHours = todayH
+                todayJobGroups = groups
                 sortedJobs = jobsWithDist
                 activityStatus = currentActivity
+                activeTodos = todos
+                currentTodo = linkedTodo
+                workType = currentWorkType
                 isLoading = false
+
+                // Start/stop elapsed timer based on clock-in state
+                if let entry {
+                    startElapsedTimer(clockInISO: entry.clockIn)
+                } else {
+                    elapsedTimer?.invalidate()
+                    elapsedTimer = nil
+                    elapsedText = "0h 0m"
+                }
 
                 // Check if current clock-in is to shop
                 if let entry, entry.jobName.lowercased().contains("shop") || entry.jobName.lowercased().contains("warehouse") {
@@ -724,6 +1014,133 @@ struct IOSClockPage: View {
             await MainActor.run {
                 errorMessage = error.localizedDescription
                 isLoading = false
+            }
+        }
+    }
+}
+
+// MARK: - Switch Job Picker Sheet
+
+private struct SwitchJobPickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let jobs: [IOSClockPage.JobWithDistance]
+    let onSelect: (Int64?, Bool) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                // Shop option
+                Button {
+                    onSelect(nil, true)
+                } label: {
+                    HStack(spacing: DS.Space.md) {
+                        Image(systemName: "building.fill")
+                            .font(.title3)
+                            .foregroundStyle(.blue)
+                            .frame(width: 36, height: 36)
+                            .background(Color.blue.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Shop / Warehouse").font(.body).fontWeight(.semibold)
+                            Text("Office, ordering, design work").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                // Job sites
+                ForEach(jobs) { job in
+                    Button {
+                        onSelect(job.id, false)
+                    } label: {
+                        HStack(spacing: DS.Space.md) {
+                            Image(systemName: "mappin.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(.orange)
+                                .frame(width: 36, height: 36)
+                                .background(Color.orange.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(job.jobName).font(.body).fontWeight(.medium)
+                                if !job.jobNumber.isEmpty {
+                                    Text("#\(job.jobNumber)").font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            if !job.distanceText.isEmpty {
+                                Text(job.distanceText)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .navigationTitle("Switch to…")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - To-Do Picker Sheet
+
+private struct TodoPickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let todos: [JobsService.ClockTodoItem]
+    let onSelect: (JobsService.ClockTodoItem) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if todos.isEmpty {
+                    ContentUnavailableView(
+                        "No To-Dos",
+                        systemImage: "checklist",
+                        description: Text("This job has no active to-dos. Add to-dos in the job's notebook.")
+                    )
+                } else {
+                    ForEach(todos) { todo in
+                        Button {
+                            onSelect(todo)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(todo.title)
+                                    .font(.headline)
+                                    .foregroundStyle(.primary)
+                                if let content = todo.content, !content.isEmpty {
+                                    Text(content)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                                if let status = todo.taskStatus, status != "pending" {
+                                    Text(status.capitalized)
+                                        .font(.caption2)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.orange.opacity(0.2))
+                                        .clipShape(Capsule())
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("What are you working on?")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Skip") { dismiss() }
+                }
             }
         }
     }

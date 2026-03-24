@@ -135,7 +135,7 @@ public enum ConflictResolver {
         // Chat
         "chat_channels", "chat_channel_members", "qa_threads",
         "chat_messages", "chat_read_receipts", "chat_mentions",
-        "rfi_objects", "qa_escalations",
+        "rfi_objects", "qa_escalations", "message_attachments",
         // Reports & Billing
         "billing_periods", "report_annotations", "report_share_tokens", "report_templates",
         "pto_policies", "pto_transactions", "pto_balances",

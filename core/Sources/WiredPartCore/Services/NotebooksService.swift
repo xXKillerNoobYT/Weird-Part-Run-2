@@ -327,7 +327,24 @@ public final class NotebooksService: Sendable {
     }
 
     // =========================================================================
-    // MARK: - 6. Notebooks Stats
+    // MARK: - 6. Complete / Update Entry
+    // =========================================================================
+
+    /// Mark a notebook entry (to-do) as complete.
+    public func completeEntry(entryId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE notebook_entries
+                    SET task_status = 'complete', updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                arguments: [entryId]
+            )
+        }
+    }
+
+    // MARK: - 7. Notebooks Stats
     // =========================================================================
 
     /// Get aggregate notebooks statistics: total, job-linked, and general counts.
