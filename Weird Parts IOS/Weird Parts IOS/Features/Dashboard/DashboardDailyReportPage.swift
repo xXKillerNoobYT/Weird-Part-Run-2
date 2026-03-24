@@ -735,15 +735,125 @@ private struct ReportProblemSheet: View {
 private struct SubmitDailyReportSheet: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
+
+    @State private var reportData: DailyReportGenerator.DailyReportData?
+    @State private var todaysJobs: [(jobId: Int64, jobName: String, hours: Double)] = []
+    @State private var selectedJobId: Int64?
     @State private var accomplishments = ""
     @State private var issues = ""
     @State private var tomorrowNotes = ""
     @State private var saveError: String?
     @State private var isSaving = false
+    @State private var isLoadingReport = true
 
     var body: some View {
         NavigationStack {
             Form {
+                // Job picker (if multiple jobs today)
+                if todaysJobs.count > 1 {
+                    Section("Job") {
+                        Picker("Select Job", selection: $selectedJobId) {
+                            ForEach(todaysJobs, id: \.jobId) { job in
+                                Text("\(job.jobName) (\(String(format: "%.1fh", job.hours)))")
+                                    .tag(job.jobId as Int64?)
+                            }
+                        }
+                        .onChange(of: selectedJobId) { _, newValue in
+                            if let jid = newValue {
+                                loadReportForJob(jid)
+                            }
+                        }
+                    }
+                }
+
+                // System-generated section
+                if let report = reportData {
+                    Section {
+                        HStack {
+                            Label("Hours", systemImage: "clock")
+                            Spacer()
+                            Text(String(format: "%.1fh", report.totalHours))
+                                .font(.headline)
+                        }
+
+                        if !report.breaksTaken.isEmpty {
+                            ForEach(report.breaksTaken, id: \.startTime) { brk in
+                                HStack {
+                                    Image(systemName: "cup.and.saucer")
+                                        .foregroundStyle(.orange)
+                                    Text(brk.type.capitalized)
+                                    Spacer()
+                                    Text("\(brk.durationMinutes)m")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+
+                        if !report.todosCompleted.isEmpty {
+                            ForEach(report.todosCompleted, id: \.name) { todo in
+                                HStack {
+                                    Image(systemName: todo.stage == "complete" ? "checkmark.circle.fill" : "circle.dotted")
+                                        .foregroundStyle(todo.stage == "complete" ? .green : .blue)
+                                    Text(todo.name).lineLimit(1)
+                                    Spacer()
+                                    Text(todo.stage.replacingOccurrences(of: "_", with: " ").capitalized)
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+
+                        if !report.jposCreated.isEmpty {
+                            ForEach(report.jposCreated, id: \.jpoNumber) { jpo in
+                                HStack {
+                                    Image(systemName: "doc.plaintext")
+                                        .foregroundStyle(.purple)
+                                    Text(jpo.jpoNumber)
+                                    Spacer()
+                                    Text("\(jpo.lineCount) items")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+
+                        if !report.qaQuestions.isEmpty {
+                            ForEach(report.qaQuestions, id: \.question) { qa in
+                                HStack {
+                                    Image(systemName: "questionmark.circle")
+                                        .foregroundStyle(.blue)
+                                    Text(qa.question).lineLimit(1)
+                                    Spacer()
+                                    Text(qa.status.capitalized)
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+
+                        if report.messagesCount > 0 {
+                            HStack {
+                                Image(systemName: "bubble.left")
+                                    .foregroundStyle(.indigo)
+                                Text("Messages sent")
+                                Spacer()
+                                Text("\(report.messagesCount)")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    } header: {
+                        Text("System-Generated")
+                    } footer: {
+                        Text("Automatically compiled from today's activity")
+                    }
+                } else if isLoadingReport {
+                    Section {
+                        HStack {
+                            ProgressView()
+                            Text("Loading report data...")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                // Manual fields
                 Section("What was accomplished today?") {
                     TextField("Work completed...", text: $accomplishments, axis: .vertical)
                         .lineLimit(3...6)
@@ -774,6 +884,37 @@ private struct SubmitDailyReportSheet: View {
                     .disabled(accomplishments.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
             }
+            .task { loadInitialData() }
+        }
+    }
+
+    private func loadInitialData() {
+        guard let db = appCore.db,
+              let userId = appCore.currentUser?.id else {
+            isLoadingReport = false
+            return
+        }
+        let generator = DailyReportGenerator(db: db)
+        do {
+            todaysJobs = try generator.getTodaysJobs(userId: userId)
+            if let primaryJob = todaysJobs.first {
+                selectedJobId = primaryJob.jobId
+                reportData = try generator.generateReport(userId: userId, jobId: primaryJob.jobId)
+            }
+        } catch {
+            // Non-fatal — manual report still works
+        }
+        isLoadingReport = false
+    }
+
+    private func loadReportForJob(_ jobId: Int64) {
+        guard let db = appCore.db,
+              let userId = appCore.currentUser?.id else { return }
+        let generator = DailyReportGenerator(db: db)
+        do {
+            reportData = try generator.generateReport(userId: userId, jobId: jobId)
+        } catch {
+            // Non-fatal
         }
     }
 

@@ -1,17 +1,20 @@
 import SwiftUI
 import WiredPartCore
 
-/// Sheet for creating a new notebook.
+/// Sheet for creating a new notebook, optionally from a template.
 struct CreateNotebookSheet: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
 
+    var templateId: Int64? = nil
     var onSave: () -> Void
 
     @State private var title = ""
     @State private var notebookType = "general"
     @State private var selectedJobId: Int64?
+    @State private var selectedTemplateId: Int64?
     @State private var jobs: [JobsService.JobListItem] = []
+    @State private var templates: [NotebooksService.NotebookTemplateItem] = []
     @State private var isSaving = false
     @State private var saveError: String?
 
@@ -50,6 +53,22 @@ struct CreateNotebookSheet: View {
                     }
                 }
 
+                // Template picker
+                if !templates.isEmpty {
+                    Section {
+                        Picker("Start from Template", selection: $selectedTemplateId) {
+                            Text("Blank Notebook").tag(nil as Int64?)
+                            ForEach(templates) { template in
+                                Text(template.name).tag(template.id as Int64?)
+                            }
+                        }
+                    } header: {
+                        Text("Template")
+                    } footer: {
+                        Text("Templates create pre-built sections and pages for you")
+                    }
+                }
+
                 if let error = saveError {
                     Section {
                         Text(error)
@@ -70,7 +89,13 @@ struct CreateNotebookSheet: View {
                         .fontWeight(.semibold)
                 }
             }
-            .task { loadJobs() }
+            .task {
+                loadJobs()
+                loadTemplates()
+                if let tid = templateId {
+                    selectedTemplateId = tid
+                }
+            }
         }
     }
 
@@ -82,6 +107,11 @@ struct CreateNotebookSheet: View {
         jobs = (try? service.listJobs(status: "active", limit: 200)) ?? []
     }
 
+    private func loadTemplates() {
+        guard let service = appCore.notebooksService else { return }
+        templates = (try? service.getTemplates(templateType: "job")) ?? []
+    }
+
     private func saveNotebook() {
         guard let service = appCore.notebooksService,
               let userId = appCore.currentUser?.id else {
@@ -91,12 +121,18 @@ struct CreateNotebookSheet: View {
         isSaving = true
         saveError = nil
         do {
-            _ = try service.createNotebook(
+            let nbId = try service.createNotebook(
                 title: title,
                 notebookType: notebookType,
                 jobId: notebookType == "job" ? selectedJobId : nil,
                 createdBy: userId
             )
+
+            // Apply template if selected
+            if let tid = selectedTemplateId {
+                try service.applyJobTemplate(templateId: tid, notebookId: nbId, createdBy: userId)
+            }
+
             onSave()
             dismiss()
         } catch {

@@ -109,30 +109,89 @@ public struct Notebook: Codable, FetchableRecord, MutablePersistableRecord, Send
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }
 
+// MARK: - NotebookSectionGroup
+
+public struct NotebookSectionGroup: Codable, FetchableRecord, MutablePersistableRecord, Sendable, Identifiable {
+    public static let databaseTableName = "notebook_section_groups"
+    public var id: Int64?
+    public var notebookId: Int64
+    public var name: String
+    public var sortOrder: Int
+    public var isCollapsed: Int
+    public var createdAt: String?
+    public var updatedAt: String?
+    public var deletedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case notebookId = "notebook_id"
+        case sortOrder = "sort_order"
+        case isCollapsed = "is_collapsed"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case deletedAt = "deleted_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
 // MARK: - NotebookSection
 
 public struct NotebookSection: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "notebook_sections"
     public var id: Int64?
     public var notebookId: Int64
+    public var groupId: Int64?
     public var name: String
     public var sectionType: String
     public var sortOrder: Int
     public var isLocked: Int
+    public var isCollapsed: Int
     public var deletedAt: String?
     public var createdAt: String?
+    public var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name
         case notebookId = "notebook_id"
+        case groupId = "group_id"
         case sectionType = "section_type"
         case sortOrder = "sort_order"
         case isLocked = "is_locked"
+        case isCollapsed = "is_collapsed"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
+        case updatedAt = "updated_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+// MARK: - Block Types
+
+/// Types of content blocks in notebook entries.
+public enum BlockType: String, Codable, Sendable, CaseIterable {
+    case text
+    case heading
+    case photo
+    case checklist
+    case partReference = "part_reference"
+    case divider
+    case callout
+    case table
+    case todo
+    case panelSchedule = "panel_schedule"
+}
+
+/// A single item in a checklist block.
+public struct ChecklistItem: Codable, Sendable {
+    public var text: String
+    public var checked: Bool
+
+    public init(text: String, checked: Bool = false) {
+        self.text = text
+        self.checked = checked
+    }
 }
 
 // MARK: - NotebookEntry
@@ -141,6 +200,7 @@ public struct NotebookEntry: Codable, FetchableRecord, MutablePersistableRecord,
     public static let databaseTableName = "notebook_entries"
     public var id: Int64?
     public var sectionId: Int64
+    public var notebookId: Int64?
     public var title: String
     public var content: String?
     public var entryType: String
@@ -157,12 +217,23 @@ public struct NotebookEntry: Codable, FetchableRecord, MutablePersistableRecord,
     public var deletedBy: Int64?
     public var deletedAt: String?
     public var sortOrder: Int
+    public var isCompleted: Int
     public var createdAt: String?
     public var updatedAt: String?
+
+    // Block content fields
+    public var blockType: String
+    public var blockData: String?         // JSON for type-specific data
+    public var headingLevel: Int?         // 1, 2, 3 for headings
+    public var checklistItems: String?    // JSON array of {text, checked}
+    public var photoPath: String?
+    public var referenceType: String?     // "part", "po", "jpo", "job"
+    public var referenceId: Int64?
 
     enum CodingKeys: String, CodingKey {
         case id, title, content
         case sectionId = "section_id"
+        case notebookId = "notebook_id"
         case entryType = "entry_type"
         case fieldType = "field_type"
         case fieldRequired = "field_required"
@@ -177,8 +248,16 @@ public struct NotebookEntry: Codable, FetchableRecord, MutablePersistableRecord,
         case deletedBy = "deleted_by"
         case deletedAt = "deleted_at"
         case sortOrder = "sort_order"
+        case isCompleted = "is_completed"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case blockType = "block_type"
+        case blockData = "block_data"
+        case headingLevel = "heading_level"
+        case checklistItems = "checklist_items"
+        case photoPath = "photo_path"
+        case referenceType = "reference_type"
+        case referenceId = "reference_id"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }

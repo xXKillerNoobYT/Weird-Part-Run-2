@@ -5,6 +5,7 @@ import WiredPartCore
 ///
 /// Shows all RFIs across jobs for office/management review.
 /// RFIs are Q&A threads that have been escalated to the office level.
+/// Uses smart card filters and provides navigation to escalation timeline.
 struct IOSRFIListPage: View {
     @EnvironmentObject private var appCore: AppCore
 
@@ -12,19 +13,33 @@ struct IOSRFIListPage: View {
     @State private var supplierQuestions: [ChatService.SupplierQuestionRow] = []
     @State private var isLoading = true
     @State private var searchText = ""
-    @State private var statusFilter = "all"
+    @State private var statusFilter: RFIFilter = .all
     @State private var loadError: String?
+    @State private var actionError: String?
     private enum ActiveSheet: String, Identifiable {
         case createRFI
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
 
-    private let statusOptions = ["all", "open", "answered", "escalated"]
+    enum RFIFilter: String, CaseIterable {
+        case all = "All"
+        case open = "Open"
+        case pendingResponse = "Pending Response"
+        case closed = "Closed"
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            filterBar
+            smartCardBar
+
+            if let error = actionError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal)
+            }
+
             threadList
         }
         .navigationTitle("RFIs")
@@ -47,32 +62,77 @@ struct IOSRFIListPage: View {
         .task { loadData() }
     }
 
-    // MARK: - Filter Bar
+    // MARK: - Smart Card Filters
 
-    private var filterBar: some View {
+    private var smartCardBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(statusOptions, id: \.self) { status in
-                    Button {
-                        statusFilter = status
-                        loadData()
-                    } label: {
-                        Text(status.capitalized)
-                            .font(.caption)
-                            .fontWeight(statusFilter == status ? .bold : .regular)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(statusFilter == status ? Color.accentColor : Color.secondary.opacity(0.2))
-                            )
-                            .foregroundStyle(statusFilter == status ? .white : .primary)
+            HStack(spacing: 10) {
+                ForEach(RFIFilter.allCases, id: \.self) { filter in
+                    smartCard(filter.rawValue, count: countFor(filter),
+                              icon: iconFor(filter), isActive: statusFilter == filter,
+                              color: colorFor(filter)) {
+                        statusFilter = filter
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal)
-            .padding(.vertical, 6)
+            .padding(.vertical, 8)
         }
+    }
+
+    private func countFor(_ filter: RFIFilter) -> Int {
+        let allItems = threads
+        switch filter {
+        case .all: return allItems.count + supplierQuestions.count
+        case .open: return allItems.filter { $0.status == "open" || $0.status == "escalated" }.count
+        case .pendingResponse: return supplierQuestions.filter { $0.status == "open" }.count
+        case .closed: return allItems.filter { $0.status == "answered" || $0.status == "closed" }.count
+        }
+    }
+
+    private func iconFor(_ filter: RFIFilter) -> String {
+        switch filter {
+        case .all: return "doc.text"
+        case .open: return "exclamationmark.circle"
+        case .pendingResponse: return "clock"
+        case .closed: return "checkmark.circle"
+        }
+    }
+
+    private func colorFor(_ filter: RFIFilter) -> Color {
+        switch filter {
+        case .all: return .blue
+        case .open: return .orange
+        case .pendingResponse: return .purple
+        case .closed: return .green
+        }
+    }
+
+    private func smartCard(_ label: String, count: Int, icon: String, isActive: Bool,
+                           color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                HStack(spacing: 4) {
+                    Image(systemName: icon)
+                        .font(.caption2)
+                    Text("\(count)")
+                        .font(.system(.title3, weight: .bold))
+                        .monospacedDigit()
+                }
+                Text(label)
+                    .font(.caption2)
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isActive ? .white : color)
+            .frame(minWidth: 70)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isActive ? color : color.opacity(0.1))
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Thread List
@@ -84,7 +144,7 @@ struct IOSRFIListPage: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
-        } else if filteredThreads.isEmpty && supplierQuestions.isEmpty {
+        } else if filteredThreads.isEmpty && filteredSupplierQuestions.isEmpty {
             EmptyStateView(
                 icon: "doc.questionmark",
                 title: "No RFIs",
@@ -92,9 +152,9 @@ struct IOSRFIListPage: View {
             )
         } else {
             List {
-                if !supplierQuestions.isEmpty {
+                if !filteredSupplierQuestions.isEmpty {
                     Section("Supplier Questions") {
-                        ForEach(supplierQuestions) { question in
+                        ForEach(filteredSupplierQuestions) { question in
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
                                     Image(systemName: "building.2")
@@ -125,13 +185,16 @@ struct IOSRFIListPage: View {
                     }
                 }
 
-                Section("RFIs") {
-                    ForEach(filteredThreads) { thread in
-                        NavigationLink {
-                            IOSEscalationTimeline(thread: thread)
-                                .navigationTitle("RFI Detail")
-                        } label: {
-                            rfiRow(thread)
+                if !filteredThreads.isEmpty {
+                    Section("RFIs") {
+                        ForEach(filteredThreads) { thread in
+                            NavigationLink {
+                                IOSEscalationTimeline(thread: thread)
+                                    .environmentObject(appCore)
+                                    .navigationTitle("RFI Detail")
+                            } label: {
+                                rfiRow(thread)
+                            }
                         }
                     }
                 }
@@ -141,13 +204,37 @@ struct IOSRFIListPage: View {
     }
 
     private var filteredThreads: [ChatService.QAThreadRow] {
-        // Status filter is already applied in loadData() via the service call,
-        // so only apply search text filtering here
-        guard !searchText.isEmpty else { return threads }
-        let query = searchText.lowercased()
-        return threads.filter {
-            $0.question.lowercased().contains(query) ||
-            $0.askedByName.lowercased().contains(query)
+        var items = threads
+
+        switch statusFilter {
+        case .all: break
+        case .open: items = items.filter { $0.status == "open" || $0.status == "escalated" }
+        case .pendingResponse: items = [] // Supplier questions only
+        case .closed: items = items.filter { $0.status == "answered" || $0.status == "closed" }
+        }
+
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            items = items.filter {
+                $0.question.lowercased().contains(query) ||
+                $0.askedByName.lowercased().contains(query)
+            }
+        }
+
+        return items
+    }
+
+    private var filteredSupplierQuestions: [ChatService.SupplierQuestionRow] {
+        switch statusFilter {
+        case .pendingResponse, .all:
+            if searchText.isEmpty { return supplierQuestions }
+            let query = searchText.lowercased()
+            return supplierQuestions.filter {
+                $0.subject.lowercased().contains(query) ||
+                $0.supplierName.lowercased().contains(query)
+            }
+        default:
+            return []
         }
     }
 
@@ -195,33 +282,37 @@ struct IOSRFIListPage: View {
 
     private func statusColor(_ status: String) -> Color {
         switch status {
-        case "open": .orange
-        case "answered": .green
-        case "escalated": .red
-        default: .secondary
+        case "open": return .orange
+        case "answered": return .green
+        case "escalated": return .red
+        default: return .secondary
         }
     }
 
     private func priorityColor(_ priority: String) -> Color {
         switch priority {
-        case "urgent": .red
-        case "high": .orange
-        case "normal": .blue
-        case "low": .secondary
-        default: .secondary
+        case "urgent": return .red
+        case "high": return .orange
+        case "normal": return .blue
+        case "low": return .secondary
+        default: return .secondary
         }
     }
 
     // MARK: - Data
 
     private func loadData() {
-        guard let service = appCore.chatService else { return }
+        guard let service = appCore.chatService else {
+            loadError = "Chat service unavailable"
+            isLoading = false
+            return
+        }
         isLoading = threads.isEmpty && supplierQuestions.isEmpty
         loadError = nil
         do {
-            let statusArg = statusFilter == "all" ? nil : statusFilter
-            threads = try service.listQAThreads(status: statusArg)
-            supplierQuestions = try service.listSupplierQuestions(status: statusArg)
+            // Load all — client-side filtering via smart cards
+            threads = try service.listQAThreads()
+            supplierQuestions = try service.listSupplierQuestions()
         } catch {
             loadError = error.localizedDescription
         }

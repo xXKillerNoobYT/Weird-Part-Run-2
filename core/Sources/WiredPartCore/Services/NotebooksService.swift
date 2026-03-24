@@ -64,11 +64,24 @@ public final class NotebooksService: Sendable {
         public let sortOrder: Int
         public let isCompleted: Bool
         public let createdAt: String?
+        // Block fields
+        public let title: String?
+        public let blockType: String
+        public let blockData: String?
+        public let headingLevel: Int?
+        public let checklistItems: String?
+        public let photoPath: String?
+        public let referenceType: String?
+        public let referenceId: Int64?
 
         public init(
             id: Int64, entryType: String, content: String,
             createdByName: String, sortOrder: Int, isCompleted: Bool,
-            createdAt: String?
+            createdAt: String?,
+            title: String? = nil, blockType: String = "text",
+            blockData: String? = nil, headingLevel: Int? = nil,
+            checklistItems: String? = nil, photoPath: String? = nil,
+            referenceType: String? = nil, referenceId: Int64? = nil
         ) {
             self.id = id
             self.entryType = entryType
@@ -77,6 +90,14 @@ public final class NotebooksService: Sendable {
             self.sortOrder = sortOrder
             self.isCompleted = isCompleted
             self.createdAt = createdAt
+            self.title = title
+            self.blockType = blockType
+            self.blockData = blockData
+            self.headingLevel = headingLevel
+            self.checklistItems = checklistItems
+            self.photoPath = photoPath
+            self.referenceType = referenceType
+            self.referenceId = referenceId
         }
     }
 
@@ -205,8 +226,10 @@ public final class NotebooksService: Sendable {
 
             // Fetch the entries
             let entriesSQL = """
-                SELECT ne.id, ne.entry_type, ne.content, ne.sort_order, ne.is_completed,
-                       ne.created_at,
+                SELECT ne.id, ne.entry_type, ne.title, ne.content, ne.sort_order,
+                       COALESCE(ne.is_completed, 0) as is_completed, ne.created_at,
+                       ne.block_type, ne.block_data, ne.heading_level, ne.checklist_items,
+                       ne.photo_path, ne.reference_type, ne.reference_id,
                        COALESCE(u.display_name, u.email, 'Unknown') AS created_by_name
                 FROM notebook_entries ne
                 LEFT JOIN users u ON u.id = ne.created_by
@@ -223,7 +246,15 @@ public final class NotebooksService: Sendable {
                     createdByName: row["created_by_name"] ?? "Unknown",
                     sortOrder: row["sort_order"] ?? 0,
                     isCompleted: (row["is_completed"] as Int?) == 1,
-                    createdAt: row["created_at"] as String?
+                    createdAt: row["created_at"] as String?,
+                    title: row["title"] as String?,
+                    blockType: row["block_type"] ?? "text",
+                    blockData: row["block_data"] as String?,
+                    headingLevel: row["heading_level"] as Int?,
+                    checklistItems: row["checklist_items"] as String?,
+                    photoPath: row["photo_path"] as String?,
+                    referenceType: row["reference_type"] as String?,
+                    referenceId: row["reference_id"] as Int64?
                 )
             }
 
@@ -369,6 +400,329 @@ public final class NotebooksService: Sendable {
     }
 
     // =========================================================================
+    // MARK: - Section Groups
+    // =========================================================================
+
+    /// Create a new section group in a notebook.
+    @discardableResult
+    public func createSectionGroup(notebookId: Int64, name: String) throws -> Int64 {
+        try db.writer.write { dbConn in
+            let maxOrder = try Int.fetchOne(dbConn, sql: """
+                SELECT COALESCE(MAX(sort_order), -1) FROM notebook_section_groups
+                WHERE notebook_id = ? AND deleted_at IS NULL
+                """, arguments: [notebookId]) ?? -1
+
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_section_groups (notebook_id, name, sort_order, created_at, updated_at)
+                VALUES (?, ?, ?, datetime('now'), datetime('now'))
+                """, arguments: [notebookId, name, maxOrder + 1])
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Update a section group's name.
+    public func updateSectionGroup(groupId: Int64, name: String) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE notebook_section_groups SET name = ?, updated_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [name, groupId])
+        }
+    }
+
+    /// Soft-delete a section group.
+    public func deleteSectionGroup(groupId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE notebook_section_groups SET deleted_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [groupId])
+            // Unlink sections from this group (they become ungrouped)
+            try dbConn.execute(sql: """
+                UPDATE notebook_sections SET group_id = NULL, updated_at = datetime('now')
+                WHERE group_id = ?
+                """, arguments: [groupId])
+        }
+    }
+
+    /// Reorder section groups within a notebook.
+    public func reorderSectionGroups(notebookId: Int64, orderedIds: [Int64]) throws {
+        try db.writer.write { dbConn in
+            for (index, groupId) in orderedIds.enumerated() {
+                try dbConn.execute(sql: """
+                    UPDATE notebook_section_groups SET sort_order = ?, updated_at = datetime('now')
+                    WHERE id = ? AND notebook_id = ?
+                    """, arguments: [index, groupId, notebookId])
+            }
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Sections (Extended)
+    // =========================================================================
+
+    /// Create a new section in a notebook, optionally within a group.
+    @discardableResult
+    public func createSection(notebookId: Int64, groupId: Int64?, name: String) throws -> Int64 {
+        try db.writer.write { dbConn in
+            let maxOrder = try Int.fetchOne(dbConn, sql: """
+                SELECT COALESCE(MAX(sort_order), -1) FROM notebook_sections
+                WHERE notebook_id = ? AND deleted_at IS NULL
+                """, arguments: [notebookId]) ?? -1
+
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_sections (notebook_id, group_id, name, section_type, sort_order, is_locked, is_collapsed, created_at, updated_at)
+                VALUES (?, ?, ?, 'notes', ?, 0, 0, datetime('now'), datetime('now'))
+                """, arguments: [notebookId, groupId, name, maxOrder + 1])
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Update a section's name.
+    public func updateSection(sectionId: Int64, name: String) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE notebook_sections SET name = ?, updated_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [name, sectionId])
+        }
+    }
+
+    /// Soft-delete a section.
+    public func deleteSection(sectionId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE notebook_sections SET deleted_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [sectionId])
+        }
+    }
+
+    /// Move a section to a different group (or ungrouped if nil).
+    public func moveSection(sectionId: Int64, toGroupId: Int64?, sortOrder: Int) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE notebook_sections SET group_id = ?, sort_order = ?, updated_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [toGroupId, sortOrder, sectionId])
+        }
+    }
+
+    /// Reorder sections within a group.
+    public func reorderSections(groupId: Int64?, orderedIds: [Int64]) throws {
+        try db.writer.write { dbConn in
+            for (index, sectionId) in orderedIds.enumerated() {
+                try dbConn.execute(sql: """
+                    UPDATE notebook_sections SET sort_order = ?, updated_at = datetime('now')
+                    WHERE id = ?
+                    """, arguments: [index, sectionId])
+            }
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Block Entries
+    // =========================================================================
+
+    /// Create a block entry in a section.
+    @discardableResult
+    public func createBlockEntry(
+        sectionId: Int64,
+        blockType: String = "text",
+        title: String? = nil,
+        content: String? = nil,
+        blockData: String? = nil,
+        createdBy: Int64,
+        sortOrder: Int? = nil
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            let order: Int
+            if let so = sortOrder {
+                order = so
+            } else {
+                order = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(MAX(sort_order), -1) FROM notebook_entries
+                    WHERE section_id = ? AND deleted_at IS NULL
+                    """, arguments: [sectionId]) ?? -1) + 1
+            }
+
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_entries
+                (section_id, title, content, entry_type, block_type, block_data,
+                 field_required, is_deleted, is_completed, sort_order, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, 'note', ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
+                """, arguments: [sectionId, title ?? "", content, blockType, blockData, order, createdBy])
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Update a block entry's content and/or block data.
+    public func updateBlockEntry(entryId: Int64, content: String?, blockData: String?) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE notebook_entries SET content = ?, block_data = ?, updated_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [content, blockData, entryId])
+        }
+    }
+
+    /// Soft-delete a block entry.
+    public func deleteBlockEntry(entryId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE notebook_entries SET deleted_at = datetime('now'), is_deleted = 1
+                WHERE id = ?
+                """, arguments: [entryId])
+        }
+    }
+
+    /// Reorder block entries within a section.
+    public func reorderBlockEntries(sectionId: Int64, orderedIds: [Int64]) throws {
+        try db.writer.write { dbConn in
+            for (index, entryId) in orderedIds.enumerated() {
+                try dbConn.execute(sql: """
+                    UPDATE notebook_entries SET sort_order = ?, updated_at = datetime('now')
+                    WHERE id = ? AND section_id = ?
+                    """, arguments: [index, entryId, sectionId])
+            }
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Hierarchy Queries
+    // =========================================================================
+
+    /// Full hierarchy structure for a notebook.
+    public struct NotebookHierarchy: Sendable {
+        public let groups: [SectionGroupWithChildren]
+        public let ungroupedSections: [SectionWithEntries]
+    }
+
+    /// A section group with its child sections and entries.
+    public struct SectionGroupWithChildren: Sendable, Identifiable {
+        public let id: Int64
+        public let name: String
+        public let sortOrder: Int
+        public let isCollapsed: Bool
+        public let sections: [SectionWithEntries]
+    }
+
+    /// A section with its entries.
+    public struct SectionWithEntries: Sendable, Identifiable {
+        public let id: Int64
+        public let name: String
+        public let groupId: Int64?
+        public let sortOrder: Int
+        public let isCollapsed: Bool
+        public let entries: [NotebookEntryRow]
+    }
+
+    /// Get full notebook hierarchy: groups → sections → entries.
+    public func getNotebookHierarchy(notebookId: Int64) throws -> NotebookHierarchy {
+        do {
+            return try db.writer.read { dbConn in
+                // 1. Get all section groups
+                let groupRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT id, name, sort_order, is_collapsed
+                    FROM notebook_section_groups
+                    WHERE notebook_id = ? AND deleted_at IS NULL
+                    ORDER BY sort_order ASC
+                    """, arguments: [notebookId])
+
+                // 2. Get all sections
+                let sectionRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT id, name, group_id, sort_order, COALESCE(is_collapsed, 0) as is_collapsed
+                    FROM notebook_sections
+                    WHERE notebook_id = ? AND deleted_at IS NULL
+                    ORDER BY sort_order ASC
+                    """, arguments: [notebookId])
+
+                // 3. Get all entries
+                let entryRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT ne.id, ne.section_id, ne.entry_type, ne.title, ne.content, ne.sort_order,
+                           COALESCE(ne.is_completed, 0) as is_completed, ne.created_at,
+                           ne.block_type, ne.block_data, ne.heading_level, ne.checklist_items,
+                           ne.photo_path, ne.reference_type, ne.reference_id,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS created_by_name
+                    FROM notebook_entries ne
+                    LEFT JOIN users u ON u.id = ne.created_by
+                    WHERE ne.section_id IN (SELECT id FROM notebook_sections WHERE notebook_id = ? AND deleted_at IS NULL)
+                      AND ne.deleted_at IS NULL AND ne.is_deleted = 0
+                    ORDER BY ne.sort_order ASC, ne.created_at ASC
+                    """, arguments: [notebookId])
+
+                // Map entries by section ID
+                var entriesBySectionId: [Int64: [NotebookEntryRow]] = [:]
+                for row in entryRows {
+                    let sectionId: Int64 = row["section_id"] ?? 0
+                    let entry = NotebookEntryRow(
+                        id: row["id"] ?? 0,
+                        entryType: row["entry_type"] ?? "note",
+                        content: row["content"] ?? "",
+                        createdByName: row["created_by_name"] ?? "Unknown",
+                        sortOrder: row["sort_order"] ?? 0,
+                        isCompleted: (row["is_completed"] as Int?) == 1,
+                        createdAt: row["created_at"],
+                        title: row["title"] as String?,
+                        blockType: row["block_type"] ?? "text",
+                        blockData: row["block_data"] as String?,
+                        headingLevel: row["heading_level"] as Int?,
+                        checklistItems: row["checklist_items"] as String?,
+                        photoPath: row["photo_path"] as String?,
+                        referenceType: row["reference_type"] as String?,
+                        referenceId: row["reference_id"] as Int64?
+                    )
+                    entriesBySectionId[sectionId, default: []].append(entry)
+                }
+
+                // Build sections
+                func buildSection(_ row: Row) -> SectionWithEntries {
+                    let sid: Int64 = row["id"] ?? 0
+                    return SectionWithEntries(
+                        id: sid,
+                        name: row["name"] ?? "",
+                        groupId: row["group_id"],
+                        sortOrder: row["sort_order"] ?? 0,
+                        isCollapsed: (row["is_collapsed"] as Int?) == 1,
+                        entries: entriesBySectionId[sid] ?? []
+                    )
+                }
+
+                // Build groups with their sections
+                var usedSectionIds = Set<Int64>()
+                let groups: [SectionGroupWithChildren] = groupRows.map { gRow in
+                    let gid: Int64 = gRow["id"] ?? 0
+                    let childSections = sectionRows.filter { ($0["group_id"] as Int64?) == gid }
+                        .map { row -> SectionWithEntries in
+                            let s = buildSection(row)
+                            usedSectionIds.insert(s.id)
+                            return s
+                        }
+                    return SectionGroupWithChildren(
+                        id: gid,
+                        name: gRow["name"] ?? "",
+                        sortOrder: gRow["sort_order"] ?? 0,
+                        isCollapsed: (gRow["is_collapsed"] as Int?) == 1,
+                        sections: childSections
+                    )
+                }
+
+                // Ungrouped sections
+                let ungrouped = sectionRows
+                    .filter { ($0["group_id"] as Int64?) == nil }
+                    .map { buildSection($0) }
+
+                return NotebookHierarchy(groups: groups, ungroupedSections: ungrouped)
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return NotebookHierarchy(groups: [], ungroupedSections: [])
+            }
+            throw error
+        }
+    }
+
+    // =========================================================================
     // MARK: - Internal Helpers
     // =========================================================================
 
@@ -382,6 +736,294 @@ public final class NotebooksService: Sendable {
         } catch {
             if isTableNotFoundError(error) { return 0 }
             throw error
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Templates
+    // =========================================================================
+
+    /// Template data structure for JSON encoding/decoding.
+    public struct NotebookTemplateData: Codable, Sendable {
+        public let groups: [TemplateGroup]
+
+        public struct TemplateGroup: Codable, Sendable {
+            public let name: String
+            public let sections: [TemplateSection]
+        }
+
+        public struct TemplateSection: Codable, Sendable {
+            public let name: String
+            public let entries: [TemplateEntry]
+        }
+
+        public struct TemplateEntry: Codable, Sendable {
+            public let blockType: String
+            public let title: String?
+            public let content: String?
+            public let headingLevel: Int?
+            public let checklistItems: [[String: String]]?
+        }
+    }
+
+    /// Template list item for display.
+    public struct NotebookTemplateItem: Identifiable, Sendable {
+        public let id: Int64
+        public let name: String
+        public let description: String?
+        public let templateType: String
+        public let category: String?
+        public let isDefault: Bool
+        public let createdAt: String?
+    }
+
+    /// Get all templates, optionally filtered by type.
+    public func getTemplates(templateType: String? = nil) throws -> [NotebookTemplateItem] {
+        do {
+            return try db.writer.read { dbConn in
+                var sql = """
+                    SELECT id, name, description, template_type, category, is_default, created_at
+                    FROM notebook_templates
+                    WHERE deleted_at IS NULL
+                    """
+                var args: [any DatabaseValueConvertible] = []
+                if let tt = templateType {
+                    sql += " AND template_type = ?"
+                    args.append(tt)
+                }
+                sql += " ORDER BY is_default DESC, name ASC"
+                return try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args)).map { row in
+                    NotebookTemplateItem(
+                        id: row["id"] ?? 0,
+                        name: row["name"] ?? "",
+                        description: row["description"] as String?,
+                        templateType: row["template_type"] ?? "job",
+                        category: row["category"] as String?,
+                        isDefault: (row["is_default"] as Int?) == 1,
+                        createdAt: row["created_at"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Create a template.
+    public func createTemplate(
+        name: String,
+        description: String?,
+        templateType: String,
+        category: String?,
+        templateData: NotebookTemplateData,
+        createdBy: Int64
+    ) throws -> Int64 {
+        let jsonData = try JSONEncoder().encode(templateData)
+        let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
+        return try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_templates (name, description, template_type, category, template_data, created_by)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [name, description, templateType, category, jsonString, createdBy])
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Apply a job template to a notebook — creates groups, sections, and entries.
+    public func applyJobTemplate(templateId: Int64, notebookId: Int64, createdBy: Int64) throws {
+        let templateRow = try db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: "SELECT template_data FROM notebook_templates WHERE id = ?", arguments: [templateId])
+        }
+        guard let jsonString = templateRow?["template_data"] as String?,
+              let jsonData = jsonString.data(using: .utf8) else { return }
+
+        let template = try JSONDecoder().decode(NotebookTemplateData.self, from: jsonData)
+
+        for (groupIndex, group) in template.groups.enumerated() {
+            let groupId = try createSectionGroup(notebookId: notebookId, name: group.name)
+
+            for (sectionIndex, section) in group.sections.enumerated() {
+                let sectionId = try createSection(notebookId: notebookId, groupId: groupId, name: section.name)
+
+                for (entryIndex, entry) in section.entries.enumerated() {
+                    var checklistJson: String? = nil
+                    if let items = entry.checklistItems, let data = try? JSONSerialization.data(withJSONObject: items) {
+                        checklistJson = String(data: data, encoding: .utf8)
+                    }
+                    try db.writer.write { dbConn in
+                        try dbConn.execute(sql: """
+                            INSERT INTO notebook_entries (notebook_id, section_id, entry_type, block_type, title, content,
+                                heading_level, checklist_items, sort_order, created_by, created_at)
+                            VALUES (?, ?, 'note', ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                            """, arguments: [
+                                notebookId, sectionId, entry.blockType,
+                                entry.title, entry.content,
+                                entry.headingLevel, checklistJson,
+                                entryIndex, createdBy
+                            ])
+                    }
+                }
+            }
+        }
+    }
+
+    /// Apply a page template to a section — creates entries.
+    public func applyPageTemplate(templateId: Int64, sectionId: Int64, createdBy: Int64) throws {
+        let templateRow = try db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: "SELECT template_data FROM notebook_templates WHERE id = ?", arguments: [templateId])
+        }
+        guard let jsonString = templateRow?["template_data"] as String?,
+              let jsonData = jsonString.data(using: .utf8) else { return }
+
+        let template = try JSONDecoder().decode(NotebookTemplateData.self, from: jsonData)
+
+        // Page templates use the first section's entries from the first group
+        guard let firstGroup = template.groups.first,
+              let firstSection = firstGroup.sections.first else { return }
+
+        for (idx, entry) in firstSection.entries.enumerated() {
+            _ = try createBlockEntry(
+                sectionId: sectionId,
+                blockType: entry.blockType,
+                title: entry.title,
+                content: entry.content,
+                createdBy: createdBy,
+                sortOrder: idx
+            )
+        }
+    }
+
+    /// Delete a template (soft delete).
+    public func deleteTemplate(templateId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE notebook_templates SET deleted_at = datetime('now') WHERE id = ?
+                """, arguments: [templateId])
+        }
+    }
+
+    /// Seed default templates if none exist.
+    public func seedDefaultTemplates(createdBy: Int64) throws {
+        let count = try db.writer.read { dbConn -> Int in
+            try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM notebook_templates WHERE is_default = 1") ?? 0
+        }
+        guard count == 0 else { return }
+
+        // Residential Job Template
+        let residentialTemplate = NotebookTemplateData(groups: [
+            .init(name: "Safety & Compliance", sections: [
+                .init(name: "Safety Checklist", entries: [
+                    .init(blockType: "heading", title: "Pre-Work Safety", content: nil, headingLevel: 1, checklistItems: nil),
+                    .init(blockType: "checklist", title: "Safety Items", content: nil, headingLevel: nil, checklistItems: [
+                        ["text": "PPE verified", "checked": "false"],
+                        ["text": "Area secured", "checked": "false"],
+                        ["text": "Permits posted", "checked": "false"],
+                        ["text": "Fire extinguisher accessible", "checked": "false"],
+                    ]),
+                ]),
+            ]),
+            .init(name: "Materials & Parts", sections: [
+                .init(name: "Material List", entries: []),
+                .init(name: "Parts Used", entries: []),
+            ]),
+            .init(name: "Daily Log", sections: [
+                .init(name: "Day 1", entries: [
+                    .init(blockType: "heading", title: "Daily Log", content: nil, headingLevel: 1, checklistItems: nil),
+                    .init(blockType: "text", title: "Notes", content: "", headingLevel: nil, checklistItems: nil),
+                ]),
+            ]),
+            .init(name: "Photos", sections: [
+                .init(name: "Progress Photos", entries: []),
+                .init(name: "Issue Photos", entries: []),
+            ]),
+            .init(name: "Punch List", sections: [
+                .init(name: "Items", entries: []),
+            ]),
+        ])
+
+        let jsonData = try JSONEncoder().encode(residentialTemplate)
+        let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_templates (name, description, template_type, category, template_data, is_default, created_by)
+                VALUES (?, ?, ?, ?, ?, 1, ?)
+                """, arguments: [
+                    "Residential Job", "Standard residential job notebook with safety, materials, daily log, photos, and punch list",
+                    "job", "residential", jsonString, createdBy
+                ])
+        }
+
+        // Commercial Job Template
+        let commercialTemplate = NotebookTemplateData(groups: [
+            .init(name: "Safety & Compliance", sections: [
+                .init(name: "Safety Checklist", entries: [
+                    .init(blockType: "checklist", title: "Daily Safety", content: nil, headingLevel: nil, checklistItems: [
+                        ["text": "PPE verified", "checked": "false"],
+                        ["text": "Area secured", "checked": "false"],
+                        ["text": "OSHA signage posted", "checked": "false"],
+                        ["text": "Fire watch assigned", "checked": "false"],
+                    ]),
+                ]),
+                .init(name: "Permits", entries: []),
+            ]),
+            .init(name: "Panel Schedules", sections: [
+                .init(name: "Main Panel", entries: []),
+            ]),
+            .init(name: "Materials & Parts", sections: [
+                .init(name: "Material List", entries: []),
+                .init(name: "Parts Used", entries: []),
+                .init(name: "Returns", entries: []),
+            ]),
+            .init(name: "Daily Log", sections: []),
+            .init(name: "Photos & Documentation", sections: [
+                .init(name: "Progress Photos", entries: []),
+                .init(name: "As-Built Photos", entries: []),
+                .init(name: "Issue Photos", entries: []),
+            ]),
+            .init(name: "Punch List", sections: [
+                .init(name: "Items", entries: []),
+            ]),
+        ])
+
+        let commercialJson = try JSONEncoder().encode(commercialTemplate)
+        let commercialJsonStr = String(data: commercialJson, encoding: .utf8) ?? "{}"
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_templates (name, description, template_type, category, template_data, is_default, created_by)
+                VALUES (?, ?, ?, ?, ?, 1, ?)
+                """, arguments: [
+                    "Commercial Job", "Commercial job notebook with panel schedules, permits, and as-built documentation",
+                    "job", "commercial", commercialJsonStr, createdBy
+                ])
+        }
+
+        // Service Call Template
+        let serviceTemplate = NotebookTemplateData(groups: [
+            .init(name: "Service Call", sections: [
+                .init(name: "Problem Description", entries: [
+                    .init(blockType: "text", title: "Customer Complaint", content: "", headingLevel: nil, checklistItems: nil),
+                ]),
+                .init(name: "Diagnosis", entries: []),
+                .init(name: "Work Performed", entries: []),
+                .init(name: "Parts Used", entries: []),
+                .init(name: "Photos", entries: []),
+            ]),
+        ])
+
+        let serviceJson = try JSONEncoder().encode(serviceTemplate)
+        let serviceJsonStr = String(data: serviceJson, encoding: .utf8) ?? "{}"
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_templates (name, description, template_type, category, template_data, is_default, created_by)
+                VALUES (?, ?, ?, ?, ?, 1, ?)
+                """, arguments: [
+                    "Service Call", "Quick service call notebook for diagnosis and repair",
+                    "job", "service", serviceJsonStr, createdBy
+                ])
         }
     }
 

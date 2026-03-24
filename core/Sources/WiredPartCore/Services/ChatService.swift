@@ -520,6 +520,20 @@ public final class ChatService: Sendable {
         return message.contains("no such table")
     }
 
+    /// Parse an ISO 8601 date string from SQLite.
+    private func parseDate(_ string: String) -> Date? {
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = fmt.date(from: string) { return d }
+        fmt.formatOptions = [.withInternetDateTime]
+        if let d = fmt.date(from: string) { return d }
+        // SQLite datetime format: "2024-01-15 10:30:00"
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        return df.date(from: string)
+    }
+
     // =========================================================================
     // MARK: - Attachments
     // =========================================================================
@@ -867,6 +881,146 @@ public final class ChatService: Sendable {
         } catch {
             if isTableNotFoundError(error) { return nil }
             throw error
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Escalation
+    // =========================================================================
+
+    /// An escalation step in the timeline history.
+    public struct EscalationStep: Sendable, Identifiable {
+        public let id: Int64
+        public let level: String       // "worker", "lead", "manager", "office"
+        public let levelLabel: String   // "Worker", "Lead", "Manager", "Office"
+        public let isCurrent: Bool
+        public let isComplete: Bool
+        public let reviewedBy: String?
+        public let reviewedAt: Date?
+        public let notes: String?
+    }
+
+    /// Get escalation history for a Q&A thread, building a step-by-step timeline.
+    public func getEscalationHistory(threadId: Int64) throws -> [EscalationStep] {
+        do {
+            return try db.writer.read { dbConn -> [EscalationStep] in
+                // Get the thread's current level
+                guard let threadRow = try Row.fetchOne(dbConn, sql: """
+                    SELECT current_level, status FROM qa_threads WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [threadId]) else {
+                    return []
+                }
+                let currentLevel: String = threadRow["current_level"] ?? "worker"
+
+                // Get escalation records
+                let escRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT qe.id, qe.from_level, qe.to_level, qe.reason, qe.created_at,
+                           COALESCE(u.display_name, u.first_name || ' ' || u.last_name, u.email, 'Unknown') AS escalated_by_name
+                    FROM qa_escalations qe
+                    LEFT JOIN users u ON u.id = qe.escalated_by
+                    WHERE qe.thread_id = ?
+                    ORDER BY qe.created_at ASC
+                    """, arguments: [threadId])
+
+                // Build a map of level → escalation info
+                let levelOrder = ["worker", "lead", "manager", "office"]
+                let levelLabels = ["worker": "Worker", "lead": "Lead", "manager": "Manager", "office": "Office"]
+
+                // Track which levels have been reviewed and by whom
+                var levelInfo: [String: (by: String?, at: Date?, notes: String?)] = [:]
+                for row in escRows {
+                    let fromLevel: String = row["from_level"] ?? ""
+                    let toLevel: String = row["to_level"] ?? ""
+                    let name: String? = row["escalated_by_name"]
+                    let dateStr: String? = row["created_at"]
+                    let reason: String? = row["reason"]
+
+                    let date = dateStr.flatMap { parseDate($0) }
+
+                    // The fromLevel was reviewed by this person (they chose to escalate/push back)
+                    levelInfo[fromLevel] = (by: name, at: date, notes: nil)
+                    // If pushing back, the to_level gets the reason
+                    let fromIdx = levelOrder.firstIndex(of: fromLevel) ?? 0
+                    let toIdx = levelOrder.firstIndex(of: toLevel) ?? 0
+                    if toIdx < fromIdx {
+                        // Push back — attach reason to the target level
+                        levelInfo[toLevel] = (by: nil, at: nil, notes: reason)
+                    }
+                }
+
+                let currentIdx = levelOrder.firstIndex(of: currentLevel) ?? 0
+
+                return levelOrder.enumerated().map { (idx, level) in
+                    let info = levelInfo[level]
+                    return EscalationStep(
+                        id: Int64(idx),
+                        level: level,
+                        levelLabel: levelLabels[level] ?? level.capitalized,
+                        isCurrent: level == currentLevel,
+                        isComplete: idx < currentIdx,
+                        reviewedBy: info?.by,
+                        reviewedAt: info?.at,
+                        notes: info?.notes
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Escalate a Q&A thread to the next level.
+    public func escalateThread(threadId: Int64, escalatedBy: Int64, notes: String?) throws {
+        try db.writer.write { dbConn in
+            guard let row = try Row.fetchOne(dbConn, sql: """
+                SELECT current_level FROM qa_threads WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [threadId]) else {
+                return
+            }
+            let current: String = row["current_level"] ?? "worker"
+            let levelOrder = ["worker", "lead", "manager", "office"]
+            guard let idx = levelOrder.firstIndex(of: current), idx < levelOrder.count - 1 else { return }
+            let nextLevel = levelOrder[idx + 1]
+
+            // Update thread
+            try dbConn.execute(sql: """
+                UPDATE qa_threads SET current_level = ?, status = 'escalated', updated_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [nextLevel, threadId])
+
+            // Insert escalation record
+            try dbConn.execute(sql: """
+                INSERT INTO qa_escalations (thread_id, from_level, to_level, escalated_by, reason, created_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now'))
+                """, arguments: [threadId, current, nextLevel, escalatedBy, notes])
+        }
+    }
+
+    /// Push a Q&A thread back down one level with feedback.
+    public func pushBackThread(threadId: Int64, pushedBackBy: Int64, reason: String) throws {
+        try db.writer.write { dbConn in
+            guard let row = try Row.fetchOne(dbConn, sql: """
+                SELECT current_level FROM qa_threads WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [threadId]) else {
+                return
+            }
+            let current: String = row["current_level"] ?? "worker"
+            let levelOrder = ["worker", "lead", "manager", "office"]
+            guard let idx = levelOrder.firstIndex(of: current), idx > 0 else { return }
+            let prevLevel = levelOrder[idx - 1]
+
+            // Update thread
+            try dbConn.execute(sql: """
+                UPDATE qa_threads SET current_level = ?, status = 'open', updated_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [prevLevel, threadId])
+
+            // Insert escalation record (direction is indicated by from > to)
+            try dbConn.execute(sql: """
+                INSERT INTO qa_escalations (thread_id, from_level, to_level, escalated_by, reason, created_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now'))
+                """, arguments: [threadId, current, prevLevel, pushedBackBy, reason])
         }
     }
 

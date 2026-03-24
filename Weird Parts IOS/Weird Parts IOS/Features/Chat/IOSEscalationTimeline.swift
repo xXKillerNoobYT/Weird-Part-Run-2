@@ -1,126 +1,292 @@
 import SwiftUI
 import WiredPartCore
 
-/// Visual timeline showing the escalation chain for a Q&A thread.
+/// Visual escalation timeline showing the bidirectional escalation chain for Q&A threads.
 ///
-/// Displays each escalation level with who was asked, when, and
-/// whether they answered or escalated further.
+/// Displays: Worker → Lead → Manager → Office with review info at each step.
+/// Supports escalate (up) and push back (down) actions.
 struct IOSEscalationTimeline: View {
+    @EnvironmentObject private var appCore: AppCore
+
     let thread: ChatService.QAThreadRow
 
+    @State private var steps: [ChatService.EscalationStep] = []
+    @State private var isLoading = true
+    @State private var loadError: String?
+    @State private var actionError: String?
+    @State private var showPushBackSheet = false
+    @State private var pushBackReason = ""
+
+    private var canEscalate: Bool {
+        thread.currentLevel != "office" && thread.status == "open"
+    }
+
+    private var canPushBack: Bool {
+        thread.currentLevel != "worker" && thread.status != "closed"
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Question
-            TimelineNode(
-                icon: "questionmark.circle.fill",
-                color: .blue,
-                title: "Question Asked",
-                subtitle: thread.askedByName,
-                detail: thread.question,
-                isFirst: true,
-                isLast: false
-            )
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // Thread info header
+                threadInfoHeader
 
-            // Current Level
-            TimelineNode(
-                icon: levelIcon(thread.currentLevel),
-                color: levelColor(thread.currentLevel),
-                title: "Level: \(thread.currentLevel.capitalized)",
-                subtitle: "Status: \(thread.status.capitalized)",
-                detail: nil,
-                isFirst: false,
-                isLast: thread.answer == nil
-            )
+                // Error banner
+                if let error = actionError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .padding(.horizontal)
+                }
 
-            // Answer (if exists)
-            if let answer = thread.answer {
-                TimelineNode(
-                    icon: "checkmark.circle.fill",
-                    color: .green,
-                    title: "Answered",
-                    subtitle: thread.answeredByName ?? "Unknown",
-                    detail: answer,
-                    isFirst: false,
-                    isLast: true
-                )
+                // Timeline
+                if isLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                } else if let error = loadError {
+                    ErrorStateView(message: error) { Task { loadSteps() } }
+                } else {
+                    timelineView
+                }
+
+                // Action buttons
+                actionButtons
+            }
+            .padding()
+        }
+        .task { loadSteps() }
+        .sheet(isPresented: $showPushBackSheet) {
+            PushBackSheet(
+                reason: $pushBackReason,
+                onSubmit: { doPushBack() }
+            )
+        }
+    }
+
+    // MARK: - Thread Info Header
+
+    private var threadInfoHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                StatusBadge(text: thread.status.capitalized, color: statusColor(thread.status))
+                StatusBadge(text: thread.priority.capitalized, color: priorityColor(thread.priority))
+            }
+
+            Text(thread.question)
+                .font(.headline)
+
+            Text("Asked by \(thread.askedByName)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if let answer = thread.answer, !answer.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                    Text(answer)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
-        .padding()
     }
 
-    private func levelIcon(_ level: String) -> String {
-        switch level {
-        case "lead": return "person.fill"
-        case "foreman": return "person.badge.shield.checkmark.fill"
-        case "pm": return "person.crop.circle.badge.checkmark"
-        case "office": return "building.2.fill"
-        default: return "arrow.up.circle.fill"
+    // MARK: - Timeline View
+
+    private var timelineView: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Escalation Timeline")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .padding(.bottom, 8)
+
+            ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
+                HStack(alignment: .top, spacing: 12) {
+                    // Timeline node
+                    VStack(spacing: 0) {
+                        Circle()
+                            .fill(step.isCurrent ? Color.blue : step.isComplete ? Color.green : Color.gray.opacity(0.3))
+                            .frame(width: 12, height: 12)
+                        if index < steps.count - 1 {
+                            Rectangle()
+                                .fill(step.isComplete ? Color.green : Color.gray.opacity(0.3))
+                                .frame(width: 2, height: 40)
+                        }
+                    }
+
+                    // Step content
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(step.levelLabel)
+                                .font(.subheadline)
+                                .fontWeight(step.isCurrent ? .bold : .regular)
+                            if step.isCurrent {
+                                Text("Current")
+                                    .font(.caption2)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 1)
+                                    .background(.blue)
+                                    .clipShape(Capsule())
+                            }
+                        }
+                        if let reviewer = step.reviewedBy, let date = step.reviewedAt {
+                            Text("\(reviewer) — \(date, style: .relative)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let notes = step.notes {
+                            Text(notes)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .italic()
+                        }
+                    }
+                }
+            }
         }
     }
 
-    private func levelColor(_ level: String) -> Color {
-        switch level {
-        case "lead": .blue
-        case "foreman": .orange
-        case "pm": .purple
-        case "office": .red
-        default: .secondary
+    // MARK: - Action Buttons
+
+    @ViewBuilder
+    private var actionButtons: some View {
+        if canEscalate || canPushBack {
+            HStack(spacing: 12) {
+                if canEscalate {
+                    Button {
+                        doEscalate()
+                    } label: {
+                        Label("Escalate", systemImage: "arrow.up.circle")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                if canPushBack {
+                    Button {
+                        showPushBackSheet = true
+                    } label: {
+                        Label("Push Back", systemImage: "arrow.down.circle")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.orange)
+                }
+            }
+            .padding(.top, 8)
+        }
+    }
+
+    // MARK: - Actions
+
+    private func loadSteps() {
+        guard let service = appCore.chatService else {
+            loadError = "Chat service unavailable"
+            isLoading = false
+            return
+        }
+        isLoading = steps.isEmpty
+        loadError = nil
+        do {
+            steps = try service.getEscalationHistory(threadId: thread.id)
+        } catch {
+            loadError = error.localizedDescription
+        }
+        isLoading = false
+    }
+
+    private func doEscalate() {
+        guard let service = appCore.chatService,
+              let userId = appCore.currentUser?.id else {
+            actionError = "Service unavailable"
+            return
+        }
+        do {
+            try service.escalateThread(threadId: thread.id, escalatedBy: userId, notes: nil)
+            loadSteps()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func doPushBack() {
+        guard let service = appCore.chatService,
+              let userId = appCore.currentUser?.id else {
+            actionError = "Service unavailable"
+            return
+        }
+        let reason = pushBackReason.trimmingCharacters(in: .whitespaces)
+        guard !reason.isEmpty else {
+            actionError = "Push back requires a reason"
+            return
+        }
+        do {
+            try service.pushBackThread(threadId: thread.id, pushedBackBy: userId, reason: reason)
+            pushBackReason = ""
+            showPushBackSheet = false
+            loadSteps()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func statusColor(_ status: String) -> Color {
+        switch status {
+        case "open": return .orange
+        case "answered": return .green
+        case "escalated": return .red
+        case "closed": return .secondary
+        default: return .secondary
+        }
+    }
+
+    private func priorityColor(_ priority: String) -> Color {
+        switch priority {
+        case "urgent": return .red
+        case "high": return .orange
+        case "normal": return .blue
+        case "low": return .secondary
+        default: return .secondary
         }
     }
 }
 
-// MARK: - Timeline Node
+// MARK: - Push Back Sheet
 
-private struct TimelineNode: View {
-    let icon: String
-    let color: Color
-    let title: String
-    let subtitle: String
-    let detail: String?
-    let isFirst: Bool
-    let isLast: Bool
+/// Sheet for entering a reason when pushing back a Q&A thread.
+private struct PushBackSheet: View {
+    @Binding var reason: String
+    let onSubmit: () -> Void
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            // Timeline line + dot
-            VStack(spacing: 0) {
-                if !isFirst {
-                    Rectangle()
-                        .fill(color.opacity(0.3))
-                        .frame(width: 2, height: 16)
-                }
-                Image(systemName: icon)
-                    .font(.body)
-                    .foregroundStyle(color)
-                    .frame(width: 24, height: 24)
-                if !isLast {
-                    Rectangle()
-                        .fill(color.opacity(0.3))
-                        .frame(width: 2, height: 16)
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Reason for pushing back...", text: $reason, axis: .vertical)
+                        .lineLimit(3...6)
+                } header: {
+                    Text("Feedback")
+                } footer: {
+                    Text("Provide feedback explaining why the question is being sent back.")
                 }
             }
-            .frame(width: 24)
-
-            // Content
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if let detail {
-                    Text(detail)
-                        .font(.caption)
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.secondary.opacity(0.1))
-                        )
+            .navigationTitle("Push Back")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Submit") {
+                        onSubmit()
+                    }
+                    .disabled(reason.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
-            .padding(.vertical, 4)
         }
     }
 }

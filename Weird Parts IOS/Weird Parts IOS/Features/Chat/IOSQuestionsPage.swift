@@ -3,9 +3,8 @@ import WiredPartCore
 
 /// Q&A threads list page for iOS.
 ///
-/// Displays a searchable list of Q&A threads with question text,
-/// asked by name, status badge, priority, and answer status.
-/// Supports pull-to-refresh and status-based filtering.
+/// Displays a searchable list of Q&A threads with smart card filters,
+/// escalation level display, and navigation to thread detail/escalation timeline.
 struct IOSQuestionsPage: View {
     @EnvironmentObject private var appCore: AppCore
 
@@ -14,19 +13,26 @@ struct IOSQuestionsPage: View {
     @State private var threads: [ChatService.QAThreadRow] = []
     @State private var isLoading = true
     @State private var searchText = ""
-    @State private var statusFilter = "all"
+    @State private var statusFilter: QAFilter = .all
     @State private var loadError: String?
+    @State private var actionError: String?
     private enum ActiveSheet: String, Identifiable {
         case askQuestion
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
 
-    private let statusOptions = ["all", "open", "answered", "escalated", "closed"]
+    enum QAFilter: String, CaseIterable {
+        case all = "All"
+        case open = "Open"
+        case myQuestions = "My Questions"
+        case needsMyReview = "Needs My Review"
+        case resolved = "Resolved"
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            statusPicker
+            smartCardBar
             questionsList
         }
         .navigationTitle("Q&A")
@@ -50,32 +56,81 @@ struct IOSQuestionsPage: View {
         .task { loadData() }
     }
 
-    // MARK: - Status Picker
+    // MARK: - Smart Card Filters
 
-    private var statusPicker: some View {
+    private var smartCardBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(statusOptions, id: \.self) { status in
-                    Button {
-                        statusFilter = status
+            HStack(spacing: 10) {
+                ForEach(QAFilter.allCases, id: \.self) { filter in
+                    smartCard(filter.rawValue, count: countFor(filter),
+                              icon: iconFor(filter), isActive: statusFilter == filter,
+                              color: colorFor(filter)) {
+                        statusFilter = filter
                         loadData()
-                    } label: {
-                        Text(status == "all" ? "All" : status.capitalized)
-                            .font(.caption)
-                            .fontWeight(statusFilter == status ? .bold : .regular)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(statusFilter == status ? Color.accentColor : Color.secondary.opacity(0.2))
-                            )
-                            .foregroundStyle(statusFilter == status ? .white : .primary)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
         }
+    }
+
+    private func countFor(_ filter: QAFilter) -> Int {
+        switch filter {
+        case .all: return threads.count
+        case .open: return threads.filter { $0.status == "open" || $0.status == "escalated" }.count
+        case .myQuestions:
+            return threads.count // All shown for now — user-specific filtering added later
+        case .needsMyReview: return threads.filter { $0.status == "open" }.count
+        case .resolved: return threads.filter { $0.status == "answered" || $0.status == "closed" }.count
+        }
+    }
+
+    private func iconFor(_ filter: QAFilter) -> String {
+        switch filter {
+        case .all: return "list.bullet"
+        case .open: return "exclamationmark.circle"
+        case .myQuestions: return "person.circle"
+        case .needsMyReview: return "eye.circle"
+        case .resolved: return "checkmark.circle"
+        }
+    }
+
+    private func colorFor(_ filter: QAFilter) -> Color {
+        switch filter {
+        case .all: return .blue
+        case .open: return .orange
+        case .myQuestions: return .purple
+        case .needsMyReview: return .red
+        case .resolved: return .green
+        }
+    }
+
+    private func smartCard(_ label: String, count: Int, icon: String, isActive: Bool,
+                           color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                HStack(spacing: 4) {
+                    Image(systemName: icon)
+                        .font(.caption2)
+                    Text("\(count)")
+                        .font(.system(.title3, weight: .bold))
+                        .monospacedDigit()
+                }
+                Text(label)
+                    .font(.caption2)
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isActive ? .white : color)
+            .frame(minWidth: 70)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isActive ? color : color.opacity(0.1))
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Questions List
@@ -95,20 +150,41 @@ struct IOSQuestionsPage: View {
             }
         } else {
             List(filteredThreads, id: \.id) { thread in
-                threadRow(thread)
+                NavigationLink {
+                    IOSEscalationTimeline(thread: thread)
+                        .environmentObject(appCore)
+                        .navigationTitle("Q&A Detail")
+                } label: {
+                    threadRow(thread)
+                }
             }
             .listStyle(.insetGrouped)
         }
     }
 
     private var filteredThreads: [ChatService.QAThreadRow] {
-        guard !searchText.isEmpty else { return threads }
-        let query = searchText.lowercased()
-        return threads.filter {
-            $0.question.lowercased().contains(query) ||
-            $0.askedByName.lowercased().contains(query) ||
-            ($0.answeredByName?.lowercased().contains(query) ?? false)
+        var items = threads
+
+        // Apply smart card filter
+        switch statusFilter {
+        case .all: break
+        case .open: items = items.filter { $0.status == "open" || $0.status == "escalated" }
+        case .myQuestions: break // Show all for now
+        case .needsMyReview: items = items.filter { $0.status == "open" }
+        case .resolved: items = items.filter { $0.status == "answered" || $0.status == "closed" }
         }
+
+        // Apply search
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            items = items.filter {
+                $0.question.lowercased().contains(query) ||
+                $0.askedByName.lowercased().contains(query) ||
+                ($0.answeredByName?.lowercased().contains(query) ?? false)
+            }
+        }
+
+        return items
     }
 
     private func threadRow(_ thread: ChatService.QAThreadRow) -> some View {
@@ -196,13 +272,16 @@ struct IOSQuestionsPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.chatService else { return }
+        guard let service = appCore.chatService else {
+            loadError = "Chat service unavailable"
+            isLoading = false
+            return
+        }
         isLoading = threads.isEmpty
         loadError = nil
         do {
-            threads = try service.listQAThreads(
-                status: statusFilter == "all" ? nil : statusFilter
-            )
+            // Load all threads — filtering is done client-side via smart cards
+            threads = try service.listQAThreads()
         } catch {
             loadError = error.localizedDescription
         }

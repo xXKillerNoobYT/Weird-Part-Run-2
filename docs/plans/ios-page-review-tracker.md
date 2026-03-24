@@ -36,14 +36,14 @@
 | Warehouse | 15 files | ❌ | — | Not started |
 | Scheduling | 12 files | ✅ Design | — | Design complete, prompts pending |
 | Chat | 9 files | ✅ Design | — | Design complete, prompts pending |
-| Tools | 7 files | ❌ | — | Not started |
-| Fleet | 17 files | ❌ | — | Not started |
+| Tools | 7 files | ✅ Design | — | Design complete, prompts pending |
+| Fleet | 17 files | ✅ Design | — | Design complete, prompts pending |
 | Reports | 9 files | ❌ | — | Not started |
 | Office | 6 files | ❌ | — | Not started |
 | Notebooks | 7 files | ✅ Design | — | Design complete, prompts pending |
 | Settings | 23 files | ❌ | — | Not started |
 
-**Totals:** 81 prompts written · 32 DONE · 49 queued · 5 areas designed (prompts pending) · ~7 feature areas unreviewed
+**Totals:** 81 prompts written · 32 DONE · 49 queued · 7 areas designed (prompts pending) · ~5 feature areas unreviewed
 
 ---
 
@@ -344,6 +344,36 @@ These areas have comprehensive design plans saved in `docs/plans/`. Next step: r
 - End-of-job reviews: estimate vs actual, categorized delays, crew feedback, GC rating
 - AI Smart Question System: suggests new questions after 15+ jobs, stage-specific, rejected questions log with AI reconsideration, history-based suggestions (GC/area/type)
 
+### Tools (Design: 2026-03-23)
+
+**Plan file:** `docs/plans/ios-tools-pages.md`
+**Files:** `IOSToolsDashboardPage`, `IOSToolRegistryPage`, `IOSToolCheckoutsPage`, `IOSToolMaintenancePage`, `IOSToolKitsPage`, `IOSToolAdminPage`, `IOSToolsRouter`
+
+**Key design decisions:**
+- Dashboard quick actions: pick action FIRST (Checkout/Return/Report Issue), then scan QR or type ID
+- Tool detail: full checkout history, maintenance log, version history (2yr), attached parts
+- Edit verification: any user can edit, but without hat → PENDING → manager notified → must scan QR to unlock approve/reject
+- Four kit types: Consumable-Only, Tool+Consumable, Mixed, Tools-Only
+- Kit features: missing tools status, inspection checklist, restock consumables, condition check on checkout AND return
+- Tool trade: initiator condition check → request → receiver condition check → accept/decline. 7-day auto-complete if no response.
+- Five maintenance types: time-based, usage-based, schedule-based, decreasing-based (confidence decay), condition-triggered
+- Management page (renamed from Admin): bulk actions, categories/types config, company policies, location assignment, audit trail
+
+### Fleet (Design: 2026-03-23)
+
+**Plan file:** `docs/plans/ios-fleet-pages.md`
+**Files:** `IOSFleetDashboardPage`, `IOSVehiclesPage`, `IOSVehicleDetailPage`, `IOSMyTruckPage`, `IOSTruckToolsPage`, `IOSFuelPage`, `IOSMileagePage`, `IOSMaintenancePage`, `IOSInspectionsPage`, `IOSTelematicsPage`, `IOSTrailersPage`, `IOSTrailerDetailPage`, `IOSTrailerLocationsPage`, `IOSCreateVehicleSheet`, `IOSCreateTrailerSheet`, `IOSAssignDriverSheet`, `FleetRouter`
+
+**Key design decisions:**
+- My Vehicle = primary worker view, opens first for field workers, smart cards (Tools On Board, Parts On Board, Tank, Maintenance Due)
+- Two truck inventory types: Truck Stock (permanent, MIN/TARGET/MAX) vs Transfer Area (temporary logistics)
+- Trailers = mini warehouses with own shelves/drawers, own MIN/TARGET/MAX, AT SHOP uses target only, NOT AT SHOP uses full MIN/MAX
+- Vehicle detail: 7 tabs (Overview, Parts, Tools, Assignments, Maintenance, Usage, Inspections)
+- Pre-trip inspections: residential-sized checklist, customizable per vehicle/trailer type, ties into clock-in
+- Fleet dashboard KPIs: smart cards for vehicles/active/maintenance due/overdue inspect/trailers/fuel/miles/cost
+- Fleet reports live in Reports section (not Fleet)
+- Code quality: cleanest section — zero GRDB imports, zero raw SQL, design enhancement only
+
 ---
 
 ## Unreviewed Pages — What Still Needs Review
@@ -363,14 +393,6 @@ Each area below needs: (1) read every file, (2) identify issues, (3) record desi
 **Files:** `WarehouseDashboardPage`, `IOSMovementWizard`, `WarehouseMovementsPage`, `WarehouseLocationsPage`, `IOSStagingPage`, `IOSReceivingPage`, `IOSAuditPage`, `IOSAuditSetupView`, `IOSAuditSummaryView`, `IOSInventoryGridPage`, `IOSWarehouseReturnsPage`, `IOSWarehouseToolsPage`, `IOSWarehouseNetworkPage`, `IOSWarehouseSettingsPage`, `WarehouseRouter`
 **Expected issues:** Movement wizard flow, location management, audit workflow, dashboard KPIs
 
-
-### Tools (7 files)
-**Files:** `IOSToolsDashboardPage`, `IOSToolRegistryPage`, `IOSToolCheckoutsPage`, `IOSToolMaintenancePage`, `IOSToolKitsPage`, `IOSToolAdminPage`, `IOSToolsRouter`
-**Expected issues:** Checkout/return flow, kit verification, maintenance tracking, admin controls
-
-### Fleet (17 files)
-**Files:** `IOSFleetDashboardPage`, `IOSVehiclesPage`, `IOSVehicleDetailPage`, `IOSMyTruckPage`, `IOSTruckToolsPage`, `IOSFuelPage`, `IOSMileagePage`, `IOSMaintenancePage`, `IOSInspectionsPage`, `IOSTelematicsPage`, `IOSTrailersPage`, `IOSTrailerDetailPage`, `IOSTrailerLocationsPage`, `IOSCreateVehicleSheet`, `IOSCreateTrailerSheet`, `IOSAssignDriverSheet`, `FleetRouter`
-**Expected issues:** Vehicle CRUD, assignment flow, maintenance scheduling, fuel/mileage tracking, inspection checklists
 
 ### Reports (9 files)
 **Files:** `IOSTimesheetsPage`, `IOSLaborOverviewPage`, `IOSPreBillingPage`, `IOSBookkeeperExportPage`, `IOSSpendingPage`, `IOSProfitabilityPage`, `IOSDailyReportsSummaryPage`, `IOSPublicReportView`, `IOSReportsRouter`
@@ -428,8 +450,10 @@ DESIGNED (need prompts written):
   - Notebooks (see docs/plans/ios-notebooks-pages.md)
   - People (see docs/plans/ios-people-pages.md)
   - Scheduling (see docs/plans/ios-scheduling-pages.md)
+  - Tools (see docs/plans/ios-tools-pages.md)
+  - Fleet (see docs/plans/ios-fleet-pages.md)
 
-THEN:  Page-by-page reviews for remaining 7 feature areas (Orders, Warehouse, Tools, Fleet, Reports, Office, Settings)
+THEN:  Page-by-page reviews for remaining 5 feature areas (Orders, Warehouse, Reports, Office, Settings)
 ```
 
 ---

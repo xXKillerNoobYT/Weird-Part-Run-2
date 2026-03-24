@@ -52,6 +52,28 @@ extension AppDatabase {
         registerMigration035StagingBoxes(&migrator)
         registerMigration036ClockTodoIntegration(&migrator)
         registerMigration037ChatAttachments(&migrator)
+        registerMigration038NotebookHierarchy(&migrator)
+        registerMigration039NotebookTemplates(&migrator)
+    }
+
+    // MARK: - Migration 039: Notebook Templates
+
+    private static func registerMigration039NotebookTemplates(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("039_notebook_templates") { db in
+            try db.create(table: "notebook_templates") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("description", .text)
+                t.column("template_type", .text).notNull().defaults(to: "job")
+                t.column("category", .text)
+                t.column("template_data", .text).notNull()
+                t.column("is_default", .integer).notNull().defaults(to: 0)
+                t.column("created_by", .integer).references("users")
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+            }
+        }
     }
 }
 
@@ -3258,6 +3280,49 @@ extension AppDatabase {
                 t.column("created_at", .text).defaults(sql: "(datetime('now'))")
             }
             try db.create(index: "idx_msg_attach_message", on: "message_attachments", columns: ["message_id"])
+        }
+    }
+}
+
+// MARK: - 038: Notebook Hierarchy (Section Groups + Block Content)
+
+extension AppDatabase {
+    private static func registerMigration038NotebookHierarchy(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("038_notebook_hierarchy") { db in
+            // Section groups — optional grouping above sections
+            try db.create(table: "notebook_section_groups") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("notebook_id", .integer).notNull()
+                    .references("notebooks", onDelete: .cascade)
+                t.column("name", .text).notNull()
+                t.column("sort_order", .integer).notNull().defaults(to: 0)
+                t.column("is_collapsed", .integer).notNull().defaults(to: 0)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
+            }
+            try db.create(index: "idx_nsg_notebook", on: "notebook_section_groups", columns: ["notebook_id"])
+
+            // Add group_id and additional columns to notebook_sections
+            try db.alter(table: "notebook_sections") { t in
+                t.add(column: "group_id", .integer)
+                    .references("notebook_section_groups", onDelete: .setNull)
+                t.add(column: "is_collapsed", .integer).notNull().defaults(to: 0)
+                t.add(column: "updated_at", .text).defaults(sql: "(datetime('now'))")
+            }
+
+            // Add block content columns to notebook_entries
+            try db.alter(table: "notebook_entries") { t in
+                t.add(column: "block_type", .text).notNull().defaults(to: "text")
+                t.add(column: "block_data", .text)         // JSON for type-specific data
+                t.add(column: "heading_level", .integer)     // 1, 2, 3 for headings
+                t.add(column: "checklist_items", .text)      // JSON array of {text, checked}
+                t.add(column: "photo_path", .text)
+                t.add(column: "reference_type", .text)       // "part", "po", "jpo", "job"
+                t.add(column: "reference_id", .integer)
+                t.add(column: "is_completed", .integer).notNull().defaults(to: 0)
+                t.add(column: "notebook_id", .integer)       // Direct notebook reference for queries
+            }
         }
     }
 }

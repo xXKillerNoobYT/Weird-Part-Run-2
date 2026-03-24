@@ -105,7 +105,7 @@ public enum ConflictResolver {
         "job_customers", "job_general_contractors",
         // Notebooks
         "notebook_templates", "template_sections", "template_entries",
-        "notebooks", "notebook_sections", "notebook_entries",
+        "notebooks", "notebook_section_groups", "notebook_sections", "notebook_entries", "notebook_templates",
         "notebook_entry_permissions", "task_order_links", "notebook_entry_tools",
         // Orders & Procurement
         "job_parts_orders", "jpo_line_items", "purchase_orders", "po_line_items",
