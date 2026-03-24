@@ -38,11 +38,14 @@ public final class SchedulingService: Sendable {
         public let endTime: String?
         public let status: String
         public let notes: String?
+        public let timeSlot: String
+        public let userName: String?
 
         public init(
             id: Int64, jobName: String, date: String,
             startTime: String?, endTime: String?,
-            status: String, notes: String?
+            status: String, notes: String?,
+            timeSlot: String = "full", userName: String? = nil
         ) {
             self.id = id
             self.jobName = jobName
@@ -51,6 +54,8 @@ public final class SchedulingService: Sendable {
             self.endTime = endTime
             self.status = status
             self.notes = notes
+            self.timeSlot = timeSlot
+            self.userName = userName
         }
     }
 
@@ -152,6 +157,38 @@ public final class SchedulingService: Sendable {
         }
     }
 
+    /// Summary of schedule data for a single day (month view).
+    public struct DayScheduleSummary: Sendable {
+        public let date: String
+        public let amCount: Int
+        public let pmCount: Int
+        public let fullDayCount: Int
+        public let totalWorkers: Int
+        public let timeOffCount: Int
+
+        public init(date: String, amCount: Int, pmCount: Int, fullDayCount: Int, totalWorkers: Int, timeOffCount: Int) {
+            self.date = date
+            self.amCount = amCount
+            self.pmCount = pmCount
+            self.fullDayCount = fullDayCount
+            self.totalWorkers = totalWorkers
+            self.timeOffCount = timeOffCount
+        }
+    }
+
+    /// A time-off entry for the day detail view.
+    public struct TimeOffEntry: Sendable, Identifiable {
+        public let id: Int64
+        public let employeeName: String
+        public let reason: String?
+
+        public init(id: Int64, employeeName: String, reason: String?) {
+            self.id = id
+            self.employeeName = employeeName
+            self.reason = reason
+        }
+    }
+
     /// Dashboard-level scheduling stats.
     public struct SchedulingStats: Sendable {
         public let scheduledToday: Int
@@ -181,9 +218,12 @@ public final class SchedulingService: Sendable {
                     SELECT jd.id, jd.dispatch_date AS date,
                            jd.shift_start AS start_time, jd.shift_end AS end_time,
                            jd.status, jd.notes,
-                           COALESCE(j.job_name, 'Unassigned') AS job_name
+                           COALESCE(jd.time_slot, 'full') AS time_slot,
+                           COALESCE(j.job_name, 'Unassigned') AS job_name,
+                           COALESCE(u.display_name, u.email) AS user_name
                     FROM job_dispatch jd
                     LEFT JOIN jobs j ON j.id = jd.job_id
+                    LEFT JOIN users u ON u.id = jd.user_id
                     WHERE jd.user_id = ?
                       AND jd.dispatch_date >= ?
                       AND jd.dispatch_date <= ?
@@ -200,7 +240,9 @@ public final class SchedulingService: Sendable {
                         startTime: row["start_time"] as String?,
                         endTime: row["end_time"] as String?,
                         status: row["status"] ?? "scheduled",
-                        notes: row["notes"] as String?
+                        notes: row["notes"] as String?,
+                        timeSlot: row["time_slot"] ?? "full",
+                        userName: row["user_name"] as String?
                     )
                 }
             }
@@ -554,6 +596,204 @@ public final class SchedulingService: Sendable {
     }
 
     // =========================================================================
+    // MARK: - 7b. Weekly Dispatch Board (Gantt)
+    // =========================================================================
+
+    /// A dispatch assignment row for the Gantt-style board.
+    public struct DispatchAssignment: Sendable, Identifiable {
+        public let id: Int64
+        public let jobId: Int64
+        public let jobName: String
+        public let employeeId: Int64
+        public let employeeName: String
+        public let employeeInitials: String
+        public let date: String
+        public let timeSlot: String
+        public let status: String
+
+        public init(
+            id: Int64, jobId: Int64, jobName: String,
+            employeeId: Int64, employeeName: String, employeeInitials: String,
+            date: String, timeSlot: String, status: String
+        ) {
+            self.id = id
+            self.jobId = jobId
+            self.jobName = jobName
+            self.employeeId = employeeId
+            self.employeeName = employeeName
+            self.employeeInitials = employeeInitials
+            self.date = date
+            self.timeSlot = timeSlot
+            self.status = status
+        }
+    }
+
+    /// A job row summary for the dispatch board.
+    public struct DispatchJobRow: Sendable, Identifiable {
+        public let id: Int64
+        public let jobName: String
+        public let stageName: String?
+
+        public init(id: Int64, jobName: String, stageName: String?) {
+            self.id = id
+            self.jobName = jobName
+            self.stageName = stageName
+        }
+    }
+
+    /// Get all dispatch assignments for a week.
+    public func getWeeklyDispatchAssignments(weekStart: String, weekEnd: String) throws -> [DispatchAssignment] {
+        do {
+            return try db.writer.read { dbConn -> [DispatchAssignment] in
+                let sql = """
+                    SELECT jd.id, jd.job_id, jd.user_id AS employee_id,
+                           jd.dispatch_date AS date,
+                           COALESCE(jd.time_slot, 'full') AS time_slot,
+                           jd.status,
+                           COALESCE(j.job_name, 'Unassigned') AS job_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS employee_name
+                    FROM job_dispatch jd
+                    LEFT JOIN jobs j ON j.id = jd.job_id
+                    LEFT JOIN users u ON u.id = jd.user_id
+                    WHERE jd.dispatch_date >= ?
+                      AND jd.dispatch_date <= ?
+                      AND jd.deleted_at IS NULL
+                    ORDER BY j.job_name, jd.dispatch_date
+                    """
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [weekStart, weekEnd])
+                return rows.map { row in
+                    let name: String = row["employee_name"] ?? "Unknown"
+                    let initials = Self.makeInitials(name)
+                    return DispatchAssignment(
+                        id: row["id"] ?? 0,
+                        jobId: row["job_id"] ?? 0,
+                        jobName: row["job_name"] ?? "Unassigned",
+                        employeeId: row["employee_id"] ?? 0,
+                        employeeName: name,
+                        employeeInitials: initials,
+                        date: row["date"] ?? "",
+                        timeSlot: row["time_slot"] ?? "full",
+                        status: row["status"] ?? "scheduled"
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get active job rows for the dispatch board (jobs with active status).
+    public func getDispatchJobRows() throws -> [DispatchJobRow] {
+        do {
+            return try db.writer.read { dbConn -> [DispatchJobRow] in
+                let sql = """
+                    SELECT j.id, j.job_name,
+                           js.stage_name
+                    FROM jobs j
+                    LEFT JOIN job_stages js ON js.job_id = j.id AND js.is_current = 1 AND js.deleted_at IS NULL
+                    WHERE j.status = 'active'
+                      AND j.deleted_at IS NULL
+                    ORDER BY j.job_name
+                    """
+                let rows = try Row.fetchAll(dbConn, sql: sql)
+                return rows.map { row in
+                    DispatchJobRow(
+                        id: row["id"] ?? 0,
+                        jobName: row["job_name"] ?? "",
+                        stageName: row["stage_name"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get workers who have no dispatch assignments for the given week.
+    public func getUnassignedWorkers(weekStart: String, weekEnd: String) throws -> [UnassignedWorker] {
+        do {
+            return try db.writer.read { dbConn -> [UnassignedWorker] in
+                let sql = """
+                    SELECT u.id, COALESCE(u.display_name, u.email, 'Unknown') AS name
+                    FROM users u
+                    WHERE u.deleted_at IS NULL
+                      AND u.status = 'active'
+                      AND u.id NOT IN (
+                          SELECT DISTINCT jd.user_id FROM job_dispatch jd
+                          WHERE jd.dispatch_date >= ?
+                            AND jd.dispatch_date <= ?
+                            AND jd.deleted_at IS NULL
+                      )
+                    ORDER BY name
+                    """
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [weekStart, weekEnd])
+                return rows.map { row in
+                    UnassignedWorker(
+                        id: row["id"] ?? 0,
+                        name: row["name"] ?? "Unknown"
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// An unassigned worker for the dispatch board.
+    public struct UnassignedWorker: Sendable, Identifiable {
+        public let id: Int64
+        public let name: String
+
+        public init(id: Int64, name: String) {
+            self.id = id
+            self.name = name
+        }
+    }
+
+    /// Check if a user has time off on a specific date.
+    /// Returns the time-off entry if found, nil otherwise.
+    public func checkTimeOffConflict(employeeId: Int64, date: String) throws -> TimeOffEntry? {
+        do {
+            return try db.writer.read { dbConn -> TimeOffEntry? in
+                let sql = """
+                    SELECT se.id, se.reason,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS employee_name
+                    FROM schedule_exceptions se
+                    LEFT JOIN users u ON u.id = se.user_id
+                    WHERE se.user_id = ?
+                      AND se.exception_date = ?
+                      AND se.exception_type = 'time_off'
+                      AND se.deleted_at IS NULL
+                    LIMIT 1
+                    """
+                guard let row = try Row.fetchOne(dbConn, sql: sql, arguments: [employeeId, date]) else {
+                    return nil
+                }
+                return TimeOffEntry(
+                    id: row["id"] ?? 0,
+                    employeeName: row["employee_name"] ?? "Unknown",
+                    reason: row["reason"] as String?
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) { return nil }
+            throw error
+        }
+    }
+
+    /// Generate initials from a name (e.g., "John Smith" → "JS").
+    private static func makeInitials(_ name: String) -> String {
+        let parts = name.split(separator: " ")
+        if parts.count >= 2 {
+            return String(parts[0].prefix(1) + parts[1].prefix(1)).uppercased()
+        }
+        return String(name.prefix(2)).uppercased()
+    }
+
+    // =========================================================================
     // MARK: - 8. Schedule Entry Creation
     // =========================================================================
 
@@ -565,23 +805,184 @@ public final class SchedulingService: Sendable {
         date: String,
         startTime: String? = nil,
         endTime: String? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        timeSlot: String = "full"
     ) throws -> Int64 {
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO job_dispatch
-                    (job_id, user_id, dispatch_date, shift_start, shift_end, notes, status, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 'scheduled', datetime('now'), datetime('now'))
+                    (job_id, user_id, dispatch_date, shift_start, shift_end, notes, time_slot, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled', datetime('now'), datetime('now'))
                     """,
-                arguments: [jobId, userId, date, startTime, endTime, notes]
+                arguments: [jobId, userId, date, startTime, endTime, notes, timeSlot]
             )
             return dbConn.lastInsertedRowID
         }
     }
 
     // =========================================================================
-    // MARK: - 9. Scheduling Stats
+    // MARK: - 9. Month Schedule Summary
+    // =========================================================================
+
+    /// Get a summary of schedule data for each day in a given month.
+    /// Used by the month calendar view to show dots/indicators.
+    public func getMonthScheduleSummary(year: Int, month: Int) throws -> [String: DayScheduleSummary] {
+        let startDate = String(format: "%04d-%02d-01", year, month)
+        // Calculate last day of month
+        var comps = DateComponents()
+        comps.year = year
+        comps.month = month + 1
+        comps.day = 0
+        let cal = Calendar.current
+        let lastDay = cal.date(from: comps).map { cal.component(.day, from: $0) } ?? 28
+        let endDate = String(format: "%04d-%02d-%02d", year, month, lastDay)
+
+        do {
+            return try db.writer.read { dbConn -> [String: DayScheduleSummary] in
+                // Count schedule entries by date and time_slot
+                let sql = """
+                    SELECT jd.dispatch_date AS date,
+                           COALESCE(jd.time_slot, 'full') AS time_slot,
+                           COUNT(*) AS cnt
+                    FROM job_dispatch jd
+                    WHERE jd.dispatch_date >= ?
+                      AND jd.dispatch_date <= ?
+                      AND jd.deleted_at IS NULL
+                    GROUP BY jd.dispatch_date, COALESCE(jd.time_slot, 'full')
+                    ORDER BY jd.dispatch_date
+                    """
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [startDate, endDate])
+
+                // Count time-off entries by date
+                let toSql = """
+                    SELECT exception_date AS date, COUNT(*) AS cnt
+                    FROM schedule_exceptions
+                    WHERE exception_type = 'time_off'
+                      AND exception_date >= ?
+                      AND exception_date <= ?
+                      AND deleted_at IS NULL
+                    GROUP BY exception_date
+                    """
+                let toRows = try Row.fetchAll(dbConn, sql: toSql, arguments: [startDate, endDate])
+
+                // Build time-off lookup
+                var timeOffByDate: [String: Int] = [:]
+                for row in toRows {
+                    let date: String = row["date"] ?? ""
+                    let cnt: Int = row["cnt"] ?? 0
+                    timeOffByDate[date] = cnt
+                }
+
+                // Build schedule summary by date
+                var tempData: [String: (am: Int, pm: Int, full: Int)] = [:]
+                for row in rows {
+                    let date: String = row["date"] ?? ""
+                    let slot: String = row["time_slot"] ?? "full"
+                    let cnt: Int = row["cnt"] ?? 0
+                    var entry = tempData[date] ?? (am: 0, pm: 0, full: 0)
+                    switch slot {
+                    case "am": entry.am += cnt
+                    case "pm": entry.pm += cnt
+                    default: entry.full += cnt
+                    }
+                    tempData[date] = entry
+                }
+
+                // Merge into final summaries
+                var result: [String: DayScheduleSummary] = [:]
+                let allDates = Set(tempData.keys).union(timeOffByDate.keys)
+                for date in allDates {
+                    let sched = tempData[date] ?? (am: 0, pm: 0, full: 0)
+                    let toCount = timeOffByDate[date] ?? 0
+                    result[date] = DayScheduleSummary(
+                        date: date,
+                        amCount: sched.am,
+                        pmCount: sched.pm,
+                        fullDayCount: sched.full,
+                        totalWorkers: sched.am + sched.pm + sched.full,
+                        timeOffCount: toCount
+                    )
+                }
+                return result
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [:] }
+            throw error
+        }
+    }
+
+    /// Get all schedule entries for a specific date (all users).
+    /// Used by the day detail view.
+    public func getScheduleEntriesForDate(date: String) throws -> [ScheduleEntry] {
+        do {
+            return try db.writer.read { dbConn -> [ScheduleEntry] in
+                let sql = """
+                    SELECT jd.id, jd.dispatch_date AS date,
+                           jd.shift_start AS start_time, jd.shift_end AS end_time,
+                           jd.status, jd.notes,
+                           COALESCE(jd.time_slot, 'full') AS time_slot,
+                           COALESCE(j.job_name, 'Unassigned') AS job_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS user_name
+                    FROM job_dispatch jd
+                    LEFT JOIN jobs j ON j.id = jd.job_id
+                    LEFT JOIN users u ON u.id = jd.user_id
+                    WHERE jd.dispatch_date = ?
+                      AND jd.deleted_at IS NULL
+                    ORDER BY COALESCE(jd.time_slot, 'full'), u.display_name ASC
+                    """
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [date])
+                return rows.map { row in
+                    ScheduleEntry(
+                        id: row["id"] ?? 0,
+                        jobName: row["job_name"] ?? "Unassigned",
+                        date: row["date"] ?? "",
+                        startTime: row["start_time"] as String?,
+                        endTime: row["end_time"] as String?,
+                        status: row["status"] ?? "scheduled",
+                        notes: row["notes"] as String?,
+                        timeSlot: row["time_slot"] ?? "full",
+                        userName: row["user_name"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get time-off entries for a specific date.
+    public func getTimeOffForDate(date: String) throws -> [TimeOffEntry] {
+        do {
+            return try db.writer.read { dbConn -> [TimeOffEntry] in
+                let sql = """
+                    SELECT se.id, se.reason,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS employee_name
+                    FROM schedule_exceptions se
+                    LEFT JOIN users u ON u.id = se.user_id
+                    WHERE se.exception_date = ?
+                      AND se.exception_type = 'time_off'
+                      AND se.deleted_at IS NULL
+                    ORDER BY employee_name
+                    """
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [date])
+                return rows.map { row in
+                    TimeOffEntry(
+                        id: row["id"] ?? 0,
+                        employeeName: row["employee_name"] ?? "Unknown",
+                        reason: row["reason"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 10. Scheduling Stats
     // =========================================================================
 
     /// Get scheduling dashboard stats: scheduled today, dispatched today, pending time-off.
@@ -612,6 +1013,315 @@ public final class SchedulingService: Sendable {
             dispatchedToday: dispatchedToday,
             pendingTimeOff: pendingTimeOff
         )
+    }
+
+    // =========================================================================
+    // MARK: - 11. Pipeline
+    // =========================================================================
+
+    /// A pipeline item representing a job ready or near-ready for scheduling.
+    public struct PipelineItem: Sendable, Identifiable {
+        public let id: Int64
+        public let jobId: Int64
+        public let jobName: String
+        public let customerName: String
+        public let estimatedDays: Int?
+        public let pipelineCategory: String  // "start_anytime", "schedule_needed", "favorite_gc", "small_job"
+        public let callbackDate: String?
+        public let callbackSnoozedUntil: String?
+        public let notes: String?
+
+        public init(
+            id: Int64, jobId: Int64, jobName: String, customerName: String,
+            estimatedDays: Int?, pipelineCategory: String,
+            callbackDate: String?, callbackSnoozedUntil: String?, notes: String?
+        ) {
+            self.id = id
+            self.jobId = jobId
+            self.jobName = jobName
+            self.customerName = customerName
+            self.estimatedDays = estimatedDays
+            self.pipelineCategory = pipelineCategory
+            self.callbackDate = callbackDate
+            self.callbackSnoozedUntil = callbackSnoozedUntil
+            self.notes = notes
+        }
+    }
+
+    /// Get the short-term pipeline: active jobs categorized by readiness.
+    /// Categories: start_anytime (no blockers), schedule_needed (need dispatch),
+    /// favorite_gc (from preferred GCs), small_job (<=2 est. days).
+    public func getShortTermPipeline() throws -> [PipelineItem] {
+        do {
+            return try db.writer.read { dbConn -> [PipelineItem] in
+                // Active jobs not yet completed, that don't have future dispatches
+                let sql = """
+                    SELECT j.id, j.job_name,
+                           COALESCE(j.customer_name, 'Unknown') AS customer_name,
+                           j.estimated_days,
+                           j.notes,
+                           j.callback_date,
+                           j.callback_snoozed_until,
+                           (SELECT COUNT(*) FROM job_dispatch jd
+                            WHERE jd.job_id = j.id
+                              AND jd.dispatch_date >= date('now')
+                              AND jd.deleted_at IS NULL) AS future_dispatches,
+                           COALESCE(j.is_favorite_gc, 0) AS is_favorite_gc
+                    FROM jobs j
+                    WHERE j.status = 'active'
+                      AND j.deleted_at IS NULL
+                    ORDER BY j.job_name
+                    """
+                let rows = try Row.fetchAll(dbConn, sql: sql)
+
+                return rows.compactMap { row -> PipelineItem? in
+                    let id: Int64 = row["id"] ?? 0
+                    let jobName: String = row["job_name"] ?? ""
+                    let customerName: String = row["customer_name"] ?? "Unknown"
+                    let estimatedDays: Int? = row["estimated_days"] as Int?
+                    let futureDispatches: Int = row["future_dispatches"] ?? 0
+                    let isFavoriteGC: Bool = (row["is_favorite_gc"] as Int?) == 1
+                    let callbackDate: String? = row["callback_date"] as String?
+                    let callbackSnoozed: String? = row["callback_snoozed_until"] as String?
+                    let notes: String? = row["notes"] as String?
+
+                    // Categorize
+                    let category: String
+                    if isFavoriteGC {
+                        category = "favorite_gc"
+                    } else if let days = estimatedDays, days <= 2 {
+                        category = "small_job"
+                    } else if futureDispatches == 0 {
+                        category = "start_anytime"
+                    } else {
+                        category = "schedule_needed"
+                    }
+
+                    return PipelineItem(
+                        id: id, jobId: id, jobName: jobName,
+                        customerName: customerName,
+                        estimatedDays: estimatedDays,
+                        pipelineCategory: category,
+                        callbackDate: callbackDate,
+                        callbackSnoozedUntil: callbackSnoozed,
+                        notes: notes
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Snooze a callback to a future date.
+    public func snoozeCallback(jobId: Int64, until: String) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE jobs SET callback_snoozed_until = ? WHERE id = ?",
+                arguments: [until, jobId]
+            )
+        }
+    }
+
+    /// Mark a callback as complete (clear the callback date).
+    public func markCallbackComplete(jobId: Int64, notes: String?) throws {
+        try db.writer.write { dbConn in
+            if let notes, !notes.isEmpty {
+                try dbConn.execute(
+                    sql: "UPDATE jobs SET callback_date = NULL, callback_snoozed_until = NULL, notes = COALESCE(notes || '\n', '') || ? WHERE id = ?",
+                    arguments: [notes, jobId]
+                )
+            } else {
+                try dbConn.execute(
+                    sql: "UPDATE jobs SET callback_date = NULL, callback_snoozed_until = NULL WHERE id = ?",
+                    arguments: [jobId]
+                )
+            }
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 12. Long-Term Pipeline
+    // =========================================================================
+
+    /// Monthly capacity summary for the long-term timeline.
+    public struct MonthCapacity: Sendable, Identifiable {
+        public let id: String           // "2026-04"
+        public let monthLabel: String   // "April 2026"
+        public let availableDays: Int   // work-days × crew size
+        public let scheduledDays: Int   // sum of estimated job days
+        public let jobCount: Int
+        public let pendingBidCount: Int
+        public let jobs: [JobSummary]
+
+        public var utilizationPercent: Double {
+            Double(scheduledDays) / max(Double(availableDays), 1)
+        }
+
+        public init(id: String, monthLabel: String, availableDays: Int, scheduledDays: Int,
+                     jobCount: Int, pendingBidCount: Int, jobs: [JobSummary]) {
+            self.id = id
+            self.monthLabel = monthLabel
+            self.availableDays = availableDays
+            self.scheduledDays = scheduledDays
+            self.jobCount = jobCount
+            self.pendingBidCount = pendingBidCount
+            self.jobs = jobs
+        }
+    }
+
+    /// Job summary for month detail view.
+    public struct JobSummary: Sendable, Identifiable {
+        public let id: Int64
+        public let name: String
+        public let estimatedDays: Int?
+        public let status: String
+
+        public init(id: Int64, name: String, estimatedDays: Int?, status: String) {
+            self.id = id
+            self.name = name
+            self.estimatedDays = estimatedDays
+            self.status = status
+        }
+    }
+
+    /// AI-generated capacity warning.
+    public struct CapacityWarning: Sendable, Identifiable {
+        public let id: String
+        public let month: String
+        public let message: String
+        public let suggestion: String
+        public let isOvercommitted: Bool
+
+        public init(id: String, month: String, message: String, suggestion: String, isOvercommitted: Bool) {
+            self.id = id
+            self.month = month
+            self.message = message
+            self.suggestion = suggestion
+            self.isOvercommitted = isOvercommitted
+        }
+    }
+
+    /// Get a 36-month timeline of capacity data.
+    public func getLongTermTimeline(months: Int = 36) throws -> [MonthCapacity] {
+        let cal = Calendar.current
+        let today = Date()
+        let crewSize = try getActiveCrewSize()
+        let avgWorkDaysPerMonth = 22
+
+        var result: [MonthCapacity] = []
+
+        for offset in 0..<months {
+            guard let monthDate = cal.date(byAdding: .month, value: offset, to: today) else { continue }
+            let year = cal.component(.year, from: monthDate)
+            let month = cal.component(.month, from: monthDate)
+            let monthId = String(format: "%04d-%02d", year, month)
+
+            let f = DateFormatter()
+            f.dateFormat = "MMMM yyyy"
+            let monthLabel = f.string(from: monthDate)
+
+            let availableDays = avgWorkDaysPerMonth * max(crewSize, 1)
+
+            // Get jobs that overlap this month
+            let startDate = String(format: "%04d-%02d-01", year, month)
+            var comps = DateComponents()
+            comps.year = year
+            comps.month = month + 1
+            comps.day = 0
+            let lastDay = cal.date(from: comps).map { cal.component(.day, from: $0) } ?? 28
+            let endDate = String(format: "%04d-%02d-%02d", year, month, lastDay)
+
+            let jobs = try getJobsForMonth(startDate: startDate, endDate: endDate)
+            let scheduledDays = jobs.reduce(0) { $0 + ($1.estimatedDays ?? 0) }
+            let pendingBids = try getPendingBidCountForMonth(startDate: startDate, endDate: endDate)
+
+            result.append(MonthCapacity(
+                id: monthId,
+                monthLabel: monthLabel,
+                availableDays: availableDays,
+                scheduledDays: scheduledDays,
+                jobCount: jobs.count,
+                pendingBidCount: pendingBids,
+                jobs: jobs
+            ))
+        }
+
+        return result
+    }
+
+    /// Get active crew member count.
+    private func getActiveCrewSize() throws -> Int {
+        try safeCount(sql: "SELECT COUNT(*) FROM users WHERE status = 'active' AND deleted_at IS NULL")
+    }
+
+    /// Get jobs that are scheduled within a month range.
+    private func getJobsForMonth(startDate: String, endDate: String) throws -> [JobSummary] {
+        do {
+            return try db.writer.read { dbConn -> [JobSummary] in
+                let sql = """
+                    SELECT DISTINCT j.id, j.job_name, j.estimated_days, j.status
+                    FROM jobs j
+                    WHERE j.deleted_at IS NULL
+                      AND j.status IN ('active', 'scheduled', 'pending')
+                      AND (
+                          j.start_date <= ? AND (j.due_date >= ? OR j.due_date IS NULL)
+                          OR j.start_date BETWEEN ? AND ?
+                      )
+                    ORDER BY j.job_name
+                    """
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [endDate, startDate, startDate, endDate])
+                return rows.map { row in
+                    JobSummary(
+                        id: row["id"] ?? 0,
+                        name: row["job_name"] ?? "",
+                        estimatedDays: row["estimated_days"] as Int?,
+                        status: row["status"] ?? ""
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Count pending bids for a month.
+    private func getPendingBidCountForMonth(startDate: String, endDate: String) throws -> Int {
+        try safeCount(
+            sql: """
+                SELECT COUNT(*) FROM jobs
+                WHERE status = 'bid' AND deleted_at IS NULL
+                  AND (start_date BETWEEN ? AND ? OR start_date IS NULL)
+                """,
+            arguments: StatementArguments([startDate, endDate])
+        )
+    }
+
+    /// Generate capacity warnings from timeline data.
+    public func getCapacityWarnings(timeline: [MonthCapacity]) -> [CapacityWarning] {
+        var warnings: [CapacityWarning] = []
+        for month in timeline.prefix(12) {
+            if month.utilizationPercent > 1.0 {
+                warnings.append(CapacityWarning(
+                    id: "over-\(month.id)",
+                    month: month.monthLabel,
+                    message: "\(month.monthLabel): Overcommitted at \(Int(month.utilizationPercent * 100))% capacity",
+                    suggestion: "Consider pushing some jobs or hiring temporary help",
+                    isOvercommitted: true
+                ))
+            } else if month.utilizationPercent < 0.3 && month.jobCount == 0 {
+                warnings.append(CapacityWarning(
+                    id: "under-\(month.id)",
+                    month: month.monthLabel,
+                    message: "\(month.monthLabel): No jobs scheduled",
+                    suggestion: "Accelerate sales pipeline or pull jobs forward",
+                    isOvercommitted: false
+                ))
+            }
+        }
+        return warnings
     }
 
     // =========================================================================

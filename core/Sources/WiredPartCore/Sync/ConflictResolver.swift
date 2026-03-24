@@ -157,6 +157,9 @@ public enum ConflictResolver {
         "payment_records", "customer_communications", "contractor_notes", "contractor_ratings",
         // Work classification audit
         "classification_history",
+        // Estimation
+        "estimation_questions", "estimation_responses", "estimation_results",
+        "estimation_reviews", "estimation_question_rejections",
         // Suppliers
         "supplier_portal_tokens", "supplier_po_acknowledgments", "supplier_contact_ratings",
         // Costs

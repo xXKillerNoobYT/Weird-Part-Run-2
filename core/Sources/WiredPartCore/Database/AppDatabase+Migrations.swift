@@ -60,6 +60,8 @@ extension AppDatabase {
         registerMigration043PaymentTracking(&migrator)
         registerMigration044JobClassifications(&migrator)
         registerMigration045TodoClassification(&migrator)
+        registerMigration046HalfDayScheduling(&migrator)
+        registerMigration047JobEstimation(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -3829,6 +3831,133 @@ extension AppDatabase {
                     .references("users")
                 t.column("reason", .text)
                 t.column("changed_at", .text).defaults(sql: "datetime('now')")
+            }
+        }
+    }
+
+    // MARK: - Migration 046: Half-Day Scheduling
+
+    private static func registerMigration046HalfDayScheduling(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("046_half_day_scheduling") { db in
+            // Add time_slot column to job_dispatch for AM/PM/Full day scheduling
+            try db.alter(table: "job_dispatch") { t in
+                t.add(column: "time_slot", .text).defaults(to: "full")
+                // Values: "full", "am", "pm"
+            }
+        }
+    }
+
+    // MARK: - Migration 047: Job Estimation
+
+    private static func registerMigration047JobEstimation(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("047_job_estimation") { db in
+            // Configurable questions asked at each stage of a job
+            try db.create(table: "estimation_questions") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("question_text", .text).notNull()
+                t.column("question_group", .text).notNull()      // scope, complexity, access, materials, labor
+                t.column("stage", .text).notNull()                // bid, pre_start, during, before_trim, punch_list
+                t.column("answer_type", .text).notNull().defaults(to: "number") // number, choice, boolean, text
+                t.column("choices", .text)                        // JSON array for choice type
+                t.column("weight", .double).notNull().defaults(to: 1.0)
+                t.column("is_active", .integer).notNull().defaults(to: 1)
+                t.column("sort_order", .integer).notNull().defaults(to: 0)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
+            }
+
+            // Responses to estimation questions for a specific job+stage
+            try db.create(table: "estimation_responses") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("job_id", .integer).notNull()
+                    .references("jobs", onDelete: .cascade)
+                t.column("question_id", .integer).notNull()
+                    .references("estimation_questions")
+                t.column("stage", .text).notNull()
+                t.column("response_value", .text)                 // the answer
+                t.column("is_unknown", .integer).notNull().defaults(to: 0) // "?" response
+                t.column("answered_by", .integer).references("users")
+                t.column("answered_at", .text).defaults(sql: "(datetime('now'))")
+            }
+
+            // Calculated estimation results per job+stage
+            try db.create(table: "estimation_results") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("job_id", .integer).notNull()
+                    .references("jobs", onDelete: .cascade)
+                t.column("stage", .text).notNull()
+                t.column("estimated_days", .double)
+                t.column("estimated_hours", .double)
+                t.column("confidence_percent", .double)           // 0-100
+                t.column("ai_suggested", .integer).notNull().defaults(to: 0)
+                t.column("notes", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+
+            // Weekly and end-of-job reviews to improve future estimates
+            try db.create(table: "estimation_reviews") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("job_id", .integer).notNull()
+                    .references("jobs", onDelete: .cascade)
+                t.column("review_type", .text).notNull()          // weekly, end_of_job
+                t.column("actual_days", .double)
+                t.column("actual_hours", .double)
+                t.column("estimate_at_start", .double)
+                t.column("variance_percent", .double)
+                t.column("lessons_learned", .text)
+                t.column("reviewed_by", .integer).references("users")
+                t.column("reviewed_at", .text).defaults(sql: "(datetime('now'))")
+            }
+
+            // Log of rejected questions for AI reconsideration
+            try db.create(table: "estimation_question_rejections") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("question_id", .integer).notNull()
+                    .references("estimation_questions")
+                t.column("rejected_by", .integer).references("users")
+                t.column("reason", .text)
+                t.column("rejected_at", .text).defaults(sql: "(datetime('now'))")
+            }
+
+            // Seed default estimation questions
+            let seedQuestions: [(String, String, String, String, String?, Double, Int)] = [
+                // Scope questions — bid stage
+                ("Total square footage", "scope", "bid", "number", nil, 2.0, 1),
+                ("Number of rooms/areas", "scope", "bid", "number", nil, 1.5, 2),
+                ("Number of floors", "scope", "bid", "number", nil, 1.0, 3),
+                ("New construction or remodel?", "scope", "bid", "choice", "[\"New Construction\",\"Remodel\",\"Addition\"]", 1.5, 4),
+
+                // Complexity questions — bid stage
+                ("Custom trim or millwork?", "complexity", "bid", "boolean", nil, 2.0, 1),
+                ("High ceilings (over 10ft)?", "complexity", "bid", "boolean", nil, 1.5, 2),
+                ("Difficulty level", "complexity", "bid", "choice", "[\"Standard\",\"Moderate\",\"Complex\",\"Very Complex\"]", 2.5, 3),
+
+                // Access questions — pre_start stage
+                ("Clear site access for deliveries?", "access", "pre_start", "boolean", nil, 1.0, 1),
+                ("Elevator or stair access only?", "access", "pre_start", "choice", "[\"Ground Level\",\"Elevator\",\"Stairs Only\"]", 1.5, 2),
+                ("Parking available for crew?", "access", "pre_start", "boolean", nil, 0.5, 3),
+
+                // Materials questions — pre_start stage
+                ("Materials on-site?", "materials", "pre_start", "boolean", nil, 1.5, 1),
+                ("Special order items pending?", "materials", "pre_start", "boolean", nil, 2.0, 2),
+                ("Material complexity", "materials", "pre_start", "choice", "[\"Standard\",\"Mixed\",\"All Custom\"]", 1.5, 3),
+
+                // Labor questions — during stage
+                ("Crew size needed", "labor", "during", "number", nil, 2.0, 1),
+                ("Subcontractor coordination needed?", "labor", "during", "boolean", nil, 1.5, 2),
+                ("Overtime likely?", "labor", "during", "boolean", nil, 1.0, 3),
+
+                // Punch list questions
+                ("Estimated punch list items", "scope", "punch_list", "number", nil, 1.0, 1),
+                ("Touch-up paint needed?", "materials", "punch_list", "boolean", nil, 0.5, 2),
+            ]
+
+            for (text, group, stage, answerType, choices, weight, sortOrder) in seedQuestions {
+                try db.execute(sql: """
+                    INSERT INTO estimation_questions (question_text, question_group, stage, answer_type, choices, weight, sort_order)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [text, group, stage, answerType, choices, weight, sortOrder])
             }
         }
     }

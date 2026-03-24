@@ -1,7 +1,7 @@
 import SwiftUI
 import WiredPartCore
 
-/// Sheet for creating a new schedule entry.
+/// Sheet for creating a new schedule entry with half-day support.
 struct CreateScheduleEntrySheet: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
@@ -12,6 +12,7 @@ struct CreateScheduleEntrySheet: View {
     @State private var jobs: [JobsService.JobListItem] = []
     @State private var selectedJobId: Int64?
     @State private var entryDate = Date()
+    @State private var timeSlot = "full"
     @State private var startTime = ""
     @State private var endTime = ""
     @State private var notes = ""
@@ -37,6 +38,15 @@ struct CreateScheduleEntrySheet: View {
 
                 Section("Date") {
                     DatePicker("Date", selection: $entryDate, displayedComponents: .date)
+                }
+
+                Section("Time Slot") {
+                    Picker("Time Slot", selection: $timeSlot) {
+                        Text("Full Day").tag("full")
+                        Text("AM Only").tag("am")
+                        Text("PM Only").tag("pm")
+                    }
+                    .pickerStyle(.segmented)
                 }
 
                 Section("Time (Optional)") {
@@ -99,7 +109,8 @@ struct CreateScheduleEntrySheet: View {
                 date: fmt.string(from: entryDate),
                 startTime: startTime.isEmpty ? nil : startTime,
                 endTime: endTime.isEmpty ? nil : endTime,
-                notes: notes.isEmpty ? nil : notes
+                notes: notes.isEmpty ? nil : notes,
+                timeSlot: timeSlot
             )
             onSave()
             dismiss()

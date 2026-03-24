@@ -24,6 +24,9 @@ struct OfficeRouter: View {
         case "office-deletion-approvals":
             IOSDeletionApprovalsPage()
 
+        case "office-estimation-settings":
+            IOSEstimationSettingsPage()
+
         // Finance & Billing
         case "office-spending":
             IOSSpendingDashboardPage()

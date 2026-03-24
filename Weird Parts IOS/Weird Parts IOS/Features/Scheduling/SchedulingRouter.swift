@@ -14,6 +14,8 @@ struct SchedulingRouter: View {
         case "scheduling-availability": IOSWeeklyAvailabilityPage()
         case "scheduling-sub-schedule": IOSSubSchedulePage()
         case "scheduling-config": IOSScheduleConfigPage()
+        case "scheduling-pipeline": IOSShortTermPipelinePage()
+        case "scheduling-long-pipeline": IOSLongTermPipelinePage()
         default: Text("Unknown scheduling page: \(tabId)").foregroundStyle(.secondary)
         }
     }

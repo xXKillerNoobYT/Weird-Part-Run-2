@@ -222,6 +222,10 @@ struct IOSContentRouter: View {
             SchedulingRouter(tabId: "scheduling-calendar")
         case "/scheduling/config":
             SchedulingRouter(tabId: "scheduling-config")
+        case "/scheduling/pipeline":
+            SchedulingRouter(tabId: "scheduling-pipeline")
+        case "/scheduling/long-pipeline":
+            SchedulingRouter(tabId: "scheduling-long-pipeline")
 
         // Office sub-routes
         case "/office/manage-jobs":
@@ -242,6 +246,8 @@ struct IOSContentRouter: View {
             OfficeRouter(tabId: "office-labor-overview")
         case "/office/daily-summary":
             OfficeRouter(tabId: "office-daily-summary")
+        case "/office/estimation-settings":
+            OfficeRouter(tabId: "office-estimation-settings")
         case "/office/employees":
             OfficeRouter(tabId: "office-employees")
         case "/office/hats":

@@ -1225,3 +1225,56 @@ Xcode AI appends an entry here after completing each prompt. This is the source 
 - IOSNotebookDetailPage: manager review section with Approve button (manage_jobs gated)
 - ConflictResolver: classification_history added to whitelist
 - Build: PASS
+
+## Prompt 46A Results (2026-03-23)
+- Migration 046: time_slot column on job_dispatch (full/am/pm)
+- SchedulingService: DayScheduleSummary, TimeOffEntry structs
+- SchedulingService: getMonthScheduleSummary, getScheduleEntriesForDate, getTimeOffForDate
+- ScheduleEntry struct: added timeSlot, userName fields
+- createScheduleEntry: accepts timeSlot parameter
+- IOSScheduleCalendarPage: week/month mode toggle, month grid with colored dots (AM/PM/Full/TimeOff)
+- CreateScheduleEntrySheet: time slot picker (Full Day/AM/PM)
+- Build: PASS
+
+## Prompt 46B Results (2026-03-23)
+- SchedulingService: DispatchAssignment, DispatchJobRow, UnassignedWorker structs
+- SchedulingService: getWeeklyDispatchAssignments, getDispatchJobRows, getUnassignedWorkers, checkTimeOffConflict, makeInitials
+- IOSDispatchPage: Gantt-style board with job rows × 7-day columns
+- Colored employee bars (AM=blue, PM=green, Full=orange)
+- Unassigned workers section, assignment sheet, time-off conflict alert
+- Build: PASS
+
+## Prompt 46C Results (2026-03-23)
+- SchedulingService: PipelineItem struct, getShortTermPipeline, snoozeCallback, markCallbackComplete
+- IOSShortTermPipelinePage: TargetCard/SmartCard components, pipeline sections with target indicators
+- Callbacks Due section with snooze (1d/3d/1w) and mark complete
+- Routing: SchedulingRouter, NavigationConfig, IOSContentRouter
+- Build: PASS
+
+## Prompt 46D Results (2026-03-23)
+- SchedulingService: MonthCapacity, JobSummary, CapacityWarning structs
+- SchedulingService: getLongTermTimeline, getActiveCrewSize, getJobsForMonth, getPendingBidCountForMonth, getCapacityWarnings
+- IOSLongTermPipelinePage: 36-month timeline with capacity bars, AI warnings, job detail drill-down
+- Routing: SchedulingRouter, NavigationConfig, IOSContentRouter
+- Build: PASS
+
+## Prompt 46E Results (2026-03-23)
+- AIDispatchService: DispatchSuggestion, SuggestedAssignment, ScoringFactor structs
+- AIDispatchService: generateSuggestions (3 options: greedy, team-priority, diverse)
+- AIDispatchService: recordDispatcherChoice, getDispatchContext
+- Points-based scoring: skill=10, team=8, specialty=6, travel=5, history=4, preference=3
+- Build: PASS
+
+## Prompt 46F Results (2026-03-23)
+- Migration 047: 5 estimation tables (estimation_questions, estimation_responses, estimation_results, estimation_reviews, estimation_question_rejections) + 18 seed questions
+- EstimationModels: 5 GRDB model structs + HistoricalAverage, QuestionEffectiveness result types
+- JobEstimationService: 18 methods — questions CRUD, responses, calculation with weighted scoring, historical averages, weekly/end-of-job reviews, AI effectiveness analysis, capacity calculation
+- IOSEstimationQuestionnairePage: grouped questions by category, "?" unknown button, confidence score, historical comparison, AI insights
+- IOSEstimationSettingsPage: question management (add/edit/deactivate/reactivate), AI effectiveness analysis with correlation scores and keep/modify/remove recommendations
+- IOSEstimationReviewPage: weekly review (auto-calculates from labor data) + end-of-job review with actual days/hours and lessons learned
+- IOSJobDetailTabView: added "Estimate" tab with stage navigation (Bid, Pre-Start, During, Before Trim, Punch List) + Reviews link
+- OfficeRouter: office-estimation-settings route
+- NavigationConfig + IOSContentRouter: /office/estimation-settings path
+- AppCore: jobEstimationService registered (declaration, bootstrap, teardown)
+- ConflictResolver: 5 estimation tables added to whitelist
+- Build: PASS

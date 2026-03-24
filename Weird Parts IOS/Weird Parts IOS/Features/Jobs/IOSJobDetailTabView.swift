@@ -39,6 +39,7 @@ struct IOSJobDetailTabView: View {
         ("chat", "Chat", "bubble.left"),
         ("qa", "Q&A", "questionmark.circle"),
         ("costs", "Costs", "dollarsign.circle"),
+        ("estimate", "Estimate", "chart.bar.doc.horizontal"),
     ]
 
     var body: some View {
@@ -169,6 +170,8 @@ struct IOSJobDetailTabView: View {
                 qaTab(job)
             case "costs":
                 costsTab(job)
+            case "estimate":
+                estimateTab(job)
             default:
                 Text("Unknown tab")
             }
@@ -562,6 +565,69 @@ struct IOSJobDetailTabView: View {
         }
         .padding()
         .hideWithoutPermission("show_dollar_values")
+    }
+
+    // MARK: - Estimate Tab
+
+    private func estimateTab(_ job: JobsService.JobDetail) -> some View {
+        VStack(spacing: 16) {
+            Text("Job Estimation")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Stage selector — navigate to questionnaire for each stage
+            let stages: [(id: String, label: String, icon: String)] = [
+                ("bid", "Bid", "doc.text.magnifyingglass"),
+                ("pre_start", "Pre-Start", "checklist"),
+                ("during", "During Job", "hammer"),
+                ("before_trim", "Before Trim", "ruler"),
+                ("punch_list", "Punch List", "checkmark.circle"),
+            ]
+
+            ForEach(stages, id: \.id) { stage in
+                NavigationLink {
+                    IOSEstimationQuestionnairePage(jobId: jobId, stage: stage.id)
+                        .environmentObject(appCore)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: stage.icon)
+                            .foregroundStyle(.blue)
+                            .frame(width: 24)
+                        Text(stage.label)
+                            .font(.subheadline)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(12)
+                    .dsCard()
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Reviews link
+            NavigationLink {
+                IOSEstimationReviewPage(jobId: jobId)
+                    .environmentObject(appCore)
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .foregroundStyle(.green)
+                        .frame(width: 24)
+                    Text("Reviews & Actuals")
+                        .font(.subheadline)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(12)
+                .dsCard()
+            }
+            .buttonStyle(.plain)
+        }
+        .padding()
     }
 
     // MARK: - Orders Tab
