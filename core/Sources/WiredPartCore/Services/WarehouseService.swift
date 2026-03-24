@@ -2121,4 +2121,1278 @@ public final class WarehouseService: Sendable {
             return "\(type) #\(id)"
         }
     }
+
+    // =========================================================================
+    // MARK: - Floor Plans
+    // =========================================================================
+
+    /// Create a new warehouse floor plan.
+    public func createFloorPlan(name: String, widthInches: Int, lengthInches: Int) throws -> WarehouseFloorPlan {
+        try db.writer.write { dbConn in
+            var plan = WarehouseFloorPlan(
+                name: name,
+                widthInches: widthInches,
+                lengthInches: lengthInches,
+                isActive: true
+            )
+            try plan.insert(dbConn)
+            return plan
+        }
+    }
+
+    /// Get a floor plan by ID.
+    public func getFloorPlan(id: Int64) throws -> WarehouseFloorPlan? {
+        try db.writer.read { dbConn in
+            try WarehouseFloorPlan
+                .filter(Column("id") == id && Column("deleted_at") == nil)
+                .fetchOne(dbConn)
+        }
+    }
+
+    /// List all active floor plans.
+    public func listFloorPlans() throws -> [WarehouseFloorPlan] {
+        try db.writer.read { dbConn in
+            try WarehouseFloorPlan
+                .filter(Column("deleted_at") == nil)
+                .order(Column("name"))
+                .fetchAll(dbConn)
+        }
+    }
+
+    /// Soft delete a floor plan.
+    public func deleteFloorPlan(id: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE warehouse_floor_plans SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [id]
+            )
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Floor Features
+    // =========================================================================
+
+    /// Add a non-storage feature to a floor plan (door, walkway, office, etc.)
+    public func addFloorFeature(
+        floorPlanId: Int64, featureType: String, label: String?,
+        gridX: Int, gridY: Int, gridWidth: Int = 1, gridHeight: Int = 1, rotation: Int = 0
+    ) throws -> WarehouseFloorFeature {
+        try db.writer.write { dbConn in
+            var feature = WarehouseFloorFeature(
+                floorPlanId: floorPlanId,
+                featureType: featureType,
+                label: label,
+                gridX: gridX, gridY: gridY,
+                gridWidth: gridWidth, gridHeight: gridHeight,
+                rotation: rotation
+            )
+            try feature.insert(dbConn)
+            return feature
+        }
+    }
+
+    /// List features for a floor plan.
+    public func listFloorFeatures(floorPlanId: Int64) throws -> [WarehouseFloorFeature] {
+        try db.writer.read { dbConn in
+            try WarehouseFloorFeature
+                .filter(Column("floor_plan_id") == floorPlanId && Column("deleted_at") == nil)
+                .fetchAll(dbConn)
+        }
+    }
+
+    /// Soft delete a floor feature.
+    public func deleteFloorFeature(id: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE warehouse_floor_features SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [id]
+            )
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Storage Units
+    // =========================================================================
+
+    /// Add a storage unit to a floor plan.
+    public func addStorageUnit(
+        floorPlanId: Int64, name: String, unitType: String,
+        rowNumber: String? = nil, unitNumber: String? = nil,
+        widthInches: Int? = nil, depthInches: Int? = nil, heightInches: Int? = nil,
+        gridX: Int? = nil, gridY: Int? = nil,
+        gridWidth: Int? = nil, gridHeight: Int? = nil,
+        rotation: Int = 0, frontFace: String? = "south",
+        isMovable: Bool = false, isJobReady: Bool = false
+    ) throws -> WarehouseStorageUnit {
+        try db.writer.write { dbConn in
+            var unit = WarehouseStorageUnit(
+                floorPlanId: floorPlanId,
+                name: name,
+                unitType: unitType,
+                rowNumber: rowNumber,
+                unitNumber: unitNumber,
+                widthInches: widthInches,
+                depthInches: depthInches,
+                heightInches: heightInches,
+                gridX: gridX,
+                gridY: gridY,
+                gridWidth: gridWidth,
+                gridHeight: gridHeight,
+                rotation: rotation,
+                frontFace: frontFace,
+                isMovable: isMovable,
+                isJobReady: isJobReady,
+                isConfigured: false
+            )
+            try unit.insert(dbConn)
+            return unit
+        }
+    }
+
+    /// List storage units for a floor plan.
+    public func listStorageUnits(floorPlanId: Int64) throws -> [WarehouseStorageUnit] {
+        try db.writer.read { dbConn in
+            try WarehouseStorageUnit
+                .filter(Column("floor_plan_id") == floorPlanId && Column("deleted_at") == nil)
+                .order(Column("row_number"), Column("unit_number"))
+                .fetchAll(dbConn)
+        }
+    }
+
+    /// Update a storage unit's properties.
+    public func updateStorageUnit(
+        id: Int64, name: String? = nil, unitType: String? = nil,
+        rowNumber: String? = nil, unitNumber: String? = nil,
+        gridX: Int? = nil, gridY: Int? = nil,
+        gridWidth: Int? = nil, gridHeight: Int? = nil,
+        rotation: Int? = nil, frontFace: String? = nil,
+        isConfigured: Bool? = nil
+    ) throws {
+        try db.writer.write { dbConn in
+            guard var unit = try WarehouseStorageUnit.fetchOne(dbConn, key: id) else { return }
+            if let name = name { unit.name = name }
+            if let unitType = unitType { unit.unitType = unitType }
+            if let rowNumber = rowNumber { unit.rowNumber = rowNumber }
+            if let unitNumber = unitNumber { unit.unitNumber = unitNumber }
+            if let gridX = gridX { unit.gridX = gridX }
+            if let gridY = gridY { unit.gridY = gridY }
+            if let gridWidth = gridWidth { unit.gridWidth = gridWidth }
+            if let gridHeight = gridHeight { unit.gridHeight = gridHeight }
+            if let rotation = rotation { unit.rotation = rotation }
+            if let frontFace = frontFace { unit.frontFace = frontFace }
+            if let isConfigured = isConfigured { unit.isConfigured = isConfigured }
+            try unit.update(dbConn)
+        }
+    }
+
+    /// Soft delete a storage unit.
+    public func deleteStorageUnit(id: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE warehouse_storage_units SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [id]
+            )
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Storage Levels
+    // =========================================================================
+
+    /// Add a level to a storage unit.
+    public func addStorageLevel(
+        unitId: Int64, levelCode: String, levelName: String? = nil,
+        order: Int = 0, heightInches: Int? = nil, areaCount: Int = 1
+    ) throws -> WarehouseStorageLevel {
+        try db.writer.write { dbConn in
+            var level = WarehouseStorageLevel(
+                unitId: unitId,
+                levelCode: levelCode,
+                levelName: levelName,
+                levelOrder: order,
+                heightInches: heightInches,
+                areaCount: areaCount
+            )
+            try level.insert(dbConn)
+            return level
+        }
+    }
+
+    /// List levels for a storage unit, ordered bottom to top.
+    public func listLevelsForUnit(unitId: Int64) throws -> [WarehouseStorageLevel] {
+        try db.writer.read { dbConn in
+            try WarehouseStorageLevel
+                .filter(Column("unit_id") == unitId && Column("deleted_at") == nil)
+                .order(Column("level_order"))
+                .fetchAll(dbConn)
+        }
+    }
+
+    /// Soft delete a storage level.
+    public func deleteStorageLevel(id: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE warehouse_storage_levels SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [id]
+            )
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Storage Areas
+    // =========================================================================
+
+    /// Add an area to a storage level.
+    public func addStorageArea(
+        levelId: Int64, areaNumber: Int, widthInches: Int? = nil
+    ) throws -> WarehouseStorageArea {
+        try db.writer.write { dbConn in
+            let areaCode = String(format: "A%02d", areaNumber)
+            var area = WarehouseStorageArea(
+                levelId: levelId,
+                areaCode: areaCode,
+                areaNumber: areaNumber,
+                widthInches: widthInches,
+                hasQrCode: false,
+                hasSticker: false
+            )
+            try area.insert(dbConn)
+
+            // Auto-generate full location code
+            if let areaId = area.id {
+                let code = try generateFullLocationCode(areaId: areaId, dbConn: dbConn)
+                try dbConn.execute(
+                    sql: "UPDATE warehouse_storage_areas SET full_location_code = ? WHERE id = ?",
+                    arguments: [code, areaId]
+                )
+                area.fullLocationCode = code
+            }
+            return area
+        }
+    }
+
+    /// List areas for a storage level.
+    public func listAreasForLevel(levelId: Int64) throws -> [WarehouseStorageArea] {
+        try db.writer.read { dbConn in
+            try WarehouseStorageArea
+                .filter(Column("level_id") == levelId && Column("deleted_at") == nil)
+                .order(Column("area_number"))
+                .fetchAll(dbConn)
+        }
+    }
+
+    /// Soft delete a storage area.
+    public func deleteStorageArea(id: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE warehouse_storage_areas SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [id]
+            )
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Bins
+    // =========================================================================
+
+    /// Add a bin to an area.
+    public func addBin(areaId: Int64, binNumber: Int, isFixed: Bool = false) throws -> WarehouseBin {
+        try db.writer.write { dbConn in
+            let binCode = String(format: "B%02d", binNumber)
+            var bin = WarehouseBin(
+                areaId: areaId,
+                binCode: binCode,
+                binNumber: binNumber,
+                isFixed: isFixed
+            )
+            try bin.insert(dbConn)
+            return bin
+        }
+    }
+
+    /// List bins for an area.
+    public func listBinsForArea(areaId: Int64) throws -> [WarehouseBin] {
+        try db.writer.read { dbConn in
+            try WarehouseBin
+                .filter(Column("area_id") == areaId && Column("deleted_at") == nil)
+                .order(Column("bin_number"))
+                .fetchAll(dbConn)
+        }
+    }
+
+    /// Assign a part to a bin.
+    public func assignPartToBin(binId: Int64, partId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE warehouse_bins SET assigned_part_id = ? WHERE id = ?",
+                arguments: [partId, binId]
+            )
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Part Assignments
+    // =========================================================================
+
+    /// Assign a part to a storage area.
+    public func assignPartToArea(partId: Int64, areaId: Int64, isHome: Bool = false) throws -> WarehousePartAssignment {
+        try db.writer.write { dbConn in
+            var assignment = WarehousePartAssignment(
+                partId: partId,
+                areaId: areaId,
+                isHome: isHome
+            )
+            try assignment.insert(dbConn)
+            return assignment
+        }
+    }
+
+    /// Row type for part assignment query results.
+    public struct PartAssignmentInfo: Sendable {
+        public let assignmentId: Int64
+        public let areaId: Int64
+        public let areaCode: String
+        public let fullLocationCode: String?
+        public let isHome: Bool
+        public let unitName: String
+        public let levelCode: String
+    }
+
+    /// Get all assignments for a part with location info.
+    public func getPartAssignments(partId: Int64) throws -> [PartAssignmentInfo] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT pa.id as assignment_id, pa.area_id, pa.is_home,
+                       sa.area_code, sa.full_location_code,
+                       su.name as unit_name, sl.level_code
+                FROM warehouse_part_assignments pa
+                JOIN warehouse_storage_areas sa ON sa.id = pa.area_id
+                JOIN warehouse_storage_levels sl ON sl.id = sa.level_id
+                JOIN warehouse_storage_units su ON su.id = sl.unit_id
+                WHERE pa.part_id = ? AND pa.deleted_at IS NULL
+                ORDER BY pa.is_home DESC, su.name, sl.level_order, sa.area_number
+                """, arguments: [partId])
+
+            return rows.map { row in
+                PartAssignmentInfo(
+                    assignmentId: row["assignment_id"],
+                    areaId: row["area_id"],
+                    areaCode: row["area_code"] ?? "",
+                    fullLocationCode: row["full_location_code"],
+                    isHome: (row["is_home"] as Int?) == 1,
+                    unitName: row["unit_name"] ?? "",
+                    levelCode: row["level_code"] ?? ""
+                )
+            }
+        }
+    }
+
+    /// Remove a part assignment (soft delete).
+    public func removePartAssignment(assignmentId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE warehouse_part_assignments SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [assignmentId]
+            )
+        }
+    }
+
+    /// Row type for area contents query.
+    public struct AreaContentsItem: Sendable {
+        public let partId: Int64
+        public let partName: String
+        public let partNumber: String?
+        public let isHome: Bool
+    }
+
+    /// Get the parts assigned to an area.
+    public func getAreaContents(areaId: Int64) throws -> [AreaContentsItem] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT pa.part_id, pa.is_home,
+                       COALESCE(p.name, '') as part_name,
+                       p.part_number
+                FROM warehouse_part_assignments pa
+                JOIN parts p ON p.id = pa.part_id
+                WHERE pa.area_id = ? AND pa.deleted_at IS NULL AND p.deleted_at IS NULL
+                ORDER BY p.name
+                """, arguments: [areaId])
+
+            return rows.map { row in
+                AreaContentsItem(
+                    partId: row["part_id"] ?? 0,
+                    partName: row["part_name"] ?? "",
+                    partNumber: row["part_number"],
+                    isHome: (row["is_home"] as Int?) == 1
+                )
+            }
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Location Code Generation
+    // =========================================================================
+
+    /// Generate a full location code for a storage area (e.g. R01-U01-S02-A04).
+    public func generateFullLocationCode(areaId: Int64) throws -> String {
+        try db.writer.read { dbConn in
+            try generateFullLocationCode(areaId: areaId, dbConn: dbConn)
+        }
+    }
+
+    /// Internal location code generator — usable inside a transaction.
+    private func generateFullLocationCode(areaId: Int64, dbConn: Database) throws -> String {
+        let row = try Row.fetchOne(dbConn, sql: """
+            SELECT su.row_number, su.unit_number, sl.level_code, sa.area_code
+            FROM warehouse_storage_areas sa
+            JOIN warehouse_storage_levels sl ON sl.id = sa.level_id
+            JOIN warehouse_storage_units su ON su.id = sl.unit_id
+            WHERE sa.id = ?
+            """, arguments: [areaId])
+
+        let rowNum = (row?["row_number"] as String?) ?? "R00"
+        let unitNum = (row?["unit_number"] as String?) ?? "U00"
+        let levelCode = (row?["level_code"] as String?) ?? "S00"
+        let areaCode = (row?["area_code"] as String?) ?? "A00"
+
+        return "\(rowNum)-\(unitNum)-\(levelCode)-\(areaCode)"
+    }
+
+    // =========================================================================
+    // MARK: - Navigation & QR Integration
+    // =========================================================================
+
+    /// Directional guidance between two areas.
+    public struct DirectionResult: Sendable {
+        public let fromCode: String
+        public let toCode: String
+        public let rowDiff: Int
+        public let unitDiff: Int
+        public let instructions: String
+    }
+
+    /// Get directions from one area to another.
+    public func getDirections(fromAreaId: Int64, toAreaId: Int64) throws -> DirectionResult {
+        try db.writer.read { dbConn in
+            let fromRow = try Row.fetchOne(dbConn, sql: """
+                SELECT su.row_number, su.unit_number, su.grid_x, su.grid_y,
+                       sa.full_location_code
+                FROM warehouse_storage_areas sa
+                JOIN warehouse_storage_levels sl ON sl.id = sa.level_id
+                JOIN warehouse_storage_units su ON su.id = sl.unit_id
+                WHERE sa.id = ?
+                """, arguments: [fromAreaId])
+
+            let toRow = try Row.fetchOne(dbConn, sql: """
+                SELECT su.row_number, su.unit_number, su.grid_x, su.grid_y,
+                       sa.full_location_code, sl.level_code, sa.area_code
+                FROM warehouse_storage_areas sa
+                JOIN warehouse_storage_levels sl ON sl.id = sa.level_id
+                JOIN warehouse_storage_units su ON su.id = sl.unit_id
+                WHERE sa.id = ?
+                """, arguments: [toAreaId])
+
+            let fromCode = (fromRow?["full_location_code"] as String?) ?? "?"
+            let toCode = (toRow?["full_location_code"] as String?) ?? "?"
+
+            let fromX = (fromRow?["grid_x"] as Int?) ?? 0
+            let toX = (toRow?["grid_x"] as Int?) ?? 0
+            let fromY = (fromRow?["grid_y"] as Int?) ?? 0
+            let toY = (toRow?["grid_y"] as Int?) ?? 0
+
+            let dx = toX - fromX
+            let dy = toY - fromY
+
+            // Parse row numbers as integers for difference
+            let fromRowNum = Self.parseRowNumber(fromRow?["row_number"] as String?)
+            let toRowNum = Self.parseRowNumber(toRow?["row_number"] as String?)
+            let rowDiff = toRowNum - fromRowNum
+
+            let fromUnitNum = Self.parseUnitNumber(fromRow?["unit_number"] as String?)
+            let toUnitNum = Self.parseUnitNumber(toRow?["unit_number"] as String?)
+            let unitDiff = toUnitNum - fromUnitNum
+
+            // Build human-readable instructions
+            var parts: [String] = []
+            if dx > 0 { parts.append("Go RIGHT \(dx) columns") }
+            else if dx < 0 { parts.append("Go LEFT \(-dx) columns") }
+            if dy > 0 { parts.append("Go DOWN \(dy) rows") }
+            else if dy < 0 { parts.append("Go UP \(-dy) rows") }
+
+            let toUnit = (toRow?["unit_number"] as String?) ?? "?"
+            let toLevel = (toRow?["level_code"] as String?) ?? "?"
+            let toArea = (toRow?["area_code"] as String?) ?? "?"
+            parts.append("Unit \(toUnit), \(toLevel), \(toArea)")
+
+            let instructions = parts.joined(separator: ", ")
+
+            return DirectionResult(
+                fromCode: fromCode, toCode: toCode,
+                rowDiff: rowDiff, unitDiff: unitDiff,
+                instructions: instructions
+            )
+        }
+    }
+
+    /// Update user's last known position from a scan.
+    public func setUserCurrentPosition(userId: Int64, areaId: Int64) throws {
+        // Store in a lightweight way — user_settings or a dedicated table.
+        // For now, use a simple key-value approach via the change log.
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT OR REPLACE INTO warehouse_user_positions (user_id, area_id, updated_at)
+                    VALUES (?, ?, datetime('now'))
+                    """,
+                arguments: [userId, areaId]
+            )
+        }
+    }
+
+    /// Get user's last known warehouse position.
+    public func getUserCurrentPosition(userId: Int64) throws -> Int64? {
+        try db.writer.read { dbConn in
+            try Int64.fetchOne(dbConn, sql: """
+                SELECT area_id FROM warehouse_user_positions WHERE user_id = ?
+                """, arguments: [userId])
+        }
+    }
+
+    /// Location info from a QR code scan.
+    public struct LocationScanInfo: Sendable {
+        public let areaId: Int64
+        public let fullLocationCode: String
+        public let unitName: String
+        public let levelName: String
+        public let areaCode: String
+        public let parts: [AreaContentsItem]
+    }
+
+    /// Look up a location by its full QR code string.
+    public func getLocationByQR(qrCode: String) throws -> LocationScanInfo? {
+        try db.writer.read { dbConn in
+            guard let row = try Row.fetchOne(dbConn, sql: """
+                SELECT sa.id as area_id, sa.full_location_code, sa.area_code,
+                       su.name as unit_name,
+                       COALESCE(sl.level_name, sl.level_code) as level_name
+                FROM warehouse_storage_areas sa
+                JOIN warehouse_storage_levels sl ON sl.id = sa.level_id
+                JOIN warehouse_storage_units su ON su.id = sl.unit_id
+                WHERE sa.full_location_code = ? AND sa.deleted_at IS NULL
+                """, arguments: [qrCode]) else { return nil }
+
+            let areaId: Int64 = row["area_id"]
+            let parts = try getAreaContentsList(areaId: areaId, dbConn: dbConn)
+
+            return LocationScanInfo(
+                areaId: areaId,
+                fullLocationCode: row["full_location_code"] ?? qrCode,
+                unitName: row["unit_name"] ?? "",
+                levelName: row["level_name"] ?? "",
+                areaCode: row["area_code"] ?? "",
+                parts: parts
+            )
+        }
+    }
+
+    /// Reusable area contents fetch inside a read transaction.
+    private func getAreaContentsList(areaId: Int64, dbConn: Database) throws -> [AreaContentsItem] {
+        let rows = try Row.fetchAll(dbConn, sql: """
+            SELECT pa.part_id, pa.is_home,
+                   COALESCE(p.name, '') as part_name,
+                   p.part_number
+            FROM warehouse_part_assignments pa
+            JOIN parts p ON p.id = pa.part_id
+            WHERE pa.area_id = ? AND pa.deleted_at IS NULL AND p.deleted_at IS NULL
+            ORDER BY p.name
+            """, arguments: [areaId])
+
+        return rows.map { row in
+            AreaContentsItem(
+                partId: row["part_id"] ?? 0,
+                partName: row["part_name"] ?? "",
+                partNumber: row["part_number"],
+                isHome: (row["is_home"] as Int?) == 1
+            )
+        }
+    }
+
+    /// Parse row number from string (e.g. "R01" → 1).
+    private static func parseRowNumber(_ str: String?) -> Int {
+        guard let s = str, s.count > 1 else { return 0 }
+        return Int(s.dropFirst()) ?? 0
+    }
+
+    /// Parse unit number from string (e.g. "U01" → 1).
+    private static func parseUnitNumber(_ str: String?) -> Int {
+        guard let s = str, s.count > 1 else { return 0 }
+        return Int(s.dropFirst()) ?? 0
+    }
+
+    // =========================================================================
+    // MARK: - Onboarding Wizard
+    // =========================================================================
+
+    /// Get current onboarding progress, or nil if none exists.
+    public func getOnboardingProgress() throws -> WarehouseOnboardingProgress? {
+        try db.writer.read { dbConn in
+            try WarehouseOnboardingProgress
+                .filter(Column("completed_at") == nil)
+                .order(Column("id").desc)
+                .fetchOne(dbConn)
+        }
+    }
+
+    /// Start a new onboarding session.
+    public func startOnboarding(floorPlanId: Int64? = nil) throws -> WarehouseOnboardingProgress {
+        try db.writer.write { dbConn in
+            var progress = WarehouseOnboardingProgress(
+                floorPlanId: floorPlanId,
+                currentStep: 1,
+                step1Complete: false,
+                step2Complete: false,
+                step3Complete: false
+            )
+            try progress.insert(dbConn)
+            return progress
+        }
+    }
+
+    /// Update onboarding step progress.
+    public func updateOnboardingStep(
+        id: Int64, currentStep: Int,
+        step1Complete: Bool? = nil, step2Complete: Bool? = nil, step3Complete: Bool? = nil,
+        step4Progress: String? = nil, step5Progress: String? = nil, step6Progress: String? = nil,
+        floorPlanId: Int64? = nil
+    ) throws {
+        try db.writer.write { dbConn in
+            guard var progress = try WarehouseOnboardingProgress.fetchOne(dbConn, key: id) else { return }
+            progress.currentStep = currentStep
+            if let s1 = step1Complete { progress.step1Complete = s1 }
+            if let s2 = step2Complete { progress.step2Complete = s2 }
+            if let s3 = step3Complete { progress.step3Complete = s3 }
+            if let s4 = step4Progress { progress.step4Progress = s4 }
+            if let s5 = step5Progress { progress.step5Progress = s5 }
+            if let s6 = step6Progress { progress.step6Progress = s6 }
+            if let fp = floorPlanId { progress.floorPlanId = fp }
+            try progress.update(dbConn)
+        }
+    }
+
+    /// Complete the onboarding process.
+    public func completeOnboarding(id: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE warehouse_onboarding_progress SET completed_at = datetime('now') WHERE id = ?",
+                arguments: [id]
+            )
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Audit Confidence System
+    // =========================================================================
+
+    // MARK: Confidence CRUD
+
+    /// Get the confidence record for a part at a specific area.
+    public func getPartConfidence(partId: Int64, areaId: Int64) throws -> PartConfidence? {
+        try db.writer.read { dbConn in
+            try PartConfidence
+                .filter(Column("part_id") == partId && Column("area_id") == areaId)
+                .fetchOne(dbConn)
+        }
+    }
+
+    /// Set or create the confidence percentage for a part at an area.
+    public func setPartConfidence(partId: Int64, areaId: Int64, percent: Double) throws {
+        try db.writer.write { dbConn in
+            if var existing = try PartConfidence
+                .filter(Column("part_id") == partId && Column("area_id") == areaId)
+                .fetchOne(dbConn) {
+                existing.confidencePercent = min(100, max(0, percent))
+                existing.updatedAt = Self.nowString()
+                try existing.update(dbConn)
+            } else {
+                var record = PartConfidence(
+                    id: nil, partId: partId, areaId: areaId,
+                    confidencePercent: min(100, max(0, percent)),
+                    reliabilityLevel: 0,
+                    lastAuditDate: nil, lastAuditBy: nil, lastAuditCount: nil,
+                    systemCount: 0, decayRate: 0.066, movementDecayFactor: 1.0,
+                    cleanAuditStreak: 0, misplacementCount: 0, lastMisplacementDate: nil,
+                    totalAuditCount: 0, totalVarianceDollars: 0.0,
+                    createdAt: nil, updatedAt: nil
+                )
+                try record.insert(dbConn)
+            }
+        }
+    }
+
+    /// Apply daily decay to all confidence scores. Called by a scheduled job.
+    public func decayAllConfidence() throws {
+        try db.writer.write { dbConn in
+            // confidence_percent -= decay_rate * movement_decay_factor, clamped to 0
+            try dbConn.execute(sql: """
+                UPDATE part_confidence
+                SET confidence_percent = MAX(0, confidence_percent - (decay_rate * movement_decay_factor)),
+                    updated_at = datetime('now')
+                WHERE confidence_percent > 0
+                """)
+        }
+    }
+
+    /// Record an individual audit count and update confidence accordingly.
+    @discardableResult
+    public func recordAuditCount(
+        sessionId: Int64,
+        partId: Int64,
+        areaId: Int64,
+        systemCount: Int,
+        userCount: Int,
+        countedBy: Int64,
+        unitCostDollars: Double = 0
+    ) throws -> AuditCount {
+        try db.writer.write { dbConn in
+            let variance = userCount - systemCount
+            let varianceDollars = Double(abs(variance)) * unitCostDollars
+            let variancePercent: Double = systemCount > 0 ? (Double(abs(variance)) / Double(systemCount)) * 100.0 : (variance == 0 ? 0 : 100)
+            let result: String
+            if variance == 0 { result = "exact" }
+            else if abs(variance) == 1 { result = "neutral" }
+            else if variance > 0 { result = "over" }
+            else { result = "under" }
+
+            var count = AuditCount(
+                id: nil, sessionId: sessionId, partId: partId, areaId: areaId,
+                systemCount: systemCount, userCount: userCount,
+                variance: variance, varianceDollars: varianceDollars,
+                variancePercent: variancePercent, result: result,
+                countedBy: countedBy, countedAt: nil
+            )
+            try count.insert(dbConn)
+
+            // Update session totals
+            try dbConn.execute(sql: """
+                UPDATE audit_sessions_v2
+                SET parts_counted = parts_counted + 1,
+                    discrepancies_found = discrepancies_found + CASE WHEN ? != 0 THEN 1 ELSE 0 END
+                WHERE id = ?
+                """, arguments: [variance, sessionId])
+
+            // Update or create confidence record
+            if var conf = try PartConfidence
+                .filter(Column("part_id") == partId && Column("area_id") == areaId)
+                .fetchOne(dbConn) {
+                let isClean = (variance == 0)
+                conf.confidencePercent = isClean ? min(100, conf.confidencePercent + 25) : max(0, conf.confidencePercent - 15)
+                conf.lastAuditDate = Self.nowString()
+                conf.lastAuditBy = countedBy
+                conf.lastAuditCount = userCount
+                conf.systemCount = userCount // Reconcile to user count
+                conf.totalAuditCount += 1
+                conf.totalVarianceDollars += varianceDollars
+                conf.cleanAuditStreak = isClean ? conf.cleanAuditStreak + 1 : 0
+                conf.movementDecayFactor = 1.0 // Reset after audit
+                conf.reliabilityLevel = Self.computeReliabilityLevel(conf)
+                conf.updatedAt = Self.nowString()
+                try conf.update(dbConn)
+            } else {
+                let isClean = (variance == 0)
+                var conf = PartConfidence(
+                    id: nil, partId: partId, areaId: areaId,
+                    confidencePercent: isClean ? 75 : 50,
+                    reliabilityLevel: isClean ? 3 : 1,
+                    lastAuditDate: Self.nowString(), lastAuditBy: countedBy,
+                    lastAuditCount: userCount, systemCount: userCount,
+                    decayRate: 0.066, movementDecayFactor: 1.0,
+                    cleanAuditStreak: isClean ? 1 : 0, misplacementCount: 0,
+                    lastMisplacementDate: nil, totalAuditCount: 1,
+                    totalVarianceDollars: varianceDollars,
+                    createdAt: nil, updatedAt: nil
+                )
+                try conf.insert(dbConn)
+            }
+
+            return count
+        }
+    }
+
+    /// Calculate movement-based decay factor for a part at an area.
+    /// More movements since last audit = faster confidence decay.
+    public func calculateMovementDecayFactor(partId: Int64, areaId: Int64) throws -> Double {
+        try db.writer.read { dbConn in
+            let lastAudit = try String?.fetchOne(dbConn, sql: """
+                SELECT last_audit_date FROM part_confidence
+                WHERE part_id = ? AND area_id = ?
+                """, arguments: [partId, areaId]) ?? nil
+
+            let sinceDate = lastAudit ?? "2000-01-01"
+            let moveCount = try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM stock_movements
+                WHERE part_id = ? AND created_at > ?
+                  AND (from_location LIKE '%area%' OR to_location LIKE '%area%')
+                """, arguments: [partId, sinceDate]) ?? 0
+
+            // 1.0 base + 0.2 per movement, capped at 3.0
+            return min(3.0, 1.0 + Double(moveCount) * 0.2)
+        }
+    }
+
+    // MARK: Reliability Level
+
+    /// Compute reliability level 0-10 from a confidence record.
+    private static func computeReliabilityLevel(_ conf: PartConfidence) -> Int {
+        var score = 0.0
+        // Confidence contributes up to 4 points
+        score += (conf.confidencePercent / 100.0) * 4.0
+        // Clean audit streak contributes up to 3 points
+        score += min(3.0, Double(conf.cleanAuditStreak) * 0.5)
+        // Low misplacement contributes up to 2 points
+        if conf.misplacementCount == 0 { score += 2.0 }
+        else if conf.misplacementCount < 3 { score += 1.0 }
+        // Audit frequency contributes up to 1 point
+        if conf.totalAuditCount >= 5 { score += 1.0 }
+        else if conf.totalAuditCount >= 2 { score += 0.5 }
+        return min(10, max(0, Int(score.rounded())))
+    }
+
+    /// Calculate and return the reliability level for a part at an area.
+    public func calculateReliabilityLevel(partId: Int64, areaId: Int64) throws -> Int {
+        guard let conf = try getPartConfidence(partId: partId, areaId: areaId) else { return 0 }
+        return Self.computeReliabilityLevel(conf)
+    }
+
+    /// Get all part confidence records at a given reliability level.
+    public func getPartsAtLevel(level: Int) throws -> [PartConfidence] {
+        try db.writer.read { dbConn in
+            try PartConfidence
+                .filter(Column("reliability_level") == level)
+                .order(Column("confidence_percent").desc)
+                .fetchAll(dbConn)
+        }
+    }
+
+    // MARK: Audit Sessions
+
+    /// Start a new audit session.
+    @discardableResult
+    public func startAuditSession(
+        sessionType: String = "count",
+        startedBy: Int64,
+        floorPlanId: Int64? = nil,
+        targetAreaId: Int64? = nil,
+        targetUnitId: Int64? = nil
+    ) throws -> AuditSessionV2 {
+        try db.writer.write { dbConn in
+            var session = AuditSessionV2(
+                id: nil, sessionType: sessionType, startedBy: startedBy,
+                floorPlanId: floorPlanId, targetAreaId: targetAreaId,
+                targetUnitId: targetUnitId, status: "active",
+                partsCounted: 0, discrepanciesFound: 0, misplacedFound: 0,
+                startedAt: nil, completedAt: nil, deletedAt: nil
+            )
+            try session.insert(dbConn)
+            return session
+        }
+    }
+
+    /// Complete an audit session.
+    public func completeAuditSession(sessionId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE audit_sessions_v2
+                SET status = 'completed', completed_at = datetime('now')
+                WHERE id = ? AND status = 'active'
+                """, arguments: [sessionId])
+        }
+    }
+
+    /// Get an audit session by ID.
+    public func getAuditSession(sessionId: Int64) throws -> AuditSessionV2? {
+        try db.writer.read { dbConn in
+            try AuditSessionV2.fetchOne(dbConn, key: sessionId)
+        }
+    }
+
+    /// List audit sessions with optional filters.
+    public func listAuditSessions(
+        sessionType: String? = nil,
+        status: String? = nil,
+        limit: Int = 50
+    ) throws -> [AuditSessionV2] {
+        try db.writer.read { dbConn in
+            var query = AuditSessionV2.filter(Column("deleted_at") == nil)
+            if let st = sessionType { query = query.filter(Column("session_type") == st) }
+            if let s = status { query = query.filter(Column("status") == s) }
+            return try query.order(Column("started_at").desc).limit(limit).fetchAll(dbConn)
+        }
+    }
+
+    /// Get audit counts for a session.
+    public func getAuditCounts(sessionId: Int64) throws -> [AuditCount] {
+        try db.writer.read { dbConn in
+            try AuditCount
+                .filter(Column("session_id") == sessionId)
+                .order(Column("counted_at").desc)
+                .fetchAll(dbConn)
+        }
+    }
+
+    // MARK: User Ratings
+
+    /// Get the warehouse rating for a user, creating a default if needed.
+    public func getUserWarehouseRating(userId: Int64) throws -> UserWarehouseRating {
+        try db.writer.write { dbConn in
+            if let existing = try UserWarehouseRating
+                .filter(Column("user_id") == userId)
+                .fetchOne(dbConn) {
+                return existing
+            }
+            var rating = UserWarehouseRating(
+                id: nil, userId: userId,
+                overallRating: 5.0, accuracyRating: 5.0, effortRating: 5.0,
+                placementRating: 5.0, wizardCompliance: 5.0, speedRating: 5.0,
+                proactiveRating: 5.0, totalAudits: 0, totalAccurate: 0,
+                totalMisplacementsFound: 0, totalProactiveFixes: 0, updatedAt: nil
+            )
+            try rating.insert(dbConn)
+            return rating
+        }
+    }
+
+    /// Update a user's warehouse rating after an action.
+    /// action: "audit", "misplacement_find", "proactive_fix"
+    /// result: "accurate", "inaccurate" (for audits)
+    public func updateUserRating(userId: Int64, action: String, result: String? = nil) throws {
+        try db.writer.write { dbConn in
+            // Ensure record exists
+            var rating: UserWarehouseRating
+            if let existing = try UserWarehouseRating
+                .filter(Column("user_id") == userId)
+                .fetchOne(dbConn) {
+                rating = existing
+            } else {
+                rating = UserWarehouseRating(
+                    id: nil, userId: userId,
+                    overallRating: 5.0, accuracyRating: 5.0, effortRating: 5.0,
+                    placementRating: 5.0, wizardCompliance: 5.0, speedRating: 5.0,
+                    proactiveRating: 5.0, totalAudits: 0, totalAccurate: 0,
+                    totalMisplacementsFound: 0, totalProactiveFixes: 0, updatedAt: nil
+                )
+                try rating.insert(dbConn)
+            }
+
+            switch action {
+            case "audit":
+                rating.totalAudits += 1
+                rating.effortRating = min(10, rating.effortRating + 0.1)
+                if result == "accurate" {
+                    rating.totalAccurate += 1
+                    rating.accuracyRating = min(10, rating.accuracyRating + 0.2)
+                } else {
+                    rating.accuracyRating = max(0, rating.accuracyRating - 0.1)
+                }
+            case "misplacement_find":
+                rating.totalMisplacementsFound += 1
+                rating.placementRating = min(10, rating.placementRating + 0.3)
+            case "proactive_fix":
+                rating.totalProactiveFixes += 1
+                rating.proactiveRating = min(10, rating.proactiveRating + 0.3)
+            default:
+                break
+            }
+
+            // Recalculate overall as weighted average
+            rating.overallRating = (
+                rating.accuracyRating * 0.30 +
+                rating.effortRating * 0.15 +
+                rating.placementRating * 0.20 +
+                rating.wizardCompliance * 0.10 +
+                rating.speedRating * 0.10 +
+                rating.proactiveRating * 0.15
+            )
+            rating.updatedAt = Self.nowString()
+            try rating.update(dbConn)
+        }
+    }
+
+    /// Get the warehouse leaderboard sorted by overall rating.
+    public func getWarehouseLeaderboard() throws -> [UserWarehouseRating] {
+        try db.writer.read { dbConn in
+            try UserWarehouseRating
+                .order(Column("overall_rating").desc)
+                .fetchAll(dbConn)
+        }
+    }
+
+    // MARK: Organization Ratings
+
+    /// Get or create the organization rating for an area.
+    public func getOrganizationRating(areaId: Int64) throws -> OrganizationRating {
+        try db.writer.write { dbConn in
+            if let existing = try OrganizationRating
+                .filter(Column("area_id") == areaId)
+                .fetchOne(dbConn) {
+                return existing
+            }
+            var rating = OrganizationRating(
+                id: nil, areaId: areaId,
+                overallRating: 5.0,
+                labelsAccurate: false, partsInHome: false, noDuplicates: false,
+                notOvercrowded: false, binsAssigned: false, similarPartsNearby: false,
+                cleanAuditCount: 0, lastOrgCheck: nil, lastOrgCheckBy: nil, updatedAt: nil
+            )
+            try rating.insert(dbConn)
+            return rating
+        }
+    }
+
+    /// Record an organization check for an area, updating the area's org rating.
+    public func recordOrgCheck(
+        areaId: Int64,
+        checkedBy: Int64,
+        labelsAccurate: Bool,
+        partsInHome: Bool,
+        noDuplicates: Bool,
+        notOvercrowded: Bool,
+        binsAssigned: Bool,
+        similarPartsNearby: Bool = false
+    ) throws {
+        try db.writer.write { dbConn in
+            var rating: OrganizationRating
+            if let existing = try OrganizationRating
+                .filter(Column("area_id") == areaId)
+                .fetchOne(dbConn) {
+                rating = existing
+            } else {
+                rating = OrganizationRating(
+                    id: nil, areaId: areaId, overallRating: 5.0,
+                    labelsAccurate: false, partsInHome: false, noDuplicates: false,
+                    notOvercrowded: false, binsAssigned: false, similarPartsNearby: false,
+                    cleanAuditCount: 0, lastOrgCheck: nil, lastOrgCheckBy: nil, updatedAt: nil
+                )
+                try rating.insert(dbConn)
+            }
+
+            rating.labelsAccurate = labelsAccurate
+            rating.partsInHome = partsInHome
+            rating.noDuplicates = noDuplicates
+            rating.notOvercrowded = notOvercrowded
+            rating.binsAssigned = binsAssigned
+            rating.similarPartsNearby = similarPartsNearby
+            rating.lastOrgCheck = Self.nowString()
+            rating.lastOrgCheckBy = checkedBy
+
+            // Calculate overall as fraction of checks passed (0-10 scale)
+            let checks: [Bool] = [labelsAccurate, partsInHome, noDuplicates, notOvercrowded, binsAssigned, similarPartsNearby]
+            let passed = checks.filter { $0 }.count
+            rating.overallRating = (Double(passed) / Double(checks.count)) * 10.0
+
+            if passed == checks.count {
+                rating.cleanAuditCount += 1
+            }
+
+            rating.updatedAt = Self.nowString()
+            try rating.update(dbConn)
+        }
+    }
+
+    /// Get the composite warehouse score (0-10) across all areas.
+    public func getWarehouseOverallScore() throws -> Double {
+        try db.writer.read { dbConn in
+            let avg = try Double.fetchOne(dbConn, sql: """
+                SELECT AVG(overall_rating) FROM organization_ratings
+                """) ?? 5.0
+            return avg
+        }
+    }
+
+    // MARK: Consolidation
+
+    /// Suggest consolidation for a part spread across multiple areas.
+    @discardableResult
+    public func suggestConsolidation(partId: Int64) throws -> ConsolidationVote? {
+        try db.writer.write { dbConn in
+            // Find all areas this part is assigned to
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT area_id FROM warehouse_part_assignments
+                WHERE part_id = ? AND deleted_at IS NULL AND is_home = 1
+                """, arguments: [partId])
+
+            let areaIds = rows.compactMap { $0["area_id"] as Int64? }
+            guard areaIds.count > 1 else { return nil }
+
+            // Check if there's already an active vote
+            if let existing = try ConsolidationVote
+                .filter(Column("part_id") == partId && Column("status") == "voting" && Column("deleted_at") == nil)
+                .fetchOne(dbConn) {
+                return existing
+            }
+
+            let areasJSON = try JSONEncoder().encode(areaIds)
+            let areasString = String(data: areasJSON, encoding: .utf8) ?? "[]"
+
+            var vote = ConsolidationVote(
+                id: nil, partId: partId, currentAreas: areasString,
+                chosenAreaId: nil, status: "voting", managerOverride: false,
+                dismissReason: nil, ignoreCount: 0,
+                createdAt: nil, decidedAt: nil, deletedAt: nil
+            )
+            try vote.insert(dbConn)
+            return vote
+        }
+    }
+
+    /// Cast a user's vote on a consolidation suggestion.
+    public func castConsolidationVote(voteId: Int64, userId: Int64, chosenAreaId: Int64) throws {
+        try db.writer.write { dbConn in
+            var entry = ConsolidationVoteEntry(
+                id: nil, voteId: voteId, userId: userId,
+                chosenAreaId: chosenAreaId, votedAt: nil
+            )
+            try entry.insert(dbConn)
+        }
+    }
+
+    /// Manager overrides a consolidation vote, choosing the final area.
+    public func managerOverrideConsolidation(voteId: Int64, chosenAreaId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE consolidation_votes
+                SET chosen_area_id = ?, status = 'decided', manager_override = 1,
+                    decided_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [chosenAreaId, voteId])
+        }
+    }
+
+    /// Apply a decided consolidation — marks it as applied.
+    /// The actual movement should be created separately via the movement wizard.
+    public func applyConsolidation(voteId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE consolidation_votes
+                SET status = 'applied'
+                WHERE id = ? AND status = 'decided'
+                """, arguments: [voteId])
+        }
+    }
+
+    /// Dismiss a consolidation suggestion.
+    public func dismissConsolidation(voteId: Int64, reason: String?) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE consolidation_votes
+                SET status = 'dismissed', dismiss_reason = ?,
+                    ignore_count = ignore_count + 1
+                WHERE id = ?
+                """, arguments: [reason, voteId])
+        }
+    }
+
+    /// Get active consolidation votes.
+    public func getActiveConsolidationVotes() throws -> [ConsolidationVote] {
+        try db.writer.read { dbConn in
+            try ConsolidationVote
+                .filter(Column("status") == "voting" && Column("deleted_at") == nil)
+                .order(Column("created_at").desc)
+                .fetchAll(dbConn)
+        }
+    }
+
+    // MARK: Misplaced Parts
+
+    /// Log a part found in the wrong location.
+    @discardableResult
+    public func logMisplacedPart(
+        partId: Int64,
+        foundAtAreaId: Int64,
+        homeAreaId: Int64?,
+        qtyFound: Int,
+        foundBy: Int64
+    ) throws -> MisplacedPartsLog {
+        try db.writer.write { dbConn in
+            var log = MisplacedPartsLog(
+                id: nil, partId: partId,
+                foundAtAreaId: foundAtAreaId, homeAreaId: homeAreaId,
+                qtyFound: qtyFound, resolution: "pending",
+                resolvedBy: nil, resolvedAt: nil,
+                foundBy: foundBy, foundAt: nil
+            )
+            try log.insert(dbConn)
+
+            // Update confidence misplacement count
+            if var conf = try PartConfidence
+                .filter(Column("part_id") == partId && Column("area_id") == foundAtAreaId)
+                .fetchOne(dbConn) {
+                conf.misplacementCount += 1
+                conf.lastMisplacementDate = Self.nowString()
+                conf.confidencePercent = max(0, conf.confidencePercent - 10)
+                conf.reliabilityLevel = Self.computeReliabilityLevel(conf)
+                conf.updatedAt = Self.nowString()
+                try conf.update(dbConn)
+            }
+
+            // Update audit session if active
+            try dbConn.execute(sql: """
+                UPDATE audit_sessions_v2
+                SET misplaced_found = misplaced_found + 1
+                WHERE status = 'active' AND started_by = ?
+                ORDER BY started_at DESC LIMIT 1
+                """, arguments: [foundBy])
+
+            return log
+        }
+    }
+
+    /// Resolve a misplaced part entry.
+    public func resolveMisplacedPart(logId: Int64, resolution: String, resolvedBy: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE misplaced_parts_log
+                SET resolution = ?, resolved_by = ?, resolved_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [resolution, resolvedBy, logId])
+        }
+    }
+
+    /// Get pending misplaced parts.
+    public func getPendingMisplacedParts() throws -> [MisplacedPartsLog] {
+        try db.writer.read { dbConn in
+            try MisplacedPartsLog
+                .filter(Column("resolution") == "pending")
+                .order(Column("found_at").desc)
+                .fetchAll(dbConn)
+        }
+    }
+
+    // MARK: - Part Name Lookup
+
+    /// Get a part's display name by ID.
+    public func getPartName(partId: Int64) throws -> String? {
+        try db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: """
+                SELECT COALESCE(name, description, 'Part #' || id) FROM parts WHERE id = ?
+                """, arguments: [partId])
+        }
+    }
+
+    /// Get a part's code by ID.
+    public func getPartCode(partId: Int64) throws -> String? {
+        try db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: """
+                SELECT part_number FROM parts WHERE id = ?
+                """, arguments: [partId])
+        }
+    }
+
+    // MARK: - Helpers (Audit)
+
+    private static func nowString() -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f.string(from: Date())
+    }
 }

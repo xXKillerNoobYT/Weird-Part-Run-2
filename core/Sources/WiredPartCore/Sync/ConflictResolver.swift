@@ -143,6 +143,14 @@ public enum ConflictResolver {
         "receiving_sessions", "receiving_session_items",
         "warehouse_locations", "stock_entries",
         "staging_zones", "staging_items", "staging_boxes",
+        "warehouse_floor_plans", "warehouse_floor_features",
+        "warehouse_storage_units", "warehouse_storage_levels",
+        "warehouse_storage_areas", "warehouse_bins", "warehouse_part_assignments",
+        "warehouse_user_positions", "warehouse_onboarding_progress",
+        // Audit confidence
+        "part_confidence", "audit_sessions_v2", "audit_counts",
+        "misplaced_parts_log", "user_warehouse_ratings", "organization_ratings",
+        "consolidation_votes", "consolidation_vote_entries",
         // Suppliers
         "supplier_portal_tokens", "supplier_po_acknowledgments", "supplier_contact_ratings",
         // Costs

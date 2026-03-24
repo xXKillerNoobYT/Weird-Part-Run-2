@@ -445,7 +445,7 @@ struct IOSAuditPage: View {
                     .font(.headline)
 
                 TextField("0", text: $userCountInput)
-                    .font(.system(.largeTitle, weight: .bold, design: .rounded))
+                    .font(.system(size: 48, weight: .bold, design: .rounded))
                     .multilineTextAlignment(.center)
                     .keyboardType(.numberPad)
                     .frame(width: 150)
