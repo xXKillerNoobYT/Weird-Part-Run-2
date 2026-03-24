@@ -1278,3 +1278,162 @@ Xcode AI appends an entry here after completing each prompt. This is the source 
 - AppCore: jobEstimationService registered (declaration, bootstrap, teardown)
 - ConflictResolver: 5 estimation tables added to whitelist
 - Build: PASS
+
+## Prompt 47B Results (2026-03-23)
+- Migration 048: tool_checkouts table (condition tracking on checkout/return), tool_change_log table (version history with verification status)
+- ToolsService: 9 new methods — getToolDetail, getKitContents, getToolVersionHistory, getPendingEdits, checkoutToolWithCondition, returnToolWithCondition, editToolWithVerification, approveToolEdit + helper methods (conditionToRating, ratingToCondition)
+- ToolsService result types: ToolDetail (23 fields with joined user name + last condition), KitContentItem, ToolChangeRecord, ToolEditResult
+- IOSToolDetailPage: full detail page with tool info, status/assignment, kit contents checklist (qty bars for consumables, present/missing badges for tools), checkout/return buttons, recent changes section, pending verification banner
+- ToolCheckoutSheet: REQUIRED 5-level condition check (Excellent/Good/Fair/Poor/Damaged), notes field
+- ToolReturnSheet: REQUIRED condition check + condition change warning when different from checkout
+- ToolEditSheet: edit-without-permission pattern — any user can edit, without manage_tools hat edits go to pending_verification
+- ToolApproveEditSheet: manager QR scan approval for pending edits
+- ToolReportIssueSheet: severity picker (minor/major/critical), critical auto-marks tool for maintenance
+- ToolVersionHistorySheet: full 2-year change history with type badges and verification status
+- IOSToolRegistryPage: tool rows now NavigationLink to IOSToolDetailPage
+- IOSToolAdminPage: tool rows now NavigationLink to IOSToolDetailPage
+- ConflictResolver: tool_checkouts, tool_change_log added to whitelist
+- ActiveSheet enum pattern used for all sheets
+- All errors shown in UI (no empty catches, no silent guard returns)
+- Build: PASS
+
+## Prompt 47D Results (2026-03-23)
+- Migration 049: tool_trades table (tool_id, from/to user, condition at send/receive, status with pending/accepted/declined/expired/cancelled, 7-day expires_at)
+- ToolsService: 5 new methods — initiateTrade (validates checked out to sender, no pending trades), respondToTrade (accept closes old checkout + creates new one + updates assignment), expireOldTrades, getPendingTradesForUser, reportToolLostOrStolen
+- ToolsService.ToolTradeInfo result type with tool name, user names, conditions, status
+- ToolsService.ToolsServiceError enum (toolNotCheckedOutToUser, tradePending, tradeNotFound, editNotFound)
+- ToolTradeSheet: condition check + employee picker (from PeopleService), sends trade request
+- TradeResponseSheet: shows sender's condition, required condition check from receiver, accept/decline buttons
+- LostStolenReportSheet: lost/stolen picker, description, last known location, manager review info
+- IOSToolDetailPage: added trade/lostStolen to ActiveSheet enum, pending trades section, toolbar menu items
+- Trades auto-expire on page load via expireOldTrades call
+- ConflictResolver: tool_trades added to whitelist
+- Build: PASS
+
+## Prompt 47E Results (2026-03-23)
+- Migration 050: tool_maintenance_configs table (5 strategy types: time_based, usage_based, schedule_based, decreasing_based, condition_triggered) + 3 new tools columns (total_usage_hours, confidence_score, last_maintenance_date)
+- ToolsService: 7 new methods — createMaintenanceConfig, getMaintenanceConfigs, toggleMaintenanceConfig, recordMaintenance, calculateNextMaintenanceDate (multi-config aware), updateConfidenceScores (daily decay), getMaintenanceHistory
+- ToolsService result types: MaintenanceConfigInfo, MaintenanceRecordInfo
+- Tool model updated: added totalUsageHours, confidenceScore, lastMaintenanceDate columns + CodingKeys
+- ToolDetail struct: added confidenceScore, totalUsageHours, lastMaintenanceDate fields
+- IOSToolDetailPage: confidence gauge section (Gauge widget with gradient, shows next maintenance due), maintenance configs section (type-specific icons + details), add maintenance rule button
+- MaintenanceConfigSheet: type picker with 5 options, type-specific config fields (interval stepper, usage threshold, decay rate/floor sliders with preview, condition trigger toggles)
+- Confidence decay math: exponential decay `current * (1 - rate)^days`, floor threshold for mandatory maintenance
+- ConflictResolver: tool_maintenance_configs added to whitelist
+- Build: PASS
+
+## Prompt 48A Results (2026-03-23)
+- Migration 051: vehicle_stock table (truck_stock + transfer types with MIN/TARGET/MAX + source/destination), fuel_level + next_maintenance_date columns on vehicles, trailer_attachments table
+- FleetService: MyVehicleStats struct + getMyVehicleStats(userId:) — aggregates tool count, part count, fuel level, maintenance due, transfer items, attached trailer
+- FleetService: VehicleStockItem struct + getVehicleStock(vehicleId:stockType:), addVehicleStockItem(), logFuelLevel()
+- IOSMyTruckPage redesigned: smart cards (Tools, Parts, Tank %, Maintenance, Transfers), segmented inventory tabs (Truck Stock with MIN/TARGET/MAX progress bars vs Transfer Area with source→destination), quick actions (Log Fuel, Report Issue, Add Part), trailer attached section
+- ActiveSheet enum: logFuel, reportIssue, addTransferItem with full sheet implementations
+- LogFuelSheet: slider 0-100% saves to vehicle fuel_level
+- AddTransferItemSheet: part name, quantity, source/destination, reason picker
+- "No vehicle assigned" fallback state preserved
+- ConflictResolver: vehicle_stock, trailer_attachments added to whitelist
+- Build: PASS
+
+## Prompt 48B Results (2026-03-23)
+- IOSVehicleDetailPage rebuilt with 7 horizontal scrollable tabs: Overview, Parts, Tools, Assignments, Maintenance, Usage, Inspections
+- Overview: vehicle info, registration, quick stats (odometer, current driver)
+- Parts tab: Spare Parts (truck_stock) with health bars (red/orange/green) + Transfer Area with source→destination
+- Tools tab: checked-out tools with condition badges (color-coded capsules)
+- Assignments tab: active/past driver history with take-home indicator, assign driver button
+- Maintenance tab: records with type, date, performer, cost, odometer
+- Usage tab: combined fuel history (gallons + cost) + mileage logs
+- Inspections tab: pass/fail/conditional with icon + color coding
+- Lazy tab loading: data loaded only when tab selected, tracked via loadedTabs Set
+- FleetService: VehicleToolItem struct + getVehicleTools(vehicleId:) — tools checked out by vehicle's assigned drivers
+- Build: PASS
+
+## Prompt 48C Results (2026-03-23)
+- Migration 052: trailer_storage_units (shelves/drawers/bins), trailer_stock (per-part with MIN/TARGET/MAX + storage unit ref), trailer_location_history (shop/job_site/in_transit), ALTER job_trailers (is_at_shop, linked_warehouse_id)
+- FleetService: TrailerDetail struct + getTrailerDetail(trailerId:), TrailerStockItem + getTrailerStock, TrailerStorageUnit + getTrailerStorageUnits, TrailerLocationRecord + getTrailerLocationHistory, updateTrailerLocation (closes previous, opens new, updates is_at_shop)
+- IOSTrailerDetailPage rebuilt with 4 tabs: Inventory, Tools, Storage, History
+- Location badge bar: "At Shop" (green) vs "In Field" (blue) with MIN/MAX enforcement status
+- Inventory tab: summary alert for items below MIN (only when away from shop), health bars only shown in field
+- Storage tab: grouped by storage units with slot counts, unassigned items section
+- Location history tab: type icons (building/mappin/truck), arrival/departure times
+- IOSTrailersPage updated: passes trailerId instead of full TrailerListItem
+- ConflictResolver: trailer_storage_units, trailer_stock, trailer_location_history added
+- Build: PASS
+
+## Prompt 48D Results (2026-03-23)
+- Migration 053: inspection_templates (vehicle_type, section, item_name, is_critical, sort_order, is_active), inspection_records (vehicle_id, trailer_id, inspector_id, result, notes, performed_at, odometer_reading, fuel_level), inspection_results (inspection_id, template_item_id, status, notes, photo_path)
+- Seed data: 20 items per vehicle type (van + truck), 11 trailer-specific items across exterior + equipment sections
+- FleetService: InspectionTemplateItem + getInspectionChecklist(vehicleType:includeTrailer:), InspectionItemResult + saveInspection(...), InspectionRequirement enum + checkInspectionRequired(vehicleId:), InspectionRecordRow + getInspectionRecords(vehicleId:limit:)
+- PreTripInspectionView: 4 sections (Exterior, Interior, Equipment, Notes), progress bar with color changes, 3-state items (OK/Issue/N/A), critical items marked with red icon, result auto-calculated (pass/fail/conditional), odometer + fuel level readings, submit saves all item results
+- InspectionItemRow with InspectionStatusButton: capsule-style buttons, issue state shows notes field
+- IOSVehicleDetailPage inspections tab: "Start Pre-Trip Inspection" button, inspection history from new inspection_records table with result badges
+- Clock-in integration: checkInspectionRequired returns .cleared/.required(reason:)/.blocked(reason:)
+- ConflictResolver: inspection_templates, inspection_records, inspection_results added
+- Build: PASS
+
+## Prompt 48E Results (2026-03-23)
+- Fleet dashboard rebuilt with 5+3 smart card rows (horizontal scroll)
+- Row 1: Vehicles, Active, Maint. Due, Overdue Inspect, Trailers (always visible)
+- Row 2: Fuel MTD, Miles MTD, Maint. MTD (hat-gated: view_fleet_financials)
+- Vehicle status list: type icon (car/truck/suv), driver name or "Unassigned" (orange), inspection status (green if today, red otherwise), NavigationLink to detail
+- Upcoming maintenance section: days-until countdown, overdue (red), due today (orange), future (gray)
+- Recent maintenance activity feed (kept from original design)
+- Fleet Reports navigation link with placeholder destination
+- FleetService: FleetDashboardStats struct (extends FleetStats with overdueInspections + MTD costs), VehicleStatusItem + getVehicleStatusList(), FleetMaintenanceItem + getUpcomingFleetMaintenance(), getFleetDashboardStats() (aggregates basic stats + overdue inspections + MTD fuel/miles/maintenance costs)
+- Build: PASS
+
+## Prompt 49A Results (2026-03-23)
+- Reports reorganized into 7 categories: Labor, Financial, Fleet, Warehouse, Scheduling, Custom, Shared
+- ReportCategory enum with icon + color properties
+- Horizontal scrollable capsule category picker with active state highlighting
+- Permission gating: Financial hidden without view_financials, Fleet hidden without view_fleet_financials
+- Labor reports: Timesheets, Daily Summary, Labor Overview, Pre-Billing Export, Bookkeeper Export (all existing pages)
+- Financial reports: Spending Dashboard, Profitability (existing pages)
+- Fleet/Warehouse/Scheduling: ContentUnavailableView placeholders for 49C
+- Custom: Report Builder placeholder for 49D
+- Shared: placeholder for shared saved reports
+- reportRow helper function for consistent list styling
+- IOSReportsRouter kept tabId parameter for backward compatibility
+- Build: PASS
+
+## Prompt 49B Results (2026-03-23)
+- ReportPDFGenerator: multi-page PDF with title, subtitle, date, column headers per page, alternating row backgrounds, page footers
+- ReportCSVGenerator: CSV with proper escaping for commas, quotes, newlines
+- ReportExportToolbar ViewModifier: Menu with PDF + CSV export options, writes to temp file, presents ReportShareSheet
+- ReportShareSheet: UIActivityViewController wrapper for system share
+- Applied .reportExportToolbar() to 7 report pages:
+  - IOSTimesheetsPage (Employee, Regular, Overtime, Total, Days)
+  - IOSSpendingPage (Metric/Value pairs from SpendingSummary)
+  - IOSDailyReportsSummaryPage (Job, Workers, Hours, Status)
+  - IOSProfitabilityPage (Job, Revenue, Labor, Material, Profit, Margin)
+  - IOSPreBillingPage (Job, Regular Hrs, Overtime Hrs)
+  - IOSBookkeeperExportPage (combined Labor + Material rows)
+  - IOSLaborOverviewPage (Employee, Regular, Overtime, Total, Days)
+- Build: PASS
+
+## Prompt 49C Results (2026-03-23)
+- 10 new report pages across Fleet/Warehouse/Scheduling
+- All with .reportExportToolbar() export support
+- ReportDateRange enum shared across time-based reports (6 ranges: this/last week/month, quarter, year)
+- Service: 10 report query methods added:
+  - FleetService: getFuelCostReport, getMaintenanceTrendsReport, getMileageSummaryReport, getVehicleUtilizationReport
+  - WarehouseService: getInventoryValueReport, getBackorderReport, getTurnoverReport
+  - SchedulingService: getCrewUtilizationReport, getDispatchEfficiencyReport, getPipelineSummaryReport
+- Fleet reports: Fuel Costs, Maintenance Trends, Mileage Summary, Vehicle Utilization
+- Warehouse reports: Inventory Value (by category), Backorder Status, Inventory Turnover
+- Scheduling reports: Crew Utilization, Dispatch Efficiency, Pipeline Summary
+- Replaced 3 ContentUnavailableView placeholders in IOSReportsRouter with real NavigationLink lists
+- All errors shown in UI (loadError state + Label)
+- Build: PASS
+
+## Prompt 49D Results (2026-03-23)
+- Report builder: 4-step wizard (Type → Fields → Filters → Results)
+- 6 report types: Labor Hours, Parts Usage, Job Costs, Tool Checkouts, Vehicle Fuel, Order History
+- Each type with configurable columns (toggles) and date range filters
+- Save/load report configurations to saved_reports table
+- CustomReportsView: "Create New Report" + saved reports list with delete
+- SharedReportsView: shows shared reports from team members
+- Export toolbar on results step (PDF + CSV)
+- Migration 054: saved_reports table (name, report_type, columns_json, filters_json, created_by, is_shared)
+- ConflictResolver: added "saved_reports" to sync whitelist
+- ReportsService: generateCustomReport (6 type-specific SQL generators), saveReportConfig, getSavedReports, deleteSavedReport, markReportRun
+- Build: PASS

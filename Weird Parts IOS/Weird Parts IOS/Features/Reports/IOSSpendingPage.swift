@@ -24,6 +24,20 @@ struct IOSSpendingPage: View {
             spendingContent
         }
         .navigationTitle("Spending")
+        .reportExportToolbar(
+            title: "Spending",
+            columns: ["Metric", "Value"],
+            rows: {
+                guard let s = summary else { return [] }
+                return [
+                    ["Total Spend", String(format: "$%.2f", s.totalSpend)],
+                    ["PO Count", "\(s.poCount)"],
+                    ["Avg PO Amount", String(format: "$%.2f", s.avgPOAmount)],
+                    ["Top Supplier", s.topSupplierName ?? "N/A"],
+                    ["Top Supplier Amount", String(format: "$%.2f", s.topSupplierAmount)],
+                ]
+            }()
+        )
         .refreshable { loadData() }
         .task { loadData() }
     }

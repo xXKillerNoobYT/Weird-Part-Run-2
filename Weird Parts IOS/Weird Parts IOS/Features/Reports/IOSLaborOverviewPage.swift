@@ -25,6 +25,13 @@ struct IOSLaborOverviewPage: View {
             }
         }
         .navigationTitle("Labor Overview")
+        .reportExportToolbar(
+            title: "Labor_Overview",
+            columns: ["Employee", "Regular", "Overtime", "Total", "Days"],
+            rows: timesheetRows.map { [$0.userName, String(format: "%.1f", $0.regularHours),
+                                       String(format: "%.1f", $0.overtimeHours),
+                                       String(format: "%.1f", $0.totalHours), "\($0.daysWorked)"] }
+        )
         .refreshable { loadData() }
         .task { loadData() }
     }

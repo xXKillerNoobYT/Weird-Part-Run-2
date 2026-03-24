@@ -125,7 +125,9 @@ struct IOSToolRegistryPage: View {
             )
         } else {
             List(filteredTools, id: \.id) { tool in
-                toolRow(tool)
+                NavigationLink(destination: IOSToolDetailPage(toolId: tool.id).environmentObject(appCore)) {
+                    toolRow(tool)
+                }
             }
             .listStyle(.insetGrouped)
         }

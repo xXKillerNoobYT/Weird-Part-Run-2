@@ -569,6 +569,355 @@ public final class ReportsService: Sendable {
         }
     }
 
+    // =========================================================================
+    // MARK: - Custom Report Builder
+    // =========================================================================
+
+    /// A saved report configuration.
+    public struct SavedReport: Sendable, Identifiable {
+        public let id: Int64
+        public let name: String
+        public let reportType: String
+        public let columnsJson: String
+        public let filtersJson: String
+        public let createdBy: Int64
+        public let isShared: Bool
+        public let createdAt: String?
+        public let lastRunAt: String?
+    }
+
+    /// Generate a custom report based on type and selected columns/filters.
+    /// Returns rows as arrays of strings matching the requested columns.
+    public func generateCustomReport(
+        type: String, columns: [String],
+        startDate: Date, endDate: Date,
+        filters: [String: String]
+    ) throws -> [[String]] {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let startStr = fmt.string(from: startDate)
+        let endStr = fmt.string(from: endDate)
+
+        switch type {
+        case "labor_hours":
+            return try generateLaborHoursReport(columns: columns, startStr: startStr, endStr: endStr)
+        case "parts_usage":
+            return try generatePartsUsageReport(columns: columns, startStr: startStr, endStr: endStr)
+        case "job_costs":
+            return try generateJobCostsReport(columns: columns, startStr: startStr, endStr: endStr)
+        case "tool_checkouts":
+            return try generateToolCheckoutsReport(columns: columns, startStr: startStr, endStr: endStr)
+        case "vehicle_fuel":
+            return try generateVehicleFuelReport(columns: columns, startStr: startStr, endStr: endStr)
+        case "order_history":
+            return try generateOrderHistoryReport(columns: columns, startStr: startStr, endStr: endStr)
+        default:
+            return []
+        }
+    }
+
+    /// Save a report configuration.
+    @discardableResult
+    public func saveReportConfig(
+        name: String, type: String, columns: [String],
+        filters: [String: String], userId: Int64, isShared: Bool
+    ) throws -> Int64 {
+        let columnsData = try JSONSerialization.data(withJSONObject: columns)
+        let filtersData = try JSONSerialization.data(withJSONObject: filters)
+        let columnsJson = String(data: columnsData, encoding: .utf8) ?? "[]"
+        let filtersJson = String(data: filtersData, encoding: .utf8) ?? "{}"
+        return try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO saved_reports (name, report_type, columns_json, filters_json, created_by, is_shared)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [name, type, columnsJson, filtersJson, userId, isShared])
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Get saved reports for a user (own + shared).
+    public func getSavedReports(userId: Int64) throws -> [SavedReport] {
+        do {
+            return try db.writer.read { dbConn -> [SavedReport] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT * FROM saved_reports
+                    WHERE deleted_at IS NULL AND (created_by = ? OR is_shared = 1)
+                    ORDER BY last_run_at DESC, created_at DESC
+                    """, arguments: [userId])
+                return rows.map { row in
+                    SavedReport(
+                        id: row["id"] ?? 0,
+                        name: row["name"] ?? "",
+                        reportType: row["report_type"] ?? "",
+                        columnsJson: row["columns_json"] ?? "[]",
+                        filtersJson: row["filters_json"] ?? "{}",
+                        createdBy: row["created_by"] ?? 0,
+                        isShared: row["is_shared"] as Bool? ?? false,
+                        createdAt: row["created_at"] as String?,
+                        lastRunAt: row["last_run_at"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Delete a saved report (soft delete).
+    public func deleteSavedReport(reportId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE saved_reports SET deleted_at = datetime('now') WHERE id = ?
+                """, arguments: [reportId])
+        }
+    }
+
+    /// Update last_run_at timestamp.
+    public func markReportRun(reportId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE saved_reports SET last_run_at = datetime('now') WHERE id = ?
+                """, arguments: [reportId])
+        }
+    }
+
+    // MARK: - Custom Report Generators
+
+    private func generateLaborHoursReport(columns: [String], startStr: String, endStr: String) throws -> [[String]] {
+        do {
+            return try db.writer.read { dbConn -> [[String]] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT COALESCE(u.display_name, u.email, 'Unknown') AS employee_name,
+                           le.work_date AS date,
+                           ROUND(le.hours_regular + le.hours_overtime, 2) AS hours,
+                           COALESCE(j.name, '') AS job_name,
+                           COALESCE(le.activity_type, '') AS activity_type,
+                           COALESCE(le.clock_in, '') AS clock_in,
+                           COALESCE(le.clock_out, '') AS clock_out,
+                           COALESCE(le.notes, '') AS notes
+                    FROM labor_entries le
+                    LEFT JOIN users u ON u.id = le.user_id
+                    LEFT JOIN jobs j ON j.id = le.job_id
+                    WHERE le.deleted_at IS NULL
+                      AND le.work_date >= ? AND le.work_date <= ?
+                    ORDER BY le.work_date DESC, employee_name
+                    """, arguments: [startStr, endStr])
+                return rows.map { row in
+                    columns.map { col in
+                        switch col {
+                        case "employee_name": return row["employee_name"] as String? ?? ""
+                        case "date": return row["date"] as String? ?? ""
+                        case "hours": return String(format: "%.2f", row["hours"] as Double? ?? 0)
+                        case "job_name": return row["job_name"] as String? ?? ""
+                        case "activity_type": return row["activity_type"] as String? ?? ""
+                        case "clock_in": return row["clock_in"] as String? ?? ""
+                        case "clock_out": return row["clock_out"] as String? ?? ""
+                        case "notes": return row["notes"] as String? ?? ""
+                        default: return ""
+                        }
+                    }
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    private func generatePartsUsageReport(columns: [String], startStr: String, endStr: String) throws -> [[String]] {
+        do {
+            return try db.writer.read { dbConn -> [[String]] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT COALESCE(p.name, 'Unknown') AS part_name,
+                           COALESCE(pc.name, '') AS category,
+                           ABS(sm.qty) AS quantity_used,
+                           COALESCE(j.name, '') AS job_name,
+                           date(sm.created_at) AS date,
+                           COALESCE(sm.unit_cost_at_move, p.company_cost_price, 0) AS cost,
+                           ABS(sm.qty) * COALESCE(sm.unit_cost_at_move, p.company_cost_price, 0) AS total_cost
+                    FROM stock_movements sm
+                    LEFT JOIN parts p ON p.id = sm.part_id
+                    LEFT JOIN part_categories pc ON pc.id = p.category_id
+                    LEFT JOIN jobs j ON j.id = sm.job_id
+                    WHERE sm.deleted_at IS NULL AND sm.movement_type IN ('pull', 'usage', 'job_pull')
+                      AND date(sm.created_at) >= ? AND date(sm.created_at) <= ?
+                    ORDER BY sm.created_at DESC
+                    LIMIT 500
+                    """, arguments: [startStr, endStr])
+                return rows.map { row in
+                    columns.map { col in
+                        switch col {
+                        case "part_name": return row["part_name"] as String? ?? ""
+                        case "category": return row["category"] as String? ?? ""
+                        case "quantity_used": return "\(row["quantity_used"] as Int? ?? 0)"
+                        case "job_name": return row["job_name"] as String? ?? ""
+                        case "date": return row["date"] as String? ?? ""
+                        case "cost": return String(format: "%.2f", row["cost"] as Double? ?? 0)
+                        case "total_cost": return String(format: "%.2f", row["total_cost"] as Double? ?? 0)
+                        default: return ""
+                        }
+                    }
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    private func generateJobCostsReport(columns: [String], startStr: String, endStr: String) throws -> [[String]] {
+        do {
+            return try db.writer.read { dbConn -> [[String]] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT j.name AS job_name,
+                           COALESCE((SELECT SUM(le.hours_regular * COALESCE(ew.hourly_rate, 0) +
+                                               le.hours_overtime * COALESCE(ew.hourly_rate, 0) * 1.5)
+                                     FROM labor_entries le
+                                     LEFT JOIN employee_wages ew ON ew.user_id = le.user_id
+                                     WHERE le.job_id = j.id AND le.deleted_at IS NULL
+                                       AND le.work_date >= ? AND le.work_date <= ?), 0) AS labor_cost,
+                           COALESCE((SELECT SUM(ABS(sm.qty) * COALESCE(sm.unit_cost_at_move, 0))
+                                     FROM stock_movements sm
+                                     WHERE sm.job_id = j.id AND sm.deleted_at IS NULL
+                                       AND date(sm.created_at) >= ? AND date(sm.created_at) <= ?), 0) AS material_cost,
+                           COALESCE(j.budget_amount, 0) AS budget
+                    FROM jobs j
+                    WHERE j.deleted_at IS NULL AND j.status != 'archived'
+                    ORDER BY j.name
+                    """, arguments: [startStr, endStr, startStr, endStr])
+                return rows.map { row in
+                    let labor: Double = row["labor_cost"] ?? 0
+                    let material: Double = row["material_cost"] ?? 0
+                    let total = labor + material
+                    let budget: Double = row["budget"] ?? 0
+                    let variance = budget - total
+                    return columns.map { col in
+                        switch col {
+                        case "job_name": return row["job_name"] as String? ?? ""
+                        case "labor_cost": return String(format: "%.2f", labor)
+                        case "material_cost": return String(format: "%.2f", material)
+                        case "total_cost": return String(format: "%.2f", total)
+                        case "budget": return String(format: "%.2f", budget)
+                        case "variance": return String(format: "%.2f", variance)
+                        default: return ""
+                        }
+                    }
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    private func generateToolCheckoutsReport(columns: [String], startStr: String, endStr: String) throws -> [[String]] {
+        do {
+            return try db.writer.read { dbConn -> [[String]] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT COALESCE(t.name, 'Unknown') AS tool_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS employee_name,
+                           tc.checked_out_at AS checkout_date,
+                           COALESCE(tc.returned_at, '') AS return_date,
+                           COALESCE(tc.condition_out, '') AS condition_out,
+                           COALESCE(tc.condition_in, '') AS condition_in
+                    FROM tool_checkouts tc
+                    LEFT JOIN tools t ON t.id = tc.tool_id
+                    LEFT JOIN users u ON u.id = tc.user_id
+                    WHERE tc.deleted_at IS NULL
+                      AND date(tc.checked_out_at) >= ? AND date(tc.checked_out_at) <= ?
+                    ORDER BY tc.checked_out_at DESC
+                    """, arguments: [startStr, endStr])
+                return rows.map { row in
+                    columns.map { col in
+                        switch col {
+                        case "tool_name": return row["tool_name"] as String? ?? ""
+                        case "employee_name": return row["employee_name"] as String? ?? ""
+                        case "checkout_date": return String((row["checkout_date"] as String? ?? "").prefix(10))
+                        case "return_date": return String((row["return_date"] as String? ?? "").prefix(10))
+                        case "condition_out": return row["condition_out"] as String? ?? ""
+                        case "condition_in": return row["condition_in"] as String? ?? ""
+                        default: return ""
+                        }
+                    }
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    private func generateVehicleFuelReport(columns: [String], startStr: String, endStr: String) throws -> [[String]] {
+        do {
+            return try db.writer.read { dbConn -> [[String]] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT COALESCE(v.vehicle_name, v.vehicle_number, 'Unknown') AS vehicle_name,
+                           f.log_date AS date,
+                           COALESCE(f.gallons, 0) AS gallons,
+                           COALESCE(f.total_cost, 0) AS cost,
+                           COALESCE(f.odometer_reading, 0) AS odometer
+                    FROM fuel_logs f
+                    LEFT JOIN vehicles v ON v.id = f.vehicle_id
+                    WHERE f.deleted_at IS NULL
+                      AND f.log_date >= ? AND f.log_date <= ?
+                    ORDER BY f.log_date DESC
+                    """, arguments: [startStr, endStr])
+                return rows.map { row in
+                    columns.map { col in
+                        switch col {
+                        case "vehicle_name": return row["vehicle_name"] as String? ?? ""
+                        case "date": return row["date"] as String? ?? ""
+                        case "gallons": return String(format: "%.1f", row["gallons"] as Double? ?? 0)
+                        case "cost": return String(format: "%.2f", row["cost"] as Double? ?? 0)
+                        case "odometer": return "\(row["odometer"] as Int? ?? 0)"
+                        default: return ""
+                        }
+                    }
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    private func generateOrderHistoryReport(columns: [String], startStr: String, endStr: String) throws -> [[String]] {
+        do {
+            return try db.writer.read { dbConn -> [[String]] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT po.po_number, COALESCE(s.name, 'Unknown') AS supplier_name,
+                           COALESCE(po.order_date, date(po.created_at)) AS order_date,
+                           COALESCE(po.total_amount, 0) AS total,
+                           COALESCE(po.status, '') AS status,
+                           (SELECT COUNT(*) FROM po_line_items pol WHERE pol.po_id = po.id AND pol.deleted_at IS NULL) AS items_count
+                    FROM purchase_orders po
+                    LEFT JOIN suppliers s ON s.id = po.supplier_id
+                    WHERE po.deleted_at IS NULL
+                      AND COALESCE(po.order_date, date(po.created_at)) >= ?
+                      AND COALESCE(po.order_date, date(po.created_at)) <= ?
+                    ORDER BY order_date DESC
+                    """, arguments: [startStr, endStr])
+                return rows.map { row in
+                    columns.map { col in
+                        switch col {
+                        case "po_number": return row["po_number"] as String? ?? ""
+                        case "supplier_name": return row["supplier_name"] as String? ?? ""
+                        case "order_date": return row["order_date"] as String? ?? ""
+                        case "total": return String(format: "%.2f", row["total"] as Double? ?? 0)
+                        case "status": return row["status"] as String? ?? ""
+                        case "items_count": return "\(row["items_count"] as Int? ?? 0)"
+                        default: return ""
+                        }
+                    }
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     /// Detect whether a GRDB/SQLite error indicates a missing table.
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)

@@ -1325,6 +1325,159 @@ public final class SchedulingService: Sendable {
     }
 
     // =========================================================================
+    // MARK: - Report Queries
+    // =========================================================================
+
+    /// Crew utilization row — scheduled hours vs available hours per employee.
+    public struct CrewUtilizationRow: Sendable, Identifiable {
+        public let id: Int64
+        public let employeeName: String
+        public let scheduledHours: Double
+        public let availableHours: Double
+        public let utilization: Double
+    }
+
+    /// Dispatch efficiency row — dispatched vs scheduled vs completed.
+    public struct DispatchEfficiencyRow: Sendable, Identifiable {
+        public let id: String
+        public let date: String
+        public let scheduledCount: Int
+        public let dispatchedCount: Int
+        public let completedCount: Int
+        public let efficiency: Double
+    }
+
+    /// Pipeline summary row — job counts by status.
+    public struct PipelineSummaryRow: Sendable, Identifiable {
+        public let id: String
+        public let status: String
+        public let jobCount: Int
+        public let totalEstimatedHours: Double
+    }
+
+    /// Get crew utilization for a date range: scheduled hours vs available hours per employee.
+    public func getCrewUtilizationReport(startDate: Date, endDate: Date) throws -> [CrewUtilizationRow] {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let startStr = fmt.string(from: startDate)
+        let endStr = fmt.string(from: endDate)
+        let totalDays = max(1, Calendar.current.dateComponents([.day], from: startDate, to: endDate).day ?? 1)
+        let availableHoursPerEmployee = Double(totalDays) * 8.0 // 8-hour workday assumption
+        do {
+            return try db.writer.read { dbConn -> [CrewUtilizationRow] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT u.id, COALESCE(u.display_name, u.email, 'Employee') AS employee_name,
+                           COUNT(jd.id) AS dispatch_count,
+                           COALESCE(SUM(
+                               CASE
+                                   WHEN jd.shift_start IS NOT NULL AND jd.shift_end IS NOT NULL
+                                   THEN (julianday(jd.shift_end) - julianday(jd.shift_start)) * 24
+                                   ELSE 8.0
+                               END
+                           ), 0) AS scheduled_hours
+                    FROM users u
+                    LEFT JOIN job_dispatch jd ON jd.user_id = u.id
+                        AND jd.deleted_at IS NULL
+                        AND jd.dispatch_date >= ? AND jd.dispatch_date <= ?
+                    WHERE u.deleted_at IS NULL AND u.is_active = 1 AND u.role != 'admin'
+                    GROUP BY u.id
+                    HAVING dispatch_count > 0
+                    ORDER BY scheduled_hours DESC
+                    """, arguments: [startStr, endStr])
+                return rows.map { row in
+                    let hours: Double = row["scheduled_hours"] ?? 0
+                    return CrewUtilizationRow(
+                        id: row["id"] ?? 0,
+                        employeeName: row["employee_name"] ?? "Unknown",
+                        scheduledHours: hours,
+                        availableHours: availableHoursPerEmployee,
+                        utilization: min(1.0, hours / max(1, availableHoursPerEmployee))
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get dispatch efficiency by date — how many dispatches were completed vs scheduled.
+    public func getDispatchEfficiencyReport(startDate: Date, endDate: Date) throws -> [DispatchEfficiencyRow] {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let startStr = fmt.string(from: startDate)
+        let endStr = fmt.string(from: endDate)
+        do {
+            return try db.writer.read { dbConn -> [DispatchEfficiencyRow] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT dispatch_date,
+                           COUNT(*) AS scheduled_count,
+                           SUM(CASE WHEN status IN ('dispatched', 'completed') THEN 1 ELSE 0 END) AS dispatched_count,
+                           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_count
+                    FROM job_dispatch
+                    WHERE deleted_at IS NULL
+                      AND dispatch_date >= ? AND dispatch_date <= ?
+                    GROUP BY dispatch_date
+                    ORDER BY dispatch_date DESC
+                    """, arguments: [startStr, endStr])
+                return rows.map { row in
+                    let scheduled: Int = row["scheduled_count"] ?? 0
+                    let completed: Int = row["completed_count"] ?? 0
+                    let dateStr: String = row["dispatch_date"] ?? ""
+                    return DispatchEfficiencyRow(
+                        id: dateStr,
+                        date: dateStr,
+                        scheduledCount: scheduled,
+                        dispatchedCount: row["dispatched_count"] ?? 0,
+                        completedCount: completed,
+                        efficiency: scheduled > 0 ? Double(completed) / Double(scheduled) : 0
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get pipeline summary — active jobs grouped by status.
+    public func getPipelineSummaryReport() throws -> [PipelineSummaryRow] {
+        do {
+            return try db.writer.read { dbConn -> [PipelineSummaryRow] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT j.status,
+                           COUNT(j.id) AS job_count,
+                           COALESCE(SUM(j.estimated_hours), 0) AS total_estimated_hours
+                    FROM jobs j
+                    WHERE j.deleted_at IS NULL AND j.status != 'archived'
+                    GROUP BY j.status
+                    ORDER BY
+                        CASE j.status
+                            WHEN 'active' THEN 1
+                            WHEN 'scheduled' THEN 2
+                            WHEN 'pending' THEN 3
+                            WHEN 'on_hold' THEN 4
+                            WHEN 'completed' THEN 5
+                            ELSE 6
+                        END
+                    """)
+                return rows.map { row in
+                    let status: String = row["status"] ?? "unknown"
+                    return PipelineSummaryRow(
+                        id: status,
+                        status: status,
+                        jobCount: row["job_count"] ?? 0,
+                        totalEstimatedHours: row["total_estimated_hours"] ?? 0
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    // =========================================================================
     // MARK: - Internal Helpers
     // =========================================================================
 

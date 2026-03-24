@@ -1520,6 +1520,370 @@ public final class DashboardService: Sendable {
         }
     }
 
+    // MARK: - Office Dashboard
+
+    /// Briefing data generated from overnight and current-day activity.
+    public struct OfficeBriefing: Sendable {
+        public let summary: String
+        public let generatedAt: Date
+        public let highlights: [String]
+        public let alertCount: Int
+
+        public init(summary: String, generatedAt: Date, highlights: [String], alertCount: Int) {
+            self.summary = summary
+            self.generatedAt = generatedAt
+            self.highlights = highlights
+            self.alertCount = alertCount
+        }
+    }
+
+    /// An actionable item requiring manager attention, with urgency-based priority.
+    public struct AttentionItem: Identifiable, Sendable {
+        public let id: Int64
+        public let title: String
+        public let subtitle: String
+        public let itemType: String
+        public let createdAt: Date
+        public let priority: AttentionPriority
+
+        public init(id: Int64, title: String, subtitle: String, itemType: String,
+                    createdAt: Date, priority: AttentionPriority) {
+            self.id = id
+            self.title = title
+            self.subtitle = subtitle
+            self.itemType = itemType
+            self.createdAt = createdAt
+            self.priority = priority
+        }
+    }
+
+    /// Priority levels for attention items, based on age since creation.
+    public enum AttentionPriority: Int, Sendable, Comparable {
+        case low = 1       // green — just created
+        case medium = 2    // yellow — same day
+        case high = 3      // orange — within 24hr of deadline
+        case overdue = 4   // red — past 4 days
+
+        public static func < (lhs: AttentionPriority, rhs: AttentionPriority) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+
+        /// Determine priority from age in seconds since creation.
+        public static func from(age: TimeInterval) -> AttentionPriority {
+            let days = age / 86400
+            if days > 4 { return .overdue }
+            if days > 1 { return .high }
+            if days > 0 { return .medium }
+            return .low
+        }
+    }
+
+    /// A single scheduled item for today.
+    public struct ScheduleItem: Identifiable, Sendable {
+        public let id: Int64
+        public let title: String
+        public let jobName: String?
+        public let employeeName: String
+        public let shiftStart: String?
+
+        public init(id: Int64, title: String, jobName: String?, employeeName: String, shiftStart: String?) {
+            self.id = id
+            self.title = title
+            self.jobName = jobName
+            self.employeeName = employeeName
+            self.shiftStart = shiftStart
+        }
+    }
+
+    /// Financial overview with this-week vs last-week and this-month vs last-month.
+    public struct FinancialSnapshot: Sendable {
+        public let spendingThisWeek: Double
+        public let spendingLastWeek: Double
+        public let spendingThisMonth: Double
+        public let spendingLastMonth: Double
+        public let outstandingPOValue: Double
+
+        public init(spendingThisWeek: Double, spendingLastWeek: Double,
+                    spendingThisMonth: Double, spendingLastMonth: Double,
+                    outstandingPOValue: Double) {
+            self.spendingThisWeek = spendingThisWeek
+            self.spendingLastWeek = spendingLastWeek
+            self.spendingThisMonth = spendingThisMonth
+            self.spendingLastMonth = spendingLastMonth
+            self.outstandingPOValue = outstandingPOValue
+        }
+    }
+
+    /// Generate a briefing from overnight and current-day activity.
+    public func getOfficeBriefing() throws -> OfficeBriefing {
+        do {
+            return try db.writer.read { dbConn -> OfficeBriefing in
+                let newJPOs = try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM job_parts_orders
+                    WHERE created_at >= datetime('now', '-12 hours')
+                      AND deleted_at IS NULL
+                    """) ?? 0
+
+                let pendingApprovals = try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM job_parts_orders
+                    WHERE status = 'submitted' AND deleted_at IS NULL
+                    """) ?? 0
+
+                let clockedInToday = try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(DISTINCT user_id) FROM labor_entries
+                    WHERE date(clock_in) = date('now')
+                      AND clock_out IS NULL
+                      AND deleted_at IS NULL
+                    """) ?? 0
+
+                let overdueItems = try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM purchase_orders
+                    WHERE expected_delivery IS NOT NULL
+                      AND date(expected_delivery) < date('now')
+                      AND status NOT IN ('received', 'cancelled')
+                      AND deleted_at IS NULL
+                    """) ?? 0
+
+                let pendingTimeOff = try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM schedule_exceptions
+                    WHERE exception_type = 'time_off'
+                      AND is_approved = 0
+                      AND deleted_at IS NULL
+                    """) ?? 0
+
+                var highlights: [String] = []
+                if newJPOs > 0 { highlights.append("\(newJPOs) new job part orders overnight") }
+                if pendingApprovals > 0 { highlights.append("\(pendingApprovals) JPOs awaiting approval") }
+                if clockedInToday > 0 { highlights.append("\(clockedInToday) workers clocked in") }
+                if overdueItems > 0 { highlights.append("\(overdueItems) overdue deliveries") }
+                if pendingTimeOff > 0 { highlights.append("\(pendingTimeOff) time-off requests pending") }
+
+                let deliveryNote = overdueItems > 0
+                    ? "\(overdueItems) deliveries are overdue."
+                    : "all deliveries on track."
+
+                let summary = "Good morning. \(pendingApprovals) items need approval, \(clockedInToday) workers are active, and \(deliveryNote)"
+
+                return OfficeBriefing(
+                    summary: summary,
+                    generatedAt: Date(),
+                    highlights: highlights,
+                    alertCount: pendingApprovals + overdueItems + pendingTimeOff
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return OfficeBriefing(summary: "Dashboard data not yet available.", generatedAt: Date(), highlights: [], alertCount: 0)
+            }
+            throw error
+        }
+    }
+
+    /// Fetch actionable items requiring manager attention, sorted by priority then age.
+    public func getAttentionItems() throws -> [AttentionItem] {
+        var items: [AttentionItem] = []
+
+        // JPO approvals
+        do {
+            let jpos = try db.writer.read { dbConn -> [Row] in
+                try Row.fetchAll(dbConn, sql: """
+                    SELECT jpo.id, jpo.created_at,
+                           COALESCE(j.job_name, 'Unknown Job') AS job_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS requester
+                    FROM job_parts_orders jpo
+                    LEFT JOIN jobs j ON jpo.job_id = j.id
+                    LEFT JOIN users u ON jpo.created_by = u.id
+                    WHERE jpo.status = 'submitted'
+                      AND jpo.deleted_at IS NULL
+                    ORDER BY jpo.created_at ASC
+                    """)
+            }
+            let isoFormatter = ISO8601DateFormatter()
+            isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let fallbackFormatter = ISO8601DateFormatter()
+            fallbackFormatter.formatOptions = [.withInternetDateTime]
+
+            for row in jpos {
+                let dateStr: String = row["created_at"] ?? ""
+                let created = isoFormatter.date(from: dateStr) ?? fallbackFormatter.date(from: dateStr) ?? Date()
+                let age = Date().timeIntervalSince(created)
+                items.append(AttentionItem(
+                    id: row["id"] ?? 0,
+                    title: "JPO Approval: \(row["job_name"] as String? ?? "Unknown")",
+                    subtitle: "Requested by \(row["requester"] as String? ?? "Unknown")",
+                    itemType: "jpo_approval",
+                    createdAt: created,
+                    priority: .from(age: age)
+                ))
+            }
+        } catch {
+            if !isTableNotFoundError(error) { throw error }
+        }
+
+        // Pending time-off requests
+        do {
+            let timeOff = try db.writer.read { dbConn -> [Row] in
+                try Row.fetchAll(dbConn, sql: """
+                    SELECT se.id, se.exception_date, se.reason,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS employee_name
+                    FROM schedule_exceptions se
+                    LEFT JOIN users u ON u.id = se.user_id
+                    WHERE se.exception_type = 'time_off'
+                      AND se.is_approved = 0
+                      AND se.deleted_at IS NULL
+                    ORDER BY se.created_at ASC
+                    """)
+            }
+            for row in timeOff {
+                let dateStr: String = row["exception_date"] ?? ""
+                // exception_date is a date string, use created_at proxy for age
+                let now = Date()
+                items.append(AttentionItem(
+                    id: row["id"] ?? 0,
+                    title: "Time Off: \(row["employee_name"] as String? ?? "Unknown")",
+                    subtitle: "\(dateStr) — \(row["reason"] as String? ?? "No reason")",
+                    itemType: "time_off",
+                    createdAt: now.addingTimeInterval(-86400), // approximate 1 day for priority
+                    priority: .medium
+                ))
+            }
+        } catch {
+            if !isTableNotFoundError(error) { throw error }
+        }
+
+        // Overdue PO deliveries
+        do {
+            let overdue = try db.writer.read { dbConn -> [Row] in
+                try Row.fetchAll(dbConn, sql: """
+                    SELECT po.id, po.po_number, po.expected_delivery,
+                           COALESCE(s.name, 'Unknown') AS supplier_name
+                    FROM purchase_orders po
+                    LEFT JOIN suppliers s ON s.id = po.supplier_id
+                    WHERE po.expected_delivery IS NOT NULL
+                      AND date(po.expected_delivery) < date('now')
+                      AND po.status NOT IN ('received', 'cancelled')
+                      AND po.deleted_at IS NULL
+                    ORDER BY po.expected_delivery ASC
+                    LIMIT 20
+                    """)
+            }
+            for row in overdue {
+                items.append(AttentionItem(
+                    id: row["id"] ?? 0,
+                    title: "Overdue PO: \(row["po_number"] as String? ?? "?")",
+                    subtitle: "From \(row["supplier_name"] as String? ?? "Unknown") — expected \(row["expected_delivery"] as String? ?? "?")",
+                    itemType: "overdue_po",
+                    createdAt: Date().addingTimeInterval(-5 * 86400), // overdue = always red
+                    priority: .overdue
+                ))
+            }
+        } catch {
+            if !isTableNotFoundError(error) { throw error }
+        }
+
+        // Sort by priority (highest first), then by age (oldest first)
+        items.sort { a, b in
+            if a.priority != b.priority {
+                return a.priority > b.priority
+            }
+            return a.createdAt < b.createdAt
+        }
+
+        return items
+    }
+
+    /// Fetch today's dispatch schedule (workers assigned to jobs today).
+    public func getTodaySchedule() throws -> [ScheduleItem] {
+        do {
+            return try db.writer.read { dbConn -> [ScheduleItem] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT jd.id, jd.shift_start,
+                           COALESCE(j.job_name, 'Unassigned') AS job_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS employee_name
+                    FROM job_dispatch jd
+                    LEFT JOIN jobs j ON j.id = jd.job_id
+                    LEFT JOIN users u ON u.id = jd.user_id
+                    WHERE jd.dispatch_date = date('now')
+                      AND jd.deleted_at IS NULL
+                    ORDER BY jd.shift_start ASC, employee_name ASC
+                    """)
+                return rows.map { row in
+                    ScheduleItem(
+                        id: row["id"] ?? 0,
+                        title: row["employee_name"] ?? "Unknown",
+                        jobName: row["job_name"],
+                        employeeName: row["employee_name"] ?? "Unknown",
+                        shiftStart: row["shift_start"]
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Fetch financial snapshot comparing this week vs last week and this month vs last month.
+    public func getFinancialSnapshot() throws -> FinancialSnapshot {
+        do {
+            return try db.writer.read { dbConn -> FinancialSnapshot in
+                // This week spending (POs created this week)
+                let spendingThisWeek = try Double.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(total_cost), 0) FROM purchase_orders
+                    WHERE date(created_at) >= date('now', 'weekday 0', '-7 days')
+                      AND status NOT IN ('cancelled')
+                      AND deleted_at IS NULL
+                    """) ?? 0
+
+                // Last week spending
+                let spendingLastWeek = try Double.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(total_cost), 0) FROM purchase_orders
+                    WHERE date(created_at) >= date('now', 'weekday 0', '-14 days')
+                      AND date(created_at) < date('now', 'weekday 0', '-7 days')
+                      AND status NOT IN ('cancelled')
+                      AND deleted_at IS NULL
+                    """) ?? 0
+
+                // This month spending
+                let spendingThisMonth = try Double.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(total_cost), 0) FROM purchase_orders
+                    WHERE date(created_at) >= date('now', 'start of month')
+                      AND status NOT IN ('cancelled')
+                      AND deleted_at IS NULL
+                    """) ?? 0
+
+                // Last month spending
+                let spendingLastMonth = try Double.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(total_cost), 0) FROM purchase_orders
+                    WHERE date(created_at) >= date('now', 'start of month', '-1 month')
+                      AND date(created_at) < date('now', 'start of month')
+                      AND status NOT IN ('cancelled')
+                      AND deleted_at IS NULL
+                    """) ?? 0
+
+                // Outstanding PO value (submitted/ordered, not yet received)
+                let outstandingPOValue = try Double.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(total_cost), 0) FROM purchase_orders
+                    WHERE status IN ('submitted', 'ordered', 'acknowledged')
+                      AND deleted_at IS NULL
+                    """) ?? 0
+
+                return FinancialSnapshot(
+                    spendingThisWeek: spendingThisWeek,
+                    spendingLastWeek: spendingLastWeek,
+                    spendingThisMonth: spendingThisMonth,
+                    spendingLastMonth: spendingLastMonth,
+                    outstandingPOValue: outstandingPOValue
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return FinancialSnapshot(spendingThisWeek: 0, spendingLastWeek: 0, spendingThisMonth: 0, spendingLastMonth: 0, outstandingPOValue: 0)
+            }
+            throw error
+        }
+    }
+
     // MARK: - Internal Helpers
 
     /// Execute a `SELECT COUNT(*)` query and return the integer result.

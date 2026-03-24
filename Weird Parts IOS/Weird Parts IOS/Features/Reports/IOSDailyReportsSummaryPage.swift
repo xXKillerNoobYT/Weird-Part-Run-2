@@ -34,6 +34,12 @@ struct IOSDailyReportsSummaryPage: View {
             summaryContent
         }
         .navigationTitle("Reports Summary")
+        .reportExportToolbar(
+            title: "Daily_Summary",
+            columns: ["Job", "Workers", "Hours", "Status"],
+            rows: rows.map { [$0.jobName, "\($0.workerCount)",
+                              String(format: "%.1f", $0.totalHours), $0.status] }
+        )
         .refreshable { loadData() }
         .task { loadData() }
     }

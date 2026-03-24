@@ -55,7 +55,7 @@ struct IOSTrailersPage: View {
             }
         } else {
             List(filteredTrailers, id: \.id) { trailer in
-                NavigationLink(destination: IOSTrailerDetailPage(trailer: trailer)) {
+                NavigationLink(destination: IOSTrailerDetailPage(trailerId: trailer.id)) {
                     trailerRow(trailer)
                 }
             }

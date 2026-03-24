@@ -37,6 +37,13 @@ struct IOSTimesheetsPage: View {
             timesheetList
         }
         .navigationTitle("Timesheets")
+        .reportExportToolbar(
+            title: "Timesheets",
+            columns: ["Employee", "Regular", "Overtime", "Total", "Days"],
+            rows: rows.map { [$0.userName, String(format: "%.1f", $0.regularHours),
+                              String(format: "%.1f", $0.overtimeHours),
+                              String(format: "%.1f", $0.totalHours), "\($0.daysWorked)"] }
+        )
         .searchable(text: $searchText, prompt: "Search employees...")
         .refreshable { loadData() }
         .task { loadData() }

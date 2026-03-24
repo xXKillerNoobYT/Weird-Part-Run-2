@@ -3,16 +3,45 @@ import WiredPartCore
 
 /// Driver's personal vehicle dashboard — "My Truck" page.
 ///
-/// Shows the vehicle currently assigned to the logged-in user with key info,
-/// upcoming maintenance, recent mileage, and quick action buttons.
+/// Shows the vehicle currently assigned to the logged-in user with smart card KPIs,
+/// two inventory types (Truck Stock vs Transfer Area), quick actions,
+/// and attached trailer section.
 struct IOSMyTruckPage: View {
     @EnvironmentObject private var appCore: AppCore
 
+    // MARK: - State
+
     @State private var vehicle: FleetService.VehicleDetail?
+    @State private var vehicleStats: FleetService.MyVehicleStats?
+    @State private var truckStock: [FleetService.VehicleStockItem] = []
+    @State private var transferItems: [FleetService.VehicleStockItem] = []
     @State private var recentMileage: [FleetService.MileageRow] = []
     @State private var recentFuel: [FleetService.FuelRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var inventoryTab: InventoryTab = .truckStock
+    @State private var activeSheet: ActiveSheet?
+
+    enum InventoryTab: String, CaseIterable {
+        case truckStock = "Truck Stock"
+        case transfer = "Transfer"
+    }
+
+    enum ActiveSheet: Identifiable {
+        case logFuel
+        case reportIssue
+        case addTransferItem
+
+        var id: String {
+            switch self {
+            case .logFuel: return "logFuel"
+            case .reportIssue: return "reportIssue"
+            case .addTransferItem: return "addTransferItem"
+            }
+        }
+    }
+
+    // MARK: - Body
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +59,9 @@ struct IOSMyTruckPage: View {
         .navigationTitle("My Truck")
         .refreshable { loadData() }
         .task { loadData() }
+        .sheet(item: $activeSheet) { sheet in
+            sheetContent(sheet)
+        }
     }
 
     // MARK: - No Vehicle
@@ -47,13 +79,17 @@ struct IOSMyTruckPage: View {
     private func vehicleContent(_ v: FleetService.VehicleDetail) -> some View {
         List {
             vehicleHeaderSection(v)
+            smartCardsSection
             quickActionsSection
-            assignmentsSection(v)
+            inventorySection
+            trailerSection
             mileageSection
             fuelSection
         }
         .listStyle(.insetGrouped)
     }
+
+    // MARK: - Header
 
     private func vehicleHeaderSection(_ v: FleetService.VehicleDetail) -> some View {
         Section {
@@ -106,73 +142,167 @@ struct IOSMyTruckPage: View {
         }
     }
 
-    private var quickActionsSection: some View {
-        Section("Quick Actions") {
-            Button {
-                NotificationCenter.default.post(
-                    name: .navigateToModule,
-                    object: nil,
-                    userInfo: ["moduleId": "fleet", "tabId": "fleet-mileage"]
-                )
-            } label: {
-                Label("Log Mileage", systemImage: "speedometer")
-            }
-            Button {
-                NotificationCenter.default.post(
-                    name: .navigateToModule,
-                    object: nil,
-                    userInfo: ["moduleId": "fleet", "tabId": "fleet-fuel"]
-                )
-            } label: {
-                Label("Log Fuel", systemImage: "fuelpump.fill")
-            }
-            Button {
-                NotificationCenter.default.post(
-                    name: .navigateToModule,
-                    object: nil,
-                    userInfo: ["moduleId": "fleet", "tabId": "fleet-maintenance"]
-                )
-            } label: {
-                Label("Report Issue", systemImage: "exclamationmark.triangle.fill")
-            }
-            Button {
-                NotificationCenter.default.post(
-                    name: .navigateToModule,
-                    object: nil,
-                    userInfo: ["moduleId": "fleet", "tabId": "fleet-inspections"]
-                )
-            } label: {
-                Label("Pre-Trip Inspection", systemImage: "checklist")
+    // MARK: - Smart Cards
+
+    private var smartCardsSection: some View {
+        Section {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    MyVehicleSmartCard(
+                        title: "Tools",
+                        value: "\(vehicleStats?.toolCount ?? 0)",
+                        icon: "wrench.fill",
+                        color: .blue
+                    )
+                    MyVehicleSmartCard(
+                        title: "Parts",
+                        value: "\(vehicleStats?.partCount ?? 0)",
+                        icon: "shippingbox.fill",
+                        color: .green
+                    )
+
+                    if let fuel = vehicleStats?.fuelLevel {
+                        MyVehicleSmartCard(
+                            title: "Tank",
+                            value: "\(Int(fuel * 100))%",
+                            icon: "fuelpump.fill",
+                            color: fuel < 0.25 ? .red : fuel < 0.5 ? .orange : .green
+                        )
+                    }
+
+                    MyVehicleSmartCard(
+                        title: "Maintenance",
+                        value: "\(vehicleStats?.maintenanceDue ?? 0)",
+                        icon: "wrench.and.screwdriver.fill",
+                        color: (vehicleStats?.maintenanceDue ?? 0) > 0 ? .red : .green
+                    )
+
+                    if (vehicleStats?.transferItems ?? 0) > 0 {
+                        MyVehicleSmartCard(
+                            title: "Transfers",
+                            value: "\(vehicleStats?.transferItems ?? 0)",
+                            icon: "arrow.left.arrow.right",
+                            color: .purple
+                        )
+                    }
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 4)
             }
         }
     }
 
-    private func assignmentsSection(_ v: FleetService.VehicleDetail) -> some View {
-        Section("Assignments") {
-            if v.assignments.isEmpty {
-                Text("No active assignments")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(v.assignments) { assignment in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(assignment.userName)
-                                .fontWeight(.medium)
-                            Text(assignment.assignmentType.capitalized)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+    // MARK: - Quick Actions
+
+    private var quickActionsSection: some View {
+        Section("Quick Actions") {
+            HStack(spacing: 12) {
+                QuickActionBtn(title: "Log Fuel", icon: "fuelpump.fill", color: .blue) {
+                    activeSheet = .logFuel
+                }
+                QuickActionBtn(title: "Report Issue", icon: "exclamationmark.triangle.fill", color: .red) {
+                    activeSheet = .reportIssue
+                }
+                QuickActionBtn(title: "Add Part", icon: "plus.circle.fill", color: .green) {
+                    activeSheet = .addTransferItem
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    // MARK: - Inventory (Truck Stock vs Transfer)
+
+    private var inventorySection: some View {
+        Section {
+            Picker("Inventory", selection: $inventoryTab) {
+                ForEach(InventoryTab.allCases, id: \.self) { tab in
+                    Text(tab.rawValue).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            switch inventoryTab {
+            case .truckStock:
+                if truckStock.isEmpty {
+                    Text("No truck stock items")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(truckStock) { item in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.partName).font(.subheadline)
+                                Text("Qty: \(item.quantity)")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if let target = item.targetQty, target > 0 {
+                                ProgressView(
+                                    value: min(Double(item.quantity), Double(target)),
+                                    total: Double(target)
+                                )
+                                .tint(
+                                    item.quantity < (item.minQty ?? 0) ? .red :
+                                    item.quantity >= target ? .green : .orange
+                                )
+                                .frame(width: 60)
+                            }
                         }
-                        Spacer()
-                        if assignment.isTakeHome {
-                            Label("Take Home", systemImage: "house.fill")
-                                .font(.caption)
-                                .foregroundStyle(.blue)
+                    }
+                }
+
+            case .transfer:
+                if transferItems.isEmpty {
+                    Text("No items in transit")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(transferItems) { item in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.partName).font(.subheadline)
+                                Text("\(item.sourceLocation ?? "?") → \(item.destinationLocation ?? "?")")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("×\(item.quantity)")
+                                .font(.subheadline).monospacedDigit()
                         }
                     }
                 }
             }
+        } header: {
+            Text("Inventory")
         }
     }
+
+    // MARK: - Trailer
+
+    @ViewBuilder
+    private var trailerSection: some View {
+        if let stats = vehicleStats, stats.hasTrailer {
+            Section {
+                HStack {
+                    Image(systemName: "truck.box.fill")
+                        .foregroundStyle(.blue)
+                    VStack(alignment: .leading) {
+                        Text(stats.trailerName ?? "Trailer")
+                            .font(.subheadline).fontWeight(.medium)
+                        Text("Attached")
+                            .font(.caption).foregroundStyle(.green)
+                    }
+                    Spacer()
+                    // Navigation to trailer detail (48C)
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                }
+            } header: {
+                Text("Trailer")
+            }
+        }
+    }
+
+    // MARK: - Recent Mileage
 
     private var mileageSection: some View {
         Section("Recent Mileage") {
@@ -201,6 +331,8 @@ struct IOSMyTruckPage: View {
             }
         }
     }
+
+    // MARK: - Recent Fuel
 
     private var fuelSection: some View {
         Section("Recent Fuel") {
@@ -237,6 +369,41 @@ struct IOSMyTruckPage: View {
         }
     }
 
+    // MARK: - Sheet Content
+
+    @ViewBuilder
+    private func sheetContent(_ sheet: ActiveSheet) -> some View {
+        switch sheet {
+        case .logFuel:
+            LogFuelSheet(
+                vehicleId: vehicleStats?.vehicleId ?? 0,
+                onComplete: {
+                    activeSheet = nil
+                    loadData()
+                }
+            )
+            .environmentObject(appCore)
+
+        case .reportIssue:
+            ReportVehicleIssueSheet(
+                vehicleName: vehicle?.vehicleName ?? "Vehicle",
+                onComplete: {
+                    activeSheet = nil
+                }
+            )
+
+        case .addTransferItem:
+            AddTransferItemSheet(
+                vehicleId: vehicleStats?.vehicleId ?? 0,
+                onComplete: {
+                    activeSheet = nil
+                    loadData()
+                }
+            )
+            .environmentObject(appCore)
+        }
+    }
+
     // MARK: - Helpers
 
     private func statusColor(_ status: String) -> Color {
@@ -252,28 +419,39 @@ struct IOSMyTruckPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let fleet = appCore.fleetService else { return }
+        guard let fleet = appCore.fleetService else {
+            loadError = "Fleet service not available"
+            isLoading = false
+            return
+        }
         isLoading = vehicle == nil
         loadError = nil
 
         do {
-            // Find current user's assigned vehicle by user ID
             guard let currentUserId = appCore.currentUser?.id else {
                 vehicle = nil
                 isLoading = false
                 return
             }
-            let vehicles = try fleet.listVehicles(status: "active")
 
-            // Find first vehicle assigned to the current user by ID
-            if let assigned = vehicles.first(where: { $0.assignedUserId == currentUserId }) {
-                vehicle = try fleet.getVehicleDetail(id: assigned.id)
+            // Get smart card stats
+            vehicleStats = try fleet.getMyVehicleStats(userId: currentUserId)
 
-                // Load recent logs for this vehicle
-                recentMileage = try fleet.listMileageLogs(vehicleId: assigned.id, limit: 5)
-                recentFuel = try fleet.listFuelLogs(vehicleId: assigned.id, limit: 5)
+            if let stats = vehicleStats {
+                // Load vehicle detail
+                vehicle = try fleet.getVehicleDetail(id: stats.vehicleId)
+
+                // Load inventory by type
+                truckStock = try fleet.getVehicleStock(vehicleId: stats.vehicleId, stockType: "truck_stock")
+                transferItems = try fleet.getVehicleStock(vehicleId: stats.vehicleId, stockType: "transfer")
+
+                // Load recent logs
+                recentMileage = try fleet.listMileageLogs(vehicleId: stats.vehicleId, limit: 5)
+                recentFuel = try fleet.listFuelLogs(vehicleId: stats.vehicleId, limit: 5)
             } else {
                 vehicle = nil
+                truckStock = []
+                transferItems = []
                 recentMileage = []
                 recentFuel = []
             }
@@ -281,5 +459,252 @@ struct IOSMyTruckPage: View {
             loadError = error.localizedDescription
         }
         isLoading = false
+    }
+}
+
+// MARK: - Smart Card Component
+
+private struct MyVehicleSmartCard: View {
+    let title: String
+    let value: String
+    let icon: String
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title2)
+                .fontWeight(.bold)
+            Image(systemName: icon)
+                .foregroundStyle(color)
+                .font(.caption)
+        }
+        .padding(10)
+        .frame(minWidth: 90)
+        .background(color.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+// MARK: - Quick Action Button
+
+private struct QuickActionBtn: View {
+    let title: String
+    let icon: String
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .foregroundStyle(color)
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(color.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Log Fuel Sheet
+
+private struct LogFuelSheet: View {
+    let vehicleId: Int64
+    let onComplete: () -> Void
+    @EnvironmentObject private var appCore: AppCore
+    @State private var fuelPercent: Double = 100
+    @State private var isSaving = false
+    @State private var saveError: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Fuel Level") {
+                    VStack(spacing: 12) {
+                        Text("\(Int(fuelPercent))%")
+                            .font(.title)
+                            .fontWeight(.bold)
+                            .foregroundStyle(
+                                fuelPercent < 25 ? .red :
+                                fuelPercent < 50 ? .orange : .green
+                            )
+                        Slider(value: $fuelPercent, in: 0...100, step: 5)
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                if let error = saveError {
+                    Section {
+                        Text(error).foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("Log Fuel Level")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { onComplete() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        saveFuel()
+                    }
+                    .disabled(isSaving)
+                }
+            }
+        }
+    }
+
+    private func saveFuel() {
+        guard let fleet = appCore.fleetService else {
+            saveError = "Fleet service not available"
+            return
+        }
+        isSaving = true
+        saveError = nil
+        do {
+            try fleet.logFuelLevel(vehicleId: vehicleId, fuelLevel: fuelPercent / 100.0)
+            onComplete()
+        } catch {
+            saveError = error.localizedDescription
+        }
+        isSaving = false
+    }
+}
+
+// MARK: - Report Vehicle Issue Sheet
+
+private struct ReportVehicleIssueSheet: View {
+    let vehicleName: String
+    let onComplete: () -> Void
+    @State private var description: String = ""
+    @State private var severity: String = "low"
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Vehicle") {
+                    Text(vehicleName).font(.headline)
+                }
+
+                Section("Severity") {
+                    Picker("Severity", selection: $severity) {
+                        Text("Low").tag("low")
+                        Text("Medium").tag("medium")
+                        Text("High").tag("high")
+                        Text("Critical").tag("critical")
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Section("Description") {
+                    TextField("Describe the issue...", text: $description, axis: .vertical)
+                        .lineLimit(3...6)
+                }
+
+                Section {
+                    Text("This will be sent to fleet management for review.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Report Issue")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { onComplete() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Submit") { onComplete() }
+                        .disabled(description.isEmpty)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Add Transfer Item Sheet
+
+private struct AddTransferItemSheet: View {
+    let vehicleId: Int64
+    let onComplete: () -> Void
+    @EnvironmentObject private var appCore: AppCore
+    @State private var partName: String = ""
+    @State private var quantity: Int = 1
+    @State private var source: String = ""
+    @State private var destination: String = ""
+    @State private var reason: String = "job_delivery"
+    @State private var isSaving = false
+    @State private var saveError: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Part") {
+                    TextField("Part name", text: $partName)
+                    Stepper("Quantity: \(quantity)", value: $quantity, in: 1...999)
+                }
+
+                Section("Transfer Details") {
+                    TextField("Source location", text: $source)
+                    TextField("Destination", text: $destination)
+                    Picker("Reason", selection: $reason) {
+                        Text("Job Delivery").tag("job_delivery")
+                        Text("Return").tag("return")
+                        Text("Restock").tag("restock")
+                    }
+                }
+
+                if let error = saveError {
+                    Section {
+                        Text(error).foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("Add Transfer Item")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { onComplete() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        saveTransferItem()
+                    }
+                    .disabled(partName.isEmpty || isSaving)
+                }
+            }
+        }
+    }
+
+    private func saveTransferItem() {
+        guard let fleet = appCore.fleetService else {
+            saveError = "Fleet service not available"
+            return
+        }
+        isSaving = true
+        saveError = nil
+        do {
+            try fleet.addVehicleStockItem(
+                vehicleId: vehicleId,
+                partName: partName,
+                quantity: quantity,
+                stockType: "transfer",
+                sourceLocation: source.isEmpty ? nil : source,
+                destinationLocation: destination.isEmpty ? nil : destination,
+                transferReason: reason
+            )
+            onComplete()
+        } catch {
+            saveError = error.localizedDescription
+        }
+        isSaving = false
     }
 }

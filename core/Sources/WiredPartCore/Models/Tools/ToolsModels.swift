@@ -29,6 +29,9 @@ public struct Tool: Codable, FetchableRecord, MutablePersistableRecord, Sendable
     public var salvageValue: Double?
     public var usefulLifeYears: Int?
     public var calibrationDueDate: String?
+    public var totalUsageHours: Double?
+    public var confidenceScore: Double?
+    public var lastMaintenanceDate: String?
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
@@ -52,6 +55,9 @@ public struct Tool: Codable, FetchableRecord, MutablePersistableRecord, Sendable
         case salvageValue = "salvage_value"
         case usefulLifeYears = "useful_life_years"
         case calibrationDueDate = "calibration_due_date"
+        case totalUsageHours = "total_usage_hours"
+        case confidenceScore = "confidence_score"
+        case lastMaintenanceDate = "last_maintenance_date"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"

@@ -138,6 +138,7 @@ public enum ConflictResolver {
         "rfi_objects", "qa_escalations", "message_attachments",
         // Reports & Billing
         "billing_periods", "report_annotations", "report_share_tokens", "report_templates",
+        "saved_reports",
         "pto_policies", "pto_transactions", "pto_balances",
         // Warehouse
         "receiving_sessions", "receiving_session_items",
@@ -160,6 +161,13 @@ public enum ConflictResolver {
         // Estimation
         "estimation_questions", "estimation_responses", "estimation_results",
         "estimation_reviews", "estimation_question_rejections",
+        // Tool Detail
+        "tool_checkouts", "tool_change_log", "tool_trades", "tool_maintenance_configs",
+        // Vehicle Stock & Trailers
+        "vehicle_stock", "trailer_attachments",
+        "trailer_storage_units", "trailer_stock", "trailer_location_history",
+        // Pre-Trip Inspections
+        "inspection_templates", "inspection_records", "inspection_results",
         // Suppliers
         "supplier_portal_tokens", "supplier_po_acknowledgments", "supplier_contact_ratings",
         // Costs

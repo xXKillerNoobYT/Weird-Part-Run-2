@@ -19,6 +19,15 @@ struct IOSProfitabilityPage: View {
     var body: some View {
         profitabilityContent
             .navigationTitle("Profitability")
+            .reportExportToolbar(
+                title: "Profitability",
+                columns: ["Job", "Revenue", "Labor", "Material", "Profit", "Margin"],
+                rows: rows.map { [$0.jobName, String(format: "$%.2f", $0.revenue),
+                                  String(format: "$%.2f", $0.laborCost),
+                                  String(format: "$%.2f", $0.materialCost),
+                                  String(format: "$%.2f", $0.profit),
+                                  String(format: "%.1f%%", $0.margin)] }
+            )
             .searchable(text: $searchText, prompt: "Search jobs...")
             .refreshable { loadData() }
             .task { loadData() }

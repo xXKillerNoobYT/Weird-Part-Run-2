@@ -1,17 +1,19 @@
 import SwiftUI
 import WiredPartCore
 
-/// Fleet dashboard page for iOS.
+/// Fleet dashboard page showing KPI smart cards, vehicle status list,
+/// cost summary (hat-gated), upcoming maintenance, and fleet report link.
 ///
-/// Displays 4 KPI cards (total vehicles, active, maintenance due, total trailers)
-/// and a recent maintenance activity feed. Uses FleetService.getFleetStats()
-/// for KPIs and FleetService.listMaintenanceRecords(limit: 5) for activity.
+/// Uses FleetService methods: getFleetDashboardStats(), getVehicleStatusList(),
+/// getUpcomingFleetMaintenance(), listMaintenanceRecords().
 struct IOSFleetDashboardPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     // MARK: - State
 
-    @State private var stats: FleetService.FleetStats?
+    @State private var dashStats: FleetService.FleetDashboardStats?
+    @State private var vehicles: [FleetService.VehicleStatusItem] = []
+    @State private var upcomingMaintenance: [FleetService.FleetMaintenanceItem] = []
     @State private var recentMaintenance: [FleetService.MaintenanceRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
@@ -39,54 +41,106 @@ struct IOSFleetDashboardPage: View {
     private var dashboardContent: some View {
         ScrollView {
             VStack(spacing: 20) {
-                kpiSection
+                // Row 1: Fleet status smart cards
+                fleetStatusCards
+
+                // Row 2: Cost smart cards (hat-gated)
+                costCards
+
+                // Vehicle status list
+                vehicleStatusSection
+
+                // Upcoming maintenance
+                upcomingMaintenanceSection
+
+                // Recent maintenance activity
                 recentActivitySection
+
+                // Fleet reports link
+                fleetReportsSection
             }
             .padding()
         }
     }
 
-    // MARK: - KPI Cards
+    // MARK: - Fleet Status Cards (Row 1)
 
-    @ViewBuilder
-    private var kpiSection: some View {
-        let current = stats ?? FleetService.FleetStats(
-            totalVehicles: 0, activeVehicles: 0, maintenanceDue: 0, totalTrailers: 0
-        )
-
-        LazyVGrid(columns: [
-            GridItem(.flexible(), spacing: 12),
-            GridItem(.flexible(), spacing: 12),
-        ], spacing: 12) {
-            kpiCard(
-                title: "Total Vehicles",
-                value: "\(current.totalVehicles)",
-                icon: "car.fill",
-                color: .blue
-            )
-            kpiCard(
-                title: "Active",
-                value: "\(current.activeVehicles)",
-                icon: "checkmark.circle.fill",
-                color: .green
-            )
-            kpiCard(
-                title: "Maintenance Due",
-                value: "\(current.maintenanceDue)",
-                icon: "wrench.and.screwdriver.fill",
-                color: current.maintenanceDue > 0 ? .orange : .green
-            )
-            kpiCard(
-                title: "Total Trailers",
-                value: "\(current.totalTrailers)",
-                icon: "shippingbox.fill",
-                color: .purple
-            )
+    private var fleetStatusCards: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                dashboardSmartCard(
+                    title: "Vehicles",
+                    value: "\(dashStats?.totalVehicles ?? 0)",
+                    icon: "car.fill",
+                    color: .blue
+                )
+                dashboardSmartCard(
+                    title: "Active",
+                    value: "\(dashStats?.activeVehicles ?? 0)",
+                    icon: "checkmark.circle.fill",
+                    color: .green
+                )
+                dashboardSmartCard(
+                    title: "Maint. Due",
+                    value: "\(dashStats?.maintenanceDue ?? 0)",
+                    icon: "wrench.fill",
+                    color: (dashStats?.maintenanceDue ?? 0) > 0 ? .orange : .green
+                )
+                dashboardSmartCard(
+                    title: "Overdue Inspect",
+                    value: "\(dashStats?.overdueInspections ?? 0)",
+                    icon: "exclamationmark.triangle.fill",
+                    color: (dashStats?.overdueInspections ?? 0) > 0 ? .red : .green
+                )
+                dashboardSmartCard(
+                    title: "Trailers",
+                    value: "\(dashStats?.totalTrailers ?? 0)",
+                    icon: "shippingbox.fill",
+                    color: .purple
+                )
+            }
         }
     }
 
+    // MARK: - Cost Cards (Row 2 — Hat-Gated)
+
     @ViewBuilder
-    private func kpiCard(title: String, value: String, icon: String, color: Color) -> some View {
+    private var costCards: some View {
+        if appCore.hasPermission("view_fleet_financials"), let stats = dashStats {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    if let fuelCost = stats.fuelCostMTD {
+                        dashboardSmartCard(
+                            title: "Fuel MTD",
+                            value: "$\(Int(fuelCost))",
+                            icon: "fuelpump.fill",
+                            color: .orange
+                        )
+                    }
+                    if let miles = stats.milesMTD {
+                        dashboardSmartCard(
+                            title: "Miles MTD",
+                            value: "\(miles.formatted())",
+                            icon: "speedometer",
+                            color: .blue
+                        )
+                    }
+                    if let maintCost = stats.maintenanceCostMTD {
+                        dashboardSmartCard(
+                            title: "Maint. MTD",
+                            value: "$\(Int(maintCost))",
+                            icon: "wrench.and.screwdriver.fill",
+                            color: .red
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Smart Card Component
+
+    private func dashboardSmartCard(title: String, value: String, icon: String, color: Color) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Image(systemName: icon)
@@ -103,10 +157,217 @@ struct IOSFleetDashboardPage: View {
                 .foregroundStyle(.secondary)
         }
         .padding()
+        .frame(minWidth: 120)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title): \(value)")
+    }
+
+    // MARK: - Vehicle Status List
+
+    @ViewBuilder
+    private var vehicleStatusSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Vehicles")
+                    .font(.headline)
+                Spacer()
+                Text("\(vehicles.count)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 4)
+
+            if vehicles.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "car")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.secondary)
+                    Text("No vehicles found")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(vehicles.enumerated()), id: \.element.id) { index, vehicle in
+                        NavigationLink(value: vehicle.id) {
+                            vehicleStatusRow(vehicle)
+                        }
+                        .buttonStyle(.plain)
+
+                        if index < vehicles.count - 1 {
+                            Divider().padding(.leading, 44)
+                        }
+                    }
+                }
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
+
+    private func vehicleStatusRow(_ vehicle: FleetService.VehicleStatusItem) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: vehicleIcon(vehicle.vehicleType))
+                .font(.body)
+                .foregroundStyle(statusColor(vehicle.status))
+                .frame(width: 30)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(vehicle.vehicleName)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                if let driver = vehicle.driverName {
+                    Text(driver)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Unassigned")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(vehicle.status.capitalized)
+                    .font(.caption)
+                    .foregroundStyle(statusColor(vehicle.status))
+
+                if let inspDate = vehicle.lastInspectionDate {
+                    let isToday = inspDate.hasPrefix(todayString)
+                    Text(isToday ? "Inspected" : "No inspection today")
+                        .font(.caption2)
+                        .foregroundStyle(isToday ? .green : .red)
+                } else {
+                    Text("Never inspected")
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                }
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+
+    // MARK: - Cost Summary Section (Hat-Gated)
+
+    @ViewBuilder
+    private var costSummarySection: some View {
+        if appCore.hasPermission("view_fleet_financials"), let stats = dashStats {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Cost Summary — This Month")
+                    .font(.headline)
+                    .padding(.horizontal, 4)
+
+                HStack(spacing: 12) {
+                    costSummaryCard(
+                        title: "Fuel",
+                        value: stats.fuelCostMTD ?? 0,
+                        icon: "fuelpump.fill",
+                        color: .orange
+                    )
+                    costSummaryCard(
+                        title: "Maintenance",
+                        value: stats.maintenanceCostMTD ?? 0,
+                        icon: "wrench.fill",
+                        color: .red
+                    )
+                }
+
+                Text("Detailed cost analysis available in Fleet Reports")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
+            }
+        }
+    }
+
+    private func costSummaryCard(title: String, value: Double, icon: String, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .foregroundStyle(color)
+            Text("$\(Int(value))")
+                .font(.headline)
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(color.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    // MARK: - Upcoming Maintenance
+
+    @ViewBuilder
+    private var upcomingMaintenanceSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Upcoming Maintenance")
+                .font(.headline)
+                .padding(.horizontal, 4)
+
+            if upcomingMaintenance.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "calendar.badge.checkmark")
+                        .font(.system(size: 28))
+                        .foregroundStyle(.secondary)
+                    Text("No upcoming maintenance")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(upcomingMaintenance.enumerated()), id: \.element.id) { index, item in
+                        HStack {
+                            Text(item.vehicleName)
+                                .font(.subheadline)
+                            Spacer()
+                            let days = Int(item.daysUntil)
+                            if days < 0 {
+                                Text("Overdue \(abs(days))d")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(.red)
+                            } else if days == 0 {
+                                Text("Due Today")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(.orange)
+                            } else {
+                                Text("In \(days)d")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+
+                        if index < upcomingMaintenance.count - 1 {
+                            Divider().padding(.leading, 12)
+                        }
+                    }
+                }
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+        }
     }
 
     // MARK: - Recent Maintenance Activity
@@ -195,15 +456,81 @@ struct IOSFleetDashboardPage: View {
         .padding(.vertical, 10)
     }
 
+    // MARK: - Fleet Reports Link
+
+    private var fleetReportsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Analytics")
+                .font(.headline)
+                .padding(.horizontal, 4)
+
+            NavigationLink {
+                Text("Fleet Reports")
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+            } label: {
+                HStack {
+                    Image(systemName: "chart.bar.fill")
+                        .foregroundStyle(.blue)
+                    Text("Fleet Reports")
+                        .font(.subheadline)
+                    Spacer()
+                    Text("Fuel, Mileage, Maintenance trends")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding(12)
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func vehicleIcon(_ type: String) -> String {
+        switch type.lowercased() {
+        case "van": return "car.fill"
+        case "truck": return "truck.box.fill"
+        case "pickup": return "suv.side.fill"
+        default: return "car.fill"
+        }
+    }
+
+    private func statusColor(_ status: String) -> Color {
+        switch status.lowercased() {
+        case "active": return .green
+        case "inactive", "out_of_service": return .red
+        case "maintenance": return .orange
+        default: return .secondary
+        }
+    }
+
+    private var todayString: String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        return fmt.string(from: Date())
+    }
+
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.fleetService else { return }
-        isLoading = stats == nil && recentMaintenance.isEmpty
+        guard let service = appCore.fleetService else {
+            loadError = "Fleet service not available"
+            isLoading = false
+            return
+        }
+        isLoading = dashStats == nil
         loadError = nil
 
         do {
-            stats = try service.getFleetStats()
+            dashStats = try service.getFleetDashboardStats()
+            vehicles = try service.getVehicleStatusList()
+            upcomingMaintenance = try service.getUpcomingFleetMaintenance(limit: 10)
             recentMaintenance = try service.listMaintenanceRecords(limit: 5)
         } catch {
             loadError = error.localizedDescription

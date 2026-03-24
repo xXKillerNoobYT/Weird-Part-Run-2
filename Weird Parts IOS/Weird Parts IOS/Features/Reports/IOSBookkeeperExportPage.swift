@@ -36,6 +36,15 @@ struct IOSBookkeeperExportPage: View {
             exportContent
         }
         .navigationTitle("Bookkeeper Export")
+        .reportExportToolbar(
+            title: "Bookkeeper_Export",
+            columns: ["Type", "Name", "Regular", "Overtime", "Amount"],
+            rows: laborRows.map { ["Labor", $0.employeeName,
+                                   String(format: "%.1f", $0.regularHours),
+                                   String(format: "%.1f", $0.overtimeHours), ""] }
+                 + materialRows.map { ["Material", $0.supplierName, $0.poNumber, "",
+                                       String(format: "$%.2f", $0.totalAmount)] }
+        )
         .refreshable { loadData() }
         .task { loadData() }
     }

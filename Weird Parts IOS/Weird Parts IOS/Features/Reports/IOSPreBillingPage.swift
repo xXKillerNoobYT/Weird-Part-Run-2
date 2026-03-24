@@ -35,6 +35,12 @@ struct IOSPreBillingPage: View {
             billingContent
         }
         .navigationTitle("Pre-Billing")
+        .reportExportToolbar(
+            title: "Pre-Billing",
+            columns: ["Job", "Regular Hrs", "Overtime Hrs"],
+            rows: rows.map { [$0.jobName, String(format: "%.1f", $0.regularHours),
+                              String(format: "%.1f", $0.overtimeHours)] }
+        )
         .refreshable { loadData() }
         .task { loadData() }
     }

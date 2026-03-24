@@ -40,7 +40,9 @@ struct IOSToolAdminPage: View {
 
             Section("All Tools (\(filteredTools.count))") {
                 ForEach(filteredTools, id: \.id) { tool in
-                    toolRow(tool)
+                    NavigationLink(destination: IOSToolDetailPage(toolId: tool.id).environmentObject(appCore)) {
+                        toolRow(tool)
+                    }
                 }
             }
         }

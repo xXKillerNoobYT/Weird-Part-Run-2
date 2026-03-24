@@ -62,6 +62,13 @@ extension AppDatabase {
         registerMigration045TodoClassification(&migrator)
         registerMigration046HalfDayScheduling(&migrator)
         registerMigration047JobEstimation(&migrator)
+        registerMigration048ToolDetailTables(&migrator)
+        registerMigration049ToolTrades(&migrator)
+        registerMigration050ToolMaintenanceConfigs(&migrator)
+        registerMigration051VehicleStockAndTrailers(&migrator)
+        registerMigration052TrailerMiniWarehouse(&migrator)
+        registerMigration053PreTripInspection(&migrator)
+        registerMigration054SavedReports(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -3959,6 +3966,426 @@ extension AppDatabase {
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, arguments: [text, group, stage, answerType, choices, weight, sortOrder])
             }
+        }
+    }
+
+    // MARK: - Migration 048: Tool Detail Tables (checkouts, change log)
+
+    private static func registerMigration048ToolDetailTables(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("048_tool_detail_tables") { db in
+
+            // Tool checkouts — dedicated checkout/return tracking with condition
+            try db.create(table: "tool_checkouts") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("tool_id", .integer).notNull()
+                    .references("tools", onDelete: .cascade)
+                t.column("checked_out_by", .integer).notNull()
+                    .references("users")
+                t.column("checked_out_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+                t.column("checkout_condition", .text).notNull()
+                    .defaults(to: "Good")
+                t.column("checkout_notes", .text)
+                t.column("checked_in_at", .text)
+                t.column("checked_in_by", .integer)
+                    .references("users")
+                t.column("return_condition", .text)
+                t.column("return_notes", .text)
+                t.column("expected_return", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_tool_checkouts_tool", on: "tool_checkouts", columns: ["tool_id"])
+            try db.create(index: "idx_tool_checkouts_active", on: "tool_checkouts",
+                          columns: ["tool_id", "checked_in_at"])
+
+            // Tool change log — version history for edits, with verification
+            try db.create(table: "tool_change_log") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("tool_id", .integer).notNull()
+                    .references("tools", onDelete: .cascade)
+                t.column("changed_by", .integer).notNull()
+                    .references("users")
+                t.column("change_type", .text).notNull()
+                    .defaults(to: "edit")
+                t.column("field_name", .text)
+                t.column("old_value", .text)
+                t.column("new_value", .text)
+                t.column("verification_status", .text).notNull()
+                    .defaults(to: "approved")
+                t.column("verified_by", .integer)
+                    .references("users")
+                t.column("verified_at", .text)
+                t.column("notes", .text)
+                t.column("deleted_at", .text)
+                t.column("changed_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_tcl_tool", on: "tool_change_log", columns: ["tool_id"])
+            try db.create(index: "idx_tcl_status", on: "tool_change_log",
+                          columns: ["tool_id", "verification_status"])
+            try db.create(index: "idx_tcl_date", on: "tool_change_log", columns: ["changed_at"])
+        }
+    }
+
+    // MARK: - Migration 049: Tool Trades
+
+    private static func registerMigration049ToolTrades(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("049_tool_trades") { db in
+            try db.create(table: "tool_trades") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("tool_id", .integer).notNull()
+                    .references("tools", onDelete: .cascade)
+                t.column("from_user_id", .integer).notNull()
+                    .references("users")
+                t.column("to_user_id", .integer).notNull()
+                    .references("users")
+                t.column("condition_at_send", .text).notNull()
+                t.column("condition_at_receive", .text)
+                t.column("send_notes", .text)
+                t.column("receive_notes", .text)
+                t.column("status", .text).notNull()
+                    .defaults(to: "pending")
+                t.column("expires_at", .text).notNull()
+                t.column("responded_at", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_tool_trades_tool", on: "tool_trades", columns: ["tool_id"])
+            try db.create(index: "idx_tool_trades_status", on: "tool_trades", columns: ["status"])
+            try db.create(index: "idx_tool_trades_to_user", on: "tool_trades",
+                          columns: ["to_user_id", "status"])
+        }
+    }
+
+    // MARK: - Migration 050: Tool Maintenance Configs
+
+    private static func registerMigration050ToolMaintenanceConfigs(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("050_tool_maintenance_configs") { db in
+
+            // Maintenance configs — 5 maintenance strategy types per tool
+            try db.create(table: "tool_maintenance_configs") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("tool_id", .integer).notNull()
+                    .references("tools", onDelete: .cascade)
+                t.column("maintenance_type", .text).notNull()
+                t.column("interval_days", .integer)
+                t.column("usage_threshold", .double)
+                t.column("schedule_cron", .text)
+                t.column("decay_rate", .double)
+                t.column("decay_floor", .double)
+                t.column("condition_triggers", .text)
+                t.column("description", .text)
+                t.column("is_active", .integer).notNull().defaults(to: 1)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_tmc_tool", on: "tool_maintenance_configs", columns: ["tool_id"])
+
+            // Add usage tracking and confidence columns to tools
+            try db.alter(table: "tools") { t in
+                t.add(column: "total_usage_hours", .double).defaults(to: 0)
+                t.add(column: "confidence_score", .double).defaults(to: 1.0)
+                t.add(column: "last_maintenance_date", .text)
+            }
+        }
+    }
+}
+
+// MARK: - 051: Vehicle Stock & Trailer Attachments
+
+extension AppDatabase {
+    private static func registerMigration051VehicleStockAndTrailers(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("051_vehicle_stock_and_trailers") { db in
+
+            // Vehicle stock — permanent truck inventory + in-transit transfer items
+            try db.create(table: "vehicle_stock") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("vehicle_id", .integer).notNull()
+                    .references("vehicles", onDelete: .cascade)
+                t.column("part_id", .integer).references("parts")
+                t.column("part_name", .text).notNull()
+                t.column("quantity", .integer).notNull().defaults(to: 0)
+                t.column("stock_type", .text).notNull().defaults(to: "truck_stock")
+                    // "truck_stock" = permanent (MIN/TARGET/MAX)
+                    // "transfer" = in-transit (source/destination)
+                t.column("min_qty", .integer)
+                t.column("target_qty", .integer)
+                t.column("max_qty", .integer)
+                t.column("source_location", .text)       // transfer: where it came from
+                t.column("destination_location", .text)   // transfer: where it's going
+                t.column("transfer_reason", .text)        // "job_delivery", "return", "restock"
+                t.column("notes", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_vs_vehicle", on: "vehicle_stock", columns: ["vehicle_id"])
+            try db.create(index: "idx_vs_type", on: "vehicle_stock", columns: ["stock_type"])
+
+            // Add fuel_level column to vehicles (0.0–1.0, nullable)
+            try db.alter(table: "vehicles") { t in
+                t.add(column: "fuel_level", .double)
+                t.add(column: "next_maintenance_date", .text)
+            }
+
+            // Trailer attachments — which trailer is attached to which vehicle
+            try db.create(table: "trailer_attachments") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("vehicle_id", .integer).notNull()
+                    .references("vehicles", onDelete: .cascade)
+                t.column("trailer_id", .integer).notNull()
+                    .references("job_trailers", onDelete: .cascade)
+                t.column("attached_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+                t.column("detached_at", .text)
+                t.column("attached_by", .integer).references("users")
+                t.column("notes", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_ta_vehicle", on: "trailer_attachments", columns: ["vehicle_id"])
+            try db.create(index: "idx_ta_trailer", on: "trailer_attachments", columns: ["trailer_id"])
+        }
+    }
+}
+
+// MARK: - 052: Trailer Mini-Warehouse
+
+extension AppDatabase {
+    private static func registerMigration052TrailerMiniWarehouse(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("052_trailer_mini_warehouse") { db in
+
+            // Trailer storage units — physical containers (shelves, drawers, bins)
+            try db.create(table: "trailer_storage_units") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("trailer_id", .integer).notNull()
+                    .references("job_trailers", onDelete: .cascade)
+                t.column("name", .text).notNull()         // "Shelf A", "Drawer 1"
+                t.column("unit_type", .text).notNull()     // "shelf", "drawer", "compartment", "bin"
+                t.column("capacity_slots", .integer)
+                t.column("sort_order", .integer).notNull().defaults(to: 0)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_tsu_trailer", on: "trailer_storage_units", columns: ["trailer_id"])
+
+            // Trailer stock — per-part inventory with MIN/TARGET/MAX and optional storage location
+            try db.create(table: "trailer_stock") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("trailer_id", .integer).notNull()
+                    .references("job_trailers", onDelete: .cascade)
+                t.column("storage_unit_id", .integer)
+                    .references("trailer_storage_units")
+                t.column("part_id", .integer).references("parts")
+                t.column("part_name", .text).notNull()
+                t.column("quantity", .integer).notNull().defaults(to: 0)
+                t.column("min_qty", .integer)
+                t.column("target_qty", .integer)
+                t.column("max_qty", .integer)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_ts_trailer", on: "trailer_stock", columns: ["trailer_id"])
+
+            // Location tracking columns on job_trailers
+            try db.alter(table: "job_trailers") { t in
+                t.add(column: "is_at_shop", .integer).defaults(to: 1)
+                t.add(column: "linked_warehouse_id", .integer)
+            }
+
+            // Trailer location history — tracks shop/job_site/in_transit transitions
+            try db.create(table: "trailer_location_history") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("trailer_id", .integer).notNull()
+                    .references("job_trailers", onDelete: .cascade)
+                t.column("location_type", .text).notNull()  // "shop", "job_site", "in_transit"
+                t.column("location_label", .text)
+                t.column("job_id", .integer).references("jobs")
+                t.column("latitude", .double)
+                t.column("longitude", .double)
+                t.column("arrived_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+                t.column("departed_at", .text)
+                t.column("recorded_by", .integer).references("users")
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_tlh_trailer", on: "trailer_location_history", columns: ["trailer_id"])
+        }
+    }
+
+    // MARK: - Migration 053: Pre-Trip Inspection
+
+    private static func registerMigration053PreTripInspection(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("053_pre_trip_inspection") { db in
+            // Checklist templates — one row per checklist item per vehicle type
+            try db.create(table: "inspection_templates") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("vehicle_type", .text).notNull()  // "van", "truck", "trailer"
+                t.column("section", .text).notNull()        // "exterior", "interior", "equipment"
+                t.column("item_name", .text).notNull()
+                t.column("item_description", .text)
+                t.column("is_critical", .boolean).notNull().defaults(to: false)
+                t.column("sort_order", .integer).notNull().defaults(to: 0)
+                t.column("is_active", .boolean).notNull().defaults(to: true)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+            }
+
+            // Inspection records — one per inspection session
+            try db.create(table: "inspection_records") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("vehicle_id", .integer).notNull()
+                    .references("vehicles", onDelete: .cascade)
+                t.column("trailer_id", .integer)
+                    .references("job_trailers", onDelete: .setNull)
+                t.column("inspector_id", .integer).notNull()
+                    .references("users", onDelete: .cascade)
+                t.column("result", .text).notNull()  // "pass", "fail", "conditional"
+                t.column("notes", .text)
+                t.column("performed_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+                t.column("odometer_reading", .integer)
+                t.column("fuel_level", .double)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_ir_vehicle", on: "inspection_records", columns: ["vehicle_id"])
+            try db.create(index: "idx_ir_inspector", on: "inspection_records", columns: ["inspector_id"])
+
+            // Inspection results — one per checklist item per inspection
+            try db.create(table: "inspection_results") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("inspection_id", .integer).notNull()
+                    .references("inspection_records", onDelete: .cascade)
+                t.column("template_item_id", .integer).notNull()
+                    .references("inspection_templates", onDelete: .cascade)
+                t.column("status", .text).notNull()  // "ok", "issue", "na"
+                t.column("notes", .text)
+                t.column("photo_path", .text)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull()
+                    .defaults(sql: "(datetime('now'))")
+            }
+            try db.create(index: "idx_ires_inspection", on: "inspection_results", columns: ["inspection_id"])
+
+            // ── Seed default inspection items ──────────────────────────────
+
+            // Helper to insert a template row
+            func seed(_ vehicleType: String, _ section: String, _ name: String,
+                      _ isCritical: Bool, _ order: Int, _ desc: String? = nil) throws {
+                try db.execute(sql: """
+                    INSERT INTO inspection_templates
+                    (vehicle_type, section, item_name, item_description, is_critical, sort_order)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """, arguments: [vehicleType, section, name, desc, isCritical, order])
+            }
+
+            // Vehicle exterior items (apply to both "van" and "truck")
+            let exteriorItems: [(String, Bool, String?)] = [
+                ("Tires — Tread Depth", true, "Check all tires for adequate tread"),
+                ("Tires — Pressure", true, "Check all tires for proper inflation"),
+                ("Headlights", true, nil),
+                ("Taillights", true, nil),
+                ("Turn Signals", true, nil),
+                ("Brake Lights", true, nil),
+                ("Mirrors", false, "Side and rearview mirrors intact"),
+                ("Windshield", false, "No cracks or chips that obstruct view"),
+                ("Body Damage", false, "Note any new dents, scratches, or damage"),
+                ("Fluid Leaks", true, "Check under vehicle for oil/coolant leaks"),
+            ]
+
+            // Vehicle interior items
+            let interiorItems: [(String, Bool, String?)] = [
+                ("Seatbelt", true, "Seatbelt latches and retracts properly"),
+                ("Horn", true, nil),
+                ("Gauges Working", false, "All dashboard gauges operational"),
+                ("Wipers", false, "Blades in good condition"),
+                ("Heater/AC", false, nil),
+                ("Dashboard Lights", false, "No unexpected warning lights"),
+            ]
+
+            // Vehicle equipment items
+            let equipmentItems: [(String, Bool, String?)] = [
+                ("Fire Extinguisher", true, "Present and charged"),
+                ("First Aid Kit", false, nil),
+                ("Safety Cones/Triangles", false, nil),
+                ("Spare Tire", false, "Present and inflated"),
+            ]
+
+            // Seed for "van" and "truck"
+            for vehicleType in ["van", "truck"] {
+                for (i, item) in exteriorItems.enumerated() {
+                    try seed(vehicleType, "exterior", item.0, item.1, i, item.2)
+                }
+                for (i, item) in interiorItems.enumerated() {
+                    try seed(vehicleType, "interior", item.0, item.1, i, item.2)
+                }
+                for (i, item) in equipmentItems.enumerated() {
+                    try seed(vehicleType, "equipment", item.0, item.1, i, item.2)
+                }
+            }
+
+            // Trailer-specific exterior items
+            let trailerExteriorItems: [(String, Bool, String?)] = [
+                ("Hitch Connection", true, "Properly secured and locked"),
+                ("Safety Chains", true, "Connected and not dragging"),
+                ("Trailer Lights", true, "All trailer lights functional"),
+                ("Tires — Tread Depth", true, nil),
+                ("Tires — Pressure", true, nil),
+                ("Trailer Body", false, "No damage or loose panels"),
+                ("Doors/Latches", false, "All doors secure and operational"),
+                ("Load Secured", true, "All cargo properly secured"),
+            ]
+
+            // Trailer equipment
+            let trailerEquipmentItems: [(String, Bool, String?)] = [
+                ("Wheel Chocks", false, nil),
+                ("Tie-Down Straps", false, "Present and in good condition"),
+                ("Reflectors/Markings", false, "Visible and clean"),
+            ]
+
+            for (i, item) in trailerExteriorItems.enumerated() {
+                try seed("trailer", "exterior", item.0, item.1, i, item.2)
+            }
+            for (i, item) in trailerEquipmentItems.enumerated() {
+                try seed("trailer", "equipment", item.0, item.1, i, item.2)
+            }
+        }
+    }
+
+    // MARK: - Migration 054: Saved Reports
+
+    private static func registerMigration054SavedReports(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("054_saved_reports") { db in
+            try db.create(table: "saved_reports") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("report_type", .text).notNull()
+                t.column("columns_json", .text).notNull()
+                t.column("filters_json", .text).notNull()
+                t.column("created_by", .integer).notNull().references("users")
+                t.column("is_shared", .boolean).notNull().defaults(to: false)
+                t.column("deleted_at", .datetime)
+                t.column("created_at", .datetime).notNull().defaults(sql: "datetime('now')")
+                t.column("last_run_at", .datetime)
+            }
+
+            try db.create(index: "idx_sr_created_by", on: "saved_reports", columns: ["created_by"])
         }
     }
 }

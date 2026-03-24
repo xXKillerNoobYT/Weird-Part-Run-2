@@ -3388,6 +3388,158 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    // =========================================================================
+    // MARK: - Report Queries
+    // =========================================================================
+
+    /// Inventory value grouped by category.
+    public struct InventoryValueRow: Sendable, Identifiable {
+        public let id: Int64
+        public let categoryName: String
+        public let itemCount: Int
+        public let onHandValue: Double
+        public let onOrderValue: Double
+    }
+
+    /// Backorder status row.
+    public struct BackorderRow: Sendable, Identifiable {
+        public let id: Int64
+        public let partName: String
+        public let partCode: String?
+        public let qtyOrdered: Int
+        public let qtyReceived: Int
+        public let qtyBackordered: Int
+        public let expectedDate: String?
+        public let supplierName: String?
+    }
+
+    /// Inventory turnover row — movement activity per part.
+    public struct TurnoverRow: Sendable, Identifiable {
+        public let id: Int64
+        public let partName: String
+        public let partCode: String?
+        public let movementCount: Int
+        public let totalQtyMoved: Int
+        public let currentStock: Int
+    }
+
+    /// Get inventory value grouped by category.
+    public func getInventoryValueReport() throws -> [InventoryValueRow] {
+        do {
+            return try db.writer.read { dbConn -> [InventoryValueRow] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT pc.id, pc.name AS category_name,
+                           COUNT(DISTINCT p.id) AS item_count,
+                           COALESCE(SUM(s.qty * p.weighted_avg_cost), 0) AS on_hand_value,
+                           COALESCE(
+                               (SELECT SUM(pol.qty_ordered - pol.qty_received) * COALESCE(pol.unit_cost, p.company_cost_price)
+                                FROM po_line_items pol
+                                JOIN purchase_orders po ON po.id = pol.po_id
+                                WHERE pol.part_id = p.id AND pol.deleted_at IS NULL
+                                  AND po.deleted_at IS NULL AND po.status IN ('sent', 'partial')
+                                  AND pol.qty_received < pol.qty_ordered), 0) AS on_order_value
+                    FROM part_categories pc
+                    LEFT JOIN parts p ON p.category_id = pc.id AND p.deleted_at IS NULL AND p.is_active = 1
+                    LEFT JOIN stock s ON s.part_id = p.id AND s.deleted_at IS NULL AND s.location_type = 'warehouse'
+                    WHERE pc.deleted_at IS NULL
+                    GROUP BY pc.id
+                    ORDER BY on_hand_value DESC
+                    """)
+                return rows.map { row in
+                    InventoryValueRow(
+                        id: row["id"] ?? 0,
+                        categoryName: row["category_name"] ?? "Uncategorized",
+                        itemCount: row["item_count"] ?? 0,
+                        onHandValue: row["on_hand_value"] ?? 0,
+                        onOrderValue: row["on_order_value"] ?? 0
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get backorder status — PO line items not fully received.
+    public func getBackorderReport() throws -> [BackorderRow] {
+        do {
+            return try db.writer.read { dbConn -> [BackorderRow] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT pol.id, COALESCE(p.name, 'Unknown Part') AS part_name,
+                           p.code AS part_code,
+                           pol.qty_ordered, pol.qty_received,
+                           (pol.qty_ordered - pol.qty_received) AS qty_backordered,
+                           pol.backorder_expected_date AS expected_date,
+                           sup.name AS supplier_name
+                    FROM po_line_items pol
+                    JOIN purchase_orders po ON po.id = pol.po_id
+                    LEFT JOIN parts p ON p.id = pol.part_id
+                    LEFT JOIN suppliers sup ON sup.id = po.supplier_id
+                    WHERE pol.deleted_at IS NULL AND po.deleted_at IS NULL
+                      AND pol.qty_received < pol.qty_ordered
+                      AND po.status IN ('sent', 'partial')
+                    ORDER BY qty_backordered DESC
+                    """)
+                return rows.map { row in
+                    BackorderRow(
+                        id: row["id"] ?? 0,
+                        partName: row["part_name"] ?? "Unknown",
+                        partCode: row["part_code"] as String?,
+                        qtyOrdered: row["qty_ordered"] ?? 0,
+                        qtyReceived: row["qty_received"] ?? 0,
+                        qtyBackordered: row["qty_backordered"] ?? 0,
+                        expectedDate: row["expected_date"] as String?,
+                        supplierName: row["supplier_name"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get inventory turnover — parts with the most movement activity.
+    public func getTurnoverReport(startDate: Date, endDate: Date) throws -> [TurnoverRow] {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let startStr = fmt.string(from: startDate)
+        let endStr = fmt.string(from: endDate)
+        do {
+            return try db.writer.read { dbConn -> [TurnoverRow] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT p.id, COALESCE(p.name, 'Unknown') AS part_name, p.code AS part_code,
+                           COUNT(sm.id) AS movement_count,
+                           COALESCE(SUM(ABS(sm.qty)), 0) AS total_qty_moved,
+                           COALESCE((SELECT SUM(s.qty) FROM stock s
+                                     WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) AS current_stock
+                    FROM parts p
+                    JOIN stock_movements sm ON sm.part_id = p.id
+                        AND sm.deleted_at IS NULL
+                        AND date(sm.created_at) >= ? AND date(sm.created_at) <= ?
+                    WHERE p.deleted_at IS NULL
+                    GROUP BY p.id
+                    ORDER BY movement_count DESC
+                    LIMIT 50
+                    """, arguments: [startStr, endStr])
+                return rows.map { row in
+                    TurnoverRow(
+                        id: row["id"] ?? 0,
+                        partName: row["part_name"] ?? "Unknown",
+                        partCode: row["part_code"] as String?,
+                        movementCount: row["movement_count"] ?? 0,
+                        totalQtyMoved: row["total_qty_moved"] ?? 0,
+                        currentStock: row["current_stock"] ?? 0
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     // MARK: - Helpers (Audit)
 
     private static func nowString() -> String {
