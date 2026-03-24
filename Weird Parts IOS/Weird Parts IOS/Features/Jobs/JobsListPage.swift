@@ -3,40 +3,85 @@ import WiredPartCore
 
 /// Jobs list page for iOS.
 ///
-/// Displays a searchable list of all jobs grouped by status. Shows job number,
-/// name, customer, priority badge, and team count. Supports pull-to-refresh
+/// Displays a searchable list of all jobs with smart status cards, sort options,
+/// payment hold privacy, and continuous job filtering. Supports pull-to-refresh
 /// and search filtering.
 struct JobsListPage: View {
     @EnvironmentObject private var appCore: AppCore
 
+    // MARK: - Types
+
+    enum JobStatusFilter: String, CaseIterable {
+        case all = "All"
+        case active = "Active"
+        case warranty = "Warranty"
+        case continuous = "Continuous"
+        case complete = "Complete"
+        case onHold = "On Hold"
+        case paymentHold = "Payment Hold"
+        case cancelled = "Cancelled"
+
+        /// The status string used for service queries.
+        var queryValue: String? {
+            switch self {
+            case .all: nil
+            case .active: "active"
+            case .warranty: "warranty"
+            case .continuous: "continuous"
+            case .complete: "completed"
+            case .onHold: "on_hold"
+            case .paymentHold: "payment_hold"
+            case .cancelled: "cancelled"
+            }
+        }
+    }
+
+    enum JobSort: String, CaseIterable {
+        case recentActivity = "Recent Activity"
+        case name = "Name"
+        case startDate = "Start Date"
+    }
+
     // MARK: - State
 
     @State private var jobs: [JobsService.JobListItem] = []
-    @State private var stats: JobsService.JobStats?
+    @State private var allJobs: [JobsService.JobListItem] = []
+    @State private var statusCounts: [String: Int] = [:]
     @State private var isLoading = true
     @State private var searchText = ""
-    @State private var statusFilter = "all"
+    @State private var statusFilter: JobStatusFilter = .active
+    @State private var sortOption: JobSort = .recentActivity
     @State private var showCreateJob = false
     @State private var loadError: String?
     @State private var showHelp = false
 
-    private let statusOptions = ["all", "active", "completed", "on_hold", "cancelled"]
-
     var body: some View {
         VStack(spacing: 0) {
-            statusPicker
+            smartCards
             jobsList
         }
         .navigationTitle("Jobs")
         .searchable(text: $searchText, prompt: "Search jobs...")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showCreateJob = true
-                } label: {
-                    Image(systemName: "plus")
+                HStack(spacing: 12) {
+                    Menu {
+                        Picker("Sort", selection: $sortOption) {
+                            ForEach(JobSort.allCases, id: \.self) { sort in
+                                Text(sort.rawValue).tag(sort)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down")
+                    }
+
+                    Button {
+                        showCreateJob = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .requiresPermission("manage_jobs")
                 }
-                .requiresPermission("manage_jobs")
             }
             ToolbarItem(placement: .secondaryAction) {
                 Button { showHelp = true } label: {
@@ -48,9 +93,10 @@ struct JobsListPage: View {
             PageHelpSheet(
                 title: "Jobs Help",
                 sections: [
-                    ("Overview", "View and manage all jobs. Filter by status using the chips at the top, or search by name and job number."),
-                    ("Creating Jobs", "Tap the + button to create a new job. Fill in the job name, number, customer, address, and other details."),
-                    ("Job Details", "Tap any job to see its full detail page with team, labor, parts, orders, notebooks, and cost tracking.")
+                    ("Overview", "View and manage all jobs. Filter by status using the smart cards at the top, or search by name and job number."),
+                    ("Smart Cards", "Tap a status card to filter. The number shows how many jobs have that status. Payment Hold is only visible to managers."),
+                    ("Sorting", "Use the sort button in the toolbar to sort by recent activity, name, or start date."),
+                    ("Creating Jobs", "Tap the + button to create a new job. Requires manage_jobs permission.")
                 ]
             )
         }
@@ -61,35 +107,79 @@ struct JobsListPage: View {
             .environmentObject(appCore)
         }
         .onChange(of: searchText) { loadJobs() }
+        .onChange(of: sortOption) { applyFilterAndSort() }
         .refreshable { loadJobs() }
         .task { loadJobs() }
     }
 
-    // MARK: - Status Picker
+    // MARK: - Smart Cards
 
-    private var statusPicker: some View {
+    private var smartCards: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(statusOptions, id: \.self) { status in
-                    Button {
-                        statusFilter = status
-                        loadJobs()
-                    } label: {
-                        Text(status == "all" ? "All" : status.replacingOccurrences(of: "_", with: " ").capitalized)
-                            .font(.caption)
-                            .fontWeight(statusFilter == status ? .bold : .regular)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(statusFilter == status ? Color.accentColor : Color.secondary.opacity(0.2))
-                            )
-                            .foregroundStyle(statusFilter == status ? .white : .primary)
-                    }
-                    .buttonStyle(.plain)
+            HStack(spacing: 10) {
+                ForEach(visibleFilters, id: \.self) { filter in
+                    smartCard(filter)
                 }
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
+        }
+    }
+
+    private func smartCard(_ filter: JobStatusFilter) -> some View {
+        let count = countFor(filter)
+        let isActive = statusFilter == filter
+        let color = colorFor(filter)
+        return Button {
+            statusFilter = filter
+            applyFilterAndSort()
+        } label: {
+            VStack(spacing: 2) {
+                Text("\(count)")
+                    .font(.system(.title3, weight: .bold))
+                    .foregroundStyle(isActive ? .white : color)
+                Text(filter.rawValue)
+                    .font(.caption2)
+                    .foregroundStyle(isActive ? .white.opacity(0.9) : .secondary)
+            }
+            .frame(minWidth: 70)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isActive ? color : color.opacity(0.1))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Payment Hold card only visible to users with manage_jobs permission.
+    private var visibleFilters: [JobStatusFilter] {
+        var filters = JobStatusFilter.allCases
+        if !appCore.hasPermission("manage_jobs") {
+            filters.removeAll { $0 == .paymentHold }
+        }
+        return filters
+    }
+
+    private func countFor(_ filter: JobStatusFilter) -> Int {
+        if filter == .all { return allJobs.count }
+        if filter == .continuous {
+            return allJobs.filter { $0.jobType == "continuous" || $0.status == "continuous" }.count
+        }
+        return statusCounts[filter.queryValue ?? ""] ?? 0
+    }
+
+    private func colorFor(_ filter: JobStatusFilter) -> Color {
+        switch filter {
+        case .all: .primary
+        case .active: .green
+        case .warranty: .purple
+        case .continuous: .gray
+        case .complete: .blue
+        case .onHold: .orange
+        case .paymentHold: .red
+        case .cancelled: .red.opacity(0.7)
         }
     }
 
@@ -106,8 +196,8 @@ struct JobsListPage: View {
             EmptyStateView(
                 icon: "hammer",
                 title: "No Jobs",
-                message: searchText.isEmpty ? "Create your first job to get started." : "No jobs match your search criteria.",
-                actionLabel: searchText.isEmpty ? "Create Job" : nil
+                message: searchText.isEmpty ? "No jobs match this filter." : "No jobs match your search criteria.",
+                actionLabel: searchText.isEmpty && statusFilter == .all ? "Create Job" : nil
             ) {
                 showCreateJob = true
             }
@@ -119,6 +209,7 @@ struct JobsListPage: View {
                 } label: {
                     jobRow(job)
                 }
+                .opacity(job.jobType == "continuous" ? 0.7 : 1.0)
             }
             .listStyle(.insetGrouped)
         }
@@ -127,11 +218,19 @@ struct JobsListPage: View {
     private func jobRow(_ job: JobsService.JobListItem) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
+                HStack(spacing: 6) {
                     Text(job.jobNumber)
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
                     priorityBadge(job.priority)
+                    if job.jobType == "continuous" {
+                        Text("Continuous")
+                            .font(.caption2)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(.gray))
+                    }
                 }
                 Text(job.jobName)
                     .fontWeight(.medium)
@@ -145,7 +244,7 @@ struct JobsListPage: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 4) {
-                statusBadge(job.status)
+                jobStatusBadge(job.status)
                 if job.teamCount > 0 {
                     Label("\(job.teamCount)", systemImage: "person.2")
                         .font(.caption)
@@ -160,20 +259,54 @@ struct JobsListPage: View {
 
     // MARK: - Badges
 
-    private func statusBadge(_ status: String) -> some View {
+    private func jobStatusBadge(_ status: String) -> some View {
+        let isPaymentHold = status == "payment_hold"
+        let hasManagePermission = appCore.hasPermission("manage_jobs")
+
+        if isPaymentHold {
+            if hasManagePermission {
+                // Managers see $ badge with "Payment Hold"
+                return AnyView(
+                    HStack(spacing: 2) {
+                        Image(systemName: "dollarsign.circle.fill")
+                        Text("Payment Hold")
+                    }
+                    .font(.system(.caption2, weight: .semibold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(.red))
+                    .foregroundStyle(.white)
+                )
+            } else {
+                // Workers see generic "On Hold"
+                return AnyView(
+                    Text("On Hold")
+                        .font(.system(.caption2, weight: .semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(.red.opacity(0.15)))
+                        .foregroundStyle(.red)
+                )
+            }
+        }
+
         let color: Color = switch status {
         case "active": .green
         case "completed": .blue
         case "on_hold": .orange
         case "cancelled": .red
+        case "warranty": .purple
+        case "continuous": .gray
         default: .secondary
         }
-        return Text(status.replacingOccurrences(of: "_", with: " ").capitalized)
-            .font(.system(.caption2, weight: .semibold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(color.opacity(0.15)))
-            .foregroundStyle(color)
+        return AnyView(
+            Text(status.replacingOccurrences(of: "_", with: " ").capitalized)
+                .font(.system(.caption2, weight: .semibold))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(color.opacity(0.15)))
+                .foregroundStyle(color)
+        )
     }
 
     private func priorityBadge(_ priority: String) -> some View {
@@ -193,17 +326,53 @@ struct JobsListPage: View {
 
     private func loadJobs() {
         guard let service = appCore.jobsService else { return }
-        isLoading = jobs.isEmpty
+        isLoading = jobs.isEmpty && allJobs.isEmpty
         loadError = nil
         do {
-            jobs = try service.listJobs(
+            allJobs = try service.listJobs(
                 search: searchText.isEmpty ? nil : searchText,
-                status: statusFilter == "all" ? nil : statusFilter
+                status: nil
             )
-            stats = try service.getJobStats()
+            // Build status counts
+            var counts: [String: Int] = [:]
+            for j in allJobs {
+                counts[j.status, default: 0] += 1
+            }
+            statusCounts = counts
+            applyFilterAndSort()
         } catch {
             loadError = error.localizedDescription
         }
         isLoading = false
+    }
+
+    private func applyFilterAndSort() {
+        var filtered = allJobs
+
+        // Apply status filter
+        if let query = statusFilter.queryValue {
+            if statusFilter == .continuous {
+                filtered = filtered.filter { $0.jobType == "continuous" || $0.status == "continuous" }
+            } else {
+                filtered = filtered.filter { $0.status == query }
+            }
+        }
+
+        // Continuous jobs: only show to assigned workers or managers
+        // (We don't have assignment info on JobListItem, so we skip this client-side filter
+        //  and rely on the server query. Managers see all.)
+
+        // Apply sort
+        switch sortOption {
+        case .recentActivity:
+            // Default order from service (most recently updated)
+            break
+        case .name:
+            filtered.sort { $0.jobName.localizedCaseInsensitiveCompare($1.jobName) == .orderedAscending }
+        case .startDate:
+            filtered.sort { ($0.startDate ?? "") > ($1.startDate ?? "") }
+        }
+
+        jobs = filtered
     }
 }

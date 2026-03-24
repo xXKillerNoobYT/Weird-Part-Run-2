@@ -1,7 +1,5 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
-
 
 /// Employee detail page with tabs for profile, hats, teams, and activity.
 struct IOSEmployeeDetailPage: View {
@@ -12,8 +10,13 @@ struct IOSEmployeeDetailPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var selectedTab = "profile"
+
+    // Hat management
+    @State private var allHats: [(hat: PeopleService.HatInfo, isAssigned: Bool)] = []
+    @State private var canManageHats = false
+
     private enum ActiveSheet: String, Identifiable {
-        case editEmployee
+        case editContact
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
@@ -38,16 +41,28 @@ struct IOSEmployeeDetailPage: View {
         .task { loadData() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("Edit") { activeSheet = .editEmployee }
+                Button("Edit") { activeSheet = .editContact }
                     .disabled(employee == nil)
             }
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
-            case .editEmployee:
+            case .editContact:
                 if let emp = employee {
-                    EditEmployeeSheet(employee: emp) { loadData() }
-                        .environmentObject(appCore)
+                    EditEmployeeContactSheet(
+                        displayName: emp.displayName,
+                        email: emp.email,
+                        phone: emp.phone ?? ""
+                    ) { name, email, phone in
+                        guard let service = appCore.peopleService else { return }
+                        try service.updateEmployeeContact(
+                            employeeId: emp.id,
+                            displayName: name,
+                            phone: phone.isEmpty ? nil : phone,
+                            email: email.isEmpty ? nil : email
+                        )
+                        loadData()
+                    }
                 }
             }
         }
@@ -126,28 +141,47 @@ struct IOSEmployeeDetailPage: View {
 
     private func hatsTab(_ emp: PeopleService.EmployeeDetail) -> some View {
         List {
-            if emp.hats.isEmpty {
+            if allHats.isEmpty {
                 Section {
-                    Text("No hats assigned")
+                    Text("No hats available")
                         .foregroundStyle(.secondary)
                 }
             } else {
-                Section("Assigned Hats (\(emp.hats.count))") {
-                    ForEach(emp.hats) { hat in
+                Section {
+                    ForEach(allHats, id: \.hat.id) { item in
                         HStack(spacing: 12) {
                             Image(systemName: "graduationcap.fill")
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(item.isAssigned ? Color.accentColor : .gray)
                                 .frame(width: 24)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(hat.name)
+                                Text(item.hat.name)
                                     .fontWeight(.medium)
-                                if let desc = hat.description, !desc.isEmpty {
+                                if let desc = item.hat.description, !desc.isEmpty {
                                     Text(desc)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
                             }
+                            Spacer()
+                            if canManageHats {
+                                Toggle("", isOn: Binding<Bool>(
+                                    get: { item.isAssigned },
+                                    set: { newValue in
+                                        toggleHat(hatId: item.hat.id, assign: newValue)
+                                    }
+                                ))
+                                .labelsHidden()
+                            } else if item.isAssigned {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(.green)
+                            }
                         }
+                    }
+                } header: {
+                    Text("Hats & Roles (\(allHats.filter(\.isAssigned).count) assigned)")
+                } footer: {
+                    if !canManageHats {
+                        Text("Contact a manager to change hat assignments")
                     }
                 }
             }
@@ -203,6 +237,17 @@ struct IOSEmployeeDetailPage: View {
         }
     }
 
+    private func toggleHat(hatId: Int64, assign: Bool) {
+        guard let service = appCore.peopleService else { return }
+        do {
+            try service.toggleHatAssignment(employeeId: employeeId, hatId: hatId, assign: assign)
+            // Reload hats
+            allHats = (try? service.getAllHatsWithAssignment(employeeId: employeeId)) ?? []
+        } catch {
+            loadError = "Failed to update hat: \(error.localizedDescription)"
+        }
+    }
+
     private func loadData() {
         guard let service = appCore.peopleService else {
             isLoading = false
@@ -213,38 +258,37 @@ struct IOSEmployeeDetailPage: View {
         loadError = nil
         do {
             employee = try service.getEmployeeDetail(id: employeeId)
+            allHats = try service.getAllHatsWithAssignment(employeeId: employeeId)
+            canManageHats = appCore.hasPermission("manage_people") || appCore.hasPermission("admin")
         } catch {
             loadError = error.localizedDescription
         }
         isLoading = false
     }
 }
-// MARK: - Edit Employee Sheet
 
-private struct EditEmployeeSheet: View {
-    @EnvironmentObject private var appCore: AppCore
+// MARK: - Edit Employee Contact Sheet
+
+private struct EditEmployeeContactSheet: View {
     @Environment(\.dismiss) private var dismiss
 
-    let employee: PeopleService.EmployeeDetail
-    let onSave: () -> Void
-
-    @State private var displayName: String
-    @State private var email: String
-    @State private var phone: String
+    @State var displayName: String
+    @State var email: String
+    @State var phone: String
     @State private var errorMessage: String?
+    @State private var isSaving = false
 
-    init(employee: PeopleService.EmployeeDetail, onSave: @escaping () -> Void) {
-        self.employee = employee
-        self.onSave = onSave
-        _displayName = State(initialValue: employee.displayName)
-        _email = State(initialValue: employee.email)
-        _phone = State(initialValue: employee.phone ?? "")
-    }
+    let onSave: (String, String, String) throws -> Void
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Employee Info") {
+                if let error = errorMessage {
+                    Section {
+                        Text(error).foregroundStyle(.red).font(.caption)
+                    }
+                }
+                Section("Contact Info") {
                     TextField("Display Name", text: $displayName)
                         .textContentType(.name)
                     TextField("Email", text: $email)
@@ -255,13 +299,8 @@ private struct EditEmployeeSheet: View {
                         .textContentType(.telephoneNumber)
                         .keyboardType(.phonePad)
                 }
-                if let error = errorMessage {
-                    Section {
-                        Text(error).foregroundStyle(.red).font(.caption)
-                    }
-                }
             }
-            .navigationTitle("Edit Employee")
+            .navigationTitle("Edit Contact Info")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -269,33 +308,21 @@ private struct EditEmployeeSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(displayName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(isSaving || displayName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
         }
     }
 
     private func save() {
-        guard let db = appCore.db else {
-            errorMessage = "Database unavailable"
-            return
-        }
+        isSaving = true
         let trimmedName = displayName.trimmingCharacters(in: .whitespaces)
         do {
-            try db.writer.write { dbConn in
-                try dbConn.execute(
-                    sql: """
-                        UPDATE users SET display_name = ?, email = ?, phone = ?, updated_at = datetime('now')
-                        WHERE id = ?
-                        """,
-                    arguments: [trimmedName, email.isEmpty ? nil : email, phone.isEmpty ? nil : phone, employee.id]
-                )
-            }
-            onSave()
+            try onSave(trimmedName, email, phone)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
         }
+        isSaving = false
     }
 }
-

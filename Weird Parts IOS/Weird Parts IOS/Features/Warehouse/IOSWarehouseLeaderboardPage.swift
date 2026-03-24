@@ -31,9 +31,8 @@ struct IOSWarehouseLeaderboardPage: View {
     }
 
     private var isManager: Bool {
-        appCore.currentUser?.role == "manager" ||
-        appCore.currentUser?.role == "admin" ||
-        appCore.currentUser?.role == "owner"
+        appCore.hasPermission("manage_warehouse") ||
+        appCore.hasPermission("admin")
     }
 
     var body: some View {
@@ -259,9 +258,8 @@ struct IOSWarehouseLeaderboardPage: View {
     }
 
     private func fetchUserName(userId: Int64) throws -> String? {
-        // Use people service if available
-        if let name = try? appCore.peopleService?.getUser(userId: userId) {
-            return name.displayName
+        if let user = try? appCore.authService?.getUser(userId) {
+            return user.displayName
         }
         return "User #\(userId)"
     }

@@ -178,63 +178,207 @@ struct IOSJobDetailTabView: View {
     // MARK: - Overview Tab
 
     private func overviewTab(_ job: JobsService.JobDetail) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Status & Priority
-            HStack(spacing: 8) {
-                StatusBadge(
-                    text: job.status.replacingOccurrences(of: "_", with: " ").capitalized,
-                    color: statusColor(job.status)
-                )
-                StatusBadge(
-                    text: job.priority.capitalized,
-                    color: priorityColor(job.priority)
-                )
-                StatusBadge(text: job.jobType.capitalized, color: .secondary)
-                Spacer()
+        List {
+            // Payment Hold Banner
+            if job.status == "payment_hold" {
+                Section {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Payment Hold")
+                                .font(.headline)
+                                .foregroundStyle(.red)
+                            Text("This job is on payment hold. Clock-in is blocked for all workers.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
             }
 
-            // Job Number
-            DetailRow(label: "Job Number", value: job.jobNumber)
+            // Status & Job Info
+            Section {
+                HStack(spacing: 8) {
+                    StatusBadge(
+                        text: job.status.replacingOccurrences(of: "_", with: " ").capitalized,
+                        color: statusColor(job.status)
+                    )
+                    StatusBadge(
+                        text: job.priority.capitalized,
+                        color: priorityColor(job.priority)
+                    )
+                    StatusBadge(text: job.jobType.capitalized, color: .secondary)
+                    Spacer()
+                }
 
-            // Customer
-            if let customer = job.customerName, !customer.isEmpty {
-                DetailRow(label: "Customer", value: customer)
+                DetailRow(label: "Job Number", value: job.jobNumber)
+
+                if let customer = job.customerName, !customer.isEmpty {
+                    DetailRow(label: "Customer", value: customer)
+                }
+
+                if let addr = job.addressLine1, !addr.isEmpty {
+                    let fullAddr = [addr, job.city, job.state, job.zip]
+                        .compactMap { $0 }
+                        .filter { !$0.isEmpty }
+                        .joined(separator: ", ")
+                    DetailRow(label: "Address", value: fullAddr)
+                }
+
+                if let lead = job.leadUserName, !lead.isEmpty {
+                    DetailRow(label: "Lead", value: lead)
+                }
             }
 
-            // Address
-            if let addr = job.addressLine1, !addr.isEmpty {
-                let fullAddr = [addr, job.city, job.state, job.zip]
-                    .compactMap { $0 }
-                    .filter { !$0.isEmpty }
-                    .joined(separator: ", ")
-                DetailRow(label: "Address", value: fullAddr)
+            // Smart Metric Cards
+            Section {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        MetricCard(title: "Hours", value: String(format: "%.1f", job.laborHours),
+                                   subtitle: job.estimatedHours != nil ? "of \(Int(job.estimatedHours!))" : nil,
+                                   color: .blue, icon: "clock")
+                        if appCore.hasPermission("view_job_financials"), let budget = job.budgetLimit {
+                            MetricCard(title: "Budget", value: formatCurrency(job.partsCost),
+                                       subtitle: "of \(formatCurrency(budget))",
+                                       color: .green, icon: "dollarsign.circle")
+                        }
+                        MetricCard(title: "Team", value: "\(job.teamCount)",
+                                   subtitle: "members",
+                                   color: .orange, icon: "person.2")
+                        MetricCard(title: "Parts", value: formatCurrency(job.partsCost),
+                                   subtitle: "cost",
+                                   color: .purple, icon: "wrench.and.screwdriver")
+                    }
+                }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
             }
 
-            // Lead
-            if let lead = job.leadUserName, !lead.isEmpty {
-                DetailRow(label: "Lead", value: lead)
+            // Progress Bars
+            if job.estimatedHours != nil || (appCore.hasPermission("view_job_financials") && job.budgetLimit != nil) {
+                Section {
+                    if let est = job.estimatedHours, est > 0 {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Hours Progress")
+                                Spacer()
+                                Text("\(String(format: "%.1f", job.laborHours))/\(Int(est))h")
+                                    .font(.caption).monospacedDigit()
+                            }
+                            ProgressView(value: min(job.laborHours / est, 1.0))
+                                .tint(job.laborHours > est ? .red : .blue)
+                        }
+                    }
+                    if appCore.hasPermission("view_job_financials"),
+                       let budget = job.budgetLimit, budget > 0 {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Budget Progress")
+                                Spacer()
+                                Text("\(formatCurrency(job.partsCost))/\(formatCurrency(budget))")
+                                    .font(.caption).monospacedDigit()
+                            }
+                            ProgressView(value: min(job.partsCost / budget, 1.0))
+                                .tint(job.partsCost > budget ? .red : .green)
+                        }
+                    }
+                } header: {
+                    Text("Progress")
+                }
             }
 
             // Dates
-            if let start = job.startDate {
-                DetailRow(label: "Start Date", value: start)
+            Section {
+                if let start = job.startDate {
+                    DetailRow(label: "Start Date", value: start)
+                }
+                if let due = job.dueDate {
+                    DetailRow(label: "Due Date", value: due)
+                }
+                if let completed = job.completedDate {
+                    DetailRow(label: "Completed", value: completed)
+                }
+            } header: {
+                Text("Dates")
             }
-            if let due = job.dueDate {
-                DetailRow(label: "Due Date", value: due)
+
+            // Quick Actions
+            Section {
+                if appCore.hasPermission("manage_jobs") {
+                    Button {
+                        activeSheet = .editJob
+                    } label: {
+                        Label("Edit Job", systemImage: "pencil")
+                    }
+                }
+                if job.status != "payment_hold" {
+                    NavigationLink {
+                        IOSClockPage()
+                            .environmentObject(appCore)
+                    } label: {
+                        Label("Go to Clock", systemImage: "clock")
+                    }
+                }
+            } header: {
+                Text("Quick Actions")
+            }
+
+            // Warranty Info (if warranty status)
+            if job.status == "warranty" {
+                Section {
+                    if let start = job.warrantyStartDate {
+                        DetailRow(label: "Warranty Start", value: start)
+                    }
+                    if let end = job.warrantyEndDate {
+                        DetailRow(label: "Warranty End", value: end)
+                    }
+                    // Calculate days remaining
+                    if let endStr = job.warrantyEndDate {
+                        let fmt = ISO8601DateFormatter()
+                        let _ = fmt.formatOptions = [.withInternetDateTime]
+                        if let endDate = fmt.date(from: endStr) {
+                            let days = Calendar.current.dateComponents([.day], from: Date(), to: endDate).day ?? 0
+                            HStack {
+                                Text("Days Remaining")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text("\(days)")
+                                    .font(.body)
+                                    .foregroundStyle(days < 30 ? .red : .primary)
+                            }
+                        }
+                    }
+                } header: {
+                    Label("Warranty", systemImage: "shield.checkered")
+                }
+            }
+
+            // Financial Summary (hat-gated)
+            if appCore.hasPermission("view_job_financials") {
+                Section {
+                    let laborCost = job.laborHours * (job.billingRate ?? 0)
+                    LabeledContent("Labor Cost", value: formatCurrency(laborCost))
+                    LabeledContent("Materials Cost", value: formatCurrency(job.partsCost))
+                    LabeledContent("Total Cost", value: formatCurrency(laborCost + job.partsCost))
+                } header: {
+                    Text("Financial Summary")
+                }
             }
 
             // Notes
             if let notes = job.notes, !notes.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Notes")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                Section {
                     Text(notes)
                         .font(.body)
+                } header: {
+                    Text("Notes")
                 }
             }
         }
-        .padding()
+        .listStyle(.insetGrouped)
     }
 
     // MARK: - Team Tab
@@ -711,6 +855,9 @@ struct IOSJobDetailTabView: View {
         case "completed": .blue
         case "on_hold": .orange
         case "cancelled": .red
+        case "warranty": .purple
+        case "payment_hold": .red
+        case "continuous": .gray
         default: .secondary
         }
     }
@@ -730,6 +877,39 @@ struct IOSJobDetailTabView: View {
         formatter.numberStyle = .currency
         formatter.currencyCode = "USD"
         return formatter.string(from: NSNumber(value: value)) ?? "$0.00"
+    }
+}
+
+// MARK: - Metric Card
+
+private struct MetricCard: View {
+    let title: String
+    let value: String
+    let subtitle: String?
+    let color: Color
+    let icon: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Image(systemName: icon)
+                    .foregroundStyle(color)
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text(value)
+                .font(.title2).bold()
+            if let sub = subtitle {
+                Text(sub)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .frame(minWidth: 100)
+        .background(color.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 

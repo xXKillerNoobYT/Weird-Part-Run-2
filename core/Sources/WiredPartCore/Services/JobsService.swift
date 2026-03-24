@@ -660,6 +660,178 @@ public final class JobsService: Sendable {
     }
 
     // =========================================================================
+    // MARK: - 1b. Warranty Tracking
+    // =========================================================================
+
+    /// Set warranty period for a job. Calculates end date from start + duration.
+    public func setWarranty(jobId: Int64, startDate: Date, durationDays: Int) throws {
+        let endDate = Calendar.current.date(byAdding: .day, value: durationDays, to: startDate)!
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withInternetDateTime]
+        let startStr = fmt.string(from: startDate)
+        let endStr = fmt.string(from: endDate)
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE jobs SET
+                    warranty_start = ?,
+                    warranty_end = ?,
+                    warranty_duration_days = ?,
+                    status = 'warranty',
+                    updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [startStr, endStr, durationDays, jobId])
+        }
+    }
+
+    /// Check if warranty is currently active for a job.
+    public func isWarrantyActive(jobId: Int64) throws -> Bool {
+        try db.writer.read { dbConn in
+            let row = try Row.fetchOne(dbConn, sql: """
+                SELECT warranty_end FROM jobs WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobId])
+            guard let endStr = row?["warranty_end"] as? String else { return false }
+            let fmt = ISO8601DateFormatter()
+            fmt.formatOptions = [.withInternetDateTime]
+            guard let endDate = fmt.date(from: endStr) else { return false }
+            return endDate > Date()
+        }
+    }
+
+    /// Get number of warranty days remaining for a job. Returns nil if no warranty set.
+    public func warrantyDaysRemaining(jobId: Int64) throws -> Int? {
+        try db.writer.read { dbConn in
+            let row = try Row.fetchOne(dbConn, sql: """
+                SELECT warranty_end FROM jobs WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobId])
+            guard let endStr = row?["warranty_end"] as? String else { return nil }
+            let fmt = ISO8601DateFormatter()
+            fmt.formatOptions = [.withInternetDateTime]
+            guard let endDate = fmt.date(from: endStr) else { return nil }
+            return Calendar.current.dateComponents([.day], from: Date(), to: endDate).day
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 1c. Payment Hold
+    // =========================================================================
+
+    /// Put a job on payment hold. Blocks clock-in for all workers.
+    public func setPaymentHold(jobId: Int64, amount: Double, reason: String?) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE jobs SET
+                    status = 'payment_hold',
+                    payment_hold_amount = ?,
+                    payment_hold_date = datetime('now'),
+                    payment_hold_reason = ?,
+                    updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [amount, reason, jobId])
+        }
+    }
+
+    /// Remove payment hold from a job, returning it to active status.
+    public func removePaymentHold(jobId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE jobs SET
+                    status = 'active',
+                    payment_hold_amount = NULL,
+                    payment_hold_date = NULL,
+                    payment_hold_reason = NULL,
+                    updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobId])
+        }
+    }
+
+    /// Check if a job is on payment hold. Used to block clock-in.
+    public func isJobOnPaymentHold(jobId: Int64) throws -> Bool {
+        try db.writer.read { dbConn in
+            let count = try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM jobs
+                WHERE id = ? AND status = 'payment_hold' AND deleted_at IS NULL
+                """, arguments: [jobId]) ?? 0
+            return count > 0
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 1d. Continuous Jobs
+    // =========================================================================
+
+    /// Schedule data for continuous/recurring jobs.
+    public struct ContinuousSchedule: Codable, Sendable {
+        public let daysOfWeek: [Int]  // 1=Mon, 7=Sun
+        public let frequency: String   // "weekly", "biweekly", "monthly"
+
+        public init(daysOfWeek: [Int], frequency: String) {
+            self.daysOfWeek = daysOfWeek
+            self.frequency = frequency
+        }
+    }
+
+    /// Mark a job as continuous with an optional schedule.
+    public func setJobContinuous(jobId: Int64, schedule: ContinuousSchedule?) throws {
+        let scheduleJSON: String?
+        if let schedule {
+            let data = try JSONEncoder().encode(schedule)
+            scheduleJSON = String(data: data, encoding: .utf8)
+        } else {
+            scheduleJSON = nil
+        }
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE jobs SET
+                    is_continuous = 1,
+                    job_classification = 'continuous',
+                    continuous_schedule = ?,
+                    updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [scheduleJSON, jobId])
+        }
+    }
+
+    /// Get all continuous jobs for a user (jobs they're assigned to that are continuous).
+    public func getContinuousJobs(userId: Int64) throws -> [JobListItem] {
+        do {
+            return try db.writer.read { dbConn -> [JobListItem] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT j.id, j.job_number, j.job_name,
+                           c.company_name AS customer_name,
+                           j.status, j.priority, j.job_type,
+                           (SELECT COUNT(*) FROM job_team_members WHERE job_id = j.id AND deleted_at IS NULL) AS team_count,
+                           j.start_date, j.due_date
+                    FROM jobs j
+                    LEFT JOIN customers c ON j.customer_id = c.id
+                    INNER JOIN job_team_members tm ON tm.job_id = j.id AND tm.user_id = ? AND tm.deleted_at IS NULL
+                    WHERE j.is_continuous = 1 AND j.deleted_at IS NULL
+                    ORDER BY j.job_name ASC
+                    """, arguments: [userId])
+                return rows.map { row in
+                    JobListItem(
+                        id: row["id"] ?? 0,
+                        jobNumber: row["job_number"] ?? "",
+                        jobName: row["job_name"] ?? "",
+                        customerName: row["customer_name"] as String?,
+                        status: row["status"] ?? "active",
+                        priority: row["priority"] ?? "normal",
+                        jobType: row["job_type"] ?? "service",
+                        teamCount: row["team_count"] ?? 0,
+                        startDate: row["start_date"] as String?,
+                        dueDate: row["due_date"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    // =========================================================================
     // MARK: - 2. Labor / Clock In-Out
     // =========================================================================
 

@@ -16,6 +16,8 @@ struct IOSNotebookDetailPage: View {
     @State private var activeSheet: ActiveSheet?
     @State private var expandedGroups: Set<Int64> = []
     @State private var expandedSections: Set<Int64> = []
+    @State private var isWarrantyJob = false
+    @State private var todosNeedingReview: [NotebooksService.NotebookEntryRow] = []
 
     // MARK: - ActiveSheet
 
@@ -86,6 +88,32 @@ struct IOSNotebookDetailPage: View {
             if let error = actionError {
                 Section {
                     Text(error).foregroundStyle(.red).font(.caption)
+                }
+            }
+
+            // Manager Review Section (45D)
+            if isWarrantyJob && appCore.hasPermission("manage_jobs") && !todosNeedingReview.isEmpty {
+                Section {
+                    ForEach(todosNeedingReview) { entry in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.title ?? entry.content)
+                                    .font(.subheadline)
+                                Text("Classified as: \(entry.workClassification ?? "unset")")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Approve") {
+                                approveClassification(entryId: entry.id)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.green)
+                            .controlSize(.small)
+                        }
+                    }
+                } header: {
+                    Text("Needs Review (\(todosNeedingReview.count))")
                 }
             }
 
@@ -325,12 +353,49 @@ struct IOSNotebookDetailPage: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
 
             case "todo":
-                HStack(spacing: 8) {
-                    Image(systemName: entry.isCompleted ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(entry.isCompleted ? .green : .secondary)
-                    Text(entry.title ?? entry.content)
-                        .font(.subheadline)
-                        .strikethrough(entry.isCompleted)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Image(systemName: entry.isCompleted ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(entry.isCompleted ? .green : .secondary)
+                        Text(entry.title ?? entry.content)
+                            .font(.subheadline)
+                            .strikethrough(entry.isCompleted)
+
+                        if entry.isQuestion {
+                            Text("?")
+                                .font(.caption).bold()
+                                .foregroundStyle(.white)
+                                .padding(4)
+                                .background(.purple)
+                                .clipShape(Circle())
+                        }
+                    }
+
+                    // Classification UI for warranty jobs
+                    if isWarrantyJob {
+                        HStack(spacing: 8) {
+                            // Classification picker
+                            classificationPicker(for: entry)
+
+                            // Review status
+                            if entry.workClassification != nil {
+                                if entry.classificationReviewed {
+                                    Image(systemName: "checkmark.seal.fill")
+                                        .foregroundStyle(.green)
+                                        .font(.caption)
+                                } else {
+                                    Text("Needs Review")
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
+                                }
+                            }
+                        }
+
+                        // Warranty timer
+                        if let timerEnd = entry.warrantyTimerEnd {
+                            warrantyTimerView(endDate: timerEnd)
+                        }
+                    }
                 }
 
             default: // "text" and any other type
@@ -366,6 +431,80 @@ struct IOSNotebookDetailPage: View {
             } label: {
                 Label("Delete", systemImage: "trash")
             }
+        }
+    }
+
+    // MARK: - Classification UI
+
+    @ViewBuilder
+    private func classificationPicker(for entry: NotebooksService.NotebookEntryRow) -> some View {
+        let currentValue = entry.workClassification ?? ""
+        HStack(spacing: 4) {
+            Button {
+                classifyEntry(entryId: entry.id, classification: "regular")
+            } label: {
+                Text("Regular")
+                    .font(.caption2)
+                    .fontWeight(currentValue == "regular" ? .bold : .regular)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(currentValue == "regular" ? Color.blue : Color.blue.opacity(0.1))
+                    .foregroundStyle(currentValue == "regular" ? .white : .blue)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                classifyEntry(entryId: entry.id, classification: "warranty")
+            } label: {
+                Text("Warranty")
+                    .font(.caption2)
+                    .fontWeight(currentValue == "warranty" ? .bold : .regular)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(currentValue == "warranty" ? Color.purple : Color.purple.opacity(0.1))
+                    .foregroundStyle(currentValue == "warranty" ? .white : .purple)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder
+    private func warrantyTimerView(endDate: String) -> some View {
+        let fmt = ISO8601DateFormatter()
+        let _ = fmt.formatOptions = [.withInternetDateTime]
+        if let end = fmt.date(from: endDate) {
+            let daysRemaining = Calendar.current.dateComponents([.day], from: Date(), to: end).day ?? 0
+            HStack(spacing: 4) {
+                Image(systemName: "timer")
+                    .font(.caption2)
+                Text("Warranty: \(daysRemaining) days remaining")
+                    .font(.caption2)
+                    .foregroundStyle(daysRemaining < 7 ? .red : .secondary)
+            }
+        }
+    }
+
+    private func classifyEntry(entryId: Int64, classification: String) {
+        guard let service = appCore.notebooksService,
+              let userId = appCore.currentUser?.id else { return }
+        do {
+            try service.classifyTodoWork(entryId: entryId, classification: classification, classifiedBy: userId)
+            loadData()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func approveClassification(entryId: Int64) {
+        guard let service = appCore.notebooksService,
+              let userId = appCore.currentUser?.id else { return }
+        do {
+            try service.reviewClassification(entryId: entryId, reviewedBy: userId, approved: true, newClassification: nil)
+            loadData()
+        } catch {
+            actionError = error.localizedDescription
         }
     }
 
@@ -483,6 +622,15 @@ struct IOSNotebookDetailPage: View {
                 hierarchy?.groups.forEach { g in ids.append(contentsOf: g.sections.map(\.id)) }
                 hierarchy?.ungroupedSections.forEach { s in ids.append(s.id) }
                 expandedSections = Set(ids)
+            }
+            // Check if this notebook belongs to a warranty job
+            if let jobId = notebook?.jobId, let jobsService = appCore.jobsService {
+                if let job = try? jobsService.getJob(id: jobId) {
+                    isWarrantyJob = job.status == "warranty"
+                    if isWarrantyJob {
+                        todosNeedingReview = (try? service.getTodosNeedingReview(jobId: jobId)) ?? []
+                    }
+                }
             }
         } catch {
             loadError = error.localizedDescription

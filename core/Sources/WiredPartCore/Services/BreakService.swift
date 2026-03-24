@@ -113,7 +113,7 @@ public final class BreakService: Sendable {
         timerMinutes: Int? = nil
     ) throws -> BreakRecord {
         let isPaid = (breakType != "lunch_unpaid")
-        try db.writer.write { dbConn in
+        return try db.writer.write { dbConn in
             var record = BreakRecord(
                 id: nil, userId: userId, laborEntryId: laborEntryId,
                 breakType: breakType, startedAt: Self.nowString(),

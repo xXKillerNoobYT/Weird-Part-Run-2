@@ -1,42 +1,64 @@
 import SwiftUI
 import WiredPartCore
 
-/// Contacts list page for iOS.
-///
-/// Displays a searchable list of contacts with name, company, type badge,
-/// email, and phone. Supports pull-to-refresh, search, and type filtering.
+/// Contacts list page with smart card type filters, sort options,
+/// active/inactive sections, and color-coded type badges.
 struct IOSContactsPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     // MARK: - State
 
-    @State private var contacts: [PeopleService.ContactListItem] = []
+    @State private var activeContacts: [PeopleService.ContactListItem] = []
+    @State private var inactiveContacts: [PeopleService.ContactListItem] = []
+    @State private var typeCounts: [String: Int] = [:]
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var typeFilter = "all"
+    @State private var sortOption: ContactSort = .recentlyUpdated
+    @State private var showInactive = false
     @State private var loadError: String?
+
     private enum ActiveSheet: String, Identifiable {
         case addContact
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
 
-    private let typeOptions = ["all", "gc", "contractor", "supplier", "vendor", "other"]
+    private enum ContactSort: String, CaseIterable {
+        case recentlyUpdated = "Recently Updated"
+        case name = "Name"
+        case type = "Type"
+    }
+
+    private let typeFilters = ["all", "gc", "supplier", "contractor", "owner", "vendor", "active", "inactive"]
 
     var body: some View {
         VStack(spacing: 0) {
-            typePicker
+            smartCardsRow
             contactList
         }
         .navigationTitle("Contacts")
         .searchable(text: $searchText, prompt: "Search contacts...")
         .onChange(of: searchText) { loadData() }
+        .onChange(of: typeFilter) { loadData() }
+        .onChange(of: sortOption) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button { activeSheet = .addContact } label: {
-                    Image(systemName: "plus")
+                HStack(spacing: 12) {
+                    Menu {
+                        Picker("Sort", selection: $sortOption) {
+                            ForEach(ContactSort.allCases, id: \.self) { sort in
+                                Text(sort.rawValue).tag(sort)
+                            }
+                        }
+                    } label: {
+                        Label("Sort", systemImage: "arrow.up.arrow.down")
+                    }
+                    Button { activeSheet = .addContact } label: {
+                        Image(systemName: "plus")
+                    }
                 }
             }
         }
@@ -49,31 +71,54 @@ struct IOSContactsPage: View {
         }
     }
 
-    // MARK: - Type Picker
+    // MARK: - Smart Cards
 
-    private var typePicker: some View {
+    private var smartCardsRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(typeOptions, id: \.self) { type in
-                    Button {
-                        typeFilter = type
-                        loadData()
-                    } label: {
-                        Text(type == "all" ? "All" : type.replacingOccurrences(of: "_", with: " ").uppercased())
-                            .font(.caption)
-                            .fontWeight(typeFilter == type ? .bold : .regular)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(typeFilter == type ? Color.accentColor : Color.secondary.opacity(0.2))
-                            )
-                            .foregroundStyle(typeFilter == type ? .white : .primary)
+            HStack(spacing: 10) {
+                ForEach(typeFilters, id: \.self) { filter in
+                    smartCard(
+                        title: displayName(filter),
+                        count: typeCounts[filter] ?? 0,
+                        isActive: typeFilter == filter
+                    ) {
+                        typeFilter = filter
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
+        }
+    }
+
+    private func smartCard(title: String, count: Int, isActive: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Text("\(count)")
+                    .font(.title3).bold()
+                    .foregroundStyle(isActive ? .white : .primary)
+                Text(title)
+                    .font(.caption2)
+                    .foregroundStyle(isActive ? .white.opacity(0.8) : .secondary)
+            }
+            .frame(minWidth: 64)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isActive ? Color.accentColor : Color(.systemGray6))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func displayName(_ filter: String) -> String {
+        switch filter {
+        case "all": return "All"
+        case "gc": return "GC"
+        case "active": return "Active"
+        case "inactive": return "Inactive"
+        default: return filter.capitalized
         }
     }
 
@@ -86,85 +131,100 @@ struct IOSContactsPage: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
-        } else if filteredContacts.isEmpty {
+        } else if filteredActive.isEmpty && filteredInactive.isEmpty {
             ContentUnavailableView {
                 Label("No Contacts", systemImage: "person.crop.rectangle.stack")
             } description: {
                 Text("No contacts match your criteria.")
             }
         } else {
-            List(filteredContacts, id: \.id) { contact in
-                contactRow(contact)
+            List {
+                // Active contacts
+                Section {
+                    ForEach(filteredActive) { contact in
+                        NavigationLink(value: contact.id) {
+                            contactRow(contact)
+                        }
+                    }
+                } header: {
+                    Text("Active (\(filteredActive.count))")
+                }
+
+                // Inactive (collapsed by default)
+                if !filteredInactive.isEmpty {
+                    Section {
+                        DisclosureGroup("Inactive (\(filteredInactive.count))", isExpanded: $showInactive) {
+                            ForEach(filteredInactive) { contact in
+                                NavigationLink(value: contact.id) {
+                                    contactRow(contact)
+                                        .opacity(0.6)
+                                }
+                            }
+                        }
+                    }
+                }
             }
             .listStyle(.insetGrouped)
         }
     }
 
-    private var filteredContacts: [PeopleService.ContactListItem] {
-        guard !searchText.isEmpty else { return contacts }
+    private var filteredActive: [PeopleService.ContactListItem] {
+        guard !searchText.isEmpty else { return activeContacts }
         let query = searchText.lowercased()
-        return contacts.filter {
-            $0.firstName.lowercased().contains(query) ||
-            $0.lastName.lowercased().contains(query) ||
-            ($0.company?.lowercased().contains(query) ?? false) ||
-            ($0.email?.lowercased().contains(query) ?? false)
-        }
+        return activeContacts.filter { matchesSearch($0, query: query) }
+    }
+
+    private var filteredInactive: [PeopleService.ContactListItem] {
+        guard !searchText.isEmpty else { return inactiveContacts }
+        let query = searchText.lowercased()
+        return inactiveContacts.filter { matchesSearch($0, query: query) }
+    }
+
+    private func matchesSearch(_ contact: PeopleService.ContactListItem, query: String) -> Bool {
+        contact.firstName.lowercased().contains(query) ||
+        contact.lastName.lowercased().contains(query) ||
+        (contact.company?.lowercased().contains(query) ?? false) ||
+        (contact.email?.lowercased().contains(query) ?? false)
     }
 
     private func contactRow(_ contact: PeopleService.ContactListItem) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "person.text.rectangle")
-                .font(.title3)
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 32)
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text("\(contact.firstName) \(contact.lastName)")
-                        .fontWeight(.medium)
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(contact.firstName) \(contact.lastName)").font(.headline)
+                HStack(spacing: 4) {
                     if let type = contact.contactType, !type.isEmpty {
-                        typeBadge(type)
+                        Text(type.capitalized)
+                            .font(.caption)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(typeColor(type))
+                            .clipShape(Capsule())
+                    }
+                    if let company = contact.company, !company.isEmpty {
+                        Text(company).font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                if let company = contact.company, !company.isEmpty {
-                    Label(company, systemImage: "building")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if let email = contact.email, !email.isEmpty {
-                    Label(email, systemImage: "envelope")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             }
-
             Spacer()
-
             if let phone = contact.phone, !phone.isEmpty {
                 Label(phone, systemImage: "phone")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.caption2).foregroundStyle(.secondary)
                     .lineLimit(1)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
     }
 
-    // MARK: - Badges
-
-    private func typeBadge(_ type: String) -> some View {
-        let color: Color = switch type {
-        case "gc": .blue
-        case "contractor": .orange
-        case "supplier", "vendor": .green
-        default: .secondary
+    private func typeColor(_ type: String?) -> Color {
+        switch type {
+        case "gc": return .blue
+        case "supplier": return .purple
+        case "contractor": return .orange
+        case "owner": return .green
+        case "vendor": return .teal
+        default: return .gray
         }
-        return Text(type.uppercased())
-            .font(.system(.caption2, weight: .semibold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(color.opacity(0.15)))
-            .foregroundStyle(color)
     }
 
     // MARK: - Data Loading
@@ -175,19 +235,28 @@ struct IOSContactsPage: View {
             loadError = "People service unavailable"
             return
         }
-        isLoading = contacts.isEmpty
+        isLoading = activeContacts.isEmpty && inactiveContacts.isEmpty
         loadError = nil
         do {
-            contacts = try service.listContacts(
-                search: searchText.isEmpty ? nil : searchText,
-                contactType: typeFilter == "all" ? nil : typeFilter
-            )
+            let sortKey: String
+            switch sortOption {
+            case .name: sortKey = "name"
+            case .type: sortKey = "type"
+            case .recentlyUpdated: sortKey = "recently_updated"
+            }
+
+            let filter = typeFilter == "all" ? nil : typeFilter
+            let result = try service.getContactsSorted(sortBy: sortKey, typeFilter: filter)
+            activeContacts = result.active
+            inactiveContacts = result.inactive
+            typeCounts = try service.getContactTypeCounts()
         } catch {
             loadError = error.localizedDescription
         }
         isLoading = false
     }
 }
+
 // MARK: - Add Contact Sheet
 
 private struct AddContactSheet: View {
@@ -203,7 +272,7 @@ private struct AddContactSheet: View {
     @State private var contactType = "other"
     @State private var errorMessage: String?
 
-    private let typeOptions = ["gc", "contractor", "supplier", "vendor", "other"]
+    private let typeOptions = ["gc", "contractor", "supplier", "vendor", "owner", "other"]
 
     var body: some View {
         NavigationStack {
@@ -270,4 +339,3 @@ private struct AddContactSheet: View {
         }
     }
 }
-

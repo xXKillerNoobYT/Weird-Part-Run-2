@@ -1142,6 +1142,86 @@ Xcode AI appends an entry here after completing each prompt. This is the source 
 - 41A: Teams Detail — no IOSTeamDetailPage
 - 42A-42D: Chat — channels exist, no unified inbox/attachments/interactive escalation
 - 43A-43E: Notebooks — basic structure, no block-based editing/panel schedule/daily report generator
-- 44A-44F: People — basic pages, no dashboard/payment tracking
+- 44A-44F: People — 44A-44F COMPLETE (see below)
 - 45A-45D: Jobs — basic list/detail, no stage progression/warranty classification
 - 46A-46F: Scheduling — basic calendar/dispatch, no Gantt/pipelines/AI dispatch
+
+---
+
+## Prompt 44C Results (2026-03-23)
+- IOSCustomerDetailPage rebuilt with 8 sections: contact info, additional contacts, business info, billing/payment (hat-gated), job history, communication history, documents, lifetime stats
+- PeopleService: getCustomerDetail, addCommunicationEntry + 5 data types (CustomerDetail, CustomerContact, CustomerJobSummary, CustomerStats, CommunicationEntry)
+- Billing hat-gated behind view_job_financials permission
+- PaymentStatusBar component (green-to-red gradient) included in customer detail
+- 3 sheets: AddCustomerContactSheet, AddCommunicationSheet, AddPaymentSheet
+- Build: PASS
+
+## Prompt 44D Results (2026-03-23)
+- IOSContractorsPage: showAddContractor Bool → ActiveSheet enum (.create, .edit)
+- IOSContractorDetailPage rebuilt with 5 sections: contact info, qualifications, performance rating (subcontractors only), job history, notes
+- PeopleService: getContractorRating, getContractorJobHistory, getContractorNotes, addContractorNote, addContractorRating + 3 data types (ContractorRating, ContractorNote, ContractorJobSummary)
+- QualificationRow and RatingRow components with star display
+- AddContractorNoteSheet
+- Build: PASS
+
+## Prompt 44E Results (2026-03-23)
+- IOSContactsPage redesigned with smart cards for type filters (All, GC, Supplier, Contractor, Owner, Vendor, Active, Inactive)
+- Sort options (Recently Updated, Name, Type) via toolbar menu
+- Active/inactive sections with DisclosureGroup collapsed by default
+- Color-coded type badges (blue=GC, purple=supplier, orange=contractor, green=owner, teal=vendor)
+- PeopleService: getContactsSorted (returns active/inactive split), getContactTypeCounts
+- Build: PASS
+
+## Prompt 44F Results (2026-03-23)
+- Migration 043: payment_records, customer_communications, contractor_notes, contractor_ratings tables + settings rows
+- PeopleService: isPaymentTrackingEnabled, setPaymentTrackingEnabled, getPaymentSettings, updatePaymentSettings, getCustomerPaymentStatus, getPaymentRecords, createPaymentRecord, recordPayment, getOverdueCustomers + 3 data types (PaymentStatus, PaymentRecord, CustomerPaymentAlert)
+- PaymentStatusBar component (green/yellow/red gradient bar)
+- AppConfigPage: Payment Tracking settings section (toggle, terms stepper, warning stepper, auto-hold toggle)
+- IOSPeopleDashboardPage: overdue payment alerts section when tracking enabled
+- IOSCustomerDetailPage: payment history and record payment when tracking enabled
+- ConflictResolver: payment_records, customer_communications, contractor_notes, contractor_ratings added
+- Default: payment tracking OFF — no payment UI unless explicitly enabled
+- Build: PASS
+
+## Prompt 45A Results (2026-03-23)
+- JobsListPage redesigned with 8 smart status cards (All, Active, Warranty, Continuous, Complete, On Hold, Payment Hold, Cancelled)
+- Smart cards show count + title with color-coded backgrounds
+- Payment Hold card only visible to managers (manage_jobs permission)
+- Payment Hold badge: managers see "$" icon + "Payment Hold", workers see generic "On Hold"
+- Continuous jobs rendered at 0.7 opacity
+- Sort options: Recent Activity, Name, Start Date (toolbar menu)
+- Status counts computed from full job list, filter applied client-side
+- Build: PASS
+
+## Prompt 45B Results (2026-03-23)
+- Overview tab rebuilt as mini-dashboard with List sections
+- Payment hold banner at top for payment_hold jobs (red warning)
+- Smart metric cards: Hours, Budget (hat-gated), Team, Parts in horizontal scroll
+- Dual progress bars: hours vs estimate, budget vs limit (hat-gated)
+- Dates section with start, due, completed
+- Quick actions: Edit Job (manage_jobs), Go to Clock (disabled for payment hold)
+- Warranty section: start date, end date, days remaining (red when <30 days)
+- Financial summary: labor cost, materials cost, total (hat-gated)
+- MetricCard component added (icon, title, value, subtitle with color background)
+- Status colors updated: warranty=purple, payment_hold=red, continuous=gray
+- Build: PASS
+
+## Prompt 45C Results (2026-03-23)
+- Migration 044: 9 new columns on jobs table (warranty_start, warranty_end, warranty_duration_days, job_classification, payment_hold_amount, payment_hold_date, payment_hold_reason, is_continuous, continuous_schedule)
+- JobsService: setWarranty, isWarrantyActive, warrantyDaysRemaining
+- JobsService: setPaymentHold, removePaymentHold, isJobOnPaymentHold
+- JobsService: ContinuousSchedule struct, setJobContinuous, getContinuousJobs
+- IOSClockPage: payment hold check before clock-in with error message
+- Build: PASS
+
+## Prompt 45D Results (2026-03-23)
+- Migration 045: 7 new columns on notebook_entries (work_classification, classification_reviewed, classification_reviewed_by, classification_reviewed_at, warranty_timer_start, warranty_timer_end, is_question) + classification_history table
+- NotebooksService: ClassificationChange struct, classifyTodoWork, reviewClassification, reclassifyTodoWork, getClassificationHistory, startWarrantyTimer, getTodosNeedingReview, ensureWarrantySection
+- NotebookEntryRow struct: added workClassification, classificationReviewed, warrantyTimerEnd, isQuestion fields
+- All 3 NotebookEntryRow query locations updated to include classification fields
+- IOSNotebookDetailPage: classification picker (Regular/Warranty buttons) on warranty job to-dos
+- IOSNotebookDetailPage: warranty timer display (days remaining, red when <7 days)
+- IOSNotebookDetailPage: question tag ("?" purple circle) on to-do items
+- IOSNotebookDetailPage: manager review section with Approve button (manage_jobs gated)
+- ConflictResolver: classification_history added to whitelist
+- Build: PASS

@@ -7,6 +7,7 @@ struct PeopleRouter: View {
 
     var body: some View {
         switch tabId {
+        case "people-dashboard": IOSPeopleDashboardPage()
         case "people-employees": IOSEmployeesPage()
         case "people-customers": IOSCustomersPage()
         case "people-contacts": IOSContactsPage()

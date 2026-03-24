@@ -151,6 +151,12 @@ public enum ConflictResolver {
         "part_confidence", "audit_sessions_v2", "audit_counts",
         "misplaced_parts_log", "user_warehouse_ratings", "organization_ratings",
         "consolidation_votes", "consolidation_vote_entries",
+        // Break compliance
+        "break_policies", "break_bonuses", "break_records", "company_break_settings",
+        // Payment tracking & communication
+        "payment_records", "customer_communications", "contractor_notes", "contractor_ratings",
+        // Work classification audit
+        "classification_history",
         // Suppliers
         "supplier_portal_tokens", "supplier_po_acknowledgments", "supplier_contact_ratings",
         // Costs

@@ -1,41 +1,78 @@
 import SwiftUI
 import WiredPartCore
 
-/// Customer detail page showing company info, contacts, and job history.
+/// Customer detail page with full sections: contact, additional contacts, business,
+/// billing (hat-gated), job history, communication history, documents, and lifetime stats.
 struct IOSCustomerDetailPage: View {
     @EnvironmentObject private var appCore: AppCore
     let customer: PeopleService.CustomerListItem
 
-    @State private var customerJobs: [JobsService.JobListItem] = []
-    @State private var jobsError: String?
+    // MARK: - State
+
+    @State private var detail: PeopleService.CustomerDetail?
+    @State private var paymentStatus: PeopleService.PaymentStatus?
+    @State private var paymentRecords: [PeopleService.PaymentRecord] = []
+    @State private var paymentTrackingEnabled = false
+    @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case addContact
+        case addNote
+        case addPayment
+
+        var id: String {
+            switch self {
+            case .addContact: return "addContact"
+            case .addNote: return "addNote"
+            case .addPayment: return "addPayment"
+            }
+        }
+    }
+
+    private var hasFinancials: Bool {
+        appCore.hasPermission("view_job_financials") || appCore.hasPermission("admin")
+    }
 
     var body: some View {
-        List {
-            Section("Company Info") {
-                if let company = customer.companyName, !company.isEmpty {
-                    detailRow("Company", company)
-                }
-                if let contact = customer.contactName, !contact.isEmpty {
-                    detailRow("Contact", contact)
-                }
+        Group {
+            if let error = loadError {
+                ErrorStateView(message: error) { loadData() }
+            } else if let detail = detail {
+                detailList(detail)
+            } else {
+                ProgressView("Loading customer...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+        .navigationTitle(customer.companyName ?? customer.contactName ?? "Customer")
+        .refreshable { loadData() }
+        .task { loadData() }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .addContact:
+                AddCustomerContactSheet(customerId: customer.id) { loadData() }
+                    .environmentObject(appCore)
+            case .addNote:
+                AddCommunicationSheet(customerId: customer.id) { loadData() }
+                    .environmentObject(appCore)
+            case .addPayment:
+                AddPaymentSheet(customerId: customer.id) { loadData() }
+                    .environmentObject(appCore)
+            }
+        }
+    }
 
-            Section("Contact Details") {
-                if let email = customer.email, !email.isEmpty,
-                   let encoded = email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-                   let url = URL(string: "mailto:\(encoded)") {
-                    HStack {
-                        Text("Email")
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Link(email, destination: url)
-                    }
-                }
-                if let phone = customer.phone, !phone.isEmpty {
+    // MARK: - Detail List
+
+    private func detailList(_ detail: PeopleService.CustomerDetail) -> some View {
+        List {
+            // Contact Info
+            Section {
+                if let phone = detail.phone, !phone.isEmpty {
                     let digits = phone.filter(\.isNumber)
                     HStack {
-                        Text("Phone")
-                            .foregroundStyle(.secondary)
+                        Text("Phone").foregroundStyle(.secondary)
                         Spacer()
                         if let url = URL(string: "tel:\(digits)") {
                             Link(phone, destination: url)
@@ -44,68 +81,519 @@ struct IOSCustomerDetailPage: View {
                         }
                     }
                 }
+                if let email = detail.email, !email.isEmpty,
+                   let encoded = email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                   let url = URL(string: "mailto:\(encoded)") {
+                    HStack {
+                        Text("Email").foregroundStyle(.secondary)
+                        Spacer()
+                        Link(email, destination: url)
+                    }
+                }
+                if let address = detail.address, !address.isEmpty {
+                    LabeledContent("Address", value: address)
+                }
+            } header: {
+                Text("Contact Info")
             }
 
-            // Job history
-            Section("Job History") {
-                if let error = jobsError {
-                    Text(error)
+            // Additional Contacts
+            Section {
+                if detail.contacts.isEmpty {
+                    Text("No additional contacts")
+                        .foregroundStyle(.secondary)
                         .font(.caption)
-                        .foregroundStyle(.red)
-                } else if customerJobs.isEmpty {
-                    EmptyStateView(
-                        icon: "clock",
-                        title: "No Job History",
-                        message: "Jobs linked to this customer will appear here."
-                    )
                 } else {
-                    ForEach(customerJobs) { job in
-                        NavigationLink(value: job.id) {
-                            HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(job.jobName)
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                    Text(job.jobNumber)
+                    ForEach(detail.contacts) { contact in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(contact.name).font(.headline)
+                                if let role = contact.role, !role.isEmpty {
+                                    Text(role)
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 1)
+                                        .background(Capsule().fill(Color.accentColor))
                                 }
-                                Spacer()
-                                StatusBadge(
-                                    text: job.status.replacingOccurrences(of: "_", with: " ").capitalized,
-                                    color: job.status == "active" ? .green : job.status == "completed" ? .blue : .secondary
-                                )
+                            }
+                            if let phone = contact.phone, !phone.isEmpty {
+                                Label(phone, systemImage: "phone")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            if let email = contact.email, !email.isEmpty {
+                                Label(email, systemImage: "envelope")
+                                    .font(.caption).foregroundStyle(.secondary)
                             }
                         }
                     }
                 }
+                Button { activeSheet = .addContact } label: {
+                    Label("Add Contact", systemImage: "person.badge.plus")
+                }
+            } header: {
+                Text("Additional Contacts (\(detail.contacts.count))")
+            }
+
+            // Business Info
+            Section {
+                if let company = detail.companyName, !company.isEmpty {
+                    LabeledContent("Company", value: company)
+                }
+                if let type = detail.customerType, !type.isEmpty {
+                    LabeledContent("Type", value: type.capitalized)
+                }
+            } header: {
+                Text("Business Info")
+            }
+
+            // Billing & Payment (hat-gated)
+            if hasFinancials {
+                Section {
+                    if let revenue = detail.stats.totalRevenue {
+                        LabeledContent("Total Revenue", value: formatCurrency(revenue))
+                    }
+                    if let avg = detail.stats.averageJobSize {
+                        LabeledContent("Avg Job Size", value: formatCurrency(avg))
+                    }
+
+                    if paymentTrackingEnabled, let status = paymentStatus {
+                        PaymentStatusBar(status: status)
+                    }
+
+                    if paymentTrackingEnabled {
+                        ForEach(paymentRecords) { record in
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(record.invoiceNumber ?? "Invoice")
+                                    Text(record.dueDate)
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                VStack(alignment: .trailing) {
+                                    Text(formatCurrency(record.amount))
+                                    Text(record.status.capitalized)
+                                        .font(.caption)
+                                        .foregroundStyle(record.status == "overdue" ? .red : record.status == "paid" ? .green : .orange)
+                                }
+                            }
+                        }
+                        Button { activeSheet = .addPayment } label: {
+                            Label("Record Payment", systemImage: "dollarsign.circle")
+                        }
+                    }
+                } header: {
+                    Text("Billing & Payment")
+                }
+            }
+
+            // Job History
+            Section {
+                if detail.jobHistory.isEmpty {
+                    Text("No jobs yet")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                } else {
+                    ForEach(detail.jobHistory) { job in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(job.name).font(.headline)
+                                Text(job.jobNumber)
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            StatusBadge(
+                                text: job.status.replacingOccurrences(of: "_", with: " ").capitalized,
+                                color: statusColor(job.status)
+                            )
+                        }
+                    }
+                }
+            } header: {
+                HStack {
+                    Text("Job History")
+                    Spacer()
+                    Text("\(detail.stats.totalJobs) total")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            // Communication History
+            Section {
+                if detail.communicationLog.isEmpty {
+                    Text("No notes yet")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                } else {
+                    ForEach(detail.communicationLog) { entry in
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Image(systemName: commIcon(entry.commType))
+                                    .foregroundStyle(.blue)
+                                Text(entry.commType.capitalized)
+                                    .font(.caption).bold()
+                                Spacer()
+                                Text(entry.createdAt)
+                                    .font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Text(entry.content)
+                                .font(.caption)
+                            Text("by \(entry.createdBy)")
+                                .font(.caption2).foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                Button { activeSheet = .addNote } label: {
+                    Label("Add Note", systemImage: "square.and.pencil")
+                }
+            } header: {
+                Text("Communication History")
+            }
+
+            // Documents
+            Section {
+                Text("Contracts, proposals, and documents")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            } header: {
+                Text("Documents")
+            }
+
+            // Lifetime Stats
+            Section {
+                LabeledContent("Total Jobs", value: "\(detail.stats.totalJobs)")
+                LabeledContent("Active", value: "\(detail.stats.activeJobs)")
+                LabeledContent("Completed", value: "\(detail.stats.completedJobs)")
+                if let first = detail.stats.firstJobDate, !first.isEmpty {
+                    LabeledContent("Customer Since", value: first)
+                }
+            } header: {
+                Text("Lifetime Stats")
             }
         }
         .listStyle(.insetGrouped)
-        .navigationTitle(customer.companyName ?? customer.contactName ?? "Customer")
-        .refreshable { loadJobHistory() }
-        .task { loadJobHistory() }
     }
 
-    private func loadJobHistory() {
-        guard let service = appCore.jobsService else {
-            jobsError = "Service unavailable"
+    // MARK: - Helpers
+
+    private func commIcon(_ type: String) -> String {
+        switch type {
+        case "call": return "phone.fill"
+        case "email": return "envelope.fill"
+        case "meeting": return "person.2.fill"
+        default: return "note.text"
+        }
+    }
+
+    private func statusColor(_ status: String) -> Color {
+        switch status {
+        case "active": return .green
+        case "completed": return .blue
+        case "on_hold": return .orange
+        default: return .secondary
+        }
+    }
+
+    private func formatCurrency(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
+        return formatter.string(from: NSNumber(value: value)) ?? "$\(value)"
+    }
+
+    private func loadData() {
+        guard let service = appCore.peopleService else {
+            loadError = "Service unavailable"
+            return
+        }
+        loadError = nil
+        do {
+            detail = try service.getCustomerDetail(customerId: customer.id, includeFinancials: hasFinancials)
+            paymentTrackingEnabled = (try? service.isPaymentTrackingEnabled()) ?? false
+            if paymentTrackingEnabled && hasFinancials {
+                paymentStatus = try? service.getCustomerPaymentStatus(customerId: customer.id)
+                paymentRecords = (try? service.getPaymentRecords(customerId: customer.id)) ?? []
+            }
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Payment Status Bar
+
+struct PaymentStatusBar: View {
+    let status: PeopleService.PaymentStatus
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Payment Status")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(Int(status.paymentPercent * 100))% paid")
+                    .font(.caption).bold()
+            }
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(barColor.opacity(0.2))
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(barColor)
+                        .frame(width: geo.size.width * min(status.paymentPercent, 1.0))
+                }
+            }
+            .frame(height: 8)
+
+            if status.isOverdue {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                    Text("Overdue: \(formatCurrency(status.totalOverdue))")
+                        .font(.caption).foregroundStyle(.red)
+                    if let days = status.oldestOverdueDays {
+                        Text("(\(days) days)")
+                            .font(.caption2).foregroundStyle(.red)
+                    }
+                }
+            }
+        }
+    }
+
+    private var barColor: Color {
+        if status.paymentPercent >= 0.9 { return .green }
+        if status.paymentPercent >= 0.5 { return .yellow }
+        return .red
+    }
+
+    private func formatCurrency(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
+        return formatter.string(from: NSNumber(value: value)) ?? "$\(value)"
+    }
+}
+
+// MARK: - Add Customer Contact Sheet
+
+private struct AddCustomerContactSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let customerId: Int64
+    let onSave: () -> Void
+
+    @State private var firstName = ""
+    @State private var lastName = ""
+    @State private var role = ""
+    @State private var phone = ""
+    @State private var email = ""
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Contact") {
+                    TextField("First Name", text: $firstName)
+                        .textContentType(.givenName)
+                    TextField("Last Name", text: $lastName)
+                        .textContentType(.familyName)
+                    TextField("Role (e.g. Site Contact, Billing)", text: $role)
+                }
+                Section("Details") {
+                    TextField("Phone", text: $phone)
+                        .textContentType(.telephoneNumber)
+                        .keyboardType(.phonePad)
+                    TextField("Email", text: $email)
+                        .textContentType(.emailAddress)
+                        .keyboardType(.emailAddress)
+                        .autocapitalization(.none)
+                }
+                if let error = errorMessage {
+                    Section {
+                        Text(error).foregroundStyle(.red).font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Add Contact")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(firstName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        guard let service = appCore.peopleService else {
+            errorMessage = "Service unavailable"
             return
         }
         do {
-            customerJobs = try service.getJobsForCustomer(customerId: customer.id)
+            try service.createContact(
+                entityType: "customer",
+                entityId: customerId,
+                firstName: firstName.trimmingCharacters(in: .whitespaces),
+                lastName: lastName.trimmingCharacters(in: .whitespaces),
+                role: role.isEmpty ? "contact" : role,
+                phone: phone,
+                email: email.isEmpty ? nil : email
+            )
+            onSave()
+            dismiss()
         } catch {
-            jobsError = error.localizedDescription
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Add Communication Sheet
+
+private struct AddCommunicationSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let customerId: Int64
+    let onSave: () -> Void
+
+    @State private var commType = "note"
+    @State private var content = ""
+    @State private var errorMessage: String?
+
+    private let typeOptions = ["note", "call", "email", "meeting"]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Type") {
+                    Picker("Type", selection: $commType) {
+                        ForEach(typeOptions, id: \.self) { t in
+                            Text(t.capitalized).tag(t)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                Section("Details") {
+                    TextField("Notes", text: $content, axis: .vertical)
+                        .lineLimit(3...8)
+                }
+                if let error = errorMessage {
+                    Section {
+                        Text(error).foregroundStyle(.red).font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Add Note")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(content.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
         }
     }
 
-    private func detailRow(_ label: String, _ value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .fontWeight(.medium)
+    private func save() {
+        guard let service = appCore.peopleService else {
+            errorMessage = "Service unavailable"
+            return
+        }
+        do {
+            let userId = appCore.currentUser?.id ?? 1
+            try service.addCommunicationEntry(
+                customerId: customerId,
+                commType: commType,
+                content: content.trimmingCharacters(in: .whitespaces),
+                createdBy: userId
+            )
+            onSave()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Add Payment Sheet
+
+private struct AddPaymentSheet: View {
+    @EnvironmentObject private var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
+
+    let customerId: Int64
+    let onSave: () -> Void
+
+    @State private var amountText = ""
+    @State private var invoiceNumber = ""
+    @State private var dueDate = Date().addingTimeInterval(30 * 86400)
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Invoice") {
+                    TextField("Invoice Number", text: $invoiceNumber)
+                    TextField("Amount", text: $amountText)
+                        .keyboardType(.decimalPad)
+                    DatePicker("Due Date", selection: $dueDate, displayedComponents: .date)
+                }
+                if let error = errorMessage {
+                    Section {
+                        Text(error).foregroundStyle(.red).font(.caption)
+                    }
+                }
+            }
+            .navigationTitle("Add Invoice")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .disabled(amountText.isEmpty)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        guard let service = appCore.peopleService else {
+            errorMessage = "Service unavailable"
+            return
+        }
+        guard let amount = Double(amountText), amount > 0 else {
+            errorMessage = "Enter a valid amount"
+            return
+        }
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        let dueDateStr = f.string(from: dueDate)
+
+        do {
+            let userId = appCore.currentUser?.id ?? 1
+            try service.createPaymentRecord(
+                customerId: customerId,
+                jobId: nil,
+                amount: amount,
+                dueDate: dueDateStr,
+                invoiceNumber: invoiceNumber.isEmpty ? nil : invoiceNumber,
+                createdBy: userId
+            )
+            onSave()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }

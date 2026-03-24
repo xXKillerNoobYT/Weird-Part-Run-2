@@ -73,6 +73,11 @@ public final class NotebooksService: Sendable {
         public let photoPath: String?
         public let referenceType: String?
         public let referenceId: Int64?
+        // Classification fields (45D)
+        public let workClassification: String?
+        public let classificationReviewed: Bool
+        public let warrantyTimerEnd: String?
+        public let isQuestion: Bool
 
         public init(
             id: Int64, entryType: String, content: String,
@@ -81,7 +86,9 @@ public final class NotebooksService: Sendable {
             title: String? = nil, blockType: String = "text",
             blockData: String? = nil, headingLevel: Int? = nil,
             checklistItems: String? = nil, photoPath: String? = nil,
-            referenceType: String? = nil, referenceId: Int64? = nil
+            referenceType: String? = nil, referenceId: Int64? = nil,
+            workClassification: String? = nil, classificationReviewed: Bool = false,
+            warrantyTimerEnd: String? = nil, isQuestion: Bool = false
         ) {
             self.id = id
             self.entryType = entryType
@@ -98,6 +105,10 @@ public final class NotebooksService: Sendable {
             self.photoPath = photoPath
             self.referenceType = referenceType
             self.referenceId = referenceId
+            self.workClassification = workClassification
+            self.classificationReviewed = classificationReviewed
+            self.warrantyTimerEnd = warrantyTimerEnd
+            self.isQuestion = isQuestion
         }
     }
 
@@ -230,6 +241,8 @@ public final class NotebooksService: Sendable {
                        COALESCE(ne.is_completed, 0) as is_completed, ne.created_at,
                        ne.block_type, ne.block_data, ne.heading_level, ne.checklist_items,
                        ne.photo_path, ne.reference_type, ne.reference_id,
+                       ne.work_classification, COALESCE(ne.classification_reviewed, 0) as classification_reviewed,
+                       ne.warranty_timer_end, COALESCE(ne.is_question, 0) as is_question,
                        COALESCE(u.display_name, u.email, 'Unknown') AS created_by_name
                 FROM notebook_entries ne
                 LEFT JOIN users u ON u.id = ne.created_by
@@ -254,7 +267,11 @@ public final class NotebooksService: Sendable {
                     checklistItems: row["checklist_items"] as String?,
                     photoPath: row["photo_path"] as String?,
                     referenceType: row["reference_type"] as String?,
-                    referenceId: row["reference_id"] as Int64?
+                    referenceId: row["reference_id"] as Int64?,
+                    workClassification: row["work_classification"] as String?,
+                    classificationReviewed: (row["classification_reviewed"] as Int?) == 1,
+                    warrantyTimerEnd: row["warranty_timer_end"] as String?,
+                    isQuestion: (row["is_question"] as Int?) == 1
                 )
             }
 
@@ -397,6 +414,245 @@ public final class NotebooksService: Sendable {
             jobNotebooks: jobNotebooks,
             generalNotebooks: generalNotebooks
         )
+    }
+
+    // =========================================================================
+    // MARK: - Work Classification (Warranty)
+    // =========================================================================
+
+    /// A record of a classification change for audit trail.
+    public struct ClassificationChange: Sendable, Identifiable {
+        public let id: Int64
+        public let entryId: Int64
+        public let oldClassification: String?
+        public let newClassification: String
+        public let changedBy: Int64
+        public let reason: String?
+        public let changedAt: String
+
+        public init(id: Int64, entryId: Int64, oldClassification: String?,
+                    newClassification: String, changedBy: Int64,
+                    reason: String?, changedAt: String) {
+            self.id = id
+            self.entryId = entryId
+            self.oldClassification = oldClassification
+            self.newClassification = newClassification
+            self.changedBy = changedBy
+            self.reason = reason
+            self.changedAt = changedAt
+        }
+    }
+
+    /// Classify a to-do as regular or warranty work.
+    public func classifyTodoWork(entryId: Int64, classification: String, classifiedBy: Int64) throws {
+        try db.writer.write { dbConn in
+            // Get current classification for history
+            let current = try String.fetchOne(dbConn, sql: """
+                SELECT work_classification FROM notebook_entries WHERE id = ?
+                """, arguments: [entryId])
+
+            // Update classification
+            try dbConn.execute(sql: """
+                UPDATE notebook_entries SET
+                    work_classification = ?,
+                    classification_reviewed = 0,
+                    classification_reviewed_by = NULL,
+                    classification_reviewed_at = NULL,
+                    updated_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [classification, entryId])
+
+            // Log in classification_history
+            try dbConn.execute(sql: """
+                INSERT INTO classification_history
+                    (entry_id, old_classification, new_classification, changed_by, changed_at)
+                VALUES (?, ?, ?, ?, datetime('now'))
+                """, arguments: [entryId, current, classification, classifiedBy])
+        }
+    }
+
+    /// Manager reviews/approves a classification.
+    public func reviewClassification(entryId: Int64, reviewedBy: Int64, approved: Bool, newClassification: String?) throws {
+        try db.writer.write { dbConn in
+            if approved {
+                // Approve current classification
+                try dbConn.execute(sql: """
+                    UPDATE notebook_entries SET
+                        classification_reviewed = 1,
+                        classification_reviewed_by = ?,
+                        classification_reviewed_at = datetime('now'),
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                    """, arguments: [reviewedBy, entryId])
+            } else if let newClass = newClassification {
+                // Reclassify and approve in one step
+                let current = try String.fetchOne(dbConn, sql: """
+                    SELECT work_classification FROM notebook_entries WHERE id = ?
+                    """, arguments: [entryId])
+
+                try dbConn.execute(sql: """
+                    UPDATE notebook_entries SET
+                        work_classification = ?,
+                        classification_reviewed = 1,
+                        classification_reviewed_by = ?,
+                        classification_reviewed_at = datetime('now'),
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                    """, arguments: [newClass, reviewedBy, entryId])
+
+                try dbConn.execute(sql: """
+                    INSERT INTO classification_history
+                        (entry_id, old_classification, new_classification, changed_by, reason, changed_at)
+                    VALUES (?, ?, ?, ?, 'Manager review', datetime('now'))
+                    """, arguments: [entryId, current, newClass, reviewedBy])
+            }
+        }
+    }
+
+    /// Reclassify a to-do with reason tracking. Resets the review flag.
+    public func reclassifyTodoWork(entryId: Int64, newClassification: String, changedBy: Int64, reason: String?) throws {
+        try db.writer.write { dbConn in
+            let current = try String.fetchOne(dbConn, sql: """
+                SELECT work_classification FROM notebook_entries WHERE id = ?
+                """, arguments: [entryId])
+
+            // Log old → new
+            try dbConn.execute(sql: """
+                INSERT INTO classification_history
+                    (entry_id, old_classification, new_classification, changed_by, reason, changed_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now'))
+                """, arguments: [entryId, current, newClassification, changedBy, reason])
+
+            // Update entry and reset review
+            try dbConn.execute(sql: """
+                UPDATE notebook_entries SET
+                    work_classification = ?,
+                    classification_reviewed = 0,
+                    classification_reviewed_by = NULL,
+                    classification_reviewed_at = NULL,
+                    updated_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [newClassification, entryId])
+        }
+    }
+
+    /// Get classification history for a to-do.
+    public func getClassificationHistory(entryId: Int64) throws -> [ClassificationChange] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT id, entry_id, old_classification, new_classification,
+                       changed_by, reason, changed_at
+                FROM classification_history
+                WHERE entry_id = ?
+                ORDER BY changed_at DESC
+                """, arguments: [entryId])
+            return rows.map { row in
+                ClassificationChange(
+                    id: row["id"] ?? 0,
+                    entryId: row["entry_id"] ?? 0,
+                    oldClassification: row["old_classification"] as String?,
+                    newClassification: row["new_classification"] ?? "",
+                    changedBy: row["changed_by"] ?? 0,
+                    reason: row["reason"] as String?,
+                    changedAt: row["changed_at"] ?? ""
+                )
+            }
+        }
+    }
+
+    /// Start warranty timer when a to-do is completed. Sets timer_start = now, timer_end = now + job warranty days.
+    public func startWarrantyTimer(entryId: Int64, warrantyDurationDays: Int) throws {
+        let now = Date()
+        let end = Calendar.current.date(byAdding: .day, value: warrantyDurationDays, to: now)!
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withInternetDateTime]
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE notebook_entries SET
+                    warranty_timer_start = ?,
+                    warranty_timer_end = ?,
+                    updated_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [fmt.string(from: now), fmt.string(from: end), entryId])
+        }
+    }
+
+    /// Get to-dos needing classification review for a job (classified but not yet reviewed by manager).
+    public func getTodosNeedingReview(jobId: Int64) throws -> [NotebookEntryRow] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT ne.id, ne.entry_type, ne.title, ne.content, ne.sort_order,
+                           COALESCE(ne.is_completed, 0) as is_completed, ne.created_at,
+                           ne.block_type, ne.block_data, ne.heading_level, ne.checklist_items,
+                           ne.photo_path, ne.reference_type, ne.reference_id,
+                           ne.work_classification, COALESCE(ne.classification_reviewed, 0) as classification_reviewed,
+                           ne.warranty_timer_end, COALESCE(ne.is_question, 0) as is_question,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS created_by_name
+                    FROM notebook_entries ne
+                    LEFT JOIN users u ON u.id = ne.created_by
+                    INNER JOIN notebooks n ON n.id = ne.notebook_id
+                    WHERE n.job_id = ? AND n.deleted_at IS NULL
+                          AND ne.deleted_at IS NULL
+                          AND ne.work_classification IS NOT NULL
+                          AND ne.classification_reviewed = 0
+                    ORDER BY ne.updated_at DESC
+                    """, arguments: [jobId])
+                return rows.map { row in
+                    NotebookEntryRow(
+                        id: row["id"] ?? 0,
+                        entryType: row["entry_type"] ?? "todo",
+                        content: row["content"] ?? "",
+                        createdByName: row["created_by_name"] ?? "Unknown",
+                        sortOrder: row["sort_order"] ?? 0,
+                        isCompleted: (row["is_completed"] as Int?) == 1,
+                        createdAt: row["created_at"] as String?,
+                        title: row["title"] as String?,
+                        blockType: row["block_type"] ?? "text",
+                        blockData: row["block_data"] as String?,
+                        headingLevel: row["heading_level"] as Int?,
+                        checklistItems: row["checklist_items"] as String?,
+                        photoPath: row["photo_path"] as String?,
+                        referenceType: row["reference_type"] as String?,
+                        referenceId: row["reference_id"] as Int64?,
+                        workClassification: row["work_classification"] as String?,
+                        classificationReviewed: (row["classification_reviewed"] as Int?) == 1,
+                        warrantyTimerEnd: row["warranty_timer_end"] as String?,
+                        isQuestion: (row["is_question"] as Int?) == 1
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Ensure a "Warranty Work" section group exists in a notebook. Creates if missing.
+    @discardableResult
+    public func ensureWarrantySection(notebookId: Int64) throws -> Int64 {
+        try db.writer.write { dbConn in
+            // Check if "Warranty Work" group already exists
+            if let existingId = try Int64.fetchOne(dbConn, sql: """
+                SELECT id FROM notebook_section_groups
+                WHERE notebook_id = ? AND name = 'Warranty Work' AND deleted_at IS NULL
+                """, arguments: [notebookId]) {
+                return existingId
+            }
+
+            // Create it
+            let maxOrder = try Int.fetchOne(dbConn, sql: """
+                SELECT COALESCE(MAX(sort_order), -1) FROM notebook_section_groups
+                WHERE notebook_id = ? AND deleted_at IS NULL
+                """, arguments: [notebookId]) ?? -1
+
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_section_groups (notebook_id, name, sort_order, created_at, updated_at)
+                VALUES (?, 'Warranty Work', ?, datetime('now'), datetime('now'))
+                """, arguments: [notebookId, maxOrder + 1])
+            return dbConn.lastInsertedRowID
+        }
     }
 
     // =========================================================================
@@ -643,6 +899,8 @@ public final class NotebooksService: Sendable {
                            COALESCE(ne.is_completed, 0) as is_completed, ne.created_at,
                            ne.block_type, ne.block_data, ne.heading_level, ne.checklist_items,
                            ne.photo_path, ne.reference_type, ne.reference_id,
+                           ne.work_classification, COALESCE(ne.classification_reviewed, 0) as classification_reviewed,
+                           ne.warranty_timer_end, COALESCE(ne.is_question, 0) as is_question,
                            COALESCE(u.display_name, u.email, 'Unknown') AS created_by_name
                     FROM notebook_entries ne
                     LEFT JOIN users u ON u.id = ne.created_by
@@ -670,7 +928,11 @@ public final class NotebooksService: Sendable {
                         checklistItems: row["checklist_items"] as String?,
                         photoPath: row["photo_path"] as String?,
                         referenceType: row["reference_type"] as String?,
-                        referenceId: row["reference_id"] as Int64?
+                        referenceId: row["reference_id"] as Int64?,
+                        workClassification: row["work_classification"] as String?,
+                        classificationReviewed: (row["classification_reviewed"] as Int?) == 1,
+                        warrantyTimerEnd: row["warranty_timer_end"] as String?,
+                        isQuestion: (row["is_question"] as Int?) == 1
                     )
                     entriesBySectionId[sectionId, default: []].append(entry)
                 }

@@ -12,7 +12,19 @@ struct IOSContractorsPage: View {
     @State private var searchText = ""
     @State private var isLoading = true
     @State private var loadError: String?
-    @State private var showAddContractor = false
+
+    private enum ActiveSheet: Identifiable {
+        case create
+        case edit(PeopleService.ContractorListItem)
+
+        var id: String {
+            switch self {
+            case .create: return "create"
+            case .edit(let c): return "edit-\(c.id)"
+            }
+        }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     var body: some View {
         Group {
@@ -37,14 +49,20 @@ struct IOSContractorsPage: View {
         .refreshable { loadData() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button { showAddContractor = true } label: {
+                Button { activeSheet = .create } label: {
                     Image(systemName: "plus")
                 }
             }
         }
-        .sheet(isPresented: $showAddContractor) {
-            AddContractorSheet { loadData() }
-                .environmentObject(appCore)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .create:
+                AddContractorSheet { loadData() }
+                    .environmentObject(appCore)
+            case .edit:
+                // Future: edit contractor sheet
+                EmptyView()
+            }
         }
     }
 
@@ -175,4 +193,3 @@ private struct AddContractorSheet: View {
         }
     }
 }
-

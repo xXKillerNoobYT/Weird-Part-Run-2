@@ -37,6 +37,7 @@ final class AppCore: ObservableObject {
     public private(set) var reportsService: ReportsService?
     public private(set) var toolsService: ToolsService?
     public private(set) var dashboardService: DashboardService?
+    public private(set) var breakService: BreakService?
 
     // MARK: - Lifecycle
 
@@ -78,6 +79,7 @@ final class AppCore: ObservableObject {
                     reports: ReportsService(db: database),
                     tools: ToolsService(db: database),
                     dashboard: DashboardService(db: database),
+                    breaks: BreakService(db: database),
                     theme: theme,
                     users: users,
                     hasProfile: hasProfile
@@ -100,6 +102,7 @@ final class AppCore: ObservableObject {
             reportsService = result.reports
             toolsService = result.tools
             dashboardService = result.dashboard
+            breakService = result.breaks
 
             if let theme = result.theme {
                 self.theme = theme
@@ -257,6 +260,7 @@ final class AppCore: ObservableObject {
         reportsService = nil
         toolsService = nil
         dashboardService = nil
+        breakService = nil
         db = nil
 
         // 3. Delete the database file

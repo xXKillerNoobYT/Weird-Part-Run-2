@@ -944,6 +944,889 @@ public final class PeopleService: Sendable {
     }
 
     // =========================================================================
+    // MARK: - Employee Edit Operations
+    // =========================================================================
+
+    /// Update employee contact details.
+    public func updateEmployeeContact(
+        employeeId: Int64,
+        displayName: String?,
+        phone: String?,
+        email: String?
+    ) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE users SET display_name = ?, email = ?, phone = ?, updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                arguments: [displayName, email, phone, employeeId]
+            )
+        }
+    }
+
+    /// Get all hats with assignment status for a given employee.
+    public func getAllHatsWithAssignment(employeeId: Int64) throws -> [(hat: HatInfo, isAssigned: Bool)] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT h.id, h.name, h.description,
+                       CASE WHEN uh.id IS NOT NULL THEN 1 ELSE 0 END as is_assigned
+                FROM hats h
+                LEFT JOIN user_hats uh ON uh.hat_id = h.id AND uh.user_id = ? AND uh.deleted_at IS NULL
+                WHERE h.deleted_at IS NULL
+                ORDER BY h.name ASC
+                """, arguments: [employeeId])
+
+            return rows.map { row in
+                let hat = HatInfo(
+                    id: row["id"] ?? 0,
+                    name: row["name"] ?? "",
+                    description: row["description"] as String?
+                )
+                let assigned: Int = row["is_assigned"] ?? 0
+                return (hat: hat, isAssigned: assigned != 0)
+            }
+        }
+    }
+
+    /// Toggle a hat assignment for an employee.
+    public func toggleHatAssignment(employeeId: Int64, hatId: Int64, assign: Bool) throws {
+        try db.writer.write { dbConn in
+            if assign {
+                // Check if exists (including soft-deleted)
+                let existing = try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM user_hats WHERE user_id = ? AND hat_id = ?
+                    """, arguments: [employeeId, hatId]) ?? 0
+
+                if existing > 0 {
+                    try dbConn.execute(
+                        sql: "UPDATE user_hats SET deleted_at = NULL WHERE user_id = ? AND hat_id = ?",
+                        arguments: [employeeId, hatId]
+                    )
+                } else {
+                    try dbConn.execute(
+                        sql: "INSERT INTO user_hats (user_id, hat_id) VALUES (?, ?)",
+                        arguments: [employeeId, hatId]
+                    )
+                }
+            } else {
+                try dbConn.execute(
+                    sql: "UPDATE user_hats SET deleted_at = datetime('now') WHERE user_id = ? AND hat_id = ?",
+                    arguments: [employeeId, hatId]
+                )
+            }
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Dashboard Data Types
+    // =========================================================================
+
+    /// Worker currently clocked in.
+    public struct WorkerStatus: Sendable, Identifiable {
+        public let id: Int64
+        public let name: String
+        public let jobName: String?
+        public let clockInTime: Date
+        public let currentTodo: String?
+
+        public var elapsedTime: String {
+            let elapsed = Date().timeIntervalSince(clockInTime)
+            let hours = Int(elapsed) / 3600
+            let minutes = (Int(elapsed) % 3600) / 60
+            return "\(hours)h \(minutes)m"
+        }
+    }
+
+    /// Employee summary for off-today list.
+    public struct EmployeeSummary: Sendable, Identifiable {
+        public let id: Int64
+        public let name: String
+        public let offReason: String?
+    }
+
+    /// Certification expiring soon.
+    public struct CertificationAlert: Sendable, Identifiable {
+        public let id: Int64
+        public let employeeName: String
+        public let certName: String
+        public let expiryDate: Date
+
+        public var daysUntilExpiry: Int {
+            Calendar.current.dateComponents([.day], from: Date(), to: expiryDate).day ?? 0
+        }
+    }
+
+    /// Team assignment for today.
+    public struct TeamAssignment: Sendable, Identifiable {
+        public let id: Int64
+        public let teamName: String
+        public let jobName: String
+        public let memberCount: Int
+    }
+
+    // =========================================================================
+    // MARK: - Dashboard Queries
+    // =========================================================================
+
+    /// Get all workers currently clocked in (active labor entries with no clock_out).
+    public func getWorkersCurrentlyClocked() throws -> [WorkerStatus] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT le.id, le.user_id,
+                           COALESCE(u.display_name, u.first_name || ' ' || u.last_name, u.email, 'Unknown') as name,
+                           COALESCE(j.job_name, j.name, 'Shop') as job_name,
+                           le.clock_in,
+                           ne.title as current_todo
+                    FROM labor_entries le
+                    LEFT JOIN users u ON u.id = le.user_id
+                    LEFT JOIN jobs j ON j.id = le.job_id
+                    LEFT JOIN notebook_entries ne ON ne.id = le.linked_todo_id
+                    WHERE le.clock_out IS NULL
+                      AND le.deleted_at IS NULL
+                    ORDER BY le.clock_in ASC
+                    """)
+
+                let isoFull = ISO8601DateFormatter()
+                isoFull.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                let isoBasic = ISO8601DateFormatter()
+                isoBasic.formatOptions = [.withInternetDateTime]
+
+                return rows.compactMap { row -> WorkerStatus? in
+                    let userId: Int64 = row["user_id"] ?? 0
+                    let clockInStr: String = row["clock_in"] ?? ""
+                    guard let clockIn = isoFull.date(from: clockInStr) ?? isoBasic.date(from: clockInStr) else {
+                        return nil
+                    }
+                    return WorkerStatus(
+                        id: userId,
+                        name: row["name"] ?? "Unknown",
+                        jobName: row["job_name"] as String?,
+                        clockInTime: clockIn,
+                        currentTodo: row["current_todo"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get employees who are off today (from time_off_requests).
+    public func getEmployeesOffToday() throws -> [EmployeeSummary] {
+        let today = formatDateYMD(Date())
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT tor.id, tor.user_id,
+                           COALESCE(u.display_name, u.first_name || ' ' || u.last_name, u.email, 'Unknown') as name,
+                           tor.request_type as off_reason
+                    FROM time_off_requests tor
+                    LEFT JOIN users u ON u.id = tor.user_id
+                    WHERE tor.status = 'approved'
+                      AND tor.start_date <= ? AND tor.end_date >= ?
+                      AND tor.deleted_at IS NULL
+                    ORDER BY u.display_name ASC
+                    """, arguments: [today, today])
+
+                return rows.map { row in
+                    EmployeeSummary(
+                        id: row["user_id"] ?? 0,
+                        name: row["name"] ?? "Unknown",
+                        offReason: row["off_reason"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get certifications expiring within a given number of days.
+    public func getExpiringCertifications(withinDays: Int = 30) throws -> [CertificationAlert] {
+        let today = Date()
+        let futureDate = Calendar.current.date(byAdding: .day, value: withinDays, to: today)!
+        let todayStr = formatDateYMD(today)
+        let futureStr = formatDateYMD(futureDate)
+
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT ec.id,
+                           COALESCE(u.display_name, u.first_name || ' ' || u.last_name, 'Unknown') as employee_name,
+                           ec.cert_name,
+                           ec.expiration_date
+                    FROM employee_certifications ec
+                    LEFT JOIN users u ON u.id = ec.user_id
+                    WHERE ec.expiration_date >= ? AND ec.expiration_date <= ?
+                      AND ec.deleted_at IS NULL
+                    ORDER BY ec.expiration_date ASC
+                    """, arguments: [todayStr, futureStr])
+
+                return rows.compactMap { row -> CertificationAlert? in
+                    let expiryStr: String = row["expiration_date"] ?? ""
+                    let f = DateFormatter()
+                    f.dateFormat = "yyyy-MM-dd"
+                    guard let expiryDate = f.date(from: expiryStr) else { return nil }
+                    return CertificationAlert(
+                        id: row["id"] ?? 0,
+                        employeeName: row["employee_name"] ?? "Unknown",
+                        certName: row["cert_name"] ?? "Unknown",
+                        expiryDate: expiryDate
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get today's team assignments from the schedule.
+    public func getTodaysTeamAssignments() throws -> [TeamAssignment] {
+        let today = formatDateYMD(Date())
+
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT se.id, t.name as team_name,
+                           COALESCE(j.job_name, j.name, 'Unassigned') as job_name,
+                           (SELECT COUNT(*) FROM team_members tm WHERE tm.team_id = t.id AND tm.deleted_at IS NULL) as member_count
+                    FROM schedule_entries se
+                    LEFT JOIN teams t ON t.id = se.team_id
+                    LEFT JOIN jobs j ON j.id = se.job_id
+                    WHERE date(se.start_date) <= ? AND date(se.end_date) >= ?
+                      AND se.deleted_at IS NULL
+                      AND se.team_id IS NOT NULL
+                    GROUP BY se.team_id, se.job_id
+                    ORDER BY t.name ASC
+                    """, arguments: [today, today])
+
+                return rows.map { row in
+                    TeamAssignment(
+                        id: row["id"] ?? 0,
+                        teamName: row["team_name"] ?? "Unknown Team",
+                        jobName: row["job_name"] ?? "Unassigned",
+                        memberCount: row["member_count"] ?? 0
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Customer Detail (44C)
+    // =========================================================================
+
+    /// Full customer detail with contacts, job history, stats, and communication log.
+    public struct CustomerDetail: Sendable {
+        public let customerId: Int64
+        public let companyName: String?
+        public let contactName: String?
+        public let email: String?
+        public let phone: String?
+        public let address: String?
+        public let customerType: String?
+        public let contacts: [CustomerContact]
+        public let jobHistory: [CustomerJobSummary]
+        public let stats: CustomerStats
+        public let communicationLog: [CommunicationEntry]
+    }
+
+    public struct CustomerContact: Sendable, Identifiable {
+        public let id: Int64
+        public let name: String
+        public let role: String?
+        public let phone: String?
+        public let email: String?
+    }
+
+    public struct CustomerJobSummary: Sendable, Identifiable {
+        public let id: Int64
+        public let name: String
+        public let jobNumber: String
+        public let status: String
+        public let startDate: String?
+    }
+
+    public struct CustomerStats: Sendable {
+        public let totalJobs: Int
+        public let activeJobs: Int
+        public let completedJobs: Int
+        public let totalRevenue: Double?
+        public let averageJobSize: Double?
+        public let firstJobDate: String?
+        public let lastJobDate: String?
+    }
+
+    public struct CommunicationEntry: Sendable, Identifiable {
+        public let id: Int64
+        public let commType: String
+        public let content: String
+        public let createdBy: String
+        public let createdAt: String
+    }
+
+    /// Get full customer detail with all related data.
+    public func getCustomerDetail(customerId: Int64, includeFinancials: Bool) throws -> CustomerDetail {
+        try db.writer.read { dbConn in
+            // Customer base info
+            let custRow = try Row.fetchOne(dbConn, sql: """
+                SELECT id, COALESCE(company_name, name) as company_name, contact_name, email, phone, address, customer_type
+                FROM customers WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [customerId])
+
+            guard let row = custRow else {
+                throw PeopleError.customerNotFound(customerId)
+            }
+
+            // Additional contacts
+            let contactRows = try Row.fetchAll(dbConn, sql: """
+                SELECT id, COALESCE(first_name || ' ' || last_name, first_name, last_name, '') as name,
+                       role, phone, email
+                FROM entity_contacts
+                WHERE entity_type = 'customer' AND entity_id = ? AND deleted_at IS NULL
+                ORDER BY is_primary DESC, first_name ASC
+                """, arguments: [customerId])
+
+            let contacts = contactRows.map { r in
+                CustomerContact(
+                    id: r["id"] as Int64? ?? 0,
+                    name: r["name"] as String? ?? "",
+                    role: r["role"] as String?,
+                    phone: r["phone"] as String?,
+                    email: r["email"] as String?
+                )
+            }
+
+            // Job history
+            let jobRows = try Row.fetchAll(dbConn, sql: """
+                SELECT j.id, COALESCE(j.job_name, j.name, '') as name,
+                       COALESCE(j.job_number, '') as job_number, COALESCE(j.status, 'unknown') as status,
+                       j.start_date
+                FROM jobs j
+                JOIN job_customers jc ON jc.job_id = j.id
+                WHERE jc.customer_id = ? AND j.deleted_at IS NULL
+                ORDER BY j.created_at DESC
+                """, arguments: [customerId])
+
+            let jobHistory = jobRows.map { r in
+                CustomerJobSummary(
+                    id: r["id"] as Int64? ?? 0,
+                    name: r["name"] as String? ?? "",
+                    jobNumber: r["job_number"] as String? ?? "",
+                    status: r["status"] as String? ?? "unknown",
+                    startDate: r["start_date"] as String?
+                )
+            }
+
+            // Stats
+            let totalJobs = jobRows.count
+            let activeJobs = jobRows.filter { ($0["status"] as String? ?? "") == "active" }.count
+            let completedJobs = jobRows.filter { ($0["status"] as String? ?? "") == "completed" }.count
+
+            var totalRevenue: Double? = nil
+            var averageJobSize: Double? = nil
+            if includeFinancials {
+                let revenueRow = try Row.fetchOne(dbConn, sql: """
+                    SELECT SUM(pr.amount) as total, AVG(pr.amount) as avg_amount
+                    FROM payment_records pr
+                    WHERE pr.customer_id = ? AND pr.deleted_at IS NULL
+                    """, arguments: [customerId])
+                totalRevenue = revenueRow?["total"] as Double?
+                averageJobSize = revenueRow?["avg_amount"] as Double?
+            }
+
+            let firstJobDate = jobRows.last?["start_date"] as String?
+            let lastJobDate = jobRows.first?["start_date"] as String?
+
+            let stats = CustomerStats(
+                totalJobs: totalJobs, activeJobs: activeJobs, completedJobs: completedJobs,
+                totalRevenue: totalRevenue, averageJobSize: averageJobSize,
+                firstJobDate: firstJobDate, lastJobDate: lastJobDate
+            )
+
+            // Communication log
+            let commRows = try Row.fetchAll(dbConn, sql: """
+                SELECT cc.id, cc.comm_type, cc.content,
+                       COALESCE(u.display_name, u.first_name || ' ' || u.last_name, 'System') as created_by,
+                       cc.created_at
+                FROM customer_communications cc
+                LEFT JOIN users u ON u.id = cc.created_by
+                WHERE cc.customer_id = ? AND cc.deleted_at IS NULL
+                ORDER BY cc.created_at DESC
+                LIMIT 50
+                """, arguments: [customerId])
+
+            let commLog = commRows.map { r in
+                CommunicationEntry(
+                    id: r["id"] as Int64? ?? 0,
+                    commType: r["comm_type"] as String? ?? "note",
+                    content: r["content"] as String? ?? "",
+                    createdBy: r["created_by"] as String? ?? "System",
+                    createdAt: r["created_at"] as String? ?? ""
+                )
+            }
+
+            return CustomerDetail(
+                customerId: customerId,
+                companyName: row["company_name"] as String?,
+                contactName: row["contact_name"] as String?,
+                email: row["email"] as String?,
+                phone: row["phone"] as String?,
+                address: row["address"] as String?,
+                customerType: row["customer_type"] as String?,
+                contacts: contacts, jobHistory: jobHistory,
+                stats: stats, communicationLog: commLog
+            )
+        }
+    }
+
+    /// Add a communication entry for a customer.
+    @discardableResult
+    public func addCommunicationEntry(customerId: Int64, commType: String, content: String, createdBy: Int64) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO customer_communications (customer_id, comm_type, content, created_by)
+                VALUES (?, ?, ?, ?)
+                """, arguments: [customerId, commType, content, createdBy])
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Contractor Detail (44D)
+    // =========================================================================
+
+    /// Aggregated contractor rating.
+    public struct ContractorRating: Sendable {
+        public let qualityScore: Double
+        public let onTimeScore: Double
+        public let reliabilityScore: Double
+        public var overallScore: Double { (qualityScore + onTimeScore + reliabilityScore) / 3.0 }
+    }
+
+    /// A note attached to a contractor.
+    public struct ContractorNote: Sendable, Identifiable {
+        public let id: Int64
+        public let content: String
+        public let createdBy: String
+        public let createdAt: String
+    }
+
+    /// Job summary for contractor history.
+    public struct ContractorJobSummary: Sendable, Identifiable {
+        public let id: Int64
+        public let name: String
+        public let status: String
+        public let completedDate: String?
+    }
+
+    /// Get aggregated rating for a contractor (subcontractors only).
+    public func getContractorRating(contractorId: Int64) throws -> ContractorRating? {
+        try db.writer.read { dbConn in
+            let row = try Row.fetchOne(dbConn, sql: """
+                SELECT AVG(quality_score) as quality, AVG(on_time_score) as on_time,
+                       AVG(reliability_score) as reliability
+                FROM contractor_ratings
+                WHERE contractor_id = ? AND deleted_at IS NULL
+                """, arguments: [contractorId])
+
+            guard let r = row,
+                  let quality = r["quality"] as Double?,
+                  let onTime = r["on_time"] as Double?,
+                  let reliability = r["reliability"] as Double? else {
+                return nil
+            }
+
+            return ContractorRating(
+                qualityScore: quality, onTimeScore: onTime, reliabilityScore: reliability
+            )
+        }
+    }
+
+    /// Get job history for a contractor.
+    public func getContractorJobHistory(contractorId: Int64) throws -> [ContractorJobSummary] {
+        try db.writer.read { dbConn in
+            // Contractors are linked via subcontractor_schedules or job_general_contractors
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT DISTINCT j.id, COALESCE(j.job_name, j.name, '') as name,
+                       COALESCE(j.status, 'unknown') as status, j.end_date as completed_date
+                FROM jobs j
+                LEFT JOIN subcontractor_schedules ss ON ss.job_id = j.id AND ss.contractor_id = ?
+                LEFT JOIN job_general_contractors jgc ON jgc.job_id = j.id AND jgc.contractor_id = ?
+                WHERE (ss.id IS NOT NULL OR jgc.id IS NOT NULL) AND j.deleted_at IS NULL
+                ORDER BY j.created_at DESC
+                LIMIT 50
+                """, arguments: [contractorId, contractorId])
+
+            return rows.map { r in
+                ContractorJobSummary(
+                    id: r["id"] as Int64? ?? 0,
+                    name: r["name"] as String? ?? "",
+                    status: r["status"] as String? ?? "unknown",
+                    completedDate: r["completed_date"] as String?
+                )
+            }
+        }
+    }
+
+    /// Get notes for a contractor.
+    public func getContractorNotes(contractorId: Int64) throws -> [ContractorNote] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT cn.id, cn.content,
+                       COALESCE(u.display_name, u.first_name || ' ' || u.last_name, 'System') as created_by,
+                       cn.created_at
+                FROM contractor_notes cn
+                LEFT JOIN users u ON u.id = cn.created_by
+                WHERE cn.contractor_id = ? AND cn.deleted_at IS NULL
+                ORDER BY cn.created_at DESC
+                """, arguments: [contractorId])
+
+            return rows.map { r in
+                ContractorNote(
+                    id: r["id"] as Int64? ?? 0,
+                    content: r["content"] as String? ?? "",
+                    createdBy: r["created_by"] as String? ?? "System",
+                    createdAt: r["created_at"] as String? ?? ""
+                )
+            }
+        }
+    }
+
+    /// Add a note to a contractor.
+    @discardableResult
+    public func addContractorNote(contractorId: Int64, content: String, createdBy: Int64) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO contractor_notes (contractor_id, content, created_by)
+                VALUES (?, ?, ?)
+                """, arguments: [contractorId, content, createdBy])
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Add a rating for a contractor.
+    @discardableResult
+    public func addContractorRating(
+        contractorId: Int64, quality: Double, onTime: Double, reliability: Double,
+        ratedBy: Int64, jobId: Int64?
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO contractor_ratings (contractor_id, quality_score, on_time_score, reliability_score, rated_by, job_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [contractorId, quality, onTime, reliability, ratedBy, jobId])
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Contact Sorting (44E)
+    // =========================================================================
+
+    /// Get contacts with sorting and active/inactive separation.
+    public func getContactsSorted(sortBy: String, typeFilter: String?) throws -> (active: [ContactListItem], inactive: [ContactListItem]) {
+        let orderClause: String
+        switch sortBy {
+        case "name":
+            orderClause = "first_name ASC, last_name ASC"
+        case "type":
+            orderClause = "contact_type ASC, first_name ASC"
+        default:
+            orderClause = "updated_at DESC, first_name ASC"
+        }
+
+        return try db.writer.read { dbConn in
+            var sql = """
+                SELECT ec.id, ec.first_name, ec.last_name,
+                       ec.company, ec.email, ec.phone, ec.contact_type,
+                       COALESCE(ec.is_active, 1) as is_active
+                FROM entity_contacts ec
+                WHERE ec.deleted_at IS NULL
+                """
+            var args: [any DatabaseValueConvertible] = []
+
+            if let tf = typeFilter, !tf.isEmpty, tf != "all" {
+                if tf == "active" {
+                    sql += " AND COALESCE(ec.is_active, 1) = 1"
+                } else if tf == "inactive" {
+                    sql += " AND COALESCE(ec.is_active, 1) = 0"
+                } else {
+                    sql += " AND ec.contact_type = ?"
+                    args.append(tf)
+                }
+            }
+
+            sql += " ORDER BY \(orderClause)"
+
+            let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
+
+            var active: [ContactListItem] = []
+            var inactive: [ContactListItem] = []
+
+            for r in rows {
+                let item = ContactListItem(
+                    id: r["id"] as Int64? ?? 0,
+                    firstName: r["first_name"] as String? ?? "",
+                    lastName: r["last_name"] as String? ?? "",
+                    company: r["company"] as String?,
+                    email: r["email"] as String?,
+                    phone: r["phone"] as String?,
+                    contactType: r["contact_type"] as String?
+                )
+                let isActive = (r["is_active"] as Int?) ?? 1
+                if isActive == 1 {
+                    active.append(item)
+                } else {
+                    inactive.append(item)
+                }
+            }
+
+            return (active: active, inactive: inactive)
+        }
+    }
+
+    /// Count contacts by type for smart cards.
+    public func getContactTypeCounts() throws -> [String: Int] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT COALESCE(contact_type, 'other') as ct,
+                       SUM(CASE WHEN COALESCE(is_active, 1) = 1 THEN 1 ELSE 0 END) as active_count,
+                       SUM(CASE WHEN COALESCE(is_active, 1) = 0 THEN 1 ELSE 0 END) as inactive_count,
+                       COUNT(*) as total
+                FROM entity_contacts
+                WHERE deleted_at IS NULL
+                GROUP BY ct
+                """)
+
+            var counts: [String: Int] = ["all": 0, "active": 0, "inactive": 0]
+            for r in rows {
+                let ct = r["ct"] as String? ?? "other"
+                let total = r["total"] as Int? ?? 0
+                let activeCount = r["active_count"] as Int? ?? 0
+                let inactiveCount = r["inactive_count"] as Int? ?? 0
+                counts[ct] = total
+                counts["all"] = (counts["all"] ?? 0) + total
+                counts["active"] = (counts["active"] ?? 0) + activeCount
+                counts["inactive"] = (counts["inactive"] ?? 0) + inactiveCount
+            }
+            return counts
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Payment Tracking (44F)
+    // =========================================================================
+
+    /// Payment status for a customer.
+    public struct PaymentStatus: Sendable {
+        public let totalInvoiced: Double
+        public let totalPaid: Double
+        public let totalOverdue: Double
+        public let oldestOverdueDays: Int?
+        public var paymentPercent: Double { totalPaid / max(totalInvoiced, 1) }
+        public var isOverdue: Bool { totalOverdue > 0 }
+    }
+
+    /// A payment record row.
+    public struct PaymentRecord: Sendable, Identifiable {
+        public let id: Int64
+        public let customerId: Int64
+        public let jobId: Int64?
+        public let invoiceNumber: String?
+        public let amount: Double
+        public let dueDate: String
+        public let paidDate: String?
+        public let paidAmount: Double?
+        public let status: String
+        public let notes: String?
+    }
+
+    /// Customer with overdue payment alert.
+    public struct CustomerPaymentAlert: Sendable, Identifiable {
+        public let id: Int64
+        public let customerName: String
+        public let overdueAmount: Double
+        public let overdueDays: Int
+    }
+
+    /// Check if payment tracking is enabled.
+    public func isPaymentTrackingEnabled() throws -> Bool {
+        try db.writer.read { dbConn in
+            let val = try String.fetchOne(dbConn, sql: """
+                SELECT value FROM settings WHERE key = 'payment_tracking_enabled'
+                """)
+            return val == "1"
+        }
+    }
+
+    /// Enable/disable payment tracking.
+    public func setPaymentTrackingEnabled(_ enabled: Bool) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE settings SET value = ? WHERE key = 'payment_tracking_enabled'
+                """, arguments: [enabled ? "1" : "0"])
+        }
+    }
+
+    /// Get payment tracking settings.
+    public func getPaymentSettings() throws -> (termsDays: Int, warningDays: Int, autoHold: Bool) {
+        try db.writer.read { dbConn in
+            let terms = try Int.fetchOne(dbConn, sql: "SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'default_payment_terms_days'") ?? 30
+            let warning = try Int.fetchOne(dbConn, sql: "SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'overdue_warning_days'") ?? 7
+            let hold = try String.fetchOne(dbConn, sql: "SELECT value FROM settings WHERE key = 'auto_payment_hold'") == "1"
+            return (termsDays: terms, warningDays: warning, autoHold: hold)
+        }
+    }
+
+    /// Update payment tracking settings.
+    public func updatePaymentSettings(termsDays: Int, warningDays: Int, autoHold: Bool) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: "UPDATE settings SET value = ? WHERE key = 'default_payment_terms_days'", arguments: [String(termsDays)])
+            try dbConn.execute(sql: "UPDATE settings SET value = ? WHERE key = 'overdue_warning_days'", arguments: [String(warningDays)])
+            try dbConn.execute(sql: "UPDATE settings SET value = ? WHERE key = 'auto_payment_hold'", arguments: [autoHold ? "1" : "0"])
+        }
+    }
+
+    /// Get payment status for a customer.
+    public func getCustomerPaymentStatus(customerId: Int64) throws -> PaymentStatus {
+        try db.writer.read { dbConn in
+            let row = try Row.fetchOne(dbConn, sql: """
+                SELECT COALESCE(SUM(amount), 0) as total_invoiced,
+                       COALESCE(SUM(paid_amount), 0) as total_paid,
+                       COALESCE(SUM(CASE WHEN status = 'overdue' THEN amount - COALESCE(paid_amount, 0) ELSE 0 END), 0) as total_overdue
+                FROM payment_records
+                WHERE customer_id = ? AND deleted_at IS NULL
+                """, arguments: [customerId])
+
+            let overdueRow = try Row.fetchOne(dbConn, sql: """
+                SELECT MIN(due_date) as oldest_due
+                FROM payment_records
+                WHERE customer_id = ? AND status = 'overdue' AND deleted_at IS NULL
+                """, arguments: [customerId])
+
+            var oldestDays: Int? = nil
+            if let oldest = overdueRow?["oldest_due"] as String? {
+                let f = DateFormatter()
+                f.dateFormat = "yyyy-MM-dd"
+                if let dueDate = f.date(from: oldest) {
+                    oldestDays = Int(Date().timeIntervalSince(dueDate) / 86400)
+                }
+            }
+
+            return PaymentStatus(
+                totalInvoiced: row?["total_invoiced"] as Double? ?? 0,
+                totalPaid: row?["total_paid"] as Double? ?? 0,
+                totalOverdue: row?["total_overdue"] as Double? ?? 0,
+                oldestOverdueDays: oldestDays
+            )
+        }
+    }
+
+    /// Get payment records for a customer.
+    public func getPaymentRecords(customerId: Int64) throws -> [PaymentRecord] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT id, customer_id, job_id, invoice_number, amount, due_date,
+                       paid_date, paid_amount, status, notes
+                FROM payment_records
+                WHERE customer_id = ? AND deleted_at IS NULL
+                ORDER BY due_date DESC
+                """, arguments: [customerId])
+
+            return rows.map { r in
+                PaymentRecord(
+                    id: r["id"] as Int64? ?? 0,
+                    customerId: r["customer_id"] as Int64? ?? 0,
+                    jobId: r["job_id"] as Int64?,
+                    invoiceNumber: r["invoice_number"] as String?,
+                    amount: r["amount"] as Double? ?? 0,
+                    dueDate: r["due_date"] as String? ?? "",
+                    paidDate: r["paid_date"] as String?,
+                    paidAmount: r["paid_amount"] as Double?,
+                    status: r["status"] as String? ?? "pending",
+                    notes: r["notes"] as String?
+                )
+            }
+        }
+    }
+
+    /// Create a payment record (invoice).
+    @discardableResult
+    public func createPaymentRecord(
+        customerId: Int64, jobId: Int64?, amount: Double, dueDate: String,
+        invoiceNumber: String?, createdBy: Int64
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO payment_records (customer_id, job_id, amount, due_date, invoice_number, created_by)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, arguments: [customerId, jobId, amount, dueDate, invoiceNumber, createdBy])
+            return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Record a payment against an existing invoice.
+    public func recordPayment(recordId: Int64, amount: Double, paidDate: String) throws {
+        try db.writer.write { dbConn in
+            // Get current record
+            let row = try Row.fetchOne(dbConn, sql: "SELECT amount, COALESCE(paid_amount, 0) as paid FROM payment_records WHERE id = ?", arguments: [recordId])
+            let invoiceAmount = row?["amount"] as Double? ?? 0
+            let currentPaid = row?["paid"] as Double? ?? 0
+            let newPaid = currentPaid + amount
+            let status = newPaid >= invoiceAmount ? "paid" : "partial"
+
+            try dbConn.execute(sql: """
+                UPDATE payment_records SET paid_amount = ?, paid_date = ?, status = ?, updated_at = datetime('now')
+                WHERE id = ?
+                """, arguments: [newPaid, paidDate, status, recordId])
+        }
+    }
+
+    /// Get all customers with overdue payments.
+    public func getOverdueCustomers() throws -> [CustomerPaymentAlert] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT c.id, COALESCE(c.company_name, c.name, c.contact_name, 'Unknown') as customer_name,
+                       SUM(pr.amount - COALESCE(pr.paid_amount, 0)) as overdue_amount,
+                       MIN(pr.due_date) as oldest_due
+                FROM payment_records pr
+                JOIN customers c ON c.id = pr.customer_id
+                WHERE pr.status = 'overdue' AND pr.deleted_at IS NULL AND c.deleted_at IS NULL
+                GROUP BY c.id
+                ORDER BY overdue_amount DESC
+                """)
+
+            let f = DateFormatter()
+            f.dateFormat = "yyyy-MM-dd"
+
+            return rows.compactMap { r in
+                let daysOverdue: Int
+                if let oldest = r["oldest_due"] as String?, let dueDate = f.date(from: oldest) {
+                    daysOverdue = max(0, Int(Date().timeIntervalSince(dueDate) / 86400))
+                } else {
+                    daysOverdue = 0
+                }
+
+                return CustomerPaymentAlert(
+                    id: r["id"] as Int64? ?? 0,
+                    customerName: r["customer_name"] as String? ?? "Unknown",
+                    overdueAmount: r["overdue_amount"] as Double? ?? 0,
+                    overdueDays: daysOverdue
+                )
+            }
+        }
+    }
+
+    // =========================================================================
     // MARK: - Internal Helpers
     // =========================================================================
 
@@ -964,5 +1847,19 @@ public final class PeopleService: Sendable {
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
         return message.contains("no such table")
+    }
+
+    /// Format a date as yyyy-MM-dd.
+    private func formatDateYMD(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date)
+    }
+
+    /// Parse a yyyy-MM-dd string to a Date.
+    private func parseDateYMD(_ str: String) -> Date? {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f.date(from: str)
     }
 }

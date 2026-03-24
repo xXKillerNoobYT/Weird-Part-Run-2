@@ -56,6 +56,10 @@ extension AppDatabase {
         registerMigration039NotebookTemplates(&migrator)
         registerMigration040WarehouseFloorPlans(&migrator)
         registerMigration041AuditConfidence(&migrator)
+        registerMigration042BreakCompliance(&migrator)
+        registerMigration043PaymentTracking(&migrator)
+        registerMigration044JobClassifications(&migrator)
+        registerMigration045TodoClassification(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -372,6 +376,82 @@ extension AppDatabase {
                     .references("warehouse_storage_areas")
                 t.column("voted_at", .text).defaults(sql: "datetime('now')")
             }
+        }
+    }
+
+    // MARK: - Migration 042: Break/Lunch Compliance
+
+    private static func registerMigration042BreakCompliance(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("042_break_compliance") { db in
+            // Break/lunch policies — state and company rules
+            try db.create(table: "break_policies") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("state_code", .text)
+                t.column("policy_type", .text).notNull()
+                t.column("work_day_hours", .integer).notNull().defaults(to: 8)
+                t.column("lunch_minutes", .integer).notNull().defaults(to: 30)
+                t.column("break_count", .integer).notNull().defaults(to: 2)
+                t.column("break_minutes", .integer).notNull().defaults(to: 15)
+                t.column("data_source", .text)
+                t.column("data_date", .text)
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+            }
+
+            // Break bonuses for sticking to state minimums
+            try db.create(table: "break_bonuses") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("policy_id", .integer).notNull()
+                    .references("break_policies")
+                t.column("bonus_type", .text).notNull()
+                t.column("bonus_amount", .double).notNull().defaults(to: 0.0)
+                t.column("description", .text)
+                t.column("is_enabled", .integer).notNull().defaults(to: 0)
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+            }
+
+            // Individual break records per user per day
+            try db.create(table: "break_records") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("user_id", .integer).notNull().references("users")
+                t.column("labor_entry_id", .integer).references("labor_entries")
+                t.column("break_type", .text).notNull()
+                t.column("started_at", .text).notNull()
+                t.column("ended_at", .text)
+                t.column("duration_minutes", .integer)
+                t.column("is_paid", .integer).notNull().defaults(to: 1)
+                t.column("auto_filled", .integer).notNull().defaults(to: 0)
+                t.column("timer_duration_minutes", .integer)
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+            }
+
+            // Company-level break settings
+            try db.create(table: "company_break_settings") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("state_code", .text).notNull().defaults(to: "WY")
+                t.column("rounding_minutes", .integer).notNull().defaults(to: 15)
+                t.column("rounding_enabled", .integer).notNull().defaults(to: 0)
+                t.column("auto_fill_breaks", .integer).notNull().defaults(to: 1)
+                t.column("default_morning_break", .text).defaults(to: "10:00")
+                t.column("default_lunch", .text).defaults(to: "12:00")
+                t.column("default_afternoon_break", .text).defaults(to: "14:30")
+                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+            }
+
+            // Seed Wyoming state labor law defaults
+            try db.execute(sql: """
+                INSERT INTO break_policies (state_code, policy_type, work_day_hours, lunch_minutes, break_count, break_minutes, data_source, data_date)
+                VALUES ('WY', 'state_required_paid', 8, 30, 2, 15, 'us_dept_of_labor', date('now'))
+                """)
+
+            // Seed default company settings
+            try db.execute(sql: """
+                INSERT INTO company_break_settings (state_code, rounding_minutes, rounding_enabled, auto_fill_breaks)
+                VALUES ('WY', 15, 0, 1)
+                """)
         }
     }
 }
@@ -3621,6 +3701,134 @@ extension AppDatabase {
                 t.add(column: "reference_id", .integer)
                 t.add(column: "is_completed", .integer).notNull().defaults(to: 0)
                 t.add(column: "notebook_id", .integer)       // Direct notebook reference for queries
+            }
+        }
+    }
+
+    // MARK: - Migration 043: Payment Tracking
+
+    private static func registerMigration043PaymentTracking(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("043_payment_tracking") { db in
+            // Payment records for customer invoicing / AR tracking
+            try db.create(table: "payment_records") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("customer_id", .integer).notNull()
+                    .references("customers", onDelete: .cascade)
+                t.column("job_id", .integer)
+                    .references("jobs")
+                t.column("invoice_number", .text)
+                t.column("amount", .double).notNull()
+                t.column("due_date", .text).notNull()
+                t.column("paid_date", .text)
+                t.column("paid_amount", .double)
+                t.column("status", .text).notNull().defaults(to: "pending")
+                t.column("notes", .text)
+                t.column("created_by", .integer).references("users")
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+            }
+
+            // Communication log for customers (notes, calls, emails, meetings)
+            try db.create(table: "customer_communications") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("customer_id", .integer).notNull()
+                    .references("customers", onDelete: .cascade)
+                t.column("comm_type", .text).notNull().defaults(to: "note")
+                t.column("content", .text).notNull()
+                t.column("created_by", .integer).references("users")
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+            }
+
+            // Contractor notes
+            try db.create(table: "contractor_notes") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("contractor_id", .integer).notNull()
+                    .references("entity_contacts", onDelete: .cascade)
+                t.column("content", .text).notNull()
+                t.column("created_by", .integer).references("users")
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+            }
+
+            // Contractor ratings (subcontractors only)
+            try db.create(table: "contractor_ratings") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("contractor_id", .integer).notNull()
+                    .references("entity_contacts", onDelete: .cascade)
+                t.column("quality_score", .double).notNull().defaults(to: 0)
+                t.column("on_time_score", .double).notNull().defaults(to: 0)
+                t.column("reliability_score", .double).notNull().defaults(to: 0)
+                t.column("rated_by", .integer).references("users")
+                t.column("job_id", .integer).references("jobs")
+                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("deleted_at", .text)
+            }
+
+            // Payment tracking settings in settings table
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO settings (key, value) VALUES
+                ('payment_tracking_enabled', '0'),
+                ('default_payment_terms_days', '30'),
+                ('overdue_warning_days', '7'),
+                ('auto_payment_hold', '0')
+            """)
+        }
+    }
+
+    // MARK: - Migration 044: Job Classifications
+
+    private static func registerMigration044JobClassifications(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("044_job_classifications") { db in
+            // Warranty, classification, payment hold, and continuous columns on jobs
+            try db.alter(table: "jobs") { t in
+                // Warranty fields
+                t.add(column: "warranty_start", .text)
+                t.add(column: "warranty_end", .text)
+                t.add(column: "warranty_duration_days", .integer)
+
+                // Job classification: "standard", "continuous", "service_call"
+                t.add(column: "job_classification", .text).defaults(to: "standard")
+
+                // Payment hold
+                t.add(column: "payment_hold_amount", .double)
+                t.add(column: "payment_hold_date", .text)
+                t.add(column: "payment_hold_reason", .text)
+
+                // Continuous job fields
+                t.add(column: "is_continuous", .integer).notNull().defaults(to: 0)
+                t.add(column: "continuous_schedule", .text)
+            }
+        }
+    }
+
+    // MARK: - Migration 045: Todo Work Classification
+
+    private static func registerMigration045TodoClassification(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("045_todo_classification") { db in
+            // Work classification columns on notebook_entries
+            try db.alter(table: "notebook_entries") { t in
+                t.add(column: "work_classification", .text)
+                t.add(column: "classification_reviewed", .integer).notNull().defaults(to: 0)
+                t.add(column: "classification_reviewed_by", .integer)
+                t.add(column: "classification_reviewed_at", .text)
+                t.add(column: "warranty_timer_start", .text)
+                t.add(column: "warranty_timer_end", .text)
+                t.add(column: "is_question", .integer).notNull().defaults(to: 0)
+            }
+
+            // Classification audit history
+            try db.create(table: "classification_history") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("entry_id", .integer).notNull()
+                    .references("notebook_entries", onDelete: .cascade)
+                t.column("old_classification", .text)
+                t.column("new_classification", .text).notNull()
+                t.column("changed_by", .integer).notNull()
+                    .references("users")
+                t.column("reason", .text)
+                t.column("changed_at", .text).defaults(sql: "datetime('now')")
             }
         }
     }

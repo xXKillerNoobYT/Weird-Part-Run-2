@@ -30,8 +30,16 @@ struct IOSClockPage: View {
     @State private var linkedJobId: Int64?
     @State private var linkedJobName: String?
 
-    // Activity status (working, supply_run, etc.)
+    // Activity status (working, supply_run, break, lunch_paid, lunch_unpaid)
     @State private var activityStatus: String = "working"
+
+    // Break/lunch tracking
+    @State private var activeBreakRecord: BreakRecord?
+    @State private var breakElapsedText: String = ""
+    @State private var breakTimer: Timer?
+    @State private var breakBudgetMinutes: Int = 15
+    @State private var lunchPaidMinutes: Int = 30
+    @State private var showLunchUnpaidPrompt = false
 
     // To-do integration
     @State private var activeTodos: [JobsService.ClockTodoItem] = []
@@ -55,6 +63,7 @@ struct IOSClockPage: View {
         case help
         case todoPicker
         case switchJobPicker
+        case lunchUnpaidPrompt
 
         var id: String {
             switch self {
@@ -63,6 +72,7 @@ struct IOSClockPage: View {
             case .help: "help"
             case .todoPicker: "todoPicker"
             case .switchJobPicker: "switchJobPicker"
+            case .lunchUnpaidPrompt: "lunchUnpaidPrompt"
             }
         }
     }
@@ -106,7 +116,10 @@ struct IOSClockPage: View {
                 locationManager.requestPermission()
                 loadData()
             }
-            .onDisappear { elapsedTimer?.invalidate(); elapsedTimer = nil }
+            .onDisappear {
+                elapsedTimer?.invalidate(); elapsedTimer = nil
+                breakTimer?.invalidate(); breakTimer = nil
+            }
             .fullScreenCover(isPresented: $geofenceManager.didExitJobRegion) {
                 GeofenceAlertView(
                     geofenceManager: geofenceManager,
@@ -150,6 +163,18 @@ struct IOSClockPage: View {
                         clockIn(jobId: jobId, isShop: isShop)
                     }
                     .environmentObject(appCore)
+                case .lunchUnpaidPrompt:
+                    LunchUnpaidPromptSheet(
+                        onContinueUnpaid: {
+                            activeSheet = nil
+                            activityStatus = "lunch_unpaid"
+                        },
+                        onEndLunch: {
+                            activeSheet = nil
+                            showLunchUnpaidPrompt = false
+                            Task { await endCurrentBreak() }
+                        }
+                    )
                 }
             }
     }
@@ -193,10 +218,10 @@ struct IOSClockPage: View {
     private func clockedInSection(_ entry: JobsService.LaborEntryRow) -> some View {
         Section("Current Status") {
             VStack(alignment: .leading, spacing: 8) {
-                Label(activityStatus == "supply_run" ? "On Supply Run" : "Clocked In",
-                      systemImage: activityStatus == "supply_run" ? "car.fill" : "clock.fill")
+                // Status label
+                Label(statusLabel, systemImage: statusIcon)
                     .font(.headline)
-                    .foregroundStyle(activityStatus == "supply_run" ? .orange : .green)
+                    .foregroundStyle(statusColor)
 
                 // Live elapsed timer — large, readable display
                 VStack(spacing: 2) {
@@ -217,7 +242,12 @@ struct IOSClockPage: View {
                         .font(.system(.subheadline, design: .monospaced))
                 }
 
-                // Clock Out + Switch Job buttons
+                // Active break/lunch indicator
+                if let breakRecord = activeBreakRecord {
+                    activeBreakBanner(breakRecord)
+                }
+
+                // Clock Out + Switch Job (disabled during active break)
                 HStack(spacing: 12) {
                     Button(role: .destructive) {
                         clockOut(entryId: entry.id)
@@ -227,6 +257,7 @@ struct IOSClockPage: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
+                    .disabled(activeBreakRecord != nil)
 
                     Button {
                         Task { await switchJob(entryId: entry.id) }
@@ -237,41 +268,155 @@ struct IOSClockPage: View {
                     .buttonStyle(.bordered)
                     .controlSize(.large)
                     .tint(.blue)
+                    .disabled(activeBreakRecord != nil)
                 }
                 .padding(.top, 4)
 
                 Divider()
 
                 // Lunch / Break / Supply Run buttons
-                HStack(spacing: 12) {
+                if activeBreakRecord != nil {
+                    // Show end break button when on break
                     Button {
-                        Task { await startBreak(type: "lunch", entryId: entry.id) }
+                        Task { await endCurrentBreak() }
                     } label: {
-                        Label("Lunch", systemImage: "fork.knife")
+                        Label("End \(activeBreakRecord?.breakType == "break" ? "Break" : "Lunch")",
+                              systemImage: "checkmark.circle.fill")
+                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .controlSize(.large)
+                } else {
+                    HStack(spacing: 12) {
+                        Button {
+                            Task { await startLunchBreak(entryId: entry.id) }
+                        } label: {
+                            Label("Lunch", systemImage: "fork.knife")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(activityStatus == "supply_run")
 
-                    Button {
-                        Task { await startBreak(type: "break", entryId: entry.id) }
-                    } label: {
-                        Label("Break", systemImage: "cup.and.saucer")
-                    }
-                    .buttonStyle(.bordered)
+                        Button {
+                            Task { await startPaidBreak(entryId: entry.id) }
+                        } label: {
+                            Label("Break", systemImage: "cup.and.saucer")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(activityStatus == "supply_run")
 
-                    Button {
-                        Task { await toggleSupplyRun(entryId: entry.id) }
-                    } label: {
-                        Label(
-                            activityStatus == "supply_run" ? "End Run" : "Supply Run",
-                            systemImage: activityStatus == "supply_run" ? "checkmark.circle" : "car.fill"
-                        )
+                        Button {
+                            Task { await toggleSupplyRun(entryId: entry.id) }
+                        } label: {
+                            Label(
+                                activityStatus == "supply_run" ? "End Run" : "Supply Run",
+                                systemImage: activityStatus == "supply_run" ? "checkmark.circle" : "car.fill"
+                            )
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(activityStatus == "supply_run" ? .green : .orange)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(activityStatus == "supply_run" ? .green : .orange)
                 }
             }
             .padding(.vertical, 4)
         }
+    }
+
+    // MARK: - Status Helpers
+
+    private var statusLabel: String {
+        switch activityStatus {
+        case "supply_run": return "On Supply Run"
+        case "break": return "On Break (Paid)"
+        case "lunch_paid": return "On Lunch (Paid)"
+        case "lunch_unpaid": return "On Lunch (Unpaid)"
+        default: return "Clocked In"
+        }
+    }
+
+    private var statusIcon: String {
+        switch activityStatus {
+        case "supply_run": return "car.fill"
+        case "break": return "cup.and.saucer.fill"
+        case "lunch_paid", "lunch_unpaid": return "fork.knife"
+        default: return "clock.fill"
+        }
+    }
+
+    private var statusColor: Color {
+        switch activityStatus {
+        case "supply_run": return .orange
+        case "break": return .purple
+        case "lunch_paid": return .blue
+        case "lunch_unpaid": return .red
+        default: return .green
+        }
+    }
+
+    // MARK: - Active Break Banner
+
+    private func activeBreakBanner(_ breakRecord: BreakRecord) -> some View {
+        VStack(spacing: 6) {
+            HStack {
+                Image(systemName: breakRecord.breakType == "break" ? "cup.and.saucer.fill" : "fork.knife")
+                    .foregroundStyle(.white)
+                Text(breakRecord.breakType == "break" ? "Break Timer" : "Lunch Timer")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.white)
+                Spacer()
+                Text(breakElapsedText)
+                    .font(.system(.title3, design: .monospaced))
+                    .fontWeight(.bold)
+                    .foregroundStyle(.white)
+            }
+
+            // Budget bar
+            if breakRecord.breakType == "break" {
+                let budget = breakBudgetMinutes
+                let elapsed = breakElapsedMinutes(breakRecord)
+                let progress = min(1.0, Double(elapsed) / Double(max(1, budget)))
+                ProgressView(value: progress)
+                    .tint(progress >= 1.0 ? .red : .white)
+                Text("\(elapsed)/\(budget) min")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.8))
+            } else {
+                let paidMin = lunchPaidMinutes
+                let elapsed = breakElapsedMinutes(breakRecord)
+                let progress = min(1.0, Double(elapsed) / Double(max(1, paidMin)))
+                ProgressView(value: progress)
+                    .tint(progress >= 1.0 ? .red : .white)
+                if elapsed < paidMin {
+                    Text("\(elapsed)/\(paidMin) min paid")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.8))
+                } else {
+                    Text("Paid portion complete — \(elapsed - paidMin) min unpaid")
+                        .font(.caption2)
+                        .foregroundStyle(.yellow)
+                }
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(breakRecord.breakType == "break" ? Color.purple : Color.blue)
+        )
+    }
+
+    private func breakElapsedMinutes(_ record: BreakRecord) -> Int {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let basic = ISO8601DateFormatter()
+        basic.formatOptions = [.withInternetDateTime]
+        let local = DateFormatter()
+        local.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+
+        guard let start = formatter.date(from: record.startedAt)
+                ?? basic.date(from: record.startedAt)
+                ?? local.date(from: record.startedAt) else { return 0 }
+        return Int(Date().timeIntervalSince(start) / 60)
     }
 
     // MARK: - Job Picker (inline, no sheet)
@@ -595,6 +740,15 @@ struct IOSClockPage: View {
             let lng = location?.coordinate.longitude
 
             do {
+                // Check payment hold before allowing clock-in
+                if !isShop, let jid = jobId {
+                    let isHeld = try service.isJobOnPaymentHold(jobId: jid)
+                    if isHeld {
+                        errorMessage = "This job is on payment hold. Contact your manager."
+                        return
+                    }
+                }
+
                 if isShop {
                     // Clock in to Shop/Warehouse (jobId = 0 or a special "shop" job)
                     try service.clockIn(userId: userId, jobId: jobId ?? 0, gpsLat: lat, gpsLng: lng)
@@ -644,50 +798,142 @@ struct IOSClockPage: View {
         }
     }
 
-    /// Start a lunch or break — clocks the user out and triggers the questionnaire.
-    private func startBreak(type: String, entryId: Int64) async {
-        guard let service = appCore.jobsService,
-              let db = appCore.db else { return }
-
-        let location = await locationManager.getCurrentLocation()
+    /// Start a paid break — stays clocked in, starts break timer.
+    private func startPaidBreak(entryId: Int64) async {
+        guard let breakSvc = appCore.breakService,
+              let userId = appCore.currentUser?.id else {
+            await MainActor.run { errorMessage = "Break service unavailable" }
+            return
+        }
 
         do {
-            // Record the break type in the labor entry notes before clocking out
-            try await db.writer.write { conn in
-                let existingNotes = try String.fetchOne(
-                    conn,
-                    sql: "SELECT notes FROM labor_entries WHERE id = ?",
-                    arguments: [entryId]
-                ) ?? ""
-                let breakNote = existingNotes.isEmpty
-                    ? "[\(type)]"
-                    : "\(existingNotes) [\(type)]"
-                try conn.execute(
-                    sql: "UPDATE labor_entries SET notes = ? WHERE id = ?",
-                    arguments: [breakNote, entryId]
-                )
-            }
-
-            // Clock out (same as normal clock-out, triggers questionnaire)
-            try service.clockOut(
+            let settings = try breakSvc.getCompanyBreakSettings()
+            let record = try breakSvc.startBreak(
+                userId: userId,
+                breakType: "break",
                 laborEntryId: entryId,
-                gpsLat: location?.coordinate.latitude,
-                gpsLng: location?.coordinate.longitude
+                timerMinutes: settings.roundingMinutes > 0 ? 15 : nil
             )
-            geofenceManager.stopMonitoring()
             await MainActor.run {
+                activeBreakRecord = record
+                activityStatus = "break"
+                breakBudgetMinutes = 15
                 errorMessage = nil
-                linkedJobId = nil
-                linkedJobName = nil
-                isShopClockIn = false
-                activityStatus = "working"
-                lastLaborEntryId = entryId
-                activeSheet = .questionnaire(entryId)
+                startBreakTimer()
             }
-            loadData()
         } catch {
             await MainActor.run {
-                errorMessage = "\(type.capitalized) failed: \(error.localizedDescription)"
+                errorMessage = "Break start failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Start a lunch — first portion is paid, after paid portion prompts for unpaid.
+    private func startLunchBreak(entryId: Int64) async {
+        guard let breakSvc = appCore.breakService,
+              let userId = appCore.currentUser?.id else {
+            await MainActor.run { errorMessage = "Break service unavailable" }
+            return
+        }
+
+        do {
+            let settings = try breakSvc.getCompanyBreakSettings()
+            let policies = try breakSvc.getBreakPolicy(stateCode: settings.stateCode)
+            let lunchPolicy = policies.first { $0.policyType == "state_required_paid" }
+            let paidMin = lunchPolicy?.lunchMinutes ?? 30
+
+            let record = try breakSvc.startBreak(
+                userId: userId,
+                breakType: "lunch_paid",
+                laborEntryId: entryId,
+                timerMinutes: paidMin
+            )
+            await MainActor.run {
+                activeBreakRecord = record
+                activityStatus = "lunch_paid"
+                lunchPaidMinutes = paidMin
+                errorMessage = nil
+                startBreakTimer()
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = "Lunch start failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// End the currently active break/lunch.
+    private func endCurrentBreak() async {
+        guard let breakSvc = appCore.breakService,
+              let record = activeBreakRecord,
+              let recordId = record.id else { return }
+
+        do {
+            try breakSvc.endBreak(recordId: recordId)
+            await MainActor.run {
+                breakTimer?.invalidate()
+                breakTimer = nil
+                activeBreakRecord = nil
+                activityStatus = "working"
+                breakElapsedText = ""
+                errorMessage = nil
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = "End break failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    // MARK: - Break Timer
+
+    private func startBreakTimer() {
+        breakTimer?.invalidate()
+        updateBreakElapsedText()
+        breakTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+            Task { @MainActor in
+                updateBreakElapsedText()
+                checkBreakBudget()
+            }
+        }
+    }
+
+    private func updateBreakElapsedText() {
+        guard let record = activeBreakRecord else {
+            breakElapsedText = ""
+            return
+        }
+        let elapsed = breakElapsedMinutes(record)
+        let seconds = breakElapsedSeconds(record) % 60
+        breakElapsedText = String(format: "%d:%02d", elapsed, seconds)
+    }
+
+    private func breakElapsedSeconds(_ record: BreakRecord) -> Int {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let basic = ISO8601DateFormatter()
+        basic.formatOptions = [.withInternetDateTime]
+        let local = DateFormatter()
+        local.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+
+        guard let start = formatter.date(from: record.startedAt)
+                ?? basic.date(from: record.startedAt)
+                ?? local.date(from: record.startedAt) else { return 0 }
+        return Int(Date().timeIntervalSince(start))
+    }
+
+    private func checkBreakBudget() {
+        guard let record = activeBreakRecord else { return }
+        let elapsed = breakElapsedMinutes(record)
+
+        if record.breakType == "break" && elapsed >= breakBudgetMinutes {
+            // Auto-end break at budget limit
+            Task { await endCurrentBreak() }
+        } else if record.breakType == "lunch_paid" && elapsed >= lunchPaidMinutes {
+            // Paid lunch portion complete — prompt for unpaid continuation
+            if !showLunchUnpaidPrompt {
+                showLunchUnpaidPrompt = true
+                activeSheet = .lunchUnpaidPrompt
             }
         }
     }
@@ -967,6 +1213,19 @@ struct IOSClockPage: View {
                 }
             }
 
+            // Load active break record if any
+            var currentBreak: BreakRecord?
+            let breakBudget = 15
+            var lunchPaid = 30
+            if let breakSvc = appCore.breakService {
+                currentBreak = try? breakSvc.getActiveBreak(userId: userId)
+                if let settings = try? breakSvc.getCompanyBreakSettings() {
+                    let policies = try? breakSvc.getBreakPolicy(stateCode: settings.stateCode)
+                    let lunchPolicy = policies?.first { $0.policyType == "state_required_paid" }
+                    lunchPaid = lunchPolicy?.lunchMinutes ?? 30
+                }
+            }
+
             // Load to-dos for the active job
             var todos: [JobsService.ClockTodoItem] = []
             var linkedTodo: JobsService.ClockTodoItem?
@@ -988,11 +1247,24 @@ struct IOSClockPage: View {
                 todayHours = todayH
                 todayJobGroups = groups
                 sortedJobs = jobsWithDist
-                activityStatus = currentActivity
                 activeTodos = todos
                 currentTodo = linkedTodo
                 workType = currentWorkType
                 isLoading = false
+
+                // Apply break state
+                activeBreakRecord = currentBreak
+                breakBudgetMinutes = breakBudget
+                lunchPaidMinutes = lunchPaid
+                if let brk = currentBreak {
+                    activityStatus = brk.breakType
+                    startBreakTimer()
+                } else {
+                    activityStatus = currentActivity
+                    breakTimer?.invalidate()
+                    breakTimer = nil
+                    breakElapsedText = ""
+                }
 
                 // Start/stop elapsed timer based on clock-in state
                 if let entry {
@@ -1142,6 +1414,62 @@ private struct TodoPickerSheet: View {
                     Button("Skip") { dismiss() }
                 }
             }
+        }
+    }
+}
+
+// MARK: - Lunch Unpaid Prompt Sheet
+
+private struct LunchUnpaidPromptSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let onContinueUnpaid: () -> Void
+    let onEndLunch: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                Image(systemName: "fork.knife")
+                    .font(.system(size: 48))
+                    .foregroundStyle(.blue)
+
+                Text("Paid Lunch Complete")
+                    .font(.title2)
+                    .fontWeight(.bold)
+
+                Text("Your paid lunch period has ended. Would you like to continue on an unpaid lunch break, or return to work?")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+
+                VStack(spacing: 12) {
+                    Button {
+                        onContinueUnpaid()
+                    } label: {
+                        Label("Continue Unpaid Lunch", systemImage: "clock.badge.exclamationmark")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .tint(.orange)
+
+                    Button {
+                        onEndLunch()
+                    } label: {
+                        Label("End Lunch — Back to Work", systemImage: "checkmark.circle.fill")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .tint(.green)
+                }
+                .padding(.horizontal)
+
+                Spacer()
+            }
+            .padding(.top, 40)
+            .navigationTitle("Lunch Time")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }

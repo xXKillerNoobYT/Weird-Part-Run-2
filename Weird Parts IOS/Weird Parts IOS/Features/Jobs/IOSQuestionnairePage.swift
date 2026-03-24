@@ -30,6 +30,17 @@ struct IOSQuestionnairePage: View {
     @State private var companionPolls: [(pollId: Int64, questionText: String, hasVoted: Bool)] = []
     @State private var companionVotes: [Int64: Bool] = [:]  // pollId -> true=accept, false=reject
 
+    // Break verification
+    @State private var breakVerification: BreakAnswer = .allTaken
+    @State private var missedBreaks: Set<String> = []
+    @State private var hadBreakButtons = false  // Did the user use break buttons today?
+
+    private enum BreakAnswer: String, CaseIterable {
+        case allTaken = "Yes, all"
+        case forgot = "I forgot / didn't"
+        case partial = "Partial"
+    }
+
     var body: some View {
         NavigationStack {
             questionnaireContent
@@ -101,6 +112,47 @@ struct IOSQuestionnairePage: View {
                     }
                 }
 
+                // Break verification
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Did you take your breaks today?")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+
+                        Picker("Breaks", selection: $breakVerification) {
+                            ForEach(BreakAnswer.allCases, id: \.self) { answer in
+                                Text(answer.rawValue).tag(answer)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+
+                        if breakVerification == .partial || breakVerification == .forgot {
+                            if breakVerification == .partial {
+                                Text("Which breaks did you miss?")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                breakCheckToggle("Morning break", key: "morning_break")
+                                breakCheckToggle("Lunch", key: "lunch")
+                                breakCheckToggle("Afternoon break", key: "afternoon_break")
+                            }
+
+                            Label("Missed breaks will be reported to the office.", systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                } header: {
+                    HStack {
+                        Image(systemName: "cup.and.saucer")
+                            .foregroundStyle(.purple)
+                        Text("Break Verification")
+                    }
+                }
+
                 // Companion poll questions (always optional)
                 if !companionPolls.isEmpty {
                     Section {
@@ -149,6 +201,22 @@ struct IOSQuestionnairePage: View {
             }
             .listStyle(.insetGrouped)
         }
+    }
+
+    // MARK: - Break Check Toggle
+
+    private func breakCheckToggle(_ label: String, key: String) -> some View {
+        Toggle(label, isOn: Binding<Bool>(
+            get: { missedBreaks.contains(key) },
+            set: { selected in
+                if selected {
+                    missedBreaks.insert(key)
+                } else {
+                    missedBreaks.remove(key)
+                }
+            }
+        ))
+        .font(.subheadline)
     }
 
     // MARK: - Answer Field
@@ -212,6 +280,9 @@ struct IOSQuestionnairePage: View {
                 responses: responses
             )
 
+            // Handle break verification
+            handleBreakVerification()
+
             // Save companion poll votes (separate from clock-out responses)
             if let partsService = appCore.partsService,
                let userId = appCore.currentUser?.id {
@@ -232,6 +303,45 @@ struct IOSQuestionnairePage: View {
         isSubmitting = false
     }
 
+    /// Handle break verification logic:
+    /// - "Yes, all taken" + no break buttons used → auto-fill at defaults
+    /// - "Forgot" or "Partial" → report missed breaks to office
+    private func handleBreakVerification() {
+        guard let breakSvc = appCore.breakService,
+              let userId = appCore.currentUser?.id else { return }
+
+        switch breakVerification {
+        case .allTaken:
+            // If user said "yes, all taken" but didn't actually use break buttons,
+            // auto-fill break records at default times for compliance
+            if !hadBreakButtons {
+                try? breakSvc.autoFillBreaksForDay(
+                    userId: userId,
+                    laborEntryId: laborEntryId
+                )
+            }
+            // Note: if hadBreakButtons == true, bonus is eligible (handled by compliance calc)
+
+        case .forgot:
+            // All breaks missed — mark all as missed, auto-fill for compliance
+            try? breakSvc.autoFillBreaksForDay(
+                userId: userId,
+                laborEntryId: laborEntryId
+            )
+            // Bonus NOT eligible since questionnaire had to ask
+
+        case .partial:
+            // Some breaks missed — auto-fill the ones that were missed
+            if !missedBreaks.isEmpty {
+                try? breakSvc.autoFillBreaksForDay(
+                    userId: userId,
+                    laborEntryId: laborEntryId
+                )
+            }
+            // Bonus NOT eligible since questionnaire had to ask
+        }
+    }
+
     // MARK: - Data Loading
 
     private func loadQuestions() {
@@ -247,6 +357,22 @@ struct IOSQuestionnairePage: View {
             let msg = String(describing: error)
             if !msg.contains("no such table") {
                 errorMessage = "Failed to load questions: \(error.localizedDescription)"
+            }
+        }
+
+        // Check if user used break buttons today
+        if let breakSvc = appCore.breakService,
+           let userId = appCore.currentUser?.id {
+            do {
+                let records = try breakSvc.getBreakRecordsForDay(userId: userId)
+                hadBreakButtons = records.contains { !$0.autoFilled }
+                // Pre-select "forgot" if no break records at all
+                if records.isEmpty {
+                    breakVerification = .forgot
+                    missedBreaks = ["morning_break", "lunch", "afternoon_break"]
+                }
+            } catch {
+                // Non-critical
             }
         }
 

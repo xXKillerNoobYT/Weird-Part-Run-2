@@ -11,6 +11,10 @@ struct AppConfigPage: View {
     @State private var staleDataHours = "4"
     @State private var archiveDays = "90"
     @State private var warrantyDays = "365"
+    @State private var paymentTrackingEnabled = false
+    @State private var paymentTermsDays = 30
+    @State private var overdueWarningDays = 7
+    @State private var autoPaymentHold = false
     @State private var saved = false
     @State private var loadError: String?
     @State private var actionError: String?
@@ -59,6 +63,20 @@ struct AppConfigPage: View {
             }
 
             Section {
+                Toggle("Enable Payment Tracking", isOn: $paymentTrackingEnabled)
+
+                if paymentTrackingEnabled {
+                    Stepper("Payment Terms: \(paymentTermsDays) days", value: $paymentTermsDays, in: 7...120)
+                    Stepper("Overdue Warning: \(overdueWarningDays) days before", value: $overdueWarningDays, in: 1...30)
+                    Toggle("Auto Payment Hold", isOn: $autoPaymentHold)
+                }
+            } header: {
+                Text("Payment Tracking")
+            } footer: {
+                Text("When enabled, track invoices and payments per customer. Shows payment status on customer detail pages.")
+            }
+
+            Section {
                 Button {
                     saveConfig()
                 } label: {
@@ -91,6 +109,15 @@ struct AppConfigPage: View {
             archiveDays = try service.getSetting("archive_completed_days") ?? "90"
             let warranty = try service.getWarrantyLengthDays()
             warrantyDays = String(warranty)
+
+            // Payment tracking settings
+            if let peopleService = appCore.peopleService {
+                paymentTrackingEnabled = (try? peopleService.isPaymentTrackingEnabled()) ?? false
+                let paySettings = try? peopleService.getPaymentSettings()
+                paymentTermsDays = paySettings?.termsDays ?? 30
+                overdueWarningDays = paySettings?.warningDays ?? 7
+                autoPaymentHold = paySettings?.autoHold ?? false
+            }
         } catch {
             loadError = error.localizedDescription
         }
@@ -107,6 +134,16 @@ struct AppConfigPage: View {
             try service.updateSetting(key: "archive_completed_days", value: archiveDays, category: "data")
             if let days = Int(warrantyDays) {
                 try service.updateWarrantyLengthDays(days)
+            }
+
+            // Payment tracking settings
+            if let peopleService = appCore.peopleService {
+                try peopleService.setPaymentTrackingEnabled(paymentTrackingEnabled)
+                try peopleService.updatePaymentSettings(
+                    termsDays: paymentTermsDays,
+                    warningDays: overdueWarningDays,
+                    autoHold: autoPaymentHold
+                )
             }
             saved = true
             Task { @MainActor in

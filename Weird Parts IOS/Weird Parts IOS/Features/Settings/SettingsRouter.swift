@@ -58,6 +58,8 @@ struct SettingsRouter: View {
             IOSSupplierBridgePage()
         case "settings-clockout", "settings-clock-out-questions":
             IOSClockOutQuestionsPage()
+        case "settings-breaks", "settings-break-lunch":
+            IOSBreakSettingsPage()
         case "settings-ai-config":
             IOSAIConfigPage()
         case "settings-device-management":
