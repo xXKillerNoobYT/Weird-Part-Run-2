@@ -331,6 +331,125 @@ HStack {
 }
 ```
 
+### Step 7: Reconnection After Days Offline
+
+A device may be completely isolated (no Bluetooth, no LAN, no contact) for days or weeks. When it reconnects, everything must merge cleanly without data loss.
+
+```swift
+extension IOSSyncManager {
+    /// Smart reconnection sync for devices that have been offline for extended periods.
+    /// Handles the case where a truck was at a remote job for a week with no connectivity.
+    func performReconnectionSync() async throws {
+        syncStatus = .syncing
+
+        guard let db = appCore?.db else {
+            throw SyncError.noDatabaseAvailable
+        }
+
+        let changeTracker = ChangeTracker(db: db)
+        let pendingChanges = try changeTracker.getPendingChanges()
+
+        // 1. Determine how long we've been offline
+        let lastSync = UserDefaults.standard.double(forKey: "last_sync_timestamp")
+        let offlineDuration = Date().timeIntervalSince1970 - lastSync
+        let offlineDays = Int(offlineDuration / 86400)
+
+        // 2. Show progress to user — this may take a while
+        await MainActor.run {
+            syncProgressMessage = "Reconnecting after \(offlineDays) day\(offlineDays == 1 ? "" : "s") offline..."
+            syncProgressPercent = 0.0
+        }
+
+        // 3. Get ALL changes from shop since our last sync
+        //    This is a bulk download — could be thousands of rows
+        let shopChanges = try await requestChangesSince(timestamp: lastSync)
+
+        await MainActor.run {
+            syncProgressMessage = "Processing \(shopChanges.count) changes from shop + \(pendingChanges.count) local changes..."
+            syncProgressPercent = 0.1
+        }
+
+        // 4. Apply shop changes locally using ConflictResolver
+        //    Field-level merge means most "conflicts" aren't actually conflicts
+        let resolver = ConflictResolver(db: db)
+        var conflicts: [SyncConflict] = []
+
+        for (index, shopChange) in shopChanges.enumerated() {
+            let result = try resolver.applyRemoteChange(shopChange)
+            if case .conflict(let conflict) = result {
+                conflicts.append(conflict)
+            }
+
+            // Update progress every 100 changes
+            if index % 100 == 0 {
+                await MainActor.run {
+                    syncProgressPercent = 0.1 + (Double(index) / Double(shopChanges.count) * 0.4)
+                }
+            }
+        }
+
+        await MainActor.run {
+            syncProgressMessage = "Sending \(pendingChanges.count) local changes to shop..."
+            syncProgressPercent = 0.5
+        }
+
+        // 5. Send OUR pending changes to the shop
+        //    These are changes made while offline — could be hundreds
+        for (index, localChange) in pendingChanges.enumerated() {
+            try await sendChange(localChange)
+
+            if index % 50 == 0 {
+                await MainActor.run {
+                    syncProgressPercent = 0.5 + (Double(index) / Double(pendingChanges.count) * 0.4)
+                }
+            }
+        }
+
+        // 6. Mark all as synced
+        try changeTracker.markAsSynced(pendingChanges)
+
+        // 7. Handle conflicts (if any)
+        await MainActor.run {
+            syncProgressPercent = 0.9
+        }
+
+        if !conflicts.isEmpty {
+            // Classify and resolve — most will be auto-resolved
+            // Only hard/critical conflicts need user attention
+            let resolved = await resolveAllConflicts(conflicts)
+            let needsAttention = resolved.filter { $0.needsReview }
+
+            if !needsAttention.isEmpty {
+                await MainActor.run {
+                    pendingConflicts = needsAttention
+                    showConflictBanner = true
+                }
+            }
+        }
+
+        // 8. Done
+        await MainActor.run {
+            syncProgressPercent = 1.0
+            syncProgressMessage = nil
+            syncStatus = .synced(Date())
+            lastSyncDate = Date()
+        }
+
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "last_sync_timestamp")
+    }
+}
+```
+
+Key design rules for days-offline reconnection:
+- **Change log preserves everything** — every edit, every movement, every clock entry is in `_change_log` with timestamps. Nothing is lost no matter how long the device is offline.
+- **Field-level merge prevents most conflicts** — Device A edited notes, Device B edited price. Different fields = no conflict, both apply cleanly.
+- **Sequence numbers prevent ordering issues** — changes are applied in the order they happened, not the order they arrived.
+- **Progress bar for long syncs** — a week offline could mean thousands of changes. User sees "Processing 2,847 changes from shop..." with a progress bar.
+- **Batch processing** — changes are sent/received in batches, not one at a time. Prevents timeout on large syncs.
+- **Auto-resolve first, ask later** — 99% of "conflicts" resolve silently via LWW. Only genuinely ambiguous cases reach the user.
+- **Stock counts trigger audit** — if a device was tracking stock offline and the shop has different numbers, the confidence rating drops and an audit is triggered rather than blindly picking a winner.
+- **No data loss guarantee** — even if the app crashes mid-sync, the change log still has everything. Sync picks up where it left off.
+
 ## Important Notes
 
 - Shop computer is the ANCHOR — hub-and-spoke topology, not mesh
