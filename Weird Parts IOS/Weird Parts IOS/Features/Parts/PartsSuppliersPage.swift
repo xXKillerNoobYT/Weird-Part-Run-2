@@ -914,10 +914,8 @@ private struct SupplierDetailSheet: View {
                     .frame(minHeight: 44)
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
-                            if let service = appCore.partsService {
-                                try? service.removeSupplierContact(contactId: contact.contactId)
-                                contacts.removeAll { $0.contactId == contact.contactId }
-                            }
+                            contactToRemove = contact
+                            showRemoveContactConfirm = true
                         } label: {
                             Label("Remove", systemImage: "trash")
                         }

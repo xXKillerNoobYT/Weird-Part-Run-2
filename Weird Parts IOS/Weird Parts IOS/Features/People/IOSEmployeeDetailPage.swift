@@ -1,6 +1,7 @@
 import SwiftUI
-import WiredPartCore
 import GRDB
+import WiredPartCore
+
 
 /// Employee detail page with tabs for profile, hats, teams, and activity.
 struct IOSEmployeeDetailPage: View {

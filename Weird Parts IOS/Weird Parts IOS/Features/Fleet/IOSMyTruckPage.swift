@@ -106,10 +106,6 @@ struct IOSMyTruckPage: View {
         }
     }
 
-    @State private var showLogMileage = false
-    @State private var showLogFuel = false
-    @State private var showReportIssue = false
-
     private var quickActionsSection: some View {
         Section("Quick Actions") {
             Button {

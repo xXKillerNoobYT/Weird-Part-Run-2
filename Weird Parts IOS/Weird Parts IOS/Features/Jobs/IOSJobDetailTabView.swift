@@ -14,8 +14,13 @@ struct IOSJobDetailTabView: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var selectedTab = "overview"
-    @State private var showEditSheet = false
-    @State private var showHelp = false
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case editJob
+        case help
+        var id: String { String(describing: self) }
+    }
     @State private var jobJPOs: [OrdersService.JPOListItem] = []
     @State private var jobQAThreads: [ChatService.QAThreadRow] = []
     @State private var teamMembers: [JobsService.TeamMemberRow] = []
@@ -78,32 +83,34 @@ struct IOSJobDetailTabView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    showEditSheet = true
+                    activeSheet = .editJob
                 } label: {
                     Image(systemName: "pencil")
                 }
                 .requiresPermission("manage_jobs")
             }
             ToolbarItem(placement: .secondaryAction) {
-                Button { showHelp = true } label: {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
-            PageHelpSheet(
-                title: "Job Detail Help",
-                sections: [
-                    ("Tabs", "Use the scrollable tab bar to switch between Overview, Team, Labor, Parts, Orders, Notebooks, Chat, Q&A, and Costs."),
-                    ("Editing", "Tap the pencil icon to edit job details like name, status, priority, and address."),
-                    ("Collaboration", "The Chat and Q&A tabs let you communicate with your team. Notebooks track notes and to-dos for this job.")
-                ]
-            )
-        }
-        .sheet(isPresented: $showEditSheet) {
-            if let job {
-                IOSEditJobSheet(job: job) { loadData() }
-                    .environmentObject(appCore)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                PageHelpSheet(
+                    title: "Job Detail Help",
+                    sections: [
+                        ("Tabs", "Use the scrollable tab bar to switch between Overview, Team, Labor, Parts, Orders, Notebooks, Chat, Q&A, and Costs."),
+                        ("Editing", "Tap the pencil icon to edit job details like name, status, priority, and address."),
+                        ("Collaboration", "The Chat and Q&A tabs let you communicate with your team. Notebooks track notes and to-dos for this job.")
+                    ]
+                )
+            case .editJob:
+                if let job {
+                    IOSEditJobSheet(job: job) { loadData() }
+                        .environmentObject(appCore)
+                }
             }
         }
         .task { loadData() }
