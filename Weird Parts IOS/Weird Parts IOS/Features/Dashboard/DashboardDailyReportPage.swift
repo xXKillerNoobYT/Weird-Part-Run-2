@@ -720,7 +720,10 @@ private struct ReportProblemSheet: View {
     }
 
     private func loadJobs() {
-        guard let service = appCore.dashboardService else { return }
+        guard let service = appCore.dashboardService else {
+            // Service not ready
+            return
+        }
         do {
             let activeJobs = try service.getActiveJobsForPicker()
             jobs = activeJobs.map { (id: $0.id, name: $0.jobName) }
@@ -889,12 +892,11 @@ private struct SubmitDailyReportSheet: View {
     }
 
     private func loadInitialData() {
-        guard let db = appCore.db,
+        guard let generator = appCore.dailyReportGenerator,
               let userId = appCore.currentUser?.id else {
             isLoadingReport = false
             return
         }
-        let generator = DailyReportGenerator(db: db)
         do {
             todaysJobs = try generator.getTodaysJobs(userId: userId)
             if let primaryJob = todaysJobs.first {
@@ -908,9 +910,8 @@ private struct SubmitDailyReportSheet: View {
     }
 
     private func loadReportForJob(_ jobId: Int64) {
-        guard let db = appCore.db,
+        guard let generator = appCore.dailyReportGenerator,
               let userId = appCore.currentUser?.id else { return }
-        let generator = DailyReportGenerator(db: db)
         do {
             reportData = try generator.generateReport(userId: userId, jobId: jobId)
         } catch {

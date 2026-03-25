@@ -371,7 +371,10 @@ struct WarehouseOnboardingWizard: View {
     }
 
     private func completeCurrentStep() {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            loadError = "Service not available"
+            return
+        }
 
         // Step 1: Create floor plan if needed
         if currentStep == 1 && floorPlanId == nil {

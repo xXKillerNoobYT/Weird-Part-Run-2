@@ -670,7 +670,10 @@ struct IOSClockPage: View {
                 }
                 .pickerStyle(.segmented)
                 .onChange(of: workType) { _, newValue in
-                    guard let service = appCore.jobsService else { return }
+                    guard let service = appCore.jobsService else {
+                        errorMessage = "Service not available"
+                        return
+                    }
                     try? service.setClockEntryWorkType(clockEntryId: entry.id, workType: newValue)
                 }
 
@@ -771,7 +774,10 @@ struct IOSClockPage: View {
     }
 
     private func clockOut(entryId: Int64) {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            errorMessage = "Service not available"
+            return
+        }
 
         Task {
             let location = await locationManager.getCurrentLocation()
@@ -938,7 +944,10 @@ struct IOSClockPage: View {
 
     /// Toggle supply run status — keeps the user clocked in, changes activity status.
     private func toggleSupplyRun(entryId: Int64) async {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            await MainActor.run { errorMessage = "Service not available" }
+            return
+        }
 
         do {
             let newStatus = try service.toggleSupplyRun(laborEntryId: entryId)
@@ -967,7 +976,10 @@ struct IOSClockPage: View {
 
     /// Clock out of current job and immediately show job picker for new clock-in.
     private func switchJob(entryId: Int64) async {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            await MainActor.run { errorMessage = "Service not available" }
+            return
+        }
         let location = await locationManager.getCurrentLocation()
 
         do {
@@ -1064,7 +1076,10 @@ struct IOSClockPage: View {
     }
 
     private func loadTodosForJob(jobId: Int64) {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            errorMessage = "Service not available"
+            return
+        }
         do {
             activeTodos = try service.getActiveJobTodos(jobId: jobId)
         } catch {
@@ -1110,7 +1125,10 @@ struct IOSClockPage: View {
 
         do {
             guard let service = appCore.jobsService else {
-                await MainActor.run { isLoading = false }
+                await MainActor.run {
+                    errorMessage = "Service not available"
+                    isLoading = false
+                }
                 return
             }
 

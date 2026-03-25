@@ -364,7 +364,11 @@ struct IOSPartsOrderManagementPage: View {
     // MARK: - Data Loading
 
     private func loadSuppliers() {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            loadError = "Orders service not available"
+            isLoading = false
+            return
+        }
         do {
             suppliers = try service.getSuppliersWithActivePOs()
         } catch {

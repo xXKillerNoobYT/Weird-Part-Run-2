@@ -200,7 +200,11 @@ struct IOSVehiclesPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.fleetService else { return }
+        guard let service = appCore.fleetService else {
+            loadError = "Service not available"
+            isLoading = false
+            return
+        }
         isLoading = vehicles.isEmpty
         loadError = nil
         do {

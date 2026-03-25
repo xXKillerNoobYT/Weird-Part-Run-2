@@ -55,7 +55,7 @@ public final class DailyReportGenerator: Sendable {
     public func generateReport(userId: Int64, jobId: Int64, date: Date = Date()) throws -> DailyReportData {
         let dateStr = formatDate(date)
 
-        return try db.writer.read { dbConn in
+        do { return try db.writer.read { dbConn in
             let userName = try String.fetchOne(dbConn, sql: """
                 SELECT COALESCE(display_name, first_name || ' ' || last_name, email, 'Unknown')
                 FROM users WHERE id = ?
@@ -151,33 +151,52 @@ public final class DailyReportGenerator: Sendable {
                 userNotes: nil
             )
         }
+        } catch {
+            if isTableNotFoundError(error) {
+                return DailyReportData(
+                    date: dateStr, userId: userId, userName: "Unknown",
+                    jobId: jobId, jobName: "Unknown",
+                    clockIn: nil, clockOut: nil,
+                    totalHours: 0, breaksTaken: [],
+                    todosCompleted: [], jposCreated: [],
+                    qaQuestions: [], messagesCount: 0,
+                    userNotes: nil
+                )
+            }
+            throw error
+        }
     }
 
     /// Get today's jobs for a user to determine primary job.
     public func getTodaysJobs(userId: Int64, date: Date = Date()) throws -> [(jobId: Int64, jobName: String, hours: Double)] {
         let dateStr = formatDate(date)
-        return try db.writer.read { dbConn in
-            let rows = try Row.fetchAll(dbConn, sql: """
-                SELECT le.job_id,
-                       COALESCE(j.job_name, j.name, 'Unknown') as job_name,
-                       SUM(
-                           (julianday(COALESCE(le.clock_out, datetime('now'))) - julianday(le.clock_in)) * 24
-                           - COALESCE(le.break_minutes, 0) / 60.0
-                       ) as total_hours
-                FROM labor_entries le
-                LEFT JOIN jobs j ON j.id = le.job_id
-                WHERE le.user_id = ? AND date(le.clock_in) = ?
-                  AND le.deleted_at IS NULL
-                GROUP BY le.job_id
-                ORDER BY total_hours DESC
-                """, arguments: [userId, dateStr])
-            return rows.map { row in
-                (
-                    jobId: row["job_id"] as Int64? ?? 0,
-                    jobName: row["job_name"] as String? ?? "Unknown",
-                    hours: row["total_hours"] as Double? ?? 0
-                )
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT le.job_id,
+                           COALESCE(j.job_name, j.name, 'Unknown') as job_name,
+                           SUM(
+                               (julianday(COALESCE(le.clock_out, datetime('now'))) - julianday(le.clock_in)) * 24
+                               - COALESCE(le.break_minutes, 0) / 60.0
+                           ) as total_hours
+                    FROM labor_entries le
+                    LEFT JOIN jobs j ON j.id = le.job_id
+                    WHERE le.user_id = ? AND date(le.clock_in) = ?
+                      AND le.deleted_at IS NULL
+                    GROUP BY le.job_id
+                    ORDER BY total_hours DESC
+                    """, arguments: [userId, dateStr])
+                return rows.map { row in
+                    (
+                        jobId: row["job_id"] as Int64? ?? 0,
+                        jobName: row["job_name"] as String? ?? "Unknown",
+                        hours: row["total_hours"] as Double? ?? 0
+                    )
+                }
             }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 
@@ -199,5 +218,10 @@ public final class DailyReportGenerator: Sendable {
         let f3 = DateFormatter()
         f3.dateFormat = "yyyy-MM-dd HH:mm:ss"
         return f3.date(from: str)
+    }
+
+    private func isTableNotFoundError(_ error: Error) -> Bool {
+        let message = String(describing: error)
+        return message.contains("no such table")
     }
 }

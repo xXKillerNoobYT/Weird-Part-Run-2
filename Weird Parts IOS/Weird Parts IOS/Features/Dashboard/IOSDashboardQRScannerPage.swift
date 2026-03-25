@@ -464,8 +464,8 @@ struct IOSDashboardQRScannerPage: View {
     }
 
     private func processCode(_ code: String, autoLock: Bool) async {
-        guard let db = appCore.db else {
-            scanError = "Database not available"
+        guard let dashboardService = appCore.dashboardService else {
+            scanError = "Service not available"
             return
         }
 
@@ -478,8 +478,7 @@ struct IOSDashboardQRScannerPage: View {
         }
 
         do {
-            let autoFill = QRAutoFillService(db: db)
-            let result = try autoFill.processQRScan(code)
+            let result = try dashboardService.processQRScan(code)
 
             var stockLocations: [StockLocation]?
             if result.entityType == .part, let partId = result.entityId {

@@ -161,7 +161,11 @@ struct IOSSubSchedulePage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.schedulingService else { return }
+        guard let service = appCore.schedulingService else {
+            loadError = "Service not available"
+            isLoading = false
+            return
+        }
         isLoading = rows.isEmpty
         loadError = nil
         do {

@@ -313,7 +313,11 @@ struct IOSReceivingPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            loadError = "Service not available"
+            isLoading = false
+            return
+        }
         isLoading = sessions.isEmpty
         loadError = nil
         do {

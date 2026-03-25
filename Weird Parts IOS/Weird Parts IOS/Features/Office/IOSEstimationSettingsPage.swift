@@ -9,9 +9,19 @@ struct IOSEstimationSettingsPage: View {
     @State private var rejections: [Int64: [EstimationQuestionRejection]] = [:]
     @State private var loadError: String?
     @State private var actionError: String?
-    @State private var showAddSheet = false
-    @State private var editingQuestion: EstimationQuestion?
     @State private var showEffectiveness = false
+
+    private enum ActiveSheet: Identifiable {
+        case add
+        case edit(EstimationQuestion)
+        var id: String {
+            switch self {
+            case .add: return "add"
+            case .edit(let q): return "edit_\(q.id ?? 0)"
+            }
+        }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     private let stages = ["bid", "pre_start", "during", "before_trim", "punch_list"]
 
@@ -71,17 +81,19 @@ struct IOSEstimationSettingsPage: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    showAddSheet = true
+                    activeSheet = .add
                 } label: {
                     Image(systemName: "plus")
                 }
             }
         }
-        .sheet(isPresented: $showAddSheet) {
-            AddEstimationQuestionSheet { await loadData() }
-        }
-        .sheet(item: $editingQuestion) { question in
-            EditEstimationQuestionSheet(question: question) { await loadData() }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .add:
+                AddEstimationQuestionSheet { await loadData() }
+            case .edit(let question):
+                EditEstimationQuestionSheet(question: question) { await loadData() }
+            }
         }
         .task { await loadData() }
     }
@@ -129,7 +141,7 @@ struct IOSEstimationSettingsPage: View {
             }
 
             Button {
-                editingQuestion = question
+                activeSheet = .edit(question)
             } label: {
                 Label("Edit", systemImage: "pencil")
             }
@@ -210,7 +222,10 @@ struct IOSEstimationSettingsPage: View {
     }
 
     private func loadEffectiveness() async {
-        guard let svc = appCore.jobEstimationService else { return }
+        guard let svc = appCore.jobEstimationService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             effectiveness = try svc.analyzeQuestionEffectiveness()
             showEffectiveness = true
@@ -342,7 +357,10 @@ private struct AddEstimationQuestionSheet: View {
     }
 
     private func save() async {
-        guard let svc = appCore.jobEstimationService else { return }
+        guard let svc = appCore.jobEstimationService else {
+            saveError = "Service not available"
+            return
+        }
         do {
             let choices: [String]? = if answerType == "choice" && !choicesText.isEmpty {
                 choicesText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }

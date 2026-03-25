@@ -170,7 +170,10 @@ struct SmartDeleteSheet: View {
     }
 
     private func startEmptyShelfMode() async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            error = "Service not available"
+            return
+        }
         isProcessing = true
         do {
             _ = try service.scheduleEmptyShelfDeletion(
@@ -186,7 +189,10 @@ struct SmartDeleteSheet: View {
     }
 
     private func deleteImmediately() async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            error = "Service not available"
+            return
+        }
         isProcessing = true
         do {
             // Direct soft-delete via existing service methods

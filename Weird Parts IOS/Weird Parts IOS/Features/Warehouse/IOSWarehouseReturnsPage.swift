@@ -312,7 +312,10 @@ struct IOSWarehouseReturnsPage: View {
     // MARK: - Actions
 
     private func updateStatus(returnId: Int64, status: String) {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             try service.updateReturnStatus(returnId: returnId, status: status)
             loadData()
@@ -324,7 +327,11 @@ struct IOSWarehouseReturnsPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            loadError = "Service not available"
+            isLoading = false
+            return
+        }
         isLoading = allReturns.isEmpty
         loadError = nil
         do {

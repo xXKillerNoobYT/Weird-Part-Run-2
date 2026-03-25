@@ -327,7 +327,10 @@ struct IOSDispatchPage: View {
     // MARK: - Assignment Logic
 
     private func createAssignment(jobId: Int64, userId: Int64, date: String, timeSlot: String) {
-        guard let service = appCore.schedulingService else { return }
+        guard let service = appCore.schedulingService else {
+            actionError = "Service not available"
+            return
+        }
         actionError = nil
 
         // Check for time-off conflict
@@ -352,7 +355,10 @@ struct IOSDispatchPage: View {
     }
 
     private func forceAssignment(jobId: Int64, userId: Int64, date: String, timeSlot: String = "full") {
-        guard let service = appCore.schedulingService else { return }
+        guard let service = appCore.schedulingService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             _ = try service.createScheduleEntry(
                 userId: userId,

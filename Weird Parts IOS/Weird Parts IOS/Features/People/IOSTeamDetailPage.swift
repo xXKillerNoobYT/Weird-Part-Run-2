@@ -245,7 +245,10 @@ struct IOSTeamDetailPage: View {
     }
 
     private func removeMember(_ member: PeopleService.TeamMemberDetail) async {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             try service.removeTeamMember(membershipId: member.membershipId)
             actionError = nil
@@ -256,7 +259,10 @@ struct IOSTeamDetailPage: View {
     }
 
     private func deleteTeam() async {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             try service.deleteTeam(teamId: teamId)
         } catch {
@@ -403,6 +409,7 @@ private struct AddMemberSheet: View {
 
     private func loadEmployees() {
         guard let service = appCore.peopleService else {
+            errorMessage = "Service not available"
             isLoading = false
             return
         }
@@ -415,7 +422,10 @@ private struct AddMemberSheet: View {
     }
 
     private func addEmployee(_ employee: PeopleService.EmployeeListItem) {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            errorMessage = "Service not available"
+            return
+        }
         do {
             try service.addTeamMember(teamId: teamId, userId: employee.id)
             // Remove from list and refresh

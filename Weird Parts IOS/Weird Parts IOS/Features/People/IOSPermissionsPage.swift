@@ -166,7 +166,11 @@ struct IOSPermissionsPage: View {
     }
 
     private func togglePermission(key: String, enabled: Bool) {
-        guard let auth = appCore.authService, let hat = selectedHat else { return }
+        guard let auth = appCore.authService else {
+            loadError = "Service not available"
+            return
+        }
+        guard let hat = selectedHat else { return }
         do {
             if enabled {
                 try auth.addHatPermission(hatId: hat.id, permissionKey: key)

@@ -117,7 +117,10 @@ struct IOSIntegrationsPage: View {
     // MARK: - Toggle
 
     private func toggleIntegration(_ id: String, enabled: Bool) {
-        guard let settingsService = appCore.settingsService else { return }
+        guard let settingsService = appCore.settingsService else {
+            errorMessage = "Service not available"
+            return
+        }
         do {
             try settingsService.toggleIntegration(id, enabled: enabled)
         } catch {

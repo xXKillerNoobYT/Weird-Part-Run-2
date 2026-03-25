@@ -250,7 +250,10 @@ struct PartsBrandsPage: View {
     // MARK: - Delete
 
     private func deleteBrand(_ brand: BrandListRow) async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            deleteError = "Service not available"
+            return
+        }
         do {
             try service.deleteBrand(id: brand.id)
             brandToDelete = nil
@@ -358,7 +361,9 @@ private struct BrandFormSheet: View {
     private func save() async throws {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         guard !trimmedName.isEmpty else { return }
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            throw NSError(domain: "AppError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Service not available"])
+        }
         if let b = brand {
             try service.updateBrand(
                 id: b.id,

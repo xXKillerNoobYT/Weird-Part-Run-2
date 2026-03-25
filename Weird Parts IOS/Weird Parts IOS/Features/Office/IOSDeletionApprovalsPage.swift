@@ -213,7 +213,10 @@ struct IOSDeletionApprovalsPage: View {
     // MARK: - Actions
 
     private func approve(_ item: PartsService.ScheduledDeletion) async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            loadError = "Service not available"
+            return
+        }
         processingId = item.id
         do {
             try service.approveScheduledDeletion(id: item.id, approvedBy: nil)
@@ -225,7 +228,10 @@ struct IOSDeletionApprovalsPage: View {
     }
 
     private func cancel(_ item: PartsService.ScheduledDeletion) async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            loadError = "Service not available"
+            return
+        }
         processingId = item.id
         do {
             try service.cancelScheduledDeletion(id: item.id)

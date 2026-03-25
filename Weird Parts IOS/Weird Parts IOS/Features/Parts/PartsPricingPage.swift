@@ -1040,7 +1040,10 @@ struct PricingEditSheet: View {
     }
 
     private func loadDetails() async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            loadError = "Service not available"
+            return
+        }
         do {
             costLayers = try service.getCostLayers(partId: row.id, nonEmptyOnly: true)
             priceHistory = try service.getPriceHistory(partId: row.id, limit: 10)

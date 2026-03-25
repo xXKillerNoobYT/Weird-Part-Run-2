@@ -324,8 +324,7 @@ struct IOSReceiveShipmentPage: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(Array(grouped.keys.sorted()), id: \.self) { label in
-                        let items = grouped[label]!
-                        let result = items.first!
+                        if let items = grouped[label], let result = items.first {
                         HStack(spacing: 4) {
                             Image(systemName: result.icon)
                                 .font(.caption2)
@@ -337,6 +336,7 @@ struct IOSReceiveShipmentPage: View {
                         .background(result.color.opacity(0.12))
                         .foregroundStyle(result.color)
                         .clipShape(Capsule())
+                        }
                     }
                 }
             }

@@ -150,7 +150,10 @@ struct IOSAIConfigPage: View {
     }
 
     private func loadSettings() {
-        guard let service = appCore.settingsService else { return }
+        guard let service = appCore.settingsService else {
+            saveError = "Service not available"
+            return
+        }
         let map = (try? service.getSettingsByCategory("ai")) ?? [:]
         aiEnabled = (map["ai_enabled"] ?? "true") == "true"
         selectedModel = map["ai_model"] ?? "foundation"
@@ -159,7 +162,10 @@ struct IOSAIConfigPage: View {
     }
 
     private func saveSetting(_ key: String, value: String) {
-        guard let service = appCore.settingsService else { return }
+        guard let service = appCore.settingsService else {
+            saveError = "Service not available"
+            return
+        }
         do {
             try service.upsertSetting(key: key, value: value, category: "ai")
             saveError = nil

@@ -37,9 +37,20 @@ struct IOSStagingPage: View {
     // Smart card filter
     @State private var selectedFilter: DestinationFilter?
 
+    // Sheet management
+    private enum ActiveSheet: Identifiable {
+        case createBox
+        case help
+        var id: String {
+            switch self {
+            case .createBox: return "createBox"
+            case .help: return "help"
+            }
+        }
+    }
+    @State private var activeSheet: ActiveSheet?
+
     // Box creation
-    @State private var showCreateBox = false
-    @State private var showHelp = false
     @State private var newBoxJobId: Int64?
     @State private var newBoxSize: String = "normal"
 
@@ -91,7 +102,7 @@ struct IOSStagingPage: View {
         .refreshable { loadData() }
         .toolbar {
             ToolbarItem(placement: .secondaryAction) {
-                Button { showHelp = true } label: {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
@@ -100,7 +111,7 @@ struct IOSStagingPage: View {
                     itemsToolbar
                 } else {
                     Button {
-                        showCreateBox = true
+                        activeSheet = .createBox
                     } label: {
                         Image(systemName: "plus")
                     }
@@ -130,18 +141,20 @@ struct IOSStagingPage: View {
         } message: {
             Text(actionError ?? "")
         }
-        .sheet(isPresented: $showCreateBox) {
-            createBoxSheet
-        }
-        .sheet(isPresented: $showHelp) {
-            PageHelpSheet(
-                title: "Staging Area Help",
-                sections: [
-                    ("Overview", "The staging area holds parts that have been pulled from warehouse stock and tagged for specific jobs or destinations."),
-                    ("Boxes", "Switch to the Boxes tab to manage physical staging boxes. Mark a box as full to auto-create the next one."),
-                    ("Loading", "Swipe an item or use batch selection to confirm items are loaded onto a truck or delivered to a job site.")
-                ]
-            )
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .createBox:
+                createBoxSheet
+            case .help:
+                PageHelpSheet(
+                    title: "Staging Area Help",
+                    sections: [
+                        ("Overview", "The staging area holds parts that have been pulled from warehouse stock and tagged for specific jobs or destinations."),
+                        ("Boxes", "Switch to the Boxes tab to manage physical staging boxes. Mark a box as full to auto-create the next one."),
+                        ("Loading", "Swipe an item or use batch selection to confirm items are loaded onto a truck or delivered to a job site.")
+                    ]
+                )
+            }
         }
         .task { loadData() }
     }
@@ -644,7 +657,7 @@ struct IOSStagingPage: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
-                        showCreateBox = false
+                        activeSheet = nil
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -695,7 +708,10 @@ struct IOSStagingPage: View {
     // MARK: - Actions
 
     private func clearItem(id: Int64) {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             try service.clearStagingTag(id: id)
             loadData()
@@ -705,7 +721,10 @@ struct IOSStagingPage: View {
     }
 
     private func clearSelectedItems() {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            actionError = "Service not available"
+            return
+        }
         var failCount = 0
         for itemId in selectedItems {
             do {
@@ -727,7 +746,7 @@ struct IOSStagingPage: View {
               let jobId = newBoxJobId else { return }
         do {
             _ = try service.createStagingBox(jobId: jobId, size: newBoxSize)
-            showCreateBox = false
+            activeSheet = nil
             newBoxJobId = nil
             newBoxSize = "normal"
             loadData()
@@ -737,7 +756,10 @@ struct IOSStagingPage: View {
     }
 
     private func markFull(boxId: Int64) {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             _ = try service.markBoxFull(boxId: boxId)
             loadData()
@@ -747,7 +769,10 @@ struct IOSStagingPage: View {
     }
 
     private func reopenBox(boxId: Int64) {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             try service.markBoxOpen(boxId: boxId)
             loadData()
@@ -757,7 +782,10 @@ struct IOSStagingPage: View {
     }
 
     private func deleteBox(boxId: Int64) {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             try service.deleteStagingBox(boxId: boxId)
             loadData()
@@ -769,7 +797,11 @@ struct IOSStagingPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            loadError = "Service not available"
+            isLoading = false
+            return
+        }
         isLoading = stagedItems.isEmpty && stagingBoxes.isEmpty
         loadError = nil
         do {

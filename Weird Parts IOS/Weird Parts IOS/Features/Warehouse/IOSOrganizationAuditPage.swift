@@ -489,7 +489,10 @@ private struct OrgChecklistSheet: View {
     }
 
     private func loadExisting() {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            errorMessage = "Service not available"
+            return
+        }
         if let rating = try? service.getOrganizationRating(areaId: areaId) {
             labelsAccurate = rating.labelsAccurate
             partsInHome = rating.partsInHome

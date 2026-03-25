@@ -259,7 +259,10 @@ struct IOSWarehouseToolsPage: View {
     }
 
     private func markMaintenance(_ tool: ToolsService.ToolListItem) {
-        guard let service = appCore.toolsService else { return }
+        guard let service = appCore.toolsService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             try service.markToolMaintenance(toolId: tool.id)
             loadData()
@@ -271,7 +274,11 @@ struct IOSWarehouseToolsPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.toolsService else { return }
+        guard let service = appCore.toolsService else {
+            loadError = "Service not available"
+            isLoading = false
+            return
+        }
         isLoading = tools.isEmpty
         loadError = nil
         do {

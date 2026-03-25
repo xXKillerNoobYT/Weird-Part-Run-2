@@ -292,7 +292,10 @@ struct TypeBrandColorSection: View {
     // MARK: - Toggle Brand Link
 
     private func toggleBrand(brandId: Int64, isLinked: Bool) async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            loadError = "Service not available"
+            return
+        }
         do {
             if isLinked {
                 let linkId = try service.getTypeBrandLinkId(typeId: typeId, brandId: brandId)

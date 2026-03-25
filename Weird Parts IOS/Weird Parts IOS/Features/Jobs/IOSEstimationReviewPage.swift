@@ -9,10 +9,20 @@ struct IOSEstimationReviewPage: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var reviews: [EstimationReview] = []
     @State private var latestEstimate: EstimationResult?
-    @State private var showWeeklySheet = false
-    @State private var showEndOfJobSheet = false
     @State private var loadError: String?
     @State private var actionError: String?
+
+    private enum ActiveSheet: Identifiable {
+        case weekly
+        case endOfJob
+        var id: String {
+            switch self {
+            case .weekly: return "weekly"
+            case .endOfJob: return "endOfJob"
+            }
+        }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     var body: some View {
         List {
@@ -38,13 +48,13 @@ struct IOSEstimationReviewPage: View {
             // Action buttons
             Section {
                 Button {
-                    showWeeklySheet = true
+                    activeSheet = .weekly
                 } label: {
                     Label("Submit Weekly Review", systemImage: "calendar.badge.clock")
                 }
 
                 Button {
-                    showEndOfJobSheet = true
+                    activeSheet = .endOfJob
                 } label: {
                     Label("Submit End-of-Job Review", systemImage: "checkmark.seal")
                 }
@@ -64,11 +74,13 @@ struct IOSEstimationReviewPage: View {
             }
         }
         .navigationTitle("Estimation Reviews")
-        .sheet(isPresented: $showWeeklySheet) {
-            WeeklyReviewSheet(jobId: jobId) { await loadData() }
-        }
-        .sheet(isPresented: $showEndOfJobSheet) {
-            EndOfJobReviewSheet(jobId: jobId) { await loadData() }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .weekly:
+                WeeklyReviewSheet(jobId: jobId) { await loadData() }
+            case .endOfJob:
+                EndOfJobReviewSheet(jobId: jobId) { await loadData() }
+            }
         }
         .task { await loadData() }
     }

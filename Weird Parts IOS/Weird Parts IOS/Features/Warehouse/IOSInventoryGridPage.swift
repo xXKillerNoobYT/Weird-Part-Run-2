@@ -317,7 +317,10 @@ struct IOSInventoryGridPage: View {
     // MARK: - Actions
 
     private func auditItem(_ item: WarehouseService.LocationStock) {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             try service.recordAuditRecount(
                 partId: item.partId,
@@ -332,7 +335,10 @@ struct IOSInventoryGridPage: View {
     // MARK: - Data Loading
 
     private func loadLocations() {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            // Service not ready
+            return
+        }
         do {
             let allStock = try service.getLocationStock()
             var seen: Set<String> = []
@@ -351,7 +357,11 @@ struct IOSInventoryGridPage: View {
     }
 
     private func loadData() {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            loadError = "Service not available"
+            isLoading = false
+            return
+        }
         isLoading = items.isEmpty
         loadError = nil
         do {

@@ -161,7 +161,11 @@ struct IOSJobNotebooksPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.notebooksService else { return }
+        guard let service = appCore.notebooksService else {
+            loadError = "Service not available"
+            isLoading = false
+            return
+        }
         isLoading = notebooks.isEmpty
         loadError = nil
         do {

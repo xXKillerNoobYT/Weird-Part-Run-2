@@ -266,7 +266,10 @@ struct IOSQuestionnairePage: View {
     // MARK: - Actions
 
     private func submitResponses() {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            errorMessage = "Service not available"
+            return
+        }
         isSubmitting = true
         errorMessage = nil
 
@@ -345,7 +348,11 @@ struct IOSQuestionnairePage: View {
     // MARK: - Data Loading
 
     private func loadQuestions() {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            errorMessage = "Service not available"
+            isLoading = false
+            return
+        }
         isLoading = true
         do {
             questions = try service.getActiveQuestions()

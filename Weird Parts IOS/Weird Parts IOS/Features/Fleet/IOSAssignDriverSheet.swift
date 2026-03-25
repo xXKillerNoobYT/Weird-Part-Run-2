@@ -120,7 +120,11 @@ struct IOSAssignDriverSheet: View {
     // MARK: - Data
 
     private func loadEmployees() {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            loadError = "Service not available"
+            isLoading = false
+            return
+        }
         isLoading = true
         do {
             employees = try service.listEmployees()
@@ -134,7 +138,11 @@ struct IOSAssignDriverSheet: View {
     var onSaved: (() -> Void)?
 
     private func assignDriver() {
-        guard let fleet = appCore.fleetService, let employeeId = selectedEmployeeId else { return }
+        guard let fleet = appCore.fleetService else {
+            actionError = "Service not available"
+            return
+        }
+        guard let employeeId = selectedEmployeeId else { return }
         isSaving = true
         actionError = nil
 

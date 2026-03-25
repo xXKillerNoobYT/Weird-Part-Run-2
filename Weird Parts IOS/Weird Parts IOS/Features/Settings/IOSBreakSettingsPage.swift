@@ -396,7 +396,10 @@ struct IOSBreakSettingsPage: View {
     }
 
     private func loadPoliciesForState() {
-        guard let breakSvc = appCore.breakService else { return }
+        guard let breakSvc = appCore.breakService else {
+            errorMessage = "Service not available"
+            return
+        }
         do {
             allPolicies = try breakSvc.getAllPolicies()
         } catch {
@@ -421,7 +424,10 @@ struct IOSBreakSettingsPage: View {
     }
 
     private func loadBonuses() {
-        guard let breakSvc = appCore.breakService else { return }
+        guard let breakSvc = appCore.breakService else {
+            errorMessage = "Service not available"
+            return
+        }
 
         // Find the state policy to get its ID for bonuses
         let statePolicy = allPolicies.first { $0.policyType == "state_required_paid" && $0.stateCode == selectedState }

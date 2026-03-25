@@ -181,7 +181,10 @@ struct IOSAuditSetupView: View {
     // MARK: - Actions
 
     private func loadSummary() {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            // Service not ready
+            return
+        }
         do {
             auditSummary = try service.getAuditSummary()
         } catch {

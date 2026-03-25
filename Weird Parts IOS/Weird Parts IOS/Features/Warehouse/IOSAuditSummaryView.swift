@@ -201,7 +201,10 @@ struct IOSAuditSummaryView: View {
     // MARK: - Actions
 
     private func finalizeAudit() {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             try service.finalizeAuditSession(sessionId: sessionId)
             loadData()
@@ -211,7 +214,11 @@ struct IOSAuditSummaryView: View {
     }
 
     private func loadData() {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            loadError = "Service not available"
+            isLoading = false
+            return
+        }
         isLoading = summary == nil
         loadError = nil
         do {

@@ -83,7 +83,10 @@ struct IOSQAQuestionForm: View {
     // MARK: - Data
 
     private func loadJobs() {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            errorMessage = "Service not available"
+            return
+        }
         do {
             jobs = try service.listJobs(status: "active", limit: 200)
         } catch {

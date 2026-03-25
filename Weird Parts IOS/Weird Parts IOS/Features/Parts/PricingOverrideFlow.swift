@@ -83,7 +83,10 @@ struct PricingTierSetSheet: View {
                 }
             }
             .task {
-                guard let service = appCore.partsService else { return }
+                guard let service = appCore.partsService else {
+                    loadError = "Service not available"
+                    return
+                }
                 pricingMode = (try? service.getCompanyCostSetting(key: "pricing_mode")) ?? "markup"
             }
         }
@@ -503,7 +506,10 @@ struct PricingTierSetSheet: View {
     }
 
     private func loadEntitiesForLevel(_ level: HierarchyLevel) async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            loadError = "Service not available"
+            return
+        }
         do {
             switch level {
             case .category:
@@ -522,7 +528,10 @@ struct PricingTierSetSheet: View {
     }
 
     private func loadPreviewAndConflicts() async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            saveError = "Service not available"
+            return
+        }
         saveError = nil
         do {
             let catId = selectedLevel == .category ? selectedEntityId : nil

@@ -14,10 +14,20 @@ struct LaborPage: View {
     @State private var activeEntries: [JobsService.LaborEntryRow] = []
     @State private var recentEntries: [JobsService.LaborEntryRow] = []
     @State private var isLoading = true
-    @State private var showClockIn = false
     @State private var errorMessage: String?
     @State private var searchText = ""
-    @State private var showHelp = false
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        case clockIn
+        var id: String {
+            switch self {
+            case .help: return "help"
+            case .clockIn: return "clockIn"
+            }
+        }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     private var filteredActiveEntries: [JobsService.LaborEntryRow] {
         guard !searchText.isEmpty else { return activeEntries }
@@ -57,27 +67,31 @@ struct LaborPage: View {
                     }
                 }
                 ToolbarItem(placement: .secondaryAction) {
-                    Button { showHelp = true } label: {
+                    Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
                 }
             }
-            .sheet(isPresented: $showHelp) {
-                PageHelpSheet(
-                    title: "Labor Help",
-                    sections: [
-                        ("Overview", "Track all labor entries across jobs. Active clock-ins appear at the top with clock-out buttons. Recent history is shown below."),
-                        ("Clock In", "Tap the play button in the toolbar to start a new clock-in for any employee and job."),
-                        ("Search", "Use the search bar to filter entries by employee name or job name. Pull down to refresh.")
-                    ]
-                )
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .help:
+                    PageHelpSheet(
+                        title: "Labor Help",
+                        sections: [
+                            ("Overview", "Track all labor entries across jobs. Active clock-ins appear at the top with clock-out buttons. Recent history is shown below."),
+                            ("Clock In", "Tap the play button in the toolbar to start a new clock-in for any employee and job."),
+                            ("Search", "Use the search bar to filter entries by employee name or job name. Pull down to refresh.")
+                        ]
+                    )
+                case .clockIn:
+                    clockInSheet
+                }
+            }
+            .onChange(of: activeSheet) { _, newValue in
+                if newValue == nil { loadData() }
             }
             .refreshable { loadData() }
             .task { loadData() }
-            .sheet(isPresented: $showClockIn) { clockInSheet }
-            .onChange(of: showClockIn) { _, isShowing in
-                if !isShowing { loadData() }
-            }
     }
 
     // MARK: - Content
@@ -209,7 +223,7 @@ struct LaborPage: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showClockIn = false }
+                    Button("Cancel") { activeSheet = nil }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Clock In") { performClockIn() }
@@ -222,7 +236,10 @@ struct LaborPage: View {
     // MARK: - Actions
 
     private func prepareClockIn() {
-        guard let service = appCore.jobsService, let auth = appCore.authService else { return }
+        guard let service = appCore.jobsService, let auth = appCore.authService else {
+            errorMessage = "Service not available"
+            return
+        }
         do {
             let activeUsers = try auth.getActiveUsers()
             users = activeUsers.compactMap { user in
@@ -230,7 +247,7 @@ struct LaborPage: View {
                 return (id, user.displayName)
             }
             jobOptions = try service.listJobs(status: "active")
-            showClockIn = true
+            activeSheet = .clockIn
         } catch {
             errorMessage = "Failed to load options: \(error.localizedDescription)"
         }
@@ -242,7 +259,7 @@ struct LaborPage: View {
               let jobId = selectedJobId else { return }
         do {
             try service.clockIn(userId: userId, jobId: jobId)
-            showClockIn = false
+            activeSheet = nil
             clockInNote = ""
             selectedUserId = nil
             selectedJobId = nil
@@ -254,7 +271,10 @@ struct LaborPage: View {
     }
 
     private func clockOut(entryId: Int64) {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            errorMessage = "Service not available"
+            return
+        }
         do {
             try service.clockOut(laborEntryId: entryId)
             errorMessage = nil
@@ -278,7 +298,11 @@ struct LaborPage: View {
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            errorMessage = "Service not available"
+            isLoading = false
+            return
+        }
         isLoading = activeEntries.isEmpty && recentEntries.isEmpty
         errorMessage = nil
         do {

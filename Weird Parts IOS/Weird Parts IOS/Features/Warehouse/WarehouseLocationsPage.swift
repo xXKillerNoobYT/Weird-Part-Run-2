@@ -401,7 +401,10 @@ struct WarehouseLocationsPage: View {
     // MARK: - Actions
 
     private func rotateUnit(_ unit: WarehouseStorageUnit) {
-        guard let service = appCore.warehouseService, let unitId = unit.id else { return }
+        guard let service = appCore.warehouseService, let unitId = unit.id else {
+            loadError = "Service not available"
+            return
+        }
         let newRotation = (unit.rotation + 90) % 360
         // Swap grid width/height on rotation
         let newW = unit.gridHeight
@@ -415,7 +418,10 @@ struct WarehouseLocationsPage: View {
     }
 
     private func deleteUnit(_ unit: WarehouseStorageUnit) {
-        guard let service = appCore.warehouseService, let unitId = unit.id else { return }
+        guard let service = appCore.warehouseService, let unitId = unit.id else {
+            loadError = "Service not available"
+            return
+        }
         do {
             try service.deleteStorageUnit(id: unitId)
             loadPlanData()
@@ -449,7 +455,11 @@ struct WarehouseLocationsPage: View {
     }
 
     private func loadPlanData() {
-        guard let service = appCore.warehouseService, let planId = selectedPlanId else { return }
+        guard let service = appCore.warehouseService, let planId = selectedPlanId else {
+            loadError = "Service not available"
+            isLoading = false
+            return
+        }
         do {
             storageUnits = try service.listStorageUnits(floorPlanId: planId)
             floorFeatures = try service.listFloorFeatures(floorPlanId: planId)
@@ -971,7 +981,10 @@ private struct StorageUnitDetailSheet: View {
     }
 
     private func loadAreas(levelId: Int64) {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            loadError = "Service not available"
+            return
+        }
         do {
             areasForLevel[levelId] = try service.listAreasForLevel(levelId: levelId)
         } catch {
@@ -980,7 +993,10 @@ private struct StorageUnitDetailSheet: View {
     }
 
     private func loadAreaContents(areaId: Int64) {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            // Service not ready
+            return
+        }
         guard areaContents[areaId] == nil else { return }
         do {
             areaContents[areaId] = try service.getAreaContents(areaId: areaId)
@@ -1134,7 +1150,10 @@ private struct StickerChecklistSheet: View {
     }
 
     private func loadData() {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else {
+            // Service not ready
+            return
+        }
         do {
             levels = try service.listLevelsForUnit(unitId: unitId)
             for level in levels {

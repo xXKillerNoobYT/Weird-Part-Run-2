@@ -177,7 +177,10 @@ struct IOSTimeOffPage: View {
     // MARK: - Actions
 
     private func approveTimeOff(requestId: Int64) {
-        guard let service = appCore.schedulingService else { return }
+        guard let service = appCore.schedulingService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             try service.updateTimeOffStatus(
                 id: requestId,
@@ -191,7 +194,10 @@ struct IOSTimeOffPage: View {
     }
 
     private func denyTimeOff(requestId: Int64) {
-        guard let service = appCore.schedulingService else { return }
+        guard let service = appCore.schedulingService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             try service.updateTimeOffStatus(
                 id: requestId,

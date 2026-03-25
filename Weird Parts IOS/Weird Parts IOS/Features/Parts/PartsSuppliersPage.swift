@@ -367,7 +367,7 @@ struct PartsSuppliersPage: View {
     // MARK: - AI Context
 
     private func postSuppliersContext() {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else { return } // Service not ready
         let context = (try? service.buildSupplierAIContext()) ?? ""
         NotificationCenter.default.post(
             name: .suppliersPageActive,
@@ -380,7 +380,10 @@ struct PartsSuppliersPage: View {
 
     private func deleteSupplier(_ supplier: SupplierListRow) async {
         do {
-            guard let service = appCore.partsService else { return }
+            guard let service = appCore.partsService else {
+                deleteError = "Service not available"
+                return
+            }
             try service.deleteSupplier(id: supplier.id)
             supplierToDelete = nil
             deleteError = nil

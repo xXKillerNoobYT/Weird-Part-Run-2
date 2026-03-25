@@ -151,7 +151,10 @@ struct SecurityAdminPage: View {
     // MARK: - Force Logout
 
     private func forceLogout() {
-        guard let authService = appCore.authService, let sessionId = selectedSessionId else { return }
+        guard let authService = appCore.authService, let sessionId = selectedSessionId else {
+            if appCore.authService == nil { errorMessage = "Service not available" }
+            return
+        }
         do {
             try authService.deactivateSession(sessionId: sessionId)
             selectedSessionId = nil

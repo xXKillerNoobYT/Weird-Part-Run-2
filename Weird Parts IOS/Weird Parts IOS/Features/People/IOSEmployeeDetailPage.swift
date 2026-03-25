@@ -54,7 +54,10 @@ struct IOSEmployeeDetailPage: View {
                         email: emp.email,
                         phone: emp.phone ?? ""
                     ) { name, email, phone in
-                        guard let service = appCore.peopleService else { return }
+                        guard let service = appCore.peopleService else {
+                            // Service not ready
+                            return
+                        }
                         try service.updateEmployeeContact(
                             employeeId: emp.id,
                             displayName: name,
@@ -238,7 +241,10 @@ struct IOSEmployeeDetailPage: View {
     }
 
     private func toggleHat(hatId: Int64, assign: Bool) {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            loadError = "Service not available"
+            return
+        }
         do {
             try service.toggleHatAssignment(employeeId: employeeId, hatId: hatId, assign: assign)
             // Reload hats
@@ -326,3 +332,4 @@ private struct EditEmployeeContactSheet: View {
         isSaving = false
     }
 }
+

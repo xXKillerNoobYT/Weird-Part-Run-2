@@ -34,8 +34,18 @@ struct IOSDailyReportTemplatesPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var saveError: String?
-    @State private var showHelp = false
-    @State private var showPreview = false
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        case preview
+        var id: String {
+            switch self {
+            case .help: return "help"
+            case .preview: return "preview"
+            }
+        }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     @State private var sections: [ReportSection] = []
     @State private var aiInstructions: String = ""
@@ -55,30 +65,32 @@ struct IOSDailyReportTemplatesPage: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showHelp = true } label: {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
-            NavigationStack {
-                List {
-                    Section("About Daily Reports") {
-                        Text("Configure which sections appear in daily reports and in what order. Mandatory sections (Hours Summary, Jobs Worked) cannot be disabled.")
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                NavigationStack {
+                    List {
+                        Section("About Daily Reports") {
+                            Text("Configure which sections appear in daily reports and in what order. Mandatory sections (Hours Summary, Jobs Worked) cannot be disabled.")
+                        }
+                        Section("AI Summary") {
+                            Text("The AI summary is generated at the end of the report. Customize the instructions to control what the AI focuses on.")
+                        }
                     }
-                    Section("AI Summary") {
-                        Text("The AI summary is generated at the end of the report. Customize the instructions to control what the AI focuses on.")
-                    }
+                    .navigationTitle("Template Help")
+                    .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { activeSheet = nil } } }
                 }
-                .navigationTitle("Template Help")
-                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { showHelp = false } } }
-            }
-        }
-        .sheet(isPresented: $showPreview) {
-            NavigationStack {
-                previewView
-                    .navigationTitle("Report Preview")
-                    .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { showPreview = false } } }
+            case .preview:
+                NavigationStack {
+                    previewView
+                        .navigationTitle("Report Preview")
+                        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { activeSheet = nil } } }
+                }
             }
         }
         .task { loadSettings() }
@@ -130,7 +142,7 @@ struct IOSDailyReportTemplatesPage: View {
 
             // Preview
             Section {
-                Button { showPreview = true } label: {
+                Button { activeSheet = .preview } label: {
                     Label("Preview Report", systemImage: "eye")
                 }
             }

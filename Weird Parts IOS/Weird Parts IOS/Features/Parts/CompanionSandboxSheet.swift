@@ -84,6 +84,14 @@ struct CompanionSandboxSheet: View {
                 }
             }
             .task { await loadCategories() }
+            .alert("Error", isPresented: Binding<Bool>(
+                get: { loadError != nil },
+                set: { if !$0 { loadError = nil } }
+            )) {
+                Button("OK") { loadError = nil }
+            } message: {
+                Text(loadError ?? "")
+            }
         }
     }
 
@@ -304,7 +312,10 @@ struct CompanionSandboxSheet: View {
     // MARK: - Data Loading
 
     private func loadCategories() async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            loadError = "Service not available"
+            return
+        }
         do { categories = try service.listCategories() } catch { loadError = error.localizedDescription }
     }
 

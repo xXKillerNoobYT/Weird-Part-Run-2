@@ -15,22 +15,32 @@ public final class BreakService: Sendable {
 
     /// Get the combined break policy for a state and work day length.
     public func getBreakPolicy(stateCode: String, dayHours: Int = 8) throws -> [BreakPolicy] {
-        try db.writer.read { dbConn in
-            try BreakPolicy
-                .filter(Column("state_code") == stateCode && Column("deleted_at") == nil)
-                .filter(Column("work_day_hours") <= dayHours)
-                .order(Column("policy_type").asc)
-                .fetchAll(dbConn)
+        do {
+            return try db.writer.read { dbConn in
+                try BreakPolicy
+                    .filter(Column("state_code") == stateCode && Column("deleted_at") == nil)
+                    .filter(Column("work_day_hours") <= dayHours)
+                    .order(Column("policy_type").asc)
+                    .fetchAll(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 
     /// Get all policies (state + company) for display in settings.
     public func getAllPolicies() throws -> [BreakPolicy] {
-        try db.writer.read { dbConn in
-            try BreakPolicy
-                .filter(Column("deleted_at") == nil)
-                .order(Column("state_code").asc, Column("policy_type").asc)
-                .fetchAll(dbConn)
+        do {
+            return try db.writer.read { dbConn in
+                try BreakPolicy
+                    .filter(Column("deleted_at") == nil)
+                    .order(Column("state_code").asc, Column("policy_type").asc)
+                    .fetchAll(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 
@@ -64,10 +74,15 @@ public final class BreakService: Sendable {
 
     /// Get bonuses for a policy.
     public func getBreakBonuses(policyId: Int64) throws -> [BreakBonus] {
-        try db.writer.read { dbConn in
-            try BreakBonus
-                .filter(Column("policy_id") == policyId && Column("deleted_at") == nil)
-                .fetchAll(dbConn)
+        do {
+            return try db.writer.read { dbConn in
+                try BreakBonus
+                    .filter(Column("policy_id") == policyId && Column("deleted_at") == nil)
+                    .fetchAll(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 
@@ -145,24 +160,34 @@ public final class BreakService: Sendable {
     /// Get break records for a user on a specific date.
     public func getBreakRecordsForDay(userId: Int64, date: Date = Date()) throws -> [BreakRecord] {
         let dateStr = Self.formatDate(date)
-        return try db.writer.read { dbConn in
-            try BreakRecord
-                .filter(Column("user_id") == userId && Column("deleted_at") == nil)
-                .filter(sql: "date(started_at) = ?", arguments: [dateStr])
-                .order(Column("started_at").asc)
-                .fetchAll(dbConn)
+        do {
+            return try db.writer.read { dbConn in
+                try BreakRecord
+                    .filter(Column("user_id") == userId && Column("deleted_at") == nil)
+                    .filter(sql: "date(started_at) = ?", arguments: [dateStr])
+                    .order(Column("started_at").asc)
+                    .fetchAll(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 
     /// Get the currently active break for a user (started but not ended).
     public func getActiveBreak(userId: Int64) throws -> BreakRecord? {
-        try db.writer.read { dbConn in
-            try BreakRecord
-                .filter(Column("user_id") == userId &&
-                        Column("ended_at") == nil &&
-                        Column("deleted_at") == nil)
-                .order(Column("started_at").desc)
-                .fetchOne(dbConn)
+        do {
+            return try db.writer.read { dbConn in
+                try BreakRecord
+                    .filter(Column("user_id") == userId &&
+                            Column("ended_at") == nil &&
+                            Column("deleted_at") == nil)
+                    .order(Column("started_at").desc)
+                    .fetchOne(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return nil }
+            throw error
         }
     }
 
@@ -266,16 +291,28 @@ public final class BreakService: Sendable {
 
     /// Get company break settings (singleton).
     public func getCompanyBreakSettings() throws -> CompanyBreakSettings {
-        try db.writer.read { dbConn in
-            if let settings = try CompanyBreakSettings.fetchOne(dbConn, sql: "SELECT * FROM company_break_settings LIMIT 1") {
-                return settings
+        do {
+            return try db.writer.read { dbConn in
+                if let settings = try CompanyBreakSettings.fetchOne(dbConn, sql: "SELECT * FROM company_break_settings LIMIT 1") {
+                    return settings
+                }
+                return CompanyBreakSettings(
+                    id: nil, stateCode: "WY", roundingMinutes: 15,
+                    roundingEnabled: false, autoFillBreaks: true,
+                    defaultMorningBreak: "10:00", defaultLunch: "12:00",
+                    defaultAfternoonBreak: "14:30", updatedAt: nil
+                )
             }
-            return CompanyBreakSettings(
-                id: nil, stateCode: "WY", roundingMinutes: 15,
-                roundingEnabled: false, autoFillBreaks: true,
-                defaultMorningBreak: "10:00", defaultLunch: "12:00",
-                defaultAfternoonBreak: "14:30", updatedAt: nil
-            )
+        } catch {
+            if isTableNotFoundError(error) {
+                return CompanyBreakSettings(
+                    id: nil, stateCode: "WY", roundingMinutes: 15,
+                    roundingEnabled: false, autoFillBreaks: true,
+                    defaultMorningBreak: "10:00", defaultLunch: "12:00",
+                    defaultAfternoonBreak: "14:30", updatedAt: nil
+                )
+            }
+            throw error
         }
     }
 
@@ -365,5 +402,10 @@ public final class BreakService: Sendable {
         guard parts.count == 2, let hour = Int(parts[0]), let min = Int(parts[1]) else { return timeStr }
         let total = hour * 60 + min + minutes
         return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+
+    private func isTableNotFoundError(_ error: Error) -> Bool {
+        let message = String(describing: error)
+        return message.contains("no such table")
     }
 }

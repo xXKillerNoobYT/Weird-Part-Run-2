@@ -1356,7 +1356,10 @@ struct ToolTradeSheet: View {
     }
 
     private func loadEmployees() {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            saveError = "Service not available"
+            return
+        }
         let currentId = appCore.currentUser?.id
         do {
             employees = try service.listEmployees(status: "active")

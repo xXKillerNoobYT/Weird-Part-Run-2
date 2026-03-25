@@ -108,7 +108,10 @@ struct CreateNotebookSheet: View {
     }
 
     private func loadTemplates() {
-        guard let service = appCore.notebooksService else { return }
+        guard let service = appCore.notebooksService else {
+            // Service not ready
+            return
+        }
         templates = (try? service.getTemplates(templateType: "job")) ?? []
     }
 

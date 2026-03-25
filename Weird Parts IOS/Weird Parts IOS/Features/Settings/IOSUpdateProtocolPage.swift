@@ -154,6 +154,7 @@ struct IOSUpdateProtocolPage: View {
         buildNumber = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
 
         guard let settingsService = appCore.settingsService else {
+            errorMessage = "Service not available"
             isLoading = false
             return
         }
@@ -206,7 +207,10 @@ struct IOSUpdateProtocolPage: View {
     }
 
     private func saveChannel() {
-        guard let settingsService = appCore.settingsService else { return }
+        guard let settingsService = appCore.settingsService else {
+            errorMessage = "Service not available"
+            return
+        }
         do {
             try settingsService.saveUpdateChannel(updateChannel)
         } catch {

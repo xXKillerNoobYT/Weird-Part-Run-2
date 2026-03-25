@@ -164,7 +164,10 @@ struct PartsCompanionsPage: View {
             Button("Lock as \(lockAction == "accept" ? "Pass" : "Reject")", role: .destructive) {
                 Task {
                     guard let pollId = pollToLock, let service = appCore.partsService,
-                          let userId = appCore.currentUser?.id else { return }
+                          let userId = appCore.currentUser?.id else {
+                        actionError = "Service not available"
+                        return
+                    }
                     do {
                         try service.adminLockPoll(pollId: pollId, result: lockAction, lockedBy: userId)
                         await loadData()
@@ -178,7 +181,10 @@ struct PartsCompanionsPage: View {
         .alert("Skip This Poll?", isPresented: $showSkipConfirm) {
             Button("Skip (-50 points)", role: .destructive) {
                 Task {
-                    guard let pollId = pollToSkip, let service = appCore.partsService else { return }
+                    guard let pollId = pollToSkip, let service = appCore.partsService else {
+                        actionError = "Service not available"
+                        return
+                    }
                     do {
                         _ = try service.adminSkipPoll(pollId: pollId)
                         await loadData()
@@ -885,7 +891,10 @@ struct PartsCompanionsPage: View {
 
     private func confirmDeleteRule(_ rule: PartsService.CompanionRuleHierarchyRow) async {
         do {
-            guard let service = appCore.partsService else { return }
+            guard let service = appCore.partsService else {
+                await MainActor.run { actionError = "Service not available" }
+                return
+            }
             try service.deleteCompanionRuleSoft(id: rule.id)
             await loadData()
         } catch {
@@ -897,7 +906,10 @@ struct PartsCompanionsPage: View {
 
     private func toggleRuleActive(_ rule: PartsService.CompanionRuleHierarchyRow) async {
         do {
-            guard let service = appCore.partsService else { return }
+            guard let service = appCore.partsService else {
+                await MainActor.run { actionError = "Service not available" }
+                return
+            }
             let newActive = rule.isActive == 1 ? 0 : 1
             try service.updateCompanionRule(id: rule.id, isActive: newActive)
             await loadData()
@@ -910,7 +922,10 @@ struct PartsCompanionsPage: View {
 
     private func restoreRule(_ rule: PartsService.CompanionRuleHierarchyRow) async {
         do {
-            guard let service = appCore.partsService else { return }
+            guard let service = appCore.partsService else {
+                await MainActor.run { actionError = "Service not available" }
+                return
+            }
             try service.restoreCompanionRule(id: rule.id)
             await loadData()
         } catch {
@@ -922,7 +937,10 @@ struct PartsCompanionsPage: View {
 
     private func vote(pollId: Int64, vote: String) async {
         do {
-            guard let service = appCore.partsService, let userId = appCore.currentUser?.id else { return }
+            guard let service = appCore.partsService, let userId = appCore.currentUser?.id else {
+                await MainActor.run { actionError = "Service not available" }
+                return
+            }
             try service.castVote(pollId: pollId, userId: userId, vote: vote)
             await loadData()
         } catch {
@@ -934,7 +952,10 @@ struct PartsCompanionsPage: View {
 
     private func confirmDeleteAlternative(_ alt: PartsService.PartAlternativeWithName) async {
         do {
-            guard let service = appCore.partsService else { return }
+            guard let service = appCore.partsService else {
+                await MainActor.run { actionError = "Service not available" }
+                return
+            }
             try service.unlinkPartAlternative(linkId: alt.id)
             await loadData()
         } catch {
@@ -1183,7 +1204,10 @@ private struct CompanionRuleFormSheet: View {
     // Load categories
     private func loadCategories() async {
         do {
-            guard let service = appCore.partsService else { return }
+            guard let service = appCore.partsService else {
+                saveError = "Service not available"
+                return
+            }
             categories = try service.listCategories()
             // If editing, load dependent styles/types
             if editingRule != nil {

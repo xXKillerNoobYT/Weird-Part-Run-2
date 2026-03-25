@@ -15,23 +15,33 @@ public final class JobEstimationService: Sendable {
 
     /// Get active questions for a specific stage, ordered by group then sort_order.
     public func getQuestionsForStage(stage: String) throws -> [EstimationQuestion] {
-        try db.writer.read { dbConn in
-            try EstimationQuestion
-                .filter(Column("stage") == stage &&
-                        Column("is_active") == 1 &&
-                        Column("deleted_at") == nil)
-                .order(Column("question_group").asc, Column("sort_order").asc)
-                .fetchAll(dbConn)
+        do {
+            return try db.writer.read { dbConn in
+                try EstimationQuestion
+                    .filter(Column("stage") == stage &&
+                            Column("is_active") == 1 &&
+                            Column("deleted_at") == nil)
+                    .order(Column("question_group").asc, Column("sort_order").asc)
+                    .fetchAll(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 
     /// Get all questions (active and inactive) for settings management.
     public func getAllQuestions() throws -> [EstimationQuestion] {
-        try db.writer.read { dbConn in
-            try EstimationQuestion
-                .filter(Column("deleted_at") == nil)
-                .order(Column("stage").asc, Column("question_group").asc, Column("sort_order").asc)
-                .fetchAll(dbConn)
+        do {
+            return try db.writer.read { dbConn in
+                try EstimationQuestion
+                    .filter(Column("deleted_at") == nil)
+                    .order(Column("stage").asc, Column("question_group").asc, Column("sort_order").asc)
+                    .fetchAll(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 
@@ -108,11 +118,16 @@ public final class JobEstimationService: Sendable {
 
     /// Get rejection history for a question.
     public func getQuestionRejections(questionId: Int64) throws -> [EstimationQuestionRejection] {
-        try db.writer.read { dbConn in
-            try EstimationQuestionRejection
-                .filter(Column("question_id") == questionId)
-                .order(Column("rejected_at").desc)
-                .fetchAll(dbConn)
+        do {
+            return try db.writer.read { dbConn in
+                try EstimationQuestionRejection
+                    .filter(Column("question_id") == questionId)
+                    .order(Column("rejected_at").desc)
+                    .fetchAll(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 
@@ -150,17 +165,22 @@ public final class JobEstimationService: Sendable {
 
     /// Get all responses for a job, optionally filtered by stage.
     public func getResponsesForJob(jobId: Int64, stage: String? = nil) throws -> [EstimationResponse] {
-        try db.writer.read { dbConn in
-            var request = EstimationResponse
-                .filter(Column("job_id") == jobId)
+        do {
+            return try db.writer.read { dbConn in
+                var request = EstimationResponse
+                    .filter(Column("job_id") == jobId)
 
-            if let stage {
-                request = request.filter(Column("stage") == stage)
+                if let stage {
+                    request = request.filter(Column("stage") == stage)
+                }
+
+                return try request
+                    .order(Column("question_id").asc)
+                    .fetchAll(dbConn)
             }
-
-            return try request
-                .order(Column("question_id").asc)
-                .fetchAll(dbConn)
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 
@@ -254,21 +274,31 @@ public final class JobEstimationService: Sendable {
 
     /// Get the most recent estimation result for a job and stage.
     public func getLatestResult(jobId: Int64, stage: String) throws -> EstimationResult? {
-        try db.writer.read { dbConn in
-            try EstimationResult
-                .filter(Column("job_id") == jobId && Column("stage") == stage)
-                .order(Column("created_at").desc)
-                .fetchOne(dbConn)
+        do {
+            return try db.writer.read { dbConn in
+                try EstimationResult
+                    .filter(Column("job_id") == jobId && Column("stage") == stage)
+                    .order(Column("created_at").desc)
+                    .fetchOne(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return nil }
+            throw error
         }
     }
 
     /// Get all estimation results for a job across all stages.
     public func getAllResults(jobId: Int64) throws -> [EstimationResult] {
-        try db.writer.read { dbConn in
-            try EstimationResult
-                .filter(Column("job_id") == jobId)
-                .order(Column("created_at").desc)
-                .fetchAll(dbConn)
+        do {
+            return try db.writer.read { dbConn in
+                try EstimationResult
+                    .filter(Column("job_id") == jobId)
+                    .order(Column("created_at").desc)
+                    .fetchAll(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 
@@ -278,7 +308,7 @@ public final class JobEstimationService: Sendable {
 
     /// Get historical average durations for similar jobs (same GC, type, or area).
     public func getHistoricalAverage(gcId: Int64? = nil, jobType: String? = nil, area: String? = nil) throws -> HistoricalAverage? {
-        try db.writer.read { dbConn in
+        do { return try db.writer.read { dbConn in
             // Build filter conditions for completed jobs with reviews
             var conditions: [String] = ["j.status = 'complete'", "j.deleted_at IS NULL"]
             var args: [DatabaseValueConvertible] = []
@@ -321,6 +351,10 @@ public final class JobEstimationService: Sendable {
                 minDays: row["min_days"],
                 maxDays: row["max_days"]
             )
+        }
+        } catch {
+            if isTableNotFoundError(error) { return nil }
+            throw error
         }
     }
 
@@ -396,11 +430,16 @@ public final class JobEstimationService: Sendable {
 
     /// Get all reviews for a job.
     public func getJobReviews(jobId: Int64) throws -> [EstimationReview] {
-        try db.writer.read { dbConn in
-            try EstimationReview
-                .filter(Column("job_id") == jobId)
-                .order(Column("reviewed_at").desc)
-                .fetchAll(dbConn)
+        do {
+            return try db.writer.read { dbConn in
+                try EstimationReview
+                    .filter(Column("job_id") == jobId)
+                    .order(Column("reviewed_at").desc)
+                    .fetchAll(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 
@@ -411,7 +450,7 @@ public final class JobEstimationService: Sendable {
     /// Analyze which questions best predict actual duration.
     /// Only meaningful after 15+ completed jobs with end-of-job reviews.
     public func analyzeQuestionEffectiveness() throws -> [QuestionEffectiveness] {
-        try db.writer.read { dbConn in
+        do { return try db.writer.read { dbConn in
             // Count completed jobs with reviews
             let completedCount = try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(DISTINCT job_id) FROM estimation_reviews WHERE review_type = 'end_of_job'
@@ -490,11 +529,15 @@ public final class JobEstimationService: Sendable {
 
             return results.sorted { $0.correlationScore > $1.correlationScore }
         }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
     }
 
     /// Get AI suggestions based on job history (GC, area, type).
     public func getJobSpecificSuggestions(jobId: Int64) throws -> [String] {
-        try db.writer.read { dbConn in
+        do { return try db.writer.read { dbConn in
             guard let job = try Row.fetchOne(dbConn, sql: """
                 SELECT j.job_type, j.city, jgc.gc_id
                 FROM jobs j
@@ -553,6 +596,10 @@ public final class JobEstimationService: Sendable {
 
             return suggestions
         }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
     }
 
     // =========================================================================
@@ -562,7 +609,7 @@ public final class JobEstimationService: Sendable {
     /// Calculate work-day capacity from historical averages.
     /// Returns available work-days for the current month.
     public func calculateMonthlyCapacity() throws -> Double {
-        try db.writer.read { dbConn in
+        do { return try db.writer.read { dbConn in
             // Get active worker count
             let workerCount = try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM users WHERE deleted_at IS NULL
@@ -597,6 +644,10 @@ public final class JobEstimationService: Sendable {
 
             return (avgHoursPerDay / 8.0) * Double(workerCount) * Double(weekdays)
         }
+        } catch {
+            if isTableNotFoundError(error) { return 0 }
+            throw error
+        }
     }
 
     // =========================================================================
@@ -607,5 +658,10 @@ public final class JobEstimationService: Sendable {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
         return f.string(from: Date())
+    }
+
+    private func isTableNotFoundError(_ error: Error) -> Bool {
+        let message = String(describing: error)
+        return message.contains("no such table")
     }
 }

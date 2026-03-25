@@ -277,7 +277,10 @@ struct IOSMessageThreadView: View {
     }
 
     private func loadThreadInfo() {
-        guard let service = appCore.chatService else { return }
+        guard let service = appCore.chatService else {
+            // Service not ready
+            return
+        }
         do {
             threadInfo = try service.getThreadInfo(channelId: channelId)
         } catch {

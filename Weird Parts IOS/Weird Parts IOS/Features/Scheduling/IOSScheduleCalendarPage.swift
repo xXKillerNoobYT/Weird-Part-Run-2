@@ -453,7 +453,10 @@ struct IOSScheduleCalendarPage: View {
     }
 
     private func loadDayDetail() {
-        guard let service = appCore.schedulingService else { return }
+        guard let service = appCore.schedulingService else {
+            // Service not ready
+            return
+        }
         let dateStr = selectedDateString
         do {
             dayEntries = try service.getScheduleEntriesForDate(date: dateStr)

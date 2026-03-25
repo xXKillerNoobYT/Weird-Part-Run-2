@@ -21,8 +21,18 @@ struct DashboardView: View {
     @State private var stockChartData: [StockLevelData] = []
     @State private var spendingChartData: [SpendingCategory] = []
 
-    // KPI detail sheet
-    @State private var activeKPIDetail: KPIDetailType?
+    // Sheet management
+    private enum ActiveSheet: Identifiable {
+        case help
+        case kpiDetail(KPIDetailType)
+        var id: String {
+            switch self {
+            case .help: return "help"
+            case .kpiDetail(let type): return "kpi_\(type.id)"
+            }
+        }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     // Clock status
     @State private var isCurrentlyClockedIn = false
@@ -40,7 +50,6 @@ struct DashboardView: View {
 
     @State private var isLoading = true
     @State private var loadError: String?
-    @State private var showHelp = false
 
     private let refreshTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
     private let clockTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
@@ -82,24 +91,26 @@ struct DashboardView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .secondaryAction) {
-                    Button { showHelp = true } label: {
+                    Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
                 }
             }
-            .sheet(isPresented: $showHelp) {
-                PageHelpSheet(
-                    title: "Dashboard Help",
-                    sections: [
-                        ("Overview", "Your daily command center. See clock status, KPI stats, charts, alerts, and quick actions all in one place."),
-                        ("KPI Cards", "Tap any KPI card to see detailed breakdowns. Cards show part types, total stock, active jobs, pending orders, and low stock warnings."),
-                        ("Quick Actions", "Use the quick action buttons at the bottom to scan QR codes, clock in/out, view the daily report, move stock, or create new orders.")
-                    ]
-                )
-            }
-            .sheet(item: $activeKPIDetail) { detail in
-                KPIDetailSheet(type: detail)
-                    .environmentObject(appCore)
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .help:
+                    PageHelpSheet(
+                        title: "Dashboard Help",
+                        sections: [
+                            ("Overview", "Your daily command center. See clock status, KPI stats, charts, alerts, and quick actions all in one place."),
+                            ("KPI Cards", "Tap any KPI card to see detailed breakdowns. Cards show part types, total stock, active jobs, pending orders, and low stock warnings."),
+                            ("Quick Actions", "Use the quick action buttons at the bottom to scan QR codes, clock in/out, view the daily report, move stock, or create new orders.")
+                        ]
+                    )
+                case .kpiDetail(let detail):
+                    KPIDetailSheet(type: detail)
+                        .environmentObject(appCore)
+                }
             }
             .navigationDestination(for: DashboardDestination.self) { dest in
                 switch dest {
@@ -244,24 +255,24 @@ struct DashboardView: View {
             // Row 1: Part Types + Total Stock
             LazyVGrid(columns: twoColumns, spacing: DS.Space.md) {
                 DSKPICard(title: "Part Types", value: "\(stats.partTypes)", icon: "list.clipboard", color: .blue) {
-                    activeKPIDetail = .partTypes
+                    activeSheet = .kpiDetail(.partTypes)
                 }
                 DSKPICard(title: "Total Stock", value: "\(stats.totalStock)", icon: "shippingbox.fill", color: .teal) {
-                    activeKPIDetail = .totalStock
+                    activeSheet = .kpiDetail(.totalStock)
                 }
             }
             // Row 2: Active Jobs + Pending Orders
             LazyVGrid(columns: twoColumns, spacing: DS.Space.md) {
                 DSKPICard(title: "Active Jobs", value: "\(stats.activeJobs)", icon: "hammer", color: .orange) {
-                    activeKPIDetail = .activeJobs
+                    activeSheet = .kpiDetail(.activeJobs)
                 }
                 DSKPICard(title: "Pending Orders", value: "\(stats.pendingOrders)", icon: "cart", color: .purple) {
-                    activeKPIDetail = .pendingOrders
+                    activeSheet = .kpiDetail(.pendingOrders)
                 }
             }
             // Row 3: Low Stock (full width)
             DSKPICard(title: "Low Stock", value: "\(stats.lowStockCount)", icon: "exclamationmark.triangle", color: stats.lowStockCount > 0 ? .red : .green) {
-                activeKPIDetail = .lowStock
+                activeSheet = .kpiDetail(.lowStock)
             }
         }
         .padding(.horizontal, DS.Space.lg)
@@ -481,7 +492,10 @@ struct DashboardView: View {
     /// Loads chart data for the dashboard visualizations.
     @Sendable
     private func loadChartData() async {
-        guard let service = appCore.dashboardService else { return }
+        guard let service = appCore.dashboardService else {
+            // Service not ready
+            return
+        }
         do {
             // Labor hours for past 7 days
             let laborRows = try service.getLaborChartData()

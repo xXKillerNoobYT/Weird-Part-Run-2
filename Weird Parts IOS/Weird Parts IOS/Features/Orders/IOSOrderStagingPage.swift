@@ -326,7 +326,11 @@ struct IOSOrderStagingPage: View {
     // MARK: - Data Loading
 
     private func loadInitialData() async {
-        guard let jobsService = appCore.jobsService else { return }
+        guard let jobsService = appCore.jobsService else {
+            loadError = "Jobs service not available"
+            isLoading = false
+            return
+        }
         do {
             jobs = try jobsService.listJobs(status: "active", limit: 100)
         } catch {
@@ -452,7 +456,11 @@ private struct StageSettingsSheet: View {
     }
 
     private func loadSettings() {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            saveError = "Service not available"
+            isLoading = false
+            return
+        }
         do {
             stages = try service.getJobStages()
             mappings = try service.getCategoryStageMappings()
@@ -463,7 +471,10 @@ private struct StageSettingsSheet: View {
     }
 
     private func saveMapping(categoryId: Int64, stageId: Int64?) {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            saveError = "Service not available"
+            return
+        }
         do {
             try service.updateCategoryStageMapping(categoryId: categoryId, stageId: stageId)
         } catch {

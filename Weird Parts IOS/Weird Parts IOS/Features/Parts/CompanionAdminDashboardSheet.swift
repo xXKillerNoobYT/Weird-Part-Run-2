@@ -126,6 +126,14 @@ struct CompanionAdminDashboardSheet: View {
                 }
             }
             .task { await loadData() }
+            .alert("Error", isPresented: Binding<Bool>(
+                get: { loadError != nil },
+                set: { if !$0 { loadError = nil } }
+            )) {
+                Button("OK") { loadError = nil }
+            } message: {
+                Text(loadError ?? "")
+            }
         }
     }
 

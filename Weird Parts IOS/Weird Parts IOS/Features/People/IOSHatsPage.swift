@@ -146,7 +146,10 @@ struct IOSHatsPage: View {
     // MARK: - Data Loading
 
     private func deleteHat(_ hat: PeopleService.HatListItem) {
-        guard let service = appCore.peopleService else { return }
+        guard let service = appCore.peopleService else {
+            loadError = "Service not available"
+            return
+        }
         do {
             try service.deleteHat(id: hat.id)
             loadData()

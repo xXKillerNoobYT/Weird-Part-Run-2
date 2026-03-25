@@ -1899,6 +1899,14 @@ public final class DashboardService: Sendable {
         }
     }
 
+    // MARK: - QR Scanning
+
+    /// Process a raw QR scan string through the auto-fill service.
+    public func processQRScan(_ rawString: String) throws -> QRAutoFillResult {
+        let autoFill = QRAutoFillService(db: db)
+        return try autoFill.processQRScan(rawString)
+    }
+
     /// Detect whether a GRDB/SQLite error indicates a missing table.
     ///
     /// SQLite returns `SQLITE_ERROR` (code 1) with a message like

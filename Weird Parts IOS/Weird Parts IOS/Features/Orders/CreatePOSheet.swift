@@ -106,7 +106,10 @@ struct CreatePOSheet: View {
     }
 
     private func generatePONumber() {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            // Service not ready
+            return
+        }
         do {
             let existing = try service.listPurchaseOrders(status: nil)
             poNumber = String(format: "PO-%05d", existing.count + 1)
@@ -116,7 +119,10 @@ struct CreatePOSheet: View {
     }
 
     private func loadSuppliers() {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            loadError = "Service not available"
+            return
+        }
         do {
             suppliers = try service.listSuppliers(
                 search: supplierSearch.isEmpty ? nil : supplierSearch

@@ -356,7 +356,10 @@ private struct CreateJPOSheet: View {
     }
 
     private func loadJobContext() async {
-        guard let jobsService = appCore.jobsService else { return }
+        guard let jobsService = appCore.jobsService else {
+            errorMessage = "Jobs service not available"
+            return
+        }
         // Load active jobs
         do {
             jobs = try jobsService.listJobs(status: "active", limit: 100)
@@ -365,7 +368,10 @@ private struct CreateJPOSheet: View {
         }
 
         // Check if user is clocked in
-        guard let userId = appCore.currentUser?.id else { return }
+        guard let userId = appCore.currentUser?.id else {
+            // User not logged in
+            return
+        }
         do {
             if let activeEntry = try jobsService.getActiveClockEntry(userId: userId) {
                 clockedInJobId = activeEntry.jobId

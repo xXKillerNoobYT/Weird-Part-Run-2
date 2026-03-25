@@ -13,7 +13,18 @@ struct PartHistoryView: View {
 
     var body: some View {
         Group {
-            if isLoading {
+            if let error = loadError {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                    Text(error)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button("Retry") { loadHistory() }
+                }
+                .padding()
+            } else if isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity, alignment: .center)
             } else if entries.isEmpty {

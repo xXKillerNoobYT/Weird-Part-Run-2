@@ -14,8 +14,18 @@ struct IOSVehicleDetailPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var selectedTab: VehicleTab = .overview
-    @State private var showAssignDriver = false
-    @State private var showInspection = false
+
+    private enum ActiveSheet: Identifiable {
+        case assignDriver
+        case inspection
+        var id: String {
+            switch self {
+            case .assignDriver: return "assignDriver"
+            case .inspection: return "inspection"
+            }
+        }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     // Tab-specific data (loaded lazily)
     @State private var truckStock: [FleetService.VehicleStockItem] = []
@@ -58,21 +68,23 @@ struct IOSVehicleDetailPage: View {
         .navigationTitle(vehicle?.vehicleName ?? "Vehicle Detail")
         .refreshable { loadData() }
         .task { loadData() }
-        .sheet(isPresented: $showAssignDriver) {
-            IOSAssignDriverSheet(vehicleId: vehicleId)
-        }
-        .sheet(isPresented: $showInspection) {
-            PreTripInspectionView(
-                vehicleId: vehicleId,
-                vehicleType: vehicle?.vehicleType ?? "truck"
-            ) { _ in
-                // Reload inspections data after completion
-                loadedTabs.remove(.inspections)
-                loadTabDataIfNeeded(.inspections)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .assignDriver:
+                IOSAssignDriverSheet(vehicleId: vehicleId)
+            case .inspection:
+                PreTripInspectionView(
+                    vehicleId: vehicleId,
+                    vehicleType: vehicle?.vehicleType ?? "truck"
+                ) { _ in
+                    // Reload inspections data after completion
+                    loadedTabs.remove(.inspections)
+                    loadTabDataIfNeeded(.inspections)
+                }
             }
         }
-        .onChange(of: showAssignDriver) { _, isShowing in
-            if !isShowing { loadData() }
+        .onChange(of: activeSheet) { _, newValue in
+            if newValue == nil { loadData() }
         }
         .onChange(of: selectedTab) { _, newTab in
             loadTabDataIfNeeded(newTab)
@@ -268,7 +280,7 @@ struct IOSVehicleDetailPage: View {
     private func assignmentsTab(_ v: FleetService.VehicleDetail) -> some View {
         Section {
             Button {
-                showAssignDriver = true
+                activeSheet = .assignDriver
             } label: {
                 Label("Assign Driver", systemImage: "person.badge.plus")
             }
@@ -437,7 +449,7 @@ struct IOSVehicleDetailPage: View {
     private var inspectionsTab: some View {
         Section {
             Button {
-                showInspection = true
+                activeSheet = .inspection
             } label: {
                 Label("Start Pre-Trip Inspection", systemImage: "checklist")
                     .frame(maxWidth: .infinity)
@@ -555,7 +567,10 @@ struct IOSVehicleDetailPage: View {
         // Overview and assignments use vehicle data directly
         guard tab != .overview && tab != .assignments else { return }
         guard !loadedTabs.contains(tab) else { return }
-        guard let fleet = appCore.fleetService else { return }
+        guard let fleet = appCore.fleetService else {
+            tabLoadError = "Service not available"
+            return
+        }
 
         tabLoadError = nil
         do {

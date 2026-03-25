@@ -467,7 +467,10 @@ struct PartsForecastingPage: View {
     private func recalculateForecasts() async {
         isRecalculating = true
         do {
-            guard let service = appCore.partsService else { return }
+            guard let service = appCore.partsService else {
+                await MainActor.run { loadError = "Service not available"; isRecalculating = false }
+                return
+            }
             try service.recalculateForecasts()
             await loadData()
         } catch {
@@ -516,7 +519,7 @@ struct PartsForecastingPage: View {
     // MARK: - Location Loading
 
     private func loadLocations() {
-        guard let service = appCore.warehouseService else { return }
+        guard let service = appCore.warehouseService else { return } // Service not ready
         do {
             let locations = try service.listDistinctStockLocations()
             availableLocations = locations.map { loc in
@@ -539,7 +542,7 @@ struct PartsForecastingPage: View {
 
     @Sendable
     private func loadRecommendations() async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else { return } // Service not ready
         do {
             let recs = try service.listPendingRecommendations()
             let count = try service.pendingRecommendationCount()

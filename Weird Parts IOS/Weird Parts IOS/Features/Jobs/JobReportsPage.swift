@@ -119,7 +119,11 @@ struct JobReportsPage: View {
     // MARK: - Data Loading
 
     private func loadReports() {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            loadError = "Service not available"
+            isLoading = false
+            return
+        }
         isLoading = reports.isEmpty
         loadError = nil
         do {

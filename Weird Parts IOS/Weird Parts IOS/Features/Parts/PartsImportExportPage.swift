@@ -415,7 +415,10 @@ struct PartsImportExportPage: View {
     private func exportParts() async {
         exportStatus = .exporting
         do {
-            guard let service = appCore.partsService else { return }
+            guard let service = appCore.partsService else {
+                await MainActor.run { exportStatus = .error("Service not available") }
+                return
+            }
             let csvString = try service.exportPartsCSV(groups: selectedGroups)
 
             guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {

@@ -899,7 +899,10 @@ struct IOSJPOCreationPage: View {
         }
 
         // Check if user is clocked in
-        guard let userId = appCore.currentUser?.id else { return }
+        guard let userId = appCore.currentUser?.id else {
+            // User not logged in
+            return
+        }
         do {
             if let activeEntry = try jobsService.getActiveClockEntry(userId: userId) {
                 clockedInJobId = activeEntry.jobId

@@ -390,7 +390,10 @@ struct IOSPurchaseOrdersPage: View {
     // MARK: - Cancel / Delete
 
     private func cancelOrDeletePO(_ po: OrdersService.POListItem) async {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            actionMessage = "Service not available"
+            return
+        }
         do {
             if po.status == "draft" {
                 try service.deletePO(id: po.id)

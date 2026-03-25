@@ -15,11 +15,11 @@ struct IOSShortTermPipelinePage: View {
 
     private enum ActiveSheet: String, Identifiable {
         case callback
+        case schedule
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
     @State private var selectedItem: SchedulingService.PipelineItem?
-    @State private var showScheduleSheet = false
 
     // Filtered lists
     private var startAnytimeItems: [SchedulingService.PipelineItem] {
@@ -82,15 +82,14 @@ struct IOSShortTermPipelinePage: View {
                         snoozeCallback(jobId: item.jobId, days: days)
                     })
                 }
-            }
-        }
-        .sheet(isPresented: $showScheduleSheet) {
-            if selectedItem != nil {
-                CreateScheduleEntrySheet(
-                    date: todayString,
-                    onSave: { loadData() }
-                )
-                .environmentObject(appCore)
+            case .schedule:
+                if selectedItem != nil {
+                    CreateScheduleEntrySheet(
+                        date: todayString,
+                        onSave: { loadData() }
+                    )
+                    .environmentObject(appCore)
+                }
             }
         }
         .refreshable { loadData() }
@@ -228,7 +227,7 @@ struct IOSShortTermPipelinePage: View {
             Spacer()
             Button {
                 selectedItem = item
-                showScheduleSheet = true
+                activeSheet = .schedule
             } label: {
                 Image(systemName: "calendar.badge.plus")
             }
@@ -240,7 +239,10 @@ struct IOSShortTermPipelinePage: View {
     // MARK: - Actions
 
     private func completeCallback(jobId: Int64, notes: String?) {
-        guard let service = appCore.schedulingService else { return }
+        guard let service = appCore.schedulingService else {
+            loadError = "Service not available"
+            return
+        }
         do {
             try service.markCallbackComplete(jobId: jobId, notes: notes)
             loadData()
@@ -251,7 +253,10 @@ struct IOSShortTermPipelinePage: View {
     }
 
     private func snoozeCallback(jobId: Int64, days: Int) {
-        guard let service = appCore.schedulingService else { return }
+        guard let service = appCore.schedulingService else {
+            loadError = "Service not available"
+            return
+        }
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         let target = Calendar.current.date(byAdding: .day, value: days, to: Date()) ?? Date()

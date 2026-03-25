@@ -856,7 +856,11 @@ struct IOSJobDetailTabView: View {
     // MARK: - Data
 
     private func loadData() {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            loadError = "Service not available"
+            isLoading = false
+            return
+        }
         isLoading = job == nil
         loadError = nil
         do {
@@ -868,7 +872,10 @@ struct IOSJobDetailTabView: View {
     }
 
     private func loadTeamMembers() {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            tabError = "Service not available"
+            return
+        }
         do {
             teamMembers = try service.getTeamMembers(jobId: jobId)
         } catch {
@@ -877,7 +884,10 @@ struct IOSJobDetailTabView: View {
     }
 
     private func loadJobParts() {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            tabError = "Service not available"
+            return
+        }
         do {
             jobParts = try service.getJobParts(jobId: jobId)
         } catch {
@@ -886,7 +896,10 @@ struct IOSJobDetailTabView: View {
     }
 
     private func loadJobOrders() {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            tabError = "Service not available"
+            return
+        }
         do {
             jobJPOs = try service.listJPOs(jobId: jobId)
         } catch {
@@ -895,7 +908,10 @@ struct IOSJobDetailTabView: View {
     }
 
     private func loadJobQA() {
-        guard let service = appCore.chatService else { return }
+        guard let service = appCore.chatService else {
+            tabError = "Service not available"
+            return
+        }
         do {
             jobQAThreads = try service.listQAThreads(jobId: jobId)
         } catch {
@@ -904,8 +920,14 @@ struct IOSJobDetailTabView: View {
     }
 
     private func loadJobSupplierChannels() {
-        guard let service = appCore.chatService else { return }
-        guard let userId = appCore.currentUser?.id else { return }
+        guard let service = appCore.chatService else {
+            tabError = "Service not available"
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            tabError = "Not logged in"
+            return
+        }
         do {
             jobSupplierChannels = try service.listSupplierChannelsForJob(jobId: jobId, userId: userId)
         } catch {
@@ -1073,7 +1095,10 @@ private struct CreateJobSupplierChannelSheet: View {
     }
 
     private func loadSuppliers() {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            errorMessage = "Service not available"
+            return
+        }
         do {
             suppliers = try service.listSuppliers()
         } catch {

@@ -169,9 +169,8 @@ public final class AIDispatchService: Sendable {
                 )
             }
         } catch {
-            // Table may not exist yet — silently ignore
-            let msg = String(describing: error)
-            if !msg.contains("no such table") { throw error }
+            if isTableNotFoundError(error) { return }
+            throw error
         }
     }
 
@@ -228,7 +227,8 @@ public final class AIDispatchService: Sendable {
                 }
             }
         } catch {
-            return []
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 
@@ -249,7 +249,8 @@ public final class AIDispatchService: Sendable {
                 }
             }
         } catch {
-            return []
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 
@@ -318,7 +319,10 @@ public final class AIDispatchService: Sendable {
                 ) ?? 0
                 return count > 0
             }
-        } catch { return false }
+        } catch {
+            if isTableNotFoundError(error) { return false }
+            throw error
+        }
     }
 
     /// Check if a worker has ever been dispatched to a specific job.
@@ -332,7 +336,10 @@ public final class AIDispatchService: Sendable {
                 ) ?? 0
                 return count > 0
             }
-        } catch { return false }
+        } catch {
+            if isTableNotFoundError(error) { return false }
+            throw error
+        }
     }
 
     // =========================================================================
@@ -431,5 +438,10 @@ public final class AIDispatchService: Sendable {
               let prev = Calendar.current.date(byAdding: .day, value: -1, to: date)
         else { return dateStr }
         return f.string(from: prev)
+    }
+
+    private func isTableNotFoundError(_ error: Error) -> Bool {
+        let message = String(describing: error)
+        return message.contains("no such table")
     }
 }

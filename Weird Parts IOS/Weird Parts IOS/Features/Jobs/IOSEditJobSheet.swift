@@ -127,7 +127,10 @@ struct IOSEditJobSheet: View {
     // MARK: - Actions
 
     private func saveJob() {
-        guard let service = appCore.jobsService else { return }
+        guard let service = appCore.jobsService else {
+            errorMessage = "Service not available"
+            return
+        }
         isSaving = true
         errorMessage = nil
 

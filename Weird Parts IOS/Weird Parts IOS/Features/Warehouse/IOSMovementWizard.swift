@@ -872,8 +872,14 @@ struct IOSMovementWizard: View {
     // MARK: - Execute
 
     private func executeMovement() {
-        guard let service = appCore.warehouseService else { return }
-        guard let userId = appCore.currentUser?.id else { return }
+        guard let service = appCore.warehouseService else {
+            executeError = "Service not available"
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            executeError = "User not available"
+            return
+        }
 
         isExecuting = true
         executeError = nil

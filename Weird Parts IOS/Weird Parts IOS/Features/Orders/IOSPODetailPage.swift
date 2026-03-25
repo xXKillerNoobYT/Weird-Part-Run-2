@@ -928,7 +928,10 @@ struct IOSPODetailPage: View {
     }
 
     private func loadChannelMessages(channelId: Int64) {
-        guard let chatService = appCore.chatService else { return }
+        guard let chatService = appCore.chatService else {
+            // Service not ready
+            return
+        }
         channelMessages = (try? chatService.getMessages(channelId: channelId, limit: 50)) ?? []
         // Reverse so oldest first
         channelMessages = channelMessages.reversed()
@@ -975,7 +978,10 @@ struct IOSPODetailPage: View {
     }
 
     private func saveNewETA() async {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            actionMessage = "Service not available"
+            return
+        }
         let fmt = ISO8601DateFormatter()
         fmt.formatOptions = [.withFullDate]
         let dateStr = fmt.string(from: etaDate)
@@ -1773,7 +1779,10 @@ struct IOSPODetailPage: View {
     // MARK: - Status Transitions
 
     private func transitionPO(to newStatus: String) async {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            actionMessage = "Service not available"
+            return
+        }
         do {
             try service.updatePOStatus(id: poId, status: newStatus)
             loadData()
@@ -1783,7 +1792,10 @@ struct IOSPODetailPage: View {
     }
 
     private func deleteDraftPO() async {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            actionMessage = "Service not available"
+            return
+        }
         do {
             try service.deletePO(id: poId)
             dismiss()
@@ -1810,7 +1822,10 @@ struct IOSPODetailPage: View {
     // MARK: - Notes Actions
 
     private func addPONote() async {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            actionMessage = "Service not available"
+            return
+        }
         let author = appCore.currentUser?.displayName ?? "Unknown"
         do {
             try service.addPONote(poId: poId, note: newNoteText, author: author)

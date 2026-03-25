@@ -947,7 +947,10 @@ struct PartsCatalogPage: View {
 
     @Sendable
     private func loadLookups() async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            await MainActor.run { loadError = "Service not available"; isLoading = false }
+            return
+        }
         do {
             let cats = try service.listCategories()
             let stys = try service.listStyles()
@@ -973,7 +976,11 @@ struct PartsCatalogPage: View {
     @Sendable
     private func loadData() async {
         isLoading = parts.isEmpty
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            loadError = "Service not available"
+            isLoading = false
+            return
+        }
 
         do {
             let offset = (currentPage - 1) * pageSize
@@ -1049,7 +1056,7 @@ struct PartsCatalogPage: View {
             await MainActor.run { partPricingCache = [:] }
             return
         }
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else { return } // Service not ready
         var cache: [Int64: PartsService.ResolvedPricing] = [:]
         for part in parts {
             do {
@@ -1070,7 +1077,10 @@ struct PartsCatalogPage: View {
     // MARK: - Delete
 
     private func deletePart(_ part: CatalogPartRow) async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             try service.deletePart(id: part.id)
             await loadData()
@@ -1200,7 +1210,7 @@ private struct QuickEditSheet: View {
     private func save() async {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         guard !trimmedName.isEmpty else { return }
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else { return } // Service not ready
 
         isSaving = true
         let cost = Double(costPrice) ?? 0
@@ -1327,7 +1337,10 @@ private struct PartFormSheet: View {
         guard !trimmedName.isEmpty, selectedCategoryId > 0 else { return }
         let cost = Double(costPrice) ?? 0
         let markup = Double(markupPercent) ?? 0
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            saveError = "Service not available"
+            return
+        }
 
         do {
             if let p = part {
@@ -1460,7 +1473,10 @@ private struct PartDetailSheet: View {
 
     @Sendable
     private func loadStock() async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            loadError = "Service not available"
+            return
+        }
         do {
             let entries = try service.listStockEntries(partId: partRow.id)
             await MainActor.run { stockEntries = entries }

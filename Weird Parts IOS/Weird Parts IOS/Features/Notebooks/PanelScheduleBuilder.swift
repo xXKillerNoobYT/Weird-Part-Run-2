@@ -7,8 +7,18 @@ struct PanelScheduleBuilder: View {
     let onSave: (PanelSchedule) -> Void
 
     @State private var selectedCircuit: CircuitEntry?
-    @State private var showCircuitEditor = false
-    @State private var showPanelSettings = false
+
+    private enum ActiveSheet: Identifiable {
+        case circuitEditor
+        case panelSettings
+        var id: String {
+            switch self {
+            case .circuitEditor: return "circuitEditor"
+            case .panelSettings: return "panelSettings"
+            }
+        }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,15 +30,17 @@ struct PanelScheduleBuilder: View {
             Divider()
             panelToolbar
         }
-        .sheet(isPresented: $showCircuitEditor) {
-            if let circuit = selectedCircuit {
-                CircuitEditorSheet(circuit: circuit) { updated in
-                    updateCircuit(updated)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .circuitEditor:
+                if let circuit = selectedCircuit {
+                    CircuitEditorSheet(circuit: circuit) { updated in
+                        updateCircuit(updated)
+                    }
                 }
+            case .panelSettings:
+                PanelSettingsSheet(schedule: $schedule)
             }
-        }
-        .sheet(isPresented: $showPanelSettings) {
-            PanelSettingsSheet(schedule: $schedule)
         }
     }
 
@@ -109,7 +121,7 @@ struct PanelScheduleBuilder: View {
             selectedCircuit = circuit ?? CircuitEntry(
                 spaceNumber: spaceNumber
             )
-            showCircuitEditor = true
+            activeSheet = .circuitEditor
         } label: {
             HStack(spacing: 2) {
                 if isLeft {
@@ -159,7 +171,7 @@ struct PanelScheduleBuilder: View {
     private var panelToolbar: some View {
         HStack {
             Button {
-                showPanelSettings = true
+                activeSheet = .panelSettings
             } label: {
                 Label("Settings", systemImage: "gearshape")
                     .font(.caption)

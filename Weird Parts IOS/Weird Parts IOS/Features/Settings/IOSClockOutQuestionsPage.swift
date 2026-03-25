@@ -242,7 +242,10 @@ struct IOSClockOutQuestionsPage: View {
     }
 
     private func saveNewQuestion() {
-        guard let settingsService = appCore.settingsService else { return }
+        guard let settingsService = appCore.settingsService else {
+            errorMessage = "Service not available"
+            return
+        }
         let nextOrder = (questions.last?.sortOrder ?? 0) + 1
         do {
             try settingsService.addClockOutQuestion(
@@ -259,7 +262,10 @@ struct IOSClockOutQuestionsPage: View {
     }
 
     private func saveEditedQuestion(_ question: SettingsService.ClockOutQuestionRow) {
-        guard let settingsService = appCore.settingsService else { return }
+        guard let settingsService = appCore.settingsService else {
+            errorMessage = "Service not available"
+            return
+        }
         do {
             try settingsService.updateClockOutQuestion(
                 id: question.id,
@@ -281,7 +287,10 @@ struct IOSClockOutQuestionsPage: View {
     }
 
     private func confirmDelete() {
-        guard let settingsService = appCore.settingsService, let question = questionToDelete else { return }
+        guard let settingsService = appCore.settingsService, let question = questionToDelete else {
+            if appCore.settingsService == nil { errorMessage = "Service not available" }
+            return
+        }
         do {
             try settingsService.deleteClockOutQuestion(id: question.id)
             questionToDelete = nil

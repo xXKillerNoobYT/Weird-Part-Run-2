@@ -381,7 +381,10 @@ private struct CustomReportsView: View {
     }
 
     private func deleteReports(at offsets: IndexSet) {
-        guard let service = appCore.reportsService else { return }
+        guard let service = appCore.reportsService else {
+            loadError = "Service not available"
+            return
+        }
         for idx in offsets {
             let report = savedReports[idx]
             do {

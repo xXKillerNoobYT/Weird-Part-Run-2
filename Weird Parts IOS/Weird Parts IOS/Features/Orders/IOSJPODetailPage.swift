@@ -658,7 +658,10 @@ struct IOSJPODetailPage: View {
 
     /// Send a line to procurement by setting its status to "approved".
     private func sendToProcurement(_ lineId: Int64) {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             try service.updateJPOLineStatus(
                 lineId: lineId,
@@ -680,7 +683,10 @@ struct IOSJPODetailPage: View {
 
     /// Link a movement (transfer) ID to a JPO line item for later cancellation.
     private func linkTransferToLine(lineId: Int64, transferId: Int64) throws {
-        guard let ordersService = appCore.ordersService else { return }
+        guard let ordersService = appCore.ordersService else {
+            // Service not ready
+            return
+        }
         // Use the existing updateJPOLineStatus mechanism — the transfer_id column
         // exists on jpo_line_items. We write directly since ordersService doesn't
         // expose a dedicated setter.
@@ -726,7 +732,10 @@ struct IOSJPODetailPage: View {
     }
 
     private func rejectLine(_ lineId: Int64, reason: String) {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             // If the line was in "transfer" status, cancel the pending movement first
             if let line = jpo?.lines.first(where: { $0.id == lineId }),
@@ -781,7 +790,10 @@ struct IOSJPODetailPage: View {
     }
 
     private func updateDeliveryOption(_ option: String) {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else {
+            actionError = "Service not available"
+            return
+        }
         do {
             try service.updateJPODeliveryOption(jpoId: jpoId, option: option)
             loadData()

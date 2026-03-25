@@ -79,7 +79,10 @@ struct IOSScheduleConfigPage: View {
     }
 
     private func saveConfig() {
-        guard let service = appCore.settingsService else { return }
+        guard let service = appCore.settingsService else {
+            saveError = "Service not available"
+            return
+        }
         isSaving = true
         saveError = nil
         do {
@@ -99,7 +102,10 @@ struct IOSScheduleConfigPage: View {
     }
 
     private func loadConfig() {
-        guard let service = appCore.settingsService else { return }
+        guard let service = appCore.settingsService else {
+            loadErrorMsg = "Service not available"
+            return
+        }
         do {
             let settings = try service.getSettingsByCategory("scheduling")
             if let v = settings["work_day_start"] { workDayStart = v }

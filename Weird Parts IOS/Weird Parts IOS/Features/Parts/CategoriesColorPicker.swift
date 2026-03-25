@@ -250,7 +250,10 @@ struct CategoriesColorPicker: View {
     // MARK: - Create Catalog Part
 
     private func createCatalogPart(color: PartColor) async {
-        guard let service = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            errorMessage = "Service not available"
+            return
+        }
         guard let colorId = color.id else { return }
         guard let path = resolveHierarchyPath() else {
             errorMessage = "Could not resolve hierarchy path for this type."

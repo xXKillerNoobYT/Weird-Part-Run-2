@@ -13,10 +13,20 @@ struct IOSManageJobsPage: View {
     @State private var stats: JobsService.JobStats?
     @State private var isLoading = true
     @State private var searchText = ""
-    @State private var showHelp = false
     @State private var statusFilter = "all"
-    @State private var showCreateJob = false
     @State private var loadError: String?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        case createJob
+        var id: String {
+            switch self {
+            case .help: return "help"
+            case .createJob: return "createJob"
+            }
+        }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     private let statusOptions = ["all", "active", "completed", "on_hold", "cancelled"]
 
@@ -36,37 +46,39 @@ struct IOSManageJobsPage: View {
         .navigationTitle("Manage Jobs")
         .toolbar {
             ToolbarItem(placement: .secondaryAction) {
-                Button { showHelp = true } label: {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
-        }
-        .sheet(isPresented: $showHelp) {
-            PageHelpSheet(
-                title: "Manage Jobs Help",
-                sections: [
-                    ("Overview", "Admin-level job management with bulk actions, status changes, and advanced filtering by assignee, date, and type."),
-                    ("Bulk Actions", "Select multiple jobs to update their status, reassign team members, or archive completed jobs at once."),
-                    ("Permissions", "This page requires the 'manage jobs' permission. Standard users should use the regular Jobs page.")
-                ]
-            )
         }
         .searchable(text: $searchText, prompt: "Search jobs...")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    showCreateJob = true
+                    activeSheet = .createJob
                 } label: {
                     Image(systemName: "plus")
                 }
                 .requiresPermission("manage_jobs")
             }
         }
-        .sheet(isPresented: $showCreateJob) {
-            IOSCreateJobSheet {
-                loadData()
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                PageHelpSheet(
+                    title: "Manage Jobs Help",
+                    sections: [
+                        ("Overview", "Admin-level job management with bulk actions, status changes, and advanced filtering by assignee, date, and type."),
+                        ("Bulk Actions", "Select multiple jobs to update their status, reassign team members, or archive completed jobs at once."),
+                        ("Permissions", "This page requires the 'manage jobs' permission. Standard users should use the regular Jobs page.")
+                    ]
+                )
+            case .createJob:
+                IOSCreateJobSheet {
+                    loadData()
+                }
+                .environmentObject(appCore)
             }
-            .environmentObject(appCore)
         }
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
@@ -131,7 +143,7 @@ struct IOSManageJobsPage: View {
                 message: "Create your first job to get started.",
                 actionLabel: "Create Job"
             ) {
-                showCreateJob = true
+                activeSheet = .createJob
             }
         } else {
             List(jobs, id: \.id) { job in
