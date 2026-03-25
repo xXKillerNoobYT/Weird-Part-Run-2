@@ -511,7 +511,8 @@ public final class PartsService: Sendable {
         try db.writer.write { dbConn in
             try record.insert(dbConn)
         }
-        return record.id!
+        guard let id = record.id else { throw PartsError.invalidInput("Failed to get ID after insert") }
+        return id
     }
 
     /// Update an existing category's name, description, and/or sortOrder.
@@ -605,7 +606,8 @@ public final class PartsService: Sendable {
         try db.writer.write { dbConn in
             try record.insert(dbConn)
         }
-        return record.id!
+        guard let id = record.id else { throw PartsError.invalidInput("Failed to get ID after insert") }
+        return id
     }
 
     /// Update an existing style.
@@ -712,7 +714,8 @@ public final class PartsService: Sendable {
         try db.writer.write { dbConn in
             try record.insert(dbConn)
         }
-        return record.id!
+        guard let id = record.id else { throw PartsError.invalidInput("Failed to get ID after insert") }
+        return id
     }
 
     /// Update an existing type.
@@ -782,7 +785,8 @@ public final class PartsService: Sendable {
         try db.writer.write { dbConn in
             try record.insert(dbConn)
         }
-        return record.id!
+        guard let id = record.id else { throw PartsError.invalidInput("Failed to get ID after insert") }
+        return id
     }
 
     /// Update an existing color.
@@ -1071,7 +1075,7 @@ public final class PartsService: Sendable {
         try db.writer.write { dbConn in
             try record.insert(dbConn)
         }
-        let partId = record.id!
+        guard let partId = record.id else { throw PartsError.invalidInput("Failed to get ID after insert") }
         // Log creation in audit trail (non-fatal if migration hasn't run)
         try? logPartChange(partId: partId, userId: nil, userName: nil, action: "created", context: "Catalog")
         return partId
@@ -1283,7 +1287,8 @@ public final class PartsService: Sendable {
         try db.writer.write { dbConn in
             try record.insert(dbConn)
         }
-        return record.id!
+        guard let id = record.id else { throw PartsError.invalidInput("Failed to get ID after insert") }
+        return id
     }
 
     /// Update an existing brand.
@@ -1400,7 +1405,8 @@ public final class PartsService: Sendable {
         try db.writer.write { dbConn in
             try record.insert(dbConn)
         }
-        return record.id!
+        guard let id = record.id else { throw PartsError.invalidInput("Failed to get ID after insert") }
+        return id
     }
 
     /// Update an existing supplier.
@@ -1789,7 +1795,7 @@ public final class PartsService: Sendable {
 
                 // Create consumption record
                 var consumption = CostLayerConsumption(
-                    costLayerId: layer.id!,
+                    costLayerId: layer.id ?? 0,
                     partId: partId,
                     jobId: jobId,
                     qtyConsumed: take,
@@ -6060,5 +6066,152 @@ public final class PartsService: Sendable {
             return "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
         }
         return value
+    }
+
+    // MARK: - Catalog Search (Full Filters)
+
+    /// Result type for catalog search with full filter support.
+    public struct CatalogSearchResult: Sendable {
+        public let parts: [PartWithDetails]
+        public let totalCount: Int
+
+        public init(parts: [PartWithDetails], totalCount: Int) {
+            self.parts = parts
+            self.totalCount = totalCount
+        }
+    }
+
+    /// Sort field for catalog listing.
+    public enum CatalogSortField: String, Sendable {
+        case name, code, category, brand, stock, cost, sell
+    }
+
+    /// Lists catalog parts with full filter, sort, and pagination support.
+    public func listCatalogParts(
+        search: String? = nil,
+        categoryId: Int64? = nil,
+        styleId: Int64? = nil,
+        typeId: Int64? = nil,
+        colorId: Int64? = nil,
+        brandId: Int64? = nil,
+        lowStockOnly: Bool = false,
+        sortField: CatalogSortField = .name,
+        sortAscending: Bool = true,
+        limit: Int = 25,
+        offset: Int = 0
+    ) throws -> CatalogSearchResult {
+        try db.writer.read { dbConn in
+            var whereClauses = ["p.deleted_at IS NULL"]
+            var args: [DatabaseValueConvertible?] = []
+
+            if let categoryId {
+                whereClauses.append("p.category_id = ?")
+                args.append(categoryId)
+            }
+            if let styleId {
+                whereClauses.append("p.style_id = ?")
+                args.append(styleId)
+            }
+            if let typeId {
+                whereClauses.append("p.type_id = ?")
+                args.append(typeId)
+            }
+            if let colorId {
+                whereClauses.append("p.color_id = ?")
+                args.append(colorId)
+            }
+            if let brandId {
+                whereClauses.append("p.brand_id = ?")
+                args.append(brandId)
+            }
+
+            if let search, !search.isEmpty {
+                whereClauses.append("(p.name LIKE ? OR p.code LIKE ? OR COALESCE(b.name, '') LIKE ?)")
+                let like = "%\(search)%"
+                args.append(like)
+                args.append(like)
+                args.append(like)
+            }
+
+            if lowStockOnly {
+                whereClauses.append("""
+                    p.min_stock_level IS NOT NULL AND \
+                    COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) < p.min_stock_level
+                    """)
+            }
+
+            let whereSQL = whereClauses.joined(separator: " AND ")
+
+            let orderSQL: String
+            switch sortField {
+            case .name: orderSQL = "p.name"
+            case .code: orderSQL = "p.code"
+            case .category: orderSQL = "category_name"
+            case .brand: orderSQL = "brand_name"
+            case .stock: orderSQL = "total_stock"
+            case .cost: orderSQL = "p.company_cost_price"
+            case .sell: orderSQL = "(p.company_cost_price * (1 + p.company_markup_percent / 100))"
+            }
+            let dir = sortAscending ? "ASC" : "DESC"
+
+            // Count query
+            let countArgs = StatementArguments(args)
+            let countSQL = """
+                SELECT COUNT(*) FROM parts p
+                LEFT JOIN brands b ON b.id = p.brand_id
+                WHERE \(whereSQL)
+                """
+            let count = try Int.fetchOne(dbConn, sql: countSQL, arguments: countArgs) ?? 0
+
+            // Fetch query
+            var fetchArgValues = args
+            fetchArgValues.append(limit)
+            fetchArgValues.append(offset)
+            let fetchArgs = StatementArguments(fetchArgValues)
+
+            let fetchSQL = """
+                SELECT p.*,
+                       pc.name AS category_name,
+                       b.name AS brand_name,
+                       ps.name AS style_name,
+                       pcol.name AS color_name,
+                       COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) AS total_stock
+                FROM parts p
+                LEFT JOIN part_categories pc ON pc.id = p.category_id
+                LEFT JOIN brands b ON b.id = p.brand_id
+                LEFT JOIN part_styles ps ON ps.id = p.style_id
+                LEFT JOIN part_colors pcol ON pcol.id = p.color_id
+                WHERE \(whereSQL)
+                ORDER BY \(orderSQL) \(dir)
+                LIMIT ? OFFSET ?
+                """
+
+            let rows = try Row.fetchAll(dbConn, sql: fetchSQL, arguments: fetchArgs)
+            let parts = try rows.map { row in
+                let part = try Part(row: row)
+                return PartWithDetails(
+                    part: part,
+                    categoryName: row["category_name"] as String?,
+                    styleName: row["style_name"] as String?,
+                    typeName: nil,
+                    colorName: row["color_name"] as String?,
+                    brandName: row["brand_name"] as String?,
+                    totalStock: row["total_stock"] as Int
+                )
+            }
+            return CatalogSearchResult(parts: parts, totalCount: count)
+        }
+    }
+
+    // MARK: - Stock Entries for Part
+
+    /// Returns all active stock entries for a given part.
+    public func listStockEntries(partId: Int64) throws -> [StockEntry] {
+        try db.writer.read { dbConn in
+            try StockEntry
+                .filter(Column("part_id") == partId)
+                .filter(Column("deleted_at") == nil)
+                .fetchAll(dbConn)
+        }
     }
 }

@@ -7,7 +7,9 @@ import WiredPartCore
 /// Tap to expand into a detail popover with last sync time,
 /// pending changes count, and a manual sync button.
 struct IOSSyncStatusView: View {
-    @State private var syncManager = IOSSyncManager()
+    @EnvironmentObject private var appCore: AppCore
+
+    private var syncManager: IOSSyncManager { appCore.syncManager }
 
     var body: some View {
         Menu {

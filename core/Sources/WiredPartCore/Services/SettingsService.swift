@@ -8,6 +8,12 @@ import GRDB
 /// with one row per field.
 ///
 /// Ported from: `src/local/services/settings-service.ts`
+// TODO: When sync is implemented, filter settings by SyncScope:
+// - .company → include in company-wide sync
+// - .personal → include in per-user sync
+// - .device → exclude from sync
+// Classification lives in SyncScope.scope(for:) on the iOS side.
+
 public final class SettingsService: Sendable {
     private let db: AppDatabase
 
@@ -239,7 +245,8 @@ public final class SettingsService: Sendable {
         try db.writer.write { dbConnection in
             try record.insert(dbConnection)
         }
-        return record.id!
+        guard let id = record.id else { return 0 }
+        return id
     }
 
     /// Update an existing company profile.
@@ -391,6 +398,36 @@ public final class SettingsService: Sendable {
                 ORDER BY name ASC
             """)
             return rows.compactMap { $0["name"] as? String }
+        }
+    }
+
+    /// Export all rows from a table as an array of dictionaries.
+    public func exportTable(_ tableName: String) throws -> [Any] {
+        try db.writer.read { dbConnection in
+            // Validate table name to prevent injection
+            let tables = try Row.fetchAll(dbConnection, sql: """
+                SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?
+            """, arguments: [tableName])
+            guard !tables.isEmpty else { return [] }
+
+            let rows = try Row.fetchAll(dbConnection, sql: "SELECT * FROM \"\(tableName)\" LIMIT 10000")
+            return rows.map { row in
+                var dict: [String: Any] = [:]
+                for (column, value) in row {
+                    if value.isNull {
+                        dict[column] = NSNull()
+                    } else if let intVal = Int64.fromDatabaseValue(value) {
+                        dict[column] = intVal
+                    } else if let dblVal = Double.fromDatabaseValue(value) {
+                        dict[column] = dblVal
+                    } else if let strVal = String.fromDatabaseValue(value) {
+                        dict[column] = strVal
+                    } else {
+                        dict[column] = "\(value)"
+                    }
+                }
+                return dict
+            }
         }
     }
 

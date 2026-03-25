@@ -1,0 +1,221 @@
+import SwiftUI
+import WiredPartCore
+
+/// Dispatch AI, flex pool, pipeline targets, and scheduling preferences.
+///
+/// All values are stored as key-value settings using the `dispatch_` prefix.
+struct IOSDispatchPreferencesPage: View {
+    @EnvironmentObject private var appCore: AppCore
+
+    // MARK: - State
+
+    @State private var isLoading = true
+    @State private var loadError: String?
+    @State private var saveError: String?
+    @State private var showHelp = false
+
+    // AI Dispatch
+    @State private var enableAISuggestions = true
+    @State private var enableAILearning = true
+    @State private var showConfidenceScores = false
+
+    // Flex Pool
+    @State private var enableFlexSelfAssign = false
+    @State private var requireManagerApproval = true
+
+    // Pipeline Targets
+    @State private var startAnytimeTarget: Int = 3
+    @State private var scheduleNeededTarget: Int = 2
+    @State private var favoriteGCTarget: Int = 1
+
+    // Scheduling
+    @State private var defaultView: String = "week"
+    @State private var crewHistoryMonths: Int = 3
+    @State private var crewContinuityWeight: String = "medium"
+
+    private let viewOptions = ["day", "week", "month"]
+    private let viewLabels: [String: String] = ["day": "Day", "week": "Week", "month": "Month"]
+    private let weightOptions = ["low", "medium", "high"]
+    private let weightLabels: [String: String] = ["low": "Low", "medium": "Medium", "high": "High"]
+
+    var body: some View {
+        Group {
+            if isLoading {
+                ProgressView("Loading dispatch preferences...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let loadError {
+                ContentUnavailableView("Unable to Load", systemImage: "exclamationmark.triangle", description: Text(loadError))
+            } else {
+                settingsForm
+            }
+        }
+        .navigationTitle("Dispatch Preferences")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showHelp = true } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(isPresented: $showHelp) {
+            NavigationStack {
+                List {
+                    Section("About Dispatch Preferences") {
+                        Text("Configure how the dispatch system suggests assignments and manages the job pipeline.")
+                    }
+                    Section("AI Dispatch") {
+                        Text("AI suggestions use worker skills, team history, travel distance, and job requirements to recommend optimal assignments.")
+                    }
+                    Section("Flex Pool") {
+                        Text("The flex pool allows unassigned workers to self-assign to available jobs. Manager approval can gate the process.")
+                    }
+                    Section("Pipeline Targets") {
+                        Text("Targets are the minimum number of jobs you want in each pipeline stage. The system warns when you're below target.")
+                    }
+                }
+                .navigationTitle("Dispatch Help")
+                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { showHelp = false } } }
+            }
+        }
+        .task { loadSettings() }
+    }
+
+    // MARK: - Form
+
+    private var settingsForm: some View {
+        Form {
+            if let saveError {
+                Section {
+                    Label(saveError, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                        .font(.caption)
+                }
+            }
+
+            // AI Dispatch
+            Section {
+                Toggle("Enable AI suggestions", isOn: $enableAISuggestions)
+                Toggle("AI learns from picks", isOn: $enableAILearning)
+                Toggle("Show confidence scores", isOn: $showConfidenceScores)
+            } header: {
+                Label("AI Dispatch", systemImage: "cpu")
+            } footer: {
+                Text("When learning is on, the system improves suggestions based on which assignments the dispatcher actually makes.")
+            }
+
+            // Flex Pool
+            Section {
+                Toggle("Enable flex pool self-assign", isOn: $enableFlexSelfAssign)
+                if enableFlexSelfAssign {
+                    Toggle("Require manager approval", isOn: $requireManagerApproval)
+                }
+            } header: {
+                Label("Flex Pool", systemImage: "person.2.badge.gearshape")
+            } footer: {
+                Text("Flex pool lets unassigned workers claim open jobs on their own.")
+            }
+
+            // Pipeline Targets
+            Section {
+                Stepper("Start Anytime: \(startAnytimeTarget)", value: $startAnytimeTarget, in: 0...20)
+                Stepper("Schedule Needed: \(scheduleNeededTarget)", value: $scheduleNeededTarget, in: 0...20)
+                Stepper("Favorite GC: \(favoriteGCTarget)", value: $favoriteGCTarget, in: 0...20)
+                Text("Target = minimum number of jobs in each pipeline stage")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Label("Pipeline Targets", systemImage: "chart.bar.fill")
+            }
+
+            // Scheduling
+            Section {
+                Picker("Default view", selection: $defaultView) {
+                    ForEach(viewOptions, id: \.self) { opt in
+                        Text(viewLabels[opt] ?? opt.capitalized).tag(opt)
+                    }
+                }
+
+                Stepper("Crew history: \(crewHistoryMonths) months", value: $crewHistoryMonths, in: 1...12)
+
+                Picker("Crew continuity weight", selection: $crewContinuityWeight) {
+                    ForEach(weightOptions, id: \.self) { opt in
+                        Text(weightLabels[opt] ?? opt.capitalized).tag(opt)
+                    }
+                }
+            } header: {
+                Label("Scheduling", systemImage: "calendar.badge.clock")
+            } footer: {
+                Text("Crew continuity weight controls how strongly the system prefers keeping the same crew on a job.")
+            }
+
+            // Save
+            Section {
+                Button { saveSettings() } label: {
+                    Label("Save Settings", systemImage: "checkmark.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    private func loadSettings() {
+        guard let service = appCore.settingsService else {
+            loadError = "Settings service unavailable"
+            isLoading = false
+            return
+        }
+
+        do {
+            let map = try service.getSettingsByCategory("dispatch")
+
+            enableAISuggestions = (map["dispatch_ai_suggestions_enabled"] ?? "true") == "true"
+            enableAILearning = (map["dispatch_ai_learning_enabled"] ?? "true") == "true"
+            showConfidenceScores = (map["dispatch_show_confidence_scores"] ?? "false") == "true"
+
+            enableFlexSelfAssign = (map["dispatch_flex_self_assign_enabled"] ?? "false") == "true"
+            requireManagerApproval = (map["dispatch_flex_require_approval"] ?? "true") == "true"
+
+            startAnytimeTarget = Int(map["dispatch_pipeline_start_anytime_target"] ?? "") ?? 3
+            scheduleNeededTarget = Int(map["dispatch_pipeline_schedule_needed_target"] ?? "") ?? 2
+            favoriteGCTarget = Int(map["dispatch_pipeline_favorite_gc_target"] ?? "") ?? 1
+
+            defaultView = map["dispatch_default_view"] ?? "week"
+            crewHistoryMonths = Int(map["dispatch_crew_history_months"] ?? "") ?? 3
+            crewContinuityWeight = map["dispatch_crew_continuity_weight"] ?? "medium"
+        } catch {
+            loadError = "Failed to load: \(error.localizedDescription)"
+        }
+        isLoading = false
+    }
+
+    private func saveSettings() {
+        guard let service = appCore.settingsService else {
+            saveError = "Settings service unavailable"
+            return
+        }
+
+        do {
+            let data: [String: String] = [
+                "dispatch_ai_suggestions_enabled": enableAISuggestions ? "true" : "false",
+                "dispatch_ai_learning_enabled": enableAILearning ? "true" : "false",
+                "dispatch_show_confidence_scores": showConfidenceScores ? "true" : "false",
+                "dispatch_flex_self_assign_enabled": enableFlexSelfAssign ? "true" : "false",
+                "dispatch_flex_require_approval": requireManagerApproval ? "true" : "false",
+                "dispatch_pipeline_start_anytime_target": "\(startAnytimeTarget)",
+                "dispatch_pipeline_schedule_needed_target": "\(scheduleNeededTarget)",
+                "dispatch_pipeline_favorite_gc_target": "\(favoriteGCTarget)",
+                "dispatch_default_view": defaultView,
+                "dispatch_crew_history_months": "\(crewHistoryMonths)",
+                "dispatch_crew_continuity_weight": crewContinuityWeight,
+            ]
+            try service.upsertSettingsMap(data, category: "dispatch")
+            saveError = nil
+        } catch {
+            saveError = "Save failed: \(error.localizedDescription)"
+        }
+    }
+}

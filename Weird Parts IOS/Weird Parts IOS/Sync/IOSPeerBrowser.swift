@@ -6,8 +6,10 @@ import WiredPartCore
 /// Used during "Join Existing Business" onboarding and from the Sync settings page.
 /// Shows discovered peers with connection status and allows initiating pairing.
 struct IOSPeerBrowser: View {
-    @State private var syncManager = IOSSyncManager()
+    @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
+
+    private var syncManager: IOSSyncManager { appCore.syncManager }
 
     var body: some View {
         NavigationStack {
@@ -127,9 +129,9 @@ struct IOSPeerBrowser: View {
 
                         Spacer()
 
-                        if peer.state == "found" {
-                            Button("Connect") {
-                                syncManager.errorMessage = "Peer connection requires a shop computer running WiredPart on your network."
+                        if peer.state == "found" || peer.state == "multipeer" || peer.state == "lan" {
+                            Button("Sync") {
+                                Task { await syncManager.syncNow() }
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
@@ -152,6 +154,8 @@ struct IOSPeerBrowser: View {
         switch state {
         case "connected": return "desktopcomputer"
         case "connecting": return "arrow.triangle.2.circlepath"
+        case "multipeer": return "antenna.radiowaves.left.and.right"
+        case "lan": return "network"
         default: return "desktopcomputer.and.arrow.down"
         }
     }
@@ -160,6 +164,8 @@ struct IOSPeerBrowser: View {
         switch state {
         case "connected": return .green
         case "connecting": return .orange
+        case "multipeer": return .blue
+        case "lan": return Color.accentColor
         default: return Color.accentColor
         }
     }

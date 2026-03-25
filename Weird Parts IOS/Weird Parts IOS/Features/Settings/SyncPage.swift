@@ -14,8 +14,23 @@ struct SyncPage: View {
     @State private var saved = false
     @State private var errorMessage: String?
 
+    private var syncManager: IOSSyncManager { appCore.syncManager }
+
     var body: some View {
         Form {
+            // MARK: - Status
+            Section("Status") {
+                statusRow
+                if syncManager.pendingChanges > 0 {
+                    LabeledContent("Pending Changes") {
+                        Text("\(syncManager.pendingChanges)")
+                            .fontWeight(.medium)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+
+            // MARK: - Server
             Section("Sync Server") {
                 TextField("Shop Server Address (e.g. 192.168.1.100:8080)", text: $shopServerAddress)
                     .keyboardType(.URL)
@@ -23,6 +38,7 @@ struct SyncPage: View {
                     .autocorrectionDisabled()
             }
 
+            // MARK: - Behavior
             Section("Sync Behavior") {
                 Toggle("Auto-Sync", isOn: $autoSync)
                 HStack {
@@ -35,11 +51,7 @@ struct SyncPage: View {
                 }
             }
 
-            Section("Status") {
-                Text("Sync not configured")
-                    .foregroundStyle(.secondary)
-            }
-
+            // MARK: - Actions
             Section {
                 Button {
                     saveSettings()
@@ -54,17 +66,24 @@ struct SyncPage: View {
                 .buttonStyle(.borderedProminent)
 
                 Button {
-                    errorMessage = "Sync infrastructure not yet configured."
+                    Task { await syncManager.syncNow() }
                 } label: {
                     HStack {
                         Spacer()
-                        Text("Sync Now")
+                        if syncManager.syncStatus == .syncing {
+                            ProgressView()
+                                .controlSize(.small)
+                                .padding(.trailing, 6)
+                        }
+                        Text(syncManager.syncStatus == .syncing ? "Syncing..." : "Sync Now")
                         Spacer()
                     }
                 }
                 .buttonStyle(.bordered)
+                .disabled(syncManager.syncStatus == .syncing)
             }
 
+            // MARK: - Info
             Section {
                 Text("LAN sync connects to the shop server over your local network. Changes are merged using last-writer-wins with field-level conflict resolution.")
                     .font(.caption)
@@ -78,6 +97,39 @@ struct SyncPage: View {
             Text(errorMessage ?? "")
         }
     }
+
+    // MARK: - Status Row
+
+    @ViewBuilder
+    private var statusRow: some View {
+        switch syncManager.syncStatus {
+        case .idle:
+            Label("Not synced yet", systemImage: "circle.dashed")
+                .foregroundStyle(.secondary)
+        case .syncing:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Syncing...")
+            }
+        case .synced:
+            if let lastSync = syncManager.lastSyncDate {
+                let displayDate = lastSync.prefix(19).replacingOccurrences(of: "T", with: " ")
+                Label("Last sync: \(displayDate)", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            } else {
+                Label("Synced", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            }
+        case .error:
+            Label(syncManager.errorMessage ?? "Sync error", systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+        case .offline:
+            Label("Offline", systemImage: "wifi.slash")
+                .foregroundStyle(.orange)
+        }
+    }
+
+    // MARK: - Load / Save
 
     private func loadSettings() {
         guard let service = appCore.settingsService else {
@@ -106,6 +158,15 @@ struct SyncPage: View {
                 "auto_sync": String(autoSync),
             ], category: "sync")
             saved = true
+
+            // Reconfigure auto-sync with new settings
+            if autoSync && syncManager.isSyncAvailable {
+                let interval = TimeInterval(syncInterval) ?? 60
+                syncManager.startAutoSync(intervalSeconds: max(interval, 15))
+            } else {
+                syncManager.stopAutoSync()
+            }
+
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(2))
                 saved = false
