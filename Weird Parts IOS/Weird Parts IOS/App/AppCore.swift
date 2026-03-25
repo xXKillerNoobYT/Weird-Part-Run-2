@@ -39,6 +39,7 @@ final class AppCore: ObservableObject {
     public private(set) var dashboardService: DashboardService?
     public private(set) var breakService: BreakService?
     public private(set) var jobEstimationService: JobEstimationService?
+    public private(set) var dailyReportGenerator: DailyReportGenerator?
 
     /// Shared sync manager — all views observe this single instance.
     let syncManager = IOSSyncManager()
@@ -104,6 +105,7 @@ final class AppCore: ObservableObject {
                     dashboard: DashboardService(db: database),
                     breaks: BreakService(db: database),
                     jobEstimation: JobEstimationService(db: database),
+                    dailyReport: DailyReportGenerator(db: database),
                     theme: theme,
                     users: users,
                     hasProfile: hasProfile
@@ -128,6 +130,7 @@ final class AppCore: ObservableObject {
             dashboardService = result.dashboard
             breakService = result.breaks
             jobEstimationService = result.jobEstimation
+            dailyReportGenerator = result.dailyReport
 
             if let theme = result.theme {
                 self.theme = theme
@@ -313,6 +316,7 @@ final class AppCore: ObservableObject {
         dashboardService = nil
         breakService = nil
         jobEstimationService = nil
+        dailyReportGenerator = nil
         db = nil
 
         // 3. Delete the database file
