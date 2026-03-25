@@ -279,6 +279,188 @@
 
 ---
 
-**TOTAL: 196 test items across 23 categories**
+## X. BREAK/LUNCH COMPLIANCE (8 items)
+
+- [ ] X1. Break/Lunch policy settings page loads with 4-tier system
+- [ ] X2. State labor law defaults pre-loaded
+- [ ] X3. Company can customize beyond state requirements
+- [ ] X4. Bonus tracking for employees who stick to state minimums
+- [ ] X5. Break button changes state correctly (paid, stays clocked in)
+- [ ] X6. Lunch handles paid-to-unpaid transition
+- [ ] X7. Break/lunch compliance auto-fills on clock-out reports
+- [ ] X8. 15-minute rounding option works on timesheets (company setting)
+
+## Y. WARRANTY & JOB TYPES (10 items)
+
+- [ ] Y1. Warranty status shows countdown (visible to managers/owners)
+- [ ] Y2. Continuous jobs appear light gray, only to assigned workers
+- [ ] Y3. Payment Hold shows red indicator, blocks clock-in
+- [ ] Y4. Workers see "On Hold" (no reason); managers see payment details
+- [ ] Y5. Clock page shows work type picker (New Work / Warranty Work)
+- [ ] Y6. To-do classification (warranty vs new work) with manager review
+- [ ] Y7. Reclassification tracked in audit log
+- [ ] Y8. Per-to-do warranty timer for continuous jobs
+- [ ] Y9. Warranty work logged in Warranty section of notebook
+- [ ] Y10. Warranty expiring jobs still assignable for callback work
+
+## Z. COMPANION RULES (6 items)
+
+- [ ] Z1. Companion rules page loads with rules list
+- [ ] Z2. Auto-discovery engine runs (if 15+ jobs)
+- [ ] Z3. Weekly polls appear and accept votes
+- [ ] Z4. Clock-out questionnaire includes companion poll (7+ day old)
+- [ ] Z5. Sandbox "What If" scenario works
+- [ ] Z6. Admin dashboard shows voting accuracy + poll history
+
+## AA. FORECASTING & INVENTORY INTELLIGENCE (12 items)
+
+- [ ] AA1. Forecasting page shows urgency cards (Critical/Warning/Healthy)
+- [ ] AA2. Per-location forecast view works (Shop/Truck/Trailer/All)
+- [ ] AA3. Recalculate button runs and updates forecasts
+- [ ] AA4. Trend indicators show (ADU-30 vs ADU-90)
+- [ ] AA5. Target recommendations generate (1/day max, 60-day cooldown)
+- [ ] AA6. Recommendations show all 3 values (MIN/TARGET/MAX)
+- [ ] AA7. Forecast settings page configurable per location type
+- [ ] AA8. Shop uses ADU (parts/day), trucks use APW (parts/X-weeks)
+- [ ] AA9. Certainty rating triggers audit at <80%
+- [ ] AA10. Free space rating per location (1-10 scale)
+- [ ] AA11. Common vs Critical part category per location
+- [ ] AA12. Validation enforced: MIN < TARGET < MAX
+
+## BB. WAREHOUSE AUDIT SYSTEM (10 items)
+
+- [ ] BB1. 10-level parts reliability scale displayed
+- [ ] BB2. Confidence decays daily (configurable rate)
+- [ ] BB3. Quick verification count during movements (≤85% prompt)
+- [ ] BB4. Speed mode activates when area has QR code
+- [ ] BB5. Misplaced parts can be reported + cart system works
+- [ ] BB6. Organization audit separate tab from count audit
+- [ ] BB7. Consolidation suggestions appear for duplicate areas
+- [ ] BB8. User rating (0-10) visible on leaderboard
+- [ ] BB9. Overall warehouse rating (0-10) on dashboard
+- [ ] BB10. Progressive onboarding wizard (5 levels) works
+
+## CC. FLOOR PLAN & LOCATIONS (8 items)
+
+- [ ] CC1. Can create floor plan with room dimensions
+- [ ] CC2. Can place storage units on grid (drag + long-press rotate)
+- [ ] CC3. Storage units configurable (shelves, levels, areas per level)
+- [ ] CC4. Location naming system works (R01-U03-S02-A04 format)
+- [ ] CC5. Sticker checklist for manual labeling
+- [ ] CC6. QR code generation for areas
+- [ ] CC7. Scan area QR shows parts list + navigation guidance
+- [ ] CC8. Movable storage (gang boxes, kits) tracked separately
+
+## DD. TOOL MANAGEMENT (10 items)
+
+- [ ] DD1. Tool checkout with condition check (required)
+- [ ] DD2. Tool return with condition check
+- [ ] DD3. Tool trade between users (7-day auto-complete)
+- [ ] DD4. Kit inspection checklist (tools + consumables)
+- [ ] DD5. Missing tool status flagged
+- [ ] DD6. 4 kit types supported (consumable-only, tool+consumable, mixed, tools-only)
+- [ ] DD7. 5 maintenance types (time, usage, schedule, decreasing, condition)
+- [ ] DD8. Edit-without-permission: changes pending → manager verifies via QR
+- [ ] DD9. Lost/stolen reporting (company tool → manager decides, personal → owner decides)
+- [ ] DD10. Version history (2 years) for kits
+
+## EE. FLEET & VEHICLES (8 items)
+
+- [ ] EE1. My Vehicle page shows assigned vehicle with parts + tools
+- [ ] EE2. Truck stock (permanent) vs transfer area (haul) separated
+- [ ] EE3. Trailer detail shows mini-warehouse inventory
+- [ ] EE4. Pre-trip inspection customizable per vehicle/trailer type
+- [ ] EE5. Pre-trip ties into clock-in flow
+- [ ] EE6. Fuel + Mileage combined in Usage tab
+- [ ] EE7. Vehicle detail has 7 tabs (Overview, Parts, Tools, Assignments, Maintenance, Usage, Inspections)
+- [ ] EE8. Trailer at shop: uses shop MIN/MAX. Not at shop: uses trailer MIN/MAX
+
+## FF. SCHEDULING & DISPATCH (10 items)
+
+- [ ] FF1. Calendar has both week and month views
+- [ ] FF2. Half-day scheduling works (AM/PM split)
+- [ ] FF3. Dispatch board is interactive (drag-and-drop workers onto jobs)
+- [ ] FF4. Time-off conflict popup shows when dispatching
+- [ ] FF5. AI dispatch suggestions with 3 ranked options + points
+- [ ] FF6. Dedicated AI dispatch chat for modifications
+- [ ] FF7. Short-term pipeline shows ready/schedule-needed/favorite GC/small jobs
+- [ ] FF8. Long-term pipeline shows 3-year timeline with capacity bars
+- [ ] FF9. Flex pool: workers can self-assign from available jobs (hat-gated)
+- [ ] FF10. Job estimation questionnaire with stage-aware questions
+
+## GG. NOTEBOOK SYSTEM (8 items)
+
+- [ ] GG1. Notebook hierarchy (Section Groups → Sections → Pages)
+- [ ] GG2. Block-based editing with multiple block types
+- [ ] GG3. Slash commands (/h1, /photo, /checklist, etc.) work
+- [ ] GG4. Panel schedule builder with drag-drop circuits
+- [ ] GG5. Daily report auto-generated from clock/to-do data
+- [ ] GG6. Job starter templates create pre-built notebook structure
+- [ ] GG7. Page templates available (trim-out notes, punch list, etc.)
+- [ ] GG8. Sync conflict resolution per-block (basic version)
+
+## HH. CHAT & COMMUNICATION (8 items)
+
+- [ ] HH1. Unified inbox shows all message types sorted by recent
+- [ ] HH2. Thread info panel expandable inline (iMessage style)
+- [ ] HH3. Bidirectional escalation ladder (up and down the chain)
+- [ ] HH4. JPO Hold creates auto-linked chat thread
+- [ ] HH5. Photo/file/part-reference attachments work
+- [ ] HH6. Attachments auto-save to related job notebook
+- [ ] HH7. Office chat channel auto-created
+- [ ] HH8. Supplier bridge channels show direction indicators
+
+## II. ORDERS ADVANCED (10 items)
+
+- [ ] II1. JPO creation uses full cart builder (3-panel layout)
+- [ ] II2. Companion suggestions appear during JPO creation
+- [ ] II3. AI picks show in suggestions panel
+- [ ] II4. Per-part JPO approval/hold/reject works
+- [ ] II5. Procurement groups demand from JPOs + wishlist + forecast
+- [ ] II6. Supplier picker shows all suppliers per part (cheapest/fastest/best rated)
+- [ ] II7. PO detail shows status-appropriate action buttons
+- [ ] II8. Parts Order Management shows all parts across POs by supplier
+- [ ] II9. Receiving routing flow guides parts to correct location
+- [ ] II10. Backorder tracking per supplier per brand
+
+## JJ. OFFICE & APPROVALS (6 items)
+
+- [ ] JJ1. Office dashboard shows AI daily briefing
+- [ ] JJ2. Unified approvals queue shows ALL approval types
+- [ ] JJ3. Priority-colored attention items (green/yellow/orange/red)
+- [ ] JJ4. Financial snapshot visible (hat-gated)
+- [ ] JJ5. Background tasks status card on dashboard
+- [ ] JJ6. Office chat channel for admin coordination
+
+## KK. PERMISSIONS & HATS (6 items)
+
+- [ ] KK1. Every feature is hat-gated (no hardcoded role checks)
+- [ ] KK2. Permission matrix page shows all permissions by hat
+- [ ] KK3. Hats can be assigned/removed from employee detail
+- [ ] KK4. Hat-less users see appropriate subset of features
+- [ ] KK5. Edit-without-permission pattern works (tools only)
+- [ ] KK6. Permission changes take effect immediately (no restart)
+
+## LL. PROGRAM-WIDE STANDARDS DEEP CHECK (15 items)
+
+- [ ] LL1. Smart cards on EVERY list page (no old chip bars anywhere)
+- [ ] LL2. Help button VISIBLE (not in overflow menu) on EVERY page
+- [ ] LL3. Help content is practical and page-specific
+- [ ] LL4. AI can read help content and use it to answer questions
+- [ ] LL5. Standard filter bar on EVERY date-relevant page
+- [ ] LL6. Priority colors are TIME-based (4d/24h/overdue), not LABEL-based
+- [ ] LL7. 44px touch targets on ALL tappable elements
+- [ ] LL8. Auto-fill job context on ALL job-related forms when clocked in
+- [ ] LL9. Error messages are user-friendly (not raw localizedDescription)
+- [ ] LL10. Empty states use EmptyStateView consistently (not ContentUnavailableView)
+- [ ] LL11. Every List has .refreshable
+- [ ] LL12. Every list page with 10+ items has .searchable
+- [ ] LL13. No multiple .sheet() modifiers on any view
+- [ ] LL14. No empty catch blocks anywhere
+- [ ] LL15. No silent guard-let-service returns anywhere
+
+---
+
+**TOTAL: 331 test items across 35 categories**
 
 Each FAIL generates a specific fix prompt for Xcode.
