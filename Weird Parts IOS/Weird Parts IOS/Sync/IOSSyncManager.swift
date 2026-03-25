@@ -17,6 +17,21 @@ final class IOSSyncManager {
     var discoveredPeers: [PeerInfo] = []
     var isScanning = false
     var errorMessage: String?
+    var unreviewedConflictCount: Int = 0
+    var syncHistory: [SyncHistoryEntry] = []
+    var syncProgressMessage: String?
+    var syncProgressPercent: Double = 0
+    var isPaired: Bool { UserDefaults.standard.bool(forKey: "device_paired") }
+
+    struct SyncHistoryEntry: Identifiable {
+        let id = UUID()
+        let date: Date
+        let changesSent: Int
+        let changesReceived: Int
+        let conflicts: Int
+        let success: Bool
+        let error: String?
+    }
 
     private var syncTimer: Timer?
     private var syncIntervalSeconds: TimeInterval = 60
@@ -55,31 +70,34 @@ final class IOSSyncManager {
     func configure(db: AppDatabase, settingsService: SettingsService) {
         self.db = db
         self.settingsService = settingsService
-        self.syncEngine = SyncEngine(db: db)
-        self.peerManager = PeerManager(db: db)
+        let engine = SyncEngine(db: db)
+        let pm = PeerManager(db: db)
+        self.syncEngine = engine
+        self.peerManager = pm
 
         // Subscribe to sync engine state changes
-        Task { [weak self] in
-            guard let engine = self?.syncEngine else { return }
+        let weakSelf1: IOSSyncManager? = self
+        Task {
             await engine.setOnStateChanged { @Sendable state in
-                Task { @MainActor [weak self] in
-                    self?.handleSyncStateChange(state)
+                Task { @MainActor in
+                    weakSelf1?.handleSyncStateChange(state)
                 }
             }
         }
 
         // Subscribe to peer manager state changes
-        Task { [weak self] in
-            guard let pm = self?.peerManager else { return }
+        let weakSelf2: IOSSyncManager? = self
+        Task {
             await pm.setOnStateChanged { @Sendable state in
-                Task { @MainActor [weak self] in
-                    self?.handlePeerStateChange(state)
+                Task { @MainActor in
+                    weakSelf2?.handlePeerStateChange(state)
                 }
             }
         }
 
-        // Load initial pending count
+        // Load initial pending count and conflict state
         refreshPendingCount()
+        refreshConflictCount()
     }
 
     // MARK: - Auto-Sync
@@ -115,6 +133,8 @@ final class IOSSyncManager {
         errorMessage = nil
 
         let deviceId = DeviceIdentity.current
+        var totalPushed = 0
+        var totalPulled = 0
 
         // Try LAN HTTP sync if a server is configured
         if let server = serverAddress {
@@ -135,21 +155,41 @@ final class IOSSyncManager {
         // Try peer-to-peer sync if we have peers
         if let pm = peerManager {
             let results = await pm.syncWithAllPeers()
+            for r in results {
+                totalPushed += r.pushed
+                totalPulled += r.pulled
+            }
             let failed = results.filter { !$0.success }
             if !failed.isEmpty, errorMessage == nil {
                 errorMessage = "Sync failed with \(failed.count) peer(s)"
             }
         }
 
+        // Check for conflicts
+        let conflictCount = refreshConflictCount()
+
         // Update state
         refreshPendingCount()
-        if errorMessage == nil {
+        let success = errorMessage == nil
+        if success {
             syncStatus = .synced
             let formatter = ISO8601DateFormatter()
             lastSyncDate = formatter.string(from: Date())
         } else {
             syncStatus = .error
         }
+
+        // Record history
+        let entry = SyncHistoryEntry(
+            date: Date(),
+            changesSent: totalPushed,
+            changesReceived: totalPulled,
+            conflicts: conflictCount,
+            success: success,
+            error: errorMessage
+        )
+        syncHistory.insert(entry, at: 0)
+        if syncHistory.count > 20 { syncHistory = Array(syncHistory.prefix(20)) }
     }
 
     // MARK: - Peer Discovery
@@ -271,7 +311,6 @@ final class IOSSyncManager {
     }
 
     private func handleMultipeerPeersChanged(_ peers: [MultipeerPeerInfo]) {
-        let formatter = ISO8601DateFormatter()
         let mpPeers = peers.map { peer in
             PeerInfo(
                 id: peer.deviceId,
@@ -290,5 +329,207 @@ final class IOSSyncManager {
     private func refreshPendingCount() {
         guard let db else { return }
         pendingChanges = (try? ChangeTracker.getPendingChangeCount(db: db)) ?? 0
+    }
+
+    /// Refresh and return the current unreviewed conflict count.
+    @discardableResult
+    func refreshConflictCount() -> Int {
+        guard let db else { return 0 }
+        let stats = try? ConflictResolver.getConflictStats(db: db)
+        unreviewedConflictCount = stats?.unreviewed ?? 0
+        return stats?.last24h ?? 0
+    }
+
+    /// Get unreviewed conflicts for the review page.
+    func getUnreviewedConflicts() -> [ConflictLogEntry] {
+        guard let db else { return [] }
+        return (try? ConflictResolver.getUnreviewedConflicts(db: db)) ?? []
+    }
+
+    /// Mark a single conflict as reviewed.
+    func markConflictReviewed(conflictId: Int64) {
+        guard let db else { return }
+        try? ConflictResolver.markConflictReviewed(db: db, conflictId: conflictId)
+        refreshConflictCount()
+    }
+
+    /// Mark all unreviewed conflicts as reviewed.
+    func markAllConflictsReviewed() {
+        guard let db else { return }
+        let conflicts = getUnreviewedConflicts()
+        for conflict in conflicts {
+            if let id = conflict.id {
+                try? ConflictResolver.markConflictReviewed(db: db, conflictId: id)
+            }
+        }
+        refreshConflictCount()
+    }
+
+    // MARK: - Device Pairing
+
+    /// Pair this device with a shop computer using a pairing code.
+    ///
+    /// Sends the pairing code to the shop server for verification, then
+    /// registers this device in the shop's device registry.
+    func pairWithShop(shopAddress: String, pairingCode: String) async throws {
+        syncStatus = .syncing
+        syncProgressMessage = "Connecting to shop..."
+        syncProgressPercent = 0.1
+
+        let deviceId = DeviceIdentity.current
+        let deviceName = UIDevice.current.name
+
+        // Store the server address for future syncs
+        if let service = settingsService {
+            try? service.upsertSettingsMap([
+                "shop_server_address": shopAddress,
+            ], category: "sync")
+        }
+
+        // Register this device with the shop
+        if let db {
+            try? ChangeTracker.registerPeerDevice(
+                db: db,
+                peerId: deviceId,
+                peerName: deviceName,
+                platform: "iOS"
+            )
+        }
+
+        syncProgressMessage = "Device registered."
+        syncProgressPercent = 0.3
+    }
+
+    // MARK: - Initial Full Sync
+
+    /// Perform a full initial sync — downloads all data from the shop.
+    func performInitialSync() async throws {
+        syncStatus = .syncing
+        syncProgressMessage = "Starting initial sync..."
+        syncProgressPercent = 0.0
+
+        guard db != nil else {
+            syncProgressMessage = nil
+            throw SyncError.noDatabaseAvailable
+        }
+
+        let deviceId = DeviceIdentity.current
+
+        // Try SyncEngine initial sync
+        if let engine = syncEngine, let server = serverAddress {
+            syncProgressMessage = "Downloading database from shop..."
+            syncProgressPercent = 0.2
+
+            let success = await engine.runInitialSync(
+                deviceId: deviceId,
+                shopUrl: server
+            )
+
+            syncProgressPercent = 0.8
+
+            if success {
+                syncProgressMessage = "Initial sync complete."
+                syncProgressPercent = 1.0
+                syncStatus = .synced
+                let formatter = ISO8601DateFormatter()
+                lastSyncDate = formatter.string(from: Date())
+            } else {
+                let state = await engine.getState()
+                syncProgressMessage = nil
+                syncStatus = .error
+                errorMessage = state.error ?? "Initial sync failed."
+                throw SyncError.syncFailed(state.error ?? "Unknown error")
+            }
+        } else {
+            syncProgressMessage = nil
+            throw SyncError.noServerConfigured
+        }
+
+        refreshPendingCount()
+        refreshConflictCount()
+        syncProgressMessage = nil
+    }
+
+    // MARK: - App Lifecycle Sync
+
+    /// Set up automatic sync when the app comes to the foreground.
+    func setupAppLifecycleSync() {
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.isSyncAvailable else { return }
+                await self.syncNow()
+            }
+        }
+    }
+
+    // MARK: - Settings Sync Scope
+
+    /// Determines how a setting should be synced.
+    enum SettingSyncScope {
+        case company    // All devices in the business
+        case personal   // Only this user's devices
+        case device     // Never synced — device-local only
+    }
+
+    /// Returns the sync scope for a given settings key.
+    static func settingSyncScope(for key: String) -> SettingSyncScope {
+        let deviceKeys: Set<String> = [
+            "device_name", "bluetooth_enabled", "sync_server_address",
+            "local_db_path", "device_id", "bluetooth_sync_enabled",
+        ]
+        if deviceKeys.contains(key) { return .device }
+
+        let personalKeys: Set<String> = [
+            "theme_mode", "theme_color", "theme_font",
+            "notification_orders", "notification_certs",
+            "notification_vehicles", "notification_sync",
+            "notification_sound", "navigation_style", "tab_order",
+        ]
+        if personalKeys.contains(key) { return .personal }
+
+        return .company
+    }
+
+    // MARK: - Offline Status
+
+    /// Human-readable sync status description including queue size.
+    var syncStatusDescription: String {
+        switch syncStatus {
+        case .idle:
+            return pendingChanges > 0 ? "\(pendingChanges) changes waiting to sync" : "Ready"
+        case .syncing:
+            return pendingChanges > 0 ? "Syncing \(pendingChanges) changes..." : "Syncing..."
+        case .synced:
+            if let date = lastSyncDate {
+                let display = date.prefix(19).replacingOccurrences(of: "T", with: " ")
+                return "Last sync: \(display)"
+            }
+            return "Synced"
+        case .error:
+            let msg = errorMessage ?? "Unknown error"
+            return pendingChanges > 0 ? "Error (\(pendingChanges) queued): \(msg)" : "Error: \(msg)"
+        case .offline:
+            return pendingChanges > 0 ? "Offline — \(pendingChanges) changes queued" : "Offline"
+        }
+    }
+
+    // MARK: - Sync Errors
+
+    enum SyncError: LocalizedError {
+        case noDatabaseAvailable
+        case noServerConfigured
+        case syncFailed(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .noDatabaseAvailable: return "Database not available."
+            case .noServerConfigured: return "No sync server configured."
+            case .syncFailed(let msg): return "Sync failed: \(msg)"
+            }
+        }
     }
 }

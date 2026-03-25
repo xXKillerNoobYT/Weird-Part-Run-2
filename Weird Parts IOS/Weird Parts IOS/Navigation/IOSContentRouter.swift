@@ -195,13 +195,13 @@ struct IOSContentRouter: View {
             PeopleRouter(tabId: "people-contractors")
         case "/people/teams":
             PeopleRouter(tabId: "people-teams")
-        // People legacy routes — redirect to Office
+        // People legacy routes — redirect to People module
         case "/people/employees", "/people/directory":
-            OfficeRouter(tabId: "office-employees")
+            PeopleRouter(tabId: "people-employees")
         case "/people/hats":
-            OfficeRouter(tabId: "office-hats")
+            PeopleRouter(tabId: "people-hats")
         case "/people/permissions":
-            OfficeRouter(tabId: "office-permissions")
+            PeopleRouter(tabId: "people-permissions")
 
         // Scheduling sub-routes
         case "/scheduling/calendar":
@@ -228,32 +228,22 @@ struct IOSContentRouter: View {
             SchedulingRouter(tabId: "scheduling-long-pipeline")
 
         // Office sub-routes
+        case "/office/dashboard":
+            OfficeRouter(tabId: "office-dashboard")
+        case "/office/approvals":
+            OfficeRouter(tabId: "office-approvals")
         case "/office/manage-jobs":
             OfficeRouter(tabId: "office-manage-jobs")
         case "/office/warehouse-exec":
             OfficeRouter(tabId: "office-warehouse-exec")
-        case "/office/spending":
-            OfficeRouter(tabId: "office-spending")
-        case "/office/timesheets":
-            OfficeRouter(tabId: "office-timesheets")
-        case "/office/pre-billing":
-            OfficeRouter(tabId: "office-pre-billing")
-        case "/office/bookkeeper":
-            OfficeRouter(tabId: "office-bookkeeper")
-        case "/office/profitability":
-            OfficeRouter(tabId: "office-profitability")
-        case "/office/labor-overview":
-            OfficeRouter(tabId: "office-labor-overview")
-        case "/office/daily-summary":
-            OfficeRouter(tabId: "office-daily-summary")
         case "/office/estimation-settings":
             OfficeRouter(tabId: "office-estimation-settings")
-        case "/office/employees":
-            OfficeRouter(tabId: "office-employees")
-        case "/office/hats":
-            OfficeRouter(tabId: "office-hats")
-        case "/office/permissions":
-            OfficeRouter(tabId: "office-permissions")
+        case "/office/pipeline":
+            OfficeRouter(tabId: "office-pipeline")
+        case "/office/teams":
+            OfficeRouter(tabId: "office-teams")
+        case "/office/reports":
+            OfficeRouter(tabId: "office-reports")
 
         // Chat sub-routes
         case "/chat/channels", "/chat/messages":
@@ -271,21 +261,21 @@ struct IOSContentRouter: View {
         case "/notebooks/job-notebooks":
             IOSNotebooksRouter(tabId: "notebooks-job-notebooks")
 
-        // Reports legacy routes — redirect to Office
+        // Reports legacy routes — render pages directly
         case "/reports/timesheets":
-            OfficeRouter(tabId: "office-timesheets")
+            IOSTimesheetsPage()
         case "/reports/spending":
-            OfficeRouter(tabId: "office-spending")
+            IOSSpendingPage()
         case "/reports/daily-summary", "/reports/overview":
-            OfficeRouter(tabId: "office-daily-summary")
+            IOSDailyReportsSummaryPage()
         case "/reports/profitability":
-            OfficeRouter(tabId: "office-profitability")
+            IOSProfitabilityPage()
         case "/reports/pre-billing":
-            OfficeRouter(tabId: "office-pre-billing")
+            IOSPreBillingPage()
         case "/reports/bookkeeper":
-            OfficeRouter(tabId: "office-bookkeeper")
+            IOSBookkeeperExportPage()
         case "/reports/labor-overview":
-            OfficeRouter(tabId: "office-labor-overview")
+            IOSLaborOverviewPage()
 
         // Tools sub-routes
         case "/tools/registry":
@@ -310,6 +300,30 @@ struct IOSContentRouter: View {
             SettingsRouter(tabId: "settings-remote-sync")
         case "/settings/shared-channels":
             SettingsRouter(tabId: "settings-shared-channels")
+        case "/settings/break-lunch":
+            SettingsRouter(tabId: "settings-breaks")
+
+        // Settings stub routes (52A)
+        case "/settings/tool-policies":
+            SettingsRouter(tabId: "settings-tool-policies")
+        case "/settings/pretrip-checklists":
+            SettingsRouter(tabId: "settings-pretrip-checklists")
+        case "/settings/dispatch-preferences":
+            SettingsRouter(tabId: "settings-dispatch-preferences")
+        case "/settings/forecast-config":
+            SettingsRouter(tabId: "settings-forecast-config")
+        case "/settings/org-thresholds":
+            SettingsRouter(tabId: "settings-org-thresholds")
+        case "/settings/audit-settings":
+            SettingsRouter(tabId: "settings-audit-settings")
+        case "/settings/daily-report-templates":
+            SettingsRouter(tabId: "settings-daily-report-templates")
+        case "/settings/job-estimation-questions":
+            SettingsRouter(tabId: "settings-job-estimation-questions")
+        case "/settings/report-templates":
+            SettingsRouter(tabId: "settings-report-templates")
+        case "/settings/payment-tracking":
+            SettingsRouter(tabId: "settings-payment-tracking")
 
         // Everything else — placeholder for future native views
         default:

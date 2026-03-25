@@ -83,6 +83,50 @@ struct SyncPage: View {
                 .disabled(syncManager.syncStatus == .syncing)
             }
 
+            // MARK: - Recent Sync History
+            if !syncManager.syncHistory.isEmpty {
+                Section("Recent Syncs") {
+                    ForEach(syncManager.syncHistory.prefix(10)) { entry in
+                        HStack(spacing: 8) {
+                            Image(systemName: entry.success ? (entry.conflicts > 0 ? "exclamationmark.triangle.fill" : "checkmark.circle.fill") : "xmark.circle.fill")
+                                .foregroundStyle(entry.success ? (entry.conflicts > 0 ? .orange : .green) : .red)
+                                .font(.caption)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.date, format: .dateTime.month(.abbreviated).day().hour().minute())
+                                    .font(.caption)
+                                HStack(spacing: 8) {
+                                    if entry.changesSent > 0 {
+                                        Text("\(entry.changesSent) sent")
+                                    }
+                                    if entry.changesReceived > 0 {
+                                        Text("\(entry.changesReceived) received")
+                                    }
+                                    if entry.conflicts > 0 {
+                                        Text("\(entry.conflicts) conflict\(entry.conflicts == 1 ? "" : "s")")
+                                            .foregroundStyle(.orange)
+                                    }
+                                    if entry.changesSent == 0 && entry.changesReceived == 0 && entry.conflicts == 0 {
+                                        Text("No changes")
+                                    }
+                                }
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            if let err = entry.error {
+                                Text(err.prefix(30))
+                                    .font(.caption2)
+                                    .foregroundStyle(.red)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                }
+            }
+
             // MARK: - Info
             Section {
                 Text("LAN sync connects to the shop server over your local network. Changes are merged using last-writer-wins with field-level conflict resolution.")

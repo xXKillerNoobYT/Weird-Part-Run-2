@@ -14,6 +14,7 @@ struct IOSApprovalsPage: View {
     @State private var pendingJPOs: [OrdersService.JPOListItem] = []
     @State private var pendingDeletions: [PartsService.ScheduledDeletion] = []
     @State private var pendingTimeOff: [SchedulingService.TimeOffRow] = []
+    @State private var pendingToolEdits: [ToolsService.PendingToolEdit] = []
 
     @State private var isLoading = true
     @State private var searchText = ""
@@ -33,6 +34,7 @@ struct IOSApprovalsPage: View {
         case jpo = "JPO Approvals"
         case deletion = "Deletions"
         case timeOff = "Time-Off"
+        case toolEdit = "Tool Edits"
     }
 
     var body: some View {
@@ -73,7 +75,8 @@ struct IOSApprovalsPage: View {
     private var jpoCount: Int { pendingJPOs.count }
     private var deletionCount: Int { pendingDeletions.count }
     private var timeOffCount: Int { pendingTimeOff.count }
-    private var totalCount: Int { jpoCount + deletionCount + timeOffCount }
+    private var toolEditCount: Int { pendingToolEdits.count }
+    private var totalCount: Int { jpoCount + deletionCount + timeOffCount + toolEditCount }
 
     // MARK: - Smart Card Filters
 
@@ -88,6 +91,8 @@ struct IOSApprovalsPage: View {
                            icon: "trash", color: .orange)
                 filterCard(label: "Time-Off", count: timeOffCount, type: .timeOff,
                            icon: "calendar.badge.clock", color: .purple)
+                filterCard(label: "Tool Edits", count: toolEditCount, type: .toolEdit,
+                           icon: "wrench.and.screwdriver", color: .teal)
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
@@ -174,6 +179,17 @@ struct IOSApprovalsPage: View {
                         Label("Time-Off Requests (\(filteredTimeOff.count))", systemImage: "calendar.badge.clock")
                     }
                 }
+
+                // Tool Edits section
+                if showToolEdits && !filteredToolEdits.isEmpty {
+                    Section {
+                        ForEach(filteredToolEdits, id: \.id) { edit in
+                            toolEditRow(edit)
+                        }
+                    } header: {
+                        Label("Tool Edit Verifications (\(filteredToolEdits.count))", systemImage: "wrench.and.screwdriver")
+                    }
+                }
             }
             .listStyle(.insetGrouped)
         }
@@ -184,6 +200,7 @@ struct IOSApprovalsPage: View {
     private var showJPOs: Bool { activeFilter == nil || activeFilter == .jpo }
     private var showDeletions: Bool { activeFilter == nil || activeFilter == .deletion }
     private var showTimeOff: Bool { activeFilter == nil || activeFilter == .timeOff }
+    private var showToolEdits: Bool { activeFilter == nil || activeFilter == .toolEdit }
 
     /// Combined count of visible items (for empty state check)
     private var filteredItems: [AnyHashable] {
@@ -191,6 +208,7 @@ struct IOSApprovalsPage: View {
         if showJPOs { items.append(contentsOf: filteredJPOs.map { $0.id }) }
         if showDeletions { items.append(contentsOf: filteredDeletions.map { $0.id }) }
         if showTimeOff { items.append(contentsOf: filteredTimeOff.map { $0.id }) }
+        if showToolEdits { items.append(contentsOf: filteredToolEdits.map { $0.id }) }
         return items
     }
 
@@ -218,6 +236,16 @@ struct IOSApprovalsPage: View {
         return pendingTimeOff.filter {
             $0.userName.lowercased().contains(query) ||
             ($0.reason?.lowercased().contains(query) ?? false)
+        }
+    }
+
+    private var filteredToolEdits: [ToolsService.PendingToolEdit] {
+        guard !searchText.isEmpty else { return pendingToolEdits }
+        let query = searchText.lowercased()
+        return pendingToolEdits.filter {
+            $0.toolName.lowercased().contains(query) ||
+            $0.changedByName.lowercased().contains(query) ||
+            $0.fieldName.lowercased().contains(query)
         }
     }
 
@@ -417,6 +445,73 @@ struct IOSApprovalsPage: View {
         .padding(.vertical, 4)
     }
 
+    // MARK: - Tool Edit Row
+
+    private func toolEditRow(_ edit: ToolsService.PendingToolEdit) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(edit.toolName)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                    Text("Field: \(edit.fieldName)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let oldVal = edit.oldValue {
+                        Text("\(oldVal) → \(edit.newValue ?? "")")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("New value: \(edit.newValue ?? "")")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("By \(edit.changedByName)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                statusBadge("pending", color: .teal)
+            }
+
+            HStack(spacing: 12) {
+                Button {
+                    approveToolEditAction(edit.id)
+                } label: {
+                    Label("Approve", systemImage: "checkmark.circle.fill")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .disabled(processingId != nil)
+                .overlay {
+                    if processingId == "tool-\(edit.id)" {
+                        ProgressView()
+                    }
+                }
+
+                Button {
+                    rejectToolEditAction(edit.id)
+                } label: {
+                    Label("Reject", systemImage: "xmark.circle.fill")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .disabled(processingId != nil)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
     // MARK: - Badges
 
     private func statusBadge(_ status: String, color: Color) -> some View {
@@ -540,10 +635,50 @@ struct IOSApprovalsPage: View {
         processingId = nil
     }
 
+    // MARK: - Tool Edit Actions
+
+    private func approveToolEditAction(_ editId: Int64) {
+        guard let service = appCore.toolsService else {
+            actionError = "Tools service not available"
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            actionError = "Not logged in"
+            return
+        }
+        processingId = "tool-\(editId)"
+        do {
+            try service.approveToolEdit(editId: editId, approverId: userId)
+            pendingToolEdits.removeAll { $0.id == editId }
+        } catch {
+            actionError = error.localizedDescription
+        }
+        processingId = nil
+    }
+
+    private func rejectToolEditAction(_ editId: Int64) {
+        guard let service = appCore.toolsService else {
+            actionError = "Tools service not available"
+            return
+        }
+        guard let userId = appCore.currentUser?.id else {
+            actionError = "Not logged in"
+            return
+        }
+        processingId = "tool-\(editId)"
+        do {
+            try service.rejectToolEdit(editId: editId, rejectedBy: userId)
+            pendingToolEdits.removeAll { $0.id == editId }
+        } catch {
+            actionError = error.localizedDescription
+        }
+        processingId = nil
+    }
+
     // MARK: - Data Loading
 
     private func loadData() {
-        isLoading = pendingJPOs.isEmpty && pendingDeletions.isEmpty && pendingTimeOff.isEmpty
+        isLoading = pendingJPOs.isEmpty && pendingDeletions.isEmpty && pendingTimeOff.isEmpty && pendingToolEdits.isEmpty
         loadError = nil
 
         // Load JPOs
@@ -568,6 +703,15 @@ struct IOSApprovalsPage: View {
         if let schedulingService = appCore.schedulingService {
             do {
                 pendingTimeOff = try schedulingService.listTimeOffRequests(status: "pending")
+            } catch {
+                if loadError == nil { loadError = error.localizedDescription }
+            }
+        }
+
+        // Load pending tool edit verifications
+        if let toolsService = appCore.toolsService {
+            do {
+                pendingToolEdits = try toolsService.listPendingToolEdits()
             } catch {
                 if loadError == nil { loadError = error.localizedDescription }
             }

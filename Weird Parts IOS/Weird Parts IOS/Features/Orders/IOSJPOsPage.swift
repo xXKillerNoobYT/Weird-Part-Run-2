@@ -83,7 +83,7 @@ struct IOSJPOsPage: View {
                 .environmentObject(appCore)
         case .qrScanner:
             QRScanSheet(expectedType: .po) { result in
-                if let poId = result.entityId, result.isFound {
+                if result.entityId != nil, result.isFound {
                     // PO scanned — show JPO detail for the linked JPO
                     // For now, dismiss and reload; a future prompt can wire PO→JPO navigation
                     activeSheet = nil

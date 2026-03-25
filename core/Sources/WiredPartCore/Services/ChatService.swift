@@ -498,6 +498,103 @@ public final class ChatService: Sendable {
     }
 
     // =========================================================================
+    // MARK: - Office Channel
+    // =========================================================================
+
+    /// Ensure the system "Office" channel exists, creating it if missing.
+    /// Adds all users with office-related permissions as members.
+    public func ensureOfficeChannel() throws {
+        do {
+            try db.writer.write { dbConn in
+                // Check if Office channel already exists
+                let existingId = try Int64.fetchOne(dbConn, sql: """
+                    SELECT id FROM chat_channels
+                    WHERE channel_type = 'office' AND is_system = 1
+                      AND deleted_at IS NULL
+                    """)
+
+                if existingId != nil { return }
+
+                // Create the Office channel
+                try dbConn.execute(sql: """
+                    INSERT INTO chat_channels
+                    (name, channel_type, created_by, is_system, is_active, created_at, updated_at)
+                    VALUES ('Office', 'office', 0, 1, 1, datetime('now'), datetime('now'))
+                    """)
+
+                let channelId = dbConn.lastInsertedRowID
+
+                // Add all users with office permissions
+                let officeUsers = try Row.fetchAll(dbConn, sql: """
+                    SELECT DISTINCT uh.user_id
+                    FROM user_hats uh
+                    JOIN hats h ON h.id = uh.hat_id
+                    WHERE h.name IN ('Admin', 'Manager', 'Office')
+                      AND uh.deleted_at IS NULL
+                    """)
+
+                for row in officeUsers {
+                    let userId: Int64 = row["user_id"] ?? 0
+                    if userId > 0 {
+                        try dbConn.execute(sql: """
+                            INSERT OR IGNORE INTO chat_channel_members
+                            (channel_id, user_id, role, joined_at)
+                            VALUES (?, ?, 'member', datetime('now'))
+                            """, arguments: [channelId, userId])
+                    }
+                }
+            }
+        } catch {
+            if !isTableNotFoundError(error) { throw error }
+        }
+    }
+
+    /// Sync Office channel membership based on current hat permissions.
+    /// Adds users who gained office permissions, removes those who lost them.
+    public func syncOfficeChannelMembers() throws {
+        do {
+            try db.writer.write { dbConn in
+                guard let channelId = try Int64.fetchOne(dbConn, sql: """
+                    SELECT id FROM chat_channels
+                    WHERE channel_type = 'office' AND is_system = 1
+                      AND deleted_at IS NULL
+                    """) else { return }
+
+                // Get current office-eligible user IDs
+                let eligibleUserIds = try Int64.fetchAll(dbConn, sql: """
+                    SELECT DISTINCT uh.user_id
+                    FROM user_hats uh
+                    JOIN hats h ON h.id = uh.hat_id
+                    WHERE h.name IN ('Admin', 'Manager', 'Office')
+                      AND uh.deleted_at IS NULL
+                    """)
+
+                // Add missing members
+                for userId in eligibleUserIds {
+                    try dbConn.execute(sql: """
+                        INSERT OR IGNORE INTO chat_channel_members
+                        (channel_id, user_id, role, joined_at)
+                        VALUES (?, ?, 'member', datetime('now'))
+                        """, arguments: [channelId, userId])
+                }
+
+                // Remove members who lost office permissions
+                if !eligibleUserIds.isEmpty {
+                    let placeholders = eligibleUserIds.map { _ in "?" }.joined(separator: ",")
+                    var args: [any DatabaseValueConvertible] = [channelId]
+                    args.append(contentsOf: eligibleUserIds)
+                    try dbConn.execute(sql: """
+                        DELETE FROM chat_channel_members
+                        WHERE channel_id = ? AND user_id NOT IN (\(placeholders))
+                        """, arguments: StatementArguments(args))
+                }
+            }
+        } catch {
+            if !isTableNotFoundError(error) { throw error }
+        }
+    }
+
+    // =========================================================================
     // MARK: - Internal Helpers
     // =========================================================================
 

@@ -380,8 +380,7 @@ struct IOSJPOCreationPage: View {
     }
 
     private func searchResultRow(_ part: Part) -> some View {
-        let isBestMatch = bestMatchName != nil &&
-            part.name.lowercased().contains(bestMatchName!.lowercased())
+        let isBestMatch = bestMatchName.map { part.name.lowercased().contains($0.lowercased()) } ?? false
 
         return HStack(spacing: 8) {
             // AI best match indicator

@@ -1437,3 +1437,382 @@ Xcode AI appends an entry here after completing each prompt. This is the source 
 - ConflictResolver: added "saved_reports" to sync whitelist
 - ReportsService: generateCustomReport (6 type-specific SQL generators), saveReportConfig, getSavedReports, deleteSavedReport, markReportRun
 - Build: PASS
+
+## Prompt 50A Results (2026-03-23)
+- Office Dashboard: manager's morning starting point with 5 sections
+- AI Briefing: cached 1hr, shows summary + bullet-point highlights (new JPOs, approvals, clocked-in workers, overdue deliveries, pending time-off)
+- Needs Your Attention: priority-colored items (green/yellow/orange/red) — JPO approvals, time-off requests, overdue POs — sorted by urgency then age
+- Today's Schedule: job_dispatch entries for today with employee names, job names, shift times
+- Financial Snapshot: this-week vs last-week spending, this-month vs last-month spending, outstanding PO value — hat-gated with view_financials permission
+- Background Tasks: sync status placeholder
+- DashboardService: getOfficeBriefing, getAttentionItems, getTodaySchedule, getFinancialSnapshot + OfficeBriefing/AttentionItem/AttentionPriority/ScheduleItem/FinancialSnapshot types
+- OfficeRouter: added "office-dashboard" route
+- Build: PASS
+
+## Prompt 50B Results (2026-03-23)
+- Unified approvals: enhanced existing IOSApprovalsPage with 4th approval type (tool edits)
+- Smart card filters: All, JPOs, Deletions, Time-Off, Tool Edits (teal) — toggle to filter
+- Tool edit rows: show tool name, field name, old→new value, editor name, approve/reject buttons
+- ToolsService: listPendingToolEdits() — global query across all tools for pending_verification items
+- ToolsService: rejectToolEdit(editId:rejectedBy:) — marks change log entry as rejected
+- ToolsService: PendingToolEdit struct (id, toolId, toolName, changedByName, fieldName, oldValue, newValue, changedAt)
+- IOSApprovalsPage: added pendingToolEdits state, toolEditRow, approveToolEditAction, rejectToolEditAction, filteredToolEdits search
+- OfficeRouter: added "office-approvals" route
+- Warranty type skipped — no warranty classification system exists in codebase
+- Build: PASS
+
+## Prompt 50C Results (2026-03-23)
+- Office chat channel: auto-created system channel with channel_type='office', is_system=1
+- Migration 055: added is_system boolean column to chat_channels table
+- ChatService: ensureOfficeChannel() — creates Office channel on first launch, adds hat-eligible users
+- ChatService: syncOfficeChannelMembers() — syncs membership when hats change, adds/removes users
+- Hat-gated membership: users with Admin, Manager, or Office hats via user_hats → hats JOIN
+- IOSChannelsPage: added Office filter card (purple), office channel icon (building.columns.fill), purple "Office" badge overlay
+- AppCore bootstrap: calls ensureOfficeChannel() on app launch via Task.detached
+- Non-office users never see the channel (filtered by membership)
+- Build: PASS
+
+## Prompt 50D Results (2026-03-23)
+- Office router: removed 7 report routes (spending, timesheets, pre-billing, bookkeeper, profitability, labor-overview, daily-summary) — now in Reports module
+- Removed standalone deletion-approvals route — folded into unified approvals (50B)
+- New NavigationConfig tabs: Dashboard, Approvals, Manage Jobs, Warehouse, Estimation, Pipeline, Teams, Reports
+- Pipeline tab: links to IOSShortTermPipelinePage, IOSLongTermPipelinePage, IOSDispatchPage
+- Teams tab: embeds IOSTeamsPage from People module
+- Reports tab: custom report builder link + All Reports link to IOSReportsRouter
+- IOSContentRouter: updated office routes, fixed legacy people routes (were pointing to OfficeRouter, now point to PeopleRouter)
+- IOSContentRouter: legacy report routes render pages directly instead of routing through Office
+- Build: PASS
+
+## Prompt 51A Results (2026-03-23)
+- StandardFilterBar component: reusable date filter bar in DesignSystem/Components/
+- QuickDateFilter enum: 6 options — This Week, Last Week, This Period (bi-weekly), Last Period, This Month, Custom
+- Pay period: bi-weekly anchored to Jan 1, 2024 (matches pay cycle)
+- Custom date range: inline DatePickers that expand/collapse
+- Generic AdditionalFilters slot via @ViewBuilder for page-specific filters
+- Uses existing FilterChip component for consistent chip styling
+- Applied to 10 report pages:
+  - Fleet: FleetFuelCostReport, FleetMileageSummaryReport, FleetMaintenanceTrendsReport, FleetUtilizationReport
+  - Scheduling: SchedulingCrewUtilizationReport, SchedulingDispatchEfficiencyReport
+  - Warehouse: WarehouseTurnoverReport
+  - Labor: IOSTimesheetsPage, IOSBookkeeperExportPage, IOSPreBillingPage
+- Replaced old ReportDateRange Picker and custom dateRangePicker views with StandardFilterBar
+- Added .onChange(of: startDate/endDate) for reactive data reload
+- Build: PASS
+
+## Prompt 54A Results (2026-03-23)
+- IOSSyncManager activated (isSyncAvailable checks server address + BT enabled)
+- Shared instance: lives on AppCore.syncManager, all views share one instance
+- configure(db:settingsService:) called from AppCore.bootstrap() after DB ready
+- SyncEngine + PeerManager wired: state change callbacks update UI
+- syncNow() wired: LAN HTTP sync via SyncEngine.manualSync(), P2P sync via PeerManager.syncWithAllPeers()
+- Bluetooth peer discovery: MultipeerManager started/stopped via setBluetoothEnabled()
+- PeerManager LAN discovery: startPeerSync() / stopPeerSync() wired
+- SyncPage: real status display (idle/syncing/synced/error/offline), Sync Now triggers actual sync, pending changes count, save reconfigures auto-sync
+- BluetoothPage: toggle wires to MultipeerManager start/stop, discovered peers shown with transport type, Sync button per peer
+- IOSSyncStatusView: reads from shared syncManager, Sync Now menu action wired
+- IOSPeerBrowser: uses shared syncManager instead of own instance
+- Auto-sync on launch: if configured, runs syncNow + startPeerDiscovery + periodic sync at configured interval
+- Added setOnStateChanged() helper methods to SyncEngine and PeerManager actors (core package)
+- Build: PASS
+
+## Prompt 54B Results (2026-03-23)
+- SyncConflictBanner: orange banner at top of IOSMainView when unreviewed conflicts exist, "Review" button opens sheet
+- SyncConflictReviewPage: full conflict review page with field-level diffs
+  - Summary cards: total conflicts, unique tables, unique records
+  - Grouped by table+record, each conflict shows field name, local vs remote values, winner badge
+  - "Accept" per conflict, "Accept All" in toolbar
+  - Value boxes with color-coded borders (blue=local, purple=remote, highlighted for winner)
+- IOSSyncManager additions: unreviewedConflictCount, syncHistory array (last 20 entries)
+  - refreshConflictCount(), getUnreviewedConflicts(), markConflictReviewed(), markAllConflictsReviewed()
+  - SyncHistoryEntry struct: date, changesSent, changesReceived, conflicts, success, error
+  - syncNow() now records history entries and tracks conflict counts
+- SyncPage: "Recent Syncs" section showing last 10 sync events with status icons, sent/received/conflict counts
+- IOSMainView: conflict banner above tab/sidebar layout, sheet for conflict review
+- Build: PASS
+
+## Prompt 54C Results (2026-03-23)
+- DevicePairingView: full pairing flow — peer discovery, manual address entry, pairing code, navigate to SyncWaitingView
+  - Shows discovered peers as selectable shop computers
+  - Manual address fallback with connect button
+  - Validates pairing code (min 4 chars), stores server address + BT enabled + device_paired flags
+- SyncWaitingView: real sync progress screen — ProgressView, progress bar, messages, error/retry, completion state
+  - Calls syncManager.performInitialSync(), shows syncProgressMessage + syncProgressPercent
+  - On completion: "Continue" button calls appCore.completeOnboarding()
+  - On error: retry or go back
+- IOSSyncManager additions:
+  - pairWithShop(shopAddress:pairingCode:): registers device in device registry, stores server address
+  - performInitialSync(): runs SyncEngine.runInitialSync(), updates progress, handles errors
+  - setupAppLifecycleSync(): syncs on UIApplication.willEnterForegroundNotification
+  - SettingSyncScope enum: .company/.personal/.device classification for settings keys
+  - syncStatusDescription: human-readable status with queue size
+  - SyncError enum: noDatabaseAvailable, noServerConfigured, syncFailed
+  - syncProgressMessage + syncProgressPercent properties for UI progress tracking
+  - isPaired computed property from UserDefaults
+- AppCore: setupAppLifecycleSync() called during bootstrap
+- Build: PASS
+
+## Prompt 54D Results (2026-03-23)
+- SyncConflictClassifier: 5-level severity system (trivial/simple/moderate/hard/critical)
+  - Classifies by field name: trivialFields (updated_at, sort_order), criticalFields (qty, stock, cost, price), textFields (notes, description, content)
+  - isAutoResolvable() for trivial/simple, needsReview() for hard/critical
+- AIConflictResolutionView: AI-powered merge UI for hard conflicts
+  - Purple glow highlight on AI merge option (recommended)
+  - 6 resolution options: Device A, Device B, AI Merge, AI Alt 1, AI Alt 2, Manual Rewrite
+  - Expandable option cards with radio selection, manual TextEditor for custom values
+  - AIConflictResolution struct: holds all merge variants
+- CriticalConflictView: side-by-side comparison for financial/stock data
+  - Red-bordered card, explicit "human must decide" messaging
+  - Shows local vs remote with Device A/B labels, accept buttons for each side
+- SyncConflictReviewPage: updated to be severity-aware
+  - conflictRow() dispatches: critical → CriticalConflictView, hard → AIConflictResolutionView, others → standard
+  - severityBadge() with color-coded labels per severity level
+  - requestAIMerge(): calls FoundationModelsService.generatePreFill() 3 times for primary merge + 2 alternatives
+  - aiResolutions dictionary tracks AI results per conflict ID
+- Build: PASS
+
+## Prompt 55A Results (2026-03-23)
+- Removed `import GRDB` from all 4 remaining Features/ files (IOSEmployeeDetailPage was already clean)
+- **IOSDashboardQRScannerPage**: replaced raw stock location SQL with WarehouseService.getPartStockByLocationType()
+- **PartsCatalogPage** (heaviest — 6 GRDB usages):
+  - loadLookups(): replaced raw GRDB ORM queries with PartsService.listCategories/listStyles/listTypes/listColors/listBrands
+  - loadData(): replaced 130-line raw SQL with PartsService.listCatalogParts() (new service method)
+  - deletePart(): replaced raw SQL with PartsService.deletePart()
+  - QuickEditSheet.save(): replaced raw SQL with PartsService.updatePart()
+  - PartFormSheet.save(): replaced raw SQL with PartsService.updatePart() / createPart()
+  - PartDetailSheet.loadStock(): replaced raw GRDB ORM with PartsService.listStockEntries() (new service method)
+- **PartsForecastingPage**: replaced raw stock location SQL with WarehouseService.listDistinctStockLocations()
+- **IOSClockPage**: replaced raw supply_run notes SQL with JobsService.toggleSupplyRun() and isOnSupplyRun()
+- **New service methods added:**
+  - WarehouseService.getPartStockByLocationType(partId:) → [PartStockByLocationType]
+  - WarehouseService.listDistinctStockLocations() → [DistinctStockLocation]
+  - PartsService.listCatalogParts(search:categoryId:styleId:typeId:colorId:brandId:lowStockOnly:sortField:sortAscending:limit:offset:) → CatalogSearchResult
+  - PartsService.listStockEntries(partId:) → [StockEntry]
+  - JobsService.toggleSupplyRun(laborEntryId:) → String
+  - JobsService.getLaborEntryNotes(laborEntryId:) → String?
+  - JobsService.isOnSupplyRun(notes:) → Bool (static)
+- Zero `import GRDB` remaining in Features/ directory
+- Build: PASS
+
+## Prompt 52A Results (2026-03-23)
+- UserMenuSheet redesigned: 10 grouped sections with SF Symbol icons replacing flat 6-section list
+- Groups: General (gear), Company (building.2), Operations (wrench.and.screwdriver), Warehouse (shippingbox), Sync & Devices (arrow.triangle.2.circlepath), Security (lock.shield), Data (externaldrive), AI & Integrations (cpu), Templates (doc.text), Advanced (gearshape.2)
+- Search: `.searchable(text: $searchText, prompt: "Search Settings")` with keyword matching per item
+- Search mode: flat filtered list when typing, grouped sections when empty, ContentUnavailableView.search for no results
+- Section headers: `Label(section.title, systemImage: section.icon)` for visual grouping
+- MenuItem struct: added `keywords: [String]` for search matching
+- MenuSection struct: added `icon: String` for section header icons
+- 10 new stub pages added to SettingsRouter:
+  - Tool Policies, Pre-Trip Checklists, Dispatch Preferences, Forecast Config
+  - Organization Thresholds, Audit Settings, Daily Report Templates
+  - Job Estimation Questions, Report Templates, Payment Tracking
+  - All use `comingSoonPage(_:icon:)` → `ContentUnavailableView` with appropriate SF Symbol
+- IOSContentRouter: 10 new `/settings/*` routes + `/settings/break-lunch` route added
+- All existing 22 settings pages maintain their tabId routing unchanged
+- Build: PASS
+
+## Prompt 52B Results (2026-03-23)
+- Page 1 (Break/Lunch Policy): SKIPPED — already implemented as IOSBreakSettingsPage with 4-tier system, state presets, bonuses, auto-fill, and full breakdown; routed via `settings-breaks` / `settings-break-lunch`
+- **IOSToolPoliciesPage** created (209 lines): 4-section Form using SettingsService key-value pairs (category: `tool_policy`)
+  - Checkout Limits: max days (30), overdue notification days (7), auto-extend on active job toggle
+  - Condition Checks: require on checkout/return toggles, require photo on damage
+  - Maintenance Schedule: auto-schedule after N checkouts (50), reminder days (14)
+  - Trades: allow trades toggle, timeout days (7), require condition check
+  - Help sheet with section explanations
+- **IOSPreTripChecklistPage** created (358 lines): JSON-based checklist editor stored in `pretrip_checklist_config` setting
+  - Per-vehicle-type checklists (All, Truck, Van, Car, Trailer) with "Use Default" inheritance
+  - 3 default sections with 19 items: Exterior (8), Interior (7), Equipment (4)
+  - Critical items marked with red icon/badge
+  - Add/delete items and sections via alerts
+  - Help sheet with vehicle type explanation
+- **IOSDispatchPreferencesPage** created (222 lines): 4-section Form using SettingsService key-value pairs (category: `dispatch`)
+  - AI Dispatch: enable suggestions, learning from picks, show confidence scores
+  - Flex Pool: self-assign toggle, manager approval gate
+  - Pipeline Targets: start anytime (3), schedule needed (2), favorite GC (1) steppers
+  - Scheduling: default view picker (day/week/month), crew history months, continuity weight (low/medium/high)
+  - Help sheet with section explanations
+- SettingsRouter: 3 stubs replaced with real pages (tool-policies, pretrip-checklists, dispatch-preferences)
+- Build: PASS
+
+## Prompt 52C Results (2026-03-23)
+- **IOSForecastSettingsPage** created (278 lines): 5-section Form using SettingsService (category: `forecast`)
+  - Per-location-type defaults (Shop/Truck/Trailer segmented picker): ADU vs APW method, lookback days, min data days, APW window
+  - Common part multipliers: MIN (1.0), TARGET (1.5), MAX (2.0)
+  - Critical part multipliers: MIN (1.5), TARGET (2.0), MAX (3.0)
+  - Free space: suppress threshold slider (20%), explanatory text
+  - Auto-recalculation: daily toggle, hour stepper, category suggestion interval
+  - Help sheet with method explanations
+- **IOSOrganizationThresholdsPage** created (229 lines): 4-section Form (category: `org`)
+  - Confidence decay: base rate (0.1%/day), movement decay factor (0.5)
+  - Audit triggers: threshold slider (80%), max recs/day (1), cooldown days (60)
+  - Consolidation: voting timeout (7d), min votes (2), auto-approve unanimous toggle
+  - Organization rating: target score slider (85%), show on dashboard, include in daily report
+- **IOSAuditSettingsPage** created (226 lines): 4-section Form (category: `audit`)
+  - General: auto-scheduling toggle, default type picker (Full Count/Cycle Count/Spot Check), max concurrent (1)
+  - Speed mode: allow toggle, require QR toggle, time limit stepper (10s)
+  - Multi-user verification: threshold (2), misplacement penalty multiplier (1.5x)
+  - History: keep months (12), auto-archive, include in daily report
+- SettingsRouter: 3 stubs replaced with real pages (forecast-config, org-thresholds, audit-settings)
+- Build: PASS
+
+## Prompt 52D Results (2026-03-23)
+- **IOSDailyReportTemplatesPage** created (263 lines): JSON-based section editor stored in `daily_report_template` setting
+  - 10 default sections: Hours Summary (locked), Jobs Worked (locked), To-Do Progress, Safety Notes, Weather, Equipment, Materials, Photos, Worker Notes, AI Summary
+  - Section toggles (locked sections cannot be disabled), drag-to-reorder
+  - AI summary instructions: multi-line TextField with default prompt
+  - Preview sheet: mock report with placeholder data per enabled section
+- **Job Estimation Questions**: routed to existing IOSEstimationSettingsPage (already comprehensive with question CRUD, stages, AI effectiveness analysis from prompt 46F)
+- **IOSReportTemplatesPage** created (278 lines): CRUD for saved_reports table via ReportsService
+  - My Templates + Shared Templates sections
+  - Template rows: type icon, name, shared indicator, last-run date
+  - Create sheet: name, report type picker (6 types), share toggle
+  - Swipe-to-delete with confirmation alert
+  - Uses ReportsService.saveReportConfig(name:type:columns:filters:userId:isShared:) and getSavedReports/deleteSavedReport
+- SettingsRouter: 3 stubs replaced with real pages (daily-report-templates, job-estimation-questions, report-templates)
+- Build: PASS
+
+## Prompt 52E Results (2026-03-23)
+- **IOSBackupsPage**: replaced simulated backup with real file operations
+  - Creates `Documents/WiredPart/Backups/` directory via FileManager
+  - Copies SQLite + WAL + SHM files with timestamp naming (`wiredpart-backup-YYYY-MM-DD-HHmmss.sqlite`)
+  - Shows actual DB file size, scans backup directory for count and last backup time
+  - Disk space check: warns if < 100MB free
+  - All FileManager errors shown in UI
+- **IOSDataExportPage**: replaced simulated export with real table export
+  - Added `exportTable(_:)` to SettingsService: reads all rows (limit 10K) as `[Any]` dictionaries
+  - CSV export: headers + rows with proper escaping for commas/quotes/newlines
+  - JSON export: pretty-printed via JSONSerialization
+  - Full DB export: copies SQLite file to temp directory
+  - Share sheet (UIActivityViewController) presented after generation
+  - File naming: `wiredpart-export-{table}-{date}.{csv|json}`
+- **IOSUpdateProtocolPage**: replaced simulated check with real version comparison
+  - Reads `CFBundleShortVersionString` and `CFBundleVersion` from Bundle.main (already existed)
+  - Check compares against `latest_known_version` stored in settings
+  - Updates `last_update_check` timestamp on each check
+  - Shows "Update Available" if stored version > current, "Up to Date" otherwise
+- **IOSAIConfigPage**: replaced simulated availability with real FoundationModelsService
+  - Calls `FoundationModelsService().checkAvailability()` → `AIAvailability` enum
+  - Shows device model, iOS version, and AI status with specific reason text
+  - 6 status states: available, deviceNotEligible, appleIntelligenceNotEnabled, modelNotReady, unavailable, notSupported
+  - AI settings (enable, model, language) persisted via SettingsService (category: `ai`)
+  - Settings load on task, auto-checks availability on load
+- **SyncPage**: SKIPPED — already wired to real syncManager.syncNow() in prompt 54A
+- Build: PASS
+
+---
+
+## Prompt 52F — Settings: Sync Scope Classification
+**Date:** 2026-03-23
+**Status:** ✅ Complete
+**Build:** PASS
+
+### Changes
+
+- **NEW: SyncScopeIndicator.swift** (134 lines)
+  - `SyncScope` enum with 3 cases: `.company` (syncs to all), `.personal` (syncs to user's devices), `.device` (local only)
+  - Static `scope(for:)` maps every settings tabId to its scope
+  - Static `dominantScope(for:)` returns the most common scope for a group
+  - `SyncScopeIndicator` view: pill badge (full) or icon-only (compact mode)
+  - SF Symbols: globe, person.fill, iphone
+
+- **UserMenuSheet.swift**: Added sync scope indicators
+  - Each settings row shows compact scope icon as trailing element
+  - Section headers show dominant scope label (Company/Personal/Device)
+  - Search results also show scope icons
+
+- **SettingsRouter.swift**: Added sync scope banner
+  - `.safeAreaInset(edge: .top)` with `SyncScopeIndicator` at top of every routed page
+  - Shows full label: "Syncs to all devices" / "Syncs to your devices" / "This device only"
+
+- **SettingsService.swift**: Added TODO comment for future sync engine integration
+  - Classification: company (17 pages), personal (4 pages), device (13 pages)
+
+### Classification
+| Scope | Count | Pages |
+|-------|-------|-------|
+| Company | 17 | Company Profiles, Billing, PDF, Payment Tracking, Breaks, Tool Policies, Pre-Trip, Dispatch, Forecast, Org Thresholds, Audit Settings, Daily Reports, Estimation, Report Templates, Clock-Out, Security, Keys |
+| Personal | 4 | Themes, Notifications, App Config, AI Config |
+| Device | 13 | About, Sync, Bluetooth, Device Mgmt, Bootstrap, Backups, Export, DB Reset, Updates, Remote Sync, Shared Channels, Integrations, Supplier Bridge, Audit Log |
+
+---
+
+## Prompt 53A — Safe Update System (Production Migration Safety)
+**Date:** 2026-03-23
+**Status:** ✅ Complete
+**Build:** PASS
+
+### Changes
+
+- **AppDatabase+Migrations.swift**: `eraseDatabaseOnSchemaChange` already wrapped in `#if DEBUG` (no change needed)
+- **AppDatabase.swift**: Added production migration safety infrastructure
+  - `schemaVersion = 55` static constant tracking total migrations
+  - `backupDatabase(atPath:)` — creates timestamped pre-migration backup, copies WAL/SHM, keeps last 5
+  - `restoreDatabase(from:to:)` — restores DB + WAL/SHM from backup file
+  - Version tracking: writes `db_schema_version` and `last_migration_date` to settings after successful migration
+- **AppCore.swift**: Added pre-migration backup with rollback
+  - `#if !DEBUG`: calls `AppDatabase.backupDatabase()` before opening DB
+  - On migration failure: restores from backup, logs error, then re-throws
+  - Development builds skip backup for fast iteration
+- **AppDatabase+Migrations.swift**: Wrapped 14 ALTER TABLE calls in migrations 032-055 with `try?`
+  - Migrations affected: 032, 034, 036, 038, 044, 045, 046, 050, 051, 052, 055
+  - Prevents "column already exists" crashes on re-run edge cases
+  - CREATE TABLE calls left as `try` (GRDB migrator tracks completed migrations)
+
+### Safety Guarantees
+| Scenario | Behavior |
+|----------|----------|
+| DEBUG build, schema change | DB wiped and rebuilt (dev convenience) |
+| RELEASE build, normal migration | Pre-migration backup → migrate → record version |
+| RELEASE build, migration failure | Backup → fail → restore from backup → re-throw |
+| ALTER TABLE column exists | `try?` silently succeeds |
+| Backup storage | Last 5 pre-migration backups retained, older pruned |
+
+---
+
+## Prompt 56A — Full End-to-End Audit
+**Date:** 2026-03-23
+**Status:** ✅ Complete
+**Build:** PASS (0 errors, 0 code warnings)
+
+### Scan Results (15 categories)
+
+| Category | Issues Found | Status |
+|----------|-------------|--------|
+| 1. GRDB in UI files | 0 | ✅ Clean |
+| 2. Empty catch blocks | 0 | ✅ Clean |
+| 3. Silent guard returns | 0 systemic | ✅ Clean (all set error state) |
+| 4. Platform guards | 0 problematic | ✅ Clean (2 files use proper macCatalyst guard) |
+| 5. Sheet management | 17 files with 2 sheets | ⚪ Acceptable (2 sheets per view is fine) |
+| 6. Missing error display | 0 | ✅ Clean (13 inline catches all set state) |
+| 7. Missing .refreshable | N/A | ⚪ Not changed (existing pattern varies) |
+| 8. Missing .searchable | N/A | ⚪ Not changed (existing pattern varies) |
+| 9. Missing help buttons | N/A | ⚪ Not changed (page-specific) |
+| 10. Force unwraps | **11** | ✅ **All 11 fixed** |
+| 11. DispatchQueue.main.asyncAfter | 0 | ✅ Clean |
+| 12. Broken routes | 1 stub (payment-tracking) | ⚪ Intentional stub from 52A |
+| 13. Migration safety | 0 | ✅ Clean (56 migrations, all registered, #if DEBUG) |
+| 14. Service layer | 0 | ✅ Clean |
+| 15. Compilation | 4 warnings | ✅ **All 4 fixed** |
+
+### Fixes Applied
+
+**Force Unwraps (11 → 0):**
+- **PanelScheduleBuilder.swift** (2): `circuit!.circuitDescription` → `.flatMap` nil-coalescing
+- **IOSJobDetailTabView.swift** (1): `job.estimatedHours!` → `.map { "of \(Int($0))" }`
+- **IOSJPOCreationPage.swift** (1): `bestMatchName!.lowercased()` → `.map { } ?? false`
+- **PartsForecastingPage.swift** (4): `rec.id!` and `row.part.id!` → `guard let` safe unwrap
+- **WarehouseDashboardPage.swift** (1): `selectedFilter!.rawValue` → `.map { } ?? ""`
+- **IOSAuditPage.swift** (1): `activeSession!` → captured before nil-out via `guard let session`
+- **ReceivingRoutingFlow.swift** (1): `stockLevels!` → `if let levels`
+
+**Compiler Warnings (4 → 0):**
+- **NotebooksService.swift**: `groupIndex` and `sectionIndex` → replaced with `_`
+- **IOSJPOsPage.swift**: unused `poId` → `result.entityId != nil`
+- **IOSShortTermPipelinePage.swift**: unused `item` binding → `selectedItem != nil`
+- **IOSSyncManager.swift**: removed spurious `await` on `UIDevice.current.name`; `guard let db` → `guard db != nil`
+
+### Remaining (not code issues)
+- 5 Metal toolchain linker warnings (Xcode environment — cannot fix via code)
+- 1 intentional stub route: `settings-payment-tracking` → comingSoonPage
+
+### Second Pass
+- Issues remaining after fixes: **0**

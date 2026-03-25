@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 
 /// Full parts catalog with cascading hierarchy filters, pagination,
@@ -948,37 +947,20 @@ struct PartsCatalogPage: View {
 
     @Sendable
     private func loadLookups() async {
-        guard let db = appCore.db else { return }
+        guard let service = appCore.partsService else { return }
         do {
-            let result = try await db.writer.read { conn -> ([PartCategory], [PartStyle], [PartType], [PartColor], [Brand]) in
-                let cats = try PartCategory
-                    .filter(Column("deleted_at") == nil)
-                    .order(Column("sort_order").asc, Column("name").asc)
-                    .fetchAll(conn)
-                let stys = try PartStyle
-                    .filter(Column("deleted_at") == nil)
-                    .order(Column("sort_order").asc, Column("name").asc)
-                    .fetchAll(conn)
-                let typs = try PartType
-                    .filter(Column("deleted_at") == nil)
-                    .order(Column("sort_order").asc, Column("name").asc)
-                    .fetchAll(conn)
-                let cols = try PartColor
-                    .filter(Column("deleted_at") == nil)
-                    .order(Column("sort_order").asc, Column("name").asc)
-                    .fetchAll(conn)
-                let brnds = try Brand
-                    .filter(Column("deleted_at") == nil)
-                    .order(Column("name").asc)
-                    .fetchAll(conn)
-                return (cats, stys, typs, cols, brnds)
-            }
+            let cats = try service.listCategories()
+            let stys = try service.listStyles()
+            let typs = try service.listTypes()
+            let cols = try service.listColors()
+            let brnds = try service.listBrands().map(\.brand)
+
             await MainActor.run {
-                categories = result.0
-                styles = result.1
-                types = result.2
-                colors = result.3
-                brands = result.4
+                categories = cats
+                styles = stys
+                types = typs
+                colors = cols
+                brands = brnds
             }
         } catch {
             await MainActor.run {
@@ -991,130 +973,65 @@ struct PartsCatalogPage: View {
     @Sendable
     private func loadData() async {
         isLoading = parts.isEmpty
-        guard let db = appCore.db else { return }
+        guard let service = appCore.partsService else { return }
 
         do {
             let offset = (currentPage - 1) * pageSize
 
-            // Build WHERE clauses
-            var whereClauses = ["p.deleted_at IS NULL"]
-            var args: [DatabaseValueConvertible?] = []
-
-            if let catId = selectedCategoryId {
-                whereClauses.append("p.category_id = ?")
-                args.append(catId)
-            }
-            if let styleId = selectedStyleId {
-                whereClauses.append("p.style_id = ?")
-                args.append(styleId)
-            }
-            if let typeId = selectedTypeId {
-                whereClauses.append("p.type_id = ?")
-                args.append(typeId)
-            }
-            if let colorId = selectedColorId {
-                whereClauses.append("p.color_id = ?")
-                args.append(colorId)
-            }
-            if let brandId = selectedBrandId {
-                whereClauses.append("p.brand_id = ?")
-                args.append(brandId)
-            }
-
             let parsed = parseNaturalLanguageSearch(searchText)
             let effectiveSearchText = parsed.hasStructuredFilters ? parsed.textSearch : searchText.trimmingCharacters(in: .whitespaces)
 
-            if !effectiveSearchText.isEmpty {
-                whereClauses.append("(p.name LIKE ? OR p.code LIKE ? OR COALESCE(b.name, '') LIKE ?)")
-                let like = "%\(effectiveSearchText)%"
-                args.append(like)
-                args.append(like)
-                args.append(like)
+            let catalogSort: PartsService.CatalogSortField = switch sortField {
+            case .name: .name
+            case .code: .code
+            case .category: .category
+            case .brand: .brand
+            case .stock: .stock
+            case .cost: .cost
+            case .sell: .sell
             }
 
-            if lowStockOnly {
-                whereClauses.append("p.min_stock_level IS NOT NULL AND COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) < p.min_stock_level")
-            }
+            let result = try service.listCatalogParts(
+                search: effectiveSearchText.isEmpty ? nil : effectiveSearchText,
+                categoryId: selectedCategoryId,
+                styleId: selectedStyleId,
+                typeId: selectedTypeId,
+                colorId: selectedColorId,
+                brandId: selectedBrandId,
+                lowStockOnly: lowStockOnly,
+                sortField: catalogSort,
+                sortAscending: sortAscending,
+                limit: pageSize,
+                offset: offset
+            )
 
-            let whereSQL = whereClauses.joined(separator: " AND ")
-
-            // Sort
-            let orderSQL: String = switch sortField {
-            case .name: "p.name"
-            case .code: "p.code"
-            case .category: "category_name"
-            case .brand: "brand_name"
-            case .stock: "total_stock"
-            case .cost: "p.company_cost_price"
-            case .sell: "(p.company_cost_price * (1 + p.company_markup_percent / 100))"
-            }
-            let dir = sortAscending ? "ASC" : "DESC"
-
-            // Convert args to StatementArguments before the Sendable closure
-            let countArgs = StatementArguments(args)
-            var fetchArgValues = args
-            fetchArgValues.append(pageSize)
-            fetchArgValues.append(offset)
-            let fetchArgs = StatementArguments(fetchArgValues)
-
-            let result = try await db.writer.read { conn -> (Int, [CatalogPartRow]) in
-                // Count
-                let countSQL = """
-                    SELECT COUNT(*) FROM parts p
-                    LEFT JOIN brands b ON b.id = p.brand_id
-                    WHERE \(whereSQL)
-                    """
-                let count = try Int.fetchOne(conn, sql: countSQL, arguments: countArgs) ?? 0
-
-                // Fetch page
-                let fetchSQL = """
-                    SELECT p.*,
-                           pc.name AS category_name,
-                           b.name AS brand_name,
-                           ps.name AS style_name,
-                           pcol.name AS color_name,
-                           COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) AS total_stock
-                    FROM parts p
-                    LEFT JOIN part_categories pc ON pc.id = p.category_id
-                    LEFT JOIN brands b ON b.id = p.brand_id
-                    LEFT JOIN part_styles ps ON ps.id = p.style_id
-                    LEFT JOIN part_colors pcol ON pcol.id = p.color_id
-                    WHERE \(whereSQL)
-                    ORDER BY \(orderSQL) \(dir)
-                    LIMIT ? OFFSET ?
-                    """
-
-                let rows = try Row.fetchAll(conn, sql: fetchSQL, arguments: fetchArgs)
-
-                let prows = rows.map { row -> CatalogPartRow in
-                    let stock: Int = row["total_stock"] ?? 0
-                    let minStock: Int? = row["min_stock_level"]
-                    return CatalogPartRow(
-                        id: row["id"],
-                        name: row["name"],
-                        code: row["code"],
-                        categoryId: row["category_id"],
-                        categoryName: row["category_name"],
-                        styleId: row["style_id"],
-                        styleName: row["style_name"],
-                        colorId: row["color_id"],
-                        colorName: row["color_name"],
-                        brandId: row["brand_id"],
-                        brandName: row["brand_name"],
-                        companyCostPrice: row["company_cost_price"] ?? 0,
-                        companyMarkupPercent: row["company_markup_percent"] ?? 0,
-                        totalStock: stock,
-                        partType: row["part_type"] ?? "standard",
-                        isActive: row["is_active"] ?? 1,
-                        isLowStock: minStock.map { stock < $0 } ?? false
-                    )
-                }
-                return (count, prows)
+            let prows = result.parts.map { pwd -> CatalogPartRow in
+                let stock = pwd.totalStock
+                let minStock = pwd.part.minStockLevel
+                return CatalogPartRow(
+                    id: pwd.part.id ?? 0,
+                    name: pwd.part.name,
+                    code: pwd.part.code,
+                    categoryId: pwd.part.categoryId,
+                    categoryName: pwd.categoryName,
+                    styleId: pwd.part.styleId,
+                    styleName: pwd.styleName,
+                    colorId: pwd.part.colorId,
+                    colorName: pwd.colorName,
+                    brandId: pwd.part.brandId,
+                    brandName: pwd.brandName,
+                    companyCostPrice: pwd.part.companyCostPrice,
+                    companyMarkupPercent: pwd.part.companyMarkupPercent,
+                    totalStock: stock,
+                    partType: pwd.part.partType,
+                    isActive: pwd.part.isActive ?? 1,
+                    isLowStock: minStock.map { stock < $0 } ?? false
+                )
             }
 
             await MainActor.run {
-                totalCount = result.0
-                parts = result.1
+                totalCount = result.totalCount
+                parts = prows
                 isLoading = false
             }
         } catch {
@@ -1153,12 +1070,9 @@ struct PartsCatalogPage: View {
     // MARK: - Delete
 
     private func deletePart(_ part: CatalogPartRow) async {
-        guard let db = appCore.db else { return }
-        let now = ISO8601DateFormatter().string(from: Date())
+        guard let service = appCore.partsService else { return }
         do {
-            try await db.writer.write { conn in
-                try conn.execute(sql: "UPDATE parts SET deleted_at = ? WHERE id = ?", arguments: [now, part.id])
-            }
+            try service.deletePart(id: part.id)
             await loadData()
         } catch {
             actionError = error.localizedDescription
@@ -1286,25 +1200,20 @@ private struct QuickEditSheet: View {
     private func save() async {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         guard !trimmedName.isEmpty else { return }
-        guard let db = appCore.db else { return }
+        guard let service = appCore.partsService else { return }
 
         isSaving = true
         let cost = Double(costPrice) ?? 0
         let markup = Double(markupPercent) ?? 0
-        let now = ISO8601DateFormatter().string(from: Date())
-        let capturedCode = code
 
         do {
-            try await db.writer.write { conn in
-                try conn.execute(
-                    sql: """
-                        UPDATE parts SET name = ?, code = ?,
-                        company_cost_price = ?, company_markup_percent = ?,
-                        updated_at = ? WHERE id = ?
-                        """,
-                    arguments: [trimmedName, capturedCode.isEmpty ? nil : capturedCode, cost, markup, now, part.id]
-                )
-            }
+            try service.updatePart(
+                id: part.id,
+                name: trimmedName,
+                code: code.isEmpty ? nil : code,
+                companyCostPrice: cost,
+                companyMarkupPercent: markup
+            )
             await onSave()
             await MainActor.run { dismiss() }
         } catch {
@@ -1418,38 +1327,30 @@ private struct PartFormSheet: View {
         guard !trimmedName.isEmpty, selectedCategoryId > 0 else { return }
         let cost = Double(costPrice) ?? 0
         let markup = Double(markupPercent) ?? 0
-        guard let db = appCore.db else { return }
-        let now = ISO8601DateFormatter().string(from: Date())
-        let capturedCode = code
-        let capturedCategoryId = selectedCategoryId
-        let capturedBrandId = selectedBrandId
-        let capturedPartType = partType
+        guard let service = appCore.partsService else { return }
 
         do {
             if let p = part {
-                try await db.writer.write { conn in
-                    try conn.execute(
-                        sql: """
-                            UPDATE parts SET name = ?, code = ?, category_id = ?, brand_id = ?,
-                            part_type = ?, company_cost_price = ?, company_markup_percent = ?,
-                            updated_at = ? WHERE id = ?
-                            """,
-                        arguments: [trimmedName, capturedCode.isEmpty ? nil : capturedCode, capturedCategoryId,
-                                    capturedBrandId, capturedPartType, cost, markup, now, p.id]
-                    )
-                }
+                try service.updatePart(
+                    id: p.id,
+                    name: trimmedName,
+                    code: code.isEmpty ? nil : code,
+                    categoryId: selectedCategoryId,
+                    brandId: selectedBrandId,
+                    partType: partType,
+                    companyCostPrice: cost,
+                    companyMarkupPercent: markup
+                )
             } else {
-                try await db.writer.write { conn in
-                    try conn.execute(
-                        sql: """
-                            INSERT INTO parts (name, code, category_id, brand_id, part_type,
-                            company_cost_price, company_markup_percent, created_at, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                        arguments: [trimmedName, capturedCode.isEmpty ? nil : capturedCode, capturedCategoryId,
-                                    capturedBrandId, capturedPartType, cost, markup, now, now]
-                    )
-                }
+                _ = try service.createPart(
+                    categoryId: selectedCategoryId,
+                    name: trimmedName,
+                    partType: partType,
+                    code: code.isEmpty ? nil : code,
+                    brandId: selectedBrandId,
+                    companyCostPrice: cost,
+                    companyMarkupPercent: markup
+                )
             }
         } catch {
             saveError = error.localizedDescription
@@ -1559,14 +1460,9 @@ private struct PartDetailSheet: View {
 
     @Sendable
     private func loadStock() async {
-        guard let db = appCore.db else { return }
+        guard let service = appCore.partsService else { return }
         do {
-            let entries = try await db.writer.read { conn in
-                try StockEntry
-                    .filter(Column("part_id") == partRow.id)
-                    .filter(Column("deleted_at") == nil)
-                    .fetchAll(conn)
-            }
+            let entries = try service.listStockEntries(partId: partRow.id)
             await MainActor.run { stockEntries = entries }
         } catch {
             loadError = error.localizedDescription

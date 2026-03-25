@@ -12,6 +12,8 @@ struct SyncConflictReviewPage: View {
 
     @State private var conflicts: [ConflictLogEntry] = []
     @State private var isLoading = true
+    @State private var aiResolutions: [Int64: AIConflictResolution] = [:]
+    @State private var isRequestingAI = false
 
     private var syncManager: IOSSyncManager { appCore.syncManager }
 
@@ -76,19 +78,69 @@ struct SyncConflictReviewPage: View {
         .listStyle(.insetGrouped)
     }
 
-    // MARK: - Conflict Row
+    // MARK: - Conflict Row (severity-aware)
 
+    @ViewBuilder
     private func conflictRow(_ conflict: ConflictLogEntry) -> some View {
+        let severity = SyncConflictClassifier.classify(conflict)
+
         VStack(alignment: .leading, spacing: 8) {
-            // Field name
+            // Header with field name and severity badge
             HStack {
                 Text(friendlyFieldName(conflict.fieldName))
                     .font(.subheadline)
                     .fontWeight(.medium)
                 Spacer()
+                severityBadge(severity)
                 winnerBadge(conflict.winner)
             }
 
+            switch severity {
+            case .critical:
+                // Critical: side-by-side human decision
+                CriticalConflictView(
+                    conflict: conflict,
+                    onResolveLocal: {
+                        withAnimation { markReviewed(conflict) }
+                    },
+                    onResolveRemote: {
+                        withAnimation { markReviewed(conflict) }
+                    }
+                )
+
+            case .hard:
+                // Hard: show AI merge button or AI resolution if available
+                if let resolution = aiResolutions[conflict.id ?? 0] {
+                    AIConflictResolutionView(resolution: resolution) { _ in
+                        withAnimation { markReviewed(conflict) }
+                    }
+                } else {
+                    // Standard view with AI merge button
+                    standardConflictContent(conflict)
+
+                    Button {
+                        Task { await requestAIMerge(conflict) }
+                    } label: {
+                        Label("AI Merge", systemImage: "sparkles")
+                    }
+                    .font(.caption)
+                    .buttonStyle(.bordered)
+                    .tint(.purple)
+                    .controlSize(.small)
+                    .disabled(isRequestingAI)
+                }
+
+            default:
+                // Trivial/simple/moderate: standard view
+                standardConflictContent(conflict)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// Standard conflict content for simple/moderate conflicts.
+    private func standardConflictContent(_ conflict: ConflictLogEntry) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
             // Local vs Remote values
             HStack(spacing: 12) {
                 valueBox(
@@ -116,20 +168,15 @@ struct SyncConflictReviewPage: View {
                     .foregroundStyle(.tertiary)
             }
 
-            // Actions
-            HStack(spacing: 8) {
-                Button("Accept") {
-                    withAnimation {
-                        markReviewed(conflict)
-                    }
-                }
-                .font(.caption)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .tint(.green)
+            // Accept button
+            Button("Accept") {
+                withAnimation { markReviewed(conflict) }
             }
+            .font(.caption)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .tint(.green)
         }
-        .padding(.vertical, 4)
     }
 
     // MARK: - Value Box
@@ -232,5 +279,84 @@ struct SyncConflictReviewPage: View {
     private func loadConflicts() {
         conflicts = syncManager.getUnreviewedConflicts()
         isLoading = false
+    }
+
+    // MARK: - Severity Badge
+
+    private func severityBadge(_ severity: ConflictSeverity) -> some View {
+        let (label, color): (String, Color) = {
+            switch severity {
+            case .trivial: return ("Auto", .gray)
+            case .simple: return ("Simple", .green)
+            case .moderate: return ("Moderate", .orange)
+            case .hard: return ("AI Merge", .purple)
+            case .critical: return ("Critical", .red)
+            }
+        }()
+
+        return Text(label)
+            .font(.caption2)
+            .fontWeight(.medium)
+            .foregroundStyle(color)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(color.opacity(0.12)))
+    }
+
+    // MARK: - AI Merge
+
+    private func requestAIMerge(_ conflict: ConflictLogEntry) async {
+        guard let conflictId = conflict.id else { return }
+        isRequestingAI = true
+
+        let aiService = FoundationModelsService()
+
+        let context: [String: String] = [
+            "Entity": conflict.tableName,
+            "Field": conflict.fieldName,
+            "Device A Edit": conflict.localValue ?? "",
+            "Device A Device": conflict.localDevice,
+            "Device A Time": conflict.localTs,
+            "Device B Edit": conflict.remoteValue ?? "",
+            "Device B Device": conflict.remoteDevice,
+            "Device B Time": conflict.remoteTs,
+        ]
+
+        // Primary merge
+        let mergeResult = await aiService.generatePreFill(
+            fieldType: """
+                Merge two conflicting edits of the '\(conflict.fieldName)' field into one. \
+                Both users edited the same field. Combine both edits if possible — don't lose \
+                information from either side. If they contradict, include both perspectives clearly. \
+                Keep the result concise. Return ONLY the merged text.
+                """,
+            contextData: context
+        )
+
+        // Alternative 1: prioritize Device A
+        let alt1Result = await aiService.generatePreFill(
+            fieldType: "Merge prioritizing Device A's edit but including Device B's additions. Return ONLY the merged text.",
+            contextData: context
+        )
+
+        // Alternative 2: prioritize Device B
+        let alt2Result = await aiService.generatePreFill(
+            fieldType: "Merge prioritizing Device B's edit but including Device A's additions. Return ONLY the merged text.",
+            contextData: context
+        )
+
+        let resolution = AIConflictResolution(
+            original: nil,
+            deviceAEdit: conflict.localValue ?? "",
+            deviceBEdit: conflict.remoteValue ?? "",
+            aiMerge: mergeResult.text ?? conflict.remoteValue ?? "",
+            aiAlternative1: alt1Result.text ?? conflict.localValue ?? "",
+            aiAlternative2: alt2Result.text ?? conflict.remoteValue ?? "",
+            deviceALabel: "This device",
+            deviceBLabel: "Remote"
+        )
+
+        aiResolutions[conflictId] = resolution
+        isRequestingAI = false
     }
 }

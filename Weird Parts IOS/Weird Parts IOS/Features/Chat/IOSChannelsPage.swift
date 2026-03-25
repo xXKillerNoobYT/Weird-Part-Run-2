@@ -20,6 +20,7 @@ struct IOSChannelsPage: View {
 
     private enum ChannelTypeFilter: String, CaseIterable {
         case all = "All"
+        case office = "Office"
         case messages = "Messages"
         case dm = "DMs"
         case job = "Job"
@@ -29,6 +30,7 @@ struct IOSChannelsPage: View {
         var matchTypes: [String] {
             switch self {
             case .all: return []
+            case .office: return ["office"]
             case .messages: return ["group", "message"]
             case .dm: return ["dm"]
             case .job: return ["job"]
@@ -154,6 +156,7 @@ struct IOSChannelsPage: View {
     private func iconForFilter(_ filter: ChannelTypeFilter) -> String {
         switch filter {
         case .all: return "tray.full"
+        case .office: return "building.columns"
         case .messages: return "bubble.left"
         case .dm: return "person.2"
         case .job: return "wrench.and.screwdriver"
@@ -165,6 +168,7 @@ struct IOSChannelsPage: View {
     private func colorForFilter(_ filter: ChannelTypeFilter) -> Color {
         switch filter {
         case .all: return .accentColor
+        case .office: return .purple
         case .messages: return .green
         case .dm: return .purple
         case .job: return .blue
@@ -242,11 +246,24 @@ struct IOSChannelsPage: View {
 
     private func inboxRow(_ item: ChatService.InboxItem) -> some View {
         HStack(spacing: 12) {
-            // Type icon
-            Image(systemName: iconForChannelType(item.channelType))
-                .font(.title2)
-                .foregroundStyle(colorForChannelType(item.channelType))
-                .frame(width: 36)
+            // Type icon with optional office badge
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: iconForChannelType(item.channelType))
+                    .font(.title2)
+                    .foregroundStyle(colorForChannelType(item.channelType))
+                    .frame(width: 36)
+
+                if item.channelType == "office" {
+                    Text("Office")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 3)
+                        .padding(.vertical, 1)
+                        .background(.purple)
+                        .clipShape(Capsule())
+                        .offset(x: 6, y: -4)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
@@ -307,6 +324,7 @@ struct IOSChannelsPage: View {
 
     private func iconForChannelType(_ type: String) -> String {
         switch type {
+        case "office": return "building.columns.fill"
         case "dm": return "person.circle"
         case "job": return "hammer.circle"
         case "group", "message": return "person.3"
@@ -319,6 +337,7 @@ struct IOSChannelsPage: View {
 
     private func colorForChannelType(_ type: String) -> Color {
         switch type {
+        case "office": return .purple
         case "dm": return .purple
         case "job": return .blue
         case "group", "message": return .green

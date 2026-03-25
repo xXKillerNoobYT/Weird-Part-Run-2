@@ -238,11 +238,22 @@ struct UserMenuSheet: View {
                         Section {
                             ForEach(section.items) { item in
                                 NavigationLink(value: item.tabId) {
-                                    Label(item.label, systemImage: item.icon)
+                                    HStack {
+                                        Label(item.label, systemImage: item.icon)
+                                        Spacer()
+                                        SyncScopeIndicator(scope: SyncScope.scope(for: item.tabId), compact: true)
+                                    }
                                 }
                             }
                         } header: {
-                            Label(section.title, systemImage: section.icon)
+                            HStack {
+                                Label(section.title, systemImage: section.icon)
+                                Spacer()
+                                let dominant = SyncScope.dominantScope(for: section.items.map(\.tabId))
+                                Text(dominant.shortLabel)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                            }
                         }
                     }
                 } else {
@@ -254,7 +265,11 @@ struct UserMenuSheet: View {
                         Section("Results") {
                             ForEach(results) { item in
                                 NavigationLink(value: item.tabId) {
-                                    Label(item.label, systemImage: item.icon)
+                                    HStack {
+                                        Label(item.label, systemImage: item.icon)
+                                        Spacer()
+                                        SyncScopeIndicator(scope: SyncScope.scope(for: item.tabId), compact: true)
+                                    }
                                 }
                             }
                         }

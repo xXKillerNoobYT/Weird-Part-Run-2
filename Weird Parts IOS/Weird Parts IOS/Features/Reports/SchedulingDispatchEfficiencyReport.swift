@@ -7,19 +7,14 @@ struct SchedulingDispatchEfficiencyReport: View {
     @State private var efficiencyData: [SchedulingService.DispatchEfficiencyRow] = []
     @State private var loadError: String?
     @State private var isLoading = true
-    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var startDate = Calendar.current.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
+    @State private var endDate = Date()
 
     var body: some View {
         List {
-            Section {
-                Picker("Period", selection: $dateRange) {
-                    ForEach(ReportDateRange.allCases, id: \.self) { range in
-                        Text(range.rawValue).tag(range)
-                    }
-                }
-                .pickerStyle(.menu)
-                .onChange(of: dateRange) { _, _ in loadData() }
-            }
+            StandardFilterBar(startDate: $startDate, endDate: $endDate)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets())
 
             if let error = loadError {
                 Section {
@@ -91,6 +86,8 @@ struct SchedulingDispatchEfficiencyReport: View {
                                          "\(Int($0.efficiency * 100))%"] }
         )
         .onAppear { loadData() }
+        .onChange(of: startDate) { _, _ in loadData() }
+        .onChange(of: endDate) { _, _ in loadData() }
     }
 
     private var avgEfficiency: Double {
@@ -110,7 +107,7 @@ struct SchedulingDispatchEfficiencyReport: View {
         }
         do {
             efficiencyData = try service.getDispatchEfficiencyReport(
-                startDate: dateRange.startDate, endDate: dateRange.endDate
+                startDate: startDate, endDate: endDate
             )
         } catch {
             loadError = error.localizedDescription

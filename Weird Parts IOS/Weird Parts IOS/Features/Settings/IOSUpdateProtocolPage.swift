@@ -176,13 +176,33 @@ struct IOSUpdateProtocolPage: View {
         isCheckingUpdate = true
         errorMessage = nil
 
-        // Simulate update check — actual implementation requires
-        // network service not yet available on iOS.
-        Task {
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            loadData()
+        guard let settingsService = appCore.settingsService else {
+            errorMessage = "Settings service not available."
             isCheckingUpdate = false
+            return
         }
+
+        do {
+            // Update last check timestamp
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd HH:mm"
+            let now = formatter.string(from: Date())
+            try settingsService.upsertSetting(key: "last_update_check", value: now, category: "updates")
+
+            // Compare current version against stored latest
+            let latestKnown = try settingsService.getSettingValue("latest_known_version")
+            let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0"
+
+            if let latest = latestKnown, latest.compare(current, options: .numeric) == .orderedDescending {
+                availableVersion = latest
+            } else {
+                availableVersion = nil
+            }
+            lastCheckTime = now
+        } catch {
+            errorMessage = "Check failed: \(error.localizedDescription)"
+        }
+        isCheckingUpdate = false
     }
 
     private func saveChannel() {

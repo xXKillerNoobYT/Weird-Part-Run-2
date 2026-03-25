@@ -13,6 +13,12 @@ struct SettingsRouter: View {
 
     var body: some View {
         routedView
+            .safeAreaInset(edge: .top, spacing: 0) {
+                SyncScopeIndicator(scope: SyncScope.scope(for: tabId))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.vertical, 6)
+            }
     }
 
     @ViewBuilder
@@ -68,9 +74,39 @@ struct SettingsRouter: View {
             IOSRemoteSyncPage()
         case "settings-shared-channels":
             IOSSharedChannelsPage()
+
+        // Operations pages — implemented in 52B
+        case "settings-tool-policies":
+            IOSToolPoliciesPage()
+        case "settings-pretrip-checklists":
+            IOSPreTripChecklistPage()
+        case "settings-dispatch-preferences":
+            IOSDispatchPreferencesPage()
+        // Warehouse pages — implemented in 52C
+        case "settings-forecast-config":
+            IOSForecastSettingsPage()
+        case "settings-org-thresholds":
+            IOSOrganizationThresholdsPage()
+        case "settings-audit-settings":
+            IOSAuditSettingsPage()
+        // Template pages — implemented in 52D
+        case "settings-daily-report-templates":
+            IOSDailyReportTemplatesPage()
+        case "settings-job-estimation-questions":
+            IOSEstimationSettingsPage()
+        case "settings-report-templates":
+            IOSReportTemplatesPage()
+        case "settings-payment-tracking":
+            comingSoonPage("Payment Tracking", icon: "banknote.fill")
+
         default:
             Text("Unknown settings page: \(tabId)")
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private func comingSoonPage(_ title: String, icon: String) -> some View {
+        ContentUnavailableView(title, systemImage: icon, description: Text("This page is being built."))
+            .navigationTitle(title)
     }
 }

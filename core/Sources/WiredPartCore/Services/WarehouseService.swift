@@ -3540,6 +3540,78 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    // MARK: - Stock by Location Type
+
+    /// Aggregate stock summary for a part grouped by location_type.
+    public struct PartStockByLocationType: Sendable {
+        public let locationType: String
+        public let totalQty: Int
+
+        public init(locationType: String, totalQty: Int) {
+            self.locationType = locationType
+            self.totalQty = totalQty
+        }
+    }
+
+    /// Returns stock quantities for a part grouped by location_type (warehouse, truck, etc.).
+    public func getPartStockByLocationType(partId: Int64) throws -> [PartStockByLocationType] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT s.location_type, SUM(s.qty) AS total_qty
+                FROM stock s
+                WHERE s.part_id = ? AND s.qty > 0 AND s.deleted_at IS NULL
+                GROUP BY s.location_type
+                ORDER BY total_qty DESC
+                """, arguments: [partId])
+            return rows.map { row in
+                PartStockByLocationType(
+                    locationType: row["location_type"] ?? "unknown",
+                    totalQty: row["total_qty"] ?? 0
+                )
+            }
+        }
+    }
+
+    // MARK: - Distinct Stock Locations
+
+    /// A distinct stock location (e.g. "warehouse #1", "truck #3").
+    public struct DistinctStockLocation: Sendable, Identifiable {
+        public let id: String
+        public let locationType: String
+        public let locationId: Int64
+        public let name: String
+
+        public init(locationType: String, locationId: Int64, name: String) {
+            self.id = "\(locationType)_\(locationId)"
+            self.locationType = locationType
+            self.locationId = locationId
+            self.name = name
+        }
+    }
+
+    /// Returns all distinct stock locations that currently hold stock.
+    public func listDistinctStockLocations() throws -> [DistinctStockLocation] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT DISTINCT s.location_type, s.location_id,
+                    COALESCE(wl.name, v.vehicle_name, 'Location ' || s.location_id) AS name
+                FROM stock s
+                LEFT JOIN warehouse_locations wl ON s.location_type = 'warehouse' AND wl.id = s.location_id
+                LEFT JOIN vehicles v ON s.location_type IN ('truck', 'trailer') AND v.id = s.location_id
+                WHERE s.deleted_at IS NULL AND s.qty > 0
+                GROUP BY s.location_type, s.location_id
+                ORDER BY s.location_type, name
+                """)
+            return rows.map { row in
+                DistinctStockLocation(
+                    locationType: row["location_type"] ?? "warehouse",
+                    locationId: row["location_id"] ?? 1,
+                    name: row["name"] ?? "Unknown"
+                )
+            }
+        }
+    }
+
     // MARK: - Helpers (Audit)
 
     private static func nowString() -> String {

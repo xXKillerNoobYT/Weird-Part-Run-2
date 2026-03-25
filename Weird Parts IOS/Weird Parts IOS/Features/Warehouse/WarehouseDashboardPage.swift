@@ -335,7 +335,7 @@ struct WarehouseDashboardPage: View {
     @ViewBuilder
     private var recentActivitySection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(selectedFilter == nil ? "Recent Activity" : "Filtered: \(selectedFilter!.rawValue)")
+            Text(selectedFilter.map { "Filtered: \($0.rawValue)" } ?? "Recent Activity")
                 .font(.headline)
                 .padding(.horizontal, 4)
 

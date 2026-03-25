@@ -1,5 +1,4 @@
 import SwiftUI
-import GRDB
 import WiredPartCore
 #if os(iOS) && !targetEnvironment(macCatalyst)
 import VisionKit
@@ -484,7 +483,7 @@ struct IOSDashboardQRScannerPage: View {
 
             var stockLocations: [StockLocation]?
             if result.entityType == .part, let partId = result.entityId {
-                stockLocations = try await loadPartStockLocations(db: db, partId: partId)
+                stockLocations = try loadPartStockLocations(partId: partId)
             }
 
             let title = buildEntityTitle(result: result)
@@ -516,28 +515,19 @@ struct IOSDashboardQRScannerPage: View {
 
     // MARK: - Helpers
 
-    private func loadPartStockLocations(db: AppDatabase, partId: Int64) async throws -> [StockLocation] {
-        try await db.writer.read { conn in
-            let rows = try Row.fetchAll(conn, sql: """
-                SELECT s.location_type, SUM(s.qty) AS total_qty
-                FROM stock s
-                WHERE s.part_id = ? AND s.qty > 0 AND s.deleted_at IS NULL
-                GROUP BY s.location_type
-                ORDER BY total_qty DESC
-                """, arguments: [partId])
-            return rows.map { row in
-                let locType: String = row["location_type"] ?? "unknown"
-                let qty: Int = row["total_qty"] ?? 0
-                let label = switch locType {
-                case "warehouse": "Warehouse"
-                case "pulled", "staging": "Staging"
-                case "truck": "Truck"
-                case "trailer": "Trailer"
-                case "job": "Job Site"
-                default: locType.capitalized
-                }
-                return StockLocation(label: label, qty: qty)
+    private func loadPartStockLocations(partId: Int64) throws -> [StockLocation] {
+        guard let service = appCore.warehouseService else { return [] }
+        let stockByType = try service.getPartStockByLocationType(partId: partId)
+        return stockByType.map { entry in
+            let label = switch entry.locationType {
+            case "warehouse": "Warehouse"
+            case "pulled", "staging": "Staging"
+            case "truck": "Truck"
+            case "trailer": "Trailer"
+            case "job": "Job Site"
+            default: entry.locationType.capitalized
             }
+            return StockLocation(label: label, qty: entry.totalQty)
         }
     }
 

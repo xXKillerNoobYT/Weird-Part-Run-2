@@ -1923,4 +1923,63 @@ public final class JobsService: Sendable {
         let message = String(describing: error)
         return message.contains("no such column")
     }
+
+    // MARK: - Supply Run
+
+    /// Toggles supply run status on a labor entry by appending a timestamped marker to notes.
+    /// Returns the new activity status ("supply_run" or "working").
+    @discardableResult
+    public func toggleSupplyRun(laborEntryId: Int64) throws -> String {
+        try db.writer.write { conn in
+            let existingNotes = try String.fetchOne(
+                conn,
+                sql: "SELECT notes FROM labor_entries WHERE id = ?",
+                arguments: [laborEntryId]
+            ) ?? ""
+
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let isCurrentlyOnRun = Self.isOnSupplyRun(notes: existingNotes)
+
+            let note: String
+            if !isCurrentlyOnRun {
+                note = existingNotes.isEmpty
+                    ? "[supply_run_start:\(timestamp)]"
+                    : "\(existingNotes) [supply_run_start:\(timestamp)]"
+            } else {
+                note = "\(existingNotes) [supply_run_end:\(timestamp)]"
+            }
+
+            try conn.execute(
+                sql: "UPDATE labor_entries SET notes = ? WHERE id = ?",
+                arguments: [note, laborEntryId]
+            )
+
+            return isCurrentlyOnRun ? "working" : "supply_run"
+        }
+    }
+
+    /// Returns the notes field for a labor entry.
+    public func getLaborEntryNotes(laborEntryId: Int64) throws -> String? {
+        try db.writer.read { conn in
+            try String.fetchOne(
+                conn,
+                sql: "SELECT notes FROM labor_entries WHERE id = ?",
+                arguments: [laborEntryId]
+            )
+        }
+    }
+
+    /// Checks if the supply run markers in a notes string indicate an active supply run.
+    public static func isOnSupplyRun(notes: String?) -> Bool {
+        guard let notes, notes.contains("[supply_run_start:") else { return false }
+        let lastStart = notes.range(of: "[supply_run_start:", options: .backwards)
+        let lastEnd = notes.range(of: "[supply_run_end:", options: .backwards)
+        if let start = lastStart {
+            if let end = lastEnd {
+                return start.lowerBound > end.lowerBound
+            }
+            return true
+        }
+        return false
+    }
 }

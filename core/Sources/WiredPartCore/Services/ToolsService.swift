@@ -864,6 +864,71 @@ public final class ToolsService: Sendable {
         }
     }
 
+    /// A pending tool edit awaiting approval (includes tool name for display).
+    public struct PendingToolEdit: Sendable, Identifiable {
+        public let id: Int64
+        public let toolId: Int64
+        public let toolName: String
+        public let changedByName: String
+        public let fieldName: String
+        public let oldValue: String?
+        public let newValue: String?
+        public let changedAt: String
+
+        public init(id: Int64, toolId: Int64, toolName: String, changedByName: String,
+                    fieldName: String, oldValue: String?, newValue: String?, changedAt: String) {
+            self.id = id; self.toolId = toolId; self.toolName = toolName
+            self.changedByName = changedByName; self.fieldName = fieldName
+            self.oldValue = oldValue; self.newValue = newValue; self.changedAt = changedAt
+        }
+    }
+
+    /// List all pending tool edit verifications across all tools.
+    public func listPendingToolEdits() throws -> [PendingToolEdit] {
+        do {
+            return try db.writer.read { dbConn -> [PendingToolEdit] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT tcl.id, tcl.tool_id, tcl.field_name, tcl.old_value, tcl.new_value,
+                           tcl.changed_at,
+                           COALESCE(t.name, 'Unknown Tool') AS tool_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') AS changed_by_name
+                    FROM tool_change_log tcl
+                    LEFT JOIN tools t ON t.id = tcl.tool_id
+                    LEFT JOIN users u ON u.id = tcl.changed_by
+                    WHERE tcl.verification_status = 'pending_verification'
+                      AND tcl.deleted_at IS NULL
+                    ORDER BY tcl.changed_at ASC
+                    """)
+                return rows.map { row in
+                    PendingToolEdit(
+                        id: row["id"] ?? 0,
+                        toolId: row["tool_id"] ?? 0,
+                        toolName: row["tool_name"] ?? "Unknown Tool",
+                        changedByName: row["changed_by_name"] ?? "Unknown",
+                        fieldName: row["field_name"] ?? "",
+                        oldValue: row["old_value"],
+                        newValue: row["new_value"],
+                        changedAt: row["changed_at"] ?? ""
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Reject a pending tool edit verification.
+    public func rejectToolEdit(editId: Int64, rejectedBy: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE tool_change_log SET verification_status = 'rejected',
+                verified_by = ?, verified_at = datetime('now')
+                WHERE id = ? AND verification_status = 'pending_verification'
+                """, arguments: [rejectedBy, editId])
+        }
+    }
+
     // =========================================================================
     // MARK: - 10. Tool Trades
     // =========================================================================

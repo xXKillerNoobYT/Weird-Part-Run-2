@@ -169,21 +169,16 @@ let appModules: [AppModule] = [
         AppTab(id: "people-hats", label: "Hats & Roles", icon: "graduationcap.fill", path: "/people/hats", permission: "manage_people"),
         AppTab(id: "people-permissions", label: "Permissions", icon: "lock.shield.fill", path: "/people/permissions", permission: "manage_people"),
     ], permission: "view_people"),
-    // 12. Office — spending, reports, HR
+    // 12. Office — dashboard, approvals, pipeline, teams, reports
     AppModule(id: "office", label: "Office", icon: "briefcase.fill", tabs: [
-        // Operations
+        AppTab(id: "office-dashboard", label: "Dashboard", icon: "gauge.with.dots.needle.50percent", path: "/office/dashboard", permission: "manage_jobs"),
+        AppTab(id: "office-approvals", label: "Approvals", icon: "checkmark.seal.fill", path: "/office/approvals", permission: "manage_jobs"),
         AppTab(id: "office-manage-jobs", label: "Manage Jobs", icon: "hammer.fill", path: "/office/manage-jobs", permission: "manage_jobs"),
         AppTab(id: "office-warehouse-exec", label: "Warehouse", icon: "building.fill", path: "/office/warehouse-exec", permission: "manage_warehouse"),
-        AppTab(id: "office-deletion-approvals", label: "Deletions", icon: "trash.circle", path: "/office/deletion-approvals", permission: "manage_jobs"),
         AppTab(id: "office-estimation-settings", label: "Estimation", icon: "chart.bar.doc.horizontal", path: "/office/estimation-settings", permission: "manage_jobs"),
-        // Finance & Billing
-        AppTab(id: "office-spending", label: "Spending", icon: "dollarsign.circle.fill", path: "/office/spending", permission: "show_dollar_values"),
-        AppTab(id: "office-timesheets", label: "Timesheets", icon: "clock.badge.checkmark", path: "/office/timesheets", permission: "view_reports"),
-        AppTab(id: "office-pre-billing", label: "Pre-Billing", icon: "doc.text.fill", path: "/office/pre-billing", permission: "export_reports"),
-        AppTab(id: "office-bookkeeper", label: "Bookkeeper", icon: "books.vertical.fill", path: "/office/bookkeeper", permission: "export_reports"),
-        AppTab(id: "office-profitability", label: "Profitability", icon: "chart.pie.fill", path: "/office/profitability", permission: "show_dollar_values"),
-        AppTab(id: "office-labor-overview", label: "Labor Overview", icon: "person.3.fill", path: "/office/labor-overview", permission: "view_labor"),
-        AppTab(id: "office-daily-summary", label: "Daily Summary", icon: "chart.bar.fill", path: "/office/daily-summary", permission: "view_reports"),
+        AppTab(id: "office-pipeline", label: "Pipeline", icon: "chart.bar.xaxis", path: "/office/pipeline", permission: "manage_jobs"),
+        AppTab(id: "office-teams", label: "Teams", icon: "person.3.fill", path: "/office/teams"),
+        AppTab(id: "office-reports", label: "Reports", icon: "chart.pie.fill", path: "/office/reports", permission: "view_reports"),
     ], permission: "manage_jobs"),
     // 13. Settings — app config, security
     AppModule(id: "settings", label: "Settings", icon: "gearshape.fill", tabs: [

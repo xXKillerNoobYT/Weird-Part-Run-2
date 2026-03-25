@@ -169,19 +169,70 @@ struct IOSDataExportPage: View {
 
     // MARK: - Export Actions
 
+    @State private var exportURLs: [URL] = []
+    @State private var showShareSheet = false
+
     private func performExport() {
         isExporting = true
         exportSuccess = false
         errorMessage = nil
+        exportURLs = []
 
-        // Export requires platform-specific file system access.
-        // Simulate success — actual export to be wired in deployment phase.
-        Task {
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+        guard let settingsService = appCore.settingsService else {
+            errorMessage = "Settings service not available."
+            isExporting = false
+            return
+        }
+
+        let tmpDir = FileManager.default.temporaryDirectory
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let dateStr = formatter.string(from: Date())
+        var urls: [URL] = []
+
+        do {
+            for table in selectedTables.sorted() {
+                let rows = try settingsService.exportTable(table)
+                guard !rows.isEmpty else { continue }
+
+                let ext = selectedFormat == "json" ? "json" : "csv"
+                let fileURL = tmpDir.appendingPathComponent("wiredpart-export-\(table)-\(dateStr).\(ext)")
+
+                if selectedFormat == "json" {
+                    let data = try JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys])
+                    try data.write(to: fileURL)
+                } else {
+                    // CSV
+                    guard let firstRow = rows.first as? [String: Any] else { continue }
+                    let headers = firstRow.keys.sorted()
+                    var csv = headers.joined(separator: ",") + "\n"
+                    for row in rows {
+                        guard let dict = row as? [String: Any] else { continue }
+                        let values = headers.map { key -> String in
+                            let val = dict[key] ?? ""
+                            let str = "\(val)"
+                            if str.contains(",") || str.contains("\"") || str.contains("\n") {
+                                return "\"\(str.replacingOccurrences(of: "\"", with: "\"\""))\""
+                            }
+                            return str
+                        }
+                        csv += values.joined(separator: ",") + "\n"
+                    }
+                    try csv.write(to: fileURL, atomically: true, encoding: .utf8)
+                }
+                urls.append(fileURL)
+            }
+
+            exportURLs = urls
             exportSuccess = true
             isExporting = false
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            exportSuccess = false
+
+            if !urls.isEmpty {
+                showShareSheet = true
+            }
+        } catch {
+            errorMessage = "Export failed: \(error.localizedDescription)"
+            isExporting = false
         }
     }
 
@@ -189,12 +240,28 @@ struct IOSDataExportPage: View {
         isExporting = true
         errorMessage = nil
 
-        Task {
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            exportSuccess = true
+        guard let dbPath = try? AppCore.databasePath() else {
+            errorMessage = "Cannot locate database."
             isExporting = false
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            exportSuccess = false
+            return
         }
+
+        let tmpDir = FileManager.default.temporaryDirectory
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let dateStr = formatter.string(from: Date())
+        let destURL = tmpDir.appendingPathComponent("wiredpart-full-\(dateStr).sqlite")
+
+        do {
+            // Remove previous temp if exists
+            try? FileManager.default.removeItem(at: destURL)
+            try FileManager.default.copyItem(at: URL(fileURLWithPath: dbPath), to: destURL)
+            exportURLs = [destURL]
+            exportSuccess = true
+            showShareSheet = true
+        } catch {
+            errorMessage = "Export failed: \(error.localizedDescription)"
+        }
+        isExporting = false
     }
 }

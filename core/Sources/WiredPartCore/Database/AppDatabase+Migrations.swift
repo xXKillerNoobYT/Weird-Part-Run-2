@@ -69,6 +69,7 @@ extension AppDatabase {
         registerMigration052TrailerMiniWarehouse(&migrator)
         registerMigration053PreTripInspection(&migrator)
         registerMigration054SavedReports(&migrator)
+        registerMigration055OfficeChannel(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -88,8 +89,8 @@ extension AppDatabase {
                 t.column("template_data", .text).notNull()
                 t.column("is_default", .integer).notNull().defaults(to: 0)
                 t.column("created_by", .integer).references("users")
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
             }
         }
@@ -106,8 +107,8 @@ extension AppDatabase {
                 t.column("width_inches", .integer).notNull()
                 t.column("length_inches", .integer).notNull()
                 t.column("is_active", .integer).notNull().defaults(to: 1)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
             }
 
@@ -123,7 +124,7 @@ extension AppDatabase {
                 t.column("grid_width", .integer).notNull().defaults(to: 1)
                 t.column("grid_height", .integer).notNull().defaults(to: 1)
                 t.column("rotation", .integer).notNull().defaults(to: 0)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
             }
 
@@ -152,8 +153,8 @@ extension AppDatabase {
                 t.column("current_location_id", .integer)
                 t.column("assigned_to", .integer).references("users")
                 t.column("is_configured", .integer).notNull().defaults(to: 0)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
             }
 
@@ -167,7 +168,7 @@ extension AppDatabase {
                 t.column("level_order", .integer).notNull().defaults(to: 0)
                 t.column("height_inches", .integer)
                 t.column("area_count", .integer).notNull().defaults(to: 1)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
             }
 
@@ -182,7 +183,7 @@ extension AppDatabase {
                 t.column("has_qr_code", .integer).notNull().defaults(to: 0)
                 t.column("has_sticker", .integer).notNull().defaults(to: 0)
                 t.column("full_location_code", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
             }
 
@@ -195,7 +196,7 @@ extension AppDatabase {
                 t.column("bin_number", .integer).notNull()
                 t.column("is_fixed", .integer).notNull().defaults(to: 0)
                 t.column("assigned_part_id", .integer).references("parts")
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
             }
 
@@ -207,7 +208,7 @@ extension AppDatabase {
                 t.column("area_id", .integer).notNull()
                     .references("warehouse_storage_areas", onDelete: .cascade)
                 t.column("is_home", .integer).notNull().defaults(to: 0)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
                 t.uniqueKey(["part_id", "area_id"])
             }
@@ -218,7 +219,7 @@ extension AppDatabase {
                     .references("users", onDelete: .cascade)
                 t.column("area_id", .integer).notNull()
                     .references("warehouse_storage_areas", onDelete: .cascade)
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             // Onboarding wizard progress tracking
@@ -233,9 +234,9 @@ extension AppDatabase {
                 t.column("step4_progress", .text)
                 t.column("step5_progress", .text)
                 t.column("step6_progress", .text)
-                t.column("started_at", .text).defaults(sql: "datetime('now')")
+                t.column("started_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("completed_at", .text)
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
         }
     }
@@ -264,8 +265,8 @@ extension AppDatabase {
                 t.column("last_misplacement_date", .text)
                 t.column("total_audit_count", .integer).notNull().defaults(to: 0)
                 t.column("total_variance_dollars", .double).notNull().defaults(to: 0.0)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["part_id", "area_id"])
             }
 
@@ -281,7 +282,7 @@ extension AppDatabase {
                 t.column("parts_counted", .integer).notNull().defaults(to: 0)
                 t.column("discrepancies_found", .integer).notNull().defaults(to: 0)
                 t.column("misplaced_found", .integer).notNull().defaults(to: 0)
-                t.column("started_at", .text).defaults(sql: "datetime('now')")
+                t.column("started_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("completed_at", .text)
                 t.column("deleted_at", .text)
             }
@@ -301,7 +302,7 @@ extension AppDatabase {
                 t.column("variance_percent", .double).notNull().defaults(to: 0.0)
                 t.column("result", .text).notNull()
                 t.column("counted_by", .integer).notNull().references("users")
-                t.column("counted_at", .text).defaults(sql: "datetime('now')")
+                t.column("counted_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             // Log of parts found in wrong locations
@@ -317,7 +318,7 @@ extension AppDatabase {
                 t.column("resolved_by", .integer).references("users")
                 t.column("resolved_at", .text)
                 t.column("found_by", .integer).notNull().references("users")
-                t.column("found_at", .text).defaults(sql: "datetime('now')")
+                t.column("found_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             // Per-user warehouse reliability ratings
@@ -336,7 +337,7 @@ extension AppDatabase {
                 t.column("total_accurate", .integer).notNull().defaults(to: 0)
                 t.column("total_misplacements_found", .integer).notNull().defaults(to: 0)
                 t.column("total_proactive_fixes", .integer).notNull().defaults(to: 0)
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["user_id"])
             }
 
@@ -355,7 +356,7 @@ extension AppDatabase {
                 t.column("clean_audit_count", .integer).notNull().defaults(to: 0)
                 t.column("last_org_check", .text)
                 t.column("last_org_check_by", .integer).references("users")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
                 t.uniqueKey(["area_id"])
             }
 
@@ -370,7 +371,7 @@ extension AppDatabase {
                 t.column("manager_override", .integer).notNull().defaults(to: 0)
                 t.column("dismiss_reason", .text)
                 t.column("ignore_count", .integer).notNull().defaults(to: 0)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("decided_at", .text)
                 t.column("deleted_at", .text)
             }
@@ -383,7 +384,7 @@ extension AppDatabase {
                 t.column("user_id", .integer).notNull().references("users")
                 t.column("chosen_area_id", .integer).notNull()
                     .references("warehouse_storage_areas")
-                t.column("voted_at", .text).defaults(sql: "datetime('now')")
+                t.column("voted_at", .text).defaults(sql: "(datetime('now'))")
             }
         }
     }
@@ -403,8 +404,8 @@ extension AppDatabase {
                 t.column("break_minutes", .integer).notNull().defaults(to: 15)
                 t.column("data_source", .text)
                 t.column("data_date", .text)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
             }
 
@@ -417,7 +418,7 @@ extension AppDatabase {
                 t.column("bonus_amount", .double).notNull().defaults(to: 0.0)
                 t.column("description", .text)
                 t.column("is_enabled", .integer).notNull().defaults(to: 0)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
             }
 
@@ -433,7 +434,7 @@ extension AppDatabase {
                 t.column("is_paid", .integer).notNull().defaults(to: 1)
                 t.column("auto_filled", .integer).notNull().defaults(to: 0)
                 t.column("timer_duration_minutes", .integer)
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
             }
 
@@ -447,7 +448,7 @@ extension AppDatabase {
                 t.column("default_morning_break", .text).defaults(to: "10:00")
                 t.column("default_lunch", .text).defaults(to: "12:00")
                 t.column("default_afternoon_break", .text).defaults(to: "14:30")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
             }
 
             // Seed Wyoming state labor law defaults
@@ -3502,7 +3503,7 @@ extension AppDatabase {
     private static func registerMigration032JPOPerPartStatus(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("032_jpo_per_part_status") { db in
             // Add per-line status fields to jpo_line_items
-            try db.alter(table: "jpo_line_items") { t in
+            try? db.alter(table: "jpo_line_items") { t in
                 t.add(column: "line_status", .text).defaults(to: "pending")
                 t.add(column: "hold_reason", .text)
                 t.add(column: "reject_reason", .text)
@@ -3514,7 +3515,7 @@ extension AppDatabase {
             }
 
             // Add delivery option to job_purchase_orders
-            try db.alter(table: "job_parts_orders") { t in
+            try? db.alter(table: "job_parts_orders") { t in
                 t.add(column: "delivery_option", .text).defaults(to: "partial")
                 t.add(column: "delivery_locked", .integer).defaults(to: 0)
             }
@@ -3578,13 +3579,13 @@ extension AppDatabase {
             }
 
             // Add stage_id to jpo_line_items (auto-assigned from category mapping)
-            try db.alter(table: "jpo_line_items") { t in
+            try? db.alter(table: "jpo_line_items") { t in
                 t.add(column: "stage_id", .integer)
                     .references("job_stages")
             }
 
             // Add current_stage_id to jobs
-            try db.alter(table: "jobs") { t in
+            try? db.alter(table: "jobs") { t in
                 t.add(column: "current_stage_id", .integer)
                     .references("job_stages")
             }
@@ -3638,7 +3639,7 @@ extension AppDatabase {
         migrator.registerMigration("036_clock_todo_integration") { db in
             // Add linked_todo_id and work_type to labor_entries
             // so workers can track what they're doing + classify work type
-            try db.alter(table: "labor_entries") { t in
+            try? db.alter(table: "labor_entries") { t in
                 t.add(column: "linked_todo_id", .integer)
                     .references("notebook_entries", onDelete: .setNull)
                 t.add(column: "work_type", .text)
@@ -3692,7 +3693,7 @@ extension AppDatabase {
             try db.create(index: "idx_nsg_notebook", on: "notebook_section_groups", columns: ["notebook_id"])
 
             // Add group_id and additional columns to notebook_sections
-            try db.alter(table: "notebook_sections") { t in
+            try? db.alter(table: "notebook_sections") { t in
                 t.add(column: "group_id", .integer)
                     .references("notebook_section_groups", onDelete: .setNull)
                 t.add(column: "is_collapsed", .integer).notNull().defaults(to: 0)
@@ -3700,7 +3701,7 @@ extension AppDatabase {
             }
 
             // Add block content columns to notebook_entries
-            try db.alter(table: "notebook_entries") { t in
+            try? db.alter(table: "notebook_entries") { t in
                 t.add(column: "block_type", .text).notNull().defaults(to: "text")
                 t.add(column: "block_data", .text)         // JSON for type-specific data
                 t.add(column: "heading_level", .integer)     // 1, 2, 3 for headings
@@ -3733,8 +3734,8 @@ extension AppDatabase {
                 t.column("status", .text).notNull().defaults(to: "pending")
                 t.column("notes", .text)
                 t.column("created_by", .integer).references("users")
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
-                t.column("updated_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
             }
 
@@ -3746,7 +3747,7 @@ extension AppDatabase {
                 t.column("comm_type", .text).notNull().defaults(to: "note")
                 t.column("content", .text).notNull()
                 t.column("created_by", .integer).references("users")
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
             }
 
@@ -3757,7 +3758,7 @@ extension AppDatabase {
                     .references("entity_contacts", onDelete: .cascade)
                 t.column("content", .text).notNull()
                 t.column("created_by", .integer).references("users")
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
             }
 
@@ -3771,7 +3772,7 @@ extension AppDatabase {
                 t.column("reliability_score", .double).notNull().defaults(to: 0)
                 t.column("rated_by", .integer).references("users")
                 t.column("job_id", .integer).references("jobs")
-                t.column("created_at", .text).defaults(sql: "datetime('now')")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
             }
 
@@ -3791,7 +3792,7 @@ extension AppDatabase {
     private static func registerMigration044JobClassifications(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("044_job_classifications") { db in
             // Warranty, classification, payment hold, and continuous columns on jobs
-            try db.alter(table: "jobs") { t in
+            try? db.alter(table: "jobs") { t in
                 // Warranty fields
                 t.add(column: "warranty_start", .text)
                 t.add(column: "warranty_end", .text)
@@ -3817,7 +3818,7 @@ extension AppDatabase {
     private static func registerMigration045TodoClassification(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("045_todo_classification") { db in
             // Work classification columns on notebook_entries
-            try db.alter(table: "notebook_entries") { t in
+            try? db.alter(table: "notebook_entries") { t in
                 t.add(column: "work_classification", .text)
                 t.add(column: "classification_reviewed", .integer).notNull().defaults(to: 0)
                 t.add(column: "classification_reviewed_by", .integer)
@@ -3837,7 +3838,7 @@ extension AppDatabase {
                 t.column("changed_by", .integer).notNull()
                     .references("users")
                 t.column("reason", .text)
-                t.column("changed_at", .text).defaults(sql: "datetime('now')")
+                t.column("changed_at", .text).defaults(sql: "(datetime('now'))")
             }
         }
     }
@@ -3847,7 +3848,7 @@ extension AppDatabase {
     private static func registerMigration046HalfDayScheduling(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("046_half_day_scheduling") { db in
             // Add time_slot column to job_dispatch for AM/PM/Full day scheduling
-            try db.alter(table: "job_dispatch") { t in
+            try? db.alter(table: "job_dispatch") { t in
                 t.add(column: "time_slot", .text).defaults(to: "full")
                 // Values: "full", "am", "pm"
             }
@@ -4086,7 +4087,7 @@ extension AppDatabase {
             try db.create(index: "idx_tmc_tool", on: "tool_maintenance_configs", columns: ["tool_id"])
 
             // Add usage tracking and confidence columns to tools
-            try db.alter(table: "tools") { t in
+            try? db.alter(table: "tools") { t in
                 t.add(column: "total_usage_hours", .double).defaults(to: 0)
                 t.add(column: "confidence_score", .double).defaults(to: 1.0)
                 t.add(column: "last_maintenance_date", .text)
@@ -4129,7 +4130,7 @@ extension AppDatabase {
             try db.create(index: "idx_vs_type", on: "vehicle_stock", columns: ["stock_type"])
 
             // Add fuel_level column to vehicles (0.0–1.0, nullable)
-            try db.alter(table: "vehicles") { t in
+            try? db.alter(table: "vehicles") { t in
                 t.add(column: "fuel_level", .double)
                 t.add(column: "next_maintenance_date", .text)
             }
@@ -4199,7 +4200,7 @@ extension AppDatabase {
             try db.create(index: "idx_ts_trailer", on: "trailer_stock", columns: ["trailer_id"])
 
             // Location tracking columns on job_trailers
-            try db.alter(table: "job_trailers") { t in
+            try? db.alter(table: "job_trailers") { t in
                 t.add(column: "is_at_shop", .integer).defaults(to: 1)
                 t.add(column: "linked_warehouse_id", .integer)
             }
@@ -4381,11 +4382,22 @@ extension AppDatabase {
                 t.column("created_by", .integer).notNull().references("users")
                 t.column("is_shared", .boolean).notNull().defaults(to: false)
                 t.column("deleted_at", .datetime)
-                t.column("created_at", .datetime).notNull().defaults(sql: "datetime('now')")
+                t.column("created_at", .datetime).notNull().defaults(sql: "(datetime('now'))")
                 t.column("last_run_at", .datetime)
             }
 
             try db.create(index: "idx_sr_created_by", on: "saved_reports", columns: ["created_by"])
+        }
+    }
+
+    // MARK: - Migration 055: Office Channel (is_system)
+
+    private static func registerMigration055OfficeChannel(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("055_office_channel") { db in
+            // Add is_system column to chat_channels
+            try? db.alter(table: "chat_channels") { t in
+                t.add(column: "is_system", .boolean).notNull().defaults(to: false)
+            }
         }
     }
 }

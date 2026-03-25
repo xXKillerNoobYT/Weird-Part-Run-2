@@ -1139,7 +1139,9 @@ struct ReceivingRoutingFlow: View {
             )
             isProcessing = false
             withAnimation { currentStep = .routeConfirmed }
-            onRouteComplete(.usedWriteOff(levels: stockLevels!))
+            if let levels = stockLevels {
+                onRouteComplete(.usedWriteOff(levels: levels))
+            }
         } catch {
             routingError = error.localizedDescription
             isProcessing = false

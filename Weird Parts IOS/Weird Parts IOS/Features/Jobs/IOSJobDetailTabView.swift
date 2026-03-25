@@ -240,7 +240,7 @@ struct IOSJobDetailTabView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         MetricCard(title: "Hours", value: String(format: "%.1f", job.laborHours),
-                                   subtitle: job.estimatedHours != nil ? "of \(Int(job.estimatedHours!))" : nil,
+                                   subtitle: job.estimatedHours.map { "of \(Int($0))" },
                                    color: .blue, icon: "clock")
                         if appCore.hasPermission("view_job_financials"), let budget = job.budgetLimit {
                             MetricCard(title: "Budget", value: formatCurrency(job.partsCost),

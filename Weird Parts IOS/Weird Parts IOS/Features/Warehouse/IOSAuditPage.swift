@@ -724,11 +724,12 @@ struct IOSAuditPage: View {
 
     private func endActiveSession() {
         guard let service = appCore.warehouseService,
-              let sessionId = activeSession?.id else { return }
+              let session = activeSession,
+              let sessionId = session.id else { return }
         do {
             try service.completeAuditSession(sessionId: sessionId)
-            activeSheet = .sessionSummary(activeSession!)
             activeSession = nil
+            activeSheet = .sessionSummary(session)
             loadData()
         } catch {
             actionError = error.localizedDescription

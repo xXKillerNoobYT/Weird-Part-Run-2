@@ -146,7 +146,7 @@ struct IOSReportTemplatesPage: View {
     private func templateRow(_ template: ReportsService.SavedReport) -> some View {
         HStack {
             Image(systemName: reportTypeIcons[template.reportType] ?? "doc")
-                .foregroundStyle(.accent)
+                .foregroundStyle(Color.accentColor)
                 .frame(width: 30)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -247,10 +247,10 @@ struct IOSReportTemplatesPage: View {
         do {
             try service.saveReportConfig(
                 name: trimmed,
-                reportType: newReportType,
-                columnsJson: "[]",
-                filtersJson: "{}",
-                createdBy: userId,
+                type: newReportType,
+                columns: [],
+                filters: [:],
+                userId: userId,
                 isShared: newIsShared
             )
             showCreate = false

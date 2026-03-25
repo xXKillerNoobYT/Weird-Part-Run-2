@@ -7,20 +7,14 @@ struct FleetFuelCostReport: View {
     @State private var fuelData: [FleetService.FuelReportRow] = []
     @State private var loadError: String?
     @State private var isLoading = true
-    @State private var dateRange: ReportDateRange = .thisMonth
+    @State private var startDate = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
+    @State private var endDate = Date()
 
     var body: some View {
         List {
-            // Date range picker
-            Section {
-                Picker("Period", selection: $dateRange) {
-                    ForEach(ReportDateRange.allCases, id: \.self) { range in
-                        Text(range.rawValue).tag(range)
-                    }
-                }
-                .pickerStyle(.menu)
-                .onChange(of: dateRange) { _, _ in loadData() }
-            }
+            StandardFilterBar(startDate: $startDate, endDate: $endDate)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets())
 
             if let error = loadError {
                 Section {
@@ -83,6 +77,8 @@ struct FleetFuelCostReport: View {
                                    String(format: "%.2f", $0.costPerGallon)] }
         )
         .onAppear { loadData() }
+        .onChange(of: startDate) { _, _ in loadData() }
+        .onChange(of: endDate) { _, _ in loadData() }
     }
 
     private var totalFuelCost: Double { fuelData.reduce(0) { $0 + $1.totalCost } }
@@ -99,7 +95,7 @@ struct FleetFuelCostReport: View {
         }
         do {
             fuelData = try service.getFuelCostReport(
-                startDate: dateRange.startDate, endDate: dateRange.endDate
+                startDate: startDate, endDate: endDate
             )
         } catch {
             loadError = error.localizedDescription

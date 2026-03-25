@@ -7,19 +7,14 @@ struct WarehouseTurnoverReport: View {
     @State private var turnoverData: [WarehouseService.TurnoverRow] = []
     @State private var loadError: String?
     @State private var isLoading = true
-    @State private var dateRange: ReportDateRange = .thisMonth
+    @State private var startDate = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
+    @State private var endDate = Date()
 
     var body: some View {
         List {
-            Section {
-                Picker("Period", selection: $dateRange) {
-                    ForEach(ReportDateRange.allCases, id: \.self) { range in
-                        Text(range.rawValue).tag(range)
-                    }
-                }
-                .pickerStyle(.menu)
-                .onChange(of: dateRange) { _, _ in loadData() }
-            }
+            StandardFilterBar(startDate: $startDate, endDate: $endDate)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets())
 
             if let error = loadError {
                 Section {
@@ -87,6 +82,8 @@ struct WarehouseTurnoverReport: View {
                                        "\($0.currentStock)"] }
         )
         .onAppear { loadData() }
+        .onChange(of: startDate) { _, _ in loadData() }
+        .onChange(of: endDate) { _, _ in loadData() }
     }
 
     private var totalMovements: Int { turnoverData.reduce(0) { $0 + $1.movementCount } }
@@ -102,7 +99,7 @@ struct WarehouseTurnoverReport: View {
         }
         do {
             turnoverData = try service.getTurnoverReport(
-                startDate: dateRange.startDate, endDate: dateRange.endDate
+                startDate: startDate, endDate: endDate
             )
         } catch {
             loadError = error.localizedDescription

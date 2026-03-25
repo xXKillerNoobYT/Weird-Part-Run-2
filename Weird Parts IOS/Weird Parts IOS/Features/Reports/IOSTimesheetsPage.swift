@@ -33,7 +33,7 @@ struct IOSTimesheetsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            dateRangePicker
+            StandardFilterBar(startDate: $startDate, endDate: $endDate)
             timesheetList
         }
         .navigationTitle("Timesheets")
@@ -47,25 +47,8 @@ struct IOSTimesheetsPage: View {
         .searchable(text: $searchText, prompt: "Search employees...")
         .refreshable { loadData() }
         .task { loadData() }
-    }
-
-    // MARK: - Date Range Picker
-
-    private var dateRangePicker: some View {
-        HStack(spacing: 12) {
-            DatePicker("From", selection: $startDate, displayedComponents: .date)
-                .labelsHidden()
-                .onChange(of: startDate) { loadData() }
-
-            Image(systemName: "arrow.right")
-                .foregroundStyle(.secondary)
-
-            DatePicker("To", selection: $endDate, displayedComponents: .date)
-                .labelsHidden()
-                .onChange(of: endDate) { loadData() }
-        }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
+        .onChange(of: startDate) { _, _ in loadData() }
+        .onChange(of: endDate) { _, _ in loadData() }
     }
 
     // MARK: - Timesheet List

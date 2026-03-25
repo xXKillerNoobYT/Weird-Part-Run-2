@@ -1,4 +1,3 @@
-import GRDB
 import SwiftUI
 import WiredPartCore
 
@@ -109,7 +108,8 @@ struct PartsForecastingPage: View {
                         guard let service = appCore.partsService,
                               let userId = appCore.currentUser?.id else { return }
                         do {
-                            try service.dismissRecommendation(id: rec.id!, userId: userId, reason: dismissReason)
+                            guard let recId = rec.id else { return }
+                            try service.dismissRecommendation(id: recId, userId: userId, reason: dismissReason)
                             await loadRecommendations()
                         } catch {
                             loadError = "Dismiss failed: \(error.localizedDescription)"
@@ -516,33 +516,19 @@ struct PartsForecastingPage: View {
     // MARK: - Location Loading
 
     private func loadLocations() {
-        guard let db = appCore.db else { return }
+        guard let service = appCore.warehouseService else { return }
         do {
-            let rows = try db.writer.read { dbConn in
-                try Row.fetchAll(dbConn, sql: """
-                    SELECT DISTINCT s.location_type, s.location_id,
-                        COALESCE(wl.name, v.vehicle_name, 'Location ' || s.location_id) AS name
-                    FROM stock s
-                    LEFT JOIN warehouse_locations wl ON s.location_type = 'warehouse' AND wl.id = s.location_id
-                    LEFT JOIN vehicles v ON s.location_type IN ('truck', 'trailer') AND v.id = s.location_id
-                    WHERE s.deleted_at IS NULL AND s.qty > 0
-                    GROUP BY s.location_type, s.location_id
-                    ORDER BY s.location_type, name
-                    """)
-            }
-            availableLocations = rows.map { row in
-                let locType: String = row["location_type"] ?? "warehouse"
-                let locId: Int64 = row["location_id"] ?? 1
-                let name: String = row["name"] ?? "Unknown"
+            let locations = try service.listDistinctStockLocations()
+            availableLocations = locations.map { loc in
                 let icon: String
-                switch locType {
+                switch loc.locationType {
                 case "warehouse": icon = "building.2"
                 case "truck": icon = "truck.box"
                 case "trailer": icon = "shippingbox"
                 default: icon = "mappin"
                 }
-                return LocationOption(id: "\(locType)_\(locId)", locationType: locType,
-                                      locationId: locId, name: name, icon: icon)
+                return LocationOption(id: loc.id, locationType: loc.locationType,
+                                      locationId: loc.locationId, name: loc.name, icon: icon)
             }
         } catch {
             // Non-critical — location picker just won't show
@@ -570,7 +556,8 @@ struct PartsForecastingPage: View {
         guard let service = appCore.partsService,
               let userId = appCore.currentUser?.id else { return }
         do {
-            try service.approveRecommendation(id: rec.id!, userId: userId)
+            guard let recId = rec.id else { return }
+            try service.approveRecommendation(id: recId, userId: userId)
             await loadRecommendations()
             await loadData()
         } catch {
@@ -1048,7 +1035,8 @@ private struct ForecastDetailSheet: View {
             return
         }
         do {
-            let targets = try service.listLocationStockTargets(partId: row.part.id!)
+            guard let partId = row.part.id else { isLoadingLocations = false; return }
+            let targets = try service.listLocationStockTargets(partId: partId)
             await MainActor.run {
                 locationTargets = targets
                 isLoadingLocations = false
@@ -1082,9 +1070,11 @@ private struct ForecastDetailSheet: View {
             return
         }
 
+        guard let partId = row.part.id else { isSaving = false; return }
+
         do {
             try service.updatePart(
-                id: row.part.id!,
+                id: partId,
                 name: editName,
                 code: editCode.isEmpty ? nil : editCode,
                 minStockLevel: min,

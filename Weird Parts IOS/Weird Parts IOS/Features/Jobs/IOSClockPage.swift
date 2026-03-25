@@ -1,7 +1,5 @@
-import GRDB
 import SwiftUI
 import CoreLocation
-
 import WiredPartCore
 
 /// Clock in/out page for iOS.
@@ -940,31 +938,10 @@ struct IOSClockPage: View {
 
     /// Toggle supply run status — keeps the user clocked in, changes activity status.
     private func toggleSupplyRun(entryId: Int64) async {
-        guard let db = appCore.db else { return }
-
-        let newStatus = activityStatus == "supply_run" ? "working" : "supply_run"
+        guard let service = appCore.jobsService else { return }
 
         do {
-            try await db.writer.write { conn in
-                let existingNotes = try String.fetchOne(
-                    conn,
-                    sql: "SELECT notes FROM labor_entries WHERE id = ?",
-                    arguments: [entryId]
-                ) ?? ""
-                let timestamp = ISO8601DateFormatter().string(from: Date())
-                let note: String
-                if newStatus == "supply_run" {
-                    note = existingNotes.isEmpty
-                        ? "[supply_run_start:\(timestamp)]"
-                        : "\(existingNotes) [supply_run_start:\(timestamp)]"
-                } else {
-                    note = "\(existingNotes) [supply_run_end:\(timestamp)]"
-                }
-                try conn.execute(
-                    sql: "UPDATE labor_entries SET notes = ? WHERE id = ?",
-                    arguments: [note, entryId]
-                )
-            }
+            let newStatus = try service.toggleSupplyRun(laborEntryId: entryId)
             await MainActor.run {
                 activityStatus = newStatus
                 errorMessage = nil
@@ -1123,8 +1100,7 @@ struct IOSClockPage: View {
     }
 
     private func loadJobsAndClockStatus() async {
-        guard let db = appCore.db,
-              let userId = appCore.currentUser?.id else {
+        guard let userId = appCore.currentUser?.id else {
             await MainActor.run {
                 isLoading = false
                 errorMessage = "Not logged in"
@@ -1188,28 +1164,9 @@ struct IOSClockPage: View {
             // Check activity status from notes (supply_run tracking)
             var currentActivity = "working"
             if let entry {
-                let notes = try? await db.writer.read { conn in
-                    try String.fetchOne(
-                        conn,
-                        sql: "SELECT notes FROM labor_entries WHERE id = ?",
-                        arguments: [entry.id]
-                    )
-                }
-                if let notes, notes.contains("[supply_run_start:") {
-                    // Check if the most recent supply_run marker is a start (not an end)
-                    let lastStart = notes.range(of: "[supply_run_start:", options: .backwards)
-                    let lastEnd = notes.range(of: "[supply_run_end:", options: .backwards)
-                    if let start = lastStart {
-                        if let end = lastEnd {
-                            // Both exist — supply run is active if start came after end
-                            if start.lowerBound > end.lowerBound {
-                                currentActivity = "supply_run"
-                            }
-                        } else {
-                            // Only start exists, no end — supply run is active
-                            currentActivity = "supply_run"
-                        }
-                    }
+                let notes = try? service.getLaborEntryNotes(laborEntryId: entry.id)
+                if JobsService.isOnSupplyRun(notes: notes) {
+                    currentActivity = "supply_run"
                 }
             }
 

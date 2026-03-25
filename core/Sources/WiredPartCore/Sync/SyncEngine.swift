@@ -83,6 +83,11 @@ public actor SyncEngine {
     /// Called on the main actor when state changes.
     public var onStateChanged: (@Sendable (SyncState) -> Void)?
 
+    /// Set the state-changed callback from outside the actor.
+    public func setOnStateChanged(_ callback: (@Sendable (SyncState) -> Void)?) {
+        onStateChanged = callback
+    }
+
     public init(db: AppDatabase) {
         self.db = db
     }

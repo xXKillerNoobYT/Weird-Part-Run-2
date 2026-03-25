@@ -85,7 +85,7 @@ struct IOSShortTermPipelinePage: View {
             }
         }
         .sheet(isPresented: $showScheduleSheet) {
-            if let item = selectedItem {
+            if selectedItem != nil {
                 CreateScheduleEntrySheet(
                     date: todayString,
                     onSave: { loadData() }

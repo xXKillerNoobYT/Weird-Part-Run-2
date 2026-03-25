@@ -7,19 +7,14 @@ struct FleetUtilizationReport: View {
     @State private var utilizationData: [FleetService.VehicleUtilizationRow] = []
     @State private var loadError: String?
     @State private var isLoading = true
-    @State private var dateRange: ReportDateRange = .thisMonth
+    @State private var startDate = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
+    @State private var endDate = Date()
 
     var body: some View {
         List {
-            Section {
-                Picker("Period", selection: $dateRange) {
-                    ForEach(ReportDateRange.allCases, id: \.self) { range in
-                        Text(range.rawValue).tag(range)
-                    }
-                }
-                .pickerStyle(.menu)
-                .onChange(of: dateRange) { _, _ in loadData() }
-            }
+            StandardFilterBar(startDate: $startDate, endDate: $endDate)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets())
 
             if let error = loadError {
                 Section {
@@ -86,6 +81,8 @@ struct FleetUtilizationReport: View {
                                           "\(Int($0.utilization * 100))%"] }
         )
         .onAppear { loadData() }
+        .onChange(of: startDate) { _, _ in loadData() }
+        .onChange(of: endDate) { _, _ in loadData() }
     }
 
     private var avgUtilization: Double {
@@ -106,7 +103,7 @@ struct FleetUtilizationReport: View {
         }
         do {
             utilizationData = try service.getVehicleUtilizationReport(
-                startDate: dateRange.startDate, endDate: dateRange.endDate
+                startDate: startDate, endDate: endDate
             )
         } catch {
             loadError = error.localizedDescription

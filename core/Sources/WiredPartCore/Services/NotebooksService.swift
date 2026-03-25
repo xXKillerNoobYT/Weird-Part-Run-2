@@ -1102,10 +1102,10 @@ public final class NotebooksService: Sendable {
 
         let template = try JSONDecoder().decode(NotebookTemplateData.self, from: jsonData)
 
-        for (groupIndex, group) in template.groups.enumerated() {
+        for (_, group) in template.groups.enumerated() {
             let groupId = try createSectionGroup(notebookId: notebookId, name: group.name)
 
-            for (sectionIndex, section) in group.sections.enumerated() {
+            for (_, section) in group.sections.enumerated() {
                 let sectionId = try createSection(notebookId: notebookId, groupId: groupId, name: section.name)
 
                 for (entryIndex, entry) in section.entries.enumerated() {

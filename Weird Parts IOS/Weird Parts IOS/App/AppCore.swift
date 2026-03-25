@@ -40,6 +40,9 @@ final class AppCore: ObservableObject {
     public private(set) var breakService: BreakService?
     public private(set) var jobEstimationService: JobEstimationService?
 
+    /// Shared sync manager — all views observe this single instance.
+    let syncManager = IOSSyncManager()
+
     // MARK: - Lifecycle
 
     init() {
@@ -56,7 +59,26 @@ final class AppCore: ObservableObject {
             // GRDB's default-QoS pool semaphore).
             let path = try Self.databasePath()
             let result = try await Task.detached(priority: .userInitiated) {
-                let database = try AppDatabase.openDatabase(atPath: path)
+                // Production safety: back up before migration so we can roll back
+                #if !DEBUG
+                let backupPath = AppDatabase.backupDatabase(atPath: path)
+                #endif
+
+                let database: AppDatabase
+                do {
+                    database = try AppDatabase.openDatabase(atPath: path)
+                } catch {
+                    #if !DEBUG
+                    // Migration failed — try to restore from backup
+                    if let backup = backupPath {
+                        try? AppDatabase.restoreDatabase(from: backup, to: path)
+                        // Retry with restored DB (old schema, but data preserved)
+                        print("[AppCore] Migration failed, restored from backup. Error: \(error)")
+                    }
+                    #endif
+                    throw error
+                }
+
                 let auth = AuthService(db: database)
                 let settings = SettingsService(db: database)
 
@@ -125,6 +147,27 @@ final class AppCore: ObservableObject {
             }
             isReady = true
 
+            // Configure sync manager now that DB + settings are ready
+            if let database = db, let settings = settingsService {
+                syncManager.configure(db: database, settingsService: settings)
+
+                // Set up app lifecycle sync (foreground resume)
+                syncManager.setupAppLifecycleSync()
+
+                // Auto-sync on launch if configured
+                if syncManager.isSyncAvailable {
+                    Task { [syncManager] in
+                        await syncManager.syncNow()
+                        syncManager.startPeerDiscovery()
+
+                        // Start periodic sync at the configured interval
+                        let intervalStr = (try? settings.getSettingsByCategory("sync"))?["sync_interval"] ?? "60"
+                        let interval = TimeInterval(intervalStr) ?? 60
+                        syncManager.startAutoSync(intervalSeconds: max(interval, 15))
+                    }
+                }
+            }
+
             // Run companion auto-discovery cycle in the background
             Task.detached { [partsService] in
                 do {
@@ -132,6 +175,11 @@ final class AppCore: ObservableObject {
                 } catch {
                     // Non-critical — auto-discovery failures should not affect app operation
                 }
+            }
+
+            // Ensure Office chat channel exists (auto-created system channel)
+            Task.detached { [chatService] in
+                try? chatService?.ensureOfficeChannel()
             }
         } catch {
             loadError = error.localizedDescription

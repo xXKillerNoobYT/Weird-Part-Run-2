@@ -15,6 +15,7 @@ struct IOSMainView: View {
     @State private var showLogoutConfirm = false
     @State private var showAIAssistant = false
     @State private var aiDisplayMode: AIDisplayMode = .sheet
+    @State private var showConflictReview = false
 
     // Full sidebar state
     @State private var expandedModuleId: String? = "dashboard"
@@ -63,12 +64,22 @@ struct IOSMainView: View {
     }
 
     var body: some View {
-        Group {
-            if tabPrefs.navigationStyle == .fullSidebar {
-                fullSidebarLayout
-            } else {
-                tabViewLayout
+        VStack(spacing: 0) {
+            SyncConflictBanner { showConflictReview = true }
+                .environmentObject(appCore)
+
+            Group {
+                if tabPrefs.navigationStyle == .fullSidebar {
+                    fullSidebarLayout
+                } else {
+                    tabViewLayout
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .sheet(isPresented: $showConflictReview) {
+            SyncConflictReviewPage()
+                .environmentObject(appCore)
         }
         .confirmationDialog("Log out?", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
             Button("Log Out", role: .destructive) {

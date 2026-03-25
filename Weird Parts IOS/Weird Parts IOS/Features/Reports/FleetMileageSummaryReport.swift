@@ -7,19 +7,14 @@ struct FleetMileageSummaryReport: View {
     @State private var mileageData: [FleetService.MileageSummaryRow] = []
     @State private var loadError: String?
     @State private var isLoading = true
-    @State private var dateRange: ReportDateRange = .thisMonth
+    @State private var startDate = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
+    @State private var endDate = Date()
 
     var body: some View {
         List {
-            Section {
-                Picker("Period", selection: $dateRange) {
-                    ForEach(ReportDateRange.allCases, id: \.self) { range in
-                        Text(range.rawValue).tag(range)
-                    }
-                }
-                .pickerStyle(.menu)
-                .onChange(of: dateRange) { _, _ in loadData() }
-            }
+            StandardFilterBar(startDate: $startDate, endDate: $endDate)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets())
 
             if let error = loadError {
                 Section {
@@ -86,6 +81,8 @@ struct FleetMileageSummaryReport: View {
                                       String(format: "%.1f", $0.avgMilesPerTrip)] }
         )
         .onAppear { loadData() }
+        .onChange(of: startDate) { _, _ in loadData() }
+        .onChange(of: endDate) { _, _ in loadData() }
     }
 
     private var totalMiles: Double { mileageData.reduce(0) { $0 + $1.totalMiles } }
@@ -102,7 +99,7 @@ struct FleetMileageSummaryReport: View {
         }
         do {
             mileageData = try service.getMileageSummaryReport(
-                startDate: dateRange.startDate, endDate: dateRange.endDate
+                startDate: startDate, endDate: endDate
             )
         } catch {
             loadError = error.localizedDescription

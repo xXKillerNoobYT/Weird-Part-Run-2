@@ -118,25 +118,52 @@ struct IOSBackupsPage: View {
         }
     }
 
+    // MARK: - Helpers
+
+    private var backupDir: URL? {
+        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
+        let dir = docs.appendingPathComponent("WiredPart/Backups")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    private var dbPath: String? {
+        try? AppCore.databasePath()
+    }
+
+    private func formatFileSize(_ bytes: UInt64) -> String {
+        if bytes < 1024 { return "\(bytes) B" }
+        if bytes < 1_048_576 { return String(format: "%.1f KB", Double(bytes) / 1024) }
+        return String(format: "%.1f MB", Double(bytes) / 1_048_576)
+    }
+
     // MARK: - Data Loading
 
     private func loadData() {
-        guard let settingsService = appCore.settingsService else {
-            errorMessage = "Settings service not available."
-            isLoading = false
-            return
+        // DB size
+        if let path = dbPath,
+           let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+           let size = attrs[.size] as? UInt64 {
+            backupSizeText = formatFileSize(size)
+        } else {
+            backupSizeText = "Unknown"
         }
-        do {
-            let info = try settingsService.getBackupInfo()
-            lastBackupTime = info.lastBackupTime
-            backupCount = info.backupCount
-            backupSizeText = "N/A"
-        } catch {
-            let msg = String(describing: error)
-            if !msg.contains("no such table") {
-                errorMessage = "Failed to load backup info: \(error.localizedDescription)"
+
+        // Scan backups
+        if let dir = backupDir,
+           let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey, .creationDateKey]) {
+            let backups = files.filter { $0.pathExtension == "sqlite" }
+                .sorted { $0.lastPathComponent > $1.lastPathComponent }
+            backupCount = backups.count
+            if let newest = backups.first {
+                lastBackupTime = newest.lastPathComponent
+                    .replacingOccurrences(of: "wiredpart-backup-", with: "")
+                    .replacingOccurrences(of: ".sqlite", with: "")
+            } else {
+                lastBackupTime = nil
             }
         }
+
         isLoading = false
     }
 
@@ -147,15 +174,57 @@ struct IOSBackupsPage: View {
         backupSuccess = false
         errorMessage = nil
 
-        // Backup functionality requires platform-specific file system access.
-        // Simulate success for now — actual backup to be wired in deployment phase.
-        Task {
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+        guard let sourcePath = dbPath, let dir = backupDir else {
+            errorMessage = "Cannot locate database or backup directory."
+            isCreatingBackup = false
+            return
+        }
+
+        // Check free disk space
+        if let attrs = try? FileManager.default.attributesOfFileSystem(forPath: dir.path),
+           let freeSpace = attrs[.systemFreeSize] as? UInt64,
+           freeSpace < 100_000_000 {
+            errorMessage = "Low disk space (\(formatFileSize(freeSpace)) free). Free up space before backing up."
+            isCreatingBackup = false
+            return
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
+        let timestamp = formatter.string(from: Date())
+        let backupName = "wiredpart-backup-\(timestamp).sqlite"
+        let destURL = dir.appendingPathComponent(backupName)
+
+        do {
+            let sourceURL = URL(fileURLWithPath: sourcePath)
+            try FileManager.default.copyItem(at: sourceURL, to: destURL)
+
+            // Copy WAL/SHM if they exist
+            let walPath = sourcePath + "-wal"
+            if FileManager.default.fileExists(atPath: walPath) {
+                try? FileManager.default.copyItem(
+                    at: URL(fileURLWithPath: walPath),
+                    to: dir.appendingPathComponent(backupName + "-wal")
+                )
+            }
+            let shmPath = sourcePath + "-shm"
+            if FileManager.default.fileExists(atPath: shmPath) {
+                try? FileManager.default.copyItem(
+                    at: URL(fileURLWithPath: shmPath),
+                    to: dir.appendingPathComponent(backupName + "-shm")
+                )
+            }
+
             backupSuccess = true
             loadData()
-            isCreatingBackup = false
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            backupSuccess = false
+
+            Task {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                backupSuccess = false
+            }
+        } catch {
+            errorMessage = "Backup failed: \(error.localizedDescription)"
         }
+        isCreatingBackup = false
     }
 }

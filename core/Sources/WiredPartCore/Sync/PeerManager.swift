@@ -96,6 +96,11 @@ public actor PeerManager {
     /// Called when state changes.
     public var onStateChanged: (@Sendable (PeerManagerState) -> Void)?
 
+    /// Set the state-changed callback from outside the actor.
+    public func setOnStateChanged(_ callback: (@Sendable (PeerManagerState) -> Void)?) {
+        onStateChanged = callback
+    }
+
     public init(db: AppDatabase) {
         self.db = db
     }
