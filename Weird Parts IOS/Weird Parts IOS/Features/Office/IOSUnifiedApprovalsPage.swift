@@ -1,12 +1,15 @@
 import SwiftUI
 import WiredPartCore
 
-/// Quick-approval dashboard for managers.
+/// Unified approval dashboard for managers — the single source of truth for ALL
+/// pending approvals across the app.
 ///
-/// Aggregates all pending approval types: JPOs, scheduled deletions,
-/// and time-off requests. Supports smart card filters by approval type,
-/// reject reason requirement, and loading state during actions.
-struct IOSApprovalsPage: View {
+/// Aggregates: JPO approvals, scheduled part deletions, time-off requests,
+/// and tool edit verifications. Supports smart card filters, search, approve/reject
+/// actions with reason requirement for rejections, and pull-to-refresh.
+///
+/// Accessible from both Office > Approvals and Orders > Approvals tabs.
+struct IOSUnifiedApprovalsPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     // MARK: - State
@@ -29,6 +32,12 @@ struct IOSApprovalsPage: View {
 
     // Smart card filter
     @State private var activeFilter: ApprovalType?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     private enum ApprovalType: String, CaseIterable {
         case jpo = "JPO Approvals"
@@ -46,6 +55,23 @@ struct IOSApprovalsPage: View {
         .searchable(text: $searchText, prompt: "Search pending approvals...")
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Approvals Help",
+                sections: [
+                    ("What This Page Does", "Shows all items waiting for manager approval in one place. This includes JPO requests from field workers, scheduled part deletions, time-off requests, and tool edit verifications."),
+                    ("How to Use It", "Use the filter cards at the top to narrow by type (JPOs, Deletions, Time-Off, Tool Edits). Search by name or requester. For each item, tap Approve or Reject. Rejections require a reason that gets sent back to the requester."),
+                    ("Tips", "Pull down to refresh the list. Items disappear from this page once approved or rejected. If you reject a JPO, the field worker gets notified with your reason so they can revise and resubmit.")
+                ]
+            )
+        }
         .task { loadData() }
         .alert("Error", isPresented: .constant(actionError != nil)) {
             Button("OK") { actionError = nil }
@@ -681,7 +707,7 @@ struct IOSApprovalsPage: View {
         isLoading = pendingJPOs.isEmpty && pendingDeletions.isEmpty && pendingTimeOff.isEmpty && pendingToolEdits.isEmpty
         loadError = nil
 
-        // Load JPOs
+        // Load JPOs with status "pending"
         if let ordersService = appCore.ordersService {
             do {
                 pendingJPOs = try ordersService.listJPOs(status: "pending")
@@ -690,7 +716,7 @@ struct IOSApprovalsPage: View {
             }
         }
 
-        // Load scheduled deletions
+        // Load scheduled deletions awaiting approval
         if let partsService = appCore.partsService {
             do {
                 pendingDeletions = try partsService.listScheduledDeletions(status: "pending_approval")
@@ -699,7 +725,7 @@ struct IOSApprovalsPage: View {
             }
         }
 
-        // Load time-off requests
+        // Load time-off requests pending manager review
         if let schedulingService = appCore.schedulingService {
             do {
                 pendingTimeOff = try schedulingService.listTimeOffRequests(status: "pending")
@@ -716,6 +742,10 @@ struct IOSApprovalsPage: View {
                 if loadError == nil { loadError = error.localizedDescription }
             }
         }
+
+        // TODO: Warranty approvals — currently handled inline on notebook detail pages
+        // via the classification review workflow. No separate pending queue exists yet.
+        // When a WarrantyService.listPendingClassifications() method is added, integrate here.
 
         isLoading = false
     }

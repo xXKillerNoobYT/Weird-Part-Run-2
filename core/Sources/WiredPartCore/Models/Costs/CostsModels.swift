@@ -1,7 +1,24 @@
 import Foundation
 import GRDB
 
+// =============================================================================
+// CostsModels.swift — Usage Audit (2026-03-24)
+//
+// Struct usage categories:
+//   ACTIVE   — Struct type used directly in service methods or UI pages
+//   TABLE    — Table referenced via raw SQL in services, but struct type not
+//              used for GRDB record operations (potential future upgrade to
+//              type-safe queries)
+//   SCHEMA   — Migration/sync schema reference only. Retained because these map
+//              to real DB tables and may be needed for future GRDB record-based
+//              queries or sync conflict resolution. Do NOT remove.
+//
+// No structs were removed. All map to active migration tables and are retained
+// per project policy on migration-related types.
+// =============================================================================
+
 // MARK: - BillingPeriod
+// Usage: TABLE — ReportsService.getReportsStats() (raw SQL COUNT on billing_periods)
 
 public struct BillingPeriod: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "billing_periods"
@@ -32,6 +49,9 @@ public struct BillingPeriod: Codable, FetchableRecord, MutablePersistableRecord,
 }
 
 // MARK: - PricingTier
+// Used by: PartsService.getSellPrice(), PartsService.savePricingTier(),
+//          PartsService.previewPricingTier(), PartsService.batchApplyPricingTier(),
+//          PartsService.getPricingTiers()
 
 public struct PricingTier: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "pricing_tiers"
@@ -80,6 +100,8 @@ public struct PricingTier: Codable, FetchableRecord, MutablePersistableRecord, S
 }
 
 // MARK: - PriceHistory
+// Used by: PartsService.recordPriceChange(), PartsService.getPriceHistory(),
+//          PartsPricingPage (UI state)
 
 public struct PriceHistory: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "price_history"
@@ -115,6 +137,8 @@ public struct PriceHistory: Codable, FetchableRecord, MutablePersistableRecord, 
 }
 
 // MARK: - CostLayerConsumption
+// Used by: PartsService.consumeCostLayers(), PartsService.reverseCostLayerConsumptions(),
+//          PartsService.getConsumptionHistory()
 
 public struct CostLayerConsumption: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "cost_layer_consumptions"
@@ -148,6 +172,8 @@ public struct CostLayerConsumption: Codable, FetchableRecord, MutablePersistable
 }
 
 // MARK: - ReceivingSession
+// Usage: TABLE — WarehouseService (raw SQL INSERT/SELECT/UPDATE on receiving_sessions),
+//        DashboardService.getWarehouseDashboardKPIs(), PartsService procurement queries
 
 public struct ReceivingSession: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "receiving_sessions"
@@ -174,6 +200,7 @@ public struct ReceivingSession: Codable, FetchableRecord, MutablePersistableReco
 }
 
 // MARK: - ReceivingSessionItem
+// Usage: TABLE — WarehouseService (raw SQL INSERT/SELECT/UPDATE on receiving_session_items)
 
 public struct ReceivingSessionItem: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "receiving_session_items"
@@ -204,6 +231,7 @@ public struct ReceivingSessionItem: Codable, FetchableRecord, MutablePersistable
 }
 
 // MARK: - ReportAnnotation
+// Usage: SCHEMA — Migration + ConflictResolver only. No service or page references the struct type.
 
 public struct ReportAnnotation: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "report_annotations"
@@ -230,6 +258,7 @@ public struct ReportAnnotation: Codable, FetchableRecord, MutablePersistableReco
 }
 
 // MARK: - ReportShareToken
+// Usage: SCHEMA — Migration + ConflictResolver only. No service or page references the struct type.
 
 public struct ReportShareToken: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "report_share_tokens"
@@ -261,6 +290,7 @@ public struct ReportShareToken: Codable, FetchableRecord, MutablePersistableReco
 }
 
 // MARK: - ReportTemplate
+// Usage: SCHEMA — Migration + ConflictResolver only. No service or page references the struct type.
 
 public struct ReportTemplate: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "report_templates"
@@ -287,6 +317,7 @@ public struct ReportTemplate: Codable, FetchableRecord, MutablePersistableRecord
 }
 
 // MARK: - PTOPolicy
+// Usage: SCHEMA — Migration + ConflictResolver only. No service or page references the struct type.
 
 public struct PTOPolicy: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "pto_policies"
@@ -322,6 +353,7 @@ public struct PTOPolicy: Codable, FetchableRecord, MutablePersistableRecord, Sen
 }
 
 // MARK: - PTOBalance
+// Usage: SCHEMA — Migration + ConflictResolver only. No service or page references the struct type.
 
 public struct PTOBalance: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "pto_balances"
@@ -348,6 +380,7 @@ public struct PTOBalance: Codable, FetchableRecord, MutablePersistableRecord, Se
 }
 
 // MARK: - SupplierPortalToken
+// Usage: SCHEMA — Migration + ConflictResolver only. No service or page references the struct type.
 
 public struct SupplierPortalToken: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "supplier_portal_tokens"
@@ -377,6 +410,9 @@ public struct SupplierPortalToken: Codable, FetchableRecord, MutablePersistableR
 }
 
 // MARK: - CostLayer
+// Used by: PartsService.addCostLayer(), PartsService.consumeCostLayers(),
+//          PartsService.reverseCostLayerConsumptions(), PartsService.getCostLayers(),
+//          PartsPricingPage (UI state)
 
 public struct CostLayer: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "cost_layers"
@@ -404,6 +440,9 @@ public struct CostLayer: Codable, FetchableRecord, MutablePersistableRecord, Sen
 }
 
 // MARK: - CompanyCostSetting
+// Usage: TABLE — PartsService.getCompanyCostSetting(), PartsService.updateCompanyCostSetting()
+//        (raw SQL on company_cost_settings), PricingSettingsSheet, PricingOverrideFlow,
+//        PricingBulkEditSheet, PartsCatalogPage, PartsPricingPage
 
 public struct CompanyCostSetting: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "company_cost_settings"
@@ -425,6 +464,9 @@ public struct CompanyCostSetting: Codable, FetchableRecord, MutablePersistableRe
 }
 
 // MARK: - CompanyProfile
+// Used by: SettingsService.listCompanyProfiles(), SettingsService.getCompanyProfile(),
+//          SettingsService.createCompanyProfile(), SettingsService.updateCompanyProfile(),
+//          CompanyProfilesPage (UI state + CRUD)
 
 public struct CompanyProfile: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "company_profiles"
@@ -479,6 +521,7 @@ public struct CompanyProfile: Codable, FetchableRecord, MutablePersistableRecord
 }
 
 // MARK: - NotificationPreference
+// Usage: SCHEMA — Migration + ConflictResolver only. No service or page references the struct type.
 
 public struct NotificationPreference: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "notification_preferences"
@@ -503,6 +546,7 @@ public struct NotificationPreference: Codable, FetchableRecord, MutablePersistab
 }
 
 // MARK: - SupplierContactRating
+// Usage: SCHEMA — Migration + ConflictResolver only. No service or page references the struct type.
 
 public struct SupplierContactRating: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "supplier_contact_ratings"
@@ -529,6 +573,7 @@ public struct SupplierContactRating: Codable, FetchableRecord, MutablePersistabl
 }
 
 // MARK: - POConversation
+// Usage: SCHEMA — Migration + ConflictResolver only. No service or page references the struct type.
 
 public struct POConversation: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "po_conversations"
@@ -555,6 +600,7 @@ public struct POConversation: Codable, FetchableRecord, MutablePersistableRecord
 }
 
 // MARK: - POGroup
+// Usage: SCHEMA — Migration + ConflictResolver only. No service or page references the struct type.
 
 public struct POGroup: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "po_groups"
@@ -578,6 +624,7 @@ public struct POGroup: Codable, FetchableRecord, MutablePersistableRecord, Senda
 }
 
 // MARK: - POGroupMember
+// Usage: SCHEMA — Migration + ConflictResolver only. No service or page references the struct type.
 
 public struct POGroupMember: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "po_group_members"
@@ -597,6 +644,7 @@ public struct POGroupMember: Codable, FetchableRecord, MutablePersistableRecord,
 }
 
 // MARK: - JobPreference
+// Usage: SCHEMA — Migration + ConflictResolver only. No service or page references the struct type.
 
 public struct JobPreference: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "job_preferences"
@@ -633,6 +681,7 @@ public struct JobPreference: Codable, FetchableRecord, MutablePersistableRecord,
 }
 
 // MARK: - CategorySupplierPreference
+// Usage: SCHEMA — Migration + ConflictResolver only. No service or page references the struct type.
 
 public struct CategorySupplierPreference: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "category_supplier_preferences"
@@ -656,6 +705,7 @@ public struct CategorySupplierPreference: Codable, FetchableRecord, MutablePersi
 }
 
 // MARK: - JobSupplierPreference
+// Usage: SCHEMA — Migration + ConflictResolver only. No service or page references the struct type.
 
 public struct JobSupplierPreference: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
     public static let databaseTableName = "job_supplier_preferences"

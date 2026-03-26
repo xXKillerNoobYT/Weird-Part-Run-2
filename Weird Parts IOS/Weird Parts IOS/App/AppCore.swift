@@ -40,9 +40,15 @@ final class AppCore: ObservableObject {
     public private(set) var breakService: BreakService?
     public private(set) var jobEstimationService: JobEstimationService?
     public private(set) var dailyReportGenerator: DailyReportGenerator?
+    public private(set) var wishlistService: WishlistService?
+    public private(set) var backgroundTaskService: BackgroundTaskService?
+    public private(set) var aiDispatchService: AIDispatchService?
 
     /// Shared sync manager — all views observe this single instance.
     let syncManager = IOSSyncManager()
+
+    /// Central registry for AI-activated page filters (prompt 62S).
+    public let aiFilterRegistry = AIFilterRegistry()
 
     // MARK: - Lifecycle
 
@@ -106,6 +112,9 @@ final class AppCore: ObservableObject {
                     breaks: BreakService(db: database),
                     jobEstimation: JobEstimationService(db: database),
                     dailyReport: DailyReportGenerator(db: database),
+                    wishlist: WishlistService(db: database),
+                    backgroundTask: BackgroundTaskService(db: database),
+                    aiDispatch: AIDispatchService(db: database),
                     theme: theme,
                     users: users,
                     hasProfile: hasProfile
@@ -131,6 +140,9 @@ final class AppCore: ObservableObject {
             breakService = result.breaks
             jobEstimationService = result.jobEstimation
             dailyReportGenerator = result.dailyReport
+            wishlistService = result.wishlist
+            backgroundTaskService = result.backgroundTask
+            aiDispatchService = result.aiDispatch
 
             if let theme = result.theme {
                 self.theme = theme
@@ -171,18 +183,58 @@ final class AppCore: ObservableObject {
                 }
             }
 
-            // Run companion auto-discovery cycle in the background
-            Task.detached { [partsService] in
+            // Clean up stale background tasks from previous sessions
+            Task.detached { [backgroundTaskService] in
+                _ = try? backgroundTaskService?.cleanupStaleTasks()
+                _ = try? backgroundTaskService?.cleanupOldEntries()
+            }
+
+            // Run companion auto-discovery cycle in the background (logged)
+            Task.detached { [partsService, backgroundTaskService] in
+                let taskId = try? backgroundTaskService?.startTask(
+                    name: "Companion Auto-Discovery",
+                    type: "companion_discovery"
+                )
                 do {
                     try partsService?.runAutoDiscoveryCycle()
+                    if let taskId {
+                        try? backgroundTaskService?.completeTask(
+                            id: taskId,
+                            summary: "Discovery cycle completed"
+                        )
+                    }
                 } catch {
-                    // Non-critical — auto-discovery failures should not affect app operation
+                    if let taskId {
+                        try? backgroundTaskService?.failTask(
+                            id: taskId,
+                            error: error.localizedDescription
+                        )
+                    }
                 }
             }
 
             // Ensure Office chat channel exists (auto-created system channel)
-            Task.detached { [chatService] in
-                try? chatService?.ensureOfficeChannel()
+            Task.detached { [chatService, backgroundTaskService] in
+                let taskId = try? backgroundTaskService?.startTask(
+                    name: "Office Channel Setup",
+                    type: "system_setup"
+                )
+                do {
+                    try chatService?.ensureOfficeChannel()
+                    if let taskId {
+                        try? backgroundTaskService?.completeTask(
+                            id: taskId,
+                            summary: "Office channel ready"
+                        )
+                    }
+                } catch {
+                    if let taskId {
+                        try? backgroundTaskService?.failTask(
+                            id: taskId,
+                            error: error.localizedDescription
+                        )
+                    }
+                }
             }
         } catch {
             loadError = error.localizedDescription
@@ -317,6 +369,9 @@ final class AppCore: ObservableObject {
         breakService = nil
         jobEstimationService = nil
         dailyReportGenerator = nil
+        wishlistService = nil
+        backgroundTaskService = nil
+        aiDispatchService = nil
         db = nil
 
         // 3. Delete the database file

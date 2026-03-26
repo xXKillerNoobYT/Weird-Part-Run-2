@@ -7,8 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		08F2BF702F67B1C100944E97 /* WiredPartCore in Frameworks */ = {isa = PBXBuildFile; productRef = 08F2BF6F2F67B1C100944E97 /* WiredPartCore */; };
-		08F2BF732F67B1EE00944E97 /* WiredPartCore in Frameworks */ = {isa = PBXBuildFile; productRef = 08F2BF722F67B1EE00944E97 /* WiredPartCore */; };
 		08F2BF772F67B2CC00944E97 /* WiredPartCore in Frameworks */ = {isa = PBXBuildFile; productRef = 08F2BF762F67B2CC00944E97 /* WiredPartCore */; };
 /* End PBXBuildFile section */
 
@@ -58,9 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				08F2BF732F67B1EE00944E97 /* WiredPartCore in Frameworks */,
 				08F2BF772F67B2CC00944E97 /* WiredPartCore in Frameworks */,
-				08F2BF702F67B1C100944E97 /* WiredPartCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -129,8 +125,6 @@
 			);
 			name = "Weird Parts";
 			packageProductDependencies = (
-				08F2BF6F2F67B1C100944E97 /* WiredPartCore */,
-				08F2BF722F67B1EE00944E97 /* WiredPartCore */,
 				08F2BF762F67B2CC00944E97 /* WiredPartCore */,
 			);
 			productName = "Weird Parts IOS";
@@ -657,14 +651,6 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		08F2BF6F2F67B1C100944E97 /* WiredPartCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = WiredPartCore;
-		};
-		08F2BF722F67B1EE00944E97 /* WiredPartCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = WiredPartCore;
-		};
 		08F2BF762F67B2CC00944E97 /* WiredPartCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = WiredPartCore;

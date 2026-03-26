@@ -88,6 +88,7 @@ struct CategoryFormSheet: View {
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Name cannot be empty"])
         }
         guard let service = appCore.partsService else {
+            saveError = "Parts service not available"
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Parts service not available"])
         }
         if let existing = category, let id = existing.id {
@@ -179,6 +180,7 @@ struct StyleFormSheet: View {
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Name cannot be empty"])
         }
         guard let service = appCore.partsService else {
+            saveError = "Parts service not available"
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Parts service not available"])
         }
         if let existing = style, let id = existing.id {
@@ -270,6 +272,7 @@ struct TypeFormSheet: View {
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Name cannot be empty"])
         }
         guard let service = appCore.partsService else {
+            saveError = "Parts service not available"
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Parts service not available"])
         }
         if let existing = type, let id = existing.id {
@@ -508,6 +511,7 @@ struct ColorFormSheet: View {
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Name cannot be empty"])
         }
         guard let service = appCore.partsService else {
+            saveError = "Parts service not available"
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Parts service not available"])
         }
         let hex: String? = hasColor ? hexStringFromColor(selectedColor) : nil
