@@ -144,6 +144,7 @@ struct PartHistoryView: View {
 
     private func loadHistory() {
         guard let service = appCore.partsService else {
+            loadError = "Parts service not available"
             isLoading = false
             return
         }

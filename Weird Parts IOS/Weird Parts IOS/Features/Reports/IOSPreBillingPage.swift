@@ -14,8 +14,13 @@ struct IOSPreBillingPage: View {
     @State private var rows: [ReportsService.PreBillingRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var dateRange: ReportDateRange = .thisPeriod
     @State private var startDate = Calendar.current.date(byAdding: .day, value: -13, to: Date()) ?? Date()
     @State private var endDate = Date()
+    @State private var searchText = ""
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     private var startDateString: String {
         let f = DateFormatter()
@@ -31,7 +36,7 @@ struct IOSPreBillingPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            StandardFilterBar(startDate: $startDate, endDate: $endDate)
+            StandardFilterBar(selectedRange: $dateRange, customStart: $startDate, customEnd: $endDate)
             billingContent
         }
         .navigationTitle("Pre-Billing")
@@ -41,6 +46,21 @@ struct IOSPreBillingPage: View {
             rows: rows.map { [$0.jobName, String(format: "%.1f", $0.regularHours),
                               String(format: "%.1f", $0.overtimeHours)] }
         )
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Pre-Billing Help", sections: [
+                ("What This Page Does", "Summarizes labor hours per job for the selected date range so you can review them before sending invoices. Shows regular and overtime hours side by side for each job."),
+                ("How to Use It", "Set the start and end dates to match your billing period. Review each job's hours. The top cards show totals across all jobs. Use the export button to generate a PDF or CSV for your billing workflow."),
+                ("Tips", "Run this report before finalizing invoices. Compare the totals here against your job estimates to catch any billing surprises early. If hours look wrong, check the Timesheets page for details.")
+            ])
+        }
+        .searchable(text: $searchText, prompt: "Search jobs...")
         .refreshable { loadData() }
         .task { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
@@ -74,7 +94,7 @@ struct IOSPreBillingPage: View {
                 }
 
                 Section("Job Summaries") {
-                    ForEach(rows) { row in
+                    ForEach(filteredRows) { row in
                         billingRow(row)
                     }
                 }
@@ -133,6 +153,13 @@ struct IOSPreBillingPage: View {
     }
 
     // MARK: - Computed
+
+    private var filteredRows: [ReportsService.PreBillingRow] {
+        if searchText.isEmpty { return rows }
+        return rows.filter {
+            $0.jobName.localizedCaseInsensitiveContains(searchText)
+        }
+    }
 
     private var totalRegular: Double { rows.reduce(0) { $0 + $1.regularHours } }
     private var totalOvertime: Double { rows.reduce(0) { $0 + $1.overtimeHours } }

@@ -8,6 +8,8 @@ import WiredPartCore
 struct BillingPayPage: View {
     @EnvironmentObject private var appCore: AppCore
 
+    @State private var activeSheet: ActiveSheet?
+
     // Billing Cycle
     @State private var billingCycleType = "monthly"
     @State private var billingStartDay = 1
@@ -56,12 +58,31 @@ struct BillingPayPage: View {
                 .buttonStyle(.borderedProminent)
             }
         }
+        .navigationTitle("Billing & Pay")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Billing & Pay Help", sections: [
+                ("What This Page Does", "Sets your company's billing cycle and pay period. These control how reports, invoices, and payroll are grouped by date range."),
+                ("How to Use It", "Choose cycle and period types, set the start day of each, then tap Save. The start day determines when each period begins (1-28)."),
+            ])
+        }
         .onAppear { loadSettings() }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
         }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     private func loadSettings() {

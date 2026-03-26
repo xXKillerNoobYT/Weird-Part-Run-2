@@ -15,6 +15,7 @@ struct IOSBreakSettingsPage: View {
 
     // MARK: - State
 
+    @State private var activeSheet: ActiveSheet?
     @State private var isLoading = true
     @State private var errorMessage: String?
     @State private var successMessage: String?
@@ -64,7 +65,25 @@ struct IOSBreakSettingsPage: View {
             }
         }
         .navigationTitle("Break & Lunch")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Break & Lunch Help", sections: [
+                ("What This Page Does", "Configures break and lunch compliance rules. Shows state-required breaks (read-only), company extra breaks (editable), bonus incentives, and a full breakdown of total break allowances."),
+                ("How to Use It", "Select your state to load legal requirements. Adjust company-paid and offered breaks using the steppers. Enable bonuses to reward employees who use break buttons. Tap Save to apply all changes."),
+            ])
+        }
         .task { loadSettings() }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     // MARK: - Form

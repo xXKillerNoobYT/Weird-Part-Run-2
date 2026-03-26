@@ -9,6 +9,7 @@ import WiredPartCore
 /// and MultipeerManager.
 struct BluetoothPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @State private var activeSheet: ActiveSheet?
     @State private var bluetoothEnabled = false
     @State private var discoverable = false
 
@@ -100,9 +101,28 @@ struct BluetoothPage: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .navigationTitle("Bluetooth")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Bluetooth Help", sections: [
+                ("What This Page Does", "Controls Bluetooth and Wi-Fi Direct peer-to-peer sync using Apple Multipeer Connectivity. Enables data exchange between nearby devices without a shop server."),
+                ("How to Use It", "Enable Bluetooth Sync to start, then toggle Discoverable to let other devices find you. Nearby WiredPart devices appear automatically. Tap Sync to exchange data with a discovered peer."),
+            ])
+        }
         .onAppear {
             bluetoothEnabled = UserDefaults.standard.bool(forKey: "bluetooth_sync_enabled")
         }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     // MARK: - Peer Helpers

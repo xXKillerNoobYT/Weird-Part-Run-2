@@ -7,7 +7,12 @@ import WiredPartCore
 /// which will be available when sync infrastructure is implemented.
 struct IOSWarehouseNetworkPage: View {
     @EnvironmentObject private var appCore: AppCore
-    @State private var showHelp = false
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         List {
@@ -59,13 +64,13 @@ struct IOSWarehouseNetworkPage: View {
         .listStyle(.insetGrouped)
         .navigationTitle("Network")
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
-                Button { showHelp = true } label: {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
+        .sheet(item: $activeSheet) { _ in
             PageHelpSheet(
                 title: "Network Help",
                 sections: [

@@ -18,6 +18,7 @@ struct IOSQuestionsPage: View {
     @State private var actionError: String?
     private enum ActiveSheet: String, Identifiable {
         case askQuestion
+        case help
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
@@ -43,12 +44,28 @@ struct IOSQuestionsPage: View {
                     Label("Ask", systemImage: "plus")
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .askQuestion:
                 IOSQAQuestionForm(onSubmitted: { loadData() })
                     .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(
+                    title: "Q&A Help",
+                    sections: [
+                        ("What This Page Does", "The Q&A page is where field workers ask questions and get answers through the escalation chain. Questions start at the worker level and can be escalated up to lead, manager, or office if the person at the current level cannot answer."),
+                        ("How to Use It", "Use the filter cards to see All questions, Open ones, your own questions (My Questions), ones awaiting your input (Needs My Review), or Resolved threads. Tap any question to see its full escalation timeline and add your response."),
+                        ("Asking a Question", "Tap the + button to submit a new question. Pick the job it relates to, type your question, and set the priority (low, normal, high, urgent). Your question enters the escalation chain and the right people get notified."),
+                        ("Escalation Levels", "Questions flow through Worker, Lead, Manager, and Office levels. If someone at your level cannot answer, they escalate it up. If it was sent to the wrong level, it can be pushed back down with feedback."),
+                        ("Tips", "Urgent and high-priority questions are flagged with colored badges so they stand out. Check the status badges to see which questions are open, answered, escalated, or closed. Pull down to refresh the list.")
+                    ]
+                )
             }
         }
         .onChange(of: searchText) { loadData() }
@@ -247,14 +264,9 @@ struct IOSQuestionsPage: View {
             .foregroundStyle(color)
     }
 
+    // TODO: When QAThreadRow gains a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)
     private func priorityBadge(_ priority: String) -> some View {
-        let color: Color = switch priority {
-        case "urgent": .red
-        case "high": .orange
-        case "normal": .blue
-        case "low": .secondary
-        default: .secondary
-        }
+        let color = TimelinePriorityColor.fallbackColor(priority: priority)
         return Text(priority.capitalized)
             .font(.caption2)
             .foregroundStyle(color)

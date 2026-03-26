@@ -12,6 +12,7 @@ struct IOSUpdateProtocolPage: View {
 
     // MARK: - State
 
+    @State private var activeSheet: ActiveSheet?
     @State private var isLoading = true
     @State private var currentVersion = "1.0.0"
     @State private var buildNumber = "1"
@@ -43,7 +44,25 @@ struct IOSUpdateProtocolPage: View {
             }
         }
         .navigationTitle("Updates")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Updates Help", sections: [
+                ("What This Page Does", "Shows the current app version, checks for available updates, and lets you choose an update channel (stable, beta, or nightly)."),
+                ("How to Use It", "Tap 'Check for Updates' to see if a new version is available. Select an update channel to control which releases you receive. Updates are delivered from the shop server via the bootstrap process."),
+            ])
+        }
         .task { loadData() }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     // MARK: - Current Version

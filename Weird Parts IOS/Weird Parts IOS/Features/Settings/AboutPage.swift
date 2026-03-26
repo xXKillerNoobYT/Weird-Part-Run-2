@@ -4,6 +4,7 @@ import WiredPartCore
 /// About page showing app version, core version, and system info.
 struct AboutPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @State private var activeSheet: ActiveSheet?
 
     var body: some View {
         Form {
@@ -29,6 +30,25 @@ struct AboutPage: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .navigationTitle("About")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "About Help", sections: [
+                ("What This Page Does", "Displays app version, core library version, database location, device information, and legal notices."),
+                ("How to Use It", "Use this page to verify which version of the app and core library are running. Share device and version info when reporting issues."),
+            ])
+        }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     private var platformName: String {

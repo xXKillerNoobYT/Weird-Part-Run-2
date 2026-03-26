@@ -31,12 +31,14 @@ struct IOSMyTruckPage: View {
         case logFuel
         case reportIssue
         case addTransferItem
+        case help
 
         var id: String {
             switch self {
             case .logFuel: return "logFuel"
             case .reportIssue: return "reportIssue"
             case .addTransferItem: return "addTransferItem"
+            case .help: return "help"
             }
         }
     }
@@ -59,6 +61,13 @@ struct IOSMyTruckPage: View {
         .navigationTitle("My Truck")
         .refreshable { loadData() }
         .task { loadData() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(sheet)
         }
@@ -401,6 +410,20 @@ struct IOSMyTruckPage: View {
                 }
             )
             .environmentObject(appCore)
+
+        case .help:
+            PageHelpSheet(
+                title: "My Truck Help",
+                sections: [
+                    ("Overview", "My Truck is your personal vehicle dashboard. It shows the vehicle assigned to you with key stats, inventory, quick actions, attached trailer info, and recent mileage and fuel logs."),
+                    ("Smart Cards", "The colored cards at the top show counts for tools on your truck, spare parts loaded, fuel tank level, maintenance items due, and transfer items in transit. Red or orange colors indicate something needs attention."),
+                    ("Quick Actions", "Use Log Fuel to record a fill-up, Report Issue to flag a vehicle problem to fleet management, and Add Part to add a transfer item to your truck."),
+                    ("Inventory", "Switch between Truck Stock (parts that stay on your truck) and Transfer (items being moved between locations). Progress bars show how your stock levels compare to targets."),
+                    ("Trailer", "If a trailer is attached to your vehicle, it appears in the Trailer section. Tap the row to see trailer details."),
+                    ("No Vehicle?", "If you see 'No Vehicle Assigned,' contact your supervisor to get a vehicle assigned to your account."),
+                    ("Tips", "Pull down to refresh all data. Keep your fuel level and mileage updated regularly. Use the Report Issue button immediately when you notice a vehicle problem — do not wait.")
+                ]
+            )
         }
     }
 

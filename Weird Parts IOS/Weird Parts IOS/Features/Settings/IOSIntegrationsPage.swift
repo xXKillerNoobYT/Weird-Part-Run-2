@@ -11,6 +11,7 @@ struct IOSIntegrationsPage: View {
 
     // MARK: - State
 
+    @State private var activeSheet: ActiveSheet?
     @State private var isLoading = true
     @State private var integrations: [Integration] = []
     @State private var errorMessage: String?
@@ -50,7 +51,25 @@ struct IOSIntegrationsPage: View {
             }
         }
         .navigationTitle("Integrations")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Integrations Help", sections: [
+                ("What This Page Does", "Lists available third-party integrations and their current status. Toggle integrations on or off from any device in the network."),
+                ("How to Use It", "Enable or disable integrations using the toggles. API keys and credentials are configured on the desktop application. Sync runs automatically when an integration is enabled."),
+            ])
+        }
         .task { loadData() }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     // MARK: - Integration Row

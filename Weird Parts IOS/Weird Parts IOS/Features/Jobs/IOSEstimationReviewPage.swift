@@ -74,6 +74,9 @@ struct IOSEstimationReviewPage: View {
             }
         }
         .navigationTitle("Estimation Reviews")
+        .refreshable {
+            await loadData()
+        }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .weekly:
@@ -82,6 +85,7 @@ struct IOSEstimationReviewPage: View {
                 EndOfJobReviewSheet(jobId: jobId) { await loadData() }
             }
         }
+        .refreshable { await loadData() }
         .task { await loadData() }
     }
 
@@ -213,7 +217,10 @@ private struct WeeklyReviewSheet: View {
 
     private func save() async {
         guard let svc = appCore.jobEstimationService,
-              let userId = appCore.currentUser?.id else { return }
+              let userId = appCore.currentUser?.id else {
+            saveError = "Estimation service not available"
+            return
+        }
         isSaving = true
         do {
             try svc.submitWeeklyReview(

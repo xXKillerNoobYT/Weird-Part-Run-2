@@ -12,7 +12,7 @@ struct IOSDispatchPreferencesPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var saveError: String?
-    @State private var showHelp = false
+    @State private var activeSheet: ActiveSheet?
 
     // AI Dispatch
     @State private var enableAISuggestions = true
@@ -32,6 +32,11 @@ struct IOSDispatchPreferencesPage: View {
     @State private var defaultView: String = "week"
     @State private var crewHistoryMonths: Int = 3
     @State private var crewContinuityWeight: String = "medium"
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     private let viewOptions = ["day", "week", "month"]
     private let viewLabels: [String: String] = ["day": "Day", "week": "Week", "month": "Month"]
@@ -53,30 +58,18 @@ struct IOSDispatchPreferencesPage: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showHelp = true } label: {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
-            NavigationStack {
-                List {
-                    Section("About Dispatch Preferences") {
-                        Text("Configure how the dispatch system suggests assignments and manages the job pipeline.")
-                    }
-                    Section("AI Dispatch") {
-                        Text("AI suggestions use worker skills, team history, travel distance, and job requirements to recommend optimal assignments.")
-                    }
-                    Section("Flex Pool") {
-                        Text("The flex pool allows unassigned workers to self-assign to available jobs. Manager approval can gate the process.")
-                    }
-                    Section("Pipeline Targets") {
-                        Text("Targets are the minimum number of jobs you want in each pipeline stage. The system warns when you're below target.")
-                    }
-                }
-                .navigationTitle("Dispatch Help")
-                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { showHelp = false } } }
-            }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Dispatch Help", sections: [
+                ("About Dispatch Preferences", "Configure how the dispatch system suggests assignments and manages the job pipeline."),
+                ("AI Dispatch", "AI suggestions use worker skills, team history, travel distance, and job requirements to recommend optimal assignments."),
+                ("Flex Pool", "The flex pool allows unassigned workers to self-assign to available jobs. Manager approval can gate the process."),
+                ("Pipeline Targets", "Targets are the minimum number of jobs you want in each pipeline stage. The system warns when you're below target."),
+            ])
         }
         .task { loadSettings() }
     }

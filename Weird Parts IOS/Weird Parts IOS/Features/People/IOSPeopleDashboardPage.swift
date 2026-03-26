@@ -14,6 +14,12 @@ struct IOSPeopleDashboardPage: View {
     @State private var paymentTrackingEnabled = false
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         Group {
@@ -29,6 +35,24 @@ struct IOSPeopleDashboardPage: View {
         .navigationTitle("People")
         .task { loadData() }
         .refreshable { loadData() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "People Dashboard Help",
+                sections: [
+                    ("What This Page Does", "The People Dashboard gives you a real-time overview of your workforce. See who is clocked in, who is off today, which certifications are expiring, and which teams are assigned to jobs."),
+                    ("How to Use It", "The smart cards at the top summarize key numbers at a glance. Scroll down to see details for each section: Working Now shows live clock-in status, Off Today lists scheduled absences, and Certifications Expiring Soon flags upcoming renewals. Team Assignments Today shows which teams are dispatched."),
+                    ("Payment Alerts", "When payment tracking is enabled, overdue customer invoices appear at the bottom with the amount and number of days overdue."),
+                    ("Tips", "Pull down to refresh the dashboard with the latest data. Tap into other People pages from the navigation menu to manage employees, customers, contractors, teams, and contacts.")
+                ]
+            )
+        }
     }
 
     // MARK: - Dashboard Content

@@ -13,7 +13,9 @@ struct PartsCategoriesPage: View {
     @State private var selection: TreeSelection?
     @State private var isLoading = true
     @State private var loadError: String?
-    @State private var showHelp = false
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     var body: some View {
         Group {
@@ -32,13 +34,13 @@ struct PartsCategoriesPage: View {
         }
         .background(DS.Background.page)
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
-                Button { showHelp = true } label: {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
+        .sheet(item: $activeSheet) { _ in
             PageHelpSheet(
                 title: "Categories Help",
                 sections: [

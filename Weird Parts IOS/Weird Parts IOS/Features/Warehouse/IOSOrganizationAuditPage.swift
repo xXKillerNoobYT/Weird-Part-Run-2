@@ -66,7 +66,7 @@ struct IOSOrganizationAuditPage: View {
         .navigationTitle("Organization Audit")
         .searchable(text: $searchText, prompt: "Search areas...")
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }

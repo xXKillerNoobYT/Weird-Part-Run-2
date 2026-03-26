@@ -18,28 +18,54 @@ struct IOSJobDetailPage: View {
     @State private var laborSummary: JobsService.LaborSummary?
     @State private var isLoading = true
     @State private var loadError: String?
-    @State private var showHelp = false
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        case weeklyReview
+
+        var id: String {
+            switch self {
+            case .help: "help"
+            case .weeklyReview: "weeklyReview"
+            }
+        }
+    }
 
     var body: some View {
         detailContent
             .navigationTitle(job?.jobName ?? "Job Detail")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .secondaryAction) {
-                    Button { showHelp = true } label: {
-                        Image(systemName: "questionmark.circle")
+                ToolbarItem(placement: .primaryAction) {
+                    HStack(spacing: 12) {
+                        Button { activeSheet = .weeklyReview } label: {
+                            Image(systemName: "calendar.badge.clock")
+                        }
+                        Button { activeSheet = .help } label: {
+                            Image(systemName: "questionmark.circle")
+                        }
                     }
                 }
             }
-            .sheet(isPresented: $showHelp) {
-                PageHelpSheet(
-                    title: "Job Detail Help",
-                    sections: [
-                        ("Overview", "Full details for this job including status, priority, customer, address, dates, and notes."),
-                        ("Team & Labor", "See assigned team members and a summary of labor hours logged against this job."),
-                        ("Actions", "Pull down to refresh. Use the tab view for deeper access to team, labor, parts, and orders.")
-                    ]
-                )
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .help:
+                    PageHelpSheet(
+                        title: "Job Detail Help",
+                        sections: [
+                            ("Overview", "Full details for this job including status, priority, customer, address, dates, and notes."),
+                            ("Team & Labor", "See assigned team members and a summary of labor hours logged against this job."),
+                            ("Weekly Review", "Tap the calendar icon to submit a weekly work review for this job."),
+                            ("Actions", "Pull down to refresh. Use the tab view for deeper access to team, labor, parts, and orders.")
+                        ]
+                    )
+                case .weeklyReview:
+                    IOSWeeklyReviewSheet(
+                        jobId: jobId,
+                        jobName: job?.jobName ?? "Job \(jobId)"
+                    )
+                }
             }
             .refreshable { loadData() }
             .task { loadData() }
@@ -258,13 +284,8 @@ struct IOSJobDetailPage: View {
     }
 
     private func priorityBadge(_ priority: String) -> some View {
-        let color: Color = switch priority {
-        case "urgent": .red
-        case "high": .orange
-        case "normal": .blue
-        case "low": .secondary
-        default: .secondary
-        }
+        let isCompleted = job?.status == "completed" || job?.status == "cancelled"
+        let color: Color = TimelinePriorityColor.color(priority: priority, dueDateString: job?.dueDate, isCompleted: isCompleted)
         return Text(priority.capitalized)
             .font(.system(.caption2, weight: .semibold))
             .padding(.horizontal, 6)

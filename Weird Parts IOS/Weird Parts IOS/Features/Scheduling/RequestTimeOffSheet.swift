@@ -52,7 +52,10 @@ struct RequestTimeOffSheet: View {
 
     private func submitRequest() {
         guard let service = appCore.schedulingService,
-              let userId = appCore.currentUser?.id else { return }
+              let userId = appCore.currentUser?.id else {
+            saveError = "Scheduling service not available"
+            return
+        }
         isSaving = true
         saveError = nil
         let fmt = DateFormatter()

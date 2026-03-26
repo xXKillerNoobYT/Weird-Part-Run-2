@@ -9,6 +9,12 @@ struct IOSTrailerLocationsPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,6 +37,24 @@ struct IOSTrailerLocationsPage: View {
         .searchable(text: $searchText, prompt: "Search trailers...")
         .refreshable { loadData() }
         .task { loadData() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Trailer Locations Help",
+                sections: [
+                    ("Overview", "This page shows where every trailer in the fleet is located right now. Trailers are grouped into two sections: those currently at job sites and those in the yard or unassigned."),
+                    ("At Job Sites", "Trailers assigned to a job appear under the At Job Sites section with the job name and the tow vehicle shown. This helps dispatchers know which trailers are deployed."),
+                    ("Yard / Unassigned", "Trailers not currently on a job appear in this section. These are available for assignment to upcoming jobs or maintenance."),
+                    ("Tips", "Use the search bar to find a trailer by number, type, job name, or tow vehicle. Pull down to refresh locations. If a trailer shows the wrong location, update it from the trailer detail page.")
+                ]
+            )
+        }
     }
 
     private var trailerList: some View {

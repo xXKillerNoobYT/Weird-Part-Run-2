@@ -12,7 +12,7 @@ struct OrdersRouter: View {
         case "orders-procurement": IOSProcurementPage()
         case "orders-parts": IOSPartsOrderManagementPage()
         case "orders-staging": IOSOrderStagingPage()
-        case "orders-approvals": IOSApprovalsPage()
+        case "orders-approvals": IOSUnifiedApprovalsPage()
         case "orders-returns": IOSReturnsPage()
         case "orders-wishlist": IOSWishlistPage()
         default: ErrorStateView(message: "Unknown orders page: \(tabId)") { }

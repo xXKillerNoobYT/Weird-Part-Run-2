@@ -48,7 +48,10 @@ struct IOSQuestionnairePage: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Skip") { dismiss() }
+                        // Hide Skip when required questions remain unanswered
+                        if !hasUnansweredRequired {
+                            Button("Skip") { dismiss() }
+                        }
                     }
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Submit") { submitResponses() }
@@ -107,6 +110,14 @@ struct IOSQuestionnairePage: View {
                             }
 
                             answerField(for: question)
+
+                            // Per-question validation error for unanswered required fields
+                            if question.isRequired &&
+                               (answers[question.questionId] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Label("This question is required", systemImage: "exclamationmark.circle")
+                                    .font(.caption2)
+                                    .foregroundStyle(.red)
+                            }
                         }
                         .padding(.vertical, 4)
                     }
@@ -253,14 +264,16 @@ struct IOSQuestionnairePage: View {
 
     // MARK: - Validation
 
-    private var allRequiredAnswered: Bool {
-        for question in questions where question.isRequired {
-            let answer = answers[question.questionId] ?? ""
-            if answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return false
-            }
+    /// True when at least one required question has no answer yet.
+    private var hasUnansweredRequired: Bool {
+        questions.contains { question in
+            question.isRequired &&
+            (answers[question.questionId] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
-        return true
+    }
+
+    private var allRequiredAnswered: Bool {
+        !hasUnansweredRequired
     }
 
     // MARK: - Actions
@@ -311,7 +324,10 @@ struct IOSQuestionnairePage: View {
     /// - "Forgot" or "Partial" → report missed breaks to office
     private func handleBreakVerification() {
         guard let breakSvc = appCore.breakService,
-              let userId = appCore.currentUser?.id else { return }
+              let userId = appCore.currentUser?.id else {
+            errorMessage = "Break service not available"
+            return
+        }
 
         switch breakVerification {
         case .allTaken:

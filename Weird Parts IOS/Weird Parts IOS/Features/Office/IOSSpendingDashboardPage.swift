@@ -8,17 +8,31 @@ import WiredPartCore
 struct IOSSpendingDashboardPage: View {
     @EnvironmentObject private var appCore: AppCore
 
+    // MARK: - ActiveSheet
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
+
+    @State private var activeSheet: ActiveSheet?
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+    @State private var customEnd: Date = Date()
     @State private var isLoading = true
     @State private var loadError: String?
-    @State private var showHelp = false
     @State private var totalJobs = 0
     @State private var totalPartsCost: Double = 0
     @State private var totalLaborHours: Double = 0
     @State private var activeJobCount = 0
 
+    private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
+    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
+                StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
                 // Summary Cards
                 LazyVGrid(columns: [
                     GridItem(.flexible()),
@@ -58,24 +72,30 @@ struct IOSSpendingDashboardPage: View {
         }
         .navigationTitle("Spending Dashboard")
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
-                Button { showHelp = true } label: {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
-            PageHelpSheet(
-                title: "Spending Dashboard Help",
-                sections: [
-                    ("Overview", "Aggregate spending data across all jobs. See total parts costs, labor costs, and budget utilization at a glance."),
-                    ("Breakdown", "Cards show spending by category. Tap for detailed breakdowns by job, supplier, or time period."),
-                    ("Permissions", "This page requires the 'show dollar values' permission. Contact your admin if you cannot see cost data.")
-                ]
-            )
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                PageHelpSheet(
+                    title: "Spending Dashboard Help",
+                    sections: [
+                        ("Overview", "Aggregate spending data across all jobs. See total parts costs, labor costs, and budget utilization at a glance."),
+                        ("Breakdown", "Cards show spending by category. Tap for detailed breakdowns by job, supplier, or time period."),
+                        ("Permissions", "This page requires the 'show dollar values' permission. Contact your admin if you cannot see cost data.")
+                    ]
+                )
+            }
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onChange(of: dateRange) { loadData() }
+        .onChange(of: customStart) { loadData() }
+        .onChange(of: customEnd) { loadData() }
         .overlay {
             if isLoading {
                 ProgressView()

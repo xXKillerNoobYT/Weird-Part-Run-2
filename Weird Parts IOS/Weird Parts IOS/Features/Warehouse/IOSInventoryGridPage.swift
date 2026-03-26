@@ -18,9 +18,14 @@ struct IOSInventoryGridPage: View {
     @State private var selectedLocationId: Int64 = 1
     @State private var selectedFilter: StockFilter?
     @State private var actionError: String?
-    @State private var showHelp = false
+    @State private var activeSheet: ActiveSheet?
     @AppStorage("lastInventoryLocationType") private var lastLocationType = "warehouse"
     @AppStorage("lastInventoryLocationId") private var lastLocationId: Int = 1
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     private struct LocationOption: Identifiable, Hashable {
         let locationType: String
@@ -74,13 +79,13 @@ struct IOSInventoryGridPage: View {
         .navigationTitle("Inventory")
         .searchable(text: $searchText, prompt: "Search parts...")
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
-                Button { showHelp = true } label: {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
+        .sheet(item: $activeSheet) { _ in
             PageHelpSheet(
                 title: "Inventory Help",
                 sections: [
@@ -91,6 +96,18 @@ struct IOSInventoryGridPage: View {
             )
         }
         .refreshable { loadData() }
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .inventoryGridPageActive,
+                object: nil,
+                userInfo: [
+                    "context": "Inventory Grid: \(items.count) items at \(selectedLocationType) #\(selectedLocationId), filter: \(selectedFilter?.rawValue ?? "none")."
+                ]
+            )
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .inventoryGridPageInactive, object: nil)
+        }
         .alert("Error", isPresented: .constant(actionError != nil)) {
             Button("OK") { actionError = nil }
         } message: {
@@ -336,7 +353,8 @@ struct IOSInventoryGridPage: View {
 
     private func loadLocations() {
         guard let service = appCore.warehouseService else {
-            // Service not ready
+            loadError = "Warehouse service not available"
+            isLoading = false
             return
         }
         do {

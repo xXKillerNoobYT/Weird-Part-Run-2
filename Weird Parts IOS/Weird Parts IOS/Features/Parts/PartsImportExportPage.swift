@@ -102,7 +102,7 @@ struct PartsImportExportPage: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
@@ -416,6 +416,7 @@ struct PartsImportExportPage: View {
         exportStatus = .exporting
         do {
             guard let service = appCore.partsService else {
+                loadError = "Parts service not available"
                 await MainActor.run { exportStatus = .error("Service not available") }
                 return
             }
@@ -469,6 +470,7 @@ struct PartsImportExportPage: View {
             let brandIdx = headers.firstIndex(of: "brand")
 
             guard let service = appCore.partsService else {
+                loadError = "Parts service not available"
                 await MainActor.run { importStatus = .error("Parts service not available") }
                 return
             }

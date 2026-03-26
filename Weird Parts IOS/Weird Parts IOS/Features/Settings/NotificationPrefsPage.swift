@@ -8,6 +8,7 @@ import WiredPartCore
 /// placeholder that shows the planned notification categories.
 struct NotificationPrefsPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @State private var activeSheet: ActiveSheet?
     @State private var orderAlerts = true
     @State private var certExpiry = true
     @State private var vehicleAlerts = true
@@ -49,12 +50,31 @@ struct NotificationPrefsPage: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .navigationTitle("Notifications")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Notifications Help", sections: [
+                ("What This Page Does", "Controls which alert categories you receive and whether notification sounds are enabled. Categories include order status, certification expiry, vehicle maintenance, and sync status."),
+                ("How to Use It", "Toggle each category on or off, then tap Save Preferences. Notification preferences are stored locally on this device."),
+            ])
+        }
         .onAppear { loadPrefs() }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
         }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     private func loadPrefs() {

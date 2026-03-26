@@ -7,6 +7,7 @@ import WiredPartCore
 /// stale data threshold, and archive days via SettingsService.
 struct AppConfigPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @State private var activeSheet: ActiveSheet?
     @State private var autoLockMinutes = "15"
     @State private var staleDataHours = "4"
     @State private var archiveDays = "90"
@@ -90,12 +91,31 @@ struct AppConfigPage: View {
                 .buttonStyle(.borderedProminent)
             }
         }
+        .navigationTitle("App Config")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "App Config Help", sections: [
+                ("What This Page Does", "General application configuration including auto-lock timeout, stale data warnings, archive retention, warranty defaults, and payment tracking settings."),
+                ("How to Use It", "Adjust values for each setting and tap Save. Auto-lock controls how long before the app locks. Stale data warning triggers when sync data is old. Payment tracking enables invoice and payment monitoring per customer."),
+            ])
+        }
         .onAppear { loadConfig() }
         .alert("Error", isPresented: Binding(get: { loadError != nil || actionError != nil }, set: { if !$0 { loadError = nil; actionError = nil } })) {
             Button("OK") { loadError = nil; actionError = nil }
         } message: {
             Text(loadError ?? actionError ?? "")
         }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     private func loadConfig() {

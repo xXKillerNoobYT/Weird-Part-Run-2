@@ -479,6 +479,16 @@ struct HelpContentRegistry {
             ]
         ),
 
+        HelpEntry(
+            pageId: "office-approvals",
+            title: "Unified Approvals Help",
+            sections: [
+                ("What This Page Does", "Shows all items waiting for manager approval in one place. This includes JPO requests from field workers, scheduled part deletions, time-off requests, and tool edit verifications."),
+                ("How to Use It", "Use the filter cards at the top to narrow by type (JPOs, Deletions, Time-Off, Tool Edits). Search by name or requester. For each item, tap Approve or Reject. Rejections require a reason that gets sent back to the requester."),
+                ("Tips", "Pull down to refresh the list. Items disappear from this page once approved or rejected. If you reject a JPO, the field worker gets notified with your reason so they can revise and resubmit. This same page is accessible from both Office > Approvals and Orders > Approvals."),
+            ]
+        ),
+
         // ── REPORTS ───────────────────────────────────────────────────────
 
         HelpEntry(

@@ -28,6 +28,14 @@ struct IOSJobDetailTabView: View {
     @State private var jobSupplierChannels: [ChatService.SupplierChannelRow] = []
     @State private var showCreateSupplierChannel = false
     @State private var tabError: String?
+    /// Job stages with computed statuses (Rough-in, Prep/Makeup, Trim-out).
+    @State private var jobStages: [JobsService.JobStageStatus] = []
+
+    // AI Summary
+    @State private var aiSummary: String?
+    @State private var aiSummaryLoadedAt: Date?
+    @State private var isLoadingAISummary = false
+    private let aiService = FoundationModelsService()
 
     private let tabs: [(id: String, label: String, icon: String)] = [
         ("overview", "Overview", "doc.text"),
@@ -90,7 +98,7 @@ struct IOSJobDetailTabView: View {
                 }
                 .requiresPermission("manage_jobs")
             }
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
@@ -114,6 +122,7 @@ struct IOSJobDetailTabView: View {
                 }
             }
         }
+        .refreshable { loadData() }
         .task { loadData() }
     }
 
@@ -235,6 +244,25 @@ struct IOSJobDetailTabView: View {
                 }
             }
 
+            // Work Stage Progression (Rough-in / Prep/Makeup / Trim-out)
+            if !jobStages.isEmpty {
+                Section {
+                    JobStageProgressBar(stages: jobStages, compact: false)
+                        .padding(.vertical, 4)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                } header: {
+                    Text("Work Stage")
+                }
+            }
+
+            // Lifecycle Progression (Lead -> Estimated -> Scheduled -> etc.)
+            Section {
+                stageProgressionBar(currentStage: job.status)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            } header: {
+                Text("Lifecycle")
+            }
+
             // Smart Metric Cards
             Section {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -257,6 +285,50 @@ struct IOSJobDetailTabView: View {
                 }
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
+            }
+
+            // AI Summary
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    if isLoadingAISummary {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Generating summary...")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if let summary = aiSummary {
+                        Text(summary)
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+
+                        if let loadedAt = aiSummaryLoadedAt {
+                            Text("Generated \(loadedAt, style: .relative) ago")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    } else {
+                        Button {
+                            Task { await loadAISummary(job) }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "sparkles")
+                                    .foregroundStyle(.purple)
+                                Text("Tap to generate AI summary")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } header: {
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(.purple)
+                    Text("AI Summary")
+                }
             }
 
             // Progress Bars
@@ -307,23 +379,29 @@ struct IOSJobDetailTabView: View {
                 Text("Dates")
             }
 
-            // Quick Actions
+            // Quick Actions (3-column grid)
             Section {
-                if appCore.hasPermission("manage_jobs") {
-                    Button {
-                        activeSheet = .editJob
-                    } label: {
-                        Label("Edit Job", systemImage: "pencil")
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+                    quickAction("Clock In", icon: "clock.badge.checkmark", color: .green) {
+                        selectedTab = "labor"
+                    }
+                    quickAction("Order Parts", icon: "cart.badge.plus", color: .blue) {
+                        selectedTab = "orders"
+                    }
+                    quickAction("Add Note", icon: "note.text.badge.plus", color: .orange) {
+                        selectedTab = "notebooks"
+                    }
+                    quickAction("Ask Q&A", icon: "questionmark.bubble", color: .purple) {
+                        selectedTab = "qa"
+                    }
+                    quickAction("View Costs", icon: "dollarsign.circle", color: .green) {
+                        selectedTab = "costs"
+                    }
+                    quickAction("Team", icon: "person.2", color: .indigo) {
+                        selectedTab = "team"
                     }
                 }
-                if job.status != "payment_hold" {
-                    NavigationLink {
-                        IOSClockPage()
-                            .environmentObject(appCore)
-                    } label: {
-                        Label("Go to Clock", systemImage: "clock")
-                    }
-                }
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             } header: {
                 Text("Quick Actions")
             }
@@ -363,9 +441,38 @@ struct IOSJobDetailTabView: View {
             if appCore.hasPermission("view_job_financials") {
                 Section {
                     let laborCost = job.laborHours * (job.billingRate ?? 0)
+
+                    LabeledContent("Parts Cost", value: formatCurrency(job.partsCost))
                     LabeledContent("Labor Cost", value: formatCurrency(laborCost))
-                    LabeledContent("Materials Cost", value: formatCurrency(job.partsCost))
-                    LabeledContent("Total Cost", value: formatCurrency(laborCost + job.partsCost))
+
+                    Divider()
+
+                    LabeledContent {
+                        Text(formatCurrency(laborCost + job.partsCost))
+                            .fontWeight(.semibold)
+                    } label: {
+                        Text("Total Cost")
+                            .fontWeight(.semibold)
+                    }
+
+                    // Budget Usage progress bar
+                    if let budget = job.budgetLimit, budget > 0 {
+                        let totalCost = laborCost + job.partsCost
+                        let usageRatio = totalCost / budget
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Budget Usage")
+                                    .font(.caption)
+                                Spacer()
+                                Text("\(Int(min(usageRatio, 1.0) * 100))%")
+                                    .font(.caption)
+                                    .monospacedDigit()
+                                    .foregroundStyle(usageRatio > 1.0 ? .red : .primary)
+                            }
+                            ProgressView(value: min(usageRatio, 1.0))
+                                .tint(usageRatio > 1.0 ? .red : usageRatio > 0.8 ? .orange : .green)
+                        }
+                    }
                 } header: {
                     Text("Financial Summary")
                 }
@@ -865,6 +972,8 @@ struct IOSJobDetailTabView: View {
         loadError = nil
         do {
             job = try service.getJob(id: jobId)
+            // Load job stages with computed statuses
+            jobStages = try service.listJobStages(forJobId: jobId)
         } catch {
             loadError = error.localizedDescription
         }
@@ -935,6 +1044,161 @@ struct IOSJobDetailTabView: View {
         }
     }
 
+    // MARK: - Overview Helpers
+
+    /// Stage progression bar with dot indicators for each lifecycle stage.
+    private func stageProgressionBar(currentStage: String) -> some View {
+        let stages: [(id: String, label: String)] = [
+            ("lead", "Lead"),
+            ("estimated", "Estimated"),
+            ("scheduled", "Scheduled"),
+            ("in_progress", "In Progress"),
+            ("complete", "Complete"),
+            ("invoiced", "Invoiced"),
+            ("paid", "Paid"),
+        ]
+
+        // Map job status to the closest stage for progression
+        let stageMapping: [String: String] = [
+            "lead": "lead",
+            "estimated": "estimated",
+            "scheduled": "scheduled",
+            "active": "in_progress",
+            "in_progress": "in_progress",
+            "completed": "complete",
+            "complete": "complete",
+            "invoiced": "invoiced",
+            "paid": "paid",
+            // Non-linear statuses map to their last known progression
+            "on_hold": "in_progress",
+            "payment_hold": "complete",
+            "warranty": "complete",
+            "cancelled": "lead",
+            "continuous": "in_progress",
+        ]
+
+        let mappedStage = stageMapping[currentStage] ?? "lead"
+        let currentIndex = stages.firstIndex(where: { $0.id == mappedStage }) ?? 0
+
+        return VStack(spacing: 6) {
+            // Progress bar with dots
+            GeometryReader { geo in
+                let dotCount = stages.count
+                let spacing = geo.size.width / CGFloat(dotCount - 1)
+
+                ZStack(alignment: .leading) {
+                    // Background track
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.2))
+                        .frame(height: 4)
+
+                    // Filled track
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: spacing * CGFloat(currentIndex), height: 4)
+
+                    // Dot indicators
+                    ForEach(0..<dotCount, id: \.self) { i in
+                        let isCompleted = i <= currentIndex
+                        let isCurrent = i == currentIndex
+
+                        Circle()
+                            .fill(isCompleted ? Color.accentColor : Color.secondary.opacity(0.3))
+                            .frame(width: isCurrent ? 14 : 10, height: isCurrent ? 14 : 10)
+                            .overlay {
+                                if isCurrent {
+                                    Circle()
+                                        .stroke(Color.accentColor.opacity(0.3), lineWidth: 2)
+                                        .frame(width: 18, height: 18)
+                                }
+                            }
+                            .position(x: spacing * CGFloat(i), y: 2)
+                    }
+                }
+            }
+            .frame(height: 20)
+
+            // Stage labels
+            HStack {
+                ForEach(Array(stages.enumerated()), id: \.element.id) { i, stage in
+                    Text(stage.label)
+                        .font(.system(size: 8))
+                        .foregroundStyle(i <= currentIndex ? .primary : .tertiary)
+                        .fontWeight(i == currentIndex ? .bold : .regular)
+                        .frame(maxWidth: .infinity)
+                        .multilineTextAlignment(.center)
+                }
+            }
+        }
+    }
+
+    /// Quick action button for the 3-column grid.
+    private func quickAction(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .foregroundStyle(color)
+                    .frame(width: 36, height: 36)
+                    .background(color.opacity(0.12))
+                    .clipShape(Circle())
+                Text(title)
+                    .font(.caption2)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Load an AI-generated summary for the job overview, cached for 1 hour.
+    private func loadAISummary(_ job: JobsService.JobDetail) async {
+        // Check cache: reuse if loaded within the last hour
+        if let loadedAt = aiSummaryLoadedAt,
+           Date().timeIntervalSince(loadedAt) < 3600,
+           aiSummary != nil {
+            return
+        }
+
+        isLoadingAISummary = true
+
+        let context: [String: String] = [
+            "job_name": job.jobName,
+            "job_number": job.jobNumber,
+            "status": job.status,
+            "priority": job.priority,
+            "type": job.jobType,
+            "customer": job.customerName ?? "N/A",
+            "team_size": "\(job.teamCount) members",
+            "labor_hours": String(format: "%.1f hours", job.laborHours),
+            "estimated_hours": job.estimatedHours.map { String(format: "%.1f hours", $0) } ?? "N/A",
+            "parts_cost": formatCurrency(job.partsCost),
+            "budget": job.budgetLimit.map { formatCurrency($0) } ?? "No budget set",
+            "lead": job.leadUserName ?? "Unassigned",
+            "start_date": job.startDate ?? "Not set",
+            "due_date": job.dueDate ?? "Not set",
+            "notes": job.notes ?? "",
+        ]
+
+        let result = await aiService.generatePreFill(
+            fieldType: "brief job overview summary (2-3 sentences covering status, progress, and anything notable)",
+            contextData: context
+        )
+
+        await MainActor.run {
+            isLoadingAISummary = false
+            if result.success, let text = result.text, !text.isEmpty {
+                aiSummary = text
+                aiSummaryLoadedAt = Date()
+            } else {
+                aiSummary = "Unable to generate summary. AI may not be available on this device."
+                aiSummaryLoadedAt = Date()
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     private func statusColor(_ status: String) -> Color {
@@ -951,13 +1215,8 @@ struct IOSJobDetailTabView: View {
     }
 
     private func priorityColor(_ priority: String) -> Color {
-        switch priority {
-        case "urgent": .red
-        case "high": .orange
-        case "normal": .blue
-        case "low": .secondary
-        default: .secondary
-        }
+        let isCompleted = job?.status == "completed" || job?.status == "cancelled"
+        return TimelinePriorityColor.color(priority: priority, dueDateString: job?.dueDate, isCompleted: isCompleted)
     }
 
     private func formatCurrency(_ value: Double) -> String {

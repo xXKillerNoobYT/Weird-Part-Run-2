@@ -20,6 +20,7 @@ struct IOSReturnsPage: View {
 
     private enum ActiveSheet: Identifiable {
         case createReturn
+        case help
         var id: String { String(describing: self) }
     }
 
@@ -34,12 +35,27 @@ struct IOSReturnsPage: View {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .createReturn } label: { Image(systemName: "plus") }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .createReturn:
                 CreateReturnSheet(onSave: { loadData() })
                     .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(
+                    title: "Returns Help",
+                    sections: [
+                        ("What This Page Does", "Tracks all part returns to suppliers. Returns can be for wrong parts, damaged items, overstock, or unused materials. Each return has a status, supplier, reason, and credit amount."),
+                        ("How to Use It", "Use the filter cards to view by status (Pending, Approved, Shipped, Completed). Search by return type, supplier name, or reason. Tap + to create a new return request."),
+                        ("Return Flow", "Pending -> Approved (supplier accepted the return) -> Shipped (parts sent back) -> Completed (credit received). Each stage updates the credit tracking."),
+                        ("Tips", "The credit amount shows expected refund value in green. Filter by Pending to see returns that need follow-up with suppliers. Pull down to refresh the list.")
+                    ]
+                )
             }
         }
         .onChange(of: searchText) { loadData() }

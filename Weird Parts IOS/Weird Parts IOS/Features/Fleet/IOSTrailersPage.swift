@@ -16,6 +16,12 @@ struct IOSTrailersPage: View {
     @State private var searchText = ""
     @State private var showCreateTrailer = false
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         trailerList
@@ -32,9 +38,26 @@ struct IOSTrailersPage: View {
                     }
                     .requiresPermission("manage_fleet")
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
             }
             .sheet(isPresented: $showCreateTrailer) {
                 IOSCreateTrailerSheet(onSaved: { loadData() })
+            }
+            .sheet(item: $activeSheet) { _ in
+                PageHelpSheet(
+                    title: "Trailers Help",
+                    sections: [
+                        ("Overview", "This page lists all trailers in the fleet. Each row shows the trailer number, type, status, current job assignment, and the vehicle towing it."),
+                        ("Searching", "Use the search bar to filter by trailer number, type, status, job name, or assigned vehicle. Useful when you need to find a specific trailer quickly."),
+                        ("Adding a Trailer", "Tap the + button to add a new trailer to the fleet. You need the manage_fleet permission to create trailers."),
+                        ("Trailer Detail", "Tap any trailer to open its detail page showing inventory, tools, storage units, and location history."),
+                        ("Tips", "Status badges show availability at a glance: green for available, blue for in use, orange for maintenance, and red for retired. Pull down to refresh the list.")
+                    ]
+                )
             }
     }
 

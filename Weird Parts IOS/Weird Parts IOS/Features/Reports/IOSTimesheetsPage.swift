@@ -15,9 +15,13 @@ struct IOSTimesheetsPage: View {
     @State private var rows: [ReportsService.TimesheetRow] = []
     @State private var isLoading = true
     @State private var searchText = ""
+    @State private var dateRange: ReportDateRange = .thisPeriod
     @State private var startDate = Calendar.current.date(byAdding: .day, value: -13, to: Date()) ?? Date()
     @State private var endDate = Date()
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     private var startDateString: String {
         let f = DateFormatter()
@@ -33,7 +37,7 @@ struct IOSTimesheetsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            StandardFilterBar(startDate: $startDate, endDate: $endDate)
+            StandardFilterBar(selectedRange: $dateRange, customStart: $startDate, customEnd: $endDate)
             timesheetList
         }
         .navigationTitle("Timesheets")
@@ -44,6 +48,20 @@ struct IOSTimesheetsPage: View {
                               String(format: "%.1f", $0.overtimeHours),
                               String(format: "%.1f", $0.totalHours), "\($0.daysWorked)"] }
         )
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Timesheets Help", sections: [
+                ("What This Page Does", "Lists every employee's timesheet totals for the selected date range. Shows regular hours, overtime hours, total hours, and how many days each person worked."),
+                ("How to Use It", "Set the start and end dates to match the period you want to review. Use the search bar to find a specific employee. Each row shows their name, hours breakdown, and days worked. Export to PDF or CSV using the toolbar button."),
+                ("Tips", "Run this for each pay period before submitting payroll. If someone's hours seem too low, they may have forgotten to clock in. Compare against daily reports to catch missing entries.")
+            ])
+        }
         .searchable(text: $searchText, prompt: "Search employees...")
         .refreshable { loadData() }
         .task { loadData() }

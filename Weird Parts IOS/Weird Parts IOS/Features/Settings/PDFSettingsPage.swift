@@ -7,6 +7,7 @@ import WiredPartCore
 /// footer text, payment terms, delivery notes) via SettingsService.
 struct PDFSettingsPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @State private var activeSheet: ActiveSheet?
     @State private var accentColor = "#2563eb"
     @State private var showUnitPrices = true
     @State private var showExtended = true
@@ -67,12 +68,31 @@ struct PDFSettingsPage: View {
                 .buttonStyle(.borderedProminent)
             }
         }
+        .navigationTitle("PDF Settings")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "PDF Settings Help", sections: [
+                ("What This Page Does", "Customizes the appearance and content of generated PDF documents such as purchase orders and invoices. Controls accent color, price display, payment terms, and footer text."),
+                ("How to Use It", "Adjust display options, pick an accent color, set payment terms, and enter footer or delivery notes. Tap Save to apply changes to all future PDF exports."),
+            ])
+        }
         .onAppear { loadPDFSettings() }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
         }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     private func loadPDFSettings() {

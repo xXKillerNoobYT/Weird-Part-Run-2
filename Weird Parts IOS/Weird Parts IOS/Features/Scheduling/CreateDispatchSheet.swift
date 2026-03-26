@@ -94,7 +94,10 @@ struct CreateDispatchSheet: View {
     private func saveDispatch() {
         guard let service = appCore.schedulingService,
               let jobId = selectedJobId,
-              let userId = selectedUserId else { return }
+              let userId = selectedUserId else {
+            saveError = "Scheduling service not available"
+            return
+        }
         isSaving = true
         saveError = nil
         do {

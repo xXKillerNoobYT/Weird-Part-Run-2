@@ -181,7 +181,11 @@ struct CategoriesBrandSection: View {
     // MARK: - Data Loading
 
     private func loadBrandData() async {
-        guard let service = appCore.partsService else { isLoading = false; return }
+        guard let service = appCore.partsService else {
+            loadError = "Parts service not available"
+            isLoading = false
+            return
+        }
         do {
             let brands = try service.listBrands()
             let allBrandsList = brands.map(\.brand)

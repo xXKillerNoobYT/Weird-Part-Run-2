@@ -12,6 +12,7 @@ struct IOSBackupsPage: View {
 
     // MARK: - State
 
+    @State private var activeSheet: ActiveSheet?
     @State private var isLoading = true
     @State private var lastBackupTime: String?
     @State private var backupSizeText: String = "Unknown"
@@ -39,12 +40,30 @@ struct IOSBackupsPage: View {
             }
         }
         .navigationTitle("Backups")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Backups Help", sections: [
+                ("What This Page Does", "Manages local database backups. Shows the last backup time, database size, and stored backup count. You can create new backups manually."),
+                ("How to Use It", "Tap 'Create Backup Now' to snapshot the current database. Automatic backups run daily. Up to 7 rolling backups are retained. Database restore must be done from the desktop application."),
+            ])
+        }
         .task { loadData() }
         .alert("Restore Not Available", isPresented: $showRestoreAlert) {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Database restore must be performed from the desktop application to ensure data integrity. Connect this device to the shop server after restoring on desktop.")
         }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     // MARK: - Status Section

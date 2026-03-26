@@ -14,12 +14,15 @@ struct IOSAuditSummaryView: View {
 
     @State private var summary: WarehouseService.AuditSummary?
     @State private var discrepancies: [WarehouseService.AuditDiscrepancy] = []
+    @State private var multiUserSummaries: [WarehouseService.MultiUserAuditPartSummary] = []
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var accuracy: Double = 100.0
     @State private var actionError: String?
     @State private var showFinalizeConfirm = false
     @State private var selectedDiscrepancy: WarehouseService.AuditDiscrepancy?
+    @State private var showResolveConfirm = false
+    @State private var partToResolve: WarehouseService.MultiUserAuditPartSummary?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -44,6 +47,16 @@ struct IOSAuditSummaryView: View {
             Button("OK") { actionError = nil }
         } message: {
             Text(actionError ?? "")
+        }
+        .alert("Resolve Multi-User Audit?", isPresented: $showResolveConfirm) {
+            Button("Cancel", role: .cancel) { }
+            Button("Resolve") { resolveMultiUserAudit() }
+        } message: {
+            if let part = partToResolve, let consensus = part.consensusQuantity {
+                Text("Accept consensus count of \(consensus) for \(part.partName)? This will update the system stock and adjust user ratings.")
+            } else {
+                Text("No consensus reached yet. All assigned users must submit their counts first.")
+            }
         }
         .sheet(item: $selectedDiscrepancy) { disc in
             AdjustDiscrepancySheet(discrepancy: disc) { loadData() }
@@ -105,6 +118,15 @@ struct IOSAuditSummaryView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                }
+            }
+
+            // Multi-user verification section
+            if !multiUserSummaries.isEmpty {
+                Section("Multi-User Verification (\(multiUserSummaries.count))") {
+                    ForEach(multiUserSummaries, id: \.partId) { partSummary in
+                        multiUserAuditRow(partSummary)
+                    }
                 }
             }
 
@@ -198,7 +220,128 @@ struct IOSAuditSummaryView: View {
         .padding(.vertical, 2)
     }
 
+    private func multiUserAuditRow(_ partSummary: WarehouseService.MultiUserAuditPartSummary) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Part header
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(partSummary.partName)
+                        .fontWeight(.medium)
+                    if let bin = partSummary.binLocation, !bin.isEmpty {
+                        Text(bin)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospaced()
+                    }
+                }
+                Spacer()
+                if let expected = partSummary.expectedQuantity {
+                    Text("Expected: \(expected)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            // Individual assignment rows
+            ForEach(partSummary.assignments, id: \.id) { assignment in
+                HStack(spacing: 8) {
+                    // Status indicator
+                    Circle()
+                        .fill(assignmentStatusColor(assignment.status))
+                        .frame(width: 8, height: 8)
+
+                    Text(assignment.assignedUserName ?? "User")
+                        .font(.caption)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if let qty = assignment.countedQuantity {
+                        Text("Count: \(qty)")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                    } else {
+                        Text("Pending")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .italic()
+                    }
+
+                    Text(assignment.status.capitalized)
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule().fill(assignmentStatusColor(assignment.status).opacity(0.15))
+                        )
+                        .foregroundStyle(assignmentStatusColor(assignment.status))
+                }
+            }
+
+            // Consensus / Resolve row
+            HStack {
+                if partSummary.isResolved {
+                    Label("Resolved", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                } else if let consensus = partSummary.consensusQuantity {
+                    Label("Consensus: \(consensus)", systemImage: "person.3.fill")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                    Spacer()
+                    Button {
+                        partToResolve = partSummary
+                        showResolveConfirm = true
+                    } label: {
+                        Text("Resolve")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.mini)
+                } else {
+                    let countedCount = partSummary.assignments.filter { $0.status == "counted" }.count
+                    let totalCount = partSummary.assignments.count
+                    Label("\(countedCount)/\(totalCount) counted — awaiting consensus", systemImage: "clock.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+            }
+            .padding(.top, 2)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func assignmentStatusColor(_ status: String) -> Color {
+        switch status {
+        case "pending": return .orange
+        case "counted": return .blue
+        case "resolved": return .green
+        default: return .secondary
+        }
+    }
+
     // MARK: - Actions
+
+    private func resolveMultiUserAudit() {
+        guard let service = appCore.warehouseService,
+              let part = partToResolve else {
+            actionError = "Service not available"
+            return
+        }
+        do {
+            let result = try service.resolveMultiUserAudit(
+                partId: part.partId,
+                sessionId: sessionId,
+                resolvedBy: appCore.currentUser?.id ?? 0
+            )
+            if result == nil {
+                actionError = "No consensus could be reached. Ensure all users have submitted their counts."
+            }
+            partToResolve = nil
+            loadData()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
 
     private func finalizeAudit() {
         guard let service = appCore.warehouseService else {
@@ -225,6 +368,7 @@ struct IOSAuditSummaryView: View {
             summary = try service.getAuditSummary()
             discrepancies = try service.getAuditDiscrepancies()
             accuracy = try service.getAuditAccuracy()
+            multiUserSummaries = try service.getMultiUserAuditAssignments(sessionId: sessionId)
         } catch {
             loadError = error.localizedDescription
         }

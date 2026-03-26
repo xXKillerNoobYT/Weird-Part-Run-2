@@ -7,14 +7,25 @@ struct IOSLaborOverviewPage: View {
 
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var searchText = ""
     @State private var timesheetRows: [ReportsService.TimesheetRow] = []
     @State private var totalRegular: Double = 0
     @State private var totalOvertime: Double = 0
     @State private var totalHours: Double = 0
     @State private var uniqueWorkers: Int = 0
+    @State private var activeSheet: ActiveSheet?
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+    @State private var customEnd: Date = Date()
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
+
+    private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
+    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
 
     var body: some View {
         VStack(spacing: 0) {
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
             if isLoading {
                 ProgressView("Loading labor data...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -25,6 +36,7 @@ struct IOSLaborOverviewPage: View {
             }
         }
         .navigationTitle("Labor Overview")
+        .searchable(text: $searchText, prompt: "Search employees...")
         .reportExportToolbar(
             title: "Labor_Overview",
             columns: ["Employee", "Regular", "Overtime", "Total", "Days"],
@@ -32,8 +44,32 @@ struct IOSLaborOverviewPage: View {
                                        String(format: "%.1f", $0.overtimeHours),
                                        String(format: "%.1f", $0.totalHours), "\($0.daysWorked)"] }
         )
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Labor Overview Help", sections: [
+                ("What This Page Does", "Gives you a high-level view of labor for the current week. Shows total hours, regular vs overtime, and the number of active workers. Below that, each employee is listed with their individual breakdown."),
+                ("How to Use It", "The top section shows weekly totals. Scroll down to see each employee's regular hours, overtime, and days worked. Pull down to refresh if crews are still clocking in."),
+                ("Tips", "Keep an eye on overtime numbers. If someone is already high mid-week, consider adjusting schedules. This report resets each Monday.")
+            ])
+        }
         .refreshable { loadData() }
         .task { loadData() }
+        .onChange(of: dateRange) { loadData() }
+        .onChange(of: customStart) { loadData() }
+        .onChange(of: customEnd) { loadData() }
+    }
+
+    private var filteredTimesheetRows: [ReportsService.TimesheetRow] {
+        if searchText.isEmpty { return timesheetRows }
+        return timesheetRows.filter {
+            $0.userName.localizedCaseInsensitiveContains(searchText)
+        }
     }
 
     private var laborContent: some View {
@@ -46,12 +82,12 @@ struct IOSLaborOverviewPage: View {
             }
 
             Section("By Employee") {
-                if timesheetRows.isEmpty {
+                if filteredTimesheetRows.isEmpty {
                     Text("No labor entries this week.")
                         .foregroundStyle(.secondary)
                         .font(.caption)
                 } else {
-                    ForEach(timesheetRows) { row in
+                    ForEach(filteredTimesheetRows) { row in
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(row.userName)

@@ -12,7 +12,7 @@ struct IOSToolPoliciesPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var saveError: String?
-    @State private var showHelp = false
+    @State private var activeSheet: ActiveSheet?
 
     // Checkout Limits
     @State private var maxCheckoutDays: Int = 30
@@ -33,6 +33,11 @@ struct IOSToolPoliciesPage: View {
     @State private var tradeTimeoutDays: Int = 7
     @State private var requireTradeCondition = true
 
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
+
     var body: some View {
         Group {
             if isLoading {
@@ -48,33 +53,19 @@ struct IOSToolPoliciesPage: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showHelp = true } label: {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
-            NavigationStack {
-                List {
-                    Section("About Tool Policies") {
-                        Text("Configure how tools are checked out, returned, maintained, and traded between workers.")
-                    }
-                    Section("Checkout Limits") {
-                        Text("Set maximum durations and overdue notifications for tool checkouts. Auto-extend keeps tools checked out while the worker is on the job.")
-                    }
-                    Section("Condition Checks") {
-                        Text("Require workers to report tool condition during checkout, return, and damage events.")
-                    }
-                    Section("Maintenance") {
-                        Text("Schedule automatic maintenance after a number of checkouts or set reminder lead times.")
-                    }
-                    Section("Trades") {
-                        Text("Allow workers to trade tools directly. Trades expire after the timeout period.")
-                    }
-                }
-                .navigationTitle("Tool Policies Help")
-                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { showHelp = false } } }
-            }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Tool Policies Help", sections: [
+                ("About Tool Policies", "Configure how tools are checked out, returned, maintained, and traded between workers."),
+                ("Checkout Limits", "Set maximum durations and overdue notifications for tool checkouts. Auto-extend keeps tools checked out while the worker is on the job."),
+                ("Condition Checks", "Require workers to report tool condition during checkout, return, and damage events."),
+                ("Maintenance", "Schedule automatic maintenance after a number of checkouts or set reminder lead times."),
+                ("Trades", "Allow workers to trade tools directly. Trades expire after the timeout period."),
+            ])
         }
         .task { loadSettings() }
     }

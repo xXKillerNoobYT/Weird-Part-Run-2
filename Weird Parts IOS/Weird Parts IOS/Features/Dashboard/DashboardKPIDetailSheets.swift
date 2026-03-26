@@ -119,6 +119,9 @@ private struct PartTypesDetailView: View {
                 }
             }
         }
+        .refreshable {
+            await loadCategories()
+        }
         .navigationDestination(for: CategoryCount.self) { cat in
             CategoryPartsListView(categoryId: cat.id, categoryName: cat.name)
         }
@@ -183,6 +186,9 @@ private struct CategoryPartsListView: View {
             }
         }
         .navigationTitle(categoryName)
+        .refreshable {
+            await loadParts()
+        }
         .task { await loadParts() }
     }
 
@@ -247,6 +253,9 @@ private struct TotalStockDetailView: View {
                     }
                 }
             }
+        }
+        .refreshable {
+            await loadLocationGroups()
         }
         .navigationDestination(for: LocationGroupSummary.self) { group in
             LocationTypeStockView(locationType: group.locationType, displayName: group.displayName)
@@ -322,6 +331,9 @@ private struct LocationTypeStockView: View {
             }
         }
         .navigationTitle(displayName)
+        .refreshable {
+            await loadItems()
+        }
         .task { await loadItems() }
     }
 
@@ -401,6 +413,9 @@ private struct ActiveJobsDetailView: View {
                 }
             }
         }
+        .refreshable {
+            await loadJobs()
+        }
         .navigationDestination(for: Int64.self) { jobId in
             JobKPIDetailView(jobId: jobId)
         }
@@ -477,6 +492,9 @@ private struct JobKPIDetailView: View {
             }
         }
         .navigationTitle("Job Detail")
+        .refreshable {
+            await loadDetail()
+        }
         .task { await loadDetail() }
     }
 
@@ -557,6 +575,9 @@ private struct PendingOrdersDetailView: View {
                     }
                 }
             }
+        }
+        .refreshable {
+            await loadOrders()
         }
         .navigationDestination(for: Int64.self) { poId in
             POKPIDetailView(poId: poId)
@@ -641,6 +662,9 @@ private struct POKPIDetailView: View {
             }
         }
         .navigationTitle("Order Detail")
+        .refreshable {
+            await loadDetail()
+        }
         .task { await loadDetail() }
     }
 
@@ -726,6 +750,9 @@ private struct LowStockDetailView: View {
                     }
                 }
             }
+        }
+        .refreshable {
+            await loadLowStock()
         }
         .navigationDestination(for: LowStockPart.self) { part in
             LowStockPartDetailView(partId: part.id, partName: part.name)
@@ -818,6 +845,9 @@ private struct LowStockPartDetailView: View {
             }
         }
         .navigationTitle(partName)
+        .refreshable {
+            await loadDetail()
+        }
         .task { await loadDetail() }
     }
 

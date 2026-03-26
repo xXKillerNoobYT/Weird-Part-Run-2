@@ -11,6 +11,12 @@ struct IOSTruckToolsPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,6 +39,24 @@ struct IOSTruckToolsPage: View {
         .searchable(text: $searchText, prompt: "Search tools...")
         .refreshable { loadData() }
         .task { loadData() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Truck Tools Help",
+                sections: [
+                    ("Overview", "This page shows all tools currently checked out to fleet vehicles. It gives a quick view of which tools are on which trucks and who checked them out."),
+                    ("Reading Entries", "Each row shows the tool name, who checked it out, the checkout date, and the expected return date if one was set. Overdue returns are highlighted in orange."),
+                    ("Searching", "Use the search bar to find tools by name or by the person who checked them out. This is useful when you need to locate a specific tool across the fleet."),
+                    ("Tips", "Tools are checked out and returned through the Tools section. If a tool is missing, check this page first to see which truck it was last assigned to. Keep expected return dates updated to avoid overdue notices.")
+                ]
+            )
+        }
     }
 
     private var toolsList: some View {

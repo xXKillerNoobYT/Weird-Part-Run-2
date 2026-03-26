@@ -21,6 +21,10 @@ struct DashboardView: View {
     @State private var stockChartData: [StockLevelData] = []
     @State private var spendingChartData: [SpendingCategory] = []
 
+    // Background tasks
+    @State private var taskSummary: BackgroundTaskService.TaskSummary?
+    @State private var recentTasks: [BackgroundTaskService.TaskLogEntry] = []
+
     // Sheet management
     private enum ActiveSheet: Identifiable {
         case help
@@ -47,6 +51,9 @@ struct DashboardView: View {
         case clock
         case dailyReport
     }
+
+    // Onboarding checklist persistence
+    @AppStorage("onboarding_checklist_dismissed") private var checklistDismissed = false
 
     @State private var isLoading = true
     @State private var loadError: String?
@@ -75,6 +82,7 @@ struct DashboardView: View {
                         kpiSection
                         chartsSection
                         alertsContent
+                        backgroundTasksCard
                         quickActionsSection
                     }
                 }
@@ -83,6 +91,18 @@ struct DashboardView: View {
             .refreshable { await loadData() }
             .background(DS.Background.page)
             .task { await loadData() }
+            .onAppear {
+                NotificationCenter.default.post(
+                    name: .dashboardPageActive,
+                    object: nil,
+                    userInfo: [
+                        "context": "Dashboard: \(stats.activeJobs) active jobs, \(stats.totalStock) total stock, \(stats.partTypes) part types, \(stats.pendingOrders) pending orders, \(stats.lowStockCount) low stock, \(stats.employeeCount) employees. Clocked in: \(isCurrentlyClockedIn ? (clockedInJobName ?? "yes") : "no")."
+                    ]
+                )
+            }
+            .onDisappear {
+                NotificationCenter.default.post(name: .dashboardPageInactive, object: nil)
+            }
             .onReceive(refreshTimer) { _ in
                 Task { await loadData() }
             }
@@ -90,7 +110,7 @@ struct DashboardView: View {
                 updateClockDuration()
             }
             .toolbar {
-                ToolbarItem(placement: .secondaryAction) {
+                ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
@@ -363,6 +383,133 @@ struct DashboardView: View {
         .padding(.horizontal, DS.Space.lg)
     }
 
+    // MARK: - Background Tasks Card
+
+    @ViewBuilder
+    private var backgroundTasksCard: some View {
+        if let summary = taskSummary, summary.totalRuns > 0 {
+            VStack(alignment: .leading, spacing: DS.Space.md) {
+                // Header
+                HStack(spacing: DS.Space.xs) {
+                    Image(systemName: "gearshape.2.fill")
+                        .foregroundStyle(.indigo)
+                    Text("Background Tasks")
+                        .dsStyle(.sectionTitle)
+                    Spacer()
+                    Text("24h")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, DS.Space.xs)
+                        .padding(.vertical, DS.Space.xxxs)
+                        .background(
+                            Capsule()
+                                .fill(Color(.tertiarySystemFill))
+                        )
+                }
+
+                // Summary row
+                HStack(spacing: DS.Space.lg) {
+                    taskSummaryStat(
+                        count: summary.totalRuns,
+                        label: "Runs",
+                        color: .primary
+                    )
+                    taskSummaryStat(
+                        count: summary.successCount,
+                        label: "OK",
+                        color: DS.SemanticColor.success
+                    )
+                    if summary.failureCount > 0 {
+                        taskSummaryStat(
+                            count: summary.failureCount,
+                            label: "Failed",
+                            color: DS.SemanticColor.error
+                        )
+                    }
+                    if summary.runningCount > 0 {
+                        taskSummaryStat(
+                            count: summary.runningCount,
+                            label: "Running",
+                            color: .blue
+                        )
+                    }
+                    Spacer()
+                }
+
+                // Recent tasks (up to 3)
+                if !recentTasks.isEmpty {
+                    Divider()
+
+                    ForEach(recentTasks.prefix(3)) { task in
+                        HStack(spacing: DS.Space.sm) {
+                            Image(systemName: task.statusIcon)
+                                .font(.caption)
+                                .foregroundStyle(colorForStatus(task.status))
+                                .frame(width: 16)
+
+                            VStack(alignment: .leading, spacing: DS.Space.xxxs) {
+                                Text(task.taskName)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .lineLimit(1)
+
+                                if let summary = task.resultSummary {
+                                    Text(summary)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                } else if let error = task.errorMessage {
+                                    Text(error)
+                                        .font(.caption)
+                                        .foregroundStyle(DS.SemanticColor.error)
+                                        .lineLimit(1)
+                                }
+                            }
+
+                            Spacer()
+
+                            if let duration = task.durationString {
+                                Text(duration)
+                                    .font(.caption)
+                                    .monospacedDigit()
+                                    .foregroundStyle(.secondary)
+                            } else if task.status == "running" {
+                                ProgressView()
+                                    .controlSize(.mini)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(DS.Space.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .dsCard()
+            .padding(.horizontal, DS.Space.lg)
+        }
+    }
+
+    private func taskSummaryStat(count: Int, label: String, color: Color) -> some View {
+        VStack(spacing: DS.Space.xxxs) {
+            Text("\(count)")
+                .font(.title3)
+                .fontWeight(.semibold)
+                .monospacedDigit()
+                .foregroundStyle(color)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func colorForStatus(_ status: String) -> Color {
+        switch status {
+        case "completed": return DS.SemanticColor.success
+        case "failed": return DS.SemanticColor.error
+        case "running": return .blue
+        default: return .secondary
+        }
+    }
+
     // MARK: - Quick Actions
 
     @ViewBuilder
@@ -431,6 +578,7 @@ struct DashboardView: View {
             }
 
             let currentUserId = appCore.currentUser?.id
+            let bgService = appCore.backgroundTaskService
 
             // KPI summary via DashboardService
             let kpi = try service.getKPISummary()
@@ -460,10 +608,16 @@ struct DashboardView: View {
                 clockStatus = try service.getClockStatus(userId: userId)
             }
 
+            // Background task summary
+            let bgSummary = try? bgService?.last24HoursSummary()
+            let bgRecent = (try? bgService?.recentTasks(limit: 3)) ?? []
+
             await MainActor.run {
                 stats = newStats
                 certAlerts = certs
                 vehicleAlerts = vAlerts
+                taskSummary = bgSummary
+                recentTasks = bgRecent
                 isCurrentlyClockedIn = clockStatus.isClockedIn
                 clockedInJobName = clockStatus.jobName
                 clockedInJobNumber = clockStatus.jobNumber
@@ -493,7 +647,8 @@ struct DashboardView: View {
     @Sendable
     private func loadChartData() async {
         guard let service = appCore.dashboardService else {
-            // Service not ready
+            loadError = "Dashboard service not available"
+            isLoading = false
             return
         }
         do {
@@ -551,6 +706,7 @@ private struct DashboardStats: Sendable {
     var activeJobs = 0
     var pendingOrders = 0
     var lowStockCount = 0
+    var employeeCount = 0
 }
 
 private struct CertAlert: Sendable {

@@ -15,13 +15,51 @@ struct IOSMileagePage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    // Date filter
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+    @State private var customEnd: Date = Date()
+
+    private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
+    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
-        mileageList
+        VStack(spacing: 0) {
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
+            mileageList
+        }
             .navigationTitle("Mileage Logs")
             .searchable(text: $searchText, prompt: "Search mileage logs...")
             .refreshable { loadData() }
             .task { loadData() }
+            .onChange(of: dateRange) { loadData() }
+            .onChange(of: customStart) { loadData() }
+            .onChange(of: customEnd) { loadData() }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
+            }
+            .sheet(item: $activeSheet) { _ in
+                PageHelpSheet(
+                    title: "Mileage Logs Help",
+                    sections: [
+                        ("Overview", "This page lists all mileage logs across the fleet. Each entry shows the vehicle, driver, date, total miles driven, and the trip purpose."),
+                        ("Searching", "Use the search bar to filter by vehicle name, driver name, or trip purpose. This is useful when you need to find mileage for a specific job or driver."),
+                        ("Reading Entries", "Each row shows the vehicle name on the left with the driver underneath. On the right you will see total miles and the log date."),
+                        ("Tips", "Pull down to refresh the list. Mileage logs are created automatically when drivers complete trips or manually from the vehicle detail page. Keep mileage up to date for accurate reimbursement calculations.")
+                    ]
+                )
+            }
     }
 
     // MARK: - Mileage List

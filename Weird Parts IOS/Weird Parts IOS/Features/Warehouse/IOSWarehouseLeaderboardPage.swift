@@ -14,6 +14,7 @@ struct IOSWarehouseLeaderboardPage: View {
     @State private var loadError: String?
     @State private var leaderboard: [UserWarehouseRating] = []
     @State private var userNames: [Int64: String] = [:]
+    @State private var searchText = ""
     @State private var activeSheet: ActiveSheet?
 
     private enum ActiveSheet: Identifiable {
@@ -27,6 +28,13 @@ struct IOSWarehouseLeaderboardPage: View {
             case .consensusInfo: "consensus"
             case .help: "help"
             }
+        }
+    }
+
+    private var filteredLeaderboard: [UserWarehouseRating] {
+        if searchText.isEmpty { return leaderboard }
+        return leaderboard.filter {
+            (userNames[$0.userId] ?? "").localizedCaseInsensitiveContains(searchText)
         }
     }
 
@@ -48,7 +56,7 @@ struct IOSWarehouseLeaderboardPage: View {
         }
         .navigationTitle("Warehouse Leaderboard")
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
@@ -57,6 +65,7 @@ struct IOSWarehouseLeaderboardPage: View {
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
         }
+        .searchable(text: $searchText, prompt: "Search users...")
         .refreshable { loadData() }
         .task { loadData() }
     }
@@ -104,7 +113,7 @@ struct IOSWarehouseLeaderboardPage: View {
 
             // Full list
             Section("Rankings") {
-                ForEach(Array(leaderboard.enumerated()), id: \.element.userId) { index, rating in
+                ForEach(Array(filteredLeaderboard.enumerated()), id: \.element.userId) { index, rating in
                     leaderboardRow(rank: index + 1, rating: rating)
                         .contentShape(Rectangle())
                         .onTapGesture {

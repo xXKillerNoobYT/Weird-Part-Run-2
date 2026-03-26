@@ -14,6 +14,8 @@ struct IOSTeamDetailPage: View {
     @State private var actionError: String?
     @State private var activeSheet: ActiveSheet?
     @State private var showDeleteConfirm = false
+    @State private var memberToRemove: PeopleService.TeamMemberDetail?
+    @State private var showRemoveMemberConfirm = false
 
     private enum ActiveSheet: Identifiable {
         case editTeam
@@ -60,7 +62,7 @@ struct IOSTeamDetailPage: View {
                     Image(systemName: "ellipsis.circle")
                 }
             }
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
@@ -103,6 +105,19 @@ struct IOSTeamDetailPage: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("This will remove the team. Members will not be deleted.")
+        }
+        .alert("Remove Member?", isPresented: $showRemoveMemberConfirm) {
+            Button("Remove", role: .destructive) {
+                if let member = memberToRemove {
+                    Task { await removeMember(member) }
+                }
+                memberToRemove = nil
+            }
+            Button("Cancel", role: .cancel) { memberToRemove = nil }
+        } message: {
+            if let member = memberToRemove {
+                Text("Remove \(member.name) from this team?")
+            }
         }
         .task { await loadData() }
         .refreshable { await loadData() }
@@ -163,7 +178,8 @@ struct IOSTeamDetailPage: View {
                         }
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
-                                Task { await removeMember(member) }
+                                memberToRemove = member
+                                showRemoveMemberConfirm = true
                             } label: {
                                 Label("Remove", systemImage: "person.badge.minus")
                             }

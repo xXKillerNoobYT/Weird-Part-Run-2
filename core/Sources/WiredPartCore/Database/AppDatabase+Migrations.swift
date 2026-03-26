@@ -70,6 +70,10 @@ extension AppDatabase {
         registerMigration053PreTripInspection(&migrator)
         registerMigration054SavedReports(&migrator)
         registerMigration055OfficeChannel(&migrator)
+        registerMigration056AIConversations(&migrator)
+        registerMigration057WishlistItems(&migrator)
+        registerMigration058BackgroundTaskLog(&migrator)
+        registerMigration059MultiUserAuditAssignments(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4398,6 +4402,150 @@ extension AppDatabase {
             try? db.alter(table: "chat_channels") { t in
                 t.add(column: "is_system", .boolean).notNull().defaults(to: false)
             }
+        }
+    }
+
+    // MARK: - Migration 056: AI Conversation Messages
+
+    private static func registerMigration056AIConversations(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("056_ai_conversations") { db in
+            // Stores individual chat messages so the AI assistant remembers past conversations.
+            // Each row is a single user or assistant turn.
+            try db.create(table: "ai_conversation_messages") { t in
+                t.column("id", .text).notNull().primaryKey()
+                t.column("conversation_id", .text).notNull()
+                t.column("role", .text).notNull()            // "user" or "assistant"
+                t.column("content", .text).notNull()
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+            }
+
+            // Fast lookup by conversation
+            try db.create(
+                index: "idx_ai_conv_msgs_conv",
+                on: "ai_conversation_messages",
+                columns: ["conversation_id", "created_at"]
+            )
+        }
+    }
+
+    // MARK: - Migration 057: Wishlist Items
+
+    private static func registerMigration057WishlistItems(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("057_wishlist_items") { db in
+            try db.create(table: "wishlist_items", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("part_id", .integer).references("parts", onDelete: .cascade)
+                t.column("part_name", .text).notNull()
+                t.column("qty_suggested", .integer).notNull().defaults(to: 1)
+                t.column("reason", .text)
+                t.column("priority", .text).notNull().defaults(to: "normal")
+                t.column("source_type", .text).notNull().defaults(to: "manual")
+                t.column("status", .text).notNull().defaults(to: "pending")
+                t.column("requested_by", .text)
+                t.column("approved_by", .text)
+                t.column("approved_at", .datetime)
+                t.column("dismissed_by", .text)
+                t.column("dismissed_at", .datetime)
+                t.column("notes", .text)
+                t.column("created_at", .datetime).notNull().defaults(sql: "CURRENT_TIMESTAMP")
+                t.column("updated_at", .datetime).notNull().defaults(sql: "CURRENT_TIMESTAMP")
+            }
+
+            // Fast lookup by status for filtered list views
+            try db.create(
+                index: "idx_wishlist_status",
+                on: "wishlist_items",
+                columns: ["status"]
+            )
+
+            // Fast lookup by part for dedup checks
+            try db.create(
+                index: "idx_wishlist_part",
+                on: "wishlist_items",
+                columns: ["part_id"]
+            )
+        }
+    }
+
+    // MARK: - Migration 058: Background Task Log
+
+    private static func registerMigration058BackgroundTaskLog(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("058_background_task_log") { db in
+            try db.create(table: "background_task_log", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("task_name", .text).notNull()
+                t.column("task_type", .text).notNull()
+                t.column("status", .text).notNull().defaults(to: "running")
+                t.column("started_at", .datetime).notNull().defaults(sql: "CURRENT_TIMESTAMP")
+                t.column("completed_at", .datetime)
+                t.column("result_summary", .text)
+                t.column("error_message", .text)
+                t.column("items_processed", .integer).notNull().defaults(to: 0)
+                t.column("device_id", .text)
+            }
+
+            // Fast lookup by status for "currently running" queries
+            try db.create(
+                index: "idx_bg_task_status",
+                on: "background_task_log",
+                columns: ["status"]
+            )
+
+            // Fast lookup by start time for "recent tasks" queries
+            try db.create(
+                index: "idx_bg_task_started",
+                on: "background_task_log",
+                columns: ["started_at"]
+            )
+        }
+    }
+
+    // MARK: - Migration 059: Multi-User Audit Assignments
+
+    private static func registerMigration059MultiUserAuditAssignments(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("059_multi_user_audit_assignments") { db in
+            // Multi-user audit verification assignments for low-confidence parts.
+            // When a part's confidence is below threshold, 2-3 independent users
+            // are assigned to count it. Their counts are compared for consensus.
+            try db.create(table: "multi_user_audit_assignments") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("part_id", .integer).notNull()
+                    .references("parts", onDelete: .cascade)
+                t.column("part_name", .text).notNull()
+                t.column("bin_location", .text)
+                t.column("assigned_user_id", .integer).notNull()
+                    .references("users", onDelete: .cascade)
+                t.column("assigned_user_name", .text)
+                t.column("counted_quantity", .integer)
+                t.column("counted_at", .text)
+                t.column("status", .text).notNull().defaults(to: "pending")
+                t.column("audit_session_id", .integer)
+                    .references("audit_sessions_v2", onDelete: .cascade)
+                t.column("expected_quantity", .integer)
+                t.column("notes", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+            }
+
+            // Fast lookup by session for listing all assignments in a session
+            try db.create(
+                index: "idx_mua_session",
+                on: "multi_user_audit_assignments",
+                columns: ["audit_session_id"]
+            )
+
+            // Fast lookup by user for "my pending assignments" queries
+            try db.create(
+                index: "idx_mua_user_status",
+                on: "multi_user_audit_assignments",
+                columns: ["assigned_user_id", "status"]
+            )
+
+            // Fast lookup by part for resolving multi-user counts
+            try db.create(
+                index: "idx_mua_part_session",
+                on: "multi_user_audit_assignments",
+                columns: ["part_id", "audit_session_id"]
+            )
         }
     }
 }

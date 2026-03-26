@@ -26,9 +26,13 @@ struct WarehouseDashboardPage: View {
         case staging = "Staging Ready"
     }
 
+    @State private var showOnboardingWizard = false
+    @State private var hasLocations = true
+
     private enum ActiveSheet: Identifiable {
         case newMovement
         case qrScanner
+        case onboardingWizard
         case help
 
         var id: String { String(describing: self) }
@@ -48,7 +52,7 @@ struct WarehouseDashboardPage: View {
         .refreshable { loadData() }
         .background(DS.Background.page)
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
@@ -57,7 +61,17 @@ struct WarehouseDashboardPage: View {
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
         }
-        .task { loadData() }
+        .task {
+            loadData()
+            // Auto-show onboarding wizard if warehouse has no floor plans
+            if let service = appCore.warehouseService {
+                let plans = (try? service.listFloorPlans()) ?? []
+                hasLocations = !plans.isEmpty
+                if !hasLocations {
+                    activeSheet = .onboardingWizard
+                }
+            }
+        }
     }
 
     // MARK: - Sheet Content
@@ -75,6 +89,9 @@ struct WarehouseDashboardPage: View {
                 activeSheet = nil
             }
             .environmentObject(appCore)
+        case .onboardingWizard:
+            WarehouseOnboardingWizard()
+                .environmentObject(appCore)
         case .help:
             PageHelpSheet(
                 title: "Warehouse Dashboard Help",
@@ -258,6 +275,15 @@ struct WarehouseDashboardPage: View {
                         title: "Scan QR",
                         icon: "qrcode.viewfinder",
                         color: .orange
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button { activeSheet = .onboardingWizard } label: {
+                    quickActionButton(
+                        title: "Setup Wizard",
+                        icon: "wand.and.stars",
+                        color: .green
                     )
                 }
                 .buttonStyle(.plain)

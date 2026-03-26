@@ -20,11 +20,13 @@ struct IOSEmployeesPage: View {
     private enum ActiveSheet: Identifiable {
         case addEmployee
         case badgeScanner
+        case help
 
         var id: String {
             switch self {
             case .addEmployee: "addEmployee"
             case .badgeScanner: "badgeScanner"
+            case .help: "help"
             }
         }
     }
@@ -41,6 +43,18 @@ struct IOSEmployeesPage: View {
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .employeesPageActive,
+                object: nil,
+                userInfo: [
+                    "context": "Employees Page: \(employees.count) employees, filter: \(statusFilter)."
+                ]
+            )
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .employeesPageInactive, object: nil)
+        }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button { activeSheet = .badgeScanner } label: {
@@ -48,6 +62,11 @@ struct IOSEmployeesPage: View {
                 }
                 Button { activeSheet = .addEmployee } label: {
                     Image(systemName: "plus")
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
                 }
             }
         }
@@ -63,6 +82,16 @@ struct IOSEmployeesPage: View {
                     }
                 }
                 .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(
+                    title: "Employees Help",
+                    sections: [
+                        ("What This Page Does", "View and manage all employees in the system. Each row shows the employee's name, email, assigned hats (roles), status, and role level."),
+                        ("How to Use It", "Use the status filter chips at the top to show only Active, Inactive, or Suspended employees. Type in the search bar to filter by name, email, phone, or hat. Tap an employee to view their full profile. Tap the + button to add a new employee."),
+                        ("Badge Scanner", "Tap the QR scanner icon to scan an employee badge. If the badge is found, the employee's name fills the search bar automatically."),
+                        ("Tips", "Pull down to refresh the list. Status badges are color-coded: green for active, red for suspended, gray for inactive. Role badges show the employee's access level (admin, manager, supervisor, or worker).")
+                    ]
+                )
             }
         }
     }

@@ -118,6 +118,9 @@ struct ReportBuilderView: View {
     @State private var generateError: String?
     @State private var saveError: String?
     @State private var savedSuccessfully = false
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     enum BuilderStep: Int, CaseIterable {
         case type = 0
@@ -143,6 +146,20 @@ struct ReportBuilderView: View {
             .listStyle(.insetGrouped)
         }
         .navigationTitle("Report Builder")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Report Builder Help", sections: [
+                ("What This Page Does", "Lets you build a custom report from scratch in four steps: pick a report type, choose which columns to include, set date filters, and generate results. You can also save your report configuration to run it again later."),
+                ("How to Use It", "Step 1: Pick a report type (labor, parts, jobs, tools, fuel, or orders). Step 2: Toggle which data columns you want. Step 3: Set date range and hit Generate. Step 4: Preview results and export to PDF or CSV. You can also save the config with a name."),
+                ("Tips", "Start with all columns selected, then remove what you do not need. Saved reports appear in the Custom Reports list so you can re-run them quickly. Use the Quick Range buttons for common date periods like This Week or This Month.")
+            ])
+        }
         .reportExportToolbar(
             title: "\(selectedType.displayName) Report",
             columns: selectedColumnLabels,
@@ -334,8 +351,10 @@ struct ReportBuilderView: View {
 
     private func quickRangeButton(_ label: String, range: ReportDateRange) -> some View {
         Button(label) {
-            startDate = range.startDate
-            endDate = range.endDate
+            if let interval = range.dateInterval {
+                startDate = interval.start
+                endDate = interval.end
+            }
         }
         .buttonStyle(.bordered)
         .font(.caption)

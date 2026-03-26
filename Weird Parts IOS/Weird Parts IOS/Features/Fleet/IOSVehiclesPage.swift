@@ -12,11 +12,18 @@ struct IOSVehiclesPage: View {
     // MARK: - State
 
     @State private var vehicles: [FleetService.VehicleListItem] = []
+    @State private var allVehicles: [FleetService.VehicleListItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
     @State private var showCreateVehicle = false
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     private let statusOptions = ["all", "active", "inactive", "maintenance", "retired"]
 
@@ -30,6 +37,30 @@ struct IOSVehiclesPage: View {
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .vehiclesPageActive,
+                object: nil,
+                userInfo: [
+                    "context": "Vehicles Page: \(vehicles.count) vehicles, filter: \(statusFilter)."
+                ]
+            )
+            // Register AI filter (prompt 62S)
+            appCore.aiFilterRegistry.register(
+                pageId: "vehicles",
+                filterName: "Vehicle Status",
+                options: statusOptions,
+                activate: { value in
+                    statusFilter = value
+                    loadData()
+                }
+            )
+            appCore.aiFilterRegistry.applyPendingFilter(pageId: "vehicles")
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .vehiclesPageInactive, object: nil)
+            appCore.aiFilterRegistry.deregister(pageId: "vehicles")
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -39,33 +70,48 @@ struct IOSVehiclesPage: View {
                 }
                 .requiresPermission("manage_fleet")
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(isPresented: $showCreateVehicle) {
             IOSCreateVehicleSheet(onSaved: { loadData() })
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Vehicles Help",
+                sections: [
+                    ("Overview", "This page lists all vehicles in the fleet. Each row shows the vehicle number, name, make/model, type, status, assigned driver, and current odometer reading."),
+                    ("Filtering", "Use the status pills at the top to filter by Active, Inactive, Maintenance, or Retired vehicles. Tap All to see everything. Use the search bar to find vehicles by name, number, make, model, or driver."),
+                    ("Adding a Vehicle", "Tap the + button in the top-right corner to add a new vehicle. You need the manage_fleet permission to add vehicles."),
+                    ("Vehicle Detail", "Tap any vehicle row to open its detail page with tabs for overview, parts, tools, assignments, maintenance, usage, and inspections."),
+                    ("Tips", "Pull down to refresh the list. Status badges are color-coded: green for active, orange for maintenance, red for retired, and gray for inactive.")
+                ]
+            )
         }
     }
 
     // MARK: - Status Picker
 
+    private func countForStatus(_ status: String) -> Int {
+        if status == "all" { return allVehicles.count }
+        return allVehicles.filter { $0.status == status }.count
+    }
+
     private var statusPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(statusOptions, id: \.self) { status in
-                    Button {
+                    SmartFilterCard(
+                        title: status == "all" ? "All" : status.capitalized,
+                        count: countForStatus(status),
+                        isSelected: statusFilter == status
+                    ) {
                         statusFilter = status
                         loadData()
-                    } label: {
-                        Text(status == "all" ? "All" : status.capitalized)
-                            .font(.caption)
-                            .fontWeight(statusFilter == status ? .bold : .regular)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(statusFilter == status ? Color.accentColor : Color.secondary.opacity(0.2))
-                            )
-                            .foregroundStyle(statusFilter == status ? .white : .primary)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal)
@@ -208,9 +254,10 @@ struct IOSVehiclesPage: View {
         isLoading = vehicles.isEmpty
         loadError = nil
         do {
-            vehicles = try service.listVehicles(
-                status: statusFilter == "all" ? nil : statusFilter
-            )
+            allVehicles = try service.listVehicles(status: nil)
+            vehicles = statusFilter == "all"
+                ? allVehicles
+                : allVehicles.filter { $0.status == statusFilter }
         } catch {
             loadError = error.localizedDescription
         }

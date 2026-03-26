@@ -17,6 +17,7 @@ struct IOSQAQuestionForm: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var jobs: [JobsService.JobListItem] = []
+    @State private var wasAutoFilled = false
 
     private let priorities = ["low", "normal", "high", "urgent"]
 
@@ -27,7 +28,7 @@ struct IOSQAQuestionForm: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Job") {
+                Section {
                     if jobs.isEmpty {
                         Text("No jobs available")
                             .foregroundStyle(.secondary)
@@ -38,6 +39,15 @@ struct IOSQAQuestionForm: View {
                                 Text(job.jobName).tag(job.id as Int64?)
                             }
                         }
+                        .onChange(of: selectedJobId) { _, _ in
+                            wasAutoFilled = false
+                        }
+                    }
+                } header: {
+                    Text("Job")
+                } footer: {
+                    if wasAutoFilled {
+                        Text("Auto-filled from your active clock entry")
                     }
                 }
 
@@ -76,7 +86,10 @@ struct IOSQAQuestionForm: View {
                         .disabled(!isValid || isSaving)
                 }
             }
-            .task { loadJobs() }
+            .task {
+                loadJobs()
+                autoFillFromClockEntry()
+            }
         }
     }
 
@@ -91,6 +104,20 @@ struct IOSQAQuestionForm: View {
             jobs = try service.listJobs(status: "active", limit: 200)
         } catch {
             errorMessage = "Failed to load jobs: \(error.localizedDescription)"
+        }
+    }
+
+    private func autoFillFromClockEntry() {
+        guard selectedJobId == nil,
+              let service = appCore.jobsService,
+              let userId = appCore.currentUser?.id else { return }
+        do {
+            if let activeEntry = try service.getActiveClockEntry(userId: userId) {
+                selectedJobId = activeEntry.jobId
+                wasAutoFilled = true
+            }
+        } catch {
+            // Non-fatal — user can still select manually
         }
     }
 

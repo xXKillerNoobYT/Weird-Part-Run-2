@@ -595,6 +595,106 @@ public final class ChatService: Sendable {
     }
 
     // =========================================================================
+    // MARK: - JPO Hold Threads
+    // =========================================================================
+
+    /// Create a chat thread for a JPO line item that has been put on hold.
+    /// The channel is typed "jpo_hold" and named "Hold: [Part] ([JPO#])".
+    /// A system message is posted with the hold reason.
+    /// Returns the channel ID.
+    @discardableResult
+    public func createJPOHoldThread(
+        partName: String,
+        jpoNumber: String,
+        holdReason: String?,
+        userId: Int64
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            let channelName = "Hold: \(partName) (\(jpoNumber))"
+
+            // Check if a thread already exists for this part + JPO
+            if let existingId = try Int64.fetchOne(dbConn, sql: """
+                SELECT id FROM chat_channels
+                WHERE name = ? AND channel_type = 'jpo_hold'
+                  AND is_active = 1 AND deleted_at IS NULL
+                LIMIT 1
+                """, arguments: [channelName]) {
+                return existingId
+            }
+
+            // Create the channel
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO chat_channels
+                    (name, channel_type, created_by, is_active, created_at, updated_at)
+                    VALUES (?, 'jpo_hold', ?, 1, datetime('now'), datetime('now'))
+                    """,
+                arguments: [channelName, userId]
+            )
+            let channelId = dbConn.lastInsertedRowID
+
+            // Add creator as admin
+            try dbConn.execute(
+                sql: """
+                    INSERT OR IGNORE INTO chat_channel_members
+                    (channel_id, user_id, role, joined_at)
+                    VALUES (?, ?, 'admin', datetime('now'))
+                    """,
+                arguments: [channelId, userId]
+            )
+
+            // Post a system message with the hold reason
+            let systemMessage = holdReason ?? "This item has been placed on hold for discussion."
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO chat_messages
+                    (channel_id, sender_id, message_type, content, created_at)
+                    VALUES (?, ?, 'system', ?, datetime('now'))
+                    """,
+                arguments: [channelId, userId, systemMessage]
+            )
+
+            return channelId
+        }
+    }
+
+    /// Look up an existing JPO hold thread by part name and JPO number.
+    /// Returns the channel if found, nil otherwise.
+    public func getJPOHoldThread(partName: String, jpoNumber: String) throws -> ChannelListItem? {
+        do {
+            return try db.writer.read { dbConn -> ChannelListItem? in
+                let channelName = "Hold: \(partName) (\(jpoNumber))"
+                let sql = """
+                    SELECT cc.id, cc.name, cc.channel_type,
+                           NULL AS job_name,
+                           COALESCE((SELECT COUNT(*) FROM chat_channel_members ccm
+                                     WHERE ccm.channel_id = cc.id AND ccm.left_at IS NULL AND ccm.deleted_at IS NULL), 0) AS member_count,
+                           (SELECT MAX(cm.created_at) FROM chat_messages cm
+                            WHERE cm.channel_id = cc.id AND cm.deleted_at IS NULL) AS last_message_at
+                    FROM chat_channels cc
+                    WHERE cc.name = ? AND cc.channel_type = 'jpo_hold'
+                      AND cc.is_active = 1 AND cc.deleted_at IS NULL
+                    LIMIT 1
+                    """
+                guard let row = try Row.fetchOne(dbConn, sql: sql, arguments: [channelName]) else {
+                    return nil
+                }
+                return ChannelListItem(
+                    id: row["id"] ?? 0,
+                    name: row["name"] as String?,
+                    channelType: row["channel_type"] ?? "jpo_hold",
+                    jobName: row["job_name"] as String?,
+                    memberCount: row["member_count"] ?? 0,
+                    lastMessageAt: row["last_message_at"] as String?
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) { return nil }
+            throw error
+        }
+    }
+
+    // =========================================================================
     // MARK: - Internal Helpers
     // =========================================================================
 

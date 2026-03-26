@@ -61,23 +61,35 @@ public final class JobEstimationService: Sendable {
             nil
         }
 
-        // Get next sort order
-        let maxSort: Int = try db.writer.read { dbConn in
-            try Int.fetchOne(dbConn, sql: """
-                SELECT COALESCE(MAX(sort_order), 0) FROM estimation_questions
-                WHERE stage = ? AND question_group = ? AND deleted_at IS NULL
-                """, arguments: [stage, group]) ?? 0
-        }
+        do {
+            // Get next sort order
+            let maxSort: Int = try db.writer.read { dbConn in
+                try Int.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(MAX(sort_order), 0) FROM estimation_questions
+                    WHERE stage = ? AND question_group = ? AND deleted_at IS NULL
+                    """, arguments: [stage, group]) ?? 0
+            }
 
-        return try db.writer.write { dbConn in
-            var question = EstimationQuestion(
-                id: nil, questionText: text, questionGroup: group,
-                stage: stage, answerType: answerType, choices: choicesJSON,
-                weight: weight, isActive: 1, sortOrder: maxSort + 1,
-                createdAt: nil, updatedAt: nil, deletedAt: nil
-            )
-            try question.insert(dbConn)
-            return question
+            return try db.writer.write { dbConn in
+                var question = EstimationQuestion(
+                    id: nil, questionText: text, questionGroup: group,
+                    stage: stage, answerType: answerType, choices: choicesJSON,
+                    weight: weight, isActive: 1, sortOrder: maxSort + 1,
+                    createdAt: nil, updatedAt: nil, deletedAt: nil
+                )
+                try question.insert(dbConn)
+                return question
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return EstimationQuestion(
+                    id: nil, questionText: text, questionGroup: group,
+                    stage: stage, answerType: answerType, choices: choicesJSON,
+                    weight: weight, isActive: 1, sortOrder: 1,
+                    createdAt: nil, updatedAt: nil, deletedAt: nil
+                )
+            }
+            throw error
         }
     }
 
@@ -88,31 +100,41 @@ public final class JobEstimationService: Sendable {
         weight: Double? = nil,
         isActive: Bool? = nil
     ) throws {
-        try db.writer.write { dbConn in
-            guard var question = try EstimationQuestion.fetchOne(dbConn, key: questionId) else { return }
-            if let text { question.questionText = text }
-            if let weight { question.weight = weight }
-            if let isActive { question.isActive = isActive ? 1 : 0 }
-            question.updatedAt = Self.nowString()
-            try question.update(dbConn)
+        do {
+            try db.writer.write { dbConn in
+                guard var question = try EstimationQuestion.fetchOne(dbConn, key: questionId) else { return }
+                if let text { question.questionText = text }
+                if let weight { question.weight = weight }
+                if let isActive { question.isActive = isActive ? 1 : 0 }
+                question.updatedAt = Self.nowString()
+                try question.update(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return }
+            throw error
         }
     }
 
     /// Reject/deactivate a question with a reason.
     public func rejectQuestion(questionId: Int64, rejectedBy: Int64, reason: String?) throws {
-        try db.writer.write { dbConn in
-            // Deactivate the question
-            try dbConn.execute(sql: """
-                UPDATE estimation_questions SET is_active = 0, updated_at = datetime('now')
-                WHERE id = ?
-                """, arguments: [questionId])
+        do {
+            try db.writer.write { dbConn in
+                // Deactivate the question
+                try dbConn.execute(sql: """
+                    UPDATE estimation_questions SET is_active = 0, updated_at = datetime('now')
+                    WHERE id = ?
+                    """, arguments: [questionId])
 
-            // Log the rejection
-            var rejection = EstimationQuestionRejection(
-                id: nil, questionId: questionId, rejectedBy: rejectedBy,
-                reason: reason, rejectedAt: nil
-            )
-            try rejection.insert(dbConn)
+                // Log the rejection
+                var rejection = EstimationQuestionRejection(
+                    id: nil, questionId: questionId, rejectedBy: rejectedBy,
+                    reason: reason, rejectedAt: nil
+                )
+                try rejection.insert(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return }
+            throw error
         }
     }
 
@@ -145,21 +167,33 @@ public final class JobEstimationService: Sendable {
         isUnknown: Bool = false,
         answeredBy: Int64
     ) throws -> EstimationResponse {
-        try db.writer.write { dbConn in
-            // Delete any existing response for this job+question+stage
-            try dbConn.execute(sql: """
-                DELETE FROM estimation_responses
-                WHERE job_id = ? AND question_id = ? AND stage = ?
-                """, arguments: [jobId, questionId, stage])
+        do {
+            return try db.writer.write { dbConn in
+                // Delete any existing response for this job+question+stage
+                try dbConn.execute(sql: """
+                    DELETE FROM estimation_responses
+                    WHERE job_id = ? AND question_id = ? AND stage = ?
+                    """, arguments: [jobId, questionId, stage])
 
-            var response = EstimationResponse(
-                id: nil, jobId: jobId, questionId: questionId,
-                stage: stage, responseValue: isUnknown ? nil : value,
-                isUnknown: isUnknown ? 1 : 0,
-                answeredBy: answeredBy, answeredAt: nil
-            )
-            try response.insert(dbConn)
-            return response
+                var response = EstimationResponse(
+                    id: nil, jobId: jobId, questionId: questionId,
+                    stage: stage, responseValue: isUnknown ? nil : value,
+                    isUnknown: isUnknown ? 1 : 0,
+                    answeredBy: answeredBy, answeredAt: nil
+                )
+                try response.insert(dbConn)
+                return response
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return EstimationResponse(
+                    id: nil, jobId: jobId, questionId: questionId,
+                    stage: stage, responseValue: isUnknown ? nil : value,
+                    isUnknown: isUnknown ? 1 : 0,
+                    answeredBy: answeredBy, answeredAt: nil
+                )
+            }
+            throw error
         }
     }
 
@@ -238,15 +272,27 @@ public final class JobEstimationService: Sendable {
         let estimatedHours = baseDays * 8.0
 
         // Save the result
-        return try db.writer.write { dbConn in
-            var result = EstimationResult(
-                id: nil, jobId: jobId, stage: stage,
-                estimatedDays: baseDays, estimatedHours: estimatedHours,
-                confidencePercent: confidence, aiSuggested: 0,
-                notes: nil, createdAt: nil
-            )
-            try result.insert(dbConn)
-            return result
+        do {
+            return try db.writer.write { dbConn in
+                var result = EstimationResult(
+                    id: nil, jobId: jobId, stage: stage,
+                    estimatedDays: baseDays, estimatedHours: estimatedHours,
+                    confidencePercent: confidence, aiSuggested: 0,
+                    notes: nil, createdAt: nil
+                )
+                try result.insert(dbConn)
+                return result
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return EstimationResult(
+                    id: nil, jobId: jobId, stage: stage,
+                    estimatedDays: baseDays, estimatedHours: estimatedHours,
+                    confidencePercent: confidence, aiSuggested: 0,
+                    notes: nil, createdAt: nil
+                )
+            }
+            throw error
         }
     }
 
@@ -372,29 +418,41 @@ public final class JobEstimationService: Sendable {
         // Get the original estimate for variance calculation
         let originalEstimate = try getLatestResult(jobId: jobId, stage: "bid")
 
-        return try db.writer.write { dbConn in
-            // Calculate actual hours worked so far from labor entries
-            let actualHours = try Double.fetchOne(dbConn, sql: """
-                SELECT COALESCE(SUM(hours_worked), 0) FROM labor_entries
-                WHERE job_id = ? AND deleted_at IS NULL
-                """, arguments: [jobId]) ?? 0
+        do {
+            return try db.writer.write { dbConn in
+                // Calculate actual hours worked so far from labor entries
+                let actualHours = try Double.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(SUM(hours_worked), 0) FROM labor_entries
+                    WHERE job_id = ? AND deleted_at IS NULL
+                    """, arguments: [jobId]) ?? 0
 
-            let actualDays = actualHours / 8.0
-            let estimateAtStart = originalEstimate?.estimatedDays
-            let variance: Double? = if let est = estimateAtStart, est > 0 {
-                ((actualDays - est) / est) * 100.0
-            } else {
-                nil
+                let actualDays = actualHours / 8.0
+                let estimateAtStart = originalEstimate?.estimatedDays
+                let variance: Double? = if let est = estimateAtStart, est > 0 {
+                    ((actualDays - est) / est) * 100.0
+                } else {
+                    nil
+                }
+
+                var review = EstimationReview(
+                    id: nil, jobId: jobId, reviewType: "weekly",
+                    actualDays: actualDays, actualHours: actualHours,
+                    estimateAtStart: estimateAtStart, variancePercent: variance,
+                    lessonsLearned: notes, reviewedBy: reviewedBy, reviewedAt: nil
+                )
+                try review.insert(dbConn)
+                return review
             }
-
-            var review = EstimationReview(
-                id: nil, jobId: jobId, reviewType: "weekly",
-                actualDays: actualDays, actualHours: actualHours,
-                estimateAtStart: estimateAtStart, variancePercent: variance,
-                lessonsLearned: notes, reviewedBy: reviewedBy, reviewedAt: nil
-            )
-            try review.insert(dbConn)
-            return review
+        } catch {
+            if isTableNotFoundError(error) {
+                return EstimationReview(
+                    id: nil, jobId: jobId, reviewType: "weekly",
+                    actualDays: 0, actualHours: 0,
+                    estimateAtStart: originalEstimate?.estimatedDays, variancePercent: nil,
+                    lessonsLearned: notes, reviewedBy: reviewedBy, reviewedAt: nil
+                )
+            }
+            throw error
         }
     }
 
@@ -409,22 +467,40 @@ public final class JobEstimationService: Sendable {
     ) throws -> EstimationReview {
         let originalEstimate = try getLatestResult(jobId: jobId, stage: "bid")
 
-        return try db.writer.write { dbConn in
-            let estimateAtStart = originalEstimate?.estimatedDays
-            let variance: Double? = if let est = estimateAtStart, est > 0 {
-                ((actualDays - est) / est) * 100.0
-            } else {
-                nil
-            }
+        do {
+            return try db.writer.write { dbConn in
+                let estimateAtStart = originalEstimate?.estimatedDays
+                let variance: Double? = if let est = estimateAtStart, est > 0 {
+                    ((actualDays - est) / est) * 100.0
+                } else {
+                    nil
+                }
 
-            var review = EstimationReview(
-                id: nil, jobId: jobId, reviewType: "end_of_job",
-                actualDays: actualDays, actualHours: actualHours,
-                estimateAtStart: estimateAtStart, variancePercent: variance,
-                lessonsLearned: lessonsLearned, reviewedBy: reviewedBy, reviewedAt: nil
-            )
-            try review.insert(dbConn)
-            return review
+                var review = EstimationReview(
+                    id: nil, jobId: jobId, reviewType: "end_of_job",
+                    actualDays: actualDays, actualHours: actualHours,
+                    estimateAtStart: estimateAtStart, variancePercent: variance,
+                    lessonsLearned: lessonsLearned, reviewedBy: reviewedBy, reviewedAt: nil
+                )
+                try review.insert(dbConn)
+                return review
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                let estimateAtStart = originalEstimate?.estimatedDays
+                let variance: Double? = if let est = estimateAtStart, est > 0 {
+                    ((actualDays - est) / est) * 100.0
+                } else {
+                    nil
+                }
+                return EstimationReview(
+                    id: nil, jobId: jobId, reviewType: "end_of_job",
+                    actualDays: actualDays, actualHours: actualHours,
+                    estimateAtStart: estimateAtStart, variancePercent: variance,
+                    lessonsLearned: lessonsLearned, reviewedBy: reviewedBy, reviewedAt: nil
+                )
+            }
+            throw error
         }
     }
 

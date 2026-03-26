@@ -15,8 +15,13 @@ struct IOSBookkeeperExportPage: View {
     @State private var materialRows: [ReportsService.BookkeeperMaterialRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var dateRange: ReportDateRange = .thisPeriod
     @State private var startDate = Calendar.current.date(byAdding: .day, value: -13, to: Date()) ?? Date()
     @State private var endDate = Date()
+    @State private var searchText = ""
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     private var startDateString: String {
         let f = DateFormatter()
@@ -32,7 +37,7 @@ struct IOSBookkeeperExportPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            StandardFilterBar(startDate: $startDate, endDate: $endDate)
+            StandardFilterBar(selectedRange: $dateRange, customStart: $startDate, customEnd: $endDate)
             exportContent
         }
         .navigationTitle("Bookkeeper Export")
@@ -45,10 +50,42 @@ struct IOSBookkeeperExportPage: View {
                  + materialRows.map { ["Material", $0.supplierName, $0.poNumber, "",
                                        String(format: "$%.2f", $0.totalAmount)] }
         )
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Bookkeeper Export Help", sections: [
+                ("What This Page Does", "Shows a summary of labor hours per employee and material purchase orders for the date range you pick. This is the data your bookkeeper needs for payroll and expense tracking."),
+                ("How to Use It", "Pick a start and end date at the top. The page loads labor totals (regular and overtime hours by employee) and material POs (supplier, PO number, and amount). Use the export button to send a PDF or CSV to your bookkeeper."),
+                ("Tips", "Set dates to match your pay period for clean exports. If an employee is missing, check that their clock entries exist for that date range.")
+            ])
+        }
+        .searchable(text: $searchText, prompt: "Search employees or POs...")
         .refreshable { loadData() }
         .task { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
+    }
+
+    // MARK: - Filtered Data
+
+    private var filteredLaborRows: [ReportsService.BookkeeperLaborRow] {
+        if searchText.isEmpty { return laborRows }
+        return laborRows.filter {
+            $0.employeeName.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    private var filteredMaterialRows: [ReportsService.BookkeeperMaterialRow] {
+        if searchText.isEmpty { return materialRows }
+        return materialRows.filter {
+            $0.poNumber.localizedCaseInsensitiveContains(searchText) ||
+            $0.supplierName.localizedCaseInsensitiveContains(searchText)
+        }
     }
 
     // MARK: - Content
@@ -76,9 +113,9 @@ struct IOSBookkeeperExportPage: View {
                     }
                 }
 
-                if !materialRows.isEmpty {
+                if !filteredMaterialRows.isEmpty {
                     Section("Material Purchase Orders") {
-                        ForEach(materialRows) { row in
+                        ForEach(filteredMaterialRows) { row in
                             materialRow(row)
                         }
                     }

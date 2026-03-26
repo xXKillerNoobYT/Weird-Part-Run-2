@@ -22,12 +22,24 @@ struct IOSProcurementPage: View {
     @State private var generateError: String?
     @State private var generateSuccess: String?
     @State private var isGenerating = false
+    @State private var searchText = ""
 
     // Pull action tracking: partId -> (pullQty, orderQty)
     @State private var pullDecisions: [Int64: (pullQty: Int, orderQty: Int)] = [:]
     @State private var pullActionError: String?
     @State private var pullActionSuccess: String?
     @State private var isPulling: Set<Int64> = []  // parts currently being pulled
+
+    // Help
+    @State private var activeSheet: ActiveSheet?
+
+    // Toast
+    @State private var showSavedToast = false
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,6 +60,28 @@ struct IOSProcurementPage: View {
             }
         }
         .navigationTitle("Procurement")
+        .searchable(text: $searchText, prompt: "Search parts...")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Procurement Help",
+                sections: [
+                    ("What This Page Does", "Aggregates all parts that need to be ordered across all sources -- JPO requests, wishlist items, forecast needs, and overstock alerts. This is where the office decides what to buy and from whom."),
+                    ("How to Use It", "1. Use the filter cards (JPO Parts, Wishlist, Forecast, Overstock) to focus on one source.\n2. Each part shows demand quantity, current shop stock, and distance to target level.\n3. Select a supplier for each part using the radio buttons.\n4. Check the parts you want to include, then scroll to the PO Preview section.\n5. Review the grouped POs and tap Generate to create them."),
+                    ("Pull vs Order", "If the shop has stock, you can pull from the shelf instead of ordering. The pull options show how many to pull and how many still need ordering. Overstock items (above MAX level) require a mandatory pull."),
+                    ("Supplier Tags", "Suppliers show tags: Cheapest (lowest unit price), Best Rated (highest supplier score), Fastest (shortest lead time), and Preferred (star icon, set as default for this part)."),
+                    ("Split by JPO", "For parts needed by multiple jobs, tap 'Split by JPO' to assign different suppliers per JPO source. Useful when different jobs have different supplier preferences or urgency levels."),
+                    ("Tips", "Use Select All to quickly include everything. The PO Preview shows grouped totals by supplier before you generate. Parts disappear from this page once POs are created for them.")
+                ]
+            )
+        }
+        .searchable(text: $searchText, prompt: "Search parts...")
         .refreshable { loadData() }
         .task { loadData() }
         .alert("Error", isPresented: .constant(generateError != nil)) {
@@ -75,6 +109,23 @@ struct IOSProcurementPage: View {
             }
         } message: {
             Text(pullActionSuccess ?? "")
+        }
+        .overlay(alignment: .bottom) {
+            if showSavedToast {
+                Text("Selections saved — they'll persist while you're on this page")
+                    .font(.subheadline)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(8)
+                    .padding(.bottom, 20)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            withAnimation { showSavedToast = false }
+                        }
+                    }
+            }
         }
     }
 
@@ -129,11 +180,27 @@ struct IOSProcurementPage: View {
     // MARK: - Filtered Items
 
     private var filteredItems: [OrdersService.ProcurementItem] {
-        guard let filter = sourceFilter else { return items }
-        if filter == "overstock" {
-            return items.filter { $0.urgency == "overstock" }
+        var result = items
+
+        // Apply source filter
+        if let filter = sourceFilter {
+            if filter == "overstock" {
+                result = result.filter { $0.urgency == "overstock" }
+            } else {
+                result = result.filter { $0.sources.contains { $0.sourceType == filter } }
+            }
         }
-        return items.filter { $0.sources.contains { $0.sourceType == filter } }
+
+        // Apply search filter
+        if !searchText.isEmpty {
+            result = result.filter {
+                $0.partName.localizedCaseInsensitiveContains(searchText) ||
+                ($0.partCode?.localizedCaseInsensitiveContains(searchText) ?? false) ||
+                ($0.brandName?.localizedCaseInsensitiveContains(searchText) ?? false)
+            }
+        }
+
+        return result
     }
 
     // MARK: - Procurement List
@@ -414,7 +481,7 @@ struct IOSProcurementPage: View {
                     .disabled(isGenerating)
 
                     Button {
-                        // Save for Later — just keep selections, they persist in state
+                        withAnimation { showSavedToast = true }
                     } label: {
                         Text("Save for Later")
                             .font(.subheadline)

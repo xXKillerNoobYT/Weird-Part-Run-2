@@ -16,6 +16,12 @@ struct IOSTrailerDetailPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var selectedTab: TrailerTab = .inventory
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     enum TrailerTab: String, CaseIterable {
         case inventory = "Inventory"
@@ -46,6 +52,27 @@ struct IOSTrailerDetailPage: View {
         .navigationTitle(trailer?.name ?? "Trailer")
         .refreshable { loadData() }
         .task { loadData() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Trailer Detail Help",
+                sections: [
+                    ("Overview", "This page shows everything about a single trailer. The location badge at the top tells you whether the trailer is at the shop or in the field. Use the segmented tabs to switch between Inventory, Tools, Storage, and History."),
+                    ("Location Rules", "When a trailer is in the field, MIN/MAX stock levels are enforced — items below MIN appear as warnings. When at the shop, MIN/MAX rules are relaxed since the warehouse is nearby for restocking."),
+                    ("Inventory Tab", "Shows all parts loaded on the trailer with current quantities. In the field, progress bars show stock health against target levels. Red means below minimum, orange means between min and target, green means at or above target."),
+                    ("Tools Tab", "Shows tools loaded on the trailer, tracked through stock templates."),
+                    ("Storage Tab", "Shows the physical storage units on the trailer (shelves, drawers, compartments, bins) and which parts are in each unit. Items not assigned to a storage unit appear under Unassigned."),
+                    ("History Tab", "Shows the trailer's location history — where it has been, when it arrived and departed, and who recorded the movement. Location types include shop, job site, and in transit."),
+                    ("Tips", "Pull down to refresh all data. If stock levels look wrong, check whether the trailer's location is set correctly — MIN/MAX enforcement depends on whether the trailer is at the shop or in the field.")
+                ]
+            )
+        }
     }
 
     // MARK: - Content

@@ -29,6 +29,7 @@ struct IOSScheduleCalendarPage: View {
     @State private var loadError: String?
     private enum ActiveSheet: String, Identifiable {
         case createEntry
+        case help
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
@@ -80,16 +81,41 @@ struct IOSScheduleCalendarPage: View {
                     Image(systemName: "plus")
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .createEntry:
                 CreateScheduleEntrySheet(date: selectedDateString, onSave: { loadData() })
                     .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(title: "Schedule Calendar Help", sections: [
+                    ("What This Page Does", "The Schedule Calendar shows your work assignments in either a week list or a month grid. Month view uses colored dots to indicate AM (blue), PM (green), full-day (orange), and time-off (red) entries for each day."),
+                    ("How to Use It", "Toggle between Week and Month views using the segmented control at the top. In month view, tap any day to see its detail below the calendar. In week view, scroll through the list of assignments. Use the + button to create a new schedule entry."),
+                    ("Color Coding", "Blue dots and badges mean AM shifts, green means PM, orange means full day. Red dots indicate someone has time off that day."),
+                    ("Tips", "Pull down to refresh the schedule. Use the search bar to filter entries by job name or notes. Navigate between weeks or months using the arrow buttons.")
+                ])
             }
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear {
+            let dateStr = ISO8601DateFormatter.dateOnlyFormatter.string(from: selectedDate)
+            NotificationCenter.default.post(
+                name: .scheduleCalendarPageActive,
+                object: nil,
+                userInfo: [
+                    "context": "Schedule Calendar: mode \(calendarMode.rawValue), selected date \(dateStr), \(entries.count) entries this week, \(timeOffEntries.count) time-off entries."
+                ]
+            )
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .scheduleCalendarPageInactive, object: nil)
+        }
     }
 
     private var selectedDateString: String {
@@ -454,7 +480,8 @@ struct IOSScheduleCalendarPage: View {
 
     private func loadDayDetail() {
         guard let service = appCore.schedulingService else {
-            // Service not ready
+            loadError = "Scheduling service not available"
+            isLoading = false
             return
         }
         let dateStr = selectedDateString

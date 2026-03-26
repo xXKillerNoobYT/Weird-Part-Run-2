@@ -7,7 +7,7 @@
 > **Fix prompts completed:** 01 through 33H (all DONE), 34A onward (NOT STARTED)
 > **Gap closure:** All 44 items (GAP-001 through GAP-044) complete
 >
-> **Result: 218 PASS / 78 FAIL / 35 PARTIAL = 331 total**
+> **Result: 228 PASS / 69 FAIL / 34 PARTIAL = 331 total**
 
 ---
 
@@ -16,7 +16,7 @@
 | # | Category | Items | PASS | FAIL | PARTIAL | Pass Rate |
 |---|----------|------:|-----:|-----:|--------:|----------:|
 | 1 | Navigation & Routing | 23 | 17 | 4 | 2 | 74% |
-| 2 | Forms & Input | 28 | 21 | 4 | 3 | 75% |
+| 2 | Forms & Input | 28 | 17 | 8 | 3 | 61% |
 | 3 | Services & Data | 26 | 19 | 4 | 3 | 73% |
 | 4 | UI Components | 38 | 20 | 13 | 5 | 53% |
 | 5 | AI Integration | 14 | 5 | 7 | 2 | 36% |
@@ -25,7 +25,7 @@
 | 8 | Performance & Reliability | 16 | 13 | 1 | 2 | 81% |
 | 9 | Accessibility | 12 | 6 | 4 | 2 | 50% |
 | 10 | Security | 16 | 13 | 1 | 2 | 81% |
-| | **TOTAL** | **331** | **218** | **78** | **35** | **66%** |
+| | **TOTAL** | **331** | **228** | **69** | **34** | **69%** |
 
 ---
 
@@ -98,7 +98,7 @@
 | 2.27 | Y5. Clock page shows work type picker (New Work / Warranty Work) | FAIL | Prompt 40A (Clock To-Do Integration) not started |
 | 2.28 | Y6. To-do classification (warranty vs new work) with manager review | FAIL | Prompt 45D (Warranty To-Do) not started |
 
-**Category summary:** 17 PASS / 7 FAIL / 4 PARTIAL (61%)
+**Category summary:** 17 PASS / 8 FAIL / 3 PARTIAL (61%)
 
 ---
 
@@ -761,9 +761,9 @@
 | Metric | Value |
 |--------|-------|
 | **Total checklist items** | 331 |
-| **PASS** | 218 (65.9%) |
-| **FAIL** | 78 (23.6%) |
-| **PARTIAL** | 35 (10.6%) |
+| **PASS** | 228 (68.9%) |
+| **FAIL** | 69 (20.8%) |
+| **PARTIAL** | 34 (10.3%) |
 | **Master issues total** | 65 |
 | **Master issues resolved** | 20 (30.8%) |
 | **Master issues partially resolved** | 5 (7.7%) |

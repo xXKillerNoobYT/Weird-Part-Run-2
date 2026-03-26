@@ -15,10 +15,34 @@ struct IOSToolsDashboardPage: View {
     @State private var recentCheckouts: [ToolsService.CheckoutRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         dashboardContent
             .navigationTitle("Tools Overview")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
+            }
+            .sheet(item: $activeSheet) { _ in
+                PageHelpSheet(
+                    title: "Tools Overview Help",
+                    sections: [
+                        ("What This Page Does", "The Tools Overview is your at-a-glance dashboard for all company tools. It shows four key metrics: total tools in the system, how many are currently checked out, how many are in maintenance, and how many tool kits exist."),
+                        ("KPI Cards", "Each card at the top summarizes a key number. Blue is total tools, orange is checked out, red is in maintenance, and green is total kits. Tap pull-to-refresh to update these numbers."),
+                        ("Recent Activity", "Below the cards you will see the latest checkout and return activity. Each row shows the tool name, who checked it out, and the date. Blue arrows mean checked out, green arrows mean returned."),
+                        ("Tips", "Pull down anywhere on the page to refresh the data. If you see a high number of tools in maintenance, check the Maintenance tab for details.")
+                    ]
+                )
+            }
             .refreshable { loadData() }
             .task { loadData() }
     }

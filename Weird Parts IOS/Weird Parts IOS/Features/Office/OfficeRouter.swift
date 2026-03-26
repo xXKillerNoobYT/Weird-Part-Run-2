@@ -23,7 +23,7 @@ struct OfficeRouter: View {
 
         // Approvals (unified: JPO, deletions, time-off, tool edits)
         case "office-approvals":
-            IOSApprovalsPage()
+            IOSUnifiedApprovalsPage()
 
         // Operations (kept from original)
         case "office-manage-jobs":
@@ -40,6 +40,10 @@ struct OfficeRouter: View {
         // Teams
         case "office-teams":
             IOSTeamsPage()
+
+        // Spending Dashboard (aggregate cost view)
+        case "office-spending":
+            IOSSpendingDashboardPage()
 
         // Reports (quick links into the Reports module)
         case "office-reports":

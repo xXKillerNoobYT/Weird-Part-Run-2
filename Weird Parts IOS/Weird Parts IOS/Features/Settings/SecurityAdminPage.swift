@@ -12,6 +12,7 @@ struct SecurityAdminPage: View {
 
     // MARK: - State
 
+    @State private var activeSheet: ActiveSheet?
     @State private var isLoading = true
     @State private var devices: [AuthService.RegisteredDevice] = []
     @State private var sessions: [AuthService.ActiveSession] = []
@@ -43,6 +44,19 @@ struct SecurityAdminPage: View {
             }
         }
         .navigationTitle("Security & Devices")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Security Help", sections: [
+                ("What This Page Does", "Shows registered devices and active user sessions. Administrators can force-logout sessions from this page."),
+                ("How to Use It", "Review device status and active sessions. To end a session, tap the red X button next to it (admin permission required). Full device and session management is available on the desktop application."),
+            ])
+        }
         .task { loadData() }
         .alert("Force Logout", isPresented: $showForceLogoutConfirm) {
             Button("Cancel", role: .cancel) { selectedSessionId = nil }
@@ -50,6 +64,11 @@ struct SecurityAdminPage: View {
         } message: {
             Text("This will immediately end the selected session. The user will need to log in again.")
         }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     // MARK: - Devices Section

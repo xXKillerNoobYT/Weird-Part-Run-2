@@ -12,13 +12,26 @@ struct IOSNotebooksListPage: View {
     // MARK: - State
 
     @State private var notebooks: [NotebooksService.NotebookListItem] = []
+    @State private var allNotebooks: [NotebooksService.NotebookListItem] = []
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var typeFilter = "all"
     @State private var loadError: String?
     @State private var showCreateNotebook = false
+    @State private var activeSheet: ActiveSheet?
 
     private let typeOptions = ["all", "general", "job", "daily_report", "checklist"]
+
+    // MARK: - ActiveSheet
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String {
+            switch self {
+            case .help: return "help"
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,37 +46,72 @@ struct IOSNotebooksListPage: View {
                     Image(systemName: "plus")
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(isPresented: $showCreateNotebook) {
             CreateNotebookSheet(onSave: { loadData() })
                 .environmentObject(appCore)
         }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Notebooks Help", sections: [
+                ("What This Page Does", "Displays all notebooks in the system. Notebooks are organized documents that hold structured entries such as text blocks, checklists, photos, and part references. They can be general-purpose or linked to specific jobs."),
+                ("How to Use It", "Use the type filter chips at the top to narrow by notebook type (General, Job, Daily Report, or Checklist). Use the search bar to find notebooks by title, job name, or author. Tap a notebook to view its full contents. Pull down to refresh the list."),
+                ("Creating a Notebook", "Tap the + button in the toolbar to create a new notebook. You can choose a type, assign it to a job, and optionally start from a template."),
+                ("Notebook Types", "General notebooks are standalone. Job notebooks are linked to a specific job. Daily Report notebooks track daily progress. Checklist notebooks contain to-do items that can be checked off.")
+            ])
+        }
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .notebooksListPageActive,
+                object: nil,
+                userInfo: [
+                    "context": "Notebooks List: \(notebooks.count) notebooks, type filter: \(typeFilter)."
+                ]
+            )
+            // Register AI filter (prompt 62S)
+            appCore.aiFilterRegistry.register(
+                pageId: "notebooks",
+                filterName: "Notebook Type",
+                options: typeOptions,
+                activate: { value in
+                    typeFilter = value
+                    loadData()
+                }
+            )
+            appCore.aiFilterRegistry.applyPendingFilter(pageId: "notebooks")
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .notebooksListPageInactive, object: nil)
+            appCore.aiFilterRegistry.deregister(pageId: "notebooks")
+        }
     }
 
     // MARK: - Type Picker
+
+    private func countForType(_ type: String) -> Int {
+        if type == "all" { return allNotebooks.count }
+        return allNotebooks.filter { $0.notebookType == type }.count
+    }
 
     private var typePicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(typeOptions, id: \.self) { type in
-                    Button {
+                    SmartFilterCard(
+                        title: type == "all" ? "All" : type.replacingOccurrences(of: "_", with: " ").capitalized,
+                        count: countForType(type),
+                        isSelected: typeFilter == type
+                    ) {
                         typeFilter = type
                         loadData()
-                    } label: {
-                        Text(type == "all" ? "All" : type.replacingOccurrences(of: "_", with: " ").capitalized)
-                            .font(.caption)
-                            .fontWeight(typeFilter == type ? .bold : .regular)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(typeFilter == type ? Color.accentColor : Color.secondary.opacity(0.2))
-                            )
-                            .foregroundStyle(typeFilter == type ? .white : .primary)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal)
@@ -202,9 +250,10 @@ struct IOSNotebooksListPage: View {
         isLoading = notebooks.isEmpty
         loadError = nil
         do {
-            notebooks = try service.listNotebooks(
-                notebookType: typeFilter == "all" ? nil : typeFilter
-            )
+            allNotebooks = try service.listNotebooks(notebookType: nil)
+            notebooks = typeFilter == "all"
+                ? allNotebooks
+                : allNotebooks.filter { $0.notebookType == typeFilter }
         } catch {
             loadError = error.localizedDescription
         }

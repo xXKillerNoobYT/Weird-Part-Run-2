@@ -59,7 +59,7 @@ struct IOSReceivingPage: View {
                     Image(systemName: "plus")
                 }
             }
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }

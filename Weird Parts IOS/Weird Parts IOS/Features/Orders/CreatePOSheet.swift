@@ -102,12 +102,20 @@ struct CreatePOSheet: View {
                 }
                 .environmentObject(appCore)
             }
+            .alert("Error", isPresented: Binding<Bool>(
+                get: { loadError != nil },
+                set: { if !$0 { loadError = nil } }
+            )) {
+                Button("OK") { loadError = nil }
+            } message: {
+                Text(loadError ?? "")
+            }
         }
     }
 
     private func generatePONumber() {
         guard let service = appCore.ordersService else {
-            // Service not ready
+            loadError = "Orders service not available"
             return
         }
         do {
@@ -134,7 +142,10 @@ struct CreatePOSheet: View {
 
     private func savePO() {
         guard let service = appCore.ordersService,
-              let supplierId = selectedSupplierId else { return }
+              let supplierId = selectedSupplierId else {
+            saveError = "Orders service not available"
+            return
+        }
         isSaving = true
         saveError = nil
         do {

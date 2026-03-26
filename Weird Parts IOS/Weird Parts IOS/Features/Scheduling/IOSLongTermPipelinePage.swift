@@ -14,6 +14,21 @@ struct IOSLongTermPipelinePage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var selectedMonthId: String?
+    @State private var searchText = ""
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
+
+    private var filteredTimelineMonths: [SchedulingService.MonthCapacity] {
+        if searchText.isEmpty { return timelineMonths }
+        return timelineMonths.filter {
+            $0.monthLabel.localizedCaseInsensitiveContains(searchText) ||
+            $0.jobs.contains(where: { $0.name.localizedCaseInsensitiveContains(searchText) })
+        }
+    }
 
     private var selectedMonth: SchedulingService.MonthCapacity? {
         guard let id = selectedMonthId else { return nil }
@@ -32,6 +47,22 @@ struct IOSLongTermPipelinePage: View {
             }
         }
         .navigationTitle("Long-Term Pipeline")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Long-Term Pipeline Help", sections: [
+                ("What This Page Does", "The Long-Term Pipeline shows a 3-year capacity timeline organized by month. Each month displays a utilization bar, job count, and pending bid count so you can see how booked you are months in advance."),
+                ("How to Use It", "Scroll through the monthly timeline to see capacity at a glance. Tap any month to expand it and see the individual jobs scheduled for that period. AI warnings at the top flag months that are over- or under-committed."),
+                ("Reading the Bars", "Green means light workload, blue is moderate, orange is getting full, and red means overcommitted. The fraction (e.g. 18/22 days) shows scheduled days vs. available working days."),
+                ("Tips", "Use this view to plan bids and new work. If a month is red, avoid committing more jobs there. If months ahead look empty, it is time to ramp up sales and bidding efforts.")
+            ])
+        }
+        .searchable(text: $searchText, prompt: "Search months or jobs...")
         .refreshable { loadData() }
         .task { loadData() }
     }
@@ -65,7 +96,7 @@ struct IOSLongTermPipelinePage: View {
 
             // 3-Year Timeline
             Section {
-                ForEach(timelineMonths, id: \.id) { month in
+                ForEach(filteredTimelineMonths, id: \.id) { month in
                     Button {
                         if selectedMonthId == month.id {
                             selectedMonthId = nil

@@ -7,6 +7,9 @@ struct WarehouseInventoryValueReport: View {
     @State private var valueData: [WarehouseService.InventoryValueRow] = []
     @State private var loadError: String?
     @State private var isLoading = true
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     var body: some View {
         List {
@@ -76,6 +79,20 @@ struct WarehouseInventoryValueReport: View {
                                     String(format: "%.2f", $0.onHandValue),
                                     String(format: "%.2f", $0.onOrderValue)] }
         )
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Inventory Value Help", sections: [
+                ("What This Page Does", "Shows the total dollar value of your inventory, broken down by category. For each category, you see the on-hand value (what is in the warehouse right now) and on-order value (what has been ordered but not yet received)."),
+                ("How to Use It", "The top section shows combined totals. Scroll down to see each category with its item count and values. Use this to understand where your inventory investment is concentrated."),
+                ("Tips", "If one category holds most of the value, make sure those items are being tracked carefully. High on-order value means money is committed but not yet in the warehouse. Export this report for insurance or accounting reviews.")
+            ])
+        }
         .onAppear { loadData() }
     }
 

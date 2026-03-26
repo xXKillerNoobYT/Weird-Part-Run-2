@@ -36,6 +36,17 @@ struct IOSPartsOrderManagementPage: View {
     // Multi-selection
     @State private var selectedPartIds: Set<Int64> = []
 
+    // Help
+    @State private var activeSheet: ActiveSheet?
+
+    // Toast
+    @State private var showComingSoon = false
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             supplierPicker
@@ -65,6 +76,41 @@ struct IOSPartsOrderManagementPage: View {
         }
         .navigationTitle("Parts Management")
         .searchable(text: $searchText, prompt: "Search parts by name, code, or job...")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Parts Management Help",
+                sections: [
+                    ("What This Page Does", "Shows all parts ordered from a specific supplier across all active purchase orders. This is the supplier-centric view -- see everything you've ordered from one supplier in one place."),
+                    ("How to Use It", "Pick a supplier from the cards at the top. Use PO status filters (Draft, Active, Partial, etc.) and part status filters (Waiting, Backorder, Received) to narrow the list. Search by part name, code, job name, or PO number."),
+                    ("Multi-Select Actions", "Tap the circle next to parts to select them. The action bar at the bottom lets you move selected parts to a different PO, change quantities, or remove and hold them for a different supplier."),
+                    ("Tips", "Parts are grouped by PO number with the PO status and ETA shown in each section header. This view is great for checking what's outstanding with a specific supplier before calling them.")
+                ]
+            )
+        }
+        .overlay(alignment: .bottom) {
+            if showComingSoon {
+                Text("Coming in a future update")
+                    .font(.subheadline)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(8)
+                    .padding(.bottom, 20)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            withAnimation { showComingSoon = false }
+                        }
+                    }
+            }
+        }
         .task {
             loadSuppliers()
             if let pre = preSelectedSupplierId {
@@ -325,17 +371,17 @@ struct IOSPartsOrderManagementPage: View {
                     .fontWeight(.medium)
                 Spacer()
                 Button("Move to PO") {
-                    // TODO: Move to different PO sheet
+                    withAnimation { showComingSoon = true }
                 }
                 .font(.caption)
                 .buttonStyle(.bordered)
                 Button("Change Qty") {
-                    // TODO: Change quantity sheet
+                    withAnimation { showComingSoon = true }
                 }
                 .font(.caption)
                 .buttonStyle(.bordered)
                 Button("Remove + Hold") {
-                    // TODO: Remove and hold for different supplier
+                    withAnimation { showComingSoon = true }
                 }
                 .font(.caption)
                 .buttonStyle(.bordered)
@@ -378,6 +424,7 @@ struct IOSPartsOrderManagementPage: View {
 
     private func loadData() {
         guard let service = appCore.ordersService, let suppId = selectedSupplierId else {
+            loadError = "Orders service not available"
             isLoading = false
             return
         }

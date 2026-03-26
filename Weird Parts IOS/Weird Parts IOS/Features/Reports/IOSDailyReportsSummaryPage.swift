@@ -15,6 +15,16 @@ struct IOSDailyReportsSummaryPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var selectedDate = Date()
+    @State private var searchText = ""
+    @State private var activeSheet: ActiveSheet?
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+    @State private var customEnd: Date = Date()
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
+
+    private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
+    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
 
     private var dateString: String {
         let f = DateFormatter()
@@ -30,18 +40,38 @@ struct IOSDailyReportsSummaryPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
             dateNavigator
             summaryContent
         }
         .navigationTitle("Reports Summary")
+        .searchable(text: $searchText, prompt: "Search jobs...")
         .reportExportToolbar(
             title: "Daily_Summary",
             columns: ["Job", "Workers", "Hours", "Status"],
             rows: rows.map { [$0.jobName, "\($0.workerCount)",
                               String(format: "%.1f", $0.totalHours), $0.status] }
         )
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Daily Reports Summary Help", sections: [
+                ("What This Page Does", "Shows a quick snapshot of all daily reports across every active job for a single day. You can see how many workers were on each job, total hours logged, and the job status."),
+                ("How to Use It", "Use the left and right arrows to move between days, or tap the date to pick a specific day. Each row shows a job with worker count, hours, and status. The top KPIs give you totals at a glance."),
+                ("Tips", "Check this page at the end of each workday to make sure all jobs have reports filed. If a job shows zero workers, the foreman may not have submitted the daily report yet.")
+            ])
+        }
+        .searchable(text: $searchText, prompt: "Search jobs...")
         .refreshable { loadData() }
         .task { loadData() }
+        .onChange(of: dateRange) { loadData() }
+        .onChange(of: customStart) { loadData() }
+        .onChange(of: customEnd) { loadData() }
     }
 
     // MARK: - Date Navigator
@@ -107,7 +137,7 @@ struct IOSDailyReportsSummaryPage: View {
                 }
 
                 Section("Per-Job Activity") {
-                    ForEach(rows, id: \.id) { row in
+                    ForEach(filteredRows, id: \.id) { row in
                         jobRow(row)
                     }
                 }
@@ -176,6 +206,14 @@ struct IOSDailyReportsSummaryPage: View {
     }
 
     // MARK: - Computed
+
+    private var filteredRows: [ReportsService.DailyReportSummaryRow] {
+        if searchText.isEmpty { return rows }
+        return rows.filter {
+            $0.jobName.localizedCaseInsensitiveContains(searchText) ||
+            $0.status.localizedCaseInsensitiveContains(searchText)
+        }
+    }
 
     private var totalWorkers: Int { rows.reduce(0) { $0 + $1.workerCount } }
     private var totalHours: Double { rows.reduce(0) { $0 + $1.totalHours } }

@@ -52,7 +52,7 @@ struct PartsBrandsPage: View {
                     Image(systemName: "plus")
                 }
             }
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
@@ -362,6 +362,7 @@ private struct BrandFormSheet: View {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         guard !trimmedName.isEmpty else { return }
         guard let service = appCore.partsService else {
+            saveError = "Parts service not available"
             throw NSError(domain: "AppError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Service not available"])
         }
         if let b = brand {
@@ -724,6 +725,7 @@ struct BrandSupplierPickerSheet: View {
         isSaving = true
         do {
             guard let service = appCore.partsService else {
+                loadError = "Parts service not available"
                 isSaving = false
                 return
             }

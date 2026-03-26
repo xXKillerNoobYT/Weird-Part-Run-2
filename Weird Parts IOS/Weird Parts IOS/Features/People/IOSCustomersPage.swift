@@ -16,6 +16,7 @@ struct IOSCustomersPage: View {
     @State private var loadError: String?
     private enum ActiveSheet: String, Identifiable {
         case addCustomer
+        case help
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
@@ -33,12 +34,27 @@ struct IOSCustomersPage: View {
                         Image(systemName: "plus")
                     }
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
             }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
                 case .addCustomer:
                     AddCustomerSheet { loadData() }
                         .environmentObject(appCore)
+                case .help:
+                    PageHelpSheet(
+                        title: "Customers Help",
+                        sections: [
+                            ("What This Page Does", "View and manage all customers. Each row shows the company name, primary contact, email, and phone number."),
+                            ("How to Use It", "Type in the search bar to filter customers by company name, contact name, or email. Tap a customer to see their full detail page with contacts, job history, billing, and communication logs. Tap the + button to add a new customer."),
+                            ("Adding a Customer", "The contact name is required. You can also add a company name, email, phone, and address. Customers appear in the list immediately after saving."),
+                            ("Tips", "Pull down to refresh the customer list. Tap into a customer to add additional contacts, record payments, or log communications like calls and meetings.")
+                        ]
+                    )
                 }
             }
     }

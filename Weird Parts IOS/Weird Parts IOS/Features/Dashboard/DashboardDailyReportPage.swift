@@ -114,7 +114,7 @@ struct DashboardDailyReportPage: View {
         .background(DS.Background.page)
         .navigationTitle("Daily Report")
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
@@ -354,7 +354,10 @@ struct DashboardDailyReportPage: View {
     /// Clocks out the current user (for lunch, break, or supply run).
     private func startLunchOrBreak() {
         guard let service = appCore.jobsService,
-              let userId = appCore.currentUser?.id else { return }
+              let userId = appCore.currentUser?.id else {
+            loadError = "Jobs service not available"
+            return
+        }
         do {
             if let active = try service.getActiveClockEntry(userId: userId) {
                 try service.clockOut(laborEntryId: active.id)
@@ -591,7 +594,7 @@ struct DashboardDailyReportPage: View {
                             Text(alert.jobName)
                                 .dsStyle(.detail)
                                 .lineLimit(1)
-                            Text("$\(Int(alert.currentSpend)) of $\(Int(alert.budgetLimit))")
+                            Text("\(String(format: "$%.2f", alert.currentSpend)) of \(String(format: "$%.2f", alert.budgetLimit))")
                                 .dsStyle(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -660,16 +663,26 @@ private struct ReportProblemSheet: View {
     @State private var jobs: [(id: Int64, name: String)] = []
     @State private var saveError: String?
     @State private var isSaving = false
+    @State private var wasAutoFilled = false
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Job") {
+                Section {
                     Picker("Job", selection: $selectedJobId) {
                         Text("Select a job").tag(nil as Int64?)
                         ForEach(jobs, id: \.id) { job in
                             Text(job.name).tag(job.id as Int64?)
                         }
+                    }
+                    .onChange(of: selectedJobId) { _, _ in
+                        wasAutoFilled = false
+                    }
+                } header: {
+                    Text("Job")
+                } footer: {
+                    if wasAutoFilled {
+                        Text("Auto-filled from your active clock entry")
                     }
                 }
                 Section("Problem Description") {
@@ -694,7 +707,10 @@ private struct ReportProblemSheet: View {
                     .disabled(description.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
             }
-            .task { loadJobs() }
+            .task {
+                loadJobs()
+                autoFillFromClockEntry()
+            }
         }
     }
 
@@ -712,6 +728,7 @@ private struct ReportProblemSheet: View {
                 jobId: selectedJobId,
                 description: description.trimmingCharacters(in: .whitespaces)
             )
+            isSaving = false
             dismiss()
         } catch {
             saveError = error.localizedDescription
@@ -721,7 +738,7 @@ private struct ReportProblemSheet: View {
 
     private func loadJobs() {
         guard let service = appCore.dashboardService else {
-            // Service not ready
+            saveError = "Dashboard service not available"
             return
         }
         do {
@@ -729,6 +746,20 @@ private struct ReportProblemSheet: View {
             jobs = activeJobs.map { (id: $0.id, name: $0.jobName) }
         } catch {
             // Non-critical — picker will just be empty
+        }
+    }
+
+    private func autoFillFromClockEntry() {
+        guard selectedJobId == nil,
+              let service = appCore.jobsService,
+              let userId = appCore.currentUser?.id else { return }
+        do {
+            if let activeEntry = try service.getActiveClockEntry(userId: userId) {
+                selectedJobId = activeEntry.jobId
+                wasAutoFilled = true
+            }
+        } catch {
+            // Non-fatal — user can still select manually
         }
     }
 }
@@ -934,6 +965,7 @@ private struct SubmitDailyReportSheet: View {
                 issues: issues.trimmingCharacters(in: .whitespaces),
                 tomorrowNotes: tomorrowNotes.trimmingCharacters(in: .whitespaces)
             )
+            isSaving = false
             dismiss()
         } catch {
             saveError = error.localizedDescription

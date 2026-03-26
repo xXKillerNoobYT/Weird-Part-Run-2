@@ -13,6 +13,12 @@ struct IOSPermissionsPage: View {
     @State private var loadError: String?
     @State private var selectedHat: PeopleService.HatListItem?
     @State private var hatPermissions: [String] = []
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     /// All known permission keys
     private let allPermissions: [PermissionGroup] = [
@@ -67,6 +73,25 @@ struct IOSPermissionsPage: View {
             }
         }
         .navigationTitle("Permissions")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Permissions Help",
+                sections: [
+                    ("What This Page Does", "Configure which permissions each hat (role) grants. This is a matrix editor where you select a hat and then toggle individual permissions on or off."),
+                    ("How to Use It", "Tap a hat in the horizontal selector at the top. The permission list below updates to show all available permissions grouped by category, with toggles showing which ones are enabled for that hat."),
+                    ("Permission Groups", "Permissions are organized into categories: Parts & Warehouse, Jobs & Labor, Orders, Fleet & Tools, People, Scheduling, Chat, and Reports & Admin. Each category contains specific permission keys that control access to features."),
+                    ("Toggling Permissions", "Flip a toggle to grant or revoke a permission for the selected hat. Changes take effect immediately. Any employee wearing that hat will gain or lose access to the corresponding feature."),
+                    ("Tips", "Pull down to refresh. The first hat is auto-selected when the page loads. Permission names are derived from their system keys — for example, 'view_parts_catalog' becomes 'View Parts Catalog'. Plan your permission structure carefully: give each hat only the permissions it needs.")
+                ]
+            )
+        }
         .refreshable { loadData() }
         .task { loadData() }
     }

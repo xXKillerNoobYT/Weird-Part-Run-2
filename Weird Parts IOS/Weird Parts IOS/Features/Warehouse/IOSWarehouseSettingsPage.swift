@@ -33,7 +33,12 @@ struct IOSWarehouseSettingsPage: View {
     @State private var isSaving = false
     @State private var showSaveConfirmation = false
     @State private var errorMessage: String?
-    @State private var showHelp = false
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         Group {
@@ -46,13 +51,13 @@ struct IOSWarehouseSettingsPage: View {
         }
         .navigationTitle("Warehouse Settings")
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
-                Button { showHelp = true } label: {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
+        .sheet(item: $activeSheet) { _ in
             PageHelpSheet(
                 title: "Warehouse Settings Help",
                 sections: [

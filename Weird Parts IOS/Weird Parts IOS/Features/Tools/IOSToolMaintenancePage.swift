@@ -9,6 +9,12 @@ struct IOSToolMaintenancePage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var searchText = ""
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,6 +35,24 @@ struct IOSToolMaintenancePage: View {
         }
         .navigationTitle("Tool Maintenance")
         .searchable(text: $searchText, prompt: "Search by tool name or serial...")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Tool Maintenance Help",
+                sections: [
+                    ("What This Page Does", "This page shows all tools that are currently in maintenance status. These are tools that have been pulled from service for repair, calibration, inspection, or any other servicing need."),
+                    ("Maintenance List", "Each row shows the tool name, serial number, and an orange 'Maintenance' badge. Use the search bar to find a specific tool by name or serial number."),
+                    ("Resolving Maintenance", "To mark a tool as back in service, tap it to open the detail page, then use the Edit action to change its status back to 'Available'. Make sure the tool has actually been repaired or serviced before changing its status."),
+                    ("Tips", "Check this page regularly. Tools stuck in maintenance for a long time may need follow-up with the repair shop. If this list is empty, all tools are in working order.")
+                ]
+            )
+        }
         .refreshable { loadData() }
         .task { loadData() }
     }

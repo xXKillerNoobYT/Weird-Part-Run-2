@@ -89,6 +89,14 @@ struct PricingTierSetSheet: View {
                 }
                 pricingMode = (try? service.getCompanyCostSetting(key: "pricing_mode")) ?? "markup"
             }
+            .alert("Error", isPresented: Binding<Bool>(
+                get: { loadError != nil },
+                set: { if !$0 { loadError = nil } }
+            )) {
+                Button("OK") { loadError = nil }
+            } message: {
+                Text(loadError ?? "")
+            }
         }
     }
 

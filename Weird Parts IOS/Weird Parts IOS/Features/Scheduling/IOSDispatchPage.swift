@@ -1,11 +1,27 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import WiredPartCore
+
+// MARK: - Draggable Worker (Transferable)
+
+/// Lightweight Codable wrapper representing a worker being dragged from the
+/// "Unassigned Workers" section onto a job row. Uses `.json` content type so
+/// no custom UTType registration in Info.plist is required.
+struct DraggableWorker: Codable, Transferable {
+    let id: Int64
+    let name: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .json)
+    }
+}
 
 /// Gantt-style dispatch board for iOS.
 ///
 /// Shows job rows with daily columns across the week. Colored bars show who's
 /// assigned where (AM=blue, PM=green, Full=orange). Unassigned workers section
 /// at the bottom. Tap empty cell or unassigned worker to create assignment.
+/// Drag an unassigned worker onto a job row to quickly assign them.
 struct IOSDispatchPage: View {
     @EnvironmentObject private var appCore: AppCore
 
@@ -32,6 +48,15 @@ struct IOSDispatchPage: View {
     @State private var pendingAssignWorkerId: Int64?
 
     @State private var actionError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    // Drag-and-drop: tracks which job row is currently targeted
+    @State private var dropTargetJobId: Int64?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     private let calendar = Calendar.current
 
@@ -71,6 +96,11 @@ struct IOSDispatchPage: View {
                     Image(systemName: "plus")
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(isPresented: $showAssignSheet) {
             DispatchAssignSheet(
@@ -85,6 +115,15 @@ struct IOSDispatchPage: View {
             )
             .environmentObject(appCore)
         }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Dispatch Board Help", sections: [
+                ("What This Page Does", "The Dispatch Board is a Gantt-style weekly view showing which workers are assigned to which jobs each day. Colored bars indicate time slots: blue for AM, green for PM, and orange for full day."),
+                ("How to Use It", "Navigate between weeks using the left/right arrows. Tap an empty cell on a job row to assign a worker to that job and day. Tap a worker in the Unassigned section to start an assignment for them. Use the + button to create a new assignment from scratch."),
+                ("Drag & Drop", "Press and hold an unassigned worker chip, then drag it onto a job row. The row highlights blue when targeted. Dropping creates a full-day assignment for today (or the week start if today is not in the displayed week). Time-off conflicts are checked automatically."),
+                ("Time-Off Conflicts", "If you assign someone who has approved time off that day, you will see a conflict warning. You can choose to assign them anyway or cancel."),
+                ("Tips", "Red 'Unassigned Workers' at the bottom means people have no work scheduled that week. Aim to keep this section empty by assigning everyone to jobs.")
+            ])
+        }
         .alert("Time-Off Conflict", isPresented: $showConflictAlert) {
             Button("Assign Anyway", role: .destructive) {
                 if let jid = pendingAssignJobId, let uid = pendingAssignWorkerId, let d = pendingAssignDate {
@@ -97,6 +136,18 @@ struct IOSDispatchPage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .dispatchPageActive,
+                object: nil,
+                userInfo: [
+                    "context": "Dispatch Board: \(jobRows.count) job rows, \(assignments.count) assignments, \(unassignedWorkers.count) unassigned workers, week of \(weekStartStr)."
+                ]
+            )
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .dispatchPageInactive, object: nil)
+        }
     }
 
     // MARK: - Week Header
@@ -205,7 +256,9 @@ struct IOSDispatchPage: View {
     // MARK: - Job Row
 
     private func jobRowView(_ row: SchedulingService.DispatchJobRow) -> some View {
-        HStack(spacing: 1) {
+        let isDropTarget = dropTargetJobId == row.id
+
+        return HStack(spacing: 1) {
             // Job name column
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.jobName)
@@ -236,6 +289,21 @@ struct IOSDispatchPage: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isDropTarget ? Color.blue.opacity(0.15) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .strokeBorder(isDropTarget ? Color.blue : Color.clear, lineWidth: 2)
+        )
+        .dropDestination(for: DraggableWorker.self) { workers, _ in
+            guard let worker = workers.first else { return false }
+            handleDrop(worker: worker, onJobId: row.id)
+            return true
+        } isTargeted: { targeted in
+            dropTargetJobId = targeted ? row.id : (dropTargetJobId == row.id ? nil : dropTargetJobId)
+        }
     }
 
     private func dayCellForJob(row: SchedulingService.DispatchJobRow, day: Date) -> some View {
@@ -307,21 +375,46 @@ struct IOSDispatchPage: View {
                             selectedDate = dateString(Date())
                             showAssignSheet = true
                         } label: {
-                            Text(worker.name)
-                                .font(.caption)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(Color.red.opacity(0.1))
-                                .foregroundStyle(.primary)
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                            HStack(spacing: 4) {
+                                Image(systemName: "line.3.horizontal")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Text(worker.name)
+                                    .font(.caption)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.red.opacity(0.1))
+                            .foregroundStyle(.primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
                         .buttonStyle(.plain)
+                        .draggable(DraggableWorker(id: worker.id, name: worker.name))
                     }
                 }
                 .padding(.horizontal, 8)
             }
         }
         .padding(.bottom, 8)
+    }
+
+    // MARK: - Drag-and-Drop Handler
+
+    /// Called when a `DraggableWorker` is dropped onto a job row.
+    /// Defaults to today's date and "full" time slot. Checks for time-off
+    /// conflicts before creating the assignment.
+    private func handleDrop(worker: DraggableWorker, onJobId jobId: Int64) {
+        // Use today if it falls within the displayed week; otherwise use the week's start date
+        let today = Date()
+        let todayStr = dateString(today)
+        let dropDate: String
+        if todayStr >= weekStartStr && todayStr <= weekEndStr {
+            dropDate = todayStr
+        } else {
+            dropDate = weekStartStr
+        }
+
+        createAssignment(jobId: jobId, userId: worker.id, date: dropDate, timeSlot: "full")
     }
 
     // MARK: - Assignment Logic

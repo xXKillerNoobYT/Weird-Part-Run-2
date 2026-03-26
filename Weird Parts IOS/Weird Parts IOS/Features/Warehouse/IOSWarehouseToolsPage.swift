@@ -14,7 +14,12 @@ struct IOSWarehouseToolsPage: View {
     @State private var loadError: String?
     @State private var actionError: String?
     @State private var selectedFilter: ToolFilter?
-    @State private var showHelp = false
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     private enum ToolFilter: String, CaseIterable {
         case available = "Available"
@@ -42,13 +47,13 @@ struct IOSWarehouseToolsPage: View {
         .navigationTitle("Warehouse Tools")
         .searchable(text: $searchText, prompt: "Search tools...")
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
-                Button { showHelp = true } label: {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
+        .sheet(item: $activeSheet) { _ in
             PageHelpSheet(
                 title: "Warehouse Tools Help",
                 sections: [
@@ -238,7 +243,10 @@ struct IOSWarehouseToolsPage: View {
 
     private func checkoutTool(_ tool: ToolsService.ToolListItem) {
         guard let service = appCore.toolsService,
-              let userId = appCore.currentUser?.id else { return }
+              let userId = appCore.currentUser?.id else {
+            loadError = "Tools service not available"
+            return
+        }
         do {
             try service.checkoutTool(toolId: tool.id, userId: userId)
             loadData()
@@ -249,7 +257,10 @@ struct IOSWarehouseToolsPage: View {
 
     private func returnTool(_ tool: ToolsService.ToolListItem) {
         guard let service = appCore.toolsService,
-              let userId = appCore.currentUser?.id else { return }
+              let userId = appCore.currentUser?.id else {
+            loadError = "Tools service not available"
+            return
+        }
         do {
             try service.returnTool(toolId: tool.id, userId: userId)
             loadData()

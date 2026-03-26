@@ -22,15 +22,15 @@ struct IOSJPOsPage: View {
     private let statusOptions = ["all", "draft", "pending", "submitted", "approved", "rejected"]
 
     private enum ActiveSheet: Identifiable {
-        case createJPO
         case qrScanner
         case scannedJPODetail(Int64)
+        case help
 
         var id: String {
             switch self {
-            case .createJPO: "createJPO"
             case .qrScanner: "qrScanner"
             case .scannedJPODetail(let id): "scannedJPO-\(id)"
+            case .help: "help"
             }
         }
     }
@@ -62,8 +62,16 @@ struct IOSJPOsPage: View {
                 Button { activeSheet = .qrScanner } label: {
                     Image(systemName: "qrcode.viewfinder")
                 }
-                Button { activeSheet = .createJPO } label: {
+                NavigationLink {
+                    IOSJPOCreationPage()
+                        .environmentObject(appCore)
+                } label: {
                     Image(systemName: "plus")
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
                 }
             }
         }
@@ -71,6 +79,29 @@ struct IOSJPOsPage: View {
             sheetContent(for: sheet)
         }
         .task { loadData() }
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .jposPageActive,
+                object: nil,
+                userInfo: [
+                    "context": "JPOs Page: \(allJPOs.count) total JPOs, filter: \(statusFilter), \(pendingCount) pending approval."
+                ]
+            )
+            // Register AI filter (prompt 62S)
+            appCore.aiFilterRegistry.register(
+                pageId: "jpos",
+                filterName: "JPO Status",
+                options: statusOptions,
+                activate: { value in
+                    statusFilter = value
+                }
+            )
+            appCore.aiFilterRegistry.applyPendingFilter(pageId: "jpos")
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .jposPageInactive, object: nil)
+            appCore.aiFilterRegistry.deregister(pageId: "jpos")
+        }
     }
 
     // MARK: - Sheet Content
@@ -78,9 +109,6 @@ struct IOSJPOsPage: View {
     @ViewBuilder
     private func sheetContent(for sheet: ActiveSheet) -> some View {
         switch sheet {
-        case .createJPO:
-            CreateJPOSheet(onSave: { loadData() })
-                .environmentObject(appCore)
         case .qrScanner:
             QRScanSheet(expectedType: .po) { result in
                 if result.entityId != nil, result.isFound {
@@ -95,6 +123,16 @@ struct IOSJPOsPage: View {
                 IOSJPODetailPage(jpoId: jpoId)
                     .environmentObject(appCore)
             }
+        case .help:
+            PageHelpSheet(
+                title: "Job Purchase Orders Help",
+                sections: [
+                    ("What This Page Does", "Lists all Job Purchase Orders (JPOs) -- requests from field workers for parts they need on the job. Each JPO is tied to a specific job and goes through an approval workflow."),
+                    ("How to Use It", "Filter by status using the chips at the top (Draft, Pending, Submitted, Approved, Rejected). Search by job name or requester. Tap a JPO to see its line items and take action. Tap + to create a new JPO or scan a QR code to find one."),
+                    ("Status Flow", "Draft -> Submitted -> Pending (awaiting approval) -> Approved (goes to procurement) or Rejected (sent back with a reason). The pending count badge shows how many need manager attention."),
+                    ("Tips", "Pull down to refresh. If a JPO shows a question badge, it means a line item is on hold with a pending question from the approver. Tap into the JPO to view and respond to the chat thread.")
+                ]
+            )
         }
     }
 
@@ -115,20 +153,13 @@ struct IOSJPOsPage: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(statusOptions, id: \.self) { status in
-                    Button {
+                    SmartFilterCard(
+                        title: status == "all" ? "All" : status.capitalized,
+                        count: countForStatus(status),
+                        isSelected: statusFilter == status
+                    ) {
                         statusFilter = status
-                    } label: {
-                        Text("\(status == "all" ? "All" : status.capitalized) (\(countForStatus(status)))")
-                            .font(.caption)
-                            .fontWeight(statusFilter == status ? .bold : .regular)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(statusFilter == status ? Color.accentColor : Color.secondary.opacity(0.2))
-                            )
-                            .foregroundStyle(statusFilter == status ? .white : .primary)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal)
@@ -239,14 +270,9 @@ struct IOSJPOsPage: View {
             .foregroundStyle(color)
     }
 
+    // TODO: When JPOListItem gains a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)
     private func priorityBadge(_ priority: String) -> some View {
-        let color: Color = switch priority {
-        case "urgent": .red
-        case "high": .orange
-        case "normal": .blue
-        case "low": .secondary
-        default: .secondary
-        }
+        let color = TimelinePriorityColor.fallbackColor(priority: priority)
         return Text(priority.capitalized)
             .font(.caption2)
             .foregroundStyle(color)
@@ -269,141 +295,5 @@ struct IOSJPOsPage: View {
             loadError = error.localizedDescription
         }
         isLoading = false
-    }
-}
-
-// MARK: - Create JPO Sheet
-
-private struct CreateJPOSheet: View {
-    @EnvironmentObject private var appCore: AppCore
-    @Environment(\.dismiss) private var dismiss
-    let onSave: () -> Void
-
-    @State private var selectedJobId: Int64?
-    @State private var priority = "normal"
-    @State private var notes = ""
-    @State private var jobs: [JobsService.JobListItem] = []
-    @State private var errorMessage: String?
-    @State private var clockedInJobId: Int64?
-    @State private var clockedInJobName: String?
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                // Job selection
-                Section("Job") {
-                    if let clockedJob = clockedInJobName, selectedJobId == clockedInJobId {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(clockedJob)
-                                    .fontWeight(.medium)
-                                Text("Clocked in")
-                                    .font(.caption)
-                                    .foregroundStyle(.green)
-                            }
-                            Spacer()
-                            Button("Change") {
-                                selectedJobId = nil
-                                clockedInJobName = nil
-                            }
-                            .font(.caption)
-                        }
-                    } else {
-                        Picker("Select Job", selection: $selectedJobId) {
-                            Text("Select a job...").tag(nil as Int64?)
-                            ForEach(jobs, id: \.id) { job in
-                                Text(job.jobName).tag(job.id as Int64?)
-                            }
-                        }
-                    }
-                }
-
-                Section("Priority") {
-                    Picker("Priority", selection: $priority) {
-                        Text("Normal").tag("normal")
-                        Text("High").tag("high")
-                        Text("Urgent").tag("urgent")
-                    }
-                    .pickerStyle(.segmented)
-                }
-
-                Section("Notes") {
-                    TextField("Optional notes...", text: $notes, axis: .vertical)
-                        .lineLimit(3...6)
-                }
-
-                if let error = errorMessage {
-                    Section {
-                        Text(error)
-                            .foregroundStyle(.red)
-                            .font(.caption)
-                    }
-                }
-            }
-            .navigationTitle("New JPO")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") { createJPO() }
-                        .disabled(selectedJobId == nil)
-                }
-            }
-            .task { await loadJobContext() }
-        }
-    }
-
-    private func loadJobContext() async {
-        guard let jobsService = appCore.jobsService else {
-            errorMessage = "Jobs service not available"
-            return
-        }
-        // Load active jobs
-        do {
-            jobs = try jobsService.listJobs(status: "active", limit: 100)
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-
-        // Check if user is clocked in
-        guard let userId = appCore.currentUser?.id else {
-            // User not logged in
-            return
-        }
-        do {
-            if let activeEntry = try jobsService.getActiveClockEntry(userId: userId) {
-                clockedInJobId = activeEntry.jobId
-                clockedInJobName = activeEntry.jobName
-                selectedJobId = activeEntry.jobId
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func createJPO() {
-        guard let service = appCore.ordersService else {
-            errorMessage = "Orders service not available"
-            return
-        }
-        guard let jobId = selectedJobId else {
-            errorMessage = "Please select a job"
-            return
-        }
-        let userId = appCore.currentUser?.id ?? 0
-        do {
-            _ = try service.createJPO(
-                jobId: jobId,
-                requestedBy: userId,
-                priority: priority,
-                notes: notes.isEmpty ? nil : notes
-            )
-            onSave()
-            dismiss()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
     }
 }

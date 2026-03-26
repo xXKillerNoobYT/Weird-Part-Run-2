@@ -16,6 +16,12 @@ struct IOSEscalationTimeline: View {
     @State private var actionError: String?
     @State private var showPushBackSheet = false
     @State private var pushBackReason = ""
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     private var canEscalate: Bool {
         thread.currentLevel != "office" && thread.status == "open"
@@ -54,6 +60,26 @@ struct IOSEscalationTimeline: View {
             }
             .padding()
         }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Escalation Timeline Help",
+                sections: [
+                    ("What This Page Does", "This page shows the full escalation history of a Q&A question or RFI. You can see every level the question has passed through -- Worker, Lead, Manager, Office -- who reviewed it, when, and any notes they left."),
+                    ("How to Read the Timeline", "The vertical timeline shows each escalation level as a node. Green nodes are completed levels, the blue node is the current level, and gray nodes have not been reached yet. Reviewer names and timestamps appear next to each completed step."),
+                    ("Escalating a Question", "If you cannot answer the question at your level, tap the Escalate button to send it up to the next level. The question moves from Worker to Lead, Lead to Manager, or Manager to Office."),
+                    ("Pushing Back", "If a question was escalated to your level but should be handled at a lower level, tap Push Back. You will need to provide a reason explaining why it is being sent back down. This feedback helps the team learn the right routing."),
+                    ("Tips", "Check the status and priority badges at the top for a quick summary. The question text, who asked it, and any existing answer are all shown in the header. Only open questions can be escalated; closed questions cannot be changed.")
+                ]
+            )
+        }
+        .refreshable { loadSteps() }
         .task { loadSteps() }
         .sheet(isPresented: $showPushBackSheet) {
             PushBackSheet(
@@ -243,14 +269,9 @@ struct IOSEscalationTimeline: View {
         }
     }
 
+    // TODO: When QAThreadRow gains a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)
     private func priorityColor(_ priority: String) -> Color {
-        switch priority {
-        case "urgent": return .red
-        case "high": return .orange
-        case "normal": return .blue
-        case "low": return .secondary
-        default: return .secondary
-        }
+        return TimelinePriorityColor.fallbackColor(priority: priority)
     }
 }
 

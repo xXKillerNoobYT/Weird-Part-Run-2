@@ -16,6 +16,12 @@ struct IOSTelematicsPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var searchText = ""
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         locationList
@@ -23,6 +29,24 @@ struct IOSTelematicsPage: View {
             .searchable(text: $searchText, prompt: "Search vehicles...")
             .refreshable { loadData() }
             .task { loadData() }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
+            }
+            .sheet(item: $activeSheet) { _ in
+                PageHelpSheet(
+                    title: "GPS & Telematics Help",
+                    sections: [
+                        ("Overview", "This page shows the last known GPS position of each fleet vehicle. Data comes from driver mobile devices submitting location updates."),
+                        ("Status Indicators", "Moving (green) means the vehicle is currently in transit. Idle (orange) means the engine is on but the vehicle is stationary. Parked (gray) means the vehicle has been stopped for a while."),
+                        ("Reading Entries", "Each row shows the vehicle name, driver, GPS coordinates, current speed, and the time of the last update. A colored dot on the left indicates the movement status."),
+                        ("Tips", "Pull down to refresh for the latest positions. If a vehicle shows no GPS data, the driver may need to enable location services on their device. GPS updates are submitted automatically during active trips.")
+                    ]
+                )
+            }
     }
 
     // MARK: - Location List

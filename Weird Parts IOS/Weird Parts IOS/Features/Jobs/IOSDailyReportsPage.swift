@@ -15,7 +15,10 @@ struct IOSDailyReportsPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var selectedDate = Date()
-    @State private var showHelp = false
+    @State private var searchText = ""
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,13 +27,13 @@ struct IOSDailyReportsPage: View {
         }
         .navigationTitle("Daily Reports")
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
-                Button { showHelp = true } label: {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
+        .sheet(item: $activeSheet) { _ in
             PageHelpSheet(
                 title: "Daily Reports Help",
                 sections: [
@@ -40,6 +43,7 @@ struct IOSDailyReportsPage: View {
                 ]
             )
         }
+        .searchable(text: $searchText, prompt: "Search jobs...")
         .refreshable { loadData() }
         .task { loadData() }
     }
@@ -144,7 +148,7 @@ struct IOSDailyReportsPage: View {
 
                 // Per-job rows
                 Section("Jobs") {
-                    ForEach(reports, id: \.id) { report in
+                    ForEach(filteredReports, id: \.id) { report in
                         reportRow(report)
                     }
                 }
@@ -214,6 +218,14 @@ struct IOSDailyReportsPage: View {
     }
 
     // MARK: - Computed Properties
+
+    private var filteredReports: [ReportsService.DailyReportSummaryRow] {
+        if searchText.isEmpty { return reports }
+        return reports.filter {
+            $0.jobName.localizedCaseInsensitiveContains(searchText) ||
+            $0.status.localizedCaseInsensitiveContains(searchText)
+        }
+    }
 
     private var totalWorkers: Int {
         reports.reduce(0) { $0 + $1.workerCount }

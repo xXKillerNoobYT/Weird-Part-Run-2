@@ -11,6 +11,7 @@ struct IOSDatabaseResetPage: View {
 
     // MARK: - State
 
+    @State private var activeSheet: ActiveSheet?
     @State private var resetPhase: ResetPhase = .idle
     @State private var adminUsers: [User] = []
     @State private var selectedAdminId: Int64? = nil
@@ -50,6 +51,19 @@ struct IOSDatabaseResetPage: View {
             }
         }
         .navigationTitle("Database Reset")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Database Reset Help", sections: [
+                ("What This Page Does", "Permanently erases all data on this device and returns it to the first-run setup screen. This is useful when decommissioning a device or starting fresh."),
+                ("How to Use It", "Tap 'Request Database Reset' to begin. An administrator must enter their 4-digit PIN to authorize the reset. Once confirmed, the process cannot be undone."),
+            ])
+        }
         .task {
             loadDeviceStatus()
         }
@@ -263,7 +277,12 @@ struct IOSDatabaseResetPage: View {
         }
     }
 
-    // MARK: - Phase Enum
+    // MARK: - Enums
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     private enum ResetPhase {
         case idle

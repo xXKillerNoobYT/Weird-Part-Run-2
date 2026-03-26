@@ -7,12 +7,16 @@ struct FleetMaintenanceTrendsReport: View {
     @State private var trendData: [FleetService.MaintenanceTrendRow] = []
     @State private var loadError: String?
     @State private var isLoading = true
+    @State private var dateRange: ReportDateRange = .thisMonth
     @State private var startDate = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
     @State private var endDate = Date()
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     var body: some View {
         List {
-            StandardFilterBar(startDate: $startDate, endDate: $endDate)
+            StandardFilterBar(selectedRange: $dateRange, customStart: $startDate, customEnd: $endDate)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets())
 
@@ -81,6 +85,20 @@ struct FleetMaintenanceTrendsReport: View {
                                     String(format: "%.2f", $0.cost),
                                     formatDate($0.performedAt)] }
         )
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Maintenance Trends Help", sections: [
+                ("What This Page Does", "Lists all maintenance records for your fleet in the selected date range. Shows total cost, number of records, and average cost per maintenance event. Each record shows the vehicle, type of work, cost, and date."),
+                ("How to Use It", "Pick a date range at the top. The summary gives you totals. Scroll through individual records to see what work was done. Export to PDF or CSV for fleet management reviews."),
+                ("Tips", "If a single vehicle keeps showing up with high costs, it may be time to consider replacing it. Track trends month over month to budget for upcoming maintenance needs.")
+            ])
+        }
         .onAppear { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }

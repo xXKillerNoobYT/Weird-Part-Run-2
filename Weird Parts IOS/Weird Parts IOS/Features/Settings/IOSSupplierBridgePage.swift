@@ -11,6 +11,7 @@ struct IOSSupplierBridgePage: View {
 
     // MARK: - State
 
+    @State private var activeSheet: ActiveSheet?
     @State private var isLoading = true
     @State private var bridges: [ChatService.SupplierBridgeRow] = []
     @State private var errorMessage: String?
@@ -36,7 +37,25 @@ struct IOSSupplierBridgePage: View {
             }
         }
         .navigationTitle("Supplier Bridge")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Supplier Bridge Help", sections: [
+                ("What This Page Does", "Shows the status of supplier portal connections. Bridges sync order and pricing data between your system and supplier portals."),
+                ("How to Use It", "Review connected suppliers and their sync status here. Bridge credentials and configuration are managed on the desktop application. Portal notes are automatically attached to purchase orders."),
+            ])
+        }
         .task { loadData() }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     // MARK: - Bridges Section

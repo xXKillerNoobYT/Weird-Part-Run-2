@@ -15,11 +15,31 @@ struct IOSDispatchTemplatesPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var searchText = ""
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         templateContent
             .navigationTitle("Dispatch Templates")
             .searchable(text: $searchText, prompt: "Search templates...")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
+            }
+            .sheet(item: $activeSheet) { _ in
+                PageHelpSheet(title: "Dispatch Templates Help", sections: [
+                    ("What This Page Does", "Dispatch Templates are reusable crew assignment patterns. Instead of building the same dispatch layout every week, you save a template and apply it to quickly fill the board."),
+                    ("How to Use It", "Browse your saved templates in the list. Active templates are highlighted in green; inactive ones are grayed out. Use the search bar to find a specific template by name or description."),
+                    ("Tips", "Create templates for your most common weekly patterns, like 'Full Crew Monday-Friday' or 'Weekend Skeleton Crew.' Mark templates inactive when they are seasonal or no longer needed rather than deleting them.")
+                ])
+            }
             .refreshable { loadData() }
             .task { loadData() }
     }

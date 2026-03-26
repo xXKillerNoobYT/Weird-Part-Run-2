@@ -413,6 +413,29 @@ private struct SharedReportsView: View {
                 }
             }
 
+            // Public report viewer link
+            Section {
+                NavigationLink {
+                    IOSPublicReportView(reportToken: "")
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "globe")
+                            .font(.title3)
+                            .foregroundStyle(.pink)
+                            .frame(width: 30)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("View Public Report")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text("Open a report shared via public link")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+
             if sharedReports.isEmpty {
                 Section {
                     ContentUnavailableView {

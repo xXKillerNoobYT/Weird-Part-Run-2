@@ -12,18 +12,35 @@ struct IOSTimeOffPage: View {
     // MARK: - State
 
     @State private var requests: [SchedulingService.TimeOffRow] = []
+    @State private var allRequests: [SchedulingService.TimeOffRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var searchText = ""
+    @State private var statusFilter = "all"
     private enum ActiveSheet: String, Identifiable {
         case requestTimeOff
+        case help
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
     @State private var actionError: String?
 
+    private let statusOptions = ["all", "pending", "approved", "denied", "cancelled"]
+
+    // Date filter
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+    @State private var customEnd: Date = Date()
+
+    private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
+    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
+
     var body: some View {
-        timeOffContent
+        VStack(spacing: 0) {
+            statusPicker
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
+            timeOffContent
+        }
             .navigationTitle("Time Off")
             .searchable(text: $searchText, prompt: "Search requests...")
             .toolbar {
@@ -32,12 +49,24 @@ struct IOSTimeOffPage: View {
                         Image(systemName: "plus")
                     }
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
             }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
                 case .requestTimeOff:
                     RequestTimeOffSheet(onSave: { loadData() })
                         .environmentObject(appCore)
+                case .help:
+                    PageHelpSheet(title: "Time Off Help", sections: [
+                        ("What This Page Does", "The Time Off page displays all time-off requests from employees. Each request shows the employee name, date range, reason, and approval status. Managers can approve or deny pending requests directly from this list."),
+                        ("How to Use It", "Browse the list to see all requests. Use the search bar to filter by employee name or reason. Tap the + button to submit a new time-off request. If you have scheduling permissions, Approve and Deny buttons appear on pending requests."),
+                        ("Status Meanings", "Orange 'Pending' means the request is awaiting manager review. Green 'Approved' means it has been granted. Red 'Denied' means it was rejected. Gray 'Cancelled' means the employee withdrew their request."),
+                        ("Tips", "Approved time-off shows as red dots on the Schedule Calendar and triggers conflict warnings on the Dispatch Board. Always check the dispatch board after approving time off to reassign affected jobs.")
+                    ])
                 }
             }
             .alert("Error", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
@@ -47,6 +76,51 @@ struct IOSTimeOffPage: View {
             }
             .refreshable { loadData() }
             .task { loadData() }
+            .onAppear {
+                // Register AI filter (prompt 62S)
+                appCore.aiFilterRegistry.register(
+                    pageId: "time-off",
+                    filterName: "Time Off Status",
+                    options: statusOptions,
+                    activate: { value in
+                        statusFilter = value
+                        loadData()
+                    }
+                )
+                appCore.aiFilterRegistry.applyPendingFilter(pageId: "time-off")
+            }
+            .onDisappear {
+                appCore.aiFilterRegistry.deregister(pageId: "time-off")
+            }
+            .onChange(of: dateRange) { loadData() }
+            .onChange(of: customStart) { loadData() }
+            .onChange(of: customEnd) { loadData() }
+    }
+
+    // MARK: - Status Picker
+
+    private func countForStatus(_ status: String) -> Int {
+        if status == "all" { return allRequests.count }
+        return allRequests.filter { $0.status == status }.count
+    }
+
+    private var statusPicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(statusOptions, id: \.self) { status in
+                    SmartFilterCard(
+                        title: status == "all" ? "All" : status.capitalized,
+                        count: countForStatus(status),
+                        isSelected: statusFilter == status
+                    ) {
+                        statusFilter = status
+                        loadData()
+                    }
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
     }
 
     // MARK: - Content
@@ -220,7 +294,10 @@ struct IOSTimeOffPage: View {
         }
         isLoading = requests.isEmpty
         do {
-            requests = try service.listTimeOffRequests()
+            allRequests = try service.listTimeOffRequests()
+            requests = statusFilter == "all"
+                ? allRequests
+                : allRequests.filter { $0.status == statusFilter }
         } catch {
             loadError = error.localizedDescription
         }

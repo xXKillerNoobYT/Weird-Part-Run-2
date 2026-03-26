@@ -97,7 +97,7 @@ struct PartsSuppliersPage: View {
                     Image(systemName: "plus")
                 }
             }
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
@@ -367,7 +367,10 @@ struct PartsSuppliersPage: View {
     // MARK: - AI Context
 
     private func postSuppliersContext() {
-        guard let service = appCore.partsService else { return } // Service not ready
+        guard let service = appCore.partsService else {
+            loadError = "Parts service not available"
+            return
+        }
         let context = (try? service.buildSupplierAIContext()) ?? ""
         NotificationCenter.default.post(
             name: .suppliersPageActive,
@@ -578,6 +581,7 @@ private struct SupplierFormSheet: View {
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Supplier name is required"])
         }
         guard let service = appCore.partsService else {
+            saveError = "Parts service not available"
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Parts service not available"])
         }
         if let s = supplier {
@@ -637,10 +641,19 @@ private struct SupplierDetailSheet: View {
     @State private var supplierChannelId: Int64?
     @State private var contactToRemove: PartsService.SupplierContact?
     @State private var showRemoveContactConfirm = false
+    @State private var loadError: String?
 
     var body: some View {
         NavigationStack {
             List {
+                if let error = loadError {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.subheadline)
+                    }
+                }
+
                 // Section 1: Overview
                 overviewSection
 
@@ -736,7 +749,10 @@ private struct SupplierDetailSheet: View {
 
     private func createSupplierChannel() {
         guard let chatService = appCore.chatService,
-              let userId = appCore.currentUser?.id else { return }
+              let userId = appCore.currentUser?.id else {
+            loadError = "Chat service not available"
+            return
+        }
         do {
             let displayName = supplier.contactName ?? supplier.name
             let channelId = try chatService.createSupplierChannel(
@@ -1088,7 +1104,11 @@ private struct SupplierDetailSheet: View {
     }
 
     private func loadAllDetails() async {
-        guard let service = appCore.partsService else { isLoading = false; return }
+        guard let service = appCore.partsService else {
+            loadError = "Parts service not available"
+            isLoading = false
+            return
+        }
         do {
             linkedBrands = try service.getSupplierBrands(supplierId: supplier.id)
             recentPOs = try service.getSupplierRecentPOs(supplierId: supplier.id)
@@ -1191,6 +1211,7 @@ private struct AddSupplierContactSheet: View {
         saveError = nil
         do {
             guard let service = appCore.partsService else {
+                saveError = "Parts service not available"
                 throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Parts service not available"])
             }
             try service.addSupplierContact(

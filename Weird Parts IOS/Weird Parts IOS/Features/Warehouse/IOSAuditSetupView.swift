@@ -182,7 +182,7 @@ struct IOSAuditSetupView: View {
 
     private func loadSummary() {
         guard let service = appCore.warehouseService else {
-            // Service not ready
+            errorMessage = "Warehouse service not available"
             return
         }
         do {

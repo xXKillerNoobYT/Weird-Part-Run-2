@@ -8,14 +8,27 @@ import WiredPartCore
 /// reordering decisions. Trend arrows compare ADU-30 vs ADU-90.
 struct PartsForecastingPage: View {
     @EnvironmentObject private var appCore: AppCore
+
+    // MARK: - ActiveSheet
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        case forecastDetail(PartsService.ForecastDataRow)
+        var id: String {
+            switch self {
+            case .help: return "help"
+            case .forecastDetail(let row): return "forecastDetail_\(row.id)"
+            }
+        }
+    }
+
+    @State private var activeSheet: ActiveSheet?
     @State private var forecastRows: [PartsService.ForecastDataRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var searchText = ""
     @State private var filterUrgency: UrgencyFilter = .all
-    @State private var selectedRow: PartsService.ForecastDataRow?
     @State private var isRecalculating = false
-    @State private var showHelp = false
 
     // Location picker
     @State private var selectedLocationType: String = "all"
@@ -45,8 +58,20 @@ struct PartsForecastingPage: View {
         }
         .searchable(text: $searchText, prompt: "Search parts...")
         .refreshable { await loadData() }
-        .sheet(item: $selectedRow) { row in
-            ForecastDetailSheet(row: row)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                PageHelpSheet(
+                    title: "Forecasting Help",
+                    sections: [
+                        ("Overview", "Demand forecasting shows predicted usage for each part based on historical consumption. Color-coded urgency helps prioritize reorders."),
+                        ("Metrics", "ADU is Average Daily Usage. The trend arrow compares 30-day vs 90-day ADU. Reorder points are calculated from lead times and safety stock."),
+                        ("Actions", "Tap Recalculate to refresh all forecasts. Use the lightbulb icon to see AI-generated reorder recommendations.")
+                    ]
+                )
+            case .forecastDetail(let row):
+                ForecastDetailSheet(row: row)
+            }
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -80,21 +105,11 @@ struct PartsForecastingPage: View {
                     }
                 }
             }
-            ToolbarItem(placement: .secondaryAction) {
-                Button { showHelp = true } label: {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
-        }
-        .sheet(isPresented: $showHelp) {
-            PageHelpSheet(
-                title: "Forecasting Help",
-                sections: [
-                    ("Overview", "Demand forecasting shows predicted usage for each part based on historical consumption. Color-coded urgency helps prioritize reorders."),
-                    ("Metrics", "ADU is Average Daily Usage. The trend arrow compares 30-day vs 90-day ADU. Reorder points are calculated from lead times and safety stock."),
-                    ("Actions", "Tap Recalculate to refresh all forecasts. Use the lightbulb icon to see AI-generated reorder recommendations.")
-                ]
-            )
         }
         .alert("Dismiss Recommendation", isPresented: $showDismissAlert) {
             TextField("Reason (required)", text: $dismissReason)
@@ -106,7 +121,10 @@ struct PartsForecastingPage: View {
                 if let rec = dismissingRecommendation {
                     Task {
                         guard let service = appCore.partsService,
-                              let userId = appCore.currentUser?.id else { return }
+                              let userId = appCore.currentUser?.id else {
+                            loadError = "Parts service not available"
+                            return
+                        }
                         do {
                             guard let recId = rec.id else { return }
                             try service.dismissRecommendation(id: recId, userId: userId, reason: dismissReason)
@@ -244,7 +262,7 @@ struct PartsForecastingPage: View {
             Section {
                 ForEach(filteredRows) { row in
                     Button {
-                        selectedRow = row
+                        activeSheet = .forecastDetail(row)
                     } label: {
                         forecastRowView(row)
                     }
@@ -519,7 +537,11 @@ struct PartsForecastingPage: View {
     // MARK: - Location Loading
 
     private func loadLocations() {
-        guard let service = appCore.warehouseService else { return } // Service not ready
+        guard let service = appCore.warehouseService else {
+            loadError = "Warehouse service not available"
+            isLoading = false
+            return
+        }
         do {
             let locations = try service.listDistinctStockLocations()
             availableLocations = locations.map { loc in
@@ -542,7 +564,11 @@ struct PartsForecastingPage: View {
 
     @Sendable
     private func loadRecommendations() async {
-        guard let service = appCore.partsService else { return } // Service not ready
+        guard let service = appCore.partsService else {
+            loadError = "Parts service not available"
+            isLoading = false
+            return
+        }
         do {
             let recs = try service.listPendingRecommendations()
             let count = try service.pendingRecommendationCount()
@@ -557,7 +583,11 @@ struct PartsForecastingPage: View {
 
     private func approveRecommendation(_ rec: TargetRecommendation) async {
         guard let service = appCore.partsService,
-              let userId = appCore.currentUser?.id else { return }
+              let userId = appCore.currentUser?.id else {
+            loadError = "Parts service not available"
+            isLoading = false
+            return
+        }
         do {
             guard let recId = rec.id else { return }
             try service.approveRecommendation(id: recId, userId: userId)
@@ -762,6 +792,10 @@ private struct ForecastDetailSheet: View {
     @State private var editTargetStock: String = ""
     @State private var editMaxStock: String = ""
 
+    // Toast
+    @State private var showComingSoon = false
+    @State private var toastMessage: String?
+
     var body: some View {
         NavigationStack {
             List {
@@ -781,6 +815,33 @@ private struct ForecastDetailSheet: View {
                 Button("OK") { editError = nil }
             } message: {
                 Text(editError ?? "")
+            }
+            .overlay(alignment: .bottom) {
+                if showComingSoon {
+                    Text("Coming in a future update")
+                        .font(.subheadline)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(8)
+                        .padding(.bottom, 20)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                withAnimation { showComingSoon = false }
+                            }
+                        }
+                }
+                if let message = toastMessage {
+                    Text(message)
+                        .font(.subheadline)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(8)
+                        .padding(.bottom, 20)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
             .task {
                 editName = row.part.name
@@ -1020,10 +1081,32 @@ private struct ForecastDetailSheet: View {
     @ViewBuilder
     private var actionsSection: some View {
         Section("Actions") {
-            Button {} label: {
+            Button {
+                guard let service = appCore.wishlistService else {
+                    editError = "Wishlist service not available"
+                    return
+                }
+                do {
+                    let _ = try service.addItem(
+                        partId: row.part.id,
+                        partName: row.part.name,
+                        qtySuggested: max(1, (row.part.targetStockLevel ?? 0) - row.currentStock),
+                        reason: "Added from forecasting page",
+                        sourceType: "forecast"
+                    )
+                    toastMessage = "Added to wishlist"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        withAnimation { toastMessage = nil }
+                    }
+                } catch {
+                    editError = "Failed to add to wishlist: \(error.localizedDescription)"
+                }
+            } label: {
                 Label("Add to Wishlist", systemImage: "heart")
             }
-            Button {} label: {
+            Button {
+                showComingSoon = true
+            } label: {
                 Label("View in Catalog", systemImage: "list.bullet")
             }
         }
@@ -1034,6 +1117,7 @@ private struct ForecastDetailSheet: View {
     @Sendable
     private func loadLocationData() async {
         guard let service = appCore.partsService else {
+            editError = "Parts service not available"
             isLoadingLocations = false
             return
         }

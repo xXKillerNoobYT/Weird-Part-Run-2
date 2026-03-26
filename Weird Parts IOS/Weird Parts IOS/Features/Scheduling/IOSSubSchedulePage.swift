@@ -15,6 +15,13 @@ struct IOSSubSchedulePage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var selectedDate = Date()
+    @State private var searchText = ""
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     private var dateString: String {
         let f = DateFormatter()
@@ -34,6 +41,22 @@ struct IOSSubSchedulePage: View {
             scheduleContent
         }
         .navigationTitle("Sub Schedule")
+        .searchable(text: $searchText, prompt: "Search subs...")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Sub Schedule Help", sections: [
+                ("What This Page Does", "The Sub Schedule page shows all subcontractor assignments for a given date. Each row displays the subcontractor's name, their company, the job they are assigned to, and their current status."),
+                ("How to Use It", "Use the date picker or arrow buttons to navigate between days. The list updates automatically when you change dates. Pull down to refresh the current day's data."),
+                ("Status Badges", "Green 'Confirmed' means the sub has acknowledged the assignment. Orange 'Pending' means they have not confirmed yet. Blue 'Completed' means the work is done. Red 'Cancelled' means the assignment was removed."),
+                ("Tips", "Check this page each morning to confirm all subs are accounted for. Follow up on any 'Pending' status items to make sure subs know where to go.")
+            ])
+        }
         .refreshable { loadData() }
         .task { loadData() }
     }

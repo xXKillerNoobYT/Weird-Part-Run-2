@@ -22,6 +22,7 @@ struct IOSTeamsPage: View {
 
     private enum ActiveSheet: String, Identifiable {
         case addTeam
+        case help
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
@@ -38,12 +39,27 @@ struct IOSTeamsPage: View {
                         Image(systemName: "plus")
                     }
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
             }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
                 case .addTeam:
                     AddTeamSheet { loadData() }
                         .environmentObject(appCore)
+                case .help:
+                    PageHelpSheet(
+                        title: "Teams Help",
+                        sections: [
+                            ("What This Page Does", "View and manage teams. Teams group employees together for job assignments and scheduling. Each row shows the team name, description, leader, and member count."),
+                            ("Smart Card Filters", "Tap the filter cards at the top to narrow the list: All shows every team, Active shows teams with at least one member, and My Teams shows teams you belong to."),
+                            ("How to Use It", "Use the search bar to find teams by name, description, or leader. Tap a team to see its members, assigned jobs, and management options. Tap the + button to create a new team."),
+                            ("Tips", "Pull down to refresh. The member count badge on each row shows how many employees are in that team. Teams with a star icon indicate the team leader.")
+                        ]
+                    )
                 }
             }
     }

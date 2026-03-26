@@ -29,6 +29,12 @@ struct IOSMessageThreadView: View {
     @State private var pendingAttachments: [ChatService.PendingAttachment] = []
     @State private var showPhotoPicker = false
     @State private var showReferencePicker = false
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     private enum ReferenceType: String {
         case part = "part_ref"
@@ -36,6 +42,9 @@ struct IOSMessageThreadView: View {
         case job = "job_ref"
     }
     @State private var selectedReferenceType: ReferenceType?
+
+    // Toast
+    @State private var showComingSoon = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -58,6 +67,25 @@ struct IOSMessageThreadView: View {
         }
         .navigationTitle(channelName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Message Thread Help",
+                sections: [
+                    ("What This Page Does", "This is a live conversation thread. You can read messages, send replies, and attach photos, files, or references to parts, POs, and jobs. The info panel at the top shows who is in the conversation and what it is linked to."),
+                    ("How to Use It", "Type your message in the text field at the bottom and tap the send button. Messages appear in bubbles -- yours on the right (blue), others on the left (gray). Scroll up to see older messages."),
+                    ("Attachments", "Use the icons below the message list to attach a photo, a file, or a reference link. Reference links can point to a specific part, purchase order, or job so everyone in the thread can jump to that item."),
+                    ("Info Panel", "Tap the channel name header at the top to expand the info panel. It shows the source context (which job, PO, or supplier the thread is linked to), the people in the conversation, and quick action buttons like Escalate or Resolve."),
+                    ("Tips", "Pending attachments show as blue chips above the composer before you send. Tap the X on any chip to remove it. Photos and file attachments are automatically saved to the linked job's notebook for future reference.")
+                ]
+            )
+        }
         .task {
             loadMessages()
             loadThreadInfo()
@@ -66,6 +94,23 @@ struct IOSMessageThreadView: View {
             Button("OK") { actionError = nil }
         } message: {
             Text(actionError ?? "")
+        }
+        .overlay(alignment: .bottom) {
+            if showComingSoon {
+                Text("File attachments coming in a future update")
+                    .font(.subheadline)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(8)
+                    .padding(.bottom, 20)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            withAnimation { showComingSoon = false }
+                        }
+                    }
+            }
         }
     }
 
@@ -159,7 +204,7 @@ struct IOSMessageThreadView: View {
             }
 
             // File button
-            Button { /* TODO: file importer */ } label: {
+            Button { withAnimation { showComingSoon = true } } label: {
                 Image(systemName: "doc")
                     .foregroundStyle(.blue)
             }
@@ -278,7 +323,8 @@ struct IOSMessageThreadView: View {
 
     private func loadThreadInfo() {
         guard let service = appCore.chatService else {
-            // Service not ready
+            loadError = "Chat service not available"
+            isLoading = false
             return
         }
         do {

@@ -12,27 +12,41 @@ struct IOSShortTermPipelinePage: View {
     @State private var pipelineItems: [SchedulingService.PipelineItem] = []
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var searchText = ""
 
     private enum ActiveSheet: String, Identifiable {
         case callback
         case schedule
+        case help
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
     @State private var selectedItem: SchedulingService.PipelineItem?
 
+    // Toast
+    @State private var showComingSoon = false
+
+    // Search-filtered base
+    private var searchFilteredItems: [SchedulingService.PipelineItem] {
+        if searchText.isEmpty { return pipelineItems }
+        return pipelineItems.filter {
+            $0.jobName.localizedCaseInsensitiveContains(searchText) ||
+            $0.customerName.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
     // Filtered lists
     private var startAnytimeItems: [SchedulingService.PipelineItem] {
-        pipelineItems.filter { $0.pipelineCategory == "start_anytime" }
+        searchFilteredItems.filter { $0.pipelineCategory == "start_anytime" }
     }
     private var scheduleNeededItems: [SchedulingService.PipelineItem] {
-        pipelineItems.filter { $0.pipelineCategory == "schedule_needed" }
+        searchFilteredItems.filter { $0.pipelineCategory == "schedule_needed" }
     }
     private var favoriteGCItems: [SchedulingService.PipelineItem] {
-        pipelineItems.filter { $0.pipelineCategory == "favorite_gc" }
+        searchFilteredItems.filter { $0.pipelineCategory == "favorite_gc" }
     }
     private var smallJobItems: [SchedulingService.PipelineItem] {
-        pipelineItems.filter { $0.pipelineCategory == "small_job" }
+        searchFilteredItems.filter { $0.pipelineCategory == "small_job" }
     }
     private var callbacksDue: [SchedulingService.PipelineItem] {
         pipelineItems.filter { item in
@@ -63,12 +77,18 @@ struct IOSShortTermPipelinePage: View {
             }
         }
         .navigationTitle("Short-Term Pipeline")
+        .searchable(text: $searchText, prompt: "Search jobs...")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    // AI suggestion placeholder
+                    withAnimation { showComingSoon = true }
                 } label: {
                     Label("AI Suggest", systemImage: "sparkles")
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
                 }
             }
         }
@@ -90,10 +110,35 @@ struct IOSShortTermPipelinePage: View {
                     )
                     .environmentObject(appCore)
                 }
+            case .help:
+                PageHelpSheet(title: "Short-Term Pipeline Help", sections: [
+                    ("What This Page Does", "The Short-Term Pipeline shows jobs that are ready or nearly ready to be scheduled. Jobs are grouped into categories: Start Anytime, Schedule Needed, Favorite GC, and Small Jobs. Each category has a target count to keep your pipeline healthy."),
+                    ("How to Use It", "Review the target cards at the top to see if your pipeline is balanced. Green checkmarks mean you are at or above target; red means you need more jobs in that category. Tap the calendar icon on any job to schedule it. Tap the phone icon on callbacks to handle them."),
+                    ("Callbacks", "When a callback is due, it appears in the Callbacks Due section. You can mark it complete with notes, or snooze it for 1 day, 3 days, or 1 week."),
+                    ("Tips", "Keep each category at or above its target number for a healthy pipeline. 'Start Anytime' jobs are your safety net for crew that finishes early. Small Jobs are great gap fillers between bigger projects.")
+                ])
             }
         }
+        .searchable(text: $searchText, prompt: "Search jobs...")
         .refreshable { loadData() }
         .task { loadData() }
+        .overlay(alignment: .bottom) {
+            if showComingSoon {
+                Text("AI suggestions coming in a future update")
+                    .font(.subheadline)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.ultraThinMaterial)
+                    .cornerRadius(8)
+                    .padding(.bottom, 20)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .onAppear {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                            withAnimation { showComingSoon = false }
+                        }
+                    }
+            }
+        }
     }
 
     // MARK: - Content

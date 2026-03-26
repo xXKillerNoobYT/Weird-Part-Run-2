@@ -25,11 +25,17 @@ struct IOSJPODetailPage: View {
     @State private var showRejectConfirm = false
     @State private var rejectingLineId: Int64? // nil = reject selected
 
-    // Hold + chat
+    // Hold + chat (single item)
     @State private var holdQuestion = ""
     @State private var showHoldPrompt = false
     @State private var holdingLineId: Int64?
     @State private var holdingPartName: String?
+
+    // Bulk hold
+    @State private var showBulkHold = false
+    @State private var bulkHoldReason = ""
+    @State private var bulkHoldItems: [OrdersService.JPOLineRow] = []
+    @State private var isBulkHolding = false
 
     // Smart routing — stock check before approval
     @State private var showBelowMinWarning = false
@@ -40,6 +46,7 @@ struct IOSJPODetailPage: View {
         case viewChat(Int64)
         case viewPO(Int64)
         case viewMovement(Int64)
+        case help
 
         var id: String { String(describing: self) }
     }
@@ -70,6 +77,11 @@ struct IOSJPODetailPage: View {
                     activeSheet = .addLineItem
                 } label: {
                     Label("Add Item", systemImage: "plus")
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
                 }
             }
         }
@@ -108,6 +120,44 @@ struct IOSJPODetailPage: View {
                 Text("Ask the requester about \"\(name)\". They'll be notified to respond in chat.")
             }
         }
+        // Bulk hold sheet — shows all selected items, single shared reason
+        .sheet(isPresented: $showBulkHold) {
+            NavigationStack {
+                Form {
+                    Section("Items to Hold (\(bulkHoldItems.count))") {
+                        ForEach(bulkHoldItems, id: \.id) { item in
+                            HStack {
+                                Text(item.partName ?? "Unknown Part")
+                                Spacer()
+                                Text("Qty: \(item.quantity)")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    Section("Hold Reason") {
+                        TextEditor(text: $bulkHoldReason)
+                            .frame(minHeight: 80)
+                    }
+                }
+                .navigationTitle("Place Items on Hold")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            showBulkHold = false
+                            bulkHoldItems = []
+                            bulkHoldReason = ""
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Hold All") {
+                            Task { await bulkHoldAllItems() }
+                        }
+                        .disabled(bulkHoldReason.trimmingCharacters(in: .whitespaces).isEmpty || isBulkHolding)
+                    }
+                }
+            }
+        }
         // Below-min stock warning — approve with transfer vs procurement
         .alert("Stock Warning", isPresented: $showBelowMinWarning) {
             Button("Transfer Anyway") {
@@ -134,6 +184,7 @@ struct IOSJPODetailPage: View {
         } message: {
             Text(actionError ?? "")
         }
+        .refreshable { loadData() }
         .task { loadData() }
     }
 
@@ -161,6 +212,17 @@ struct IOSJPODetailPage: View {
                     .navigationTitle("Movement")
                     .navigationBarTitleDisplayMode(.inline)
             }
+        case .help:
+            PageHelpSheet(
+                title: "JPO Detail Help",
+                sections: [
+                    ("What This Page Does", "Shows all the line items in a Job Purchase Order. You can approve, hold, or reject individual parts, and use bulk actions to handle multiple items at once."),
+                    ("How to Use It", "Tap the checkbox next to items to select them for bulk actions. Use Approve to send a part to procurement or trigger a shop transfer. Use Hold to ask the requester a question (opens a chat thread). Use Reject with a required reason."),
+                    ("Smart Routing", "When you approve a line, the system checks shop stock. If the shop has enough, it creates a warehouse transfer automatically. If pulling would drop stock below minimum, you get a warning with the choice to transfer anyway or send to procurement for ordering."),
+                    ("Delivery Options", "Choose 'Deliver as parts arrive' to send partial shipments to the job site, or 'Wait for complete order' to hold everything until all parts are in. This locks once the first delivery goes out."),
+                    ("Tips", "Use the + button to add more parts to this JPO. Tap 'View Chat' on held items to see the Q&A thread. The status summary at the top gives you a quick count of pending, held, approved, and rejected items.")
+                ]
+            )
         }
     }
 
@@ -409,14 +471,20 @@ struct IOSJPODetailPage: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                HStack(spacing: 8) {
-                    if let threadId = line.chatThreadId {
-                        Button { activeSheet = .viewChat(threadId) } label: {
-                            Label("View Chat", systemImage: "message.fill")
-                                .font(.caption2)
-                        }
-                        .buttonStyle(.bordered)
+                // Discussion link to the hold chat thread
+                if let threadId = line.chatThreadId {
+                    Button { activeSheet = .viewChat(threadId) } label: {
+                        Label("Discussion", systemImage: "bubble.left.and.bubble.right.fill")
+                            .font(.caption2)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                            .background(Color.orange.opacity(0.12))
+                            .foregroundStyle(.orange)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
+                    .buttonStyle(.plain)
+                }
+                HStack(spacing: 8) {
                     Button { approveLine(line.id) } label: {
                         Label("Approve", systemImage: "checkmark.circle.fill")
                             .font(.caption2)
@@ -621,6 +689,7 @@ struct IOSJPODetailPage: View {
               let ordersService = appCore.ordersService,
               let partId = line.partId,
               let userId = appCore.currentUser?.id else {
+            loadError = "Warehouse service not available"
             sendToProcurement(line.id)
             return
         }
@@ -676,7 +745,10 @@ struct IOSJPODetailPage: View {
 
     /// Get the min_stock_level for a part.
     private func getPartMinStock(partId: Int64) throws -> Int {
-        guard let partsService = appCore.partsService else { return 0 }
+        guard let partsService = appCore.partsService else {
+            loadError = "Parts service not available"
+            return 0
+        }
         let detail = try partsService.getPart(id: partId)
         return detail.part.minStockLevel ?? 0
     }
@@ -684,7 +756,7 @@ struct IOSJPODetailPage: View {
     /// Link a movement (transfer) ID to a JPO line item for later cancellation.
     private func linkTransferToLine(lineId: Int64, transferId: Int64) throws {
         guard let ordersService = appCore.ordersService else {
-            // Service not ready
+            loadError = "Orders service not available"
             return
         }
         // Use the existing updateJPOLineStatus mechanism — the transfer_id column
@@ -698,6 +770,7 @@ struct IOSJPODetailPage: View {
               let lineId = holdingLineId,
               let jpo = jpo,
               let userId = appCore.currentUser?.id else {
+            loadError = "Orders service not available"
             holdQuestion = ""
             return
         }
@@ -720,6 +793,19 @@ struct IOSJPODetailPage: View {
                 partName: holdingPartName ?? "Part",
                 jpoId: jpo.id
             )
+
+            // Also create a jpo_hold typed thread in ChatService for
+            // unified inbox visibility with HOLD badge
+            if let chatService = appCore.chatService {
+                let jpoNumber = "JPO #\(jpo.id)"
+                _ = try chatService.createJPOHoldThread(
+                    partName: holdingPartName ?? "Part",
+                    jpoNumber: jpoNumber,
+                    holdReason: holdQuestion,
+                    userId: userId
+                )
+            }
+
             holdQuestion = ""
             holdingLineId = nil
             holdingPartName = nil
@@ -762,26 +848,62 @@ struct IOSJPODetailPage: View {
     }
 
     private func holdSelected() {
-        // For bulk hold, hold each selected line with a chat thread
-        // Use the prompt — pick the first selected line to name the prompt
-        if let firstId = selectedLineIds.first,
-           let firstLine = jpo?.lines.first(where: { $0.id == firstId }) {
-            holdingLineId = firstId
-            holdingPartName = firstLine.partName ?? "Part"
-            showHoldPrompt = true
+        // Collect ALL selected items and show the bulk hold sheet
+        guard let jpo else { return }
+        let items = jpo.lines.filter { selectedLineIds.contains($0.id) }
+        guard !items.isEmpty else { return }
+        bulkHoldItems = items
+        bulkHoldReason = ""
+        showBulkHold = true
+    }
+
+    /// Apply the same hold reason to ALL items in bulkHoldItems, cancelling
+    /// any pending transfers first. Creates a hold+chat for the first item
+    /// and a status-only hold (with the shared reason) for the rest.
+    @MainActor
+    private func bulkHoldAllItems() async {
+        guard let service = appCore.ordersService,
+              let userId = appCore.currentUser?.id else {
+            actionError = "Service not available"
+            return
         }
-        // Note: This holds just the first selected line via the prompt.
-        // For the rest, we do a simple status-only hold.
-        let remaining = selectedLineIds.dropFirst()
-        for lineId in remaining {
-            guard let service = appCore.ordersService else { break }
+
+        let reason = bulkHoldReason.trimmingCharacters(in: .whitespaces)
+        guard !reason.isEmpty else { return }
+
+        isBulkHolding = true
+
+        for item in bulkHoldItems {
             do {
-                try service.updateJPOLineStatus(lineId: lineId, status: "on_hold",
-                                                reason: "Grouped hold",
-                                                updatedBy: appCore.currentUser?.id)
-            } catch { actionError = error.localizedDescription }
+                // If the line was in "transfer" status, cancel the pending movement first
+                if item.lineStatus == "transfer",
+                   let warehouseService = appCore.warehouseService {
+                    try service.cancelJPOLineTransfer(
+                        lineId: item.id,
+                        reversedBy: userId,
+                        warehouseService: warehouseService
+                    )
+                }
+
+                // Place on hold with the shared reason
+                try service.updateJPOLineStatus(
+                    lineId: item.id,
+                    status: "on_hold",
+                    reason: reason,
+                    updatedBy: userId
+                )
+            } catch {
+                actionError = error.localizedDescription
+            }
         }
+
+        // Clean up state
         selectedLineIds.removeAll()
+        bulkHoldItems = []
+        bulkHoldReason = ""
+        isBulkHolding = false
+        showBulkHold = false
+        loadData()
     }
 
     private func rejectSelected(reason: String) {
@@ -814,13 +936,9 @@ struct IOSJPODetailPage: View {
         }
     }
 
+    // TODO: When JPODetail gains a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)
     private func priorityColor(_ priority: String) -> Color {
-        switch priority {
-        case "urgent": .red
-        case "high": .orange
-        case "normal": .blue
-        default: .secondary
-        }
+        return TimelinePriorityColor.fallbackColor(priority: priority)
     }
 
     private func formatCurrency(_ value: Double) -> String {
@@ -946,6 +1064,7 @@ private struct AddJPOLineItemSheet: View {
 
     private func searchParts() {
         guard let service = appCore.partsService, searchText.count >= 2 else {
+            if appCore.partsService == nil { errorMessage = "Parts service not available" }
             searchResults = []
             return
         }

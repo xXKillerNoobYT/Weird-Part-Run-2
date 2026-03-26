@@ -12,7 +12,7 @@ struct IOSAuditSettingsPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var saveError: String?
-    @State private var showHelp = false
+    @State private var activeSheet: ActiveSheet?
 
     // General
     @State private var enableAutoScheduling = true
@@ -32,6 +32,11 @@ struct IOSAuditSettingsPage: View {
     @State private var keepHistoryMonths: Int = 12
     @State private var autoArchive = true
     @State private var includeInDailyReport = false
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     private let auditTypes = ["full_count", "cycle_count", "spot_check"]
     private let auditTypeLabels: [String: String] = [
@@ -55,27 +60,17 @@ struct IOSAuditSettingsPage: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showHelp = true } label: {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
-            NavigationStack {
-                List {
-                    Section("Audit Types") {
-                        Text("Full Count: count every item in a location. Cycle Count: count a rotating subset. Spot Check: quick verification of specific items.")
-                    }
-                    Section("Speed Mode") {
-                        Text("Speed mode streamlines the audit process by timing each item. QR scanning ensures accuracy even at speed.")
-                    }
-                    Section("Multi-User Verification") {
-                        Text("Multiple independent counts increase accuracy. The threshold sets how many people need to count before the result is accepted.")
-                    }
-                }
-                .navigationTitle("Audit Help")
-                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { showHelp = false } } }
-            }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Audit Help", sections: [
+                ("Audit Types", "Full Count: count every item in a location. Cycle Count: count a rotating subset. Spot Check: quick verification of specific items."),
+                ("Speed Mode", "Speed mode streamlines the audit process by timing each item. QR scanning ensures accuracy even at speed."),
+                ("Multi-User Verification", "Multiple independent counts increase accuracy. The threshold sets how many people need to count before the result is accepted."),
+            ])
         }
         .task { loadSettings() }
     }

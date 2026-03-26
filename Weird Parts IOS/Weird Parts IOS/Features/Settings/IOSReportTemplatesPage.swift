@@ -12,8 +12,18 @@ struct IOSReportTemplatesPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var actionError: String?
-    @State private var showHelp = false
-    @State private var showCreate = false
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        case create
+        var id: String {
+            switch self {
+            case .help: return "help"
+            case .create: return "create"
+            }
+        }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     @State private var templates: [ReportsService.SavedReport] = []
     @State private var deleteCandidate: ReportsService.SavedReport?
@@ -57,31 +67,33 @@ struct IOSReportTemplatesPage: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack {
-                    Button { showCreate = true } label: {
+                    Button { activeSheet = .create } label: {
                         Image(systemName: "plus")
                     }
-                    Button { showHelp = true } label: {
+                    Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
-            NavigationStack {
-                List {
-                    Section("About Report Templates") {
-                        Text("Save report configurations as templates to quickly generate the same type of report with your preferred columns and filters.")
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                NavigationStack {
+                    List {
+                        Section("About Report Templates") {
+                            Text("Save report configurations as templates to quickly generate the same type of report with your preferred columns and filters.")
+                        }
+                        Section("Sharing") {
+                            Text("Shared templates are visible to all team members. Private templates are only visible to you.")
+                        }
                     }
-                    Section("Sharing") {
-                        Text("Shared templates are visible to all team members. Private templates are only visible to you.")
-                    }
+                    .navigationTitle("Templates Help")
+                    .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { activeSheet = nil } } }
                 }
-                .navigationTitle("Templates Help")
-                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { showHelp = false } } }
+            case .create:
+                createSheet
             }
-        }
-        .sheet(isPresented: $showCreate) {
-            createSheet
         }
         .alert("Delete Template?", isPresented: Binding(
             get: { deleteCandidate != nil },
@@ -92,6 +104,7 @@ struct IOSReportTemplatesPage: View {
         } message: {
             Text("This cannot be undone.")
         }
+        .refreshable { loadTemplates() }
         .task { loadTemplates() }
     }
 
@@ -206,7 +219,7 @@ struct IOSReportTemplatesPage: View {
             .navigationTitle("New Template")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showCreate = false }
+                    Button("Cancel") { activeSheet = nil }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") { createTemplate() }
@@ -253,7 +266,7 @@ struct IOSReportTemplatesPage: View {
                 userId: userId,
                 isShared: newIsShared
             )
-            showCreate = false
+            activeSheet = nil
             newName = ""
             newIsShared = false
             loadTemplates()
@@ -264,7 +277,10 @@ struct IOSReportTemplatesPage: View {
 
     private func confirmDelete() {
         guard let service = appCore.reportsService,
-              let template = deleteCandidate else { return }
+              let template = deleteCandidate else {
+            loadError = "Reports service not available"
+            return
+        }
 
         do {
             try service.deleteSavedReport(reportId: template.id)

@@ -41,6 +41,26 @@ struct WarehouseOnboardingWizard: View {
                 // Progress bar
                 progressBar
 
+                // Error banner
+                if let error = loadError {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button { loadError = nil } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 6)
+                    .background(Color.orange.opacity(0.1))
+                }
+
                 // Step content
                 TabView(selection: $currentStep) {
                     step1DefineSpace.tag(1)
@@ -424,6 +444,7 @@ struct WarehouseOnboardingWizard: View {
 
     private func saveAndExit() {
         guard let service = appCore.warehouseService, let id = progress?.id else {
+            loadError = "Warehouse service not available"
             dismiss()
             return
         }
@@ -437,6 +458,7 @@ struct WarehouseOnboardingWizard: View {
 
     private func finishOnboarding() {
         guard let service = appCore.warehouseService, let id = progress?.id else {
+            loadError = "Warehouse service not available"
             dismiss()
             return
         }

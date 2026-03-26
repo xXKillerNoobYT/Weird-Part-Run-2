@@ -310,6 +310,63 @@ public struct NotebookEntryTool: Codable, FetchableRecord, MutablePersistableRec
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }
 
+// MARK: - NotebookBlockConflict
+
+/// Represents a sync conflict on a notebook entry (block).
+/// Built from `_conflict_log` rows where the table is `notebook_entries`
+/// and the conflict has not yet been reviewed.
+///
+/// Each conflict captures both versions of a field so the user can
+/// choose which to keep ("local" or "remote").
+public struct NotebookBlockConflict: Identifiable, Sendable {
+    public let id: String               // Composite key: "\(conflictLogId)"
+    public let conflictLogId: Int64      // Row ID in _conflict_log
+    public let entryId: Int64            // notebook_entries.id
+    public let fieldName: String         // Which field conflicted (e.g. "content", "block_data")
+    public let localValue: String?
+    public let remoteValue: String?
+    public let localTimestamp: String     // ISO 8601 from _conflict_log.local_ts
+    public let remoteTimestamp: String    // ISO 8601 from _conflict_log.remote_ts
+    public let localDeviceId: String
+    public let remoteDeviceId: String
+    public let winner: String            // "local" or "remote" — what LWW chose
+    public let resolvedAt: String?
+    // Contextual info about the entry
+    public let entryTitle: String?
+    public let blockType: String?
+
+    public init(
+        conflictLogId: Int64,
+        entryId: Int64,
+        fieldName: String,
+        localValue: String?,
+        remoteValue: String?,
+        localTimestamp: String,
+        remoteTimestamp: String,
+        localDeviceId: String,
+        remoteDeviceId: String,
+        winner: String,
+        resolvedAt: String?,
+        entryTitle: String?,
+        blockType: String?
+    ) {
+        self.id = "\(conflictLogId)"
+        self.conflictLogId = conflictLogId
+        self.entryId = entryId
+        self.fieldName = fieldName
+        self.localValue = localValue
+        self.remoteValue = remoteValue
+        self.localTimestamp = localTimestamp
+        self.remoteTimestamp = remoteTimestamp
+        self.localDeviceId = localDeviceId
+        self.remoteDeviceId = remoteDeviceId
+        self.winner = winner
+        self.resolvedAt = resolvedAt
+        self.entryTitle = entryTitle
+        self.blockType = blockType
+    }
+}
+
 // MARK: - TaskOrderLink
 
 public struct TaskOrderLink: Codable, FetchableRecord, MutablePersistableRecord, Sendable {

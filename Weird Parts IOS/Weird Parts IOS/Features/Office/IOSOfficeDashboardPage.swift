@@ -13,10 +13,16 @@ struct IOSOfficeDashboardPage: View {
     @State private var financialSnapshot: DashboardService.FinancialSnapshot?
     @State private var loadError: String?
     @State private var isLoading = true
+    @State private var activeSheet: ActiveSheet?
 
     // Simple 1-hour briefing cache
     @State private var cachedBriefing: DashboardService.OfficeBriefing?
     @State private var cachedAt: Date?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         List {
@@ -41,6 +47,7 @@ struct IOSOfficeDashboardPage: View {
                 aiSummarySection
                 attentionSection
                 scheduleSection
+                quickActionsSection
                 if appCore.hasPermission("view_financials") {
                     financialSection
                 }
@@ -49,6 +56,24 @@ struct IOSOfficeDashboardPage: View {
         }
         .listStyle(.insetGrouped)
         .navigationTitle("Office Dashboard")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Office Dashboard Help",
+                sections: [
+                    ("What This Page Does", "Your morning command center. Shows an AI-generated daily briefing, items that need your attention (color-coded by priority), today's crew schedule, a financial snapshot, and background task status."),
+                    ("How to Use It", "Pull down to refresh all sections. The AI briefing updates hourly and highlights key things you should know. Attention items are sorted by urgency: red means overdue, orange is high priority. The financial snapshot compares this week and month to previous periods so you can spot spending trends."),
+                    ("Financial Snapshot", "Only visible if you have the 'view financials' permission. Shows weekly and monthly spend with comparisons to the prior period, plus outstanding PO value."),
+                    ("Tips", "Check this page first thing each morning. The briefing and attention items give you a quick read on what matters today without digging through individual pages.")
+                ]
+            )
+        }
         .refreshable { loadData() }
         .onAppear { loadData() }
     }
@@ -114,25 +139,35 @@ struct IOSOfficeDashboardPage: View {
                 }
             } else {
                 ForEach(attentionItems) { item in
-                    HStack(spacing: 10) {
-                        Image(systemName: iconForPriority(item.priority))
-                            .foregroundStyle(colorForPriority(item.priority))
-                            .frame(width: 24)
+                    Button {
+                        // TODO: Navigate to detail for attention item (item.id)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: iconForPriority(item.priority))
+                                .foregroundStyle(colorForPriority(item.priority))
+                                .frame(width: 24)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.title)
-                                .font(.subheadline)
-                            Text(item.subtitle)
-                                .font(.caption)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.title)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.primary)
+                                Text(item.subtitle)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            Text(item.createdAt, format: .relative(presentation: .numeric))
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
+
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                         }
-
-                        Spacer()
-
-                        Text(item.createdAt, format: .relative(presentation: .numeric))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
                     }
+                    .buttonStyle(.plain)
                 }
             }
         } header: {
@@ -227,6 +262,48 @@ struct IOSOfficeDashboardPage: View {
                 }
             }
         }
+    }
+
+    // MARK: - Quick Actions Section
+
+    @ViewBuilder
+    private var quickActionsSection: some View {
+        Section("Quick Actions") {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                quickActionButton("Review JPOs", icon: "doc.text.magnifyingglass", color: .blue) {
+                    // TODO: Navigate to JPO review page
+                }
+                quickActionButton("Manage Jobs", icon: "hammer.fill", color: .orange) {
+                    // TODO: Navigate to jobs management page
+                }
+                quickActionButton("View Reports", icon: "chart.bar.fill", color: .green) {
+                    // TODO: Navigate to reports page
+                }
+                quickActionButton("Dispatch Board", icon: "person.3.fill", color: .purple) {
+                    // TODO: Navigate to dispatch board page
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    private func quickActionButton(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundStyle(color)
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(color.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Background Tasks Section

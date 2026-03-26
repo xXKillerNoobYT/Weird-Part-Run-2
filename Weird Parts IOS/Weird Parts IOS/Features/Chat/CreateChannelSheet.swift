@@ -84,7 +84,10 @@ struct CreateChannelSheet: View {
 
     private func saveChannel() {
         guard let service = appCore.chatService,
-              let userId = appCore.currentUser?.id else { return }
+              let userId = appCore.currentUser?.id else {
+            saveError = "Chat service not available"
+            return
+        }
         isSaving = true
         saveError = nil
         do {

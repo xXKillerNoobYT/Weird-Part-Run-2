@@ -198,7 +198,11 @@ struct CategoriesColorPicker: View {
     // MARK: - Data Loading
 
     private func loadColors() async {
-        guard let service = appCore.partsService else { isLoading = false; return }
+        guard let service = appCore.partsService else {
+            loadError = "Parts service not available"
+            isLoading = false
+            return
+        }
         do {
             var colors = try service.listColors()
 

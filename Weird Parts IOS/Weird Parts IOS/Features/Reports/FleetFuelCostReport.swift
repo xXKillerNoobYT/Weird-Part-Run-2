@@ -7,12 +7,16 @@ struct FleetFuelCostReport: View {
     @State private var fuelData: [FleetService.FuelReportRow] = []
     @State private var loadError: String?
     @State private var isLoading = true
+    @State private var dateRange: ReportDateRange = .thisMonth
     @State private var startDate = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
     @State private var endDate = Date()
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     var body: some View {
         List {
-            StandardFilterBar(startDate: $startDate, endDate: $endDate)
+            StandardFilterBar(selectedRange: $dateRange, customStart: $startDate, customEnd: $endDate)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets())
 
@@ -76,6 +80,20 @@ struct FleetFuelCostReport: View {
                                    String(format: "%.2f", $0.totalCost),
                                    String(format: "%.2f", $0.costPerGallon)] }
         )
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Fuel Costs Help", sections: [
+                ("What This Page Does", "Breaks down fuel spending per vehicle for the date range you select. Shows total gallons, total cost, average cost per gallon, and a per-vehicle breakdown."),
+                ("How to Use It", "Set the date range at the top. The summary section shows fleet-wide totals. Below that, each vehicle lists its fuel cost and gallons. Use the export button to save as PDF or CSV."),
+                ("Tips", "If one vehicle's cost per gallon is much higher than the rest, check that fuel logs are entered correctly. Compare month-over-month to spot trends in fuel pricing or vehicle efficiency.")
+            ])
+        }
         .onAppear { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }

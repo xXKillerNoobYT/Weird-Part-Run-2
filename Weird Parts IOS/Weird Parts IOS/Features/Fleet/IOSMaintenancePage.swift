@@ -15,13 +15,51 @@ struct IOSMaintenancePage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    // Date filter
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+    @State private var customEnd: Date = Date()
+
+    private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
+    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
-        maintenanceList
+        VStack(spacing: 0) {
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
+            maintenanceList
+        }
             .navigationTitle("Maintenance")
             .searchable(text: $searchText, prompt: "Search maintenance records...")
             .refreshable { loadData() }
             .task { loadData() }
+            .onChange(of: dateRange) { loadData() }
+            .onChange(of: customStart) { loadData() }
+            .onChange(of: customEnd) { loadData() }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
+            }
+            .sheet(item: $activeSheet) { _ in
+                PageHelpSheet(
+                    title: "Maintenance Help",
+                    sections: [
+                        ("Overview", "This page lists all maintenance records across the fleet. Each record shows the vehicle, type of service performed, date, who did the work, cost, and odometer reading at the time."),
+                        ("Searching", "Use the search bar to filter by vehicle name, maintenance type, or technician name. This helps you quickly find service history for a specific truck."),
+                        ("Reading Entries", "The orange wrench icon marks each record. Vehicle name and maintenance type appear on the left. Cost and mileage appear on the right."),
+                        ("Tips", "Regular maintenance keeps trucks on the road. Check this page to verify completed services and track spending. The Fleet Dashboard also highlights upcoming and overdue maintenance items.")
+                    ]
+                )
+            }
     }
 
     // MARK: - Maintenance List

@@ -78,7 +78,11 @@ struct IOSTemplateBuilderSheet: View {
     }
 
     private func saveTemplate() {
-        guard let service = appCore.settingsService else { isSaving = false; return }
+        guard let service = appCore.settingsService else {
+            actionError = "Settings service not available"
+            isSaving = false
+            return
+        }
         isSaving = true
         do {
             // Store template as a settings entry until full template service is available

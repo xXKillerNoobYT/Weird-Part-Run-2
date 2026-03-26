@@ -10,6 +10,7 @@ struct IOSManageJobsPage: View {
     @EnvironmentObject private var appCore: AppCore
 
     @State private var jobs: [JobsService.JobListItem] = []
+    @State private var allJobs: [JobsService.JobListItem] = []
     @State private var stats: JobsService.JobStats?
     @State private var isLoading = true
     @State private var searchText = ""
@@ -45,7 +46,7 @@ struct IOSManageJobsPage: View {
         }
         .navigationTitle("Manage Jobs")
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
@@ -83,6 +84,22 @@ struct IOSManageJobsPage: View {
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear {
+            // Register AI filter (prompt 62S)
+            appCore.aiFilterRegistry.register(
+                pageId: "manage-jobs",
+                filterName: "Job Status",
+                options: statusOptions,
+                activate: { value in
+                    statusFilter = value
+                    loadData()
+                }
+            )
+            appCore.aiFilterRegistry.applyPendingFilter(pageId: "manage-jobs")
+        }
+        .onDisappear {
+            appCore.aiFilterRegistry.deregister(pageId: "manage-jobs")
+        }
     }
 
     // MARK: - Stats Bar
@@ -101,25 +118,23 @@ struct IOSManageJobsPage: View {
 
     // MARK: - Filter Bar
 
+    private func countForStatus(_ status: String) -> Int {
+        if status == "all" { return allJobs.count }
+        return allJobs.filter { $0.status == status }.count
+    }
+
     private var filterBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(statusOptions, id: \.self) { status in
-                    Button {
+                    SmartFilterCard(
+                        title: status == "all" ? "All" : status.replacingOccurrences(of: "_", with: " ").capitalized,
+                        count: countForStatus(status),
+                        isSelected: statusFilter == status
+                    ) {
                         statusFilter = status
                         loadData()
-                    } label: {
-                        Text(status == "all" ? "All" : status.replacingOccurrences(of: "_", with: " ").capitalized)
-                            .font(.caption)
-                            .fontWeight(statusFilter == status ? .bold : .regular)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(statusFilter == status ? Color.accentColor : Color.secondary.opacity(0.2))
-                            )
-                            .foregroundStyle(statusFilter == status ? .white : .primary)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal)
@@ -168,7 +183,7 @@ struct IOSManageJobsPage: View {
                         .foregroundStyle(.secondary)
                     StatusBadge(
                         text: job.priority.capitalized,
-                        color: priorityColor(job.priority)
+                        color: priorityColor(job.priority, dueDate: job.dueDate, status: job.status)
                     )
                 }
                 Text(job.jobName)
@@ -209,14 +224,14 @@ struct IOSManageJobsPage: View {
         }
     }
 
-    private func priorityColor(_ priority: String) -> Color {
-        switch priority {
-        case "urgent": .red
-        case "high": .orange
-        case "normal": .blue
-        case "low": .secondary
-        default: .secondary
+    /// Returns a time-based priority color for the given job.
+    /// Uses the job's due date to determine urgency; falls back to label-based color if no due date.
+    private func priorityColor(_ priority: String, dueDate: String? = nil, status: String? = nil) -> Color {
+        let isCompleted = status == "completed" || status == "cancelled"
+        if dueDate != nil {
+            return TimelinePriorityColor.color(priority: priority, dueDateString: dueDate, isCompleted: isCompleted)
         }
+        return TimelinePriorityColor.fallbackColor(priority: priority)
     }
 
     // MARK: - Data
@@ -230,10 +245,13 @@ struct IOSManageJobsPage: View {
         isLoading = jobs.isEmpty
         loadError = nil
         do {
-            jobs = try service.listJobs(
+            allJobs = try service.listJobs(
                 search: searchText.isEmpty ? nil : searchText,
-                status: statusFilter == "all" ? nil : statusFilter
+                status: nil
             )
+            jobs = statusFilter == "all"
+                ? allJobs
+                : allJobs.filter { $0.status == statusFilter }
             stats = try service.getJobStats()
         } catch {
             loadError = error.localizedDescription

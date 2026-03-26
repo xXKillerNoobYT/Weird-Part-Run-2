@@ -94,137 +94,148 @@ struct IOSJPOCreationPage: View {
 
     private enum ActiveSheet: Identifiable {
         case qrScanner
+        case help
 
         var id: String {
             switch self {
             case .qrScanner: "qrScanner"
+            case .help: "help"
             }
         }
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                jobHeader
+        VStack(spacing: 0) {
+            jobHeader
 
-                Divider()
+            Divider()
 
-                if sizeClass == .regular {
-                    // iPad / Mac: side-by-side
-                    HStack(spacing: 0) {
+            if sizeClass == .regular {
+                // iPad / Mac: side-by-side
+                HStack(spacing: 0) {
+                    searchPanel
+                        .frame(maxWidth: .infinity)
+                    Divider()
+                    cartPanel
+                        .frame(maxWidth: .infinity)
+                    Divider()
+                    suggestionsPanel
+                        .frame(maxWidth: .infinity)
+                }
+            } else {
+                // iPhone: stacked
+                ScrollView {
+                    VStack(spacing: 16) {
                         searchPanel
-                            .frame(maxWidth: .infinity)
-                        Divider()
                         cartPanel
-                            .frame(maxWidth: .infinity)
-                        Divider()
-                        suggestionsPanel
-                            .frame(maxWidth: .infinity)
+                        suggestionsSection
                     }
-                } else {
-                    // iPhone: stacked
-                    ScrollView {
-                        VStack(spacing: 16) {
-                            searchPanel
-                            cartPanel
-                            suggestionsSection
-                        }
-                        .padding()
-                    }
+                    .padding()
                 }
             }
-            .navigationTitle("New Parts Order")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .disabled(isSubmitting)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button { submitOrder() } label: {
-                        if isSubmitting {
-                            ProgressView()
-                        } else {
-                            Text("Submit")
-                                .fontWeight(.semibold)
-                        }
-                    }
-                    .disabled(cartItems.isEmpty || selectedJobId == nil || isSubmitting)
-                }
-            }
-            .sheet(item: $activeSheet) { sheet in
-                switch sheet {
-                case .qrScanner:
-                    QRScanSheet(expectedType: .part) { result in
-                        if let partId = result.entityId, result.isFound {
-                            addPartById(partId)
-                        }
-                        activeSheet = nil
-                    }
-                    .environmentObject(appCore)
-                }
-            }
-            .alert("Error", isPresented: .constant(submitError != nil)) {
-                Button("OK") { submitError = nil }
-            } message: {
-                Text(submitError ?? "")
-            }
-            .alert(
-                "Add \(confirmingPart?.name ?? "Part")?",
-                isPresented: $showConfirmDialog
-            ) {
-                TextField("Quantity", value: $confirmQty, format: .number)
-                    .keyboardType(.numberPad)
-                Button("Cancel", role: .cancel) { }
-                Button("Add to Cart") {
-                    if let part = confirmingPart {
-                        addToCart(part: part, quantity: confirmQty)
-                        recordSuggestionFeedback(
-                            partId: part.id ?? 0,
-                            suggestedQty: confirmOriginalQty,
-                            acceptedQty: confirmQty,
-                            source: confirmSource
-                        )
-                    }
-                }
-            } message: {
-                let stock = getShopStock(partId: confirmingPart?.id ?? 0)
-                Text("Suggested: \(confirmOriginalQty). Shop stock: \(stock). Adjust if needed.")
-            }
-            .alert("Different Job", isPresented: $showJobVerification) {
-                Button("Yes, for \(selectedJobName)") { }
-                Button("No, use clocked-in job", role: .cancel) {
-                    if let cId = clockedInJobId,
-                       let job = jobs.first(where: { $0.id == cId }) {
-                        selectedJobId = cId
-                        selectedJobName = job.jobName
-                    }
-                }
-            } message: {
-                Text("You're clocked in at a different job. Create this order for \(selectedJobName)?")
-            }
-            .overlay {
-                if showSuccessToast {
-                    VStack {
-                        Spacer()
-                        HStack(spacing: 8) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                            Text(successMessage)
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                        }
-                        .padding()
-                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                        .padding(.bottom, 32)
-                    }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .allowsHitTesting(false)
-                }
-            }
-            .task { await loadJobContext() }
-            .onChange(of: cartItems.count) { loadSuggestions() }
         }
+        .navigationTitle("New Parts Order")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button { submitOrder() } label: {
+                    if isSubmitting {
+                        ProgressView()
+                    } else {
+                        Text("Submit")
+                            .fontWeight(.semibold)
+                    }
+                }
+                .disabled(cartItems.isEmpty || selectedJobId == nil || isSubmitting)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .qrScanner:
+                QRScanSheet(expectedType: .part) { result in
+                    if let partId = result.entityId, result.isFound {
+                        addPartById(partId)
+                    }
+                    activeSheet = nil
+                }
+                .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(
+                    title: "New Parts Order Help",
+                    sections: [
+                        ("What This Page Does", "Create a Job Purchase Order (JPO) to request parts for your job. Search for parts, add them to your cart, set quantities, and submit for office approval."),
+                        ("How to Use It", "1. Your clocked-in job auto-fills at the top. Change it if needed.\n2. Set priority (Normal/High/Urgent) and delivery preference.\n3. Search for parts by name or scan a QR code.\n4. Tap the + button to add parts to the cart. Adjust quantities with +/- buttons.\n5. Check the suggestions panel for companion parts you might need.\n6. Add notes for the office, then tap Submit."),
+                        ("Stock Colors", "Green dot = in stock at the shop. Orange dot = low stock. Red dot = out of stock. In-stock parts get transferred from the shop; out-of-stock parts get ordered from suppliers."),
+                        ("Tips", "Enable the Internet toggle on search to get AI-assisted part matching. Tap a cart item to see companion suggestions for that specific part. The cart shows an estimated cost total based on last-known pricing.")
+                    ]
+                )
+            }
+        }
+        .alert("Error", isPresented: .constant(submitError != nil)) {
+            Button("OK") { submitError = nil }
+        } message: {
+            Text(submitError ?? "")
+        }
+        .alert(
+            "Add \(confirmingPart?.name ?? "Part")?",
+            isPresented: $showConfirmDialog
+        ) {
+            TextField("Quantity", value: $confirmQty, format: .number)
+                .keyboardType(.numberPad)
+            Button("Cancel", role: .cancel) { }
+            Button("Add to Cart") {
+                if let part = confirmingPart {
+                    addToCart(part: part, quantity: confirmQty)
+                    recordSuggestionFeedback(
+                        partId: part.id ?? 0,
+                        suggestedQty: confirmOriginalQty,
+                        acceptedQty: confirmQty,
+                        source: confirmSource
+                    )
+                }
+            }
+        } message: {
+            let stock = getShopStock(partId: confirmingPart?.id ?? 0)
+            Text("Suggested: \(confirmOriginalQty). Shop stock: \(stock). Adjust if needed.")
+        }
+        .alert("Different Job", isPresented: $showJobVerification) {
+            Button("Yes, for \(selectedJobName)") { }
+            Button("No, use clocked-in job", role: .cancel) {
+                if let cId = clockedInJobId,
+                   let job = jobs.first(where: { $0.id == cId }) {
+                    selectedJobId = cId
+                    selectedJobName = job.jobName
+                }
+            }
+        } message: {
+            Text("You're clocked in at a different job. Create this order for \(selectedJobName)?")
+        }
+        .overlay {
+            if showSuccessToast {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        Text(successMessage)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                    .padding()
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.bottom, 32)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .allowsHitTesting(false)
+            }
+        }
+        .task { await loadJobContext() }
+        .onChange(of: cartItems.count) { loadSuggestions() }
     }
 
     // MARK: - Job Header
@@ -778,7 +789,10 @@ struct IOSJPOCreationPage: View {
 
     private func prepareSuggestionConfirm(partId: Int64, suggestedQty: Int, source: String) {
         guard let service = appCore.partsService,
-              let details = try? service.getPart(id: partId) else { return }
+              let details = try? service.getPart(id: partId) else {
+            submitError = "Parts service not available"
+            return
+        }
         confirmingPart = details.part
         confirmQty = suggestedQty
         confirmOriginalQty = suggestedQty
@@ -806,7 +820,10 @@ struct IOSJPOCreationPage: View {
     // MARK: - Stock
 
     private func getShopStock(partId: Int64) -> Int {
-        guard let service = appCore.partsService else { return 0 }
+        guard let service = appCore.partsService else {
+            submitError = "Parts service not available"
+            return 0
+        }
         do {
             let summary = try service.getPartStockSummary(partId: partId)
             return summary.total
@@ -819,6 +836,7 @@ struct IOSJPOCreationPage: View {
 
     private func searchParts() {
         guard let service = appCore.partsService, searchText.count >= 2 else {
+            submitError = "Parts service not available"
             searchResults = []
             bestMatchName = nil
             return

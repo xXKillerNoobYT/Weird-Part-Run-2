@@ -75,7 +75,7 @@ struct WarehouseLocationsPage: View {
                     Image(systemName: "plus")
                 }
             }
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
@@ -994,7 +994,7 @@ private struct StorageUnitDetailSheet: View {
 
     private func loadAreaContents(areaId: Int64) {
         guard let service = appCore.warehouseService else {
-            // Service not ready
+            loadError = "Warehouse service not available"
             return
         }
         guard areaContents[areaId] == nil else { return }
@@ -1094,10 +1094,19 @@ private struct StickerChecklistSheet: View {
     @State private var levels: [WarehouseStorageLevel] = []
     @State private var areasForLevel: [Int64: [WarehouseStorageArea]] = [:]
     @State private var checkedCodes: Set<String> = []
+    @State private var loadError: String?
 
     var body: some View {
         NavigationStack {
             List {
+                if let error = loadError {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.subheadline)
+                    }
+                }
+
                 Section {
                     Text("Write these codes on stickers and place them on each location.")
                         .font(.caption)
@@ -1151,7 +1160,7 @@ private struct StickerChecklistSheet: View {
 
     private func loadData() {
         guard let service = appCore.warehouseService else {
-            // Service not ready
+            loadError = "Warehouse service not available"
             return
         }
         do {

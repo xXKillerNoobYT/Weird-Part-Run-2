@@ -17,6 +17,12 @@ struct IOSFleetDashboardPage: View {
     @State private var recentMaintenance: [FleetService.MaintenanceRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,6 +39,26 @@ struct IOSFleetDashboardPage: View {
         .refreshable { loadData() }
         .background(DS.Background.page)
         .task { loadData() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Fleet Dashboard Help",
+                sections: [
+                    ("Overview", "The Fleet Dashboard gives you a bird's-eye view of every vehicle, trailer, and maintenance item in the fleet. Smart cards at the top show key counts at a glance."),
+                    ("Status Cards", "The first row shows total vehicles, how many are active, how many have maintenance due, overdue inspections, and total trailers. Tap to scan quickly for anything that needs attention."),
+                    ("Cost Cards", "If you have financial permissions, a second row shows month-to-date fuel spend, miles driven, and maintenance costs. These update as new logs are entered."),
+                    ("Vehicle List", "Scroll down to see every vehicle with its current driver, status, and whether today's pre-trip inspection has been completed. Tap a vehicle to open its detail page."),
+                    ("Upcoming Maintenance", "Shows vehicles with scheduled maintenance approaching. Overdue items appear in red so nothing slips through the cracks."),
+                    ("Tips", "Pull down to refresh data at any time. Check this dashboard at the start of each day to spot overdue inspections and upcoming maintenance before trucks roll out.")
+                ]
+            )
+        }
     }
 
     // MARK: - Dashboard Content
@@ -298,7 +324,7 @@ struct IOSFleetDashboardPage: View {
         VStack(spacing: 4) {
             Image(systemName: icon)
                 .foregroundStyle(color)
-            Text("$\(Int(value))")
+            Text(String(format: "$%.2f", value))
                 .font(.headline)
             Text(title)
                 .font(.caption)

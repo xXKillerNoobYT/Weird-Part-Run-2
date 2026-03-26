@@ -55,6 +55,23 @@ struct IOSClockPage: View {
     @State private var activeSheet: ActiveSheet?
     @State private var lastLaborEntryId: Int64?
 
+    // Flex Pool — shown when user has no dispatch for today
+    @State private var hasDispatchToday = false
+    @State private var flexPoolJobs: [JobsService.ClockJobRow] = []
+    @State private var showSelfAssignConfirmation = false
+    @State private var selectedFlexJob: (id: Int64, name: String)?
+
+    // Location permission
+    @State private var showLocationDeniedAlert = false
+
+    // Date filter
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+    @State private var customEnd: Date = Date()
+
+    private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
+    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
+
     private enum ActiveSheet: Identifiable {
         case questionnaire(Int64)
         case jobScanner
@@ -103,7 +120,7 @@ struct IOSClockPage: View {
                         }
                     }
                 }
-                ToolbarItem(placement: .secondaryAction) {
+                ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
@@ -112,11 +129,29 @@ struct IOSClockPage: View {
             .refreshable { loadData() }
             .task {
                 locationManager.requestPermission()
+                if locationManager.permissionDenied {
+                    showLocationDeniedAlert = true
+                }
                 loadData()
+            }
+            .onChange(of: dateRange) { loadData() }
+            .onChange(of: customStart) { loadData() }
+            .onChange(of: customEnd) { loadData() }
+            .onAppear {
+                let clockedIn = activeEntry != nil
+                let jobName = activeEntry?.jobName ?? "none"
+                NotificationCenter.default.post(
+                    name: .clockPageActive,
+                    object: nil,
+                    userInfo: [
+                        "context": "Clock Page: \(clockedIn ? "Clocked in to \(jobName), elapsed \(elapsedText), activity: \(activityStatus)" : "Not clocked in"). Today: \(todayJobGroups.count) job entries, \(String(format: "%.1f", todayHours))h total."
+                    ]
+                )
             }
             .onDisappear {
                 elapsedTimer?.invalidate(); elapsedTimer = nil
                 breakTimer?.invalidate(); breakTimer = nil
+                NotificationCenter.default.post(name: .clockPageInactive, object: nil)
             }
             .fullScreenCover(isPresented: $geofenceManager.didExitJobRegion) {
                 GeofenceAlertView(
@@ -175,6 +210,24 @@ struct IOSClockPage: View {
                     )
                 }
             }
+            .alert("Join Job?", isPresented: $showSelfAssignConfirmation) {
+                Button("Assign & Clock In") {
+                    Task { await selfAssignAndClockIn() }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Assign yourself to \(selectedFlexJob?.name ?? "this job") and clock in?")
+            }
+            .alert("Location Permission Required", isPresented: $showLocationDeniedAlert) {
+                Button("Open Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Location is required for clock in/out. Please enable it in Settings \u{2192} Privacy & Security \u{2192} Location Services.")
+            }
     }
 
     // MARK: - Content
@@ -195,6 +248,8 @@ struct IOSClockPage: View {
                     }
                 }
 
+                StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
+
                 if let entry = activeEntry {
                     // CLOCKED IN — show status + clock out button
                     clockedInSection(entry)
@@ -204,6 +259,7 @@ struct IOSClockPage: View {
                 } else {
                     // NOT CLOCKED IN — show inline job picker
                     jobPickerSection
+                    flexPoolSection
                     todayHoursSection
                 }
             }
@@ -256,6 +312,7 @@ struct IOSClockPage: View {
                     .buttonStyle(.bordered)
                     .controlSize(.large)
                     .disabled(activeBreakRecord != nil)
+                    .opacity(activeBreakRecord != nil ? 0.4 : 1.0)
 
                     Button {
                         Task { await switchJob(entryId: entry.id) }
@@ -267,14 +324,22 @@ struct IOSClockPage: View {
                     .controlSize(.large)
                     .tint(.blue)
                     .disabled(activeBreakRecord != nil)
+                    .opacity(activeBreakRecord != nil ? 0.4 : 1.0)
                 }
                 .padding(.top, 4)
+
+                // Break explanation when clock out is disabled
+                if activeBreakRecord != nil {
+                    Label("End your break first to clock out", systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
 
                 Divider()
 
                 // Lunch / Break / Supply Run buttons
                 if activeBreakRecord != nil {
-                    // Show end break button when on break
+                    // Show end break button when on break — prominent orange to draw attention
                     Button {
                         Task { await endCurrentBreak() }
                     } label: {
@@ -283,7 +348,7 @@ struct IOSClockPage: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(.green)
+                    .tint(.orange)
                     .controlSize(.large)
                 } else {
                     HStack(spacing: 12) {
@@ -421,6 +486,38 @@ struct IOSClockPage: View {
 
     @ViewBuilder
     private var jobPickerSection: some View {
+        // Location permission warning banner
+        if locationManager.permissionDenied {
+            Section {
+                HStack(spacing: 12) {
+                    Image(systemName: "location.slash.fill")
+                        .font(.title3)
+                        .foregroundStyle(.orange)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Location Access Denied")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Text("Location is required to clock in. Tap to open Settings.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button("Settings") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
+                    .font(.caption)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                }
+                .padding(.vertical, 4)
+            }
+        }
+
         Section {
             // Shop / Warehouse — always first, pinned
             Button {
@@ -518,6 +615,76 @@ struct IOSClockPage: View {
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
+                }
+            }
+        }
+    }
+
+    // MARK: - Flex Pool Section
+
+    /// Shows available jobs for self-assignment when the worker has no dispatch today.
+    @ViewBuilder
+    private var flexPoolSection: some View {
+        if !hasDispatchToday && activeEntry == nil {
+            Section {
+                if flexPoolJobs.isEmpty {
+                    Label {
+                        Text("No available jobs for today")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    } icon: {
+                        Image(systemName: "tray")
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    ForEach(flexPoolJobs) { job in
+                        Button {
+                            selectedFlexJob = (job.id, job.jobName)
+                            showSelfAssignConfirmation = true
+                        } label: {
+                            HStack(spacing: DS.Space.md) {
+                                Image(systemName: "briefcase.fill")
+                                    .font(.title3)
+                                    .foregroundStyle(.green)
+                                    .frame(width: 40, height: 40)
+                                    .background(Color.green.opacity(0.1))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(job.jobName)
+                                        .font(.body)
+                                        .fontWeight(.medium)
+                                    if !job.jobNumber.isEmpty {
+                                        Text("#\(job.jobNumber)")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+
+                                Spacer()
+
+                                Text("Join")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .background(Color.blue.opacity(0.1))
+                                    .foregroundStyle(.blue)
+                                    .clipShape(Capsule())
+                            }
+                            .frame(minHeight: 56)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            } header: {
+                HStack {
+                    Text("Flex Pool")
+                    Spacer()
+                    Label("No dispatch today", systemImage: "person.badge.clock")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
                 }
             }
         }
@@ -726,9 +893,99 @@ struct IOSClockPage: View {
         }
     }
 
+    // MARK: - Flex Pool Actions
+
+    /// Check if the current user has a dispatch assignment for today.
+    /// If not, load the flex pool (active jobs they can self-assign to).
+    private func checkDispatchStatus() {
+        guard let userId = appCore.currentUser?.id else { return }
+
+        let today: String = {
+            let fmt = DateFormatter()
+            fmt.dateFormat = "yyyy-MM-dd"
+            return fmt.string(from: Date())
+        }()
+
+        // Check for dispatch entries via SchedulingService
+        if let schedulingService = appCore.schedulingService {
+            do {
+                let dispatches = try schedulingService.getMySchedule(
+                    userId: userId,
+                    startDate: today,
+                    endDate: today
+                )
+                hasDispatchToday = !dispatches.isEmpty
+            } catch {
+                // If table doesn't exist or other error, assume no dispatch
+                hasDispatchToday = false
+            }
+        } else {
+            // Scheduling service unavailable — assume no dispatch
+            hasDispatchToday = false
+        }
+
+        // If no dispatch today, load flex pool jobs
+        if !hasDispatchToday {
+            if let jobsService = appCore.jobsService {
+                do {
+                    flexPoolJobs = try jobsService.listActiveJobsForClock()
+                } catch {
+                    flexPoolJobs = []
+                }
+            } else {
+                flexPoolJobs = []
+            }
+        } else {
+            flexPoolJobs = []
+        }
+    }
+
+    /// Self-assign the user to the selected flex pool job and clock in.
+    private func selfAssignAndClockIn() async {
+        guard let flexJob = selectedFlexJob,
+              let userId = appCore.currentUser?.id else {
+            await MainActor.run {
+                errorMessage = "Not logged in"
+            }
+            return
+        }
+
+        let today: String = {
+            let fmt = DateFormatter()
+            fmt.dateFormat = "yyyy-MM-dd"
+            return fmt.string(from: Date())
+        }()
+
+        // Create a dispatch entry so the assignment is tracked
+        if let schedulingService = appCore.schedulingService {
+            do {
+                try schedulingService.createDispatch(
+                    jobId: flexJob.id,
+                    userId: userId,
+                    date: today,
+                    notes: "Self-assigned from Flex Pool"
+                )
+            } catch {
+                // Non-fatal: clock-in still works even if dispatch creation fails
+                print("Flex pool dispatch creation failed: \(error.localizedDescription)")
+            }
+        }
+
+        // Clock in to the selected job
+        await MainActor.run {
+            clockIn(jobId: flexJob.id, isShop: false)
+        }
+    }
+
     // MARK: - Actions
 
     private func clockIn(jobId: Int64?, isShop: Bool) {
+        // Check location permission before attempting clock-in
+        if locationManager.permissionDenied {
+            showLocationDeniedAlert = true
+            return
+        }
+
         guard let service = appCore.jobsService,
               let userId = appCore.currentUser?.id else {
             errorMessage = "Not logged in"
@@ -870,7 +1127,10 @@ struct IOSClockPage: View {
     private func endCurrentBreak() async {
         guard let breakSvc = appCore.breakService,
               let record = activeBreakRecord,
-              let recordId = record.id else { return }
+              let recordId = record.id else {
+            errorMessage = "Break service not available"
+            return
+        }
 
         do {
             try breakSvc.endBreak(recordId: recordId)
@@ -1042,7 +1302,10 @@ struct IOSClockPage: View {
 
     private func selectTodo(_ todo: JobsService.ClockTodoItem) {
         guard let service = appCore.jobsService,
-              let entry = activeEntry else { return }
+              let entry = activeEntry else {
+            errorMessage = "Jobs service not available"
+            return
+        }
         currentTodo = todo
         try? service.linkClockEntryToTodo(clockEntryId: entry.id, todoId: todo.id)
     }
@@ -1256,6 +1519,9 @@ struct IOSClockPage: View {
                 } else {
                     isShopClockIn = false
                 }
+
+                // Check dispatch status and load flex pool if needed
+                checkDispatchStatus()
             }
         } catch {
             await MainActor.run {

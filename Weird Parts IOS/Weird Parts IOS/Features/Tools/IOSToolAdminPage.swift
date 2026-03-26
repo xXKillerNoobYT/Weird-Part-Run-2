@@ -10,6 +10,12 @@ struct IOSToolAdminPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,6 +30,25 @@ struct IOSToolAdminPage: View {
         }
         .navigationTitle("Tool Admin")
         .searchable(text: $searchText, prompt: "Search tools...")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Tool Admin Help",
+                sections: [
+                    ("What This Page Does", "Tool Admin is the management view for supervisors and office staff. It provides an overview of tool counts by status along with a complete searchable list of every tool in the system."),
+                    ("Overview Section", "The top section shows key counts: total tools, how many are checked out, and how many are in maintenance. These numbers update when you pull to refresh."),
+                    ("All Tools List", "Below the overview is the full tool list with status badges. Tap any tool to open its detail page where you can edit information, change status, manage checkouts, and view history."),
+                    ("Searching", "Use the search bar to find tools by name or serial number. The count next to 'All Tools' updates to reflect your filtered results."),
+                    ("Tips", "Use this page for audits and inventory checks. Sort through tools to verify serial numbers match physical tools. If a tool shows 'Checked Out' but is sitting on the shelf, open its detail page and return it to keep records accurate.")
+                ]
+            )
+        }
         .refreshable { loadData() }
         .task { loadData() }
     }

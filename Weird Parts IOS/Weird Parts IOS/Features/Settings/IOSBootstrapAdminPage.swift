@@ -11,6 +11,7 @@ struct IOSBootstrapAdminPage: View {
 
     // MARK: - State
 
+    @State private var activeSheet: ActiveSheet?
     @State private var isLoading = true
     @State private var bootstrapDevices: [SettingsService.BootstrapDeviceRow] = []
     @State private var errorMessage: String?
@@ -41,6 +42,19 @@ struct IOSBootstrapAdminPage: View {
             }
         }
         .navigationTitle("Bootstrap Admin")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Bootstrap Admin Help", sections: [
+                ("What This Page Does", "Lists devices that registered through the bootstrap process. Shows each device's enrollment status, type, app version, and last check-in time."),
+                ("How to Use It", "Review registered devices and their statuses here. Device approval and rejection must be performed from the desktop application. Pull down to refresh the list."),
+            ])
+        }
         .refreshable { loadData() }
         .task { loadData() }
         .overlay {
@@ -55,6 +69,11 @@ struct IOSBootstrapAdminPage: View {
                 }
             }
         }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     // MARK: - Device Row

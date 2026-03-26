@@ -15,11 +15,35 @@ struct IOSToolKitsPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var searchText = ""
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         kitContent
             .navigationTitle("Tool Kits")
             .searchable(text: $searchText, prompt: "Search kits...")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
+            }
+            .sheet(item: $activeSheet) { _ in
+                PageHelpSheet(
+                    title: "Tool Kits Help",
+                    sections: [
+                        ("What This Page Does", "Tool Kits are pre-defined collections of tools grouped together for a specific job type or task. For example, a 'Rough-In Kit' might include a drill, level, tape measure, and safety glasses. This page lists all kits in the system."),
+                        ("Kit Status", "Each kit shows a status badge. 'Complete' means all required tools are present. 'Incomplete' means one or more tools are missing or damaged. 'Checked Out' means the kit is currently assigned to someone. 'Maintenance' means the kit is out of service."),
+                        ("Searching", "Use the search bar to find kits by name or description. The tool count shown under each kit tells you how many items belong to that kit."),
+                        ("Tips", "Before heading to a job site, check that your kit shows 'Complete'. If it says 'Incomplete', open the kit detail to see which tools are missing and track them down before you leave.")
+                    ]
+                )
+            }
             .refreshable { loadData() }
             .task { loadData() }
     }

@@ -3612,6 +3612,438 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    // MARK: - Warehouse Location Name Lookup
+
+    /// Look up the human-readable name for a single warehouse location.
+    /// Returns `nil` if the location doesn't exist or has been soft-deleted.
+    public func getWarehouseLocationName(id: Int64) throws -> String? {
+        try db.writer.read { dbConn in
+            try String.fetchOne(dbConn, sql: """
+                SELECT name FROM warehouse_locations WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [id])
+        }
+    }
+
+    /// Batch-lookup human-readable names for multiple warehouse locations.
+    /// Returns a dictionary mapping location ID to name. Missing or deleted locations are omitted.
+    public func getWarehouseLocationNames(ids: [Int64]) throws -> [Int64: String] {
+        guard !ids.isEmpty else { return [:] }
+        return try db.writer.read { dbConn in
+            let placeholders = ids.map { _ in "?" }.joined(separator: ", ")
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT id, name FROM warehouse_locations
+                WHERE id IN (\(placeholders)) AND deleted_at IS NULL
+                """, arguments: StatementArguments(ids))
+            var result: [Int64: String] = [:]
+            for row in rows {
+                if let id: Int64 = row["id"], let name: String = row["name"] {
+                    result[id] = name
+                }
+            }
+            return result
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Multi-User Audit Verification
+    // =========================================================================
+
+    /// Summary row for displaying multi-user audit assignments grouped by part.
+    public struct MultiUserAuditPartSummary: Sendable {
+        public let partId: Int64
+        public let partName: String
+        public let binLocation: String?
+        public let expectedQuantity: Int?
+        public let assignments: [MultiUserAuditAssignment]
+        public let consensusQuantity: Int?
+        public let isResolved: Bool
+
+        public init(
+            partId: Int64, partName: String, binLocation: String?,
+            expectedQuantity: Int?, assignments: [MultiUserAuditAssignment],
+            consensusQuantity: Int?, isResolved: Bool
+        ) {
+            self.partId = partId
+            self.partName = partName
+            self.binLocation = binLocation
+            self.expectedQuantity = expectedQuantity
+            self.assignments = assignments
+            self.consensusQuantity = consensusQuantity
+            self.isResolved = isResolved
+        }
+    }
+
+    /// Flag a low-confidence part for multi-user audit verification.
+    ///
+    /// Creates 2-3 assignments for different active users (excluding the user
+    /// who originally flagged it). Assignments are distributed among users who
+    /// have the highest warehouse accuracy ratings.
+    ///
+    /// - Parameters:
+    ///   - partId: The part to verify.
+    ///   - expectedQty: The system's expected quantity (from stock records).
+    ///   - sessionId: The audit session this verification belongs to.
+    ///   - flaggedBy: The user who flagged the discrepancy (excluded from assignments).
+    ///   - requiredCounts: Number of independent counts needed (default 2, max 3).
+    /// - Returns: The created assignments.
+    @discardableResult
+    public func flagForMultiUserAudit(
+        partId: Int64,
+        expectedQty: Int,
+        sessionId: Int64? = nil,
+        flaggedBy: Int64? = nil,
+        requiredCounts: Int = 2
+    ) throws -> [MultiUserAuditAssignment] {
+        try db.writer.write { dbConn in
+            // Get part info
+            let partRow = try Row.fetchOne(dbConn, sql: """
+                SELECT p.name, COALESCE(wpa.area_id, 0) AS area_id,
+                       wsa.full_location_code AS bin_location
+                FROM parts p
+                LEFT JOIN warehouse_part_assignments wpa ON wpa.part_id = p.id
+                    AND wpa.is_home = 1 AND wpa.deleted_at IS NULL
+                LEFT JOIN warehouse_storage_areas wsa ON wsa.id = wpa.area_id
+                    AND wsa.deleted_at IS NULL
+                WHERE p.id = ? AND p.deleted_at IS NULL
+                """, arguments: [partId])
+
+            let partName = (partRow?["name"] as String?) ?? "Unknown Part"
+            let binLocation = partRow?["bin_location"] as String?
+
+            // Get active users, excluding the flagger, ordered by accuracy rating
+            var userArgs: [DatabaseValueConvertible?] = []
+            var excludeClause = ""
+            if let flaggedBy {
+                excludeClause = "AND u.id != ?"
+                userArgs.append(flaggedBy)
+            }
+
+            let userRows = try Row.fetchAll(dbConn, sql: """
+                SELECT u.id, COALESCE(u.display_name, u.email, 'User') AS name,
+                       COALESCE(uwr.accuracy_rating, 5.0) AS accuracy
+                FROM users u
+                LEFT JOIN user_warehouse_ratings uwr ON uwr.user_id = u.id
+                WHERE u.is_active = 1 AND u.deleted_at IS NULL
+                    \(excludeClause)
+                ORDER BY COALESCE(uwr.accuracy_rating, 5.0) DESC
+                LIMIT ?
+                """, arguments: StatementArguments(userArgs + [min(requiredCounts, 3)]))
+
+            var assignments: [MultiUserAuditAssignment] = []
+
+            for userRow in userRows {
+                let userId: Int64 = userRow["id"] ?? 0
+                let userName: String = userRow["name"] ?? "User"
+
+                var assignment = MultiUserAuditAssignment(
+                    id: nil,
+                    partId: partId,
+                    partName: partName,
+                    binLocation: binLocation,
+                    assignedUserId: userId,
+                    assignedUserName: userName,
+                    countedQuantity: nil,
+                    countedAt: nil,
+                    status: "pending",
+                    auditSessionId: sessionId,
+                    expectedQuantity: expectedQty,
+                    notes: nil,
+                    createdAt: nil
+                )
+                try assignment.insert(dbConn)
+                assignments.append(assignment)
+            }
+
+            return assignments
+        }
+    }
+
+    /// Submit a user's count for a multi-user audit assignment.
+    ///
+    /// - Parameters:
+    ///   - assignmentId: The assignment to update.
+    ///   - quantity: The physical count by this user.
+    ///   - userId: The user submitting the count (verified against assignment).
+    ///   - notes: Optional notes about the count.
+    public func submitMultiUserCount(
+        assignmentId: Int64,
+        quantity: Int,
+        userId: Int64,
+        notes: String? = nil
+    ) throws {
+        try db.writer.write { dbConn in
+            // Verify the assignment exists and belongs to this user
+            guard var assignment = try MultiUserAuditAssignment.fetchOne(dbConn, key: assignmentId) else {
+                throw WarehouseError.sessionNotFound(assignmentId)
+            }
+            guard assignment.assignedUserId == userId else {
+                throw WarehouseError.sessionNotFound(assignmentId)
+            }
+            guard assignment.status == "pending" else {
+                throw WarehouseError.sessionAlreadyCompleted
+            }
+
+            assignment.countedQuantity = quantity
+            assignment.countedAt = Self.nowString()
+            assignment.status = "counted"
+            assignment.notes = notes
+            try assignment.update(dbConn)
+        }
+    }
+
+    /// Get all multi-user audit assignments for a session, grouped by part.
+    ///
+    /// - Parameter sessionId: The audit session ID (nil returns all unresolved).
+    /// - Returns: Assignments grouped by part with consensus info.
+    public func getMultiUserAuditAssignments(sessionId: Int64? = nil) throws -> [MultiUserAuditPartSummary] {
+        do {
+            return try db.writer.read { dbConn -> [MultiUserAuditPartSummary] in
+                var whereClauses = ["1=1"]
+                var args: [DatabaseValueConvertible?] = []
+
+                if let sessionId {
+                    whereClauses.append("audit_session_id = ?")
+                    args.append(sessionId)
+                }
+
+                let assignments = try MultiUserAuditAssignment
+                    .filter(sql: whereClauses.joined(separator: " AND "), arguments: StatementArguments(args))
+                    .order(Column("part_id"), Column("created_at"))
+                    .fetchAll(dbConn)
+
+                // Group by partId
+                let grouped = Dictionary(grouping: assignments) { $0.partId }
+
+                return grouped.map { (partId, partAssignments) -> MultiUserAuditPartSummary in
+                    let first = partAssignments[0]
+                    let countedAssignments = partAssignments.filter { $0.status == "counted" }
+                    let isResolved = partAssignments.allSatisfy { $0.status == "resolved" }
+
+                    // Calculate consensus: if all counted quantities agree, that's consensus
+                    let consensus: Int?
+                    if countedAssignments.count >= 2 {
+                        let counts = countedAssignments.compactMap { $0.countedQuantity }
+                        let uniqueCounts = Set(counts)
+                        if uniqueCounts.count == 1 {
+                            consensus = counts.first
+                        } else {
+                            // Find the most common count (mode)
+                            let countFreq = counts.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }
+                            let maxFreq = countFreq.values.max() ?? 0
+                            if maxFreq >= 2 {
+                                consensus = countFreq.first { $0.value == maxFreq }?.key
+                            } else {
+                                consensus = nil // No clear consensus
+                            }
+                        }
+                    } else {
+                        consensus = nil
+                    }
+
+                    return MultiUserAuditPartSummary(
+                        partId: partId,
+                        partName: first.partName,
+                        binLocation: first.binLocation,
+                        expectedQuantity: first.expectedQuantity,
+                        assignments: partAssignments,
+                        consensusQuantity: consensus,
+                        isResolved: isResolved
+                    )
+                }.sorted { $0.partName < $1.partName }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get pending multi-user audit assignments for a specific user.
+    ///
+    /// - Parameter userId: The user to fetch assignments for.
+    /// - Returns: Pending assignments for this user.
+    public func getMyMultiUserAuditAssignments(userId: Int64) throws -> [MultiUserAuditAssignment] {
+        do {
+            return try db.writer.read { dbConn in
+                try MultiUserAuditAssignment
+                    .filter(Column("assigned_user_id") == userId && Column("status") == "pending")
+                    .order(Column("created_at").desc)
+                    .fetchAll(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Resolve a multi-user audit for a part within a session.
+    ///
+    /// Compares all submitted counts, picks consensus (majority count),
+    /// adjusts the system stock to match, updates part confidence, and
+    /// adjusts user warehouse ratings based on accuracy.
+    ///
+    /// - Parameters:
+    ///   - partId: The part being resolved.
+    ///   - sessionId: The audit session.
+    ///   - resolvedBy: The user performing the resolution.
+    /// - Returns: The consensus quantity that was applied, or nil if no consensus.
+    @discardableResult
+    public func resolveMultiUserAudit(
+        partId: Int64,
+        sessionId: Int64,
+        resolvedBy: Int64
+    ) throws -> Int? {
+        try db.writer.write { dbConn in
+            // Get all assignments for this part in this session
+            let assignments = try MultiUserAuditAssignment
+                .filter(Column("part_id") == partId && Column("audit_session_id") == sessionId)
+                .fetchAll(dbConn)
+
+            let countedAssignments = assignments.filter { $0.status == "counted" }
+            guard countedAssignments.count >= 2 else { return nil }
+
+            let counts = countedAssignments.compactMap { $0.countedQuantity }
+            let countFreq = counts.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }
+
+            // Find consensus: the count with the most votes
+            guard let (consensusQty, maxVotes) = countFreq.max(by: { $0.value < $1.value }),
+                  maxVotes >= 2 || countedAssignments.count == 2 else {
+                return nil // No consensus possible
+            }
+
+            // For 2 counters, they must agree
+            if countedAssignments.count == 2 && counts[0] != counts[1] {
+                return nil
+            }
+
+            // Use the consensus quantity (or if 2 counters agree, use their count)
+            let finalQty: Int
+            if countedAssignments.count == 2 {
+                finalQty = counts[0]
+            } else {
+                finalQty = consensusQty
+            }
+
+            // Mark all assignments as resolved
+            for var assignment in assignments {
+                assignment.status = "resolved"
+                try assignment.update(dbConn)
+            }
+
+            // Update stock to match consensus
+            let expectedQty = assignments.first?.expectedQuantity ?? 0
+            if finalQty != expectedQty {
+                try dbConn.execute(sql: """
+                    UPDATE stock SET qty = ?, last_counted = datetime('now'), updated_at = datetime('now')
+                    WHERE part_id = ? AND location_type = 'warehouse' AND deleted_at IS NULL
+                    """, arguments: [finalQty, partId])
+
+                // Record adjustment movement
+                try dbConn.execute(sql: """
+                    INSERT INTO stock_movements
+                    (part_id, qty, from_location_type, to_location_type,
+                     movement_type, reason, notes, performed_by, created_at)
+                    VALUES (?, ?, 'warehouse', 'warehouse', 'adjustment',
+                            'Multi-user audit consensus', ?, ?, datetime('now'))
+                    """, arguments: [
+                        partId, finalQty,
+                        "Consensus from \(countedAssignments.count) independent counts",
+                        resolvedBy
+                    ])
+            }
+
+            // Update user warehouse ratings based on accuracy
+            for assignment in countedAssignments {
+                let wasAccurate = assignment.countedQuantity == finalQty
+                let userId = assignment.assignedUserId
+
+                if var rating = try UserWarehouseRating
+                    .filter(Column("user_id") == userId)
+                    .fetchOne(dbConn) {
+                    rating.totalAudits += 1
+                    if wasAccurate {
+                        rating.totalAccurate += 1
+                        rating.accuracyRating = min(10, rating.accuracyRating + 0.3)
+                    } else {
+                        rating.accuracyRating = max(0, rating.accuracyRating - 0.5)
+                    }
+                    rating.overallRating = (rating.accuracyRating + rating.effortRating +
+                        rating.placementRating + rating.wizardCompliance +
+                        rating.speedRating + rating.proactiveRating) / 6.0
+                    rating.updatedAt = Self.nowString()
+                    try rating.update(dbConn)
+                }
+            }
+
+            // Boost part confidence after multi-user verification
+            if var conf = try PartConfidence
+                .filter(Column("part_id") == partId)
+                .fetchOne(dbConn) {
+                conf.confidencePercent = min(100, conf.confidencePercent + 35)
+                conf.lastAuditDate = Self.nowString()
+                conf.lastAuditBy = resolvedBy
+                conf.lastAuditCount = finalQty
+                conf.systemCount = finalQty
+                conf.totalAuditCount += 1
+                conf.cleanAuditStreak = (finalQty == expectedQty) ? conf.cleanAuditStreak + 1 : 0
+                conf.movementDecayFactor = 1.0
+                conf.reliabilityLevel = Self.computeReliabilityLevel(conf)
+                conf.updatedAt = Self.nowString()
+                try conf.update(dbConn)
+            }
+
+            return finalQty
+        }
+    }
+
+    /// Get low-confidence parts that should be flagged for multi-user verification.
+    ///
+    /// Returns parts where confidence is below the threshold and that haven't
+    /// already been flagged in the current session.
+    ///
+    /// - Parameters:
+    ///   - threshold: Confidence percentage threshold (default 40%).
+    ///   - sessionId: Current session to check for existing assignments.
+    ///   - limit: Maximum number of parts to return.
+    /// - Returns: Part confidence records below threshold.
+    public func getLowConfidencePartsForVerification(
+        threshold: Double = 40.0,
+        sessionId: Int64? = nil,
+        limit: Int = 20
+    ) throws -> [PartConfidence] {
+        do {
+            return try db.writer.read { dbConn in
+                var sql = """
+                    SELECT pc.* FROM part_confidence pc
+                    WHERE pc.confidence_percent < ?
+                """
+                var args: [DatabaseValueConvertible?] = [threshold]
+
+                // Exclude parts already flagged in this session
+                if let sessionId {
+                    sql += """
+                         AND pc.part_id NOT IN (
+                            SELECT DISTINCT part_id FROM multi_user_audit_assignments
+                            WHERE audit_session_id = ?
+                         )
+                        """
+                    args.append(sessionId)
+                }
+
+                sql += " ORDER BY pc.confidence_percent ASC LIMIT ?"
+                args.append(limit)
+
+                return try PartConfidence.fetchAll(
+                    dbConn,
+                    sql: sql,
+                    arguments: StatementArguments(args)
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     // MARK: - Helpers (Audit)
 
     private static func nowString() -> String {

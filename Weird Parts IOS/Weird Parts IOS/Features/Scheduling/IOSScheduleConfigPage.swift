@@ -18,6 +18,12 @@ struct IOSScheduleConfigPage: View {
     @State private var showSaveConfirmation = false
     @State private var saveError: String?
     @State private var loadErrorMsg: String?
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         Form {
@@ -72,6 +78,21 @@ struct IOSScheduleConfigPage: View {
             }
         }
         .navigationTitle("Schedule Config")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Schedule Config Help", sections: [
+                ("What This Page Does", "Schedule Config sets the global defaults for your scheduling system. These settings control work hours, break policies, overtime thresholds, and weekend scheduling rules that apply company-wide."),
+                ("How to Use It", "Adjust the work day start and end times using 24-hour format (e.g. 07:00 for 7 AM). Set lunch and break durations with the steppers. Configure the overtime threshold for weekly hours. Toggle weekend scheduling on or off."),
+                ("Saving Changes", "Tap 'Save Configuration' at the bottom to apply your changes. A confirmation alert appears when saved successfully. If there is an error, it will be displayed in red at the bottom of the form."),
+                ("Tips", "These are global defaults. Individual schedule entries can still override these times. The overtime threshold is used for reporting and alerts, not for blocking assignments.")
+            ])
+        }
         .onAppear { loadConfig() }
         .alert("Configuration Saved", isPresented: $showSaveConfirmation) {
             Button("OK", role: .cancel) { }

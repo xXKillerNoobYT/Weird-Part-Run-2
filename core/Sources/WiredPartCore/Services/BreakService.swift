@@ -55,16 +55,29 @@ public final class BreakService: Sendable {
         breakMinutes: Int = 15,
         dataSource: String? = "manual"
     ) throws -> BreakPolicy {
-        try db.writer.write { dbConn in
-            var policy = BreakPolicy(
-                id: nil, stateCode: stateCode, policyType: policyType,
-                workDayHours: workDayHours, lunchMinutes: lunchMinutes,
-                breakCount: breakCount, breakMinutes: breakMinutes,
-                dataSource: dataSource, dataDate: Self.todayString(),
-                createdAt: nil, updatedAt: nil, deletedAt: nil
-            )
-            try policy.insert(dbConn)
-            return policy
+        do {
+            return try db.writer.write { dbConn in
+                var policy = BreakPolicy(
+                    id: nil, stateCode: stateCode, policyType: policyType,
+                    workDayHours: workDayHours, lunchMinutes: lunchMinutes,
+                    breakCount: breakCount, breakMinutes: breakMinutes,
+                    dataSource: dataSource, dataDate: Self.todayString(),
+                    createdAt: nil, updatedAt: nil, deletedAt: nil
+                )
+                try policy.insert(dbConn)
+                return policy
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return BreakPolicy(
+                    id: nil, stateCode: stateCode, policyType: policyType,
+                    workDayHours: workDayHours, lunchMinutes: lunchMinutes,
+                    breakCount: breakCount, breakMinutes: breakMinutes,
+                    dataSource: dataSource, dataDate: Self.todayString(),
+                    createdAt: nil, updatedAt: nil, deletedAt: nil
+                )
+            }
+            throw error
         }
     }
 
@@ -95,23 +108,39 @@ public final class BreakService: Sendable {
         description: String? = nil,
         isEnabled: Bool = false
     ) throws -> BreakBonus {
-        try db.writer.write { dbConn in
-            var bonus = BreakBonus(
-                id: nil, policyId: policyId, bonusType: bonusType,
-                bonusAmount: bonusAmount, description: description,
-                isEnabled: isEnabled, createdAt: nil, deletedAt: nil
-            )
-            try bonus.insert(dbConn)
-            return bonus
+        do {
+            return try db.writer.write { dbConn in
+                var bonus = BreakBonus(
+                    id: nil, policyId: policyId, bonusType: bonusType,
+                    bonusAmount: bonusAmount, description: description,
+                    isEnabled: isEnabled, createdAt: nil, deletedAt: nil
+                )
+                try bonus.insert(dbConn)
+                return bonus
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return BreakBonus(
+                    id: nil, policyId: policyId, bonusType: bonusType,
+                    bonusAmount: bonusAmount, description: description,
+                    isEnabled: isEnabled, createdAt: nil, deletedAt: nil
+                )
+            }
+            throw error
         }
     }
 
     /// Toggle a bonus enabled/disabled.
     public func toggleBonus(bonusId: Int64, isEnabled: Bool) throws {
-        try db.writer.write { dbConn in
-            try dbConn.execute(sql: """
-                UPDATE break_bonuses SET is_enabled = ? WHERE id = ?
-                """, arguments: [isEnabled, bonusId])
+        do {
+            try db.writer.write { dbConn in
+                try dbConn.execute(sql: """
+                    UPDATE break_bonuses SET is_enabled = ? WHERE id = ?
+                    """, arguments: [isEnabled, bonusId])
+            }
+        } catch {
+            if isTableNotFoundError(error) { return }
+            throw error
         }
     }
 
@@ -128,32 +157,50 @@ public final class BreakService: Sendable {
         timerMinutes: Int? = nil
     ) throws -> BreakRecord {
         let isPaid = (breakType != "lunch_unpaid")
-        return try db.writer.write { dbConn in
-            var record = BreakRecord(
-                id: nil, userId: userId, laborEntryId: laborEntryId,
-                breakType: breakType, startedAt: Self.nowString(),
-                endedAt: nil, durationMinutes: nil, isPaid: isPaid,
-                autoFilled: false, timerDurationMinutes: timerMinutes,
-                createdAt: nil, deletedAt: nil
-            )
-            try record.insert(dbConn)
-            return record
+        do {
+            return try db.writer.write { dbConn in
+                var record = BreakRecord(
+                    id: nil, userId: userId, laborEntryId: laborEntryId,
+                    breakType: breakType, startedAt: Self.nowString(),
+                    endedAt: nil, durationMinutes: nil, isPaid: isPaid,
+                    autoFilled: false, timerDurationMinutes: timerMinutes,
+                    createdAt: nil, deletedAt: nil
+                )
+                try record.insert(dbConn)
+                return record
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return BreakRecord(
+                    id: nil, userId: userId, laborEntryId: laborEntryId,
+                    breakType: breakType, startedAt: Self.nowString(),
+                    endedAt: nil, durationMinutes: nil, isPaid: isPaid,
+                    autoFilled: false, timerDurationMinutes: timerMinutes,
+                    createdAt: nil, deletedAt: nil
+                )
+            }
+            throw error
         }
     }
 
     /// End an active break, calculating duration.
     public func endBreak(recordId: Int64) throws {
-        try db.writer.write { dbConn in
-            guard var record = try BreakRecord.fetchOne(dbConn, key: recordId) else { return }
-            let endTime = Self.nowString()
-            record.endedAt = endTime
+        do {
+            try db.writer.write { dbConn in
+                guard var record = try BreakRecord.fetchOne(dbConn, key: recordId) else { return }
+                let endTime = Self.nowString()
+                record.endedAt = endTime
 
-            // Calculate duration in minutes
-            if let start = Self.parseDateTime(record.startedAt),
-               let end = Self.parseDateTime(endTime) {
-                record.durationMinutes = Int(end.timeIntervalSince(start) / 60.0)
+                // Calculate duration in minutes
+                if let start = Self.parseDateTime(record.startedAt),
+                   let end = Self.parseDateTime(endTime) {
+                    record.durationMinutes = Int(end.timeIntervalSince(start) / 60.0)
+                }
+                try record.update(dbConn)
             }
-            try record.update(dbConn)
+        } catch {
+            if isTableNotFoundError(error) { return }
+            throw error
         }
     }
 
@@ -235,7 +282,7 @@ public final class BreakService: Sendable {
         let existing = try getBreakRecordsForDay(userId: userId, date: date)
         let dateStr = Self.formatDate(date)
 
-        try db.writer.write { dbConn in
+        do { try db.writer.write { dbConn in
             // Auto-fill morning break if missing
             let hasBreak = existing.contains { $0.breakType == "break" }
             if !hasBreak {
@@ -283,6 +330,10 @@ public final class BreakService: Sendable {
                 }
             }
         }
+        } catch {
+            if isTableNotFoundError(error) { return }
+            throw error
+        }
     }
 
     // =========================================================================
@@ -326,19 +377,24 @@ public final class BreakService: Sendable {
         defaultLunch: String? = "12:00",
         defaultAfternoonBreak: String? = "14:30"
     ) throws {
-        try db.writer.write { dbConn in
-            try dbConn.execute(sql: """
-                UPDATE company_break_settings
-                SET state_code = ?, rounding_minutes = ?, rounding_enabled = ?,
-                    auto_fill_breaks = ?, default_morning_break = ?,
-                    default_lunch = ?, default_afternoon_break = ?,
-                    updated_at = datetime('now')
-                WHERE id = (SELECT id FROM company_break_settings LIMIT 1)
-                """, arguments: [
-                    stateCode, roundingMinutes, roundingEnabled,
-                    autoFillBreaks, defaultMorningBreak,
-                    defaultLunch, defaultAfternoonBreak
-                ])
+        do {
+            try db.writer.write { dbConn in
+                try dbConn.execute(sql: """
+                    UPDATE company_break_settings
+                    SET state_code = ?, rounding_minutes = ?, rounding_enabled = ?,
+                        auto_fill_breaks = ?, default_morning_break = ?,
+                        default_lunch = ?, default_afternoon_break = ?,
+                        updated_at = datetime('now')
+                    WHERE id = (SELECT id FROM company_break_settings LIMIT 1)
+                    """, arguments: [
+                        stateCode, roundingMinutes, roundingEnabled,
+                        autoFillBreaks, defaultMorningBreak,
+                        defaultLunch, defaultAfternoonBreak
+                    ])
+            }
+        } catch {
+            if isTableNotFoundError(error) { return }
+            throw error
         }
     }
 

@@ -7,12 +7,16 @@ struct FleetMileageSummaryReport: View {
     @State private var mileageData: [FleetService.MileageSummaryRow] = []
     @State private var loadError: String?
     @State private var isLoading = true
+    @State private var dateRange: ReportDateRange = .thisMonth
     @State private var startDate = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
     @State private var endDate = Date()
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     var body: some View {
         List {
-            StandardFilterBar(startDate: $startDate, endDate: $endDate)
+            StandardFilterBar(selectedRange: $dateRange, customStart: $startDate, customEnd: $endDate)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets())
 
@@ -80,6 +84,20 @@ struct FleetMileageSummaryReport: View {
                                       "\($0.tripCount)",
                                       String(format: "%.1f", $0.avgMilesPerTrip)] }
         )
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Mileage Summary Help", sections: [
+                ("What This Page Does", "Shows total miles driven per vehicle over the selected period, including trip counts and average miles per trip. Helps you track vehicle usage and plan maintenance based on mileage."),
+                ("How to Use It", "Set the date range at the top. The summary section shows fleet-wide totals. Each vehicle row shows total miles, trip count, and average miles per trip. Export for reimbursement or fleet tracking."),
+                ("Tips", "Vehicles with very high mileage may need oil changes or tire rotations sooner. Compare mileage against fuel costs to spot vehicles with poor fuel efficiency.")
+            ])
+        }
         .onAppear { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }

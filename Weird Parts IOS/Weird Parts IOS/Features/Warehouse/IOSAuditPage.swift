@@ -123,7 +123,7 @@ struct IOSAuditPage: View {
                     Label("Start Audit", systemImage: "plus")
                 }
             }
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
@@ -320,6 +320,31 @@ struct IOSAuditPage: View {
                     }
                     .buttonStyle(.bordered)
                     .tint(.orange)
+                }
+            }
+
+            // Organization Audit link
+            Section("Organization") {
+                NavigationLink {
+                    IOSOrganizationAuditPage()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "chart.bar.fill")
+                            .foregroundStyle(.purple)
+                            .frame(width: 28)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Organization Audit")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text("Area ratings, consolidation voting, org checklists")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
                 }
             }
 
@@ -725,7 +750,10 @@ struct IOSAuditPage: View {
     private func endActiveSession() {
         guard let service = appCore.warehouseService,
               let session = activeSession,
-              let sessionId = session.id else { return }
+              let sessionId = session.id else {
+            loadError = "Warehouse service not available"
+            return
+        }
         do {
             try service.completeAuditSession(sessionId: sessionId)
             activeSession = nil

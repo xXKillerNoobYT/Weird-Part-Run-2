@@ -16,8 +16,20 @@ struct IOSJobNotebooksPage: View {
     @State private var searchText = ""
     @State private var statusFilter = "all"
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
 
     private let statusOptions = ["all", "active", "archived", "locked"]
+
+    // MARK: - ActiveSheet
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String {
+            switch self {
+            case .help: return "help"
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,6 +38,21 @@ struct IOSJobNotebooksPage: View {
         }
         .navigationTitle("Job Notebooks")
         .searchable(text: $searchText, prompt: "Search job notebooks...")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Job Notebooks Help", sections: [
+                ("What This Page Does", "Shows all notebooks that are linked to jobs. Each notebook tracks structured documentation for a specific job, including notes, checklists, photos, and task items."),
+                ("How to Use It", "Use the status filter chips at the top to show only Active, Archived, or Locked notebooks. Use the search bar to find notebooks by title, job name, or author. Tap a notebook to open it and view or edit its entries. Pull down to refresh."),
+                ("Notebook Statuses", "Active notebooks are in use and can be edited. Archived notebooks are read-only records of completed work. Locked notebooks are frozen and cannot be modified, typically for compliance or approval purposes."),
+                ("Job Context", "Every notebook on this page is tied to a job. The linked job name appears below the notebook title. This makes it easy to find all documentation for a particular job site or project.")
+            ])
+        }
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }

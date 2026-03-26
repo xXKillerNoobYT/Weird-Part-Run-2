@@ -7,6 +7,9 @@ struct SchedulingPipelineReport: View {
     @State private var pipelineData: [SchedulingService.PipelineSummaryRow] = []
     @State private var loadError: String?
     @State private var isLoading = true
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     var body: some View {
         List {
@@ -69,6 +72,20 @@ struct SchedulingPipelineReport: View {
                                        "\($0.jobCount)",
                                        String(format: "%.0f", $0.totalEstimatedHours)] }
         )
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Pipeline Summary Help", sections: [
+                ("What This Page Does", "Shows all jobs in the system grouped by status: active, scheduled, pending, on hold, and completed. Gives you a bird's-eye view of your work pipeline and estimated hours in each stage."),
+                ("How to Use It", "Each status group shows a colored dot, the job count, and total estimated hours. The overview at the top gives fleet-wide totals. Use this to check if your pipeline is balanced."),
+                ("Tips", "Too many jobs in 'pending' may mean approvals are bottlenecked. If 'on hold' keeps growing, follow up on what is blocking those jobs. A healthy pipeline has most jobs in 'active' or 'scheduled'.")
+            ])
+        }
         .onAppear { loadData() }
     }
 

@@ -7,6 +7,7 @@ import WiredPartCore
 /// via the SettingsService.
 struct ThemesPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @State private var activeSheet: ActiveSheet?
     @State private var themeMode = "system"
     @State private var primaryColor = "#2563eb"
     @State private var fontFamily = "Inter"
@@ -81,12 +82,31 @@ struct ThemesPage: View {
                 .buttonStyle(.borderedProminent)
             }
         }
+        .navigationTitle("Themes")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Themes Help", sections: [
+                ("What This Page Does", "Customizes the visual appearance of the app. Choose between light, dark, or system appearance mode, pick an accent color, and select a font family."),
+                ("How to Use It", "Select a mode, tap a color preset, choose a font, then tap Save Theme. Changes apply across the entire app on this device."),
+            ])
+        }
         .onAppear { loadTheme() }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
         }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     private func loadTheme() {

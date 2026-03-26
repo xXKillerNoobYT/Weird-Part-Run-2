@@ -13,9 +13,12 @@ struct IOSNotebookTemplatesPage: View {
 
     private enum ActiveSheet: Identifiable {
         case createNotebook(templateId: Int64)
-        var id: String { "create-\(templateId)" }
-        var templateId: Int64 {
-            switch self { case .createNotebook(let id): return id }
+        case help
+        var id: String {
+            switch self {
+            case .createNotebook(let templateId): return "create-\(templateId)"
+            case .help: return "help"
+            }
         }
     }
     @State private var activeSheet: ActiveSheet?
@@ -47,10 +50,26 @@ struct IOSNotebookTemplatesPage: View {
                     Image(systemName: "arrow.clockwise")
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(item: $activeSheet) { sheet in
-            CreateNotebookSheet(templateId: sheet.templateId, onSave: { loadData() })
-                .environmentObject(appCore)
+            switch sheet {
+            case .createNotebook(let templateId):
+                CreateNotebookSheet(templateId: templateId, onSave: { loadData() })
+                    .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(title: "Notebook Templates Help", sections: [
+                    ("What This Page Does", "Displays available notebook templates grouped by category. Templates provide pre-built structures so you can create new notebooks with sections and entries already laid out, saving time on repetitive documentation."),
+                    ("How to Use It", "Browse templates by category. Tap any template or swipe right and tap 'Use' to create a new notebook from that template. Use the search bar to filter templates by name, description, or category."),
+                    ("Template Types", "Job templates are designed for job-site documentation with sections like scope of work, materials, and punch lists. General templates cover everyday needs like meeting notes or inspections."),
+                    ("Refreshing Defaults", "Tap the refresh button in the toolbar to re-seed the default templates. This is useful if defaults were deleted or if new built-in templates have been added in an update."),
+                    ("Deleting Templates", "Swipe left on any non-default template to delete it. Default templates cannot be deleted to ensure a baseline set is always available.")
+                ])
+            }
         }
         .refreshable { loadData() }
         .task { loadData() }

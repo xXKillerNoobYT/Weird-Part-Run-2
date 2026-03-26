@@ -15,6 +15,12 @@ struct IOSInspectionsPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var searchText = ""
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         inspectionList
@@ -22,6 +28,24 @@ struct IOSInspectionsPage: View {
             .searchable(text: $searchText, prompt: "Search inspections...")
             .refreshable { loadData() }
             .task { loadData() }
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
+            }
+            .sheet(item: $activeSheet) { _ in
+                PageHelpSheet(
+                    title: "Inspections Help",
+                    sections: [
+                        ("Overview", "This page shows all vehicle inspection records. Each entry lists the vehicle, inspector, date, odometer reading, and the result — Pass (green), Fail (red), or Conditional (orange)."),
+                        ("Results Explained", "Pass means all items checked out fine. Conditional means non-critical issues were found — the vehicle can operate but needs attention. Fail means a critical safety item failed — the vehicle should not be driven until repaired."),
+                        ("Searching", "Use the search bar to filter by vehicle name, inspector name, or result status. For example, type 'fail' to see all failed inspections."),
+                        ("Tips", "Pre-trip inspections should be completed every day before driving. Start an inspection from the vehicle detail page under the Inspections tab. The Fleet Dashboard shows which vehicles are missing today's inspection.")
+                    ]
+                )
+            }
     }
 
     // MARK: - Inspection List

@@ -7,12 +7,16 @@ struct WarehouseTurnoverReport: View {
     @State private var turnoverData: [WarehouseService.TurnoverRow] = []
     @State private var loadError: String?
     @State private var isLoading = true
+    @State private var dateRange: ReportDateRange = .thisMonth
     @State private var startDate = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
     @State private var endDate = Date()
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     var body: some View {
         List {
-            StandardFilterBar(startDate: $startDate, endDate: $endDate)
+            StandardFilterBar(selectedRange: $dateRange, customStart: $startDate, customEnd: $endDate)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets())
 
@@ -81,6 +85,20 @@ struct WarehouseTurnoverReport: View {
                                        "\($0.movementCount)", "\($0.totalQtyMoved)",
                                        "\($0.currentStock)"] }
         )
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Inventory Turnover Help", sections: [
+                ("What This Page Does", "Shows which parts have the most movement activity in the selected period. Lists parts by number of movements and total quantity moved, plus current stock on hand. Helps you identify your fastest-moving inventory."),
+                ("How to Use It", "Set the date range at the top. The summary tells you how many parts had activity and total movement counts. The list is sorted by most active parts first. Each row shows movement count, quantity moved, and current stock."),
+                ("Tips", "High-turnover parts should always be well-stocked to avoid job delays. If a part has lots of movements but low current stock, consider increasing your reorder target. Low-turnover parts taking up shelf space might be candidates for reduction.")
+            ])
+        }
         .onAppear { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }

@@ -20,6 +20,7 @@ struct IOSContactsPage: View {
 
     private enum ActiveSheet: String, Identifiable {
         case addContact
+        case help
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
@@ -61,12 +62,28 @@ struct IOSContactsPage: View {
                     }
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .addContact:
                 AddContactSheet { loadData() }
                     .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(
+                    title: "Contacts Help",
+                    sections: [
+                        ("What This Page Does", "View and manage all contacts across your organization. Contacts include GCs (general contractors), suppliers, contractors, owners, vendors, and other external people you work with."),
+                        ("Smart Card Filters", "Tap the type cards at the top to filter by contact type: All, GC, Supplier, Contractor, Owner, Vendor, Active, or Inactive. The count on each card shows how many contacts match that type."),
+                        ("Sorting & Search", "Use the sort button to order contacts by Recently Updated, Name, or Type. The search bar filters by first name, last name, company, or email."),
+                        ("Active vs Inactive", "Active contacts appear in the main list. Inactive contacts are collapsed by default — tap the disclosure arrow to expand them. Inactive rows appear slightly dimmed."),
+                        ("Tips", "Pull down to refresh. Contact type badges are color-coded: blue for GC, purple for supplier, orange for contractor, green for owner, and teal for vendor. Tap the + button to add a new contact with a first name and phone number (both required).")
+                    ]
+                )
             }
         }
     }

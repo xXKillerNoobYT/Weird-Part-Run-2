@@ -34,6 +34,10 @@ struct IOSStagingPage: View {
     @State private var isSelecting = false
     @State private var showBatchConfirm = false
 
+    // Box delete confirmation
+    @State private var boxToDeleteId: Int64?
+    @State private var showBoxDeleteConfirm = false
+
     // Smart card filter
     @State private var selectedFilter: DestinationFilter?
 
@@ -101,7 +105,7 @@ struct IOSStagingPage: View {
         .searchable(text: $searchText, prompt: activeTab == .items ? "Search staged parts..." : "Search boxes...")
         .refreshable { loadData() }
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
@@ -140,6 +144,17 @@ struct IOSStagingPage: View {
             Button("OK") { actionError = nil }
         } message: {
             Text(actionError ?? "")
+        }
+        .alert("Delete Box?", isPresented: $showBoxDeleteConfirm) {
+            Button("Cancel", role: .cancel) { boxToDeleteId = nil }
+            Button("Delete", role: .destructive) {
+                if let id = boxToDeleteId {
+                    deleteBox(boxId: id)
+                }
+                boxToDeleteId = nil
+            }
+        } message: {
+            Text("This will permanently delete this staging box and all its contents.")
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -422,7 +437,8 @@ struct IOSStagingPage: View {
                             boxRow(box)
                                 .swipeActions(edge: .trailing) {
                                     Button(role: .destructive) {
-                                        deleteBox(boxId: box.id)
+                                        boxToDeleteId = box.id
+                                        showBoxDeleteConfirm = true
                                     } label: {
                                         Label("Delete", systemImage: "trash")
                                     }
@@ -743,7 +759,10 @@ struct IOSStagingPage: View {
 
     private func createBox() {
         guard let service = appCore.warehouseService,
-              let jobId = newBoxJobId else { return }
+              let jobId = newBoxJobId else {
+            loadError = "Warehouse service not available"
+            return
+        }
         do {
             _ = try service.createStagingBox(jobId: jobId, size: newBoxSize)
             activeSheet = nil

@@ -15,9 +15,21 @@ struct IOSProfitabilityPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var searchText = ""
+    @State private var activeSheet: ActiveSheet?
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+    @State private var customEnd: Date = Date()
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
+
+    private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
+    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
 
     var body: some View {
-        profitabilityContent
+        VStack(spacing: 0) {
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
+            profitabilityContent
+        }
             .navigationTitle("Profitability")
             .reportExportToolbar(
                 title: "Profitability",
@@ -28,9 +40,26 @@ struct IOSProfitabilityPage: View {
                                   String(format: "$%.2f", $0.profit),
                                   String(format: "%.1f%%", $0.margin)] }
             )
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
+            }
+            .sheet(item: $activeSheet) { _ in
+                PageHelpSheet(title: "Profitability Help", sections: [
+                    ("What This Page Does", "Shows how much profit each job is making. For every job, you see revenue, labor cost, material cost, total profit, and margin percentage. Green means healthy, red means losing money."),
+                    ("How to Use It", "Scroll through the list to see all jobs. Use the search bar to find a specific job. The margin badge on the right gives you a quick color-coded indicator: green is 20%+, orange is break-even, red is a loss."),
+                    ("Tips", "Focus on jobs with orange or red margins first. If a job's labor cost is unusually high, check if overtime is driving it up. Export this report to share with management during job reviews.")
+                ])
+            }
             .searchable(text: $searchText, prompt: "Search jobs...")
             .refreshable { loadData() }
             .task { loadData() }
+            .onChange(of: dateRange) { loadData() }
+            .onChange(of: customStart) { loadData() }
+            .onChange(of: customEnd) { loadData() }
     }
 
     // MARK: - Content

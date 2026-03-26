@@ -42,8 +42,22 @@ struct JobsListPage: View {
         case startDate = "Start Date"
     }
 
+    // MARK: - ActiveSheet
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        case createJob
+        var id: String {
+            switch self {
+            case .help: return "help"
+            case .createJob: return "createJob"
+            }
+        }
+    }
+
     // MARK: - State
 
+    @State private var activeSheet: ActiveSheet?
     @State private var jobs: [JobsService.JobListItem] = []
     @State private var allJobs: [JobsService.JobListItem] = []
     @State private var statusCounts: [String: Int] = [:]
@@ -51,9 +65,9 @@ struct JobsListPage: View {
     @State private var searchText = ""
     @State private var statusFilter: JobStatusFilter = .active
     @State private var sortOption: JobSort = .recentActivity
-    @State private var showCreateJob = false
     @State private var loadError: String?
-    @State private var showHelp = false
+    /// Global job stages list (Rough-in, Prep/Makeup, Trim-out). Loaded once.
+    @State private var globalStages: [JobsService.JobStageStatus] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -76,40 +90,54 @@ struct JobsListPage: View {
                     }
 
                     Button {
-                        showCreateJob = true
+                        activeSheet = .createJob
                     } label: {
                         Image(systemName: "plus")
                     }
                     .requiresPermission("manage_jobs")
                 }
             }
-            ToolbarItem(placement: .secondaryAction) {
-                Button { showHelp = true } label: {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
-            PageHelpSheet(
-                title: "Jobs Help",
-                sections: [
-                    ("Overview", "View and manage all jobs. Filter by status using the smart cards at the top, or search by name and job number."),
-                    ("Smart Cards", "Tap a status card to filter. The number shows how many jobs have that status. Payment Hold is only visible to managers."),
-                    ("Sorting", "Use the sort button in the toolbar to sort by recent activity, name, or start date."),
-                    ("Creating Jobs", "Tap the + button to create a new job. Requires manage_jobs permission.")
-                ]
-            )
-        }
-        .sheet(isPresented: $showCreateJob) {
-            IOSCreateJobSheet {
-                loadJobs()
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                PageHelpSheet(
+                    title: "Jobs Help",
+                    sections: [
+                        ("Overview", "View and manage all jobs. Filter by status using the smart cards at the top, or search by name and job number."),
+                        ("Smart Cards", "Tap a status card to filter. The number shows how many jobs have that status. Payment Hold is only visible to managers."),
+                        ("Sorting", "Use the sort button in the toolbar to sort by recent activity, name, or start date."),
+                        ("Creating Jobs", "Tap the + button to create a new job. Requires manage_jobs permission.")
+                    ]
+                )
+            case .createJob:
+                IOSCreateJobSheet {
+                    loadJobs()
+                }
+                .environmentObject(appCore)
             }
-            .environmentObject(appCore)
         }
         .onChange(of: searchText) { loadJobs() }
         .onChange(of: sortOption) { applyFilterAndSort() }
         .refreshable { loadJobs() }
         .task { loadJobs() }
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .jobsListPageActive,
+                object: nil,
+                userInfo: [
+                    "context": "Jobs List: \(allJobs.count) total jobs, filter: \(statusFilter.rawValue), showing \(jobs.count) jobs. Status counts: \(statusCounts.map { "\($0.key): \($0.value)" }.joined(separator: ", "))"
+                ]
+            )
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .jobsListPageInactive, object: nil)
+        }
     }
 
     // MARK: - Smart Cards
@@ -199,7 +227,7 @@ struct JobsListPage: View {
                 message: searchText.isEmpty ? "No jobs match this filter." : "No jobs match your search criteria.",
                 actionLabel: searchText.isEmpty && statusFilter == .all ? "Create Job" : nil
             ) {
-                showCreateJob = true
+                activeSheet = .createJob
             }
         } else {
             List(jobs, id: \.id) { job in
@@ -222,7 +250,7 @@ struct JobsListPage: View {
                     Text(job.jobNumber)
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
-                    priorityBadge(job.priority)
+                    priorityBadge(job.priority, dueDate: job.dueDate, status: job.status)
                     if job.jobType == "continuous" {
                         Text("Continuous")
                             .font(.caption2)
@@ -238,6 +266,15 @@ struct JobsListPage: View {
                     Text(customer)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                // Compact stage progression bar
+                if !globalStages.isEmpty {
+                    let stageStatuses = JobsService.computeStageStatuses(
+                        allStages: globalStages,
+                        currentStageId: job.currentStageId,
+                        jobStatus: job.status
+                    )
+                    JobStageProgressBar(stages: stageStatuses, compact: true)
                 }
             }
 
@@ -309,14 +346,11 @@ struct JobsListPage: View {
         )
     }
 
-    private func priorityBadge(_ priority: String) -> some View {
-        let color: Color = switch priority {
-        case "urgent": .red
-        case "high": .orange
-        case "normal": .blue
-        case "low": .secondary
-        default: .secondary
-        }
+    private func priorityBadge(_ priority: String, dueDate: String? = nil, status: String? = nil) -> some View {
+        let isCompleted = status == "completed" || status == "cancelled"
+        let color: Color = dueDate != nil
+            ? TimelinePriorityColor.color(priority: priority, dueDateString: dueDate, isCompleted: isCompleted)
+            : TimelinePriorityColor.fallbackColor(priority: priority)
         return Text(priority.capitalized)
             .font(.caption2)
             .foregroundStyle(color)
@@ -337,6 +371,10 @@ struct JobsListPage: View {
                 search: searchText.isEmpty ? nil : searchText,
                 status: nil
             )
+            // Load global stages once for stage progression bars
+            if globalStages.isEmpty {
+                globalStages = try service.listAllJobStages()
+            }
             // Build status counts
             var counts: [String: Int] = [:]
             for j in allJobs {

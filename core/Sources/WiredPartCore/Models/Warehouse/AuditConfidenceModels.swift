@@ -288,6 +288,49 @@ public struct ConsolidationVote: Codable, FetchableRecord, MutablePersistableRec
     }
 }
 
+// MARK: - Multi-User Audit Assignment
+
+/// Assignment for independent verification of low-confidence parts by multiple users.
+/// When a part has low audit confidence, 2-3 different users are assigned to count it
+/// independently. Results are compared to reach consensus.
+public struct MultiUserAuditAssignment: Codable, FetchableRecord, MutablePersistableRecord, Identifiable, Sendable {
+    public var id: Int64?
+    public var partId: Int64
+    public var partName: String
+    public var binLocation: String?
+    public var assignedUserId: Int64
+    public var assignedUserName: String?
+    public var countedQuantity: Int?
+    public var countedAt: String?
+    public var status: String  // "pending", "counted", "resolved"
+    public var auditSessionId: Int64?
+    public var expectedQuantity: Int?
+    public var notes: String?
+    public var createdAt: String?
+
+    public static let databaseTableName = "multi_user_audit_assignments"
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case partId = "part_id"
+        case partName = "part_name"
+        case binLocation = "bin_location"
+        case assignedUserId = "assigned_user_id"
+        case assignedUserName = "assigned_user_name"
+        case countedQuantity = "counted_quantity"
+        case countedAt = "counted_at"
+        case status
+        case auditSessionId = "audit_session_id"
+        case expectedQuantity = "expected_quantity"
+        case notes
+        case createdAt = "created_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) {
+        id = inserted.rowID
+    }
+}
+
 // MARK: - Consolidation Vote Entry
 
 /// An individual user's vote on a consolidation suggestion.

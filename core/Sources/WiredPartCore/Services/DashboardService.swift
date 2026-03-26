@@ -1884,6 +1884,18 @@ public final class DashboardService: Sendable {
         }
     }
 
+    // MARK: - Employee Count
+
+    /// Fetch the number of active (non-deleted) employees/users in the system.
+    ///
+    /// Used by the Getting Started checklist to determine whether the user
+    /// has added any team members yet.
+    public func getEmployeeCount() throws -> Int {
+        try safeCount(
+            sql: "SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND is_active = 1"
+        )
+    }
+
     // MARK: - Internal Helpers
 
     /// Execute a `SELECT COUNT(*)` query and return the integer result.

@@ -12,7 +12,7 @@ struct IOSForecastSettingsPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var saveError: String?
-    @State private var showHelp = false
+    @State private var activeSheet: ActiveSheet?
 
     @State private var selectedLocationType: String = "shop"
 
@@ -40,6 +40,11 @@ struct IOSForecastSettingsPage: View {
     @State private var recalcHour: Int = 2
     @State private var categorySuggestionMonths: Int = 6
 
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
+
     private let locationTypes = ["shop", "truck", "trailer"]
     private let locationLabels: [String: String] = ["shop": "Shop", "truck": "Truck", "trailer": "Trailer"]
 
@@ -58,27 +63,17 @@ struct IOSForecastSettingsPage: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showHelp = true } label: {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
-            NavigationStack {
-                List {
-                    Section("Calculation Methods") {
-                        Text("ADU (Average Daily Usage) divides total usage over the lookback period. APW (Average Per Window) uses rolling windows for more responsive estimates on trucks/trailers.")
-                    }
-                    Section("Multipliers") {
-                        Text("MIN = usage x multiplier. TARGET = the optimal stock level. MAX = the upper bound before overstock warnings.")
-                    }
-                    Section("Free Space") {
-                        Text("Locations with low free space won't receive 'add new part' recommendations to avoid overcrowding.")
-                    }
-                }
-                .navigationTitle("Forecast Help")
-                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { showHelp = false } } }
-            }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Forecast Help", sections: [
+                ("Calculation Methods", "ADU (Average Daily Usage) divides total usage over the lookback period. APW (Average Per Window) uses rolling windows for more responsive estimates on trucks/trailers."),
+                ("Multipliers", "MIN = usage x multiplier. TARGET = the optimal stock level. MAX = the upper bound before overstock warnings."),
+                ("Free Space", "Locations with low free space won't receive 'add new part' recommendations to avoid overcrowding."),
+            ])
         }
         .task { loadSettings() }
     }

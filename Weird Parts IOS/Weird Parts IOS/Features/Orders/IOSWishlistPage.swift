@@ -251,14 +251,9 @@ struct IOSWishlistPage: View {
 
     // MARK: - Badges
 
+    // TODO: When WishlistItem gains a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)
     private func priorityColor(_ priority: String) -> Color {
-        switch priority {
-        case "urgent": .red
-        case "high": .orange
-        case "normal": .blue
-        case "low": .gray
-        default: .secondary
-        }
+        return TimelinePriorityColor.fallbackColor(priority: priority)
     }
 
     private func priorityBadge(_ priority: String) -> some View {
@@ -302,7 +297,8 @@ struct IOSWishlistPage: View {
     // MARK: - Actions
 
     private func approveItem(_ item: WishlistItem) {
-        guard let service = appCore.wishlistService, let id = item.id else { return }
+        guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
+        guard let id = item.id else { return }
         let approver = appCore.currentUser?.displayName ?? "Unknown"
         do {
             try service.approveItem(id: id, by: approver)

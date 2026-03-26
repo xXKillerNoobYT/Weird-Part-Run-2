@@ -18,6 +18,8 @@ struct IOSNotebookDetailPage: View {
     @State private var expandedSections: Set<Int64> = []
     @State private var isWarrantyJob = false
     @State private var todosNeedingReview: [NotebooksService.NotebookEntryRow] = []
+    @State private var panelSchedule = PanelSchedule()
+    @State private var blockConflicts: [NotebookBlockConflict] = []
 
     // MARK: - ActiveSheet
 
@@ -28,6 +30,9 @@ struct IOSNotebookDetailPage: View {
         case addGroup
         case editSection(sectionId: Int64, name: String)
         case editGroup(groupId: Int64, name: String)
+        case panelScheduleEditor
+        case conflictResolution
+        case help
 
         var id: String {
             switch self {
@@ -37,6 +42,9 @@ struct IOSNotebookDetailPage: View {
             case .addGroup: return "addGroup"
             case .editSection(let id, _): return "editSection-\(id)"
             case .editGroup(let id, _): return "editGroup-\(id)"
+            case .panelScheduleEditor: return "panelSchedule"
+            case .conflictResolution: return "conflictResolution"
+            case .help: return "help"
             }
         }
     }
@@ -72,6 +80,11 @@ struct IOSNotebookDetailPage: View {
                     Image(systemName: "plus")
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
@@ -88,6 +101,39 @@ struct IOSNotebookDetailPage: View {
             if let error = actionError {
                 Section {
                     Text(error).foregroundStyle(.red).font(.caption)
+                }
+            }
+
+            // Sync Conflict Banner (62J)
+            if !blockConflicts.isEmpty {
+                Section {
+                    Button {
+                        activeSheet = .conflictResolution
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.white)
+                                .font(.title3)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(blockConflicts.count) Sync Conflict\(blockConflicts.count == 1 ? "" : "s")")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(.white)
+                                Text("Tap to review and resolve")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.85))
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
+                        .padding(12)
+                        .background(Color.orange)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                 }
             }
 
@@ -196,6 +242,34 @@ struct IOSNotebookDetailPage: View {
                     }
                 } header: {
                     Text("Entries")
+                }
+            }
+
+            // Panel Schedule Builder (for panel_schedule notebooks)
+            if notebook?.notebookType == "panel_schedule" {
+                Section("Panel Schedule") {
+                    Button {
+                        activeSheet = .panelScheduleEditor
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "bolt.fill")
+                                .foregroundStyle(.yellow)
+                                .frame(width: 28)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Open Panel Schedule Builder")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Text("Edit circuit breaker assignments")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
             }
 
@@ -488,7 +562,10 @@ struct IOSNotebookDetailPage: View {
 
     private func classifyEntry(entryId: Int64, classification: String) {
         guard let service = appCore.notebooksService,
-              let userId = appCore.currentUser?.id else { return }
+              let userId = appCore.currentUser?.id else {
+            loadError = "Notebooks service not available"
+            return
+        }
         do {
             try service.classifyTodoWork(entryId: entryId, classification: classification, classifiedBy: userId)
             loadData()
@@ -499,7 +576,10 @@ struct IOSNotebookDetailPage: View {
 
     private func approveClassification(entryId: Int64) {
         guard let service = appCore.notebooksService,
-              let userId = appCore.currentUser?.id else { return }
+              let userId = appCore.currentUser?.id else {
+            loadError = "Notebooks service not available"
+            return
+        }
         do {
             try service.reviewClassification(entryId: entryId, reviewedBy: userId, approved: true, newClassification: nil)
             loadData()
@@ -596,6 +676,41 @@ struct IOSNotebookDetailPage: View {
             NameInputSheet(title: "Rename Group", placeholder: "Group name", initialValue: currentName) { name in
                 renameSectionGroup(groupId: groupId, name: name)
             }
+
+        case .panelScheduleEditor:
+            NavigationStack {
+                PanelScheduleBuilder(schedule: $panelSchedule) { saved in
+                    panelSchedule = saved
+                    // TODO: Persist panel schedule data to notebook metadata
+                }
+                .navigationTitle("Panel Schedule")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { activeSheet = nil }
+                    }
+                }
+            }
+
+        case .conflictResolution:
+            NotebookConflictResolutionSheet(
+                conflicts: blockConflicts,
+                onResolve: { conflictLogId, keepVersion in
+                    resolveConflict(conflictLogId: conflictLogId, keepVersion: keepVersion)
+                },
+                onResolveAll: { keepVersion in
+                    resolveAllConflicts(keepVersion: keepVersion)
+                }
+            )
+
+        case .help:
+            PageHelpSheet(title: "Notebook Detail Help", sections: [
+                ("What This Page Does", "Shows the full contents of a notebook organized into section groups, sections, and block entries. This is where you read, add, and edit all the content within a notebook."),
+                ("How It Is Organized", "Notebooks use a three-level hierarchy: Section Groups contain Sections, and Sections contain Block Entries. Ungrouped sections appear under 'Pages' at the bottom. Tap disclosure arrows to expand or collapse groups and sections."),
+                ("Adding Content", "Use the + menu in the toolbar to add a new Section Group or Section. Within each section, tap 'Add Block' to insert a new entry. Entries can be text, headings, checklists, photos, part references, callouts, tables, dividers, or to-do items."),
+                ("Editing & Deleting", "Long-press on any section, group, or entry to access context menu options for renaming, editing, or deleting. Swipe actions may also be available on some items."),
+                ("Warranty Jobs", "If this notebook is linked to a warranty job, to-do entries will show classification buttons (Regular or Warranty) and a review workflow. Managers can approve classifications from the 'Needs Review' section at the top.")
+            ])
         }
     }
 
@@ -623,6 +738,9 @@ struct IOSNotebookDetailPage: View {
                 hierarchy?.ungroupedSections.forEach { s in ids.append(s.id) }
                 expandedSections = Set(ids)
             }
+            // Check for sync conflicts on this notebook's entries (62J)
+            blockConflicts = (try? service.detectBlockConflicts(notebookId: notebookId)) ?? []
+
             // Check if this notebook belongs to a warranty job
             if let jobId = notebook?.jobId, let jobsService = appCore.jobsService {
                 if let job = try? jobsService.getJob(id: jobId) {
@@ -727,6 +845,230 @@ struct IOSNotebookDetailPage: View {
         } catch {
             actionError = error.localizedDescription
         }
+    }
+
+    // MARK: - Conflict Resolution (62J)
+
+    private func resolveConflict(conflictLogId: Int64, keepVersion: String) {
+        guard let service = appCore.notebooksService else {
+            actionError = "Notebooks service unavailable"
+            return
+        }
+        do {
+            try service.resolveBlockConflict(conflictLogId: conflictLogId, keepVersion: keepVersion)
+            loadData()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func resolveAllConflicts(keepVersion: String) {
+        guard let service = appCore.notebooksService else {
+            actionError = "Notebooks service unavailable"
+            return
+        }
+        do {
+            try service.resolveAllBlockConflicts(notebookId: notebookId, keepVersion: keepVersion)
+            activeSheet = nil
+            loadData()
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - NotebookConflictResolutionSheet (62J)
+
+/// Sheet that displays notebook block conflicts side-by-side and lets the user
+/// choose which version to keep for each conflict, or bulk-resolve all at once.
+private struct NotebookConflictResolutionSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let conflicts: [NotebookBlockConflict]
+    let onResolve: (Int64, String) -> Void      // (conflictLogId, "local" | "remote")
+    let onResolveAll: (String) -> Void           // "local" | "remote"
+
+    var body: some View {
+        NavigationStack {
+            List {
+                // Bulk actions
+                Section {
+                    HStack(spacing: 12) {
+                        Button {
+                            onResolveAll("local")
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Image(systemName: "iphone")
+                                Text("Keep All Local")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.blue)
+
+                        Button {
+                            onResolveAll("remote")
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Image(systemName: "antenna.radiowaves.left.and.right")
+                                Text("Keep All Remote")
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.purple)
+                    }
+                } header: {
+                    Text("Bulk Actions")
+                } footer: {
+                    Text("Resolve all \(conflicts.count) conflict\(conflicts.count == 1 ? "" : "s") at once, or review each one individually below.")
+                }
+
+                // Individual conflicts
+                ForEach(conflicts) { conflict in
+                    Section {
+                        // Entry context
+                        HStack(spacing: 8) {
+                            Image(systemName: blockTypeIcon(conflict.blockType ?? "text"))
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(conflict.entryTitle ?? "Entry #\(conflict.entryId)")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                Text("Field: \(conflict.fieldName)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            // Show which version LWW auto-picked
+                            Text("Auto: \(conflict.winner)")
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(conflict.winner == "local" ? Color.blue.opacity(0.15) : Color.purple.opacity(0.15))
+                                .foregroundStyle(conflict.winner == "local" ? .blue : .purple)
+                                .clipShape(Capsule())
+                        }
+
+                        // Side-by-side comparison
+                        VStack(spacing: 12) {
+                            // Local version
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Image(systemName: "iphone")
+                                        .font(.caption)
+                                    Text("Local (This Device)")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                    Spacer()
+                                    Text(formatTimestamp(conflict.localTimestamp))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .foregroundStyle(.blue)
+
+                                Text(conflict.localValue ?? "(empty)")
+                                    .font(.caption)
+                                    .foregroundStyle(conflict.localValue == nil ? .tertiary : .primary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(8)
+                                    .background(Color.blue.opacity(0.05))
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    .lineLimit(6)
+                            }
+
+                            // Remote version
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Image(systemName: "antenna.radiowaves.left.and.right")
+                                        .font(.caption)
+                                    Text("Remote (Other Device)")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                    Spacer()
+                                    Text(formatTimestamp(conflict.remoteTimestamp))
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .foregroundStyle(.purple)
+
+                                Text(conflict.remoteValue ?? "(empty)")
+                                    .font(.caption)
+                                    .foregroundStyle(conflict.remoteValue == nil ? .tertiary : .primary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(8)
+                                    .background(Color.purple.opacity(0.05))
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    .lineLimit(6)
+                            }
+                        }
+
+                        // Resolution buttons
+                        HStack(spacing: 12) {
+                            Button {
+                                onResolve(conflict.conflictLogId, "local")
+                            } label: {
+                                HStack {
+                                    Image(systemName: "checkmark")
+                                    Text("Keep Local")
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.blue)
+                            .controlSize(.small)
+
+                            Button {
+                                onResolve(conflict.conflictLogId, "remote")
+                            } label: {
+                                HStack {
+                                    Image(systemName: "checkmark")
+                                    Text("Keep Remote")
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.purple)
+                            .controlSize(.small)
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("Resolve Conflicts")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func blockTypeIcon(_ type: String) -> String {
+        switch type {
+        case "heading": return "textformat.size"
+        case "checklist": return "checklist"
+        case "photo": return "photo"
+        case "part_reference": return "shippingbox"
+        case "divider": return "minus"
+        case "callout": return "exclamationmark.bubble"
+        case "table": return "tablecells"
+        case "todo": return "circle"
+        default: return "text.alignleft"
+        }
+    }
+
+    private func formatTimestamp(_ ts: String) -> String {
+        // Show just date + time, trimming ISO 8601 cruft
+        let cleaned = ts.replacingOccurrences(of: "T", with: " ")
+            .replacingOccurrences(of: "Z", with: "")
+        // Take first 19 chars: "YYYY-MM-DD HH:MM:SS"
+        return String(cleaned.prefix(19))
     }
 }
 

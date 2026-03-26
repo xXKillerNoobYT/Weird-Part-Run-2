@@ -29,16 +29,26 @@ struct IOSPurchaseOrdersPage: View {
     @State private var isGeneratingSummary = false
     @State private var actionMessage: String?
 
+    // Date filter
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+    @State private var customEnd: Date = Date()
+
+    private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
+    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
+
     private enum ActiveSheet: Identifiable {
         case createPO
         case qrScanner
         case scannedPODetail(Int64)
+        case help
 
         var id: String {
             switch self {
             case .createPO: "createPO"
             case .qrScanner: "qrScanner"
             case .scannedPODetail(let poId): "scannedPO-\(poId)"
+            case .help: "help"
             }
         }
     }
@@ -57,6 +67,7 @@ struct IOSPurchaseOrdersPage: View {
     var body: some View {
         VStack(spacing: 0) {
             statusPicker
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
             kpiSummary
             poList
         }
@@ -83,6 +94,11 @@ struct IOSPurchaseOrdersPage: View {
                     }
                 } label: {
                     Label("Sort", systemImage: "arrow.up.arrow.down")
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
                 }
             }
         }
@@ -126,8 +142,35 @@ struct IOSPurchaseOrdersPage: View {
             Text(actionMessage ?? "")
         }
         .onChange(of: searchText) { loadData() }
+        .onChange(of: dateRange) { loadData() }
+        .onChange(of: customStart) { loadData() }
+        .onChange(of: customEnd) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
+        .onAppear {
+            NotificationCenter.default.post(
+                name: .purchaseOrdersPageActive,
+                object: nil,
+                userInfo: [
+                    "context": "Purchase Orders Page: \(allPurchaseOrders.count) total POs, filter: \(statusFilter), \(awaitingCount) awaiting delivery, pending total: \(String(format: "$%.2f", pendingTotal))."
+                ]
+            )
+            // Register AI filter (prompt 62S)
+            appCore.aiFilterRegistry.register(
+                pageId: "purchase-orders",
+                filterName: "PO Status",
+                options: statusOptions,
+                activate: { value in
+                    statusFilter = value
+                    loadData()
+                }
+            )
+            appCore.aiFilterRegistry.applyPendingFilter(pageId: "purchase-orders")
+        }
+        .onDisappear {
+            NotificationCenter.default.post(name: .purchaseOrdersPageInactive, object: nil)
+            appCore.aiFilterRegistry.deregister(pageId: "purchase-orders")
+        }
     }
 
     @ViewBuilder
@@ -148,6 +191,18 @@ struct IOSPurchaseOrdersPage: View {
                 IOSPODetailPage(poId: poId)
                     .environmentObject(appCore)
             }
+        case .help:
+            PageHelpSheet(
+                title: "Purchase Orders Help",
+                sections: [
+                    ("What This Page Does", "Lists all purchase orders sent to suppliers. Track POs from draft through ordering, receiving, and completion. See totals, line counts, and delivery status at a glance."),
+                    ("How to Use It", "Filter by status with the chips at the top (Draft, Submitted, Ordered, Partial, Received, Cancelled). Search by PO number or supplier name. Tap a PO to see full details. Tap + to create a new PO or scan a QR code."),
+                    ("Sorting", "Use the sort button (arrows icon) to order by newest, oldest, total cost (high/low), supplier name, or status."),
+                    ("Swipe Actions", "Swipe left on a draft PO to delete it, or swipe left on an active PO to cancel it. Cancellations require a reason. The system generates an AI summary of the PO to help you confirm."),
+                    ("KPI Bar", "The summary bar shows how many POs are awaiting delivery and the total dollar amount of pending orders. This helps you track outstanding spending."),
+                    ("Tips", "Pull down to refresh. Status counts in the filter chips update in real time. Tap into a PO to receive shipments, update ETAs, contact the supplier, or report issues.")
+                ]
+            )
         }
     }
 
@@ -157,21 +212,14 @@ struct IOSPurchaseOrdersPage: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(statusOptions, id: \.self) { status in
-                    Button {
+                    SmartFilterCard(
+                        title: status == "all" ? "All" : status.capitalized,
+                        count: countForStatus(status),
+                        isSelected: statusFilter == status
+                    ) {
                         statusFilter = status
                         loadData()
-                    } label: {
-                        Text("\(status == "all" ? "All" : status.capitalized) (\(countForStatus(status)))")
-                            .font(.caption)
-                            .fontWeight(statusFilter == status ? .bold : .regular)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(statusFilter == status ? Color.accentColor : Color.secondary.opacity(0.2))
-                            )
-                            .foregroundStyle(statusFilter == status ? .white : .primary)
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal)
@@ -391,6 +439,7 @@ struct IOSPurchaseOrdersPage: View {
 
     private func cancelOrDeletePO(_ po: OrdersService.POListItem) async {
         guard let service = appCore.ordersService else {
+            loadError = "Orders service not available"
             actionMessage = "Service not available"
             return
         }

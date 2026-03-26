@@ -1270,12 +1270,12 @@ public final class OrdersService: Sendable {
             var totalLines = 0
 
             for (supplierId, supplierItems) in bySupplier {
-                // Generate PO number
-                let count = try Int.fetchOne(
+                // Generate PO number (MAX-based to prevent duplicates after deletions)
+                let maxNum = try Int.fetchOne(
                     dbConn,
-                    sql: "SELECT COUNT(*) FROM purchase_orders"
+                    sql: "SELECT COALESCE(MAX(CAST(SUBSTR(po_number, 4) AS INTEGER)), 0) FROM purchase_orders"
                 ) ?? 0
-                let poNumber = String(format: "PO-%05d", count + 1)
+                let poNumber = String(format: "PO-%05d", maxNum + 1)
 
                 // Create PO
                 try dbConn.execute(
@@ -1573,12 +1573,12 @@ public final class OrdersService: Sendable {
                 throw OrdersError.invalidStatus("JPO must be approved to generate a PO")
             }
 
-            // Generate PO number
-            let count = try Int.fetchOne(
+            // Generate PO number (MAX-based to prevent duplicates after deletions)
+            let maxNum = try Int.fetchOne(
                 dbConn,
-                sql: "SELECT COUNT(*) FROM purchase_orders"
+                sql: "SELECT COALESCE(MAX(CAST(SUBSTR(po_number, 4) AS INTEGER)), 0) FROM purchase_orders"
             ) ?? 0
-            let poNumber = String(format: "PO-%05d", count + 1)
+            let poNumber = String(format: "PO-%05d", maxNum + 1)
 
             // Create PO
             try dbConn.execute(
@@ -1710,7 +1710,7 @@ public final class OrdersService: Sendable {
                        COALESCE(j.job_name,
                            CASE WHEN pl.notes LIKE '%forecast%' THEN 'Forecast Restock'
                                 WHEN pl.notes LIKE '%wishlist%' THEN 'Wishlist'
-                                ELSE 'General'
+                                ELSE 'General Stock'
                            END
                        ) AS job_name,
                        CASE WHEN j.id IS NOT NULL THEN 'job'
@@ -1964,6 +1964,133 @@ public final class OrdersService: Sendable {
         }
     }
 
+    // MARK: - Receipt History Entries (from receiving_sessions)
+
+    /// A detailed receipt history entry sourced from actual receiving sessions.
+    public struct ReceiptHistoryEntry: Identifiable, Sendable, Codable {
+        public let id: Int64
+        public let sessionDate: String
+        public let receivedBy: String
+        public let totalItemsReceived: Int
+        public let hasDiscrepancies: Bool
+        public let notes: String?
+        public let status: String
+
+        public init(
+            id: Int64, sessionDate: String, receivedBy: String,
+            totalItemsReceived: Int, hasDiscrepancies: Bool,
+            notes: String?, status: String
+        ) {
+            self.id = id
+            self.sessionDate = sessionDate
+            self.receivedBy = receivedBy
+            self.totalItemsReceived = totalItemsReceived
+            self.hasDiscrepancies = hasDiscrepancies
+            self.notes = notes
+            self.status = status
+        }
+    }
+
+    /// A single item within a receipt history entry, showing per-line detail.
+    public struct ReceiptHistoryItem: Identifiable, Sendable, Codable {
+        public let id: Int64
+        public let partName: String
+        public let partCode: String?
+        public let expectedQty: Int
+        public let receivedQty: Int
+        public let hasDiscrepancy: Bool
+        public let notes: String?
+
+        public init(
+            id: Int64, partName: String, partCode: String?,
+            expectedQty: Int, receivedQty: Int,
+            hasDiscrepancy: Bool, notes: String?
+        ) {
+            self.id = id
+            self.partName = partName
+            self.partCode = partCode
+            self.expectedQty = expectedQty
+            self.receivedQty = receivedQty
+            self.hasDiscrepancy = hasDiscrepancy
+            self.notes = notes
+        }
+    }
+
+    /// Get receipt history entries from receiving_sessions for a PO.
+    /// Returns completed sessions with summary info including discrepancy detection.
+    public func getReceiptHistoryEntries(poId: Int64) throws -> [ReceiptHistoryEntry] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT rs.id,
+                       rs.created_at AS session_date,
+                       COALESCE(u.display_name, u.email, 'Unknown') AS received_by,
+                       rs.notes,
+                       rs.status,
+                       COALESCE(
+                           (SELECT SUM(rsi.received_qty)
+                            FROM receiving_session_items rsi
+                            WHERE rsi.session_id = rs.id AND rsi.deleted_at IS NULL), 0
+                       ) AS total_items_received,
+                       COALESCE(
+                           (SELECT COUNT(*)
+                            FROM receiving_session_items rsi
+                            WHERE rsi.session_id = rs.id
+                              AND rsi.deleted_at IS NULL
+                              AND rsi.received_qty != rsi.expected_qty), 0
+                       ) AS discrepancy_count
+                FROM receiving_sessions rs
+                LEFT JOIN users u ON u.id = rs.started_by
+                WHERE rs.po_id = ?
+                  AND rs.deleted_at IS NULL
+                  AND rs.status = 'completed'
+                ORDER BY rs.created_at DESC
+                """, arguments: [poId])
+            return rows.map { row in
+                ReceiptHistoryEntry(
+                    id: row["id"] ?? 0,
+                    sessionDate: row["session_date"] ?? "",
+                    receivedBy: row["received_by"] ?? "Unknown",
+                    totalItemsReceived: row["total_items_received"] ?? 0,
+                    hasDiscrepancies: (row["discrepancy_count"] as Int? ?? 0) > 0,
+                    notes: row["notes"] as String?,
+                    status: row["status"] ?? "completed"
+                )
+            }
+        }
+    }
+
+    /// Get per-item details for a specific receiving session.
+    public func getReceiptHistoryItems(sessionId: Int64) throws -> [ReceiptHistoryItem] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT rsi.id,
+                       COALESCE(p.name, 'Unknown Part') AS part_name,
+                       p.code AS part_code,
+                       rsi.expected_qty,
+                       rsi.received_qty,
+                       rsi.notes
+                FROM receiving_session_items rsi
+                LEFT JOIN po_line_items pli ON pli.id = rsi.po_line_id
+                LEFT JOIN parts p ON p.id = pli.part_id
+                WHERE rsi.session_id = ? AND rsi.deleted_at IS NULL
+                ORDER BY p.name
+                """, arguments: [sessionId])
+            return rows.map { row in
+                let expected: Int = row["expected_qty"] ?? 0
+                let received: Int = row["received_qty"] ?? 0
+                return ReceiptHistoryItem(
+                    id: row["id"] ?? 0,
+                    partName: row["part_name"] ?? "Unknown Part",
+                    partCode: row["part_code"] as String?,
+                    expectedQty: expected,
+                    receivedQty: received,
+                    hasDiscrepancy: expected != received,
+                    notes: row["notes"] as String?
+                )
+            }
+        }
+    }
+
     // MARK: - 2c. Parts Order Management
 
     /// A part across POs for the parts management page.
@@ -2116,11 +2243,12 @@ public final class OrdersService: Sendable {
         jobId: Int64? = nil
     ) throws -> Int64 {
         try db.writer.write { dbConn in
-            let count = try Int.fetchOne(
+            // MAX-based to prevent duplicates after deletions
+            let maxNum = try Int.fetchOne(
                 dbConn,
-                sql: "SELECT COUNT(*) FROM returns"
+                sql: "SELECT COALESCE(MAX(CAST(SUBSTR(return_number, 5) AS INTEGER)), 0) FROM returns"
             ) ?? 0
-            let returnNumber = String(format: "RET-%05d", count + 1)
+            let returnNumber = String(format: "RET-%05d", maxNum + 1)
 
             try dbConn.execute(
                 sql: """

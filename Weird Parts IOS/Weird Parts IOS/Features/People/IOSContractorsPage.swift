@@ -16,11 +16,13 @@ struct IOSContractorsPage: View {
     private enum ActiveSheet: Identifiable {
         case create
         case edit(PeopleService.ContractorListItem)
+        case help
 
         var id: String {
             switch self {
             case .create: return "create"
             case .edit(let c): return "edit-\(c.id)"
+            case .help: return "help"
             }
         }
     }
@@ -53,6 +55,11 @@ struct IOSContractorsPage: View {
                     Image(systemName: "plus")
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -62,6 +69,16 @@ struct IOSContractorsPage: View {
             case .edit:
                 // Future: edit contractor sheet
                 EmptyView()
+            case .help:
+                PageHelpSheet(
+                    title: "Contractors Help",
+                    sections: [
+                        ("What This Page Does", "View and manage sub-contractors your company works with. Each row shows the contractor's name, company, phone, and email."),
+                        ("How to Use It", "Use the search bar to filter by name, company, phone, or email. Tap a contractor to see their full detail page with qualifications, performance ratings, job history, and notes. Tap the + button to add a new contractor."),
+                        ("Adding a Contractor", "A company name is required. You can also add a contact name, phone, email, and trade or specialty. The trade is saved as a note for reference."),
+                        ("Tips", "Pull down to refresh the list. Contractor detail pages include qualification tracking for licenses, insurance, and W-9 status, plus a performance rating system for quality, reliability, and timeliness.")
+                    ]
+                )
             }
         }
     }

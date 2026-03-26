@@ -34,7 +34,7 @@ struct IOSChannelsPage: View {
             case .messages: return ["group", "message"]
             case .dm: return ["dm"]
             case .job: return ["job"]
-            case .qa: return ["qa", "rfi"]
+            case .qa: return ["qa", "rfi", "jpo_hold", "jpo_qa"]
             case .supplier: return ["supplier"]
             }
         }
@@ -44,12 +44,14 @@ struct IOSChannelsPage: View {
         case createChannel
         case newDM
         case supplierChannel
+        case help
 
         var id: String {
             switch self {
             case .createChannel: "createChannel"
             case .newDM: "newDM"
             case .supplierChannel: "supplierChannel"
+            case .help: "help"
             }
         }
     }
@@ -80,6 +82,11 @@ struct IOSChannelsPage: View {
                         Image(systemName: "plus")
                     }
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
             }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
@@ -92,6 +99,16 @@ struct IOSChannelsPage: View {
                 case .supplierChannel:
                     CreateChannelSheet(channelType: "supplier", onSave: { loadData() })
                         .environmentObject(appCore)
+                case .help:
+                    PageHelpSheet(
+                        title: "Chat Channels Help",
+                        sections: [
+                            ("What This Page Does", "This is your unified chat inbox. It shows all your conversations in one place -- group channels, direct messages, job chats, supplier threads, and Q&A discussions. Unread messages float to the top so you never miss anything important."),
+                            ("How to Use It", "Use the filter cards at the top to narrow by type (Office, Messages, DMs, Job, Q&A, Supplier). Tap any conversation to open it. Use the search bar to find conversations by name, message content, or sender. Pull down to refresh the list."),
+                            ("Starting New Conversations", "Tap the + button in the top right to create a new group channel, start a direct message, or open a supplier channel. Group channels are great for team discussions. DMs are for one-on-one conversations."),
+                            ("Tips", "Unread counts show as red badges on each conversation. The type icon on the left tells you what kind of channel it is at a glance. Job-linked channels show the job name as a blue tag next to the channel name.")
+                        ]
+                    )
                 }
             }
             .refreshable { loadData() }
@@ -272,6 +289,17 @@ struct IOSChannelsPage: View {
                         .fontWeight(item.unreadCount > 0 ? .bold : .regular)
                         .lineLimit(1)
 
+                    // Orange HOLD badge for jpo_hold channels
+                    if item.channelType == "jpo_hold" {
+                        Text("HOLD")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(.orange)
+                            .clipShape(Capsule())
+                    }
+
                     if let jobName = item.jobName, !jobName.isEmpty, item.channelType != "job" {
                         Text(jobName)
                             .font(.caption2)
@@ -331,6 +359,8 @@ struct IOSChannelsPage: View {
         case "supplier": return "shippingbox.circle"
         case "qa": return "questionmark.circle"
         case "rfi": return "doc.text"
+        case "jpo_hold": return "pause.circle.fill"
+        case "jpo_qa": return "questionmark.bubble"
         default: return "bubble.left.and.bubble.right"
         }
     }
@@ -344,6 +374,8 @@ struct IOSChannelsPage: View {
         case "supplier": return .teal
         case "qa": return .orange
         case "rfi": return .orange
+        case "jpo_hold": return .orange
+        case "jpo_qa": return .orange
         default: return .accentColor
         }
     }

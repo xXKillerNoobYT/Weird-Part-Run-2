@@ -18,10 +18,12 @@ struct IOSVehicleDetailPage: View {
     private enum ActiveSheet: Identifiable {
         case assignDriver
         case inspection
+        case help
         var id: String {
             switch self {
             case .assignDriver: return "assignDriver"
             case .inspection: return "inspection"
+            case .help: return "help"
             }
         }
     }
@@ -68,6 +70,13 @@ struct IOSVehicleDetailPage: View {
         .navigationTitle(vehicle?.vehicleName ?? "Vehicle Detail")
         .refreshable { loadData() }
         .task { loadData() }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .assignDriver:
@@ -81,6 +90,21 @@ struct IOSVehicleDetailPage: View {
                     loadedTabs.remove(.inspections)
                     loadTabDataIfNeeded(.inspections)
                 }
+            case .help:
+                PageHelpSheet(
+                    title: "Vehicle Detail Help",
+                    sections: [
+                        ("Overview", "This page shows everything about a single vehicle. Use the tabs at the top to switch between Overview, Parts, Tools, Assignments, Maintenance, Usage, and Inspections."),
+                        ("Overview Tab", "Shows vehicle info (number, name, type, make/model, year, color), registration details (VIN, plate, insurance, expiry dates), current odometer, and assigned driver."),
+                        ("Parts Tab", "Shows spare parts loaded on this truck (truck stock) with quantity vs. target levels, plus any transfer items in transit to or from this vehicle."),
+                        ("Tools Tab", "Lists all tools currently checked out to this vehicle with condition status and who checked them out."),
+                        ("Assignments Tab", "Shows current and past driver assignments. Tap Assign Driver to assign a new driver. Take-home vehicles are marked with a house icon."),
+                        ("Maintenance Tab", "Lists maintenance service records for this vehicle including type, date, cost, technician, and odometer at time of service."),
+                        ("Usage Tab", "Combined view of fuel fill-ups and mileage logs. Shows the 10 most recent entries for each."),
+                        ("Inspections Tab", "Tap Start Pre-Trip Inspection to begin a new checklist. Below that you can see the history of past inspections with pass/fail/conditional results."),
+                        ("Tips", "Pull down on any tab to refresh data. Each tab loads its data independently so switching tabs is fast after the first load.")
+                    ]
+                )
             }
         }
         .onChange(of: activeSheet) { _, newValue in

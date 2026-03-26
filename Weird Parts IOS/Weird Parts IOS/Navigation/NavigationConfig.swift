@@ -104,6 +104,7 @@ let appModules: [AppModule] = [
         AppTab(id: "warehouse-audit", label: "Audit", icon: "checkmark.shield.fill", path: "/warehouse/audit", permission: "perform_audit"),
         AppTab(id: "warehouse-returns", label: "Returns", icon: "arrow.uturn.left", path: "/warehouse/returns"),
         AppTab(id: "warehouse-tools", label: "Tools", icon: "wrench.and.screwdriver.fill", path: "/warehouse/tools"),
+        AppTab(id: "warehouse-leaderboard", label: "Leaderboard", icon: "trophy.fill", path: "/warehouse/leaderboard", permission: "manage_warehouse"),
         AppTab(id: "warehouse-network", label: "Network", icon: "antenna.radiowaves.left.and.right", path: "/warehouse/network", permission: "manage_devices"),
         AppTab(id: "warehouse-settings", label: "Settings", icon: "gearshape.fill", path: "/warehouse/settings", permission: "manage_warehouse"),
     ], permission: "view_warehouse"),
@@ -161,6 +162,7 @@ let appModules: [AppModule] = [
     ], permission: "view_parts_catalog"),
     // 11. People — customers, employees, contacts
     AppModule(id: "people", label: "People", icon: "person.2.fill", tabs: [
+        AppTab(id: "people-dashboard", label: "Dashboard", icon: "chart.bar.fill", path: "/people/dashboard"),
         AppTab(id: "people-employees", label: "Employees", icon: "person.fill", path: "/people/employees", permission: "view_people"),
         AppTab(id: "people-customers", label: "Customers", icon: "person.crop.circle", path: "/people/customers", permission: "view_customers"),
         AppTab(id: "people-contacts", label: "Contacts", icon: "person.crop.rectangle.fill", path: "/people/contacts"),
@@ -177,6 +179,7 @@ let appModules: [AppModule] = [
         AppTab(id: "office-warehouse-exec", label: "Warehouse", icon: "building.fill", path: "/office/warehouse-exec", permission: "manage_warehouse"),
         AppTab(id: "office-estimation-settings", label: "Estimation", icon: "chart.bar.doc.horizontal", path: "/office/estimation-settings", permission: "manage_jobs"),
         AppTab(id: "office-pipeline", label: "Pipeline", icon: "chart.bar.xaxis", path: "/office/pipeline", permission: "manage_jobs"),
+        AppTab(id: "office-spending", label: "Spending", icon: "dollarsign.circle.fill", path: "/office/spending", permission: "show_dollar_values"),
         AppTab(id: "office-teams", label: "Teams", icon: "person.3.fill", path: "/office/teams"),
         AppTab(id: "office-reports", label: "Reports", icon: "chart.pie.fill", path: "/office/reports", permission: "view_reports"),
     ], permission: "manage_jobs"),
@@ -230,6 +233,104 @@ extension Notification.Name {
 
     /// Posted when the Forecasting page disappears.
     static let forecastingPageInactive = Notification.Name("WiredPart.forecastingPageInactive")
+
+    // MARK: - Dashboard
+
+    /// Posted when the Dashboard page appears, with summary stats context for AI.
+    static let dashboardPageActive = Notification.Name("WiredPart.dashboardPageActive")
+
+    /// Posted when the Dashboard page disappears.
+    static let dashboardPageInactive = Notification.Name("WiredPart.dashboardPageInactive")
+
+    // MARK: - Jobs
+
+    /// Posted when the Jobs List page appears, with job count and filter context for AI.
+    static let jobsListPageActive = Notification.Name("WiredPart.jobsListPageActive")
+
+    /// Posted when the Jobs List page disappears.
+    static let jobsListPageInactive = Notification.Name("WiredPart.jobsListPageInactive")
+
+    /// Posted when the Clock In/Out page appears, with clock status context for AI.
+    static let clockPageActive = Notification.Name("WiredPart.clockPageActive")
+
+    /// Posted when the Clock In/Out page disappears.
+    static let clockPageInactive = Notification.Name("WiredPart.clockPageInactive")
+
+    // MARK: - Orders
+
+    /// Posted when the JPOs page appears, with JPO count and filter context for AI.
+    static let jposPageActive = Notification.Name("WiredPart.jposPageActive")
+
+    /// Posted when the JPOs page disappears.
+    static let jposPageInactive = Notification.Name("WiredPart.jposPageInactive")
+
+    /// Posted when the Purchase Orders page appears, with PO count context for AI.
+    static let purchaseOrdersPageActive = Notification.Name("WiredPart.purchaseOrdersPageActive")
+
+    /// Posted when the Purchase Orders page disappears.
+    static let purchaseOrdersPageInactive = Notification.Name("WiredPart.purchaseOrdersPageInactive")
+
+    // MARK: - Warehouse
+
+    /// Posted when the Inventory Grid page appears, with inventory context for AI.
+    static let inventoryGridPageActive = Notification.Name("WiredPart.inventoryGridPageActive")
+
+    /// Posted when the Inventory Grid page disappears.
+    static let inventoryGridPageInactive = Notification.Name("WiredPart.inventoryGridPageInactive")
+
+    // MARK: - Scheduling
+
+    /// Posted when the Dispatch page appears, with assignment context for AI.
+    static let dispatchPageActive = Notification.Name("WiredPart.dispatchPageActive")
+
+    /// Posted when the Dispatch page disappears.
+    static let dispatchPageInactive = Notification.Name("WiredPart.dispatchPageInactive")
+
+    /// Posted when the Schedule Calendar page appears, with selected date context for AI.
+    static let scheduleCalendarPageActive = Notification.Name("WiredPart.scheduleCalendarPageActive")
+
+    /// Posted when the Schedule Calendar page disappears.
+    static let scheduleCalendarPageInactive = Notification.Name("WiredPart.scheduleCalendarPageInactive")
+
+    // MARK: - People
+
+    /// Posted when the Employees page appears, with employee count context for AI.
+    static let employeesPageActive = Notification.Name("WiredPart.employeesPageActive")
+
+    /// Posted when the Employees page disappears.
+    static let employeesPageInactive = Notification.Name("WiredPart.employeesPageInactive")
+
+    // MARK: - Fleet
+
+    /// Posted when the Vehicles page appears, with vehicle count context for AI.
+    static let vehiclesPageActive = Notification.Name("WiredPart.vehiclesPageActive")
+
+    /// Posted when the Vehicles page disappears.
+    static let vehiclesPageInactive = Notification.Name("WiredPart.vehiclesPageInactive")
+
+    // MARK: - Tools
+
+    /// Posted when the Tool Registry page appears, with tool count context for AI.
+    static let toolRegistryPageActive = Notification.Name("WiredPart.toolRegistryPageActive")
+
+    /// Posted when the Tool Registry page disappears.
+    static let toolRegistryPageInactive = Notification.Name("WiredPart.toolRegistryPageInactive")
+
+    // MARK: - Notebooks
+
+    /// Posted when the Notebooks List page appears, with notebook count context for AI.
+    static let notebooksListPageActive = Notification.Name("WiredPart.notebooksListPageActive")
+
+    /// Posted when the Notebooks List page disappears.
+    static let notebooksListPageInactive = Notification.Name("WiredPart.notebooksListPageInactive")
+
+    // MARK: - Settings
+
+    /// Posted when the Settings page appears, with context for AI.
+    static let settingsPageActive = Notification.Name("WiredPart.settingsPageActive")
+
+    /// Posted when the Settings page disappears.
+    static let settingsPageInactive = Notification.Name("WiredPart.settingsPageInactive")
 }
 
 // MARK: - Lookup Table

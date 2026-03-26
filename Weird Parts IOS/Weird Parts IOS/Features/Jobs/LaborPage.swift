@@ -47,6 +47,10 @@ struct LaborPage: View {
         }
     }
 
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+    @State private var customEnd: Date = Date()
+
     // Clock-in form state
     @State private var selectedUserId: Int64?
     @State private var selectedJobId: Int64?
@@ -54,8 +58,14 @@ struct LaborPage: View {
     @State private var users: [(id: Int64, name: String)] = []
     @State private var jobOptions: [JobsService.JobListItem] = []
 
+    private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
+    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
+
     var body: some View {
-        laborContent
+        VStack(spacing: 0) {
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
+            laborContent
+        }
             .navigationTitle("Labor")
             .searchable(text: $searchText, prompt: "Search by employee or job...")
             .toolbar {
@@ -66,7 +76,7 @@ struct LaborPage: View {
                         Label("Clock In", systemImage: "play.circle.fill")
                     }
                 }
-                ToolbarItem(placement: .secondaryAction) {
+                ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
@@ -92,6 +102,9 @@ struct LaborPage: View {
             }
             .refreshable { loadData() }
             .task { loadData() }
+            .onChange(of: dateRange) { loadData() }
+            .onChange(of: customStart) { loadData() }
+            .onChange(of: customEnd) { loadData() }
     }
 
     // MARK: - Content
@@ -256,7 +269,10 @@ struct LaborPage: View {
     private func performClockIn() {
         guard let service = appCore.jobsService,
               let userId = selectedUserId,
-              let jobId = selectedJobId else { return }
+              let jobId = selectedJobId else {
+            errorMessage = "Jobs service not available"
+            return
+        }
         do {
             try service.clockIn(userId: userId, jobId: jobId)
             activeSheet = nil

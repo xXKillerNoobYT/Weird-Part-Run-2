@@ -20,7 +20,14 @@ struct IOSOrderStagingPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var actionError: String?
+    @State private var searchText = ""
     @State private var showStageSettings = false
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -31,18 +38,37 @@ struct IOSOrderStagingPage: View {
             contentView
         }
         .navigationTitle("Job Stage Planner")
+        .searchable(text: $searchText, prompt: "Search parts...")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { showStageSettings = true } label: {
                     Image(systemName: "gearshape")
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
+        .searchable(text: $searchText, prompt: "Search parts...")
         .refreshable { loadData() }
         .task { await loadInitialData() }
         .sheet(isPresented: $showStageSettings) {
             StageSettingsSheet(onSave: { loadData() })
                 .environmentObject(appCore)
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Job Stage Planner Help",
+                sections: [
+                    ("What This Page Does", "Shows all parts across all JPOs for a job, organized by construction stage (e.g., Rough-in, Prep/Makeup, Trim-out). Parts for future stages are held back and auto-release when the current stage completes."),
+                    ("How to Use It", "Select a job from the picker at the top. Use the stage cards to filter by stage. Each part shows its JPO number, quantity, and current status. When a stage is done, tap 'Mark Stage Complete' to release the next stage's parts."),
+                    ("Held Parts", "Parts with a lock icon are held for a future stage. They won't be ordered or pulled until their stage becomes active. If you need a held part early, tap 'Request Early' to override the hold."),
+                    ("Stage Settings", "Tap the gear icon to configure stages and map part categories to specific stages. This controls which parts auto-assign to which construction phase."),
+                    ("Tips", "Pull down to refresh. The stage cards show part counts so you can see at a glance how much work is in each phase. If your clocked-in job auto-selects, you can change it with the picker.")
+                ]
+            )
         }
         .alert("Error", isPresented: .constant(actionError != nil)) {
             Button("OK") { actionError = nil }
@@ -164,8 +190,23 @@ struct IOSOrderStagingPage: View {
     }
 
     private var filteredParts: [OrdersService.StagePart] {
-        guard let filter = stageFilter else { return parts }
-        return parts.filter { $0.stageId == filter }
+        var result = parts
+
+        // Apply stage filter
+        if let filter = stageFilter {
+            result = result.filter { $0.stageId == filter }
+        }
+
+        // Apply search filter
+        if !searchText.isEmpty {
+            result = result.filter {
+                $0.partName.localizedCaseInsensitiveContains(searchText) ||
+                ($0.partCode?.localizedCaseInsensitiveContains(searchText) ?? false) ||
+                $0.jpoNumber.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+
+        return result
     }
 
     private var stageList: some View {

@@ -7,12 +7,16 @@ struct SchedulingCrewUtilizationReport: View {
     @State private var utilizationData: [SchedulingService.CrewUtilizationRow] = []
     @State private var loadError: String?
     @State private var isLoading = true
+    @State private var dateRange: ReportDateRange = .thisWeek
     @State private var startDate = Calendar.current.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
     @State private var endDate = Date()
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     var body: some View {
         List {
-            StandardFilterBar(startDate: $startDate, endDate: $endDate)
+            StandardFilterBar(selectedRange: $dateRange, customStart: $startDate, customEnd: $endDate)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets())
 
@@ -83,6 +87,20 @@ struct SchedulingCrewUtilizationReport: View {
                                           String(format: "%.1f", $0.availableHours),
                                           "\(Int($0.utilization * 100))%"] }
         )
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Crew Utilization Help", sections: [
+                ("What This Page Does", "Shows how much of each employee's available work time is being scheduled. Compares scheduled hours against available hours for the selected period. Helps you spot overloaded or underutilized workers."),
+                ("How to Use It", "Set the date range at the top. The summary shows average utilization across all employees. Each row has a progress bar showing the percentage of available hours that are scheduled. Green is well-utilized, red means underbooked."),
+                ("Tips", "Aim for 70-85% utilization to leave room for unexpected tasks. If someone is at 100%, they have no buffer for urgent jobs. Spread work across the team when possible.")
+            ])
+        }
         .onAppear { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }

@@ -8,6 +8,7 @@ import WiredPartCore
 /// package's SyncEngine and MultipeerManager.
 struct SyncPage: View {
     @EnvironmentObject private var appCore: AppCore
+    @State private var activeSheet: ActiveSheet?
     @State private var shopServerAddress = ""
     @State private var syncInterval = "30"
     @State private var autoSync = true
@@ -134,12 +135,31 @@ struct SyncPage: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .navigationTitle("LAN Sync")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "LAN Sync Help", sections: [
+                ("What This Page Does", "Configures local network sync between this device and the shop server. Shows current sync status, pending changes, and recent sync history."),
+                ("How to Use It", "Enter the shop server address, set a sync interval, and enable auto-sync. Tap 'Sync Now' for an immediate sync. Changes are merged using last-writer-wins with field-level conflict resolution."),
+            ])
+        }
         .onAppear { loadSettings() }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
         }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     // MARK: - Status Row

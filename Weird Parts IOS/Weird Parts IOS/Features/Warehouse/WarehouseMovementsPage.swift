@@ -16,6 +16,14 @@ struct WarehouseMovementsPage: View {
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
 
+    // Date filter
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+    @State private var customEnd: Date = Date()
+
+    private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
+    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
+
     private enum MovementFilter: String, CaseIterable {
         case transfers = "Transfers"
         case receives = "Receives"
@@ -51,6 +59,7 @@ struct WarehouseMovementsPage: View {
     var body: some View {
         VStack(spacing: 0) {
             smartCardFilters
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
 
             if isLoading {
                 ProgressView("Loading movements…")
@@ -74,7 +83,7 @@ struct WarehouseMovementsPage: View {
                     Image(systemName: "plus")
                 }
             }
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
@@ -85,6 +94,9 @@ struct WarehouseMovementsPage: View {
         }
         .background(DS.Background.page)
         .task { loadData() }
+        .onChange(of: dateRange) { loadData() }
+        .onChange(of: customStart) { loadData() }
+        .onChange(of: customEnd) { loadData() }
     }
 
     // MARK: - Sheet Content

@@ -12,7 +12,7 @@ struct IOSOrganizationThresholdsPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var saveError: String?
-    @State private var showHelp = false
+    @State private var activeSheet: ActiveSheet?
 
     // Confidence Decay
     @State private var baseDecayRate: Double = 0.1
@@ -33,6 +33,11 @@ struct IOSOrganizationThresholdsPage: View {
     @State private var showOnDashboard = true
     @State private var includeInDailyReport = false
 
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
+
     var body: some View {
         Group {
             if isLoading {
@@ -48,30 +53,18 @@ struct IOSOrganizationThresholdsPage: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showHelp = true } label: {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
-            NavigationStack {
-                List {
-                    Section("Confidence Decay") {
-                        Text("Each location's confidence score decreases daily. Moving parts accelerates decay since items may have been misplaced during the move.")
-                    }
-                    Section("Audit Triggers") {
-                        Text("When a location's confidence drops below the threshold, the system recommends an audit. Cooldown prevents excessive recommendations.")
-                    }
-                    Section("Consolidation") {
-                        Text("Consolidation votes let the team decide when to merge low-stock locations. Unanimous votes can auto-approve.")
-                    }
-                    Section("Organization Rating") {
-                        Text("The overall warehouse organization score reflects how well-organized and accurately tracked your inventory is.")
-                    }
-                }
-                .navigationTitle("Thresholds Help")
-                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { showHelp = false } } }
-            }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Thresholds Help", sections: [
+                ("Confidence Decay", "Each location's confidence score decreases daily. Moving parts accelerates decay since items may have been misplaced during the move."),
+                ("Audit Triggers", "When a location's confidence drops below the threshold, the system recommends an audit. Cooldown prevents excessive recommendations."),
+                ("Consolidation", "Consolidation votes let the team decide when to merge low-stock locations. Unanimous votes can auto-approve."),
+                ("Organization Rating", "The overall warehouse organization score reflects how well-organized and accurately tracked your inventory is."),
+            ])
         }
         .task { loadSettings() }
     }

@@ -40,6 +40,28 @@ struct IOSAIAssistantPanel: View {
     @State private var companionsContext: String?
     @State private var forecastContext: String?
 
+    // Page context from all feature areas (prompt 60M)
+    @State private var dashboardContext: String?
+    @State private var jobsListContext: String?
+    @State private var clockContext: String?
+    @State private var jposContext: String?
+    @State private var purchaseOrdersContext: String?
+    @State private var inventoryGridContext: String?
+    @State private var dispatchContext: String?
+    @State private var scheduleCalendarContext: String?
+    @State private var employeesContext: String?
+    @State private var vehiclesContext: String?
+    @State private var toolRegistryContext: String?
+    @State private var notebooksListContext: String?
+    @State private var settingsContext: String?
+
+    /// Tracks which page the user is currently on, mapped to a HelpContentRegistry page ID.
+    /// Updated whenever a page-active notification fires, cleared on page-inactive.
+    @State private var activePageId: String?
+
+    /// Unique ID for the current conversation thread. Changing this starts a fresh session.
+    @State private var conversationId: String = UUID().uuidString
+
     private let aiService = FoundationModelsService()
 
     var body: some View {
@@ -77,7 +99,14 @@ struct IOSAIAssistantPanel: View {
                         .help("Switch to floating overlay")
 
                         Button {
-                            messages.removeAll()
+                            startNewConversation()
+                        } label: {
+                            Image(systemName: "plus.bubble")
+                        }
+                        .help("New conversation")
+
+                        Button {
+                            clearCurrentConversation()
                         } label: {
                             Image(systemName: "trash")
                         }
@@ -140,7 +169,16 @@ struct IOSAIAssistantPanel: View {
             .help("Switch to full sheet")
 
             Button {
-                messages.removeAll()
+                startNewConversation()
+            } label: {
+                Image(systemName: "plus.bubble")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            .help("New conversation")
+
+            Button {
+                clearCurrentConversation()
             } label: {
                 Image(systemName: "trash")
                     .font(.caption)
@@ -174,53 +212,31 @@ struct IOSAIAssistantPanel: View {
         }
         .task {
             aiAvailability = aiService.checkAvailability()
-            if messages.isEmpty {
-                messages.append(AssistantMessage(
-                    role: .assistant,
-                    content: "How can I help you today? I can search your data, answer questions about jobs, parts, orders, and help you navigate the app."
-                ))
-            }
+            await loadSavedMessages()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .catalogPageActive)) { notification in
-            if let context = notification.userInfo?["context"] as? String {
-                catalogContext = context
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .catalogPageInactive)) { _ in
-            catalogContext = nil
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .pricingPageActive)) { notification in
-            if let context = notification.userInfo?["context"] as? String {
-                pricingContext = context
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .pricingPageInactive)) { _ in
-            pricingContext = nil
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .suppliersPageActive)) { notification in
-            if let context = notification.userInfo?["context"] as? String {
-                suppliersContext = context
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .suppliersPageInactive)) { _ in
-            suppliersContext = nil
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .companionsPageActive)) { notification in
-            if let context = notification.userInfo?["context"] as? String {
-                companionsContext = context
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .companionsPageInactive)) { _ in
-            companionsContext = nil
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .forecastingPageActive)) { notification in
-            if let context = notification.userInfo?["context"] as? String {
-                forecastContext = context
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .forecastingPageInactive)) { _ in
-            forecastContext = nil
-        }
+        .modifier(PartsPageContextObservers(
+            catalogContext: $catalogContext,
+            pricingContext: $pricingContext,
+            suppliersContext: $suppliersContext,
+            companionsContext: $companionsContext,
+            forecastContext: $forecastContext
+        ))
+        .modifier(FeaturePageContextObservers(
+            dashboardContext: $dashboardContext,
+            jobsListContext: $jobsListContext,
+            clockContext: $clockContext,
+            jposContext: $jposContext,
+            purchaseOrdersContext: $purchaseOrdersContext,
+            inventoryGridContext: $inventoryGridContext,
+            dispatchContext: $dispatchContext,
+            scheduleCalendarContext: $scheduleCalendarContext,
+            employeesContext: $employeesContext,
+            vehiclesContext: $vehiclesContext,
+            toolRegistryContext: $toolRegistryContext,
+            notebooksListContext: $notebooksListContext,
+            settingsContext: $settingsContext
+        ))
+        .modifier(ActivePageIdTracker(activePageId: $activePageId))
     }
 
     // MARK: - Availability Header
@@ -391,6 +407,68 @@ struct IOSAIAssistantPanel: View {
         }
     }
 
+    // MARK: - Conversation Lifecycle
+
+    /// Start a brand-new conversation — clears the AI session, resets messages, generates a new ID.
+    private func startNewConversation() {
+        Task { await aiService.clearConversation() }
+        conversationId = UUID().uuidString
+        messages = [AssistantMessage(
+            role: .assistant,
+            content: "How can I help you today? I can search your data, answer questions about jobs, parts, orders, and help you navigate the app."
+        )]
+    }
+
+    /// Delete all messages from the current conversation (UI + DB) but keep the same conversation ID.
+    private func clearCurrentConversation() {
+        let cid = conversationId
+        messages.removeAll()
+        Task { await aiService.clearConversation() }
+        if let db = appCore.db {
+            Task {
+                try? await FoundationModelsService.deleteConversation(cid, from: db)
+            }
+        }
+        // Re-add the welcome message
+        messages.append(AssistantMessage(
+            role: .assistant,
+            content: "How can I help you today? I can search your data, answer questions about jobs, parts, orders, and help you navigate the app."
+        ))
+    }
+
+    /// Load previously saved messages for the current conversation from the DB.
+    private func loadSavedMessages() async {
+        guard let db = appCore.db else {
+            addWelcomeMessageIfNeeded()
+            return
+        }
+        do {
+            let saved = try await FoundationModelsService.loadConversation(conversationId, from: db)
+            if saved.isEmpty {
+                addWelcomeMessageIfNeeded()
+            } else {
+                messages = saved.map { msg in
+                    AssistantMessage(
+                        role: msg.role == "user" ? .user : .assistant,
+                        content: msg.content
+                    )
+                }
+            }
+        } catch {
+            addWelcomeMessageIfNeeded()
+        }
+    }
+
+    /// Adds the default welcome message if the messages list is empty.
+    private func addWelcomeMessageIfNeeded() {
+        if messages.isEmpty {
+            messages.append(AssistantMessage(
+                role: .assistant,
+                content: "How can I help you today? I can search your data, answer questions about jobs, parts, orders, and help you navigate the app."
+            ))
+        }
+    }
+
     /// Generates a response using Foundation Models with tool calling when available,
     /// falls back to basic keyword matching.
     private func generateResponse(for queryText: String) async -> String {
@@ -414,14 +492,57 @@ struct IOSAIAssistantPanel: View {
                 navContext += "\n\nForecasting Page Context: \(ctx)"
                 navContext += " You can help the user understand their forecast data, identify parts that need reordering, and explain usage trends."
             }
+            // Append all feature page contexts (prompt 60M)
+            if let ctx = dashboardContext {
+                navContext += "\n\nDashboard Context: \(ctx)"
+            }
+            if let ctx = jobsListContext {
+                navContext += "\n\nJobs List Context: \(ctx)"
+            }
+            if let ctx = clockContext {
+                navContext += "\n\nClock In/Out Context: \(ctx)"
+            }
+            if let ctx = jposContext {
+                navContext += "\n\nJob Purchase Orders Context: \(ctx)"
+            }
+            if let ctx = purchaseOrdersContext {
+                navContext += "\n\nPurchase Orders Context: \(ctx)"
+            }
+            if let ctx = inventoryGridContext {
+                navContext += "\n\nInventory Grid Context: \(ctx)"
+            }
+            if let ctx = dispatchContext {
+                navContext += "\n\nDispatch Board Context: \(ctx)"
+            }
+            if let ctx = scheduleCalendarContext {
+                navContext += "\n\nSchedule Calendar Context: \(ctx)"
+            }
+            if let ctx = employeesContext {
+                navContext += "\n\nEmployees Context: \(ctx)"
+            }
+            if let ctx = vehiclesContext {
+                navContext += "\n\nVehicles Context: \(ctx)"
+            }
+            if let ctx = toolRegistryContext {
+                navContext += "\n\nTool Registry Context: \(ctx)"
+            }
+            if let ctx = notebooksListContext {
+                navContext += "\n\nNotebooks Context: \(ctx)"
+            }
+            if let ctx = settingsContext {
+                navContext += "\n\nSettings Context: \(ctx)"
+            }
             let result = await aiService.chatWithTools(
                 query: queryText,
                 db: db,
                 permissions: appCore.permissions,
-                navigationContext: navContext
+                navigationContext: navContext,
+                conversationId: conversationId
             )
             if result.success, let text = result.text, !text.isEmpty {
-                return text
+                // Check for AI filter activation commands in the response (prompt 62S)
+                parseAndApplyFilterCommands(text)
+                return cleanFilterJSON(text)
             }
         }
 
@@ -443,6 +564,11 @@ struct IOSAIAssistantPanel: View {
         // Fallback: if on the companions page, provide companions-specific help
         if companionsContext != nil {
             return "I can help you with companion rules, voting polls, and co-occurrence data. On-device AI is required for full functionality — please check Settings > AI to enable Apple Foundation Models."
+        }
+
+        // Fallback: if user asks about help / how to use the current page, use HelpContentRegistry
+        if let helpResponse = generateHelpContentResponse(for: queryText) {
+            return helpResponse
         }
 
         // Fallback: basic keyword matching
@@ -551,11 +677,47 @@ struct IOSAIAssistantPanel: View {
         )
     }
 
+    // MARK: - AI Filter Command Parsing (prompt 62S)
+
+    /// Scans AI response text for filter activation JSON blocks and applies them.
+    /// Expected format: {"activateFilter": {"pageId": "purchase-orders", "value": "draft"}}
+    private func parseAndApplyFilterCommands(_ text: String) {
+        // Look for JSON blocks containing activateFilter
+        let pattern = #"\{[^{}]*"activateFilter"\s*:\s*\{[^{}]*"pageId"\s*:\s*"([^"]+)"[^{}]*"value"\s*:\s*"([^"]+)"[^{}]*\}[^{}]*\}"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return }
+        let nsText = text as NSString
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+
+        for match in matches {
+            guard match.numberOfRanges >= 3 else { continue }
+            let pageId = nsText.substring(with: match.range(at: 1))
+            let value = nsText.substring(with: match.range(at: 2))
+            appCore.aiFilterRegistry.activateFilter(pageId: pageId, value: value)
+        }
+    }
+
+    /// Removes filter activation JSON blocks from the AI response so the user
+    /// sees clean natural language text only.
+    private func cleanFilterJSON(_ text: String) -> String {
+        let pattern = #"\s*\{[^{}]*"activateFilter"\s*:\s*\{[^{}]*\}[^{}]*\}\s*"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return text }
+        let nsText = text as NSString
+        let cleaned = regex.stringByReplacingMatches(
+            in: text,
+            range: NSRange(location: 0, length: nsText.length),
+            withTemplate: ""
+        )
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: - Navigation Context Builder
 
     /// Builds a string describing the app's module/tab layout with permission annotations.
     /// This is embedded in the AI's system instructions so it can guide users to features
     /// and note when they lack access to something.
+    ///
+    /// Also includes help content awareness from `HelpContentRegistry` so the AI can
+    /// provide accurate page-specific guidance when users ask "how do I use this page?"
     private func buildNavigationContext(permissions: [String]) -> String {
         var lines: [String] = ["App Navigation Structure:"]
         for module in appModules {
@@ -568,7 +730,67 @@ struct IOSAIAssistantPanel: View {
                 lines.append("  - \(tab.label): \(tab.path)\(tabNote)")
             }
         }
+
+        // Add available AI-activated filters (prompt 62S)
+        let availableFilters = appCore.aiFilterRegistry.getAvailableFilters()
+        if !availableFilters.isEmpty {
+            lines.append("")
+            lines.append("AI-Activated Page Filters (you can set these for the user):")
+            for filter in availableFilters {
+                lines.append("  - Page '\(filter.pageId)': \(filter.filterName) — options: \(filter.options.joined(separator: ", "))")
+            }
+            lines.append("To activate a filter, include a JSON block in your response: {\"activateFilter\": {\"pageId\": \"<id>\", \"value\": \"<option>\"}}. The filter will be applied immediately if the page is active, or queued for when the user navigates to it.")
+        }
+
+        // Add help content awareness
+        lines.append("")
+        lines.append("You have detailed help content for these pages: \(HelpContentRegistry.availableTopics.joined(separator: ", ")). When the user asks how to use a page or feature, reference this help content for accurate answers.")
+
+        // If we know which page the user is on, include that page's full help content
+        if let pageId = activePageId, let helpText = HelpContentRegistry.formattedHelp(for: pageId) {
+            lines.append("")
+            lines.append("Current Page Help Content:")
+            lines.append(helpText)
+        }
+
         return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Help Content Response
+
+    /// Checks if the user is asking about page help and returns a formatted response
+    /// from the HelpContentRegistry. Returns nil if the query doesn't match a help request.
+    private func generateHelpContentResponse(for queryText: String) -> String? {
+        let lower = queryText.lowercased()
+
+        // Detect help-seeking queries
+        let isHelpQuery = lower.contains("how do i") || lower.contains("how to")
+            || lower.contains("help") || lower.contains("what does this")
+            || lower.contains("explain this") || lower.contains("what is this page")
+            || lower.contains("how does this work") || lower.contains("what can i do")
+
+        // If user is on a known page and asking for help, provide that page's help
+        if isHelpQuery, let pageId = activePageId, let entry = HelpContentRegistry.helpFor(pageId) {
+            var response = "**\(entry.title)**\n\n"
+            for (heading, body) in entry.sections {
+                response += "**\(heading):** \(body)\n\n"
+            }
+            return response.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        // If user asks about a specific feature by keyword, search the registry
+        if isHelpQuery {
+            let matches = HelpContentRegistry.search(keyword: queryText)
+            if let best = matches.first {
+                var response = "**\(best.title)**\n\n"
+                for (heading, body) in best.sections {
+                    response += "**\(heading):** \(body)\n\n"
+                }
+                return response.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+
+        return nil
     }
 
     // MARK: - Fallback Response
@@ -596,6 +818,293 @@ struct IOSAIAssistantPanel: View {
         }
 
         return "I can help you navigate the app and search your data. Try asking about jobs, orders, parts, scheduling, reports, or fleet management."
+    }
+}
+
+// MARK: - Page Context Observer Modifiers
+
+/// Groups the original 5 Parts page notification observers to keep chatBody type-checker happy.
+private struct PartsPageContextObservers: ViewModifier {
+    @Binding var catalogContext: String?
+    @Binding var pricingContext: String?
+    @Binding var suppliersContext: String?
+    @Binding var companionsContext: String?
+    @Binding var forecastContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .catalogPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { catalogContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .catalogPageInactive)) { _ in
+                catalogContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .pricingPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { pricingContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .pricingPageInactive)) { _ in
+                pricingContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .suppliersPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { suppliersContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .suppliersPageInactive)) { _ in
+                suppliersContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .companionsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { companionsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .companionsPageInactive)) { _ in
+                companionsContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .forecastingPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { forecastContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .forecastingPageInactive)) { _ in
+                forecastContext = nil
+            }
+    }
+}
+
+/// Groups the prompt 60M feature page notification observers into a single modifier
+/// to avoid Swift type-checker complexity limits from long `.onReceive` chains.
+private struct FeaturePageContextObservers: ViewModifier {
+    @Binding var dashboardContext: String?
+    @Binding var jobsListContext: String?
+    @Binding var clockContext: String?
+    @Binding var jposContext: String?
+    @Binding var purchaseOrdersContext: String?
+    @Binding var inventoryGridContext: String?
+    @Binding var dispatchContext: String?
+    @Binding var scheduleCalendarContext: String?
+    @Binding var employeesContext: String?
+    @Binding var vehiclesContext: String?
+    @Binding var toolRegistryContext: String?
+    @Binding var notebooksListContext: String?
+    @Binding var settingsContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .modifier(FeaturePageContextObserversGroupA(
+                dashboardContext: $dashboardContext,
+                jobsListContext: $jobsListContext,
+                clockContext: $clockContext,
+                jposContext: $jposContext,
+                purchaseOrdersContext: $purchaseOrdersContext,
+                inventoryGridContext: $inventoryGridContext,
+                dispatchContext: $dispatchContext
+            ))
+            .modifier(FeaturePageContextObserversGroupB(
+                scheduleCalendarContext: $scheduleCalendarContext,
+                employeesContext: $employeesContext,
+                vehiclesContext: $vehiclesContext,
+                toolRegistryContext: $toolRegistryContext,
+                notebooksListContext: $notebooksListContext,
+                settingsContext: $settingsContext
+            ))
+    }
+}
+
+/// First group of feature page observers (Dashboard, Jobs, Clock, JPOs, POs, Inventory, Dispatch).
+private struct FeaturePageContextObserversGroupA: ViewModifier {
+    @Binding var dashboardContext: String?
+    @Binding var jobsListContext: String?
+    @Binding var clockContext: String?
+    @Binding var jposContext: String?
+    @Binding var purchaseOrdersContext: String?
+    @Binding var inventoryGridContext: String?
+    @Binding var dispatchContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .dashboardPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { dashboardContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .dashboardPageInactive)) { _ in
+                dashboardContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .jobsListPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { jobsListContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .jobsListPageInactive)) { _ in
+                jobsListContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .clockPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { clockContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .clockPageInactive)) { _ in
+                clockContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .jposPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { jposContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .jposPageInactive)) { _ in
+                jposContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .purchaseOrdersPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { purchaseOrdersContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .purchaseOrdersPageInactive)) { _ in
+                purchaseOrdersContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .inventoryGridPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { inventoryGridContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .inventoryGridPageInactive)) { _ in
+                inventoryGridContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .dispatchPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { dispatchContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .dispatchPageInactive)) { _ in
+                dispatchContext = nil
+            }
+    }
+}
+
+/// Second group of feature page observers (Schedule, Employees, Vehicles, Tools, Notebooks, Settings).
+private struct FeaturePageContextObserversGroupB: ViewModifier {
+    @Binding var scheduleCalendarContext: String?
+    @Binding var employeesContext: String?
+    @Binding var vehiclesContext: String?
+    @Binding var toolRegistryContext: String?
+    @Binding var notebooksListContext: String?
+    @Binding var settingsContext: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .scheduleCalendarPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { scheduleCalendarContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .scheduleCalendarPageInactive)) { _ in
+                scheduleCalendarContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .employeesPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { employeesContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .employeesPageInactive)) { _ in
+                employeesContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .vehiclesPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { vehiclesContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .vehiclesPageInactive)) { _ in
+                vehiclesContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toolRegistryPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { toolRegistryContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toolRegistryPageInactive)) { _ in
+                toolRegistryContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .notebooksListPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { notebooksListContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .notebooksListPageInactive)) { _ in
+                notebooksListContext = nil
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .settingsPageActive)) { notification in
+                if let ctx = notification.userInfo?["context"] as? String { settingsContext = ctx }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .settingsPageInactive)) { _ in
+                settingsContext = nil
+            }
+    }
+}
+
+// MARK: - Active Page ID Tracker (prompt 60N)
+
+/// Tracks which page the user is currently viewing by listening to all page-active/inactive
+/// notifications and mapping them to HelpContentRegistry page IDs. This allows the AI
+/// to automatically include the correct help content in its system prompt.
+///
+/// Split into 4 sub-groups to stay within Swift's type-checker complexity limits.
+private struct ActivePageIdTracker: ViewModifier {
+    @Binding var activePageId: String?
+
+    func body(content: Content) -> some View {
+        content
+            .modifier(ActivePageIdTrackerParts(activePageId: $activePageId))
+            .modifier(ActivePageIdTrackerDashJobs(activePageId: $activePageId))
+            .modifier(ActivePageIdTrackerOrdersWarehouse(activePageId: $activePageId))
+            .modifier(ActivePageIdTrackerSchedulePeopleMore(activePageId: $activePageId))
+    }
+}
+
+/// Page ID tracker group 1: Parts pages (catalog, pricing, suppliers, companions, forecasting).
+private struct ActivePageIdTrackerParts: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .catalogPageActive)) { _ in activePageId = "parts-catalog" }
+            .onReceive(NotificationCenter.default.publisher(for: .catalogPageInactive)) { _ in if activePageId == "parts-catalog" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .pricingPageActive)) { _ in activePageId = "parts-pricing" }
+            .onReceive(NotificationCenter.default.publisher(for: .pricingPageInactive)) { _ in if activePageId == "parts-pricing" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .suppliersPageActive)) { _ in activePageId = "parts-suppliers" }
+            .onReceive(NotificationCenter.default.publisher(for: .suppliersPageInactive)) { _ in if activePageId == "parts-suppliers" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .companionsPageActive)) { _ in activePageId = "parts-companions" }
+            .onReceive(NotificationCenter.default.publisher(for: .companionsPageInactive)) { _ in if activePageId == "parts-companions" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .forecastingPageActive)) { _ in activePageId = "parts-forecasting" }
+            .onReceive(NotificationCenter.default.publisher(for: .forecastingPageInactive)) { _ in if activePageId == "parts-forecasting" { activePageId = nil } }
+    }
+}
+
+/// Page ID tracker group 2: Dashboard, Jobs, Clock pages.
+private struct ActivePageIdTrackerDashJobs: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .dashboardPageActive)) { _ in activePageId = "dashboard-home" }
+            .onReceive(NotificationCenter.default.publisher(for: .dashboardPageInactive)) { _ in if activePageId == "dashboard-home" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .jobsListPageActive)) { _ in activePageId = "jobs-list" }
+            .onReceive(NotificationCenter.default.publisher(for: .jobsListPageInactive)) { _ in if activePageId == "jobs-list" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .clockPageActive)) { _ in activePageId = "dashboard-clock" }
+            .onReceive(NotificationCenter.default.publisher(for: .clockPageInactive)) { _ in if activePageId == "dashboard-clock" { activePageId = nil } }
+    }
+}
+
+/// Page ID tracker group 3: Orders + Warehouse pages (JPOs, POs, Inventory).
+private struct ActivePageIdTrackerOrdersWarehouse: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .jposPageActive)) { _ in activePageId = "orders-jpos" }
+            .onReceive(NotificationCenter.default.publisher(for: .jposPageInactive)) { _ in if activePageId == "orders-jpos" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .purchaseOrdersPageActive)) { _ in activePageId = "orders-pos" }
+            .onReceive(NotificationCenter.default.publisher(for: .purchaseOrdersPageInactive)) { _ in if activePageId == "orders-pos" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .inventoryGridPageActive)) { _ in activePageId = "warehouse-inventory" }
+            .onReceive(NotificationCenter.default.publisher(for: .inventoryGridPageInactive)) { _ in if activePageId == "warehouse-inventory" { activePageId = nil } }
+    }
+}
+
+/// Page ID tracker group 4: Scheduling, People, Fleet, Tools, Notebooks, Settings.
+private struct ActivePageIdTrackerSchedulePeopleMore: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .dispatchPageActive)) { _ in activePageId = "scheduling-dispatch" }
+            .onReceive(NotificationCenter.default.publisher(for: .dispatchPageInactive)) { _ in if activePageId == "scheduling-dispatch" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .scheduleCalendarPageActive)) { _ in activePageId = "scheduling-calendar" }
+            .onReceive(NotificationCenter.default.publisher(for: .scheduleCalendarPageInactive)) { _ in if activePageId == "scheduling-calendar" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .employeesPageActive)) { _ in activePageId = "people-employees" }
+            .onReceive(NotificationCenter.default.publisher(for: .employeesPageInactive)) { _ in if activePageId == "people-employees" { activePageId = nil } }
+            .modifier(ActivePageIdTrackerFleetToolsNotebooks(activePageId: $activePageId))
+    }
+}
+
+/// Page ID tracker group 4b: Fleet, Tools, Notebooks, Settings (sub-split to avoid type-checker limits).
+private struct ActivePageIdTrackerFleetToolsNotebooks: ViewModifier {
+    @Binding var activePageId: String?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .vehiclesPageActive)) { _ in activePageId = "fleet-vehicles" }
+            .onReceive(NotificationCenter.default.publisher(for: .vehiclesPageInactive)) { _ in if activePageId == "fleet-vehicles" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .toolRegistryPageActive)) { _ in activePageId = "tools-registry" }
+            .onReceive(NotificationCenter.default.publisher(for: .toolRegistryPageInactive)) { _ in if activePageId == "tools-registry" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .notebooksListPageActive)) { _ in activePageId = "notebooks-all" }
+            .onReceive(NotificationCenter.default.publisher(for: .notebooksListPageInactive)) { _ in if activePageId == "notebooks-all" { activePageId = nil } }
+            .onReceive(NotificationCenter.default.publisher(for: .settingsPageActive)) { _ in activePageId = "settings-app-config" }
+            .onReceive(NotificationCenter.default.publisher(for: .settingsPageInactive)) { _ in if activePageId == "settings-app-config" { activePageId = nil } }
     }
 }
 

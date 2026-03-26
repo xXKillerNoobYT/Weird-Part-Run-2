@@ -1289,6 +1289,134 @@ public final class NotebooksService: Sendable {
         }
     }
 
+    // =========================================================================
+    // MARK: - Block Conflict Detection & Resolution
+    // =========================================================================
+
+    /// Detect unreviewed sync conflicts on notebook entry blocks for a specific notebook.
+    ///
+    /// Queries `_conflict_log` for rows where:
+    /// - `table_name = 'notebook_entries'`
+    /// - `record_id` matches an entry in this notebook
+    /// - `reviewed = 0` (not yet resolved by the user)
+    ///
+    /// Returns conflicts joined with entry metadata so the UI can show context
+    /// (entry title, block type) alongside the conflicting values.
+    public func detectBlockConflicts(notebookId: Int64) throws -> [NotebookBlockConflict] {
+        do {
+            return try db.writer.read { dbConn -> [NotebookBlockConflict] in
+                let sql = """
+                    SELECT cl.id AS conflict_id,
+                           cl.record_id,
+                           cl.field_name,
+                           cl.local_value,
+                           cl.remote_value,
+                           cl.local_ts,
+                           cl.remote_ts,
+                           cl.local_device,
+                           cl.remote_device,
+                           cl.winner,
+                           cl.resolved_at,
+                           ne.title AS entry_title,
+                           ne.block_type
+                    FROM _conflict_log cl
+                    INNER JOIN notebook_entries ne ON CAST(cl.record_id AS INTEGER) = ne.id
+                    WHERE cl.table_name = 'notebook_entries'
+                      AND cl.reviewed = 0
+                      AND ne.notebook_id = ?
+                    ORDER BY cl.resolved_at DESC
+                    """
+                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [notebookId])
+                return rows.map { row in
+                    NotebookBlockConflict(
+                        conflictLogId: row["conflict_id"] ?? 0,
+                        entryId: Int64(row["record_id"] as String? ?? "0") ?? 0,
+                        fieldName: row["field_name"] ?? "",
+                        localValue: row["local_value"] as String?,
+                        remoteValue: row["remote_value"] as String?,
+                        localTimestamp: row["local_ts"] ?? "",
+                        remoteTimestamp: row["remote_ts"] ?? "",
+                        localDeviceId: row["local_device"] ?? "",
+                        remoteDeviceId: row["remote_device"] ?? "",
+                        winner: row["winner"] ?? "local",
+                        resolvedAt: row["resolved_at"] as String?,
+                        entryTitle: row["entry_title"] as String?,
+                        blockType: row["block_type"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Resolve a notebook block conflict by applying the user's chosen version.
+    ///
+    /// - Parameters:
+    ///   - conflictLogId: The `_conflict_log.id` of the conflict to resolve.
+    ///   - keepVersion: `"local"` or `"remote"` — which side's value to keep.
+    ///
+    /// If the user picks the version that LWW already chose (i.e., the `winner`
+    /// column matches `keepVersion`), we just mark it reviewed. If the user
+    /// overrides the LWW decision, we update the entry field to the non-winning
+    /// value and then mark it reviewed.
+    public func resolveBlockConflict(conflictLogId: Int64, keepVersion: String) throws {
+        try db.writer.write { dbConn in
+            // 1. Read the conflict record
+            guard let conflictRow = try Row.fetchOne(dbConn, sql: """
+                SELECT record_id, field_name, local_value, remote_value, winner
+                FROM _conflict_log WHERE id = ?
+                """, arguments: [conflictLogId]) else {
+                return
+            }
+
+            let recordId: String = conflictRow["record_id"] ?? "0"
+            let fieldName: String = conflictRow["field_name"] ?? ""
+            let localValue: String? = conflictRow["local_value"]
+            let remoteValue: String? = conflictRow["remote_value"]
+            let currentWinner: String = conflictRow["winner"] ?? "local"
+
+            // 2. If user chose the opposite of what LWW picked, apply the override
+            if keepVersion != currentWinner {
+                let valueToApply = (keepVersion == "local") ? localValue : remoteValue
+
+                // Only update content-related fields to prevent schema issues
+                let allowedFields: Set<String> = [
+                    "content", "block_data", "title", "checklist_items",
+                    "heading_level", "photo_path", "task_status", "sort_order"
+                ]
+
+                if allowedFields.contains(fieldName) {
+                    try dbConn.execute(
+                        sql: "UPDATE notebook_entries SET \"\(fieldName)\" = ?, updated_at = datetime('now') WHERE id = ?",
+                        arguments: [valueToApply, recordId]
+                    )
+                }
+            }
+
+            // 3. Mark the conflict as reviewed
+            try dbConn.execute(
+                sql: "UPDATE _conflict_log SET reviewed = 1 WHERE id = ?",
+                arguments: [conflictLogId]
+            )
+        }
+    }
+
+    /// Bulk-resolve all unreviewed conflicts for a notebook, keeping the specified version.
+    ///
+    /// Convenience method for "Keep All Local" or "Keep All Remote" actions.
+    public func resolveAllBlockConflicts(notebookId: Int64, keepVersion: String) throws {
+        let conflicts = try detectBlockConflicts(notebookId: notebookId)
+        for conflict in conflicts {
+            try resolveBlockConflict(conflictLogId: conflict.conflictLogId, keepVersion: keepVersion)
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Internal Helpers
+    // =========================================================================
+
     /// Detect whether a GRDB/SQLite error indicates a missing table.
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)

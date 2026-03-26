@@ -136,7 +136,7 @@ struct PartsCatalogPage: View {
                     Image(systemName: showPricing ? "dollarsign.circle.fill" : "dollarsign.circle")
                 }
             }
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
@@ -1056,7 +1056,11 @@ struct PartsCatalogPage: View {
             await MainActor.run { partPricingCache = [:] }
             return
         }
-        guard let service = appCore.partsService else { return } // Service not ready
+        guard let service = appCore.partsService else {
+            loadError = "Parts service not available"
+            isLoading = false
+            return
+        }
         var cache: [Int64: PartsService.ResolvedPricing] = [:]
         for part in parts {
             do {
@@ -1131,6 +1135,7 @@ private struct QuickEditSheet: View {
     @State private var costPrice: String = ""
     @State private var markupPercent: String = ""
     @State private var isSaving = false
+    @State private var saveError: String?
 
     private var sellPrice: Double {
         let cost = Double(costPrice) ?? 0
@@ -1204,13 +1209,21 @@ private struct QuickEditSheet: View {
                 costPrice = String(format: "%.2f", part.companyCostPrice)
                 markupPercent = String(format: "%.1f", part.companyMarkupPercent)
             }
+            .alert("Error", isPresented: .constant(saveError != nil)) {
+                Button("OK") { saveError = nil }
+            } message: {
+                Text(saveError ?? "")
+            }
         }
     }
 
     private func save() async {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         guard !trimmedName.isEmpty else { return }
-        guard let service = appCore.partsService else { return } // Service not ready
+        guard let service = appCore.partsService else {
+            saveError = "Service not available"
+            return
+        }
 
         isSaving = true
         let cost = Double(costPrice) ?? 0
@@ -1227,7 +1240,10 @@ private struct QuickEditSheet: View {
             await onSave()
             await MainActor.run { dismiss() }
         } catch {
-            await MainActor.run { isSaving = false }
+            await MainActor.run {
+                saveError = error.localizedDescription
+                isSaving = false
+            }
         }
     }
 }
@@ -1381,6 +1397,7 @@ private struct PartDetailSheet: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
     @State private var stockEntries: [StockEntry] = []
+    @State private var warehouseNames: [Int64: String] = [:]
     @State private var showEditForm = false
     @State private var loadError: String?
 
@@ -1425,7 +1442,7 @@ private struct PartDetailSheet: View {
                         ForEach(stockEntries, id: \.id) { entry in
                             HStack {
                                 VStack(alignment: .leading) {
-                                    Text("Warehouse #\(entry.warehouseId)")
+                                    Text(warehouseNames[entry.warehouseId] ?? "Location #\(entry.warehouseId)")
                                         .font(.subheadline)
                                     if let bin = entry.binLocation {
                                         Text("Bin: \(bin)")
@@ -1479,7 +1496,18 @@ private struct PartDetailSheet: View {
         }
         do {
             let entries = try service.listStockEntries(partId: partRow.id)
-            await MainActor.run { stockEntries = entries }
+
+            // Batch-load human-readable warehouse location names
+            var names: [Int64: String] = [:]
+            if !entries.isEmpty, let whService = appCore.warehouseService {
+                let ids = Array(Set(entries.map(\.warehouseId)))
+                names = (try? whService.getWarehouseLocationNames(ids: ids)) ?? [:]
+            }
+
+            await MainActor.run {
+                stockEntries = entries
+                warehouseNames = names
+            }
         } catch {
             loadError = error.localizedDescription
         }

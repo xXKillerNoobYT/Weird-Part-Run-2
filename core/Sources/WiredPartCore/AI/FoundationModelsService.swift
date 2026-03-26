@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 
 #if canImport(FoundationModels)
 import FoundationModels
@@ -60,6 +61,29 @@ public struct AIResult: Sendable {
 
 // MARK: - Foundation Models Service
 
+/// A single message in an AI conversation, suitable for DB persistence.
+public struct AIConversationMessage: Sendable, Codable {
+    public let id: String
+    public let conversationId: String
+    public let role: String   // "user" or "assistant"
+    public let content: String
+    public let createdAt: String
+
+    public init(
+        id: String = UUID().uuidString,
+        conversationId: String,
+        role: String,
+        content: String,
+        createdAt: String = ISO8601DateFormatter().string(from: Date())
+    ) {
+        self.id = id
+        self.conversationId = conversationId
+        self.role = role
+        self.content = content
+        self.createdAt = createdAt
+    }
+}
+
 /// Provides on-device AI text generation via Apple Foundation Models.
 ///
 /// This service wraps `LanguageModelSession` to provide:
@@ -67,6 +91,7 @@ public struct AIResult: Sendable {
 /// - Text completion (autocomplete suggestions)
 /// - Text enhancement (proofread, rewrite, summarize, expand, professional)
 /// - Pre-fill generation for empty fields
+/// - Persistent chat sessions with conversation memory
 ///
 /// All methods are safe to call on any platform. On platforms where
 /// Foundation Models is not available, methods return graceful fallbacks.
@@ -82,6 +107,21 @@ public actor FoundationModelsService {
         concise and practical. Use terminology common in electrical contracting, \
         construction, and trade work.
         """
+
+    // MARK: - Conversation Memory
+
+    /// The active Foundation Models chat session, kept alive so follow-up messages
+    /// share context. Stored as `Any` to avoid referencing FM types outside the
+    /// `#if canImport(FoundationModels)` guard. The actual type is `LanguageModelSession`.
+    #if canImport(FoundationModels)
+    private var activeChatSession: (any Sendable)?
+    #endif
+
+    /// Conversation ID that the current active session belongs to.
+    private var activeChatConversationId: String?
+
+    /// In-memory message history for the current conversation.
+    private var messageHistory: [AIConversationMessage] = []
 
     public init(maxContextChars: Int = 1000) {
         self.maxContextChars = maxContextChars
@@ -269,6 +309,10 @@ public actor FoundationModelsService {
 
     /// Respond to a question using Foundation Models tool calling for real database access.
     ///
+    /// The session is persisted across calls for the same `conversationId`, so the model
+    /// remembers prior turns. Passing a different `conversationId` (or calling
+    /// `clearConversation()`) creates a fresh session.
+    ///
     /// Tools are automatically called by the framework when the model decides they're needed.
     /// Each tool respects user permissions — queries for data the user can't see return
     /// a permission-denied message instead of results.
@@ -278,12 +322,14 @@ public actor FoundationModelsService {
     ///   - db: The app database for tool queries.
     ///   - permissions: The current user's permission keys.
     ///   - navigationContext: A string describing the app's module/tab layout with access annotations.
+    ///   - conversationId: Identifier for this conversation thread. Defaults to `"default"`.
     /// - Returns: An `AIResult` containing the assistant's response.
     public func chatWithTools(
         query: String,
         db: AppDatabase,
         permissions: [String],
-        navigationContext: String
+        navigationContext: String,
+        conversationId: String = "default"
     ) async -> AIResult {
         guard !query.trimmingCharacters(in: .whitespaces).isEmpty else {
             return .fail("Empty query")
@@ -319,10 +365,27 @@ public actor FoundationModelsService {
                     \(navigationContext)
                     """
 
-                let session = LanguageModelSession(tools: tools, instructions: chatInstructions)
+                let session = getOrCreateChatSession(
+                    conversationId: conversationId,
+                    tools: tools,
+                    instructions: chatInstructions
+                )
                 let response = try await session.respond(to: query)
-                let text = response.content
-                return .ok(text.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines))
+                let text = response.content.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+
+                // Append user + assistant messages to in-memory history
+                let userMsg = AIConversationMessage(conversationId: conversationId, role: "user", content: query)
+                let assistantMsg = AIConversationMessage(conversationId: conversationId, role: "assistant", content: text)
+                messageHistory.append(userMsg)
+                messageHistory.append(assistantMsg)
+
+                // Persist to DB (fire-and-forget — don't block the response)
+                Task.detached { [db, userMsg, assistantMsg] in
+                    try? await Self.saveMessage(userMsg, to: db)
+                    try? await Self.saveMessage(assistantMsg, to: db)
+                }
+
+                return .ok(text)
             } catch {
                 return .fail("AI generation failed: \(error.localizedDescription)")
             }
@@ -332,6 +395,120 @@ public actor FoundationModelsService {
         #else
         return .fail("Foundation Models not available on this platform")
         #endif
+    }
+
+    // MARK: - Session Management
+
+    /// Returns the existing `LanguageModelSession` if the conversation ID matches,
+    /// otherwise creates a new session and caches it.
+    #if canImport(FoundationModels)
+    @available(macOS 26.0, iOS 26.0, *)
+    private func getOrCreateChatSession(
+        conversationId: String,
+        tools: [any FoundationModels.Tool],
+        instructions: String
+    ) -> LanguageModelSession {
+        if conversationId == activeChatConversationId,
+           let existing = activeChatSession as? LanguageModelSession {
+            return existing
+        }
+        let session = LanguageModelSession(tools: tools, instructions: instructions)
+        activeChatSession = session
+        activeChatConversationId = conversationId
+        messageHistory.removeAll()
+        return session
+    }
+    #endif
+
+    /// Clear the active conversation session and in-memory history.
+    /// The UI should call this when the user taps "New Conversation".
+    public func clearConversation() {
+        #if canImport(FoundationModels)
+        activeChatSession = nil
+        #endif
+        activeChatConversationId = nil
+        messageHistory.removeAll()
+    }
+
+    /// Returns the in-memory message history for debugging / display.
+    public func currentMessageHistory() -> [AIConversationMessage] {
+        messageHistory
+    }
+
+    // MARK: - DB Persistence
+
+    /// Save a single message row to the `ai_conversation_messages` table.
+    public static func saveMessage(_ msg: AIConversationMessage, to db: AppDatabase) async throws {
+        try await db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO ai_conversation_messages (id, conversation_id, role, content, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                arguments: [msg.id, msg.conversationId, msg.role, msg.content, msg.createdAt]
+            )
+        }
+    }
+
+    /// Load all messages for a conversation from the DB, ordered chronologically.
+    public static func loadConversation(_ conversationId: String, from db: AppDatabase) async throws -> [AIConversationMessage] {
+        try await db.writer.read { dbConn in
+            let rows = try Row.fetchAll(
+                dbConn,
+                sql: """
+                    SELECT id, conversation_id, role, content, created_at
+                    FROM ai_conversation_messages
+                    WHERE conversation_id = ?
+                    ORDER BY created_at ASC
+                    """,
+                arguments: [conversationId]
+            )
+            return rows.map { row in
+                AIConversationMessage(
+                    id: row["id"],
+                    conversationId: row["conversation_id"],
+                    role: row["role"],
+                    content: row["content"],
+                    createdAt: row["created_at"]
+                )
+            }
+        }
+    }
+
+    /// Delete all messages for a conversation from the DB.
+    public static func deleteConversation(_ conversationId: String, from db: AppDatabase) async throws {
+        try await db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "DELETE FROM ai_conversation_messages WHERE conversation_id = ?",
+                arguments: [conversationId]
+            )
+        }
+    }
+
+    /// List all distinct conversation IDs with their latest message timestamp.
+    public static func listConversations(from db: AppDatabase) async throws -> [(id: String, lastMessageAt: String, preview: String)] {
+        try await db.writer.read { dbConn in
+            let rows = try Row.fetchAll(
+                dbConn,
+                sql: """
+                    SELECT conversation_id,
+                           MAX(created_at) AS last_message_at,
+                           (SELECT content FROM ai_conversation_messages m2
+                            WHERE m2.conversation_id = m1.conversation_id
+                            ORDER BY created_at DESC LIMIT 1) AS preview
+                    FROM ai_conversation_messages m1
+                    GROUP BY conversation_id
+                    ORDER BY last_message_at DESC
+                    """
+            )
+            return rows.map { row in
+                (
+                    id: row["conversation_id"] as String,
+                    lastMessageAt: row["last_message_at"] as String,
+                    preview: row["preview"] as String
+                )
+            }
+        }
     }
 
     // MARK: - Private Generation

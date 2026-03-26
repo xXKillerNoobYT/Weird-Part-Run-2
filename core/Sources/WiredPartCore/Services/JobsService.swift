@@ -44,11 +44,13 @@ public final class JobsService: Sendable {
         public let teamCount: Int
         public let startDate: String?
         public let dueDate: String?
+        public let currentStageId: Int64?
 
         public init(
             id: Int64, jobNumber: String, jobName: String, customerName: String?,
             status: String, priority: String, jobType: String = "service",
-            teamCount: Int, startDate: String?, dueDate: String?
+            teamCount: Int, startDate: String?, dueDate: String?,
+            currentStageId: Int64? = nil
         ) {
             self.id = id
             self.jobNumber = jobNumber
@@ -60,6 +62,23 @@ public final class JobsService: Sendable {
             self.teamCount = teamCount
             self.startDate = startDate
             self.dueDate = dueDate
+            self.currentStageId = currentStageId
+        }
+    }
+
+    /// A job stage with its computed status relative to a job's progression.
+    public struct JobStageStatus: Sendable, Identifiable {
+        public let id: Int64
+        public let name: String
+        public let sortOrder: Int
+        /// "completed", "in_progress", or "pending"
+        public let status: String
+
+        public init(id: Int64, name: String, sortOrder: Int, status: String) {
+            self.id = id
+            self.name = name
+            self.sortOrder = sortOrder
+            self.status = status
         }
     }
 
@@ -384,6 +403,7 @@ public final class JobsService: Sendable {
                 let sql = """
                     SELECT j.id, j.job_number, j.job_name, j.customer_name,
                            j.status, j.priority, j.job_type, j.start_date, j.due_date,
+                           j.current_stage_id,
                            COALESCE((SELECT COUNT(*) FROM job_team_members jtm
                                      WHERE jtm.job_id = j.id AND jtm.deleted_at IS NULL), 0) AS team_count
                     FROM jobs j
@@ -404,7 +424,8 @@ public final class JobsService: Sendable {
                         jobType: row["job_type"] ?? "service",
                         teamCount: row["team_count"] ?? 0,
                         startDate: row["start_date"] as String?,
-                        dueDate: row["due_date"] as String?
+                        dueDate: row["due_date"] as String?,
+                        currentStageId: row["current_stage_id"] as Int64?
                     )
                 }
             }
@@ -1061,6 +1082,46 @@ public final class JobsService: Sendable {
             }
         } catch {
             if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// A summary of todo completion for a job.
+    public struct JobTodoSummary: Sendable {
+        public let totalTodos: Int
+        public let completedTodos: Int
+
+        public init(totalTodos: Int, completedTodos: Int) {
+            self.totalTodos = totalTodos
+            self.completedTodos = completedTodos
+        }
+    }
+
+    /// Get a summary of todo progress for a job (total and completed counts).
+    public func getJobTodoSummary(jobId: Int64) throws -> JobTodoSummary {
+        do {
+            return try db.writer.read { dbConn in
+                let row = try Row.fetchOne(dbConn, sql: """
+                    SELECT
+                        COUNT(*) AS total,
+                        SUM(CASE WHEN COALESCE(ne.task_status, 'pending') = 'complete' THEN 1 ELSE 0 END) AS completed
+                    FROM notebook_entries ne
+                    JOIN notebook_sections ns ON ns.id = ne.section_id
+                    JOIN notebooks n ON n.id = ns.notebook_id
+                    WHERE n.job_id = ?
+                      AND ne.entry_type = 'todo'
+                      AND ne.deleted_at IS NULL
+                      AND ne.is_deleted = 0
+                    """, arguments: [jobId])
+                return JobTodoSummary(
+                    totalTodos: row?["total"] ?? 0,
+                    completedTodos: row?["completed"] ?? 0
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return JobTodoSummary(totalTodos: 0, completedTodos: 0)
+            }
             throw error
         }
     }
@@ -1981,5 +2042,148 @@ public final class JobsService: Sendable {
             return true
         }
         return false
+    }
+
+    // =========================================================================
+    // MARK: - Job Stages
+    // =========================================================================
+
+    /// Get all job stages with computed status relative to a specific job's progression.
+    ///
+    /// - If the job has no `current_stage_id`, all stages are "pending" (job hasn't started staging).
+    /// - Stages before the current stage are "completed".
+    /// - The current stage is "in_progress".
+    /// - Stages after the current stage are "pending".
+    /// - If the job status is "completed", all stages are marked "completed".
+    public func listJobStages(forJobId jobId: Int64) throws -> [JobStageStatus] {
+        do {
+            return try db.writer.read { dbConn -> [JobStageStatus] in
+                // Get the job's current_stage_id and status
+                guard let jobRow = try Row.fetchOne(dbConn, sql: """
+                    SELECT current_stage_id, status FROM jobs WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [jobId]) else {
+                    return []
+                }
+
+                let currentStageId: Int64? = jobRow["current_stage_id"]
+                let jobStatus: String = jobRow["status"] ?? "active"
+
+                // Get all stages
+                let stageRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT id, name, sort_order FROM job_stages
+                    WHERE deleted_at IS NULL
+                    ORDER BY sort_order ASC
+                    """)
+
+                guard !stageRows.isEmpty else { return [] }
+
+                // If job is completed, all stages are completed
+                if jobStatus == "completed" {
+                    return stageRows.map { row in
+                        JobStageStatus(
+                            id: row["id"] ?? 0,
+                            name: row["name"] ?? "",
+                            sortOrder: row["sort_order"] ?? 0,
+                            status: "completed"
+                        )
+                    }
+                }
+
+                // No current stage set — all pending
+                guard let currentId = currentStageId else {
+                    return stageRows.map { row in
+                        JobStageStatus(
+                            id: row["id"] ?? 0,
+                            name: row["name"] ?? "",
+                            sortOrder: row["sort_order"] ?? 0,
+                            status: "pending"
+                        )
+                    }
+                }
+
+                // Get current stage's sort_order
+                let currentSortOrder: Int = try Int.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(sort_order, 0) FROM job_stages WHERE id = ?
+                    """, arguments: [currentId]) ?? 0
+
+                return stageRows.map { row in
+                    let stageId: Int64 = row["id"] ?? 0
+                    let sortOrder: Int = row["sort_order"] ?? 0
+                    let status: String
+                    if sortOrder < currentSortOrder {
+                        status = "completed"
+                    } else if stageId == currentId {
+                        status = "in_progress"
+                    } else {
+                        status = "pending"
+                    }
+                    return JobStageStatus(
+                        id: stageId,
+                        name: row["name"] ?? "",
+                        sortOrder: sortOrder,
+                        status: status
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) || isColumnNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Get all job stages (global list) without job-specific status.
+    /// Returns stages ordered by sort_order.
+    public func listAllJobStages() throws -> [JobStageStatus] {
+        do {
+            return try db.writer.read { dbConn -> [JobStageStatus] in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT id, name, sort_order FROM job_stages
+                    WHERE deleted_at IS NULL
+                    ORDER BY sort_order ASC
+                    """)
+                return rows.map { row in
+                    JobStageStatus(
+                        id: row["id"] ?? 0,
+                        name: row["name"] ?? "",
+                        sortOrder: row["sort_order"] ?? 0,
+                        status: "pending"
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Compute stage statuses from a currentStageId against a list of all stages.
+    /// Used to avoid re-querying the DB when stages are already loaded.
+    public static func computeStageStatuses(
+        allStages: [JobStageStatus],
+        currentStageId: Int64?,
+        jobStatus: String
+    ) -> [JobStageStatus] {
+        // If job is completed, all stages are completed
+        if jobStatus == "completed" {
+            return allStages.map {
+                JobStageStatus(id: $0.id, name: $0.name, sortOrder: $0.sortOrder, status: "completed")
+            }
+        }
+        guard let currentId = currentStageId else {
+            // No stage set — all pending
+            return allStages
+        }
+        let currentSortOrder = allStages.first(where: { $0.id == currentId })?.sortOrder ?? 0
+        return allStages.map { stage in
+            let status: String
+            if stage.sortOrder < currentSortOrder {
+                status = "completed"
+            } else if stage.id == currentId {
+                status = "in_progress"
+            } else {
+                status = "pending"
+            }
+            return JobStageStatus(id: stage.id, name: stage.name, sortOrder: stage.sortOrder, status: status)
+        }
     }
 }

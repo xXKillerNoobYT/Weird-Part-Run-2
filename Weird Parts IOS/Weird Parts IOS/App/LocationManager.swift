@@ -12,17 +12,33 @@ final class LocationManager: NSObject, ObservableObject {
     private var continuation: CheckedContinuation<CLLocation?, Never>?
 
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    @Published var permissionDenied = false
 
     override init() {
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBest
         authorizationStatus = manager.authorizationStatus
+        permissionDenied = (authorizationStatus == .denied || authorizationStatus == .restricted)
     }
 
     /// Request "when in use" location permission.
+    ///
+    /// Checks current authorization status first to avoid redundant prompts.
+    /// If previously denied or restricted, sets `permissionDenied` so the UI
+    /// can show an "Open Settings" prompt instead of silently failing.
     func requestPermission() {
-        manager.requestWhenInUseAuthorization()
+        let status = manager.authorizationStatus
+        switch status {
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .denied, .restricted:
+            permissionDenied = true
+        case .authorizedWhenInUse, .authorizedAlways:
+            permissionDenied = false
+        @unknown default:
+            manager.requestWhenInUseAuthorization()
+        }
     }
 
     /// Get a single location fix. Returns nil if location services
@@ -63,6 +79,7 @@ extension LocationManager: CLLocationManagerDelegate {
         let status = manager.authorizationStatus
         Task { @MainActor in
             self.authorizationStatus = status
+            self.permissionDenied = (status == .denied || status == .restricted)
         }
     }
 }

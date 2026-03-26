@@ -17,6 +17,7 @@ struct IOSEmployeeDetailPage: View {
 
     private enum ActiveSheet: String, Identifiable {
         case editContact
+        case help
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
@@ -44,6 +45,11 @@ struct IOSEmployeeDetailPage: View {
                 Button("Edit") { activeSheet = .editContact }
                     .disabled(employee == nil)
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -55,7 +61,7 @@ struct IOSEmployeeDetailPage: View {
                         phone: emp.phone ?? ""
                     ) { name, email, phone in
                         guard let service = appCore.peopleService else {
-                            // Service not ready
+                            loadError = "People service not available"
                             return
                         }
                         try service.updateEmployeeContact(
@@ -67,6 +73,17 @@ struct IOSEmployeeDetailPage: View {
                         loadData()
                     }
                 }
+            case .help:
+                PageHelpSheet(
+                    title: "Employee Detail Help",
+                    sections: [
+                        ("What This Page Does", "View and edit a single employee's profile, hat assignments, and team memberships. Use the tabs to switch between Profile, Hats, and Teams views."),
+                        ("Profile Tab", "Shows the employee's basic info: name, email, phone, role, status, and important dates. Tap Edit in the toolbar to update their contact information."),
+                        ("Hats Tab", "Displays all available hats (roles) and which ones are assigned to this employee. If you have manage_people permission, you can toggle hats on and off directly. Each hat grants a set of permissions."),
+                        ("Teams Tab", "Shows which teams this employee belongs to, their role within each team, and when they joined."),
+                        ("Tips", "Pull down to refresh all data. Only managers and admins can toggle hat assignments. The Edit button updates contact info only — use the Hats tab for role changes.")
+                    ]
+                )
             }
         }
     }

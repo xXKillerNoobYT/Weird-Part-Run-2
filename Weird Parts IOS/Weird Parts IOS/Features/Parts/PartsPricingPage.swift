@@ -60,7 +60,7 @@ struct PartsPricingPage: View {
                     Image(systemName: viewMode.icon)
                 }
             }
-            ToolbarItem(placement: .secondaryAction) {
+            ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }

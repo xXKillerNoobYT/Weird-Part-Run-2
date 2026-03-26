@@ -26,9 +26,22 @@ struct IOSReceiveShipmentPage: View {
     @State private var routingItemId: Int64?  // item currently being routed
     @State private var routingResults: [Int64: RoutingResult] = [:]  // itemId -> result
 
+    // Barcode scanner (61K)
+    @State private var showBarcodeScanner = false
+    @State private var highlightedItemId: Int64?
+    @State private var scanError: String?
+
+    // Discard confirmation
+    @State private var showDiscardConfirmation = false
+
+    // Unrouted items warning (62H)
+    @State private var showUnroutedWarning = false
+
     private enum ActiveSheet: Identifiable {
         case qrScanner
+        case barcodeScanner
         case routeItem(WarehouseService.ReceivingItemInfo)
+        case help
         var id: String { String(describing: self) }
     }
 
@@ -79,6 +92,22 @@ struct IOSReceiveShipmentPage: View {
             case .wrongPart: .red
             }
         }
+    }
+
+    /// Items that have been received (qty > 0) but not yet routed (62H).
+    private var unroutedItems: [WarehouseService.ReceivingItemInfo] {
+        sessionItems.filter { item in
+            let qty = receivedQtys[item.id] ?? 0
+            return qty > 0 && routingResults[item.id] == nil
+        }
+    }
+
+    /// Whether the user has entered data that would be lost by navigating away.
+    private var hasUnsavedWork: Bool {
+        guard activeSessionId != nil else { return false }
+        let hasQuantities = receivedQtys.values.contains(where: { $0 > 0 })
+        let hasRouting = !routingResults.isEmpty
+        return hasQuantities || hasRouting
     }
 
     var body: some View {
@@ -139,6 +168,11 @@ struct IOSReceiveShipmentPage: View {
                     }
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -149,12 +183,17 @@ struct IOSReceiveShipmentPage: View {
                     }
                 }
                 .environmentObject(appCore)
+            case .barcodeScanner:
+                QRScanSheet(expectedType: .part) { result in
+                    handleScannedBarcode(code: result.code)
+                }
+                .environmentObject(appCore)
             case .routeItem(let item):
                 NavigationStack {
                     ReceivingRoutingFlow(
                         item: item,
                         poLineId: item.poLineId,
-                        receivedQty: receivedQtys[item.id] ?? item.receivedQty,
+                        receivedQty: receivedQtys[item.id] ?? item.expectedQty,
                         onRouteComplete: { route in
                             routingResults[item.id] = RoutingResult(route: route)
                         },
@@ -171,6 +210,17 @@ struct IOSReceiveShipmentPage: View {
                     }
                     .environmentObject(appCore)
                 }
+            case .help:
+                PageHelpSheet(
+                    title: "Receive Shipment Help",
+                    sections: [
+                        ("What This Page Does", "Check in parts when a shipment arrives from a supplier. Verify quantities, check prices against the PO, and route each part to its destination (job staging, shelf, or return)."),
+                        ("How to Use It", "1. Find the PO in the list or scan its QR code.\n2. Tap 'Receive' to start a receiving session.\n3. For each item, set the received quantity (use +/- or tap 'All').\n4. Verify the price -- tap Matches, Different, or Not Shown.\n5. Tap 'Route This Part' to decide where it goes.\n6. When done, tap 'Complete Receiving' to finalize."),
+                        ("Routing Options", "Stage for Job: send directly to a job's staging area. Put on Shelf: restock the shop inventory. Return: flag for return to supplier. The system suggests routing based on pending job demand and stock levels."),
+                        ("Price Verification", "If the receipt price differs from the PO price, select 'Different' and enter the actual price. This updates the cost record. 'Not Shown' is for items where the supplier did not include pricing on the packing slip."),
+                        ("Tips", "The routing progress summary shows how many items you've routed and a breakdown of decisions. You can re-route any item before completing. Tap 'Back' to exit without completing -- your session is saved.")
+                    ]
+                )
             }
         }
         .task { loadData() }
@@ -227,73 +277,256 @@ struct IOSReceiveShipmentPage: View {
 
     // MARK: - Receiving Detail View
 
+    /// Items where received quantity differs from expected (61L).
+    private var discrepancyItems: [(item: WarehouseService.ReceivingItemInfo, received: Int)] {
+        sessionItems.compactMap { item in
+            let received = receivedQtys[item.id] ?? item.expectedQty
+            guard received != item.expectedQty else { return nil }
+            return (item: item, received: received)
+        }
+    }
+
     @ViewBuilder
     private var receivingDetailView: some View {
-        List {
-            // Routing progress summary (when items have been routed)
-            if !routingResults.isEmpty {
+        ScrollViewReader { scrollProxy in
+            List {
+                // Pre-filled info banner (61L)
                 Section {
-                    routingProgressSummary
-                } header: {
-                    Text("Routing Progress")
-                }
-            }
+                    Label(
+                        "Quantities pre-filled from PO. Adjust any short or extra items.",
+                        systemImage: "info.circle.fill"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.blue)
 
-            ForEach(sessionItems, id: \.id) { item in
-                Section {
-                    receivingItemRow(item)
-                } header: {
-                    HStack {
-                        Text(item.partName)
-                        Spacer()
-                        if let result = routingResults[item.id] {
-                            Label(result.label, systemImage: result.icon)
-                                .font(.caption2)
-                                .foregroundStyle(result.color)
+                    // Reset to Expected / Clear All buttons (61L)
+                    HStack(spacing: 12) {
+                        Button {
+                            for item in sessionItems {
+                                receivedQtys[item.id] = item.expectedQty
+                            }
+                        } label: {
+                            Label("Reset to Expected", systemImage: "arrow.counterclockwise")
+                                .font(.caption)
                         }
+                        .buttonStyle(.bordered)
+
+                        Button(role: .destructive) {
+                            for item in sessionItems {
+                                receivedQtys[item.id] = 0
+                            }
+                        } label: {
+                            Label("Clear All", systemImage: "xmark.circle")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
                     }
                 }
-            }
 
-            Section {
-                Button {
-                    Task { await completeReceiving() }
-                } label: {
-                    HStack {
-                        Spacer()
-                        if isCompleting {
-                            ProgressView()
+                // Routing progress summary (when items have been routed)
+                if !routingResults.isEmpty {
+                    Section {
+                        routingProgressSummary
+                    } header: {
+                        Text("Routing Progress")
+                    }
+                }
+
+                ForEach(sessionItems, id: \.id) { item in
+                    let received = receivedQtys[item.id] ?? item.expectedQty
+                    let isAdjusted = received != item.expectedQty
+                    Section {
+                        receivingItemRow(item)
+                            .listRowBackground(
+                                highlightedItemId == item.id
+                                    ? Color.green.opacity(0.15)
+                                    : isAdjusted ? Color.orange.opacity(0.08) : nil
+                            )
+                    } header: {
+                        HStack {
+                            Text(item.partName)
+                            if isAdjusted {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                            }
+                            Spacer()
+                            if let result = routingResults[item.id] {
+                                Label(result.label, systemImage: result.icon)
+                                    .font(.caption2)
+                                    .foregroundStyle(result.color)
+                            }
+                        }
+                    }
+                    .id(item.id)
+                }
+
+                // Discrepancy summary (61L) — shown before complete button
+                if !discrepancyItems.isEmpty {
+                    Section {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("\(discrepancyItems.count) item\(discrepancyItems.count == 1 ? "" : "s") differ from expected",
+                                  systemImage: "exclamationmark.triangle.fill")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.orange)
+
+                            ForEach(discrepancyItems, id: \.item.id) { entry in
+                                HStack {
+                                    Text(entry.item.partName)
+                                        .font(.caption)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Text("Expected: \(entry.item.expectedQty)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Image(systemName: "arrow.right")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                    Text("Received: \(entry.received)")
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                        .foregroundStyle(entry.received < entry.item.expectedQty ? .red : .orange)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    } header: {
+                        Text("Discrepancy Summary")
+                    }
+                }
+
+                Section {
+                    Button {
+                        // Check for unrouted items before completing (62H)
+                        if !unroutedItems.isEmpty {
+                            showUnroutedWarning = true
                         } else {
-                            Label("Complete Receiving", systemImage: "checkmark.circle.fill")
-                                .fontWeight(.semibold)
+                            Task { await completeReceiving() }
                         }
-                        Spacer()
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if isCompleting {
+                                ProgressView()
+                            } else {
+                                Label("Complete Receiving", systemImage: "checkmark.circle.fill")
+                                    .fontWeight(.semibold)
+                            }
+                            Spacer()
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(isCompleting)
+                }
+
+                if let error = actionError {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.subheadline)
                     }
                 }
-                .frame(minHeight: 44)
-                .disabled(isCompleting)
-            }
 
-            if let error = actionError {
+                // Cancel session button
                 Section {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                        .font(.subheadline)
+                    Button(role: .destructive) {
+                        if hasUnsavedWork {
+                            showDiscardConfirmation = true
+                        } else {
+                            activeSessionId = nil
+                            sessionItems = []
+                            priceVerifications = [:]
+                            receivedQtys = [:]
+                            routingResults = [:]
+                            loadData()
+                        }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Label("Cancel Receiving Session", systemImage: "xmark.circle")
+                                .font(.subheadline)
+                            Spacer()
+                        }
+                    }
+                    .frame(minHeight: 44)
+                }
+            }
+            .listStyle(.insetGrouped)
+            .onChange(of: highlightedItemId) { _, newId in
+                // Auto-scroll to highlighted item on barcode scan (61K)
+                if let id = newId {
+                    withAnimation {
+                        scrollProxy.scrollTo(id, anchor: .center)
+                    }
+                    // Clear highlight after 2 seconds
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                        if highlightedItemId == id {
+                            withAnimation { highlightedItemId = nil }
+                        }
+                    }
                 }
             }
         }
-        .listStyle(.insetGrouped)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Button("Back") {
-                    activeSessionId = nil
-                    sessionItems = []
-                    priceVerifications = [:]
-                    receivedQtys = [:]
-                    routingResults = [:]
-                    loadData()
+                Button {
+                    if hasUnsavedWork {
+                        showDiscardConfirmation = true
+                    } else {
+                        activeSessionId = nil
+                        sessionItems = []
+                        priceVerifications = [:]
+                        receivedQtys = [:]
+                        routingResults = [:]
+                        loadData()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text("Back")
+                    }
                 }
             }
+            // Barcode scan button (61K)
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    activeSheet = .barcodeScanner
+                } label: {
+                    Image(systemName: "barcode.viewfinder")
+                }
+            }
+        }
+        .alert("Barcode Not Found", isPresented: .constant(scanError != nil)) {
+            Button("OK") { scanError = nil }
+        } message: {
+            Text(scanError ?? "")
+        }
+        .confirmationDialog("Discard Receiving Data?", isPresented: $showDiscardConfirmation, titleVisibility: .visible) {
+            Button("Keep Working", role: .cancel) { }
+            Button("Discard", role: .destructive) {
+                receivedQtys = [:]
+                routingResults = [:]
+                priceVerifications = [:]
+                activeSessionId = nil
+                sessionItems = []
+                loadData()
+            }
+        } message: {
+            Text("You have unsaved receiving data. Going back will discard all entered quantities and routing decisions.")
+        }
+        // Unrouted items warning before completing (62H)
+        .confirmationDialog(
+            "Unrouted Items",
+            isPresented: $showUnroutedWarning,
+            titleVisibility: .visible
+        ) {
+            Button("Continue Anyway") {
+                Task { await completeReceiving() }
+            }
+            Button("Go Back and Route Items", role: .cancel) { }
+        } message: {
+            Text("\(unroutedItems.count) item\(unroutedItems.count == 1 ? " has" : "s have") been received but not routed to a location. Continue anyway?")
         }
     }
 
@@ -373,7 +606,7 @@ struct IOSReceiveShipmentPage: View {
                 Spacer()
                 HStack(spacing: 12) {
                     Button {
-                        let current = receivedQtys[item.id] ?? item.receivedQty
+                        let current = receivedQtys[item.id] ?? item.expectedQty
                         if current > 0 {
                             receivedQtys[item.id] = current - 1
                         }
@@ -383,14 +616,18 @@ struct IOSReceiveShipmentPage: View {
                     }
                     .buttonStyle(.plain)
 
-                    Text("\(receivedQtys[item.id] ?? item.receivedQty)")
+                    Text("\(receivedQtys[item.id] ?? item.expectedQty)")
                         .font(.title3)
                         .fontWeight(.semibold)
                         .frame(minWidth: 40)
                         .multilineTextAlignment(.center)
+                        .foregroundStyle(
+                            (receivedQtys[item.id] ?? item.expectedQty) != item.expectedQty
+                                ? .orange : .primary
+                        )
 
                     Button {
-                        let current = receivedQtys[item.id] ?? item.receivedQty
+                        let current = receivedQtys[item.id] ?? item.expectedQty
                         receivedQtys[item.id] = current + 1
                     } label: {
                         Image(systemName: "plus.circle.fill")
@@ -398,8 +635,8 @@ struct IOSReceiveShipmentPage: View {
                     }
                     .buttonStyle(.plain)
 
-                    // Quick-fill to expected qty
-                    if (receivedQtys[item.id] ?? item.receivedQty) != item.expectedQty {
+                    // Quick-fill to expected qty (shown when quantity differs)
+                    if (receivedQtys[item.id] ?? item.expectedQty) != item.expectedQty {
                         Button {
                             receivedQtys[item.id] = item.expectedQty
                         } label: {
@@ -432,7 +669,7 @@ struct IOSReceiveShipmentPage: View {
 
     @ViewBuilder
     private func routingSection(item: WarehouseService.ReceivingItemInfo) -> some View {
-        let qty = receivedQtys[item.id] ?? item.receivedQty
+        let qty = receivedQtys[item.id] ?? item.expectedQty
 
         VStack(alignment: .leading, spacing: 8) {
             if let result = routingResults[item.id] {
@@ -554,7 +791,7 @@ struct IOSReceiveShipmentPage: View {
                     TextField("0.00", text: Binding(
                         get: {
                             if case .different(let p) = priceVerifications[itemId] {
-                                return p > 0 ? String(format: "%.5f", p) : ""
+                                return p > 0 ? String(format: "%.2f", p) : ""
                             }
                             return ""
                         },
@@ -567,6 +804,44 @@ struct IOSReceiveShipmentPage: View {
                     .frame(maxWidth: 120)
                 }
             }
+        }
+    }
+
+    // MARK: - Barcode Scan Handler (61K)
+
+    /// Match scanned barcode/code against session line items by partCode or partName.
+    /// Auto-increments received quantity and highlights the matched item.
+    private func handleScannedBarcode(code: String) {
+        guard !code.isEmpty else {
+            scanError = "Empty barcode scanned."
+            return
+        }
+
+        let normalizedCode = code.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        // Try to match against partCode first, then partName
+        let matchedItem = sessionItems.first { item in
+            if let partCode = item.partCode,
+               partCode.lowercased() == normalizedCode {
+                return true
+            }
+            return false
+        } ?? sessionItems.first { item in
+            item.partName.lowercased() == normalizedCode
+        }
+
+        guard let item = matchedItem else {
+            scanError = "No line item matches barcode \"\(code)\". Check the PO or scan a different code."
+            return
+        }
+
+        // Auto-increment received quantity
+        let currentQty = receivedQtys[item.id] ?? item.expectedQty
+        receivedQtys[item.id] = currentQty + 1
+
+        // Highlight the matched item (triggers auto-scroll via onChange)
+        withAnimation {
+            highlightedItemId = item.id
         }
     }
 
@@ -592,13 +867,18 @@ struct IOSReceiveShipmentPage: View {
 
     private func loadSessionItems() {
         guard let service = appCore.warehouseService,
-              let sessionId = activeSessionId else { return }
+              let sessionId = activeSessionId else {
+            loadError = "Warehouse service not available"
+            isLoading = false
+            return
+        }
         do {
             sessionItems = try service.getSessionItems(sessionId: sessionId)
-            // Pre-fill received qtys
+            // Pre-fill received quantities from expected (61L)
+            // Default to expected qty so the user only needs to adjust discrepancies
             for item in sessionItems {
                 if receivedQtys[item.id] == nil {
-                    receivedQtys[item.id] = item.receivedQty
+                    receivedQtys[item.id] = item.expectedQty
                 }
             }
         } catch {
@@ -608,14 +888,18 @@ struct IOSReceiveShipmentPage: View {
 
     private func completeReceiving() async {
         guard let warehouseService = appCore.warehouseService,
-              let sessionId = activeSessionId else { return }
+              let sessionId = activeSessionId else {
+            loadError = "Warehouse service not available"
+            isLoading = false
+            return
+        }
         isCompleting = true
         actionError = nil
 
         do {
             // Update received quantities
             for item in sessionItems {
-                let qty = receivedQtys[item.id] ?? item.receivedQty
+                let qty = receivedQtys[item.id] ?? item.expectedQty
                 try warehouseService.updateSessionItem(itemId: item.id, receivedQty: qty)
             }
 
@@ -630,7 +914,7 @@ struct IOSReceiveShipmentPage: View {
             if let partsService = appCore.partsService {
                 for item in sessionItems {
                     guard let partId = item.partId else { continue }
-                    let qty = receivedQtys[item.id] ?? item.receivedQty
+                    let qty = receivedQtys[item.id] ?? item.expectedQty
                     guard qty > 0 else { continue }
 
                     let verification = priceVerifications[item.id]

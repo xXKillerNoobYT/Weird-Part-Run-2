@@ -17,10 +17,12 @@ struct IOSContractorDetailPage: View {
 
     private enum ActiveSheet: Identifiable {
         case addNote
+        case help
 
         var id: String {
             switch self {
             case .addNote: return "addNote"
+            case .help: return "help"
             }
         }
     }
@@ -41,6 +43,13 @@ struct IOSContractorDetailPage: View {
             }
         }
         .navigationTitle("\(contractor.firstName) \(contractor.lastName)")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
         .refreshable { loadData() }
         .task { loadData() }
         .sheet(item: $activeSheet) { sheet in
@@ -48,6 +57,17 @@ struct IOSContractorDetailPage: View {
             case .addNote:
                 AddContractorNoteSheet(contractorId: contractor.id) { loadData() }
                     .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(
+                    title: "Contractor Detail Help",
+                    sections: [
+                        ("What This Page Does", "View all details for a single contractor: contact info, qualifications, performance ratings, job history, and notes."),
+                        ("Contact Info", "Shows the contractor's name, company, phone (tappable to call), and email (tappable to send). This is the primary point of contact for the sub-contractor."),
+                        ("Qualifications", "Track important compliance documents like licenses, insurance certificates, and W-9 forms. Expiration dates are color-coded: green for valid, red for expired."),
+                        ("Performance Rating", "Sub-contractors receive ratings for quality, on-time delivery, and reliability on a 1-5 star scale. The overall score is a combined average."),
+                        ("Tips", "Pull down to refresh. Use the Add Note button in the Notes section to record interactions, issues, or general feedback about this contractor. Notes include timestamps and who wrote them.")
+                    ]
+                )
             }
         }
     }

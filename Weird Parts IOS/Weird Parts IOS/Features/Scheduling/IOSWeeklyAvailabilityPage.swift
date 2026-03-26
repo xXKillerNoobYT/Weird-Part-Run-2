@@ -16,6 +16,13 @@ struct IOSWeeklyAvailabilityPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var weekOffset = 0
+    @State private var searchText = ""
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     private let dayLabels = ["M", "T", "W", "T", "F", "S", "S"]
 
@@ -44,6 +51,22 @@ struct IOSWeeklyAvailabilityPage: View {
             availabilityContent
         }
         .navigationTitle("Availability")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Weekly Availability Help", sections: [
+                ("What This Page Does", "The Weekly Availability page shows a grid of all employees and their availability for each day of the week. Green dots mean the person is available that day; red dots mean they are not."),
+                ("How to Use It", "Navigate between weeks using the left and right arrows. The grid shows Monday through Sunday columns. Each employee row has colored dots indicating their availability for each day. Pull down to refresh."),
+                ("Reading the Grid", "Green dot means the employee is available to work that day. Red dot means they are unavailable, whether due to time off, personal schedule, or other reasons."),
+                ("Tips", "Use this view when planning the dispatch board to quickly see who is free each day. Cross-reference with the Dispatch Board to make sure you are not assigning people on their days off.")
+            ])
+        }
+        .searchable(text: $searchText, prompt: "Search employees...")
         .refreshable { loadData() }
         .task { loadData() }
     }
@@ -76,6 +99,15 @@ struct IOSWeeklyAvailabilityPage: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
+    }
+
+    // MARK: - Filtered Data
+
+    private var filteredRows: [SchedulingService.WeeklyAvailabilityRow] {
+        if searchText.isEmpty { return rows }
+        return rows.filter {
+            $0.employeeName.localizedCaseInsensitiveContains(searchText)
+        }
     }
 
     // MARK: - Content
@@ -113,7 +145,7 @@ struct IOSWeeklyAvailabilityPage: View {
                 }
 
                 Section {
-                    ForEach(rows) { row in
+                    ForEach(filteredRows) { row in
                         availabilityRow(row)
                     }
                 }

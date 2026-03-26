@@ -15,11 +15,13 @@ struct IOSClockOutQuestionsPage: View {
     @State private var questions: [SettingsService.ClockOutQuestionRow] = []
     @State private var errorMessage: String?
     private enum ActiveSheet: Identifiable {
+        case help
         case add
         case edit(SettingsService.ClockOutQuestionRow)
 
         var id: String {
             switch self {
+            case .help: "help"
             case .add: "add"
             case .edit(let q): "edit-\(q.id)"
             }
@@ -79,10 +81,20 @@ struct IOSClockOutQuestionsPage: View {
                     Image(systemName: "plus")
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .task { loadData() }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
+            case .help:
+                PageHelpSheet(title: "Clock-Out Questions Help", sections: [
+                    ("What This Page Does", "Manages the questionnaire employees see when clocking out. Questions can be text, yes/no, or multiple choice. Answers are saved with the time entry for reporting."),
+                    ("How to Use It", "Tap + to add a new question. Set the question type and whether it's required. Swipe left on a question to edit or delete it. Reorder by dragging. Pull down to refresh."),
+                ])
             case .add:
                 questionFormSheet
             case .edit(let question):

@@ -104,6 +104,9 @@ struct IOSEstimationQuestionnairePage: View {
             }
         }
         .navigationTitle("Estimation — \(stageLabel)")
+        .refreshable {
+            await loadData()
+        }
         .task { await loadData() }
     }
 

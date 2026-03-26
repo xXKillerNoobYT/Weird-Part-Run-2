@@ -14,7 +14,15 @@ struct JobReportsPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var searchText = ""
-    @State private var showHelp = false
+    @State private var activeSheet: ActiveSheet?
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+    @State private var customEnd: Date = Date()
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
+
+    private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
+    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
 
     private var filteredReports: [JobsService.DailyReportRow] {
         guard !searchText.isEmpty else { return reports }
@@ -27,17 +35,20 @@ struct JobReportsPage: View {
     }
 
     var body: some View {
-        reportContent
+        VStack(spacing: 0) {
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
+            reportContent
+        }
             .navigationTitle("Daily Reports")
             .searchable(text: $searchText, prompt: "Search by job name or date...")
             .toolbar {
-                ToolbarItem(placement: .secondaryAction) {
-                    Button { showHelp = true } label: {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
                 }
             }
-            .sheet(isPresented: $showHelp) {
+            .sheet(item: $activeSheet) { _ in
                 PageHelpSheet(
                     title: "Job Reports Help",
                     sections: [
@@ -49,6 +60,9 @@ struct JobReportsPage: View {
             }
             .refreshable { loadReports() }
             .task { loadReports() }
+            .onChange(of: dateRange) { loadReports() }
+            .onChange(of: customStart) { loadReports() }
+            .onChange(of: customEnd) { loadReports() }
     }
 
     // MARK: - Content

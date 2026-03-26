@@ -11,6 +11,7 @@ struct IOSKeyManagementPage: View {
 
     // MARK: - State
 
+    @State private var activeSheet: ActiveSheet?
     @State private var isLoading = true
     @State private var keyFingerprint: String?
     @State private var keyCreatedAt: String?
@@ -36,7 +37,25 @@ struct IOSKeyManagementPage: View {
             }
         }
         .navigationTitle("Encryption Keys")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Encryption Keys Help", sections: [
+                ("What This Page Does", "Displays the status and details of this device's Ed25519 signing key used for sync verification. Each device has a unique key pair for signing data."),
+                ("How to Use It", "Review your key status and fingerprint here. Key rotation and advanced management must be performed from the desktop application. All paired devices re-verify after a rotation."),
+            ])
+        }
         .task { loadData() }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     // MARK: - Key Status

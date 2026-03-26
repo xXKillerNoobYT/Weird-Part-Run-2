@@ -143,6 +143,8 @@ struct IOSContentRouter: View {
             WarehouseRouter(tabId: "warehouse-inventory")
         case "/warehouse/tools":
             WarehouseRouter(tabId: "warehouse-tools")
+        case "/warehouse/leaderboard":
+            WarehouseRouter(tabId: "warehouse-leaderboard")
         case "/warehouse/network":
             WarehouseRouter(tabId: "warehouse-network")
         case "/warehouse/settings":
@@ -161,6 +163,10 @@ struct IOSContentRouter: View {
             OrdersRouter(tabId: "orders-staging")
         case "/orders/approvals":
             OrdersRouter(tabId: "orders-approvals")
+        case "/orders/parts":
+            OrdersRouter(tabId: "orders-parts")
+        case "/orders/wishlist":
+            OrdersRouter(tabId: "orders-wishlist")
 
         // Fleet sub-routes
         case "/fleet/vehicles", "/trucks/fleet":
@@ -187,6 +193,8 @@ struct IOSContentRouter: View {
             FleetRouter(tabId: "fleet-truck-tools")
 
         // People sub-routes
+        case "/people/dashboard":
+            PeopleRouter(tabId: "people-dashboard")
         case "/people/customers":
             PeopleRouter(tabId: "people-customers")
         case "/people/contacts":
@@ -240,6 +248,8 @@ struct IOSContentRouter: View {
             OfficeRouter(tabId: "office-estimation-settings")
         case "/office/pipeline":
             OfficeRouter(tabId: "office-pipeline")
+        case "/office/spending":
+            OfficeRouter(tabId: "office-spending")
         case "/office/teams":
             OfficeRouter(tabId: "office-teams")
         case "/office/reports":
@@ -276,6 +286,8 @@ struct IOSContentRouter: View {
             IOSBookkeeperExportPage()
         case "/reports/labor-overview":
             IOSLaborOverviewPage()
+        case "/reports/public":
+            IOSPublicReportView(reportToken: "")
 
         // Tools sub-routes
         case "/tools/registry":

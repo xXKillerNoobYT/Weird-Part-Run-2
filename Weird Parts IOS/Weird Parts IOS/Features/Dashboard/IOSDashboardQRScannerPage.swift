@@ -26,7 +26,9 @@ struct IOSDashboardQRScannerPage: View {
 
     // Manual entry
     @State private var manualCode = ""
-    @State private var showHelp = false
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     #if os(iOS) && !targetEnvironment(macCatalyst)
     @State private var scanner: IOSQRScanner?
@@ -53,13 +55,13 @@ struct IOSDashboardQRScannerPage: View {
         .navigationTitle("QR Scanner")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .secondaryAction) {
-                Button { showHelp = true } label: {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
+        .sheet(item: $activeSheet) { _ in
             PageHelpSheet(
                 title: "QR Scanner Help",
                 sections: [
@@ -515,7 +517,10 @@ struct IOSDashboardQRScannerPage: View {
     // MARK: - Helpers
 
     private func loadPartStockLocations(partId: Int64) throws -> [StockLocation] {
-        guard let service = appCore.warehouseService else { return [] }
+        guard let service = appCore.warehouseService else {
+            scanError = "Warehouse service not available"
+            return []
+        }
         let stockByType = try service.getPartStockByLocationType(partId: partId)
         return stockByType.map { entry in
             let label = switch entry.locationType {

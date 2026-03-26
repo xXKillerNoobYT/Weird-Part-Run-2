@@ -7,12 +7,16 @@ struct SchedulingDispatchEfficiencyReport: View {
     @State private var efficiencyData: [SchedulingService.DispatchEfficiencyRow] = []
     @State private var loadError: String?
     @State private var isLoading = true
+    @State private var dateRange: ReportDateRange = .thisWeek
     @State private var startDate = Calendar.current.dateInterval(of: .weekOfYear, for: Date())?.start ?? Date()
     @State private var endDate = Date()
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     var body: some View {
         List {
-            StandardFilterBar(startDate: $startDate, endDate: $endDate)
+            StandardFilterBar(selectedRange: $dateRange, customStart: $startDate, customEnd: $endDate)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets())
 
@@ -85,6 +89,20 @@ struct SchedulingDispatchEfficiencyReport: View {
                                          "\($0.completedCount)",
                                          "\(Int($0.efficiency * 100))%"] }
         )
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Dispatch Efficiency Help", sections: [
+                ("What This Page Does", "Tracks how well dispatch assignments are being completed each day. For every date, it shows how many jobs were scheduled, dispatched, and completed. The completion rate tells you how reliable your dispatch process is."),
+                ("How to Use It", "Set a date range to see daily efficiency numbers. The summary shows the overall average completion rate. Each date row breaks down scheduled, dispatched, and completed counts with a color-coded percentage."),
+                ("Tips", "A completion rate below 80% means jobs are being scheduled but not finished. Look at the days with the lowest rates to find patterns. Weather, missing materials, or crew shortages are common causes.")
+            ])
+        }
         .onAppear { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }

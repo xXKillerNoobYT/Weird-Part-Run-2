@@ -20,12 +20,14 @@ struct IOSCustomerDetailPage: View {
         case addContact
         case addNote
         case addPayment
+        case help
 
         var id: String {
             switch self {
             case .addContact: return "addContact"
             case .addNote: return "addNote"
             case .addPayment: return "addPayment"
+            case .help: return "help"
             }
         }
     }
@@ -46,6 +48,13 @@ struct IOSCustomerDetailPage: View {
             }
         }
         .navigationTitle(customer.companyName ?? customer.contactName ?? "Customer")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
         .refreshable { loadData() }
         .task { loadData() }
         .sheet(item: $activeSheet) { sheet in
@@ -59,6 +68,17 @@ struct IOSCustomerDetailPage: View {
             case .addPayment:
                 AddPaymentSheet(customerId: customer.id) { loadData() }
                     .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(
+                    title: "Customer Detail Help",
+                    sections: [
+                        ("What This Page Does", "View all details for a single customer: contact info, additional contacts, business info, billing and payment status, job history, communication log, documents, and lifetime stats."),
+                        ("Contacts", "The primary contact info shows phone (tappable to call), email (tappable to send), and address. The Additional Contacts section lets you add site contacts, billing contacts, or other people associated with this customer."),
+                        ("Billing & Payment", "If you have financial permissions, the Billing section shows total revenue, average job size, and a payment status bar. When payment tracking is enabled, you can see individual invoices and record new payments."),
+                        ("Communication Log", "Track calls, emails, meetings, and notes with timestamps and who recorded them. Use the Add Note button to log a new interaction."),
+                        ("Tips", "Pull down to refresh. Phone numbers and emails are tappable links. The job history section shows all jobs for this customer with color-coded status badges. Lifetime stats at the bottom give you a quick snapshot of the relationship.")
+                    ]
+                )
             }
         }
     }

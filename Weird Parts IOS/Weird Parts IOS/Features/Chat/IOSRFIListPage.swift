@@ -18,6 +18,7 @@ struct IOSRFIListPage: View {
     @State private var actionError: String?
     private enum ActiveSheet: String, Identifiable {
         case createRFI
+        case help
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
@@ -50,12 +51,28 @@ struct IOSRFIListPage: View {
                     Image(systemName: "plus")
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .createRFI:
                 IOSQAQuestionForm(onSubmitted: { loadData() })
                     .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(
+                    title: "RFI Help",
+                    sections: [
+                        ("What This Page Does", "RFIs (Requests for Information) are questions that have been escalated to the office level. This page gives office and management a single view of all open RFIs across every job, plus supplier questions that need responses."),
+                        ("How to Use It", "Use the filter cards to view All RFIs, just Open ones, those Pending Response from suppliers, or Closed items. Tap any RFI to see the full escalation timeline -- who asked it, what level it came from, and any answers provided so far."),
+                        ("Supplier Questions", "The Supplier Questions section shows inquiries sent to or from suppliers. These might be about pricing, availability, lead times, or technical specs. They appear separately so office staff can track vendor communications."),
+                        ("Creating an RFI", "Tap the + button to create a new RFI. Select the job, type the question, and set the priority. The RFI enters the escalation chain and notifies the appropriate people."),
+                        ("Tips", "Color-coded status badges (Open, Answered, Escalated, Closed) and priority badges (Low, Normal, High, Urgent) help you quickly triage which RFIs need attention first. Pull down to refresh the list at any time.")
+                    ]
+                )
             }
         }
         .refreshable { loadData() }
@@ -289,14 +306,9 @@ struct IOSRFIListPage: View {
         }
     }
 
+    // TODO: When QAThreadRow gains a dueDate field, replace fallback with TimelinePriorityColor.color(priority:dueDateString:)
     private func priorityColor(_ priority: String) -> Color {
-        switch priority {
-        case "urgent": return .red
-        case "high": return .orange
-        case "normal": return .blue
-        case "low": return .secondary
-        default: return .secondary
-        }
+        return TimelinePriorityColor.fallbackColor(priority: priority)
     }
 
     // MARK: - Data

@@ -5,6 +5,7 @@ import WiredPartCore
 struct IOSAIConfigPage: View {
     @EnvironmentObject private var appCore: AppCore
 
+    @State private var activeSheet: ActiveSheet?
     @State private var aiEnabled = true
     @State private var selectedModel = "foundation"
     @State private var isCheckingAvailability = false
@@ -117,7 +118,25 @@ struct IOSAIConfigPage: View {
             }
         }
         .navigationTitle("AI Config")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "AI Config Help", sections: [
+                ("What This Page Does", "Configures on-device AI features including model selection, availability checking, and language preferences. AI powers text suggestions, smart search, and predictive ordering."),
+                ("How to Use It", "Toggle AI features on or off. Select Apple Foundation Models for on-device processing. Tap 'Check Availability' to verify your device supports on-device AI. Choose a language for AI responses."),
+            ])
+        }
         .task { loadSettings() }
+    }
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
     }
 
     private func checkAvailability() {

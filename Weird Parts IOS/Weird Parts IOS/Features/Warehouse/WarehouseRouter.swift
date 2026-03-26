@@ -37,6 +37,8 @@ struct WarehouseRouter: View {
             IOSWarehouseToolsPage()
         case "warehouse-network":
             IOSWarehouseNetworkPage()
+        case "warehouse-leaderboard":
+            IOSWarehouseLeaderboardPage()
         case "warehouse-settings":
             IOSWarehouseSettingsPage()
         default:

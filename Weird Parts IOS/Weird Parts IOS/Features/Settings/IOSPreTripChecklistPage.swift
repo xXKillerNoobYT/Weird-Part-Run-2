@@ -44,7 +44,7 @@ struct IOSPreTripChecklistPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var saveError: String?
-    @State private var showHelp = false
+    @State private var activeSheet: ActiveSheet?
 
     @State private var selectedVehicleType: String = "all"
     @State private var checklists: [String: VehicleChecklist] = [:]
@@ -56,6 +56,11 @@ struct IOSPreTripChecklistPage: View {
 
     @State private var showAddSection = false
     @State private var newSectionName = ""
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
 
     private let vehicleTypes = ["all", "truck", "van", "car", "trailer"]
     private let vehicleLabels: [String: String] = [
@@ -81,24 +86,16 @@ struct IOSPreTripChecklistPage: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showHelp = true } label: {
+                Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
             }
         }
-        .sheet(isPresented: $showHelp) {
-            NavigationStack {
-                List {
-                    Section("About Pre-Trip Checklists") {
-                        Text("Define the inspection items drivers must check before starting their trip. Items marked as critical will fail the inspection if not OK.")
-                    }
-                    Section("Vehicle Types") {
-                        Text("Each vehicle type can have its own checklist. Toggle 'Use Default' to inherit from the All Vehicles list.")
-                    }
-                }
-                .navigationTitle("Checklist Help")
-                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { showHelp = false } } }
-            }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Checklist Help", sections: [
+                ("About Pre-Trip Checklists", "Define the inspection items drivers must check before starting their trip. Items marked as critical will fail the inspection if not OK."),
+                ("Vehicle Types", "Each vehicle type can have its own checklist. Toggle 'Use Default' to inherit from the All Vehicles list."),
+            ])
         }
         .task { loadSettings() }
     }

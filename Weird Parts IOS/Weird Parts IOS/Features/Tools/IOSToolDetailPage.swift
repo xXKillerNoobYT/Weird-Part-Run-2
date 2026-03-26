@@ -32,6 +32,7 @@ struct IOSToolDetailPage: View {
         case tradeResponse(ToolsService.ToolTradeInfo)
         case lostStolen
         case addMaintenance
+        case help
 
         var id: String {
             switch self {
@@ -45,6 +46,7 @@ struct IOSToolDetailPage: View {
             case .tradeResponse(let t): "tradeResp_\(t.id)"
             case .lostStolen: "lostStolen"
             case .addMaintenance: "addMaintenance"
+            case .help: "help"
             }
         }
     }
@@ -95,10 +97,16 @@ struct IOSToolDetailPage: View {
                     }
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(sheet)
         }
+        .refreshable { loadAllData() }
         .task { loadAllData() }
     }
 
@@ -619,6 +627,20 @@ struct IOSToolDetailPage: View {
                 }
                 .environmentObject(appCore)
             }
+        case .help:
+            PageHelpSheet(
+                title: "Tool Detail Help",
+                sections: [
+                    ("What This Page Does", "This is the complete profile for a single tool. It shows everything about the tool: identification info, current status, kit contents (if it is a kit), maintenance rules, pending trades, and a full change history."),
+                    ("Tool Information", "The top section shows the tool number, category, brand, model, serial number, purchase cost, purchase date, warranty expiration, calibration due date, and any notes. This is the tool's identity card."),
+                    ("Status & Assignment", "Shows the current status (Available, Checked Out, Maintenance, Lost), condition rating, who the tool is assigned to, and its location. If the tool is available, a blue 'Checkout' button appears. If checked out, a green 'Return' button appears."),
+                    ("Actions Menu", "Tap the three-dot menu in the top right for actions: Checkout, Return, Trade (swap with another person), Edit (change tool details), Report Issue (flag a problem), and Report Lost/Stolen."),
+                    ("Edit Verification", "Some edits require manager verification. If you change critical fields, the edit will show as 'Pending Verification' until a manager scans the tool's QR code to approve it."),
+                    ("Kit Contents", "If the tool is a kit, you will see a Contents section listing every item in the kit with its status (Present, Missing, Damaged) and quantity levels for consumables."),
+                    ("Maintenance Rules", "Shows any scheduled maintenance rules: time-based (every N days), usage-based (after N hours), confidence decay, or condition-triggered. Tap 'Add Maintenance Rule' to create new rules."),
+                    ("Tips", "Before checking out a tool, check its condition rating. If it is 'Poor' or 'Damaged', report an issue instead. Always return tools promptly to keep records accurate for the whole team.")
+                ]
+            )
         }
     }
 

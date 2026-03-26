@@ -7,12 +7,16 @@ struct FleetUtilizationReport: View {
     @State private var utilizationData: [FleetService.VehicleUtilizationRow] = []
     @State private var loadError: String?
     @State private var isLoading = true
+    @State private var dateRange: ReportDateRange = .thisMonth
     @State private var startDate = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
     @State private var endDate = Date()
+    @State private var activeSheet: ActiveSheet?
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     var body: some View {
         List {
-            StandardFilterBar(startDate: $startDate, endDate: $endDate)
+            StandardFilterBar(selectedRange: $dateRange, customStart: $startDate, customEnd: $endDate)
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets())
 
@@ -80,6 +84,20 @@ struct FleetUtilizationReport: View {
                                           "\($0.totalDays)",
                                           "\(Int($0.utilization * 100))%"] }
         )
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Vehicle Utilization Help", sections: [
+                ("What This Page Does", "Measures how often each vehicle is actually being used. Compares days active (with at least one trip or assignment) versus total days in the selected period. A higher percentage means the vehicle is being put to work."),
+                ("How to Use It", "Pick a date range at the top. The summary shows the fleet average utilization and how many vehicles had activity. Each vehicle row shows a progress bar and percentage. Green is well-used, orange is moderate, red is underused."),
+                ("Tips", "Vehicles consistently below 40% utilization might be candidates for reassignment or removal from the fleet. If utilization drops during certain months, plan maintenance during those slow periods.")
+            ])
+        }
         .onAppear { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }

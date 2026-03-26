@@ -17,6 +17,7 @@ struct IOSHatsPage: View {
     @State private var hatToDelete: PeopleService.HatListItem?
     private enum ActiveSheet: String, Identifiable {
         case addHat
+        case help
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
@@ -34,12 +35,28 @@ struct IOSHatsPage: View {
                         Image(systemName: "plus")
                     }
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                }
             }
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
                 case .addHat:
                     AddHatSheet { loadData() }
                         .environmentObject(appCore)
+                case .help:
+                    PageHelpSheet(
+                        title: "Hats & Roles Help",
+                        sections: [
+                            ("What This Page Does", "Manage hats (roles) that can be assigned to employees. Hats define what an employee is responsible for and control their permissions in the system. Each hat shows its name, description, and how many employees currently wear it."),
+                            ("How to Use It", "Search by hat name or description. Tap the + button to create a new hat with a name and optional description. Swipe left on any hat to delete it."),
+                            ("Assigning Hats", "Hats are assigned to employees from the Employee Detail page's Hats tab. Each hat grants a set of permissions — configure those on the Permissions page."),
+                            ("Deleting a Hat", "Swipe left and tap Delete to remove a hat. This removes the role and all its permission assignments permanently. Employees who had this hat will lose those permissions."),
+                            ("Tips", "Pull down to refresh. The badge on each hat shows how many employees are assigned to it. Common hats include Foreman, Electrician, Apprentice, Office Manager, etc.")
+                        ]
+                    )
                 }
             }
             .alert(

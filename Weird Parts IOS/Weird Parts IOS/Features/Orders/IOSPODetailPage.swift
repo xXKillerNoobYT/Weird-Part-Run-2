@@ -21,6 +21,7 @@ struct IOSPODetailPage: View {
 
     // Confirmations
     @State private var showDeleteConfirmation = false
+    @State private var showSubmitConfirmation = false
     @State private var showCancelConfirmation = false
     @State private var showCancelRemainingConfirmation = false
     @State private var cancelReason = ""
@@ -34,14 +35,16 @@ struct IOSPODetailPage: View {
     @State private var poNotes: [PONoteEntry] = []
     @State private var supplierNotes: [PONoteEntry] = []
 
-    // Inline edit (draft POs)
-    @State private var editingLineId: Int64?
-    @State private var editQty = ""
-    @State private var editPrice = ""
-    @State private var showInlineEdit = false
+    // Line item editing uses POLineEditSheet via .editLineItem(line)
 
-    // Receipt history
+    // Receipt history (legacy batches from order_status_history)
     @State private var receiptBatches: [OrdersService.ReceiptBatch] = []
+
+    // Receipt history entries (from receiving_sessions — 62P)
+    @State private var receiptHistoryEntries: [OrdersService.ReceiptHistoryEntry] = []
+    @State private var expandedReceiptEntryIds: Set<Int64> = []
+    @State private var receiptEntryItems: [Int64: [OrdersService.ReceiptHistoryItem]] = [:]
+    @State private var isReceiptHistoryExpanded = false
 
     // Update ETA
     @State private var etaDate = Date()
@@ -73,6 +76,8 @@ struct IOSPODetailPage: View {
         case reportIssue
         case receiptHistory
         case contactCreator
+        case help
+        case editLineItem(OrdersService.POLineRow)
 
         var id: String { String(describing: self) }
     }
@@ -90,6 +95,13 @@ struct IOSPODetailPage: View {
         }
         .navigationTitle("PO \(po?.poNumber ?? "#\(poId)")")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
         }
@@ -136,25 +148,27 @@ struct IOSPODetailPage: View {
         } message: {
             Text("This will cancel all unreceived items. Contact the supplier first to confirm. A reason is required.")
         }
-        // Inline edit alert for draft POs
-        .alert("Edit Line Item", isPresented: $showInlineEdit) {
-            TextField("Quantity", text: $editQty)
-                .keyboardType(.numberPad)
-            TextField("Unit Price", text: $editPrice)
-                .keyboardType(.decimalPad)
-            Button("Cancel", role: .cancel) {}
-            Button("Save") {
-                Task { await saveLineEdit() }
+        // Mark as Submitted confirmation
+        .confirmationDialog(
+            "Mark PO as Submitted?",
+            isPresented: $showSubmitConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Mark as Submitted") {
+                Task { await transitionPO(to: "submitted") }
             }
+            Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Update quantity and unit price for this item.")
+            Text("This changes the PO status to Submitted. You still need to contact the supplier separately (email, phone, or portal) to actually send the order.")
         }
+        // Line item editing now uses POLineEditSheet via .sheet(item: $activeSheet)
         // Action message
         .alert("Notice", isPresented: .constant(actionMessage != nil)) {
             Button("OK") { actionMessage = nil }
         } message: {
             Text(actionMessage ?? "")
         }
+        .refreshable { loadData() }
         .task { loadData() }
     }
 
@@ -185,6 +199,21 @@ struct IOSPODetailPage: View {
             receiptHistorySheet()
         case .contactCreator:
             contactCreatorSheet()
+        case .editLineItem(let lineItem):
+            POLineEditSheet(lineItem: lineItem) { newQty, newPrice in
+                Task { await saveLineEdit(lineId: lineItem.id, quantity: newQty, unitPrice: newPrice) }
+            }
+        case .help:
+            PageHelpSheet(
+                title: "PO Detail Help",
+                sections: [
+                    ("What This Page Does", "Shows everything about a Purchase Order -- supplier info, line items grouped by job, delivery timeline, cost breakdown, receipt history, and notes. This is where you manage the full lifecycle of a PO."),
+                    ("Status Actions", "Draft POs can be edited inline (tap a line item to change qty/price) and deleted. Submitted/Ordered POs can be received, have their ETA updated, or be cancelled with a required reason. Partially received POs show what's still outstanding."),
+                    ("Key Actions", "Receive Shipment: start checking in items. Manage Parts: see all parts for this supplier across POs. Contact Supplier: open a chat channel. Update ETA: set a new expected delivery date. Double Order: re-order remaining items from a different supplier. Report Issue: log a problem."),
+                    ("Notes Tabs", "The notes section has two tabs -- PO Notes (about this specific order) and Supplier Notes (general notes about the supplier visible on all their POs). Add notes to keep a paper trail."),
+                    ("Tips", "Swipe left on the PO in the list view to quick-delete drafts or cancel active orders. The cost breakdown section shows subtotal, tax, shipping, and grand total. Receipt history tracks every receiving session.")
+                ]
+            )
         }
     }
 
@@ -913,7 +942,11 @@ struct IOSPODetailPage: View {
     private func loadSupplierChannels() {
         guard let chatService = appCore.chatService,
               let userId = appCore.currentUser?.id,
-              let supplierId = po?.supplierId else { return }
+              let supplierId = po?.supplierId else {
+            loadError = "Chat service not available"
+            isLoading = false
+            return
+        }
         do {
             let allChannels = try chatService.listSupplierChannels(userId: userId)
             supplierChannels = allChannels.filter { $0.supplierId == supplierId }
@@ -929,7 +962,8 @@ struct IOSPODetailPage: View {
 
     private func loadChannelMessages(channelId: Int64) {
         guard let chatService = appCore.chatService else {
-            // Service not ready
+            loadError = "Chat service not available"
+            isLoading = false
             return
         }
         channelMessages = (try? chatService.getMessages(channelId: channelId, limit: 50)) ?? []
@@ -940,7 +974,11 @@ struct IOSPODetailPage: View {
     private func createSupplierChannel() async {
         guard let chatService = appCore.chatService,
               let userId = appCore.currentUser?.id,
-              let po else { return }
+              let po else {
+            loadError = "Chat service not available"
+            isLoading = false
+            return
+        }
         do {
             let channelName = "\(po.poNumber) — \(po.supplierName)"
             let channelId = try chatService.createSupplierChannel(
@@ -960,7 +998,10 @@ struct IOSPODetailPage: View {
 
     private func sendSupplierMessage(channelId: Int64) async {
         guard let chatService = appCore.chatService,
-              let userId = appCore.currentUser?.id else { return }
+              let userId = appCore.currentUser?.id else {
+            loadError = "Chat service not available"
+            return
+        }
         let text = newSupplierMessage.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
         do {
@@ -979,6 +1020,7 @@ struct IOSPODetailPage: View {
 
     private func saveNewETA() async {
         guard let service = appCore.ordersService else {
+            loadError = "Orders service not available"
             actionMessage = "Service not available"
             return
         }
@@ -997,7 +1039,11 @@ struct IOSPODetailPage: View {
 
     private func loadAvailableSuppliers() {
         guard let partsService = appCore.partsService,
-              let currentSupplierId = po?.supplierId else { return }
+              let currentSupplierId = po?.supplierId else {
+            loadError = "Parts service not available"
+            isLoading = false
+            return
+        }
         do {
             let all = try partsService.listSuppliers()
             availableSuppliers = all.filter { $0.supplier.id != currentSupplierId }
@@ -1009,7 +1055,11 @@ struct IOSPODetailPage: View {
     private func createDoubleOrder() async {
         guard let service = appCore.ordersService,
               let po,
-              let newSupplierId = selectedSupplierId else { return }
+              let newSupplierId = selectedSupplierId else {
+            loadError = "Orders service not available"
+            isLoading = false
+            return
+        }
 
         let remainingLines = po.lines.filter { $0.quantityOrdered > $0.quantityReceived }
         guard !remainingLines.isEmpty else { return }
@@ -1057,7 +1107,10 @@ struct IOSPODetailPage: View {
 
     private func submitIssueReport() async {
         guard let service = appCore.ordersService,
-              let po else { return }
+              let po else {
+            loadError = "Orders service not available"
+            return
+        }
         let description = issueDescription.trimmingCharacters(in: .whitespaces)
         guard !description.isEmpty else { return }
 
@@ -1099,6 +1152,7 @@ struct IOSPODetailPage: View {
     private func openDMWithCreator(userId: Int64, name: String) async {
         guard let chatService = appCore.chatService,
               let myId = appCore.currentUser?.id else {
+            loadError = "Chat service not available"
             actionMessage = "Chat service not available."
             return
         }
@@ -1167,10 +1221,8 @@ struct IOSPODetailPage: View {
                 // Job-Grouped Line Items
                 lineItemsSection(po)
 
-                // Receipt History (for received/partial POs)
-                if po.status == "received" || po.status == "partial" {
-                    receiptHistorySection()
-                }
+                // Receipt History (62P — collapsible, shows when any receiving data exists)
+                receiptHistorySection()
 
                 // Cost Summary
                 VStack(alignment: .leading, spacing: 8) {
@@ -1202,38 +1254,46 @@ struct IOSPODetailPage: View {
 
     // MARK: - Job-Grouped Line Items
 
+    /// Group PO line items by job, with "General Stock" always sorted last.
+    private func groupedLineItems(_ lines: [OrdersService.POLineRow]) -> [(jobName: String, items: [OrdersService.POLineRow])] {
+        let grouped = Dictionary(grouping: lines) { $0.jobName ?? "General Stock" }
+        return grouped.sorted {
+            // "General Stock" always sorts last
+            if $0.key == "General Stock" { return false }
+            if $1.key == "General Stock" { return true }
+            return $0.key < $1.key
+        }.map { (jobName: $0.key, items: $0.value) }
+    }
+
     @ViewBuilder
     private func lineItemsSection(_ po: OrdersService.PODetail) -> some View {
-        let grouped = Dictionary(grouping: po.lines) { $0.jobName ?? "General" }
-        let sortedKeys = grouped.keys.sorted()
+        let groups = groupedLineItems(po.lines)
 
         VStack(alignment: .leading, spacing: 12) {
             Text("Line Items (\(po.lines.count))")
                 .font(.headline)
 
-            ForEach(sortedKeys, id: \.self) { jobName in
-                if let lines = grouped[jobName] {
-                    VStack(alignment: .leading, spacing: 4) {
-                        // Job header
-                        HStack {
-                            Image(systemName: jobGroupIcon(jobName))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text(jobName)
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                            Spacer()
-                            Text("\(lines.count) items")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-                        .padding(.top, 4)
+            ForEach(groups, id: \.jobName) { group in
+                VStack(alignment: .leading, spacing: 4) {
+                    // Job section header with name and item count
+                    HStack {
+                        Image(systemName: jobGroupIcon(group.jobName))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text(group.jobName)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Spacer()
+                        Text("\(group.items.count) \(group.items.count == 1 ? "item" : "items")")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .padding(.top, 4)
 
-                        // Lines for this job
-                        ForEach(lines, id: \.id) { line in
-                            lineItemRow(line, isDraft: po.status == "draft",
-                                        expectedDelivery: po.expectedDelivery)
-                        }
+                    // Lines for this job
+                    ForEach(group.items, id: \.id) { line in
+                        lineItemRow(line, isDraft: po.status == "draft",
+                                    expectedDelivery: po.expectedDelivery)
                     }
                 }
             }
@@ -1245,7 +1305,7 @@ struct IOSPODetailPage: View {
         switch jobName {
         case "Forecast Restock": "chart.line.uptrend.xyaxis"
         case "Wishlist": "heart"
-        case "General": "shippingbox"
+        case "General", "General Stock": "shippingbox"
         default: "wrench.and.screwdriver"
         }
     }
@@ -1304,9 +1364,14 @@ struct IOSPODetailPage: View {
                 }
             }
 
-            // Delivery timeline bar (for waiting/ordered parts)
-            if line.lineStatus == "pending" || line.lineStatus == "ordered" {
-                deliveryTimelineBar(orderDate: line.createdAt, expectedDelivery: expectedDelivery)
+            // Delivery timeline bar (62O — shows for all non-cancelled/non-draft statuses)
+            if line.lineStatus == "pending" || line.lineStatus == "ordered"
+                || line.lineStatus == "received" || line.lineStatus == "backorder" {
+                DeliveryTimelineBar(
+                    orderDateString: line.createdAt,
+                    expectedDateString: expectedDelivery,
+                    isReceived: line.lineStatus == "received"
+                )
             }
 
             // Backorder actions (per line item)
@@ -1337,12 +1402,9 @@ struct IOSPODetailPage: View {
             if isDraft {
                 HStack(spacing: 8) {
                     Button {
-                        editingLineId = line.id
-                        editQty = "\(line.quantityOrdered)"
-                        editPrice = line.unitPrice.map { String(format: "%.2f", $0) } ?? ""
-                        showInlineEdit = true
+                        activeSheet = .editLineItem(line)
                     } label: {
-                        Label("Quick Edit", systemImage: "pencil")
+                        Label("Edit Qty / Price", systemImage: "pencil")
                             .font(.caption2)
                     }
                     .buttonStyle(.bordered)
@@ -1384,89 +1446,280 @@ struct IOSPODetailPage: View {
     }
 
     // MARK: - Delivery Timeline Bar
+    // Now uses the shared DeliveryTimelineBar component (62O).
+    // See Shared/DeliveryTimelineBar.swift for the reusable component.
 
-    @ViewBuilder
-    private func deliveryTimelineBar(orderDate: String?, expectedDelivery: String?) -> some View {
-        let daysElapsed = daysSince(orderDate)
-        let daysExpected = daysUntil(expectedDelivery) ?? 7
-        let totalDays = max(daysElapsed + max(daysExpected, 0), 1)
-        let progress = min(Double(daysElapsed) / Double(totalDays), 1.0)
-
-        let barColor: Color = {
-            if daysExpected > 2 { return .green }
-            if daysExpected > 0 { return .yellow }
-            if daysExpected > -2 { return .orange }
-            return .red
-        }()
-
-        VStack(alignment: .leading, spacing: 2) {
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(barColor.opacity(0.15))
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(barColor)
-                        .frame(width: geo.size.width * progress)
-                }
-            }
-            .frame(height: 4)
-
-            HStack {
-                Text("Day \(daysElapsed)")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if daysExpected > 0 {
-                    Text("\(daysExpected)d remaining")
-                        .font(.system(size: 9))
-                        .foregroundStyle(barColor)
-                } else if daysExpected == 0 {
-                    Text("Due today")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.orange)
-                } else {
-                    Text("\(-daysExpected)d LATE")
-                        .font(.system(size: 9))
-                        .fontWeight(.bold)
-                        .foregroundStyle(.red)
-                }
-            }
-        }
-    }
-
-    // MARK: - Receipt History Section
+    // MARK: - Receipt History Section (62P — collapsible with per-item details)
 
     @ViewBuilder
     private func receiptHistorySection() -> some View {
-        if !receiptBatches.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Receipt History")
-                    .font(.headline)
+        let hasEntries = !receiptHistoryEntries.isEmpty
+        let hasBatches = !receiptBatches.isEmpty
 
-                ForEach(receiptBatches) { batch in
-                    HStack(alignment: .top, spacing: 8) {
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 8, height: 8)
-                            .padding(.top, 6)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Received \(String(batch.receivedDate.prefix(10)))")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                            Text("\(batch.itemCount) items, \(batch.totalReceived) total units")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            if let by = batch.receivedBy {
-                                Text("By: \(by)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
+        if hasEntries || hasBatches {
+            VStack(alignment: .leading, spacing: 8) {
+                // Collapsible header
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isReceiptHistoryExpanded.toggle()
+                    }
+                } label: {
+                    HStack {
+                        Text("Receipt History")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+
+                        let totalSessions = hasEntries ? receiptHistoryEntries.count : receiptBatches.count
+                        Text("(\(totalSessions))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        // Discrepancy badge
+                        if hasEntries {
+                            let discrepancyCount = receiptHistoryEntries.filter(\.hasDiscrepancies).count
+                            if discrepancyCount > 0 {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.caption2)
+                                    Text("\(discrepancyCount)")
+                                        .font(.caption2)
+                                        .fontWeight(.bold)
+                                }
+                                .foregroundStyle(.orange)
                             }
+                        }
+
+                        Image(systemName: isReceiptHistoryExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                // Expanded content
+                if isReceiptHistoryExpanded {
+                    if hasEntries {
+                        // 62P: Rich entries from receiving_sessions
+                        ForEach(receiptHistoryEntries) { entry in
+                            receiptEntryRow(entry)
+                        }
+                    } else {
+                        // Fallback: legacy batches from order_status_history
+                        ForEach(receiptBatches) { batch in
+                            legacyBatchRow(batch)
                         }
                     }
                 }
             }
             .padding()
             .dsCard()
+        }
+    }
+
+    /// A single receipt entry row (62P) — tappable to expand per-item details.
+    @ViewBuilder
+    private func receiptEntryRow(_ entry: OrdersService.ReceiptHistoryEntry) -> some View {
+        let isExpanded = expandedReceiptEntryIds.contains(entry.id)
+
+        VStack(alignment: .leading, spacing: 6) {
+            // Tappable summary row
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if isExpanded {
+                        expandedReceiptEntryIds.remove(entry.id)
+                    } else {
+                        expandedReceiptEntryIds.insert(entry.id)
+                        // Load items if not already loaded
+                        if receiptEntryItems[entry.id] == nil {
+                            loadReceiptEntryItems(sessionId: entry.id)
+                        }
+                    }
+                }
+            } label: {
+                HStack(alignment: .top, spacing: 10) {
+                    // Timeline dot
+                    Circle()
+                        .fill(entry.hasDiscrepancies ? Color.orange : Color.green)
+                        .frame(width: 8, height: 8)
+                        .padding(.top, 6)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(formatSessionDate(entry.sessionDate))
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if entry.hasDiscrepancies {
+                                HStack(spacing: 2) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.system(size: 9))
+                                    Text("Discrepancy")
+                                        .font(.system(size: 9))
+                                        .fontWeight(.semibold)
+                                }
+                                .foregroundStyle(.orange)
+                            }
+                        }
+
+                        HStack(spacing: 12) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "shippingbox")
+                                    .font(.caption2)
+                                Text("\(entry.totalItemsReceived) units")
+                                    .font(.caption2)
+                            }
+                            .foregroundStyle(.secondary)
+
+                            HStack(spacing: 4) {
+                                Image(systemName: "person.circle")
+                                    .font(.caption2)
+                                Text(entry.receivedBy)
+                                    .font(.caption2)
+                            }
+                            .foregroundStyle(.tertiary)
+                        }
+
+                        if let notes = entry.notes, !notes.isEmpty {
+                            Text(notes)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .padding(.top, 6)
+                }
+            }
+            .buttonStyle(.plain)
+
+            // Per-item details (expanded)
+            if isExpanded {
+                if let items = receiptEntryItems[entry.id], !items.isEmpty {
+                    VStack(spacing: 0) {
+                        ForEach(items) { item in
+                            receiptItemDetailRow(item)
+                            if item.id != items.last?.id {
+                                Divider()
+                                    .padding(.leading, 18)
+                            }
+                        }
+                    }
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(.systemGray6))
+                    )
+                    .padding(.leading, 18)
+                } else {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .scaleEffect(0.7)
+                        Text("Loading items...")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                    }
+                    .padding(.leading, 18)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(entry.hasDiscrepancies ? Color.orange.opacity(0.06) : Color.clear)
+        )
+    }
+
+    /// Per-item detail row within a receipt entry.
+    @ViewBuilder
+    private func receiptItemDetailRow(_ item: OrdersService.ReceiptHistoryItem) -> some View {
+        HStack(spacing: 8) {
+            // Discrepancy indicator
+            if item.hasDiscrepancy {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            } else {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.green)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.partName)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                if let code = item.partCode, !code.isEmpty {
+                    Text(code)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 1) {
+                HStack(spacing: 2) {
+                    Text("\(item.receivedQty)")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(item.hasDiscrepancy ? .orange : .primary)
+                    Text("/")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    Text("\(item.expectedQty)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if item.hasDiscrepancy {
+                    let diff = item.receivedQty - item.expectedQty
+                    Text(diff > 0 ? "+\(diff) over" : "\(-diff) short")
+                        .font(.system(size: 9))
+                        .fontWeight(.semibold)
+                        .foregroundStyle(diff > 0 ? .blue : .red)
+                }
+            }
+
+            if let notes = item.notes, !notes.isEmpty {
+                Image(systemName: "note.text")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .help(notes)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// Legacy batch row fallback (from order_status_history).
+    @ViewBuilder
+    private func legacyBatchRow(_ batch: OrdersService.ReceiptBatch) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Circle()
+                .fill(Color.green)
+                .frame(width: 8, height: 8)
+                .padding(.top, 6)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Received \(String(batch.receivedDate.prefix(10)))")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Text("\(batch.itemCount) items, \(batch.totalReceived) total units")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                if let by = batch.receivedBy {
+                    Text("By: \(by)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
         }
     }
 
@@ -1660,8 +1913,8 @@ struct IOSPODetailPage: View {
             switch status {
             case "draft":
                 HStack(spacing: 8) {
-                    actionButton("Submit to Supplier", icon: "paperplane.fill", color: .blue) {
-                        await transitionPO(to: "submitted")
+                    actionButton("Mark as Submitted", icon: "checkmark.circle.fill", color: .blue) {
+                        showSubmitConfirmation = true
                     }
                     actionButton("Delete Draft", icon: "trash", color: .red) {
                         showDeleteConfirmation = true
@@ -1780,12 +2033,16 @@ struct IOSPODetailPage: View {
 
     private func transitionPO(to newStatus: String) async {
         guard let service = appCore.ordersService else {
+            loadError = "Orders service not available"
             actionMessage = "Service not available"
             return
         }
         do {
             try service.updatePOStatus(id: poId, status: newStatus)
             loadData()
+            if newStatus == "submitted" {
+                actionMessage = "PO marked as Submitted. Remember to send the order to the supplier."
+            }
         } catch {
             actionMessage = "Failed to update status: \(error.localizedDescription)"
         }
@@ -1793,6 +2050,7 @@ struct IOSPODetailPage: View {
 
     private func deleteDraftPO() async {
         guard let service = appCore.ordersService else {
+            loadError = "Orders service not available"
             actionMessage = "Service not available"
             return
         }
@@ -1804,15 +2062,15 @@ struct IOSPODetailPage: View {
         }
     }
 
-    // MARK: - Inline Line Edit
+    // MARK: - Line Edit (via Sheet)
 
-    private func saveLineEdit() async {
-        guard let lineId = editingLineId,
-              let qty = Int(editQty), qty > 0,
-              let service = appCore.ordersService else { return }
-        let price = Double(editPrice)
+    private func saveLineEdit(lineId: Int64, quantity: Int, unitPrice: Double?) async {
+        guard let service = appCore.ordersService else {
+            actionMessage = "Service not available"
+            return
+        }
         do {
-            try service.updatePOLineItem(lineId: lineId, quantity: qty, unitPrice: price)
+            try service.updatePOLineItem(lineId: lineId, quantity: quantity, unitPrice: unitPrice)
             loadData()
         } catch {
             actionMessage = "Failed to update: \(error.localizedDescription)"
@@ -1823,6 +2081,7 @@ struct IOSPODetailPage: View {
 
     private func addPONote() async {
         guard let service = appCore.ordersService else {
+            loadError = "Orders service not available"
             actionMessage = "Service not available"
             return
         }
@@ -1834,6 +2093,33 @@ struct IOSPODetailPage: View {
         } catch {
             actionMessage = "Failed to add note: \(error.localizedDescription)"
         }
+    }
+
+    // MARK: - Receipt History Helpers (62P)
+
+    /// Load per-item details for a specific receipt session.
+    private func loadReceiptEntryItems(sessionId: Int64) {
+        guard let service = appCore.ordersService else { return }
+        receiptEntryItems[sessionId] = (try? service.getReceiptHistoryItems(sessionId: sessionId)) ?? []
+    }
+
+    /// Format a session date string for display (e.g. "Mar 15, 2026 2:30 PM").
+    private func formatSessionDate(_ dateStr: String) -> String {
+        // Try full datetime first, then date-only
+        let isoFull = ISO8601DateFormatter()
+        isoFull.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoDate = ISO8601DateFormatter()
+        isoDate.formatOptions = [.withFullDate]
+
+        let date = isoFull.date(from: dateStr)
+            ?? isoDate.date(from: String(dateStr.prefix(10)))
+
+        guard let date else { return String(dateStr.prefix(16)) }
+
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 
     // MARK: - Date Helpers
@@ -1907,8 +2193,11 @@ struct IOSPODetailPage: View {
                 supplierNotes = []
             }
 
-            // Load receipt history
+            // Load receipt history (legacy batches)
             receiptBatches = (try? service.getReceiptHistory(poId: poId)) ?? []
+
+            // Load receipt history entries from receiving_sessions (62P)
+            receiptHistoryEntries = (try? service.getReceiptHistoryEntries(poId: poId)) ?? []
         } catch {
             loadError = error.localizedDescription
         }
@@ -1962,5 +2251,133 @@ private struct CostLine: View {
                 .font(.subheadline)
                 .fontWeight(bold ? .bold : .medium)
         }
+    }
+}
+
+// MARK: - PO Line Edit Sheet
+
+/// Full-featured sheet for editing a PO draft line item's quantity and unit price.
+/// Replaces the old cramped `.alert` with text fields.
+private struct POLineEditSheet: View {
+    let lineItem: OrdersService.POLineRow
+    let onSave: (Int, Double?) -> Void
+
+    @State private var quantity: Int
+    @State private var unitPriceText: String
+    @Environment(\.dismiss) private var dismiss
+
+    init(lineItem: OrdersService.POLineRow, onSave: @escaping (Int, Double?) -> Void) {
+        self.lineItem = lineItem
+        self.onSave = onSave
+        _quantity = State(initialValue: lineItem.quantityOrdered)
+        _unitPriceText = State(initialValue: lineItem.unitPrice.map { String(format: "%.2f", $0) } ?? "")
+    }
+
+    private var parsedPrice: Double? {
+        Double(unitPriceText)
+    }
+
+    private var lineTotal: Double {
+        Double(quantity) * (parsedPrice ?? 0)
+    }
+
+    private var isValid: Bool {
+        quantity > 0 && (unitPriceText.isEmpty || parsedPrice != nil)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                // Part info (read-only context)
+                Section("Part") {
+                    HStack {
+                        Text(lineItem.partName ?? "Item")
+                            .font(.headline)
+                        Spacer()
+                        if let desc = lineItem.description, !desc.isEmpty {
+                            Text(desc)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    if let jobName = lineItem.jobName {
+                        HStack {
+                            Text("Job")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text(jobName)
+                                .foregroundStyle(.secondary)
+                        }
+                        .font(.subheadline)
+                    }
+                }
+
+                // Quantity with stepper
+                Section("Quantity") {
+                    Stepper(value: $quantity, in: 1...99999) {
+                        HStack {
+                            Text("Quantity")
+                            Spacer()
+                            Text("\(quantity)")
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                                .monospacedDigit()
+                        }
+                    }
+                }
+
+                // Unit price text field
+                Section("Unit Price") {
+                    HStack {
+                        Text("$")
+                            .foregroundStyle(.secondary)
+                        TextField("0.00", text: $unitPriceText)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    if !unitPriceText.isEmpty && parsedPrice == nil {
+                        Text("Enter a valid number")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+
+                // Live total preview
+                Section("Line Total") {
+                    HStack {
+                        Text("Total")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(formatCurrency(lineTotal))
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .monospacedDigit()
+                    }
+                }
+            }
+            .navigationTitle("Edit Line Item")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(quantity, parsedPrice)
+                        dismiss()
+                    }
+                    .fontWeight(.semibold)
+                    .disabled(!isValid)
+                }
+            }
+        }
+    }
+
+    private func formatCurrency(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.currencyCode = "USD"
+        return formatter.string(from: NSNumber(value: value)) ?? "$0.00"
     }
 }

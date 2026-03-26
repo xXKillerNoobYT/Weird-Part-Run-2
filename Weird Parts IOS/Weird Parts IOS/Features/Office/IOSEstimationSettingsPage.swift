@@ -14,10 +14,12 @@ struct IOSEstimationSettingsPage: View {
     private enum ActiveSheet: Identifiable {
         case add
         case edit(EstimationQuestion)
+        case help
         var id: String {
             switch self {
             case .add: return "add"
             case .edit(let q): return "edit_\(q.id ?? 0)"
+            case .help: return "help"
             }
         }
     }
@@ -86,6 +88,11 @@ struct IOSEstimationSettingsPage: View {
                     Image(systemName: "plus")
                 }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -93,8 +100,19 @@ struct IOSEstimationSettingsPage: View {
                 AddEstimationQuestionSheet { await loadData() }
             case .edit(let question):
                 EditEstimationQuestionSheet(question: question) { await loadData() }
+            case .help:
+                PageHelpSheet(
+                    title: "Estimation Questions Help",
+                    sections: [
+                        ("What This Page Does", "Manage the questions asked during job estimation. Questions are grouped by stage (Bid, Pre-Start, During, Before Trim, Punch List) and used to build accurate job estimates based on real project data."),
+                        ("How to Use It", "Tap + to add a new question. Swipe left on any question to edit or deactivate it. Swipe right on an inactive question to reactivate it. Each question has a group, stage, answer type, and weight that affects how much it influences the estimate."),
+                        ("AI Analysis", "Tap 'Analyze Question Effectiveness' to see which questions actually correlate with accurate estimates. Questions are rated Keep, Modify, or Remove based on historical data. Requires at least 15 completed jobs with end-of-job reviews."),
+                        ("Question Weight", "Weight controls how much a question's answer impacts the final estimate. Higher weight (up to 5.0) means the answer has more influence. Default is 1.0.")
+                    ]
+                )
             }
         }
+        .refreshable { await loadData() }
         .task { await loadData() }
     }
 
@@ -237,7 +255,10 @@ struct IOSEstimationSettingsPage: View {
     private func deactivateQuestion(_ question: EstimationQuestion) async {
         guard let svc = appCore.jobEstimationService,
               let qid = question.id,
-              let userId = appCore.currentUser?.id else { return }
+              let userId = appCore.currentUser?.id else {
+            loadError = "Estimation service not available"
+            return
+        }
         do {
             try svc.rejectQuestion(questionId: qid, rejectedBy: userId, reason: "Deactivated from settings")
             await loadData()
@@ -248,7 +269,10 @@ struct IOSEstimationSettingsPage: View {
 
     private func reactivateQuestion(_ question: EstimationQuestion) async {
         guard let svc = appCore.jobEstimationService,
-              let qid = question.id else { return }
+              let qid = question.id else {
+            loadError = "Estimation service not available"
+            return
+        }
         do {
             try svc.updateQuestion(questionId: qid, isActive: true)
             await loadData()
@@ -445,7 +469,10 @@ private struct EditEstimationQuestionSheet: View {
 
     private func save() async {
         guard let svc = appCore.jobEstimationService,
-              let qid = question.id else { return }
+              let qid = question.id else {
+            saveError = "Estimation service not available"
+            return
+        }
         do {
             try svc.updateQuestion(
                 questionId: qid,

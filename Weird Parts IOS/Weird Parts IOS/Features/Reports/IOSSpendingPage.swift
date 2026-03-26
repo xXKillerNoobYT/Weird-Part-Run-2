@@ -15,11 +15,21 @@ struct IOSSpendingPage: View {
     @State private var isLoading = true
     @State private var selectedDays = 30
     @State private var loadError: String?
+    @State private var activeSheet: ActiveSheet?
+    @State private var dateRange: ReportDateRange = .thisWeek
+    @State private var customStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+    @State private var customEnd: Date = Date()
+
+    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
+
+    private var effectiveStart: Date { dateRange.dateInterval?.start ?? customStart }
+    private var effectiveEnd: Date { dateRange.dateInterval?.end ?? customEnd }
 
     private let periodOptions = [7, 14, 30, 60, 90]
 
     var body: some View {
         VStack(spacing: 0) {
+            StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
             periodPicker
             spendingContent
         }
@@ -38,8 +48,25 @@ struct IOSSpendingPage: View {
                 ]
             }()
         )
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Spending Help", sections: [
+                ("What This Page Does", "Shows how much money has been spent on purchase orders over a time window. Displays total spend, number of POs, average PO amount, and your top supplier by dollar volume."),
+                ("How to Use It", "Tap a time period button (7d, 14d, 30d, etc.) to change the lookback window. The four KPI cards update automatically. Pull down to refresh if new POs have been submitted."),
+                ("Tips", "Use the 30-day view for monthly budget checks. If the top supplier keeps changing, it might mean you are spreading orders too thin. Consolidating with fewer suppliers can get better pricing.")
+            ])
+        }
         .refreshable { loadData() }
         .task { loadData() }
+        .onChange(of: dateRange) { loadData() }
+        .onChange(of: customStart) { loadData() }
+        .onChange(of: customEnd) { loadData() }
     }
 
     // MARK: - Period Picker
