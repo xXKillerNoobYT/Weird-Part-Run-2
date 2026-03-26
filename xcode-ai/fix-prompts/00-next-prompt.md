@@ -171,6 +171,9 @@
 135. `62S-ai-filter-all-pages.md`
 136. `62T-audit-checklist-save.md`
 
+### Tier 7: Final Gate (DO NOT SKIP)
+137. `63A-final-gate.md` ← Xcode updates this to PASSING when done
+
 ## Current Progress
 
 Started: ___
