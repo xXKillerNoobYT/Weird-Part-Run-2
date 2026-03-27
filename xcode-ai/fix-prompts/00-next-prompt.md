@@ -179,10 +179,19 @@
 139. `63B-final-9-fixes.md`
 140. `64A-guided-onboarding-walkthrough.md`
 141. `64B-comprehensive-guided-onboarding.md`
-142. `65A-warehouse-wizard-functional.md`
+142. `65A-guided-onboarding-walkthrough.md` — comprehensive per-module onboarding with hat filtering + progress tracking
+143. `65B-company-setup-wizard.md` — 8-step new company data entry wizard for admins
+144. `65C-warehouse-setup-fix.md` — fix broken Steps 2-6 in warehouse onboarding wizard
+145. `66A-office-dashboard-dead-buttons.md`
+146. `66B-old-chips-to-smart-cards.md`
+147. `66C-user-friendly-error-messages.md`
+148. `64D-silent-guard-returns.md`
+149. `64E-panel-schedule-persist.md`
+150. `64F-ai-dispatch-surface.md`
+151. `64G-jpo-movement-detail.md`
 
 ### Tier 9: Final Verification
-143. After all Tier 8 prompts complete, do a full build + run. Verify:
+152. After all Tier 8 prompts complete, do a full build + run. Verify:
      - Zero loading errors on any page
      - Zero stuck popups anywhere
      - Onboarding wizard walks through every page
@@ -195,7 +204,9 @@
 ## Current Progress
 
 Started: 2026-03-15
-Last completed: 63A-final-gate.md ✅ TIER 7 COMPLETE
+Last completed: 64A-guided-onboarding-walkthrough.md ✅ POST-GATE PROMPTS COMPLETE
+63B-final-9-fixes.md ✅ (2026-03-26) — 9 audit fixes: QR button, AI dispatch, panel persist, SmartFilterCard ×3, error messages ×165, silent guards, popup audit, dead code, attention items
+64A-guided-onboarding-walkthrough.md ✅ (2026-03-26) — 4-part onboarding: interactive checklist, welcome overlay, module tour, first-visit hints
 Next: 64C-ui-stability-errors-popups.md (Tier 8, prompt 138)
 
 ## To Start

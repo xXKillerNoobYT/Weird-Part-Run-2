@@ -211,6 +211,16 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 52D | Settings Template Pages | Daily Report Templates, Job Estimation Questions, Report Templates | |
 | 52E | Settings Functional Features | Wire Backups, Export, Update Check, AI Config, Sync Now to real code | |
 | 52F | Settings Sync Classification | Sync scope indicators (company/personal/device) on all settings | | |
+| 66A | Office Dashboard Dead Buttons | Fix 6 dead/TODO navigation buttons on Office Dashboard + QR Scanner Details | |
+| 66B | Old Chips to Smart Cards (3) | Convert IOSToolRegistryPage, IOSEmployeesPage, IOSJobNotebooksPage filter chips to SmartFilterCard | |
+| 66C | User-Friendly Error Messages | Add 3 new error cases to UserFriendlyError + replace ~165 remaining error.localizedDescription | |
+| 64D | Silent Guard Returns | Fix last 6 silent guard-let returns (5 in Wishlist, 1 in QR Scanner) that don't set error state | |
+| 64E | Panel Schedule Persist | Wire panel schedule save through NotebooksService — create-or-update + load-on-open | |
+| 64F | AI Dispatch Surface | Add Apply/Dismiss buttons to AI suggestion sheet, wire recordDispatcherChoice + dispatch creation | |
+| 64G | JPO Movement Detail | Replace "Coming Soon" movement stub with real detail view using WarehouseService | |
+| 65A | Guided Onboarding Walkthrough | Comprehensive per-module onboarding with hat filtering, progress tracking, post-onboarding hints | |
+| 65B | Company Setup Wizard | 8-step new company data entry wizard for admins (profile, employees, hats, job, parts, warehouse, breaks) | |
+| 65C | Warehouse Setup Fix | Fix broken Steps 2-6 in warehouse wizard — functional unit placement, sticker checklist, part assignment, counting, targets | |
 
 ## Prompt 01 Results (2026-03-18)
 
