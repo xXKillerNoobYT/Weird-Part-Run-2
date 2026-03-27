@@ -14,6 +14,7 @@ struct IOSOfficeDashboardPage: View {
     @State private var loadError: String?
     @State private var isLoading = true
     @State private var activeSheet: ActiveSheet?
+    @State private var selectedAttentionItem: DashboardService.AttentionItem?
 
     // Simple 1-hour briefing cache
     @State private var cachedBriefing: DashboardService.OfficeBriefing?
@@ -21,7 +22,13 @@ struct IOSOfficeDashboardPage: View {
 
     private enum ActiveSheet: Identifiable {
         case help
-        var id: String { "help" }
+        case attentionDetail(DashboardService.AttentionItem)
+        var id: String {
+            switch self {
+            case .help: "help"
+            case .attentionDetail(let item): "attention-\(item.id)"
+            }
+        }
     }
 
     var body: some View {
@@ -140,7 +147,7 @@ struct IOSOfficeDashboardPage: View {
             } else {
                 ForEach(attentionItems) { item in
                     Button {
-                        // TODO: Navigate to detail for attention item (item.id)
+                        selectedAttentionItem = item
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: iconForPriority(item.priority))
@@ -270,26 +277,41 @@ struct IOSOfficeDashboardPage: View {
     private var quickActionsSection: some View {
         Section("Quick Actions") {
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                quickActionButton("Review JPOs", icon: "doc.text.magnifyingglass", color: .blue) {
-                    // TODO: Navigate to JPO review page
+                NavigationLink {
+                    OrdersRouter(tabId: "orders-jpos")
+                        .environmentObject(appCore)
+                } label: {
+                    quickActionLabel("Review JPOs", icon: "doc.text.magnifyingglass", color: .blue)
                 }
-                quickActionButton("Manage Jobs", icon: "hammer.fill", color: .orange) {
-                    // TODO: Navigate to jobs management page
+                .buttonStyle(.plain)
+                NavigationLink {
+                    IOSManageJobsPage()
+                        .environmentObject(appCore)
+                } label: {
+                    quickActionLabel("Manage Jobs", icon: "hammer.fill", color: .orange)
                 }
-                quickActionButton("View Reports", icon: "chart.bar.fill", color: .green) {
-                    // TODO: Navigate to reports page
+                .buttonStyle(.plain)
+                NavigationLink {
+                    IOSReportsRouter()
+                        .environmentObject(appCore)
+                } label: {
+                    quickActionLabel("View Reports", icon: "chart.bar.fill", color: .green)
                 }
-                quickActionButton("Dispatch Board", icon: "person.3.fill", color: .purple) {
-                    // TODO: Navigate to dispatch board page
+                .buttonStyle(.plain)
+                NavigationLink {
+                    IOSDispatchPage()
+                        .environmentObject(appCore)
+                } label: {
+                    quickActionLabel("Dispatch Board", icon: "person.3.fill", color: .purple)
                 }
+                .buttonStyle(.plain)
             }
             .padding(.vertical, 4)
         }
     }
 
-    private func quickActionButton(_ title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
+    private func quickActionLabel(_ title: String, icon: String, color: Color) -> some View {
+        VStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(.title2)
                     .foregroundStyle(color)
@@ -302,8 +324,6 @@ struct IOSOfficeDashboardPage: View {
             .padding(.vertical, 12)
             .background(color.opacity(0.1))
             .clipShape(RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Background Tasks Section

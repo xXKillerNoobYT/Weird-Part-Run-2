@@ -32,7 +32,6 @@ struct IOSJPODetailPage: View {
     @State private var holdingPartName: String?
 
     // Bulk hold
-    @State private var showBulkHold = false
     @State private var bulkHoldReason = ""
     @State private var bulkHoldItems: [OrdersService.JPOLineRow] = []
     @State private var isBulkHolding = false
@@ -46,6 +45,7 @@ struct IOSJPODetailPage: View {
         case viewChat(Int64)
         case viewPO(Int64)
         case viewMovement(Int64)
+        case bulkHold
         case help
 
         var id: String { String(describing: self) }
@@ -120,44 +120,7 @@ struct IOSJPODetailPage: View {
                 Text("Ask the requester about \"\(name)\". They'll be notified to respond in chat.")
             }
         }
-        // Bulk hold sheet — shows all selected items, single shared reason
-        .sheet(isPresented: $showBulkHold) {
-            NavigationStack {
-                Form {
-                    Section("Items to Hold (\(bulkHoldItems.count))") {
-                        ForEach(bulkHoldItems, id: \.id) { item in
-                            HStack {
-                                Text(item.partName ?? "Unknown Part")
-                                Spacer()
-                                Text("Qty: \(item.quantity)")
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    Section("Hold Reason") {
-                        TextEditor(text: $bulkHoldReason)
-                            .frame(minHeight: 80)
-                    }
-                }
-                .navigationTitle("Place Items on Hold")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            showBulkHold = false
-                            bulkHoldItems = []
-                            bulkHoldReason = ""
-                        }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Hold All") {
-                            Task { await bulkHoldAllItems() }
-                        }
-                        .disabled(bulkHoldReason.trimmingCharacters(in: .whitespaces).isEmpty || isBulkHolding)
-                    }
-                }
-            }
-        }
+        
         // Below-min stock warning — approve with transfer vs procurement
         .alert("Stock Warning", isPresented: $showBelowMinWarning) {
             Button("Transfer Anyway") {
@@ -208,9 +171,58 @@ struct IOSJPODetailPage: View {
             }
         case .viewMovement(let movementId):
             NavigationStack {
-                Text("Movement #\(movementId) — Coming Soon")
-                    .navigationTitle("Movement")
-                    .navigationBarTitleDisplayMode(.inline)
+                VStack(spacing: DS.Space.lg) {
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.secondary)
+                    Text("Movement #\(movementId)")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                    Text("View this movement in Warehouse → Movements for full details.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle("Movement")
+                .navigationBarTitleDisplayMode(.inline)
+            }
+        case .bulkHold:
+            NavigationStack {
+                Form {
+                    Section("Items to Hold (\(bulkHoldItems.count))") {
+                        ForEach(bulkHoldItems, id: \.id) { item in
+                            HStack {
+                                Text(item.partName ?? "Unknown Part")
+                                Spacer()
+                                Text("Qty: \(item.quantity)")
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    Section("Hold Reason") {
+                        TextEditor(text: $bulkHoldReason)
+                            .frame(minHeight: 80)
+                    }
+                }
+                .navigationTitle("Place Items on Hold")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            activeSheet = nil
+                            bulkHoldItems = []
+                            bulkHoldReason = ""
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Hold All") {
+                            Task { await bulkHoldAllItems() }
+                        }
+                        .disabled(bulkHoldReason.trimmingCharacters(in: .whitespaces).isEmpty || isBulkHolding)
+                    }
+                }
             }
         case .help:
             PageHelpSheet(
@@ -854,7 +866,7 @@ struct IOSJPODetailPage: View {
         guard !items.isEmpty else { return }
         bulkHoldItems = items
         bulkHoldReason = ""
-        showBulkHold = true
+        activeSheet = .bulkHold
     }
 
     /// Apply the same hold reason to ALL items in bulkHoldItems, cancelling
@@ -902,7 +914,7 @@ struct IOSJPODetailPage: View {
         bulkHoldItems = []
         bulkHoldReason = ""
         isBulkHolding = false
-        showBulkHold = false
+        activeSheet = nil
         loadData()
     }
 
