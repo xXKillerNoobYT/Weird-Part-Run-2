@@ -171,13 +171,32 @@
 135. `62S-ai-filter-all-pages.md`
 136. `62T-audit-checklist-save.md`
 
-### Tier 7: Final Gate (DO NOT SKIP)
-137. `63A-final-gate.md` ← Xcode updates this to PASSING when done
+### Tier 7: Final Gate
+137. `63A-final-gate.md` ✅ PASSED
+
+### Tier 8: Post-Audit Fixes (NEW — start here)
+138. `64C-ui-stability-errors-popups.md` ← **START HERE — fixes errors + stuck popups**
+139. `63B-final-9-fixes.md`
+140. `64A-guided-onboarding-walkthrough.md`
+141. `64B-comprehensive-guided-onboarding.md`
+142. `65A-warehouse-wizard-functional.md`
+
+### Tier 9: Final Verification
+143. After all Tier 8 prompts complete, do a full build + run. Verify:
+     - Zero loading errors on any page
+     - Zero stuck popups anywhere
+     - Onboarding wizard walks through every page
+     - Warehouse setup wizard is fully functional (all 6 steps do real work)
+     - Every button does something when tapped
+     - Every sheet dismisses properly
+     Then update 63A-final-gate.md status to PASSING with today's date.
+     Then wait 10 minutes before checking for new prompts.
 
 ## Current Progress
 
-Started: ___
-Last completed: ___
+Started: 2026-03-15
+Last completed: 63A-final-gate.md ✅ TIER 7 COMPLETE
+Next: 64C-ui-stability-errors-popups.md (Tier 8, prompt 138)
 
 ## To Start
 
