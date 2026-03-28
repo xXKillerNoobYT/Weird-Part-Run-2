@@ -128,6 +128,7 @@ struct IOSMainView: View {
                     Label(module.label, systemImage: module.icon)
                 }
                 .tag(module.id)
+                .accessibilityIdentifier("tab_\(module.id)")
             }
 
             moreTab
@@ -135,6 +136,7 @@ struct IOSMainView: View {
                     Label("More", systemImage: "ellipsis.circle.fill")
                 }
                 .tag("__more__")
+                .accessibilityIdentifier("tab_more")
         }
         .overlay(alignment: .bottomTrailing) {
             if !showAIAssistant || aiDisplayMode == .sheet {
@@ -420,6 +422,7 @@ struct IOSMainView: View {
                 .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
         }
         .dsMinTapTarget()
+        .accessibilityIdentifier("aiAssistantButton")
         .padding(.trailing, DS.Space.lg)
         .padding(.bottom, bottomPadding)
     }

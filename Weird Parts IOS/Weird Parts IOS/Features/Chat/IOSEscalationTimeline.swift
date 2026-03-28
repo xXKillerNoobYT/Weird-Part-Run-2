@@ -14,13 +14,19 @@ struct IOSEscalationTimeline: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var actionError: String?
-    @State private var showPushBackSheet = false
     @State private var pushBackReason = ""
     @State private var activeSheet: ActiveSheet?
 
+    // Single enum for all sheets — avoids SwiftUI multiple-.sheet() bug
     private enum ActiveSheet: Identifiable {
         case help
-        var id: String { "help" }
+        case pushBack
+        var id: String {
+            switch self {
+            case .help: return "help"
+            case .pushBack: return "pushBack"
+            }
+        }
     }
 
     private var canEscalate: Bool {
@@ -67,26 +73,28 @@ struct IOSEscalationTimeline: View {
                 }
             }
         }
-        .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(
-                title: "Escalation Timeline Help",
-                sections: [
-                    ("What This Page Does", "This page shows the full escalation history of a Q&A question or RFI. You can see every level the question has passed through -- Worker, Lead, Manager, Office -- who reviewed it, when, and any notes they left."),
-                    ("How to Read the Timeline", "The vertical timeline shows each escalation level as a node. Green nodes are completed levels, the blue node is the current level, and gray nodes have not been reached yet. Reviewer names and timestamps appear next to each completed step."),
-                    ("Escalating a Question", "If you cannot answer the question at your level, tap the Escalate button to send it up to the next level. The question moves from Worker to Lead, Lead to Manager, or Manager to Office."),
-                    ("Pushing Back", "If a question was escalated to your level but should be handled at a lower level, tap Push Back. You will need to provide a reason explaining why it is being sent back down. This feedback helps the team learn the right routing."),
-                    ("Tips", "Check the status and priority badges at the top for a quick summary. The question text, who asked it, and any existing answer are all shown in the header. Only open questions can be escalated; closed questions cannot be changed.")
-                ]
-            )
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                PageHelpSheet(
+                    title: "Escalation Timeline Help",
+                    sections: [
+                        ("What This Page Does", "This page shows the full escalation history of a Q&A question or RFI. You can see every level the question has passed through -- Worker, Lead, Manager, Office -- who reviewed it, when, and any notes they left."),
+                        ("How to Read the Timeline", "The vertical timeline shows each escalation level as a node. Green nodes are completed levels, the blue node is the current level, and gray nodes have not been reached yet. Reviewer names and timestamps appear next to each completed step."),
+                        ("Escalating a Question", "If you cannot answer the question at your level, tap the Escalate button to send it up to the next level. The question moves from Worker to Lead, Lead to Manager, or Manager to Office."),
+                        ("Pushing Back", "If a question was escalated to your level but should be handled at a lower level, tap Push Back. You will need to provide a reason explaining why it is being sent back down. This feedback helps the team learn the right routing."),
+                        ("Tips", "Check the status and priority badges at the top for a quick summary. The question text, who asked it, and any existing answer are all shown in the header. Only open questions can be escalated; closed questions cannot be changed.")
+                    ]
+                )
+            case .pushBack:
+                PushBackSheet(
+                    reason: $pushBackReason,
+                    onSubmit: { doPushBack() }
+                )
+            }
         }
         .refreshable { loadSteps() }
         .task { loadSteps() }
-        .sheet(isPresented: $showPushBackSheet) {
-            PushBackSheet(
-                reason: $pushBackReason,
-                onSubmit: { doPushBack() }
-            )
-        }
     }
 
     // MARK: - Thread Info Header
@@ -191,7 +199,7 @@ struct IOSEscalationTimeline: View {
                 }
                 if canPushBack {
                     Button {
-                        showPushBackSheet = true
+                        activeSheet = .pushBack
                     } label: {
                         Label("Push Back", systemImage: "arrow.down.circle")
                             .font(.caption)
@@ -250,7 +258,7 @@ struct IOSEscalationTimeline: View {
         do {
             try service.pushBackThread(threadId: thread.id, pushedBackBy: userId, reason: reason)
             pushBackReason = ""
-            showPushBackSheet = false
+            activeSheet = nil
             loadSteps()
         } catch {
             actionError = userFriendlyError(error, context: "process escalation")

@@ -72,7 +72,7 @@ struct BillingPayPage: View {
                 ("How to Use It", "Choose cycle and period types, set the start day of each, then tap Save. The start day determines when each period begins (1-28)."),
             ])
         }
-        .onAppear { loadSettings() }
+        .task { loadSettings() }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") { errorMessage = nil }
         } message: {

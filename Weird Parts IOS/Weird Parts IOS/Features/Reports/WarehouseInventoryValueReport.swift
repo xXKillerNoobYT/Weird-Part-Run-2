@@ -94,7 +94,7 @@ struct WarehouseInventoryValueReport: View {
             ])
         }
         .refreshable { loadData() }
-        .onAppear { loadData() }
+        .task { loadData() }
     }
 
     private var totalOnHand: Double { valueData.reduce(0) { $0 + $1.onHandValue } }

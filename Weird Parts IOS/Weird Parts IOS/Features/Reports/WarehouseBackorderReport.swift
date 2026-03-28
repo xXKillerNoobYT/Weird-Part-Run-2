@@ -104,7 +104,7 @@ struct WarehouseBackorderReport: View {
             ])
         }
         .refreshable { loadData() }
-        .onAppear { loadData() }
+        .task { loadData() }
     }
 
     private var totalBackordered: Int { backorderData.reduce(0) { $0 + $1.qtyBackordered } }

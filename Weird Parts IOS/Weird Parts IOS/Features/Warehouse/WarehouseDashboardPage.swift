@@ -273,6 +273,7 @@ struct WarehouseDashboardPage: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("whAction_newMovement")
 
                 Button { activeSheet = .qrScanner } label: {
                     quickActionButton(
@@ -282,6 +283,7 @@ struct WarehouseDashboardPage: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("whAction_scanQR")
 
                 Button { activeSheet = .onboardingWizard } label: {
                     quickActionButton(
@@ -291,6 +293,7 @@ struct WarehouseDashboardPage: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("whAction_setupWizard")
             }
         }
     }

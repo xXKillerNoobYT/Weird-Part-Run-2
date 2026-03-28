@@ -152,8 +152,8 @@ public final class WishlistService: Sendable {
                 dismissedBy: nil,
                 dismissedAt: nil,
                 notes: notes,
-                createdAt: nil,
-                updatedAt: nil
+                createdAt: ISO8601DateFormatter().string(from: Date()),
+                updatedAt: ISO8601DateFormatter().string(from: Date())
             )
             try item.insert(dbConn)
             return item

@@ -724,13 +724,11 @@ struct IOSProcurementPage: View {
     @ViewBuilder
     private func pullOptionsView(_ item: OrdersService.ProcurementItem) -> some View {
         if item.shopStock > 0 && item.totalDemand > 0 {
-            let hasPullDecision = pullDecisions[item.id] != nil
             let currentlyPulling = isPulling.contains(item.id)
 
             VStack(spacing: 4) {
-                if hasPullDecision {
+                if let decision = pullDecisions[item.id] {
                     // Show the active pull decision
-                    let decision = pullDecisions[item.id]!
                     HStack(spacing: 6) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)

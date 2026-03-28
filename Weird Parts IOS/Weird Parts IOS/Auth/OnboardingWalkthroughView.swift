@@ -260,8 +260,8 @@ struct OnboardingWalkthroughView: View {
     private var availableModules: [OnboardingModule] {
         let permissions = appCore.permissions
         return onboardingModules.filter { module in
-            module.requiredPermission == nil ||
-            permissions.contains(module.requiredPermission!)
+            guard let permission = module.requiredPermission else { return true }
+            return permissions.contains(permission)
         }
     }
 

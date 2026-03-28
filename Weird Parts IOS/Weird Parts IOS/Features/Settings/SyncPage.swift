@@ -149,7 +149,7 @@ struct SyncPage: View {
                 ("How to Use It", "Enter the shop server address, set a sync interval, and enable auto-sync. Tap 'Sync Now' for an immediate sync. Changes are merged using last-writer-wins with field-level conflict resolution."),
             ])
         }
-        .onAppear { loadSettings() }
+        .task { loadSettings() }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") { errorMessage = nil }
         } message: {

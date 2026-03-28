@@ -57,16 +57,16 @@ public final class DailyReportGenerator: Sendable {
 
         do { return try db.writer.read { dbConn in
             let userName = try String.fetchOne(dbConn, sql: """
-                SELECT COALESCE(display_name, first_name || ' ' || last_name, email, 'Unknown')
+                SELECT COALESCE(display_name, email, 'Unknown')
                 FROM users WHERE id = ?
                 """, arguments: [userId]) ?? "Unknown"
 
             let jobName = try String.fetchOne(dbConn, sql: """
-                SELECT COALESCE(job_name, name, 'Unknown') FROM jobs WHERE id = ?
+                SELECT COALESCE(job_name, job_number, 'Unknown') FROM jobs WHERE id = ?
                 """, arguments: [jobId]) ?? "Unknown"
 
             let clockRows = try Row.fetchAll(dbConn, sql: """
-                SELECT clock_in, clock_out, break_minutes
+                SELECT clock_in, clock_out, regular_hours, overtime_hours
                 FROM labor_entries
                 WHERE user_id = ? AND job_id = ? AND date(clock_in) = ?
                   AND deleted_at IS NULL
@@ -85,8 +85,16 @@ public final class DailyReportGenerator: Sendable {
                     let outDate = cout.flatMap { parseDateTime($0) } ?? date
                     totalMinutes += outDate.timeIntervalSince(inDate) / 60
                 }
-                totalBreakMinutes += (row["break_minutes"] as Int?) ?? 0
             }
+
+            // Get break minutes from break_records table
+            totalBreakMinutes = try Int.fetchOne(dbConn, sql: """
+                SELECT COALESCE(SUM(
+                    CAST((julianday(COALESCE(ended_at, datetime('now'))) - julianday(started_at)) * 1440 AS INTEGER)
+                ), 0)
+                FROM break_records
+                WHERE user_id = ? AND date(started_at) = ? AND deleted_at IS NULL
+                """, arguments: [userId, dateStr]) ?? 0
 
             let totalHours = max(0, (totalMinutes - Double(totalBreakMinutes))) / 60.0
 
@@ -109,9 +117,9 @@ public final class DailyReportGenerator: Sendable {
             }
 
             let jpoRows = try Row.fetchAll(dbConn, sql: """
-                SELECT jpo.jpo_number, COUNT(jpol.id) as line_count
+                SELECT jpo.order_number, COUNT(jpol.id) as line_count
                 FROM job_parts_orders jpo
-                LEFT JOIN jpo_lines jpol ON jpol.jpo_id = jpo.id
+                LEFT JOIN jpo_line_items jpol ON jpol.jpo_id = jpo.id
                 WHERE jpo.job_id = ? AND date(jpo.created_at) = ?
                   AND jpo.deleted_at IS NULL
                 GROUP BY jpo.id
@@ -119,7 +127,7 @@ public final class DailyReportGenerator: Sendable {
                 """, arguments: [jobId, dateStr])
 
             let jpos = jpoRows.map { row in
-                JPOSummary(jpoNumber: row["jpo_number"] ?? "", lineCount: row["line_count"] ?? 0)
+                JPOSummary(jpoNumber: row["order_number"] ?? "", lineCount: row["line_count"] ?? 0)
             }
 
             let qaRows = try Row.fetchAll(dbConn, sql: """
@@ -174,10 +182,9 @@ public final class DailyReportGenerator: Sendable {
             return try db.writer.read { dbConn in
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT le.job_id,
-                           COALESCE(j.job_name, j.name, 'Unknown') as job_name,
+                           COALESCE(j.job_name, j.job_number, 'Unknown') as job_name,
                            SUM(
                                (julianday(COALESCE(le.clock_out, datetime('now'))) - julianday(le.clock_in)) * 24
-                               - COALESCE(le.break_minutes, 0) / 60.0
                            ) as total_hours
                     FROM labor_entries le
                     LEFT JOIN jobs j ON j.id = le.job_id
@@ -222,6 +229,6 @@ public final class DailyReportGenerator: Sendable {
 
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
-        return message.contains("no such table")
+        return message.contains("no such table") || message.contains("no such column")
     }
 }

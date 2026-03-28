@@ -165,17 +165,13 @@ public final class BackgroundTaskService: Sendable {
         do {
             return try db.writer.read { dbConn in
                 let cutoff = Date().addingTimeInterval(-86400) // 24 hours ago
-                let formatter = DateFormatter()
-                formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-                formatter.timeZone = TimeZone(identifier: "UTC")
-                let cutoffStr = formatter.string(from: cutoff)
 
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT status, COUNT(*) as cnt
                     FROM background_task_log
                     WHERE started_at >= ?
                     GROUP BY status
-                """, arguments: [cutoffStr])
+                """, arguments: [cutoff])
 
                 var total = 0, success = 0, failure = 0, running = 0
                 for row in rows {
@@ -244,14 +240,10 @@ public final class BackgroundTaskService: Sendable {
         do {
             return try db.writer.write { dbConn in
                 let cutoff = Date().addingTimeInterval(-Double(daysToKeep) * 86400)
-                let formatter = DateFormatter()
-                formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-                formatter.timeZone = TimeZone(identifier: "UTC")
-                let cutoffStr = formatter.string(from: cutoff)
 
                 try dbConn.execute(
-                    sql: "DELETE FROM background_task_log WHERE started_at < ?",
-                    arguments: [cutoffStr]
+                    sql: "DELETE FROM background_task_log WHERE started_at <= ?",
+                    arguments: [cutoff]
                 )
                 return dbConn.changesCount
             }
@@ -268,10 +260,6 @@ public final class BackgroundTaskService: Sendable {
         do {
             return try db.writer.write { dbConn in
                 let cutoff = Date().addingTimeInterval(-Double(maxRunMinutes) * 60)
-                let formatter = DateFormatter()
-                formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-                formatter.timeZone = TimeZone(identifier: "UTC")
-                let cutoffStr = formatter.string(from: cutoff)
 
                 try dbConn.execute(
                     sql: """
@@ -279,9 +267,9 @@ public final class BackgroundTaskService: Sendable {
                         SET status = 'failed',
                             completed_at = datetime('now'),
                             error_message = 'Task timed out (stale cleanup)'
-                        WHERE status = 'running' AND started_at < ?
+                        WHERE status = 'running' AND started_at <= ?
                     """,
-                    arguments: [cutoffStr]
+                    arguments: [cutoff]
                 )
                 return dbConn.changesCount
             }

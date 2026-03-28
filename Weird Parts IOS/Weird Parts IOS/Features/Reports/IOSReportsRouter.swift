@@ -364,7 +364,7 @@ private struct CustomReportsView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .onAppear { loadSavedReports() }
+        .task { loadSavedReports() }
     }
 
     private func loadSavedReports() {
@@ -470,7 +470,7 @@ private struct SharedReportsView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .onAppear { loadSharedReports() }
+        .task { loadSharedReports() }
     }
 
     private func loadSharedReports() {

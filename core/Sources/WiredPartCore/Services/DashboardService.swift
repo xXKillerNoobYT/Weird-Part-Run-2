@@ -1692,7 +1692,7 @@ public final class DashboardService: Sendable {
                            COALESCE(u.display_name, u.email, 'Unknown') AS requester
                     FROM job_parts_orders jpo
                     LEFT JOIN jobs j ON jpo.job_id = j.id
-                    LEFT JOIN users u ON jpo.created_by = u.id
+                    LEFT JOIN users u ON jpo.requested_by = u.id
                     WHERE jpo.status = 'submitted'
                       AND jpo.deleted_at IS NULL
                     ORDER BY jpo.created_at ASC

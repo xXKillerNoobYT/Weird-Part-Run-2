@@ -97,6 +97,7 @@ struct JobsListPage: View {
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityIdentifier("createJobButton")
                     .requiresPermission("manage_jobs")
                 }
             }
@@ -182,6 +183,7 @@ struct JobsListPage: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("jobFilter_\(filter.rawValue)")
     }
 
     /// Payment Hold card only visible to users with manage_jobs permission.
@@ -293,6 +295,7 @@ struct JobsListPage: View {
             }
         }
         .padding(.vertical, 4)
+        .accessibilityIdentifier("jobRow_\(job.id)")
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(job.jobName), \(job.jobNumber), status \(job.status), priority \(job.priority)")
     }

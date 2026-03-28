@@ -99,7 +99,7 @@ struct FleetMileageSummaryReport: View {
             ])
         }
         .refreshable { loadData() }
-        .onAppear { loadData() }
+        .task { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
     }

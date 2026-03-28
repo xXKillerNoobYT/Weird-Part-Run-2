@@ -182,5 +182,9 @@ struct BreakServiceTests {
 
         let rounded = breakService.getRoundedTime(time: "10:07", roundingMinutes: 15)
         #expect(rounded == "10:00" || rounded == "10:15")
+
+        // 10:16 should round down to 10:15
+        let rounded2 = breakService.getRoundedTime(time: "10:16", roundingMinutes: 15)
+        #expect(rounded2 == "10:15")
     }
 }

@@ -118,7 +118,7 @@ struct CompanyProfilesPage: View {
             }
         }
         .refreshable { loadProfiles() }
-        .onAppear { loadProfiles() }
+        .task { loadProfiles() }
         .alert("Delete Profile", isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) { profileToDelete = nil }
             Button("Delete", role: .destructive) {

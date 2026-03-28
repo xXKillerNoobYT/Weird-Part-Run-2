@@ -118,8 +118,10 @@ struct IOSOfficeDashboardPage: View {
             }
         }
         .refreshable { loadData() }
-        .task { appCore.onboardingManager?.markCompleted("office-view") }
-        .onAppear { loadData() }
+        .task {
+            appCore.onboardingManager?.markCompleted("office-view")
+            loadData()
+        }
     }
 
     // MARK: - AI Summary Section

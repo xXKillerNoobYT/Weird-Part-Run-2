@@ -852,8 +852,13 @@ struct ToolsServiceTests {
         let toolId = try insertTool(env, toolNumber: "T-TRD", name: "Trade Tool", status: "available")
 
         // Create a second user as the trade recipient
-        let recipientResult = try env.auth.seedFirstAdmin(displayName: "Recipient", pin: "5678")
-        let recipientId = recipientResult.user!.id!
+        let recipientId = try env.db.writer.write { dbConn -> Int64 in
+            try dbConn.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active, created_at, updated_at)
+                VALUES ('Recipient', 'hash', 1, datetime('now'), datetime('now'))
+                """)
+            return dbConn.lastInsertedRowID
+        }
 
         #expect(throws: ToolsService.ToolsServiceError.self) {
             try env.tools.initiateTrade(

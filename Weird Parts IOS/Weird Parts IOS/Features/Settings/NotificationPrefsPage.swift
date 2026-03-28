@@ -64,7 +64,7 @@ struct NotificationPrefsPage: View {
                 ("How to Use It", "Toggle each category on or off, then tap Save Preferences. Notification preferences are stored locally on this device."),
             ])
         }
-        .onAppear { loadPrefs() }
+        .task { loadPrefs() }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") { errorMessage = nil }
         } message: {

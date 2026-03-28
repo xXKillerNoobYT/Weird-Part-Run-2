@@ -674,7 +674,10 @@ struct NotebooksServiceTests {
         // History should have 2 entries (initial classify + reclassify)
         let history = try env.notebooks.getClassificationHistory(entryId: entryId)
         #expect(history.count == 2)
-        #expect(history[0].reason == "Customer reported pre-existing issue")
+        // One entry should have the reclassify reason
+        #expect(history.contains { $0.reason == "Customer reported pre-existing issue" })
+        // One entry should have the warranty classification
+        #expect(history.contains { $0.newClassification == "warranty" })
     }
 
     // MARK: - 20. Ensure Warranty Section

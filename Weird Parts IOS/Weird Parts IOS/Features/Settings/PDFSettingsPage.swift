@@ -82,7 +82,7 @@ struct PDFSettingsPage: View {
                 ("How to Use It", "Adjust display options, pick an accent color, set payment terms, and enter footer or delivery notes. Tap Save to apply changes to all future PDF exports."),
             ])
         }
-        .onAppear { loadPDFSettings() }
+        .task { loadPDFSettings() }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") { errorMessage = nil }
         } message: {

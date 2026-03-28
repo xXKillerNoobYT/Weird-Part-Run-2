@@ -51,12 +51,12 @@ struct DatabaseTests {
             "warehouse_locations", // 020
             // Notebooks & auth (022-024)
             // Pricing & suppliers (025-028)
-            "pricing_rules",     // 025
+            "pricing_tiers",     // 025
             // Forecasting (029-031)
             // JPO & staging (032-035)
             "staging_boxes",     // 035
             // Clock & chat (036-037)
-            "chat_attachments",  // 037
+            "message_attachments", // 037
             // Notebook hierarchy (038-039)
             "notebook_templates", // 039
             // Warehouse floor plans (040)
@@ -68,17 +68,17 @@ struct DatabaseTests {
             "part_confidence",   // 041
             "break_records",     // 042
             // Payment & classification (043-045)
-            "payment_tracking",  // 043
+            "payment_records",   // 043
             // Scheduling & estimation (046-047)
             "estimation_questions", // 047
             // Tools detail (048-050)
-            "tool_parts",        // 048
+            "tool_checkouts",    // 048
             // Vehicle & trailer (051-053)
-            "pre_trip_inspections", // 053
+            "inspection_templates", // 053
             // Reports & office (054-055)
             "saved_reports",     // 054
             // AI conversations (056)
-            "ai_conversations",  // 056
+            "ai_conversation_messages", // 056
             // Wishlist & background tasks (057-058)
             "wishlist_items",    // 057
             "background_task_log", // 058

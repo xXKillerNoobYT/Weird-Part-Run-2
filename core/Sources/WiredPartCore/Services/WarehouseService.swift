@@ -915,7 +915,7 @@ public final class WarehouseService: Sendable {
             try dbConn.execute(
                 sql: """
                     INSERT INTO receiving_session_items (session_id, po_line_id, expected_qty, created_at)
-                    SELECT ?, id, qty, datetime('now')
+                    SELECT ?, id, qty_ordered, datetime('now')
                     FROM po_line_items
                     WHERE po_id = ? AND deleted_at IS NULL
                     """,
@@ -2595,7 +2595,7 @@ public final class WarehouseService: Sendable {
             let rows = try Row.fetchAll(dbConn, sql: """
                 SELECT pa.part_id, pa.is_home,
                        COALESCE(p.name, '') as part_name,
-                       p.part_number
+                       p.code as part_number
                 FROM warehouse_part_assignments pa
                 JOIN parts p ON p.id = pa.part_id
                 WHERE pa.area_id = ? AND pa.deleted_at IS NULL AND p.deleted_at IS NULL
@@ -2784,7 +2784,7 @@ public final class WarehouseService: Sendable {
         let rows = try Row.fetchAll(dbConn, sql: """
             SELECT pa.part_id, pa.is_home,
                    COALESCE(p.name, '') as part_name,
-                   p.part_number
+                   p.code as part_number
             FROM warehouse_part_assignments pa
             JOIN parts p ON p.id = pa.part_id
             WHERE pa.area_id = ? AND pa.deleted_at IS NULL AND p.deleted_at IS NULL
@@ -3015,7 +3015,7 @@ public final class WarehouseService: Sendable {
             let moveCount = try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM stock_movements
                 WHERE part_id = ? AND created_at > ?
-                  AND (from_location LIKE '%area%' OR to_location LIKE '%area%')
+                  AND (from_location_type = 'area' OR to_location_type = 'area')
                 """, arguments: [partId, sinceDate]) ?? 0
 
             // 1.0 base + 0.2 per movement, capped at 3.0

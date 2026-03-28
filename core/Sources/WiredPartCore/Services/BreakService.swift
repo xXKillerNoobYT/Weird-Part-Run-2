@@ -206,12 +206,12 @@ public final class BreakService: Sendable {
 
     /// Get break records for a user on a specific date.
     public func getBreakRecordsForDay(userId: Int64, date: Date = Date()) throws -> [BreakRecord] {
-        let dateStr = Self.formatDate(date)
+        let dateStr = Self.formatDateUTC(date)
         do {
             return try db.writer.read { dbConn in
                 try BreakRecord
                     .filter(Column("user_id") == userId && Column("deleted_at") == nil)
-                    .filter(sql: "date(started_at) = ?", arguments: [dateStr])
+                    .filter(sql: "substr(started_at, 1, 10) = ?", arguments: [dateStr])
                     .order(Column("started_at").asc)
                     .fetchAll(dbConn)
             }
@@ -403,9 +403,22 @@ public final class BreakService: Sendable {
     // =========================================================================
 
     /// Round a time string to the nearest N minutes (for reports only).
+    /// Accepts ISO8601 datetime strings or short "HH:mm" time strings.
+    /// Returns in the same format as the input.
     public func getRoundedTime(time: String, roundingMinutes: Int = 15) -> String {
+        // Handle short "HH:mm" format
+        let isShortTime = time.count <= 5 && time.contains(":")
+        if isShortTime {
+            let parts = time.split(separator: ":")
+            guard parts.count == 2, let hour = Int(parts[0]), let minute = Int(parts[1]) else { return time }
+            let roundedMinute = (minute / roundingMinutes) * roundingMinutes
+            return String(format: "%02d:%02d", hour, roundedMinute)
+        }
+
+        // Handle full datetime formats
         guard let date = Self.parseDateTime(time) else { return time }
-        let calendar = Calendar.current
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone(identifier: "UTC")!
         let minute = calendar.component(.minute, from: date)
         let roundedMinute = (minute / roundingMinutes) * roundingMinutes
         let diff = roundedMinute - minute
@@ -434,6 +447,14 @@ public final class BreakService: Sendable {
     private static func formatDate(_ date: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date)
+    }
+
+    /// Format a date as "yyyy-MM-dd" in UTC (matching how nowString() stores timestamps).
+    private static func formatDateUTC(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "UTC")
         return f.string(from: date)
     }
 

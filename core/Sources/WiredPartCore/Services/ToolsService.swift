@@ -1268,12 +1268,33 @@ public final class ToolsService: Sendable {
         notes: String?, cost: Double?
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            // Ensure a default maintenance type exists for the FK constraint
+            let typeCount = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM tool_maintenance_types") ?? 0
+            if typeCount == 0 {
+                try dbConn.execute(sql: """
+                    INSERT OR IGNORE INTO tool_maintenance_types (name, description, sort_order)
+                    VALUES ('General', 'General maintenance', 0)
+                    """)
+            }
+
+            // Resolve the maintenance_type_id from the config or default
+            let typeId: Int64
+            if let cId = configId {
+                typeId = try Int64.fetchOne(dbConn, sql: """
+                    SELECT id FROM tool_maintenance_types LIMIT 1
+                    """) ?? cId
+            } else {
+                typeId = try Int64.fetchOne(dbConn, sql: """
+                    SELECT id FROM tool_maintenance_types LIMIT 1
+                    """) ?? 1
+            }
+
             // Insert record into the existing tool_maintenance_records table
             try dbConn.execute(sql: """
                 INSERT INTO tool_maintenance_records
                 (tool_id, maintenance_type_id, service_date, cost, description, performed_by, notes, created_at)
-                VALUES (?, COALESCE(?, 1), date('now'), ?, ?, ?, ?, datetime('now'))
-                """, arguments: [toolId, configId, cost,
+                VALUES (?, ?, date('now'), ?, ?, ?, ?, datetime('now'))
+                """, arguments: [toolId, typeId, cost,
                                  "\(conditionBefore ?? "—") → \(conditionAfter ?? "—")",
                                  performedBy, notes])
 

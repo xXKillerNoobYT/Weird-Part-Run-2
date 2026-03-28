@@ -384,7 +384,7 @@ struct IOSPODetailPage: View {
                     Button("Done") { activeSheet = nil }
                 }
             }
-            .onAppear { loadSupplierChannels() }
+            .task { loadSupplierChannels() }
         }
     }
 
@@ -565,7 +565,7 @@ struct IOSPODetailPage: View {
                     Button("Cancel") { activeSheet = nil }
                 }
             }
-            .onAppear { loadAvailableSuppliers() }
+            .task { loadAvailableSuppliers() }
         }
     }
 

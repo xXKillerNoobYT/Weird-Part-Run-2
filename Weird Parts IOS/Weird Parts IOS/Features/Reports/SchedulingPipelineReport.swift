@@ -87,7 +87,7 @@ struct SchedulingPipelineReport: View {
             ])
         }
         .refreshable { loadData() }
-        .onAppear { loadData() }
+        .task { loadData() }
     }
 
     private var totalJobs: Int { pipelineData.reduce(0) { $0 + $1.jobCount } }

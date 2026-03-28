@@ -25,14 +25,18 @@ struct DashboardView: View {
     @State private var taskSummary: BackgroundTaskService.TaskSummary?
     @State private var recentTasks: [BackgroundTaskService.TaskLogEntry] = []
 
-    // Sheet management
+    // Sheet management — single enum to avoid SwiftUI multiple-.sheet() bug
     private enum ActiveSheet: Identifiable {
         case help
         case kpiDetail(KPIDetailType)
+        case createJob
+        case companySetup
         var id: String {
             switch self {
             case .help: return "help"
             case .kpiDetail(let type): return "kpi_\(type.id)"
+            case .createJob: return "createJob"
+            case .companySetup: return "companySetup"
             }
         }
     }
@@ -56,8 +60,7 @@ struct DashboardView: View {
     @AppStorage("onboarding_checklist_dismissed") private var checklistDismissed = false
     @AppStorage("hasCompletedCompanySetup") private var hasCompletedCompanySetup = false
     @State private var warehouseHasFloorPlan = false
-    @State private var showCreateJobSheet = false
-    @State private var showCompanySetupWizard = false
+    // showCreateJobSheet and showCompanySetupWizard consolidated into ActiveSheet enum
 
     @State private var isLoading = true
     @State private var loadError: String?
@@ -145,15 +148,13 @@ struct DashboardView: View {
                     KPIDetailSheet(type: detail)
                         .environmentObject(appCore)
                         .task { appCore.onboardingManager?.markCompleted("dashboard-tap-kpi") }
+                case .createJob:
+                    IOSCreateJobSheet()
+                        .environmentObject(appCore)
+                case .companySetup:
+                    CompanySetupWizard()
+                        .environmentObject(appCore)
                 }
-            }
-            .sheet(isPresented: $showCreateJobSheet) {
-                IOSCreateJobSheet()
-                    .environmentObject(appCore)
-            }
-            .sheet(isPresented: $showCompanySetupWizard) {
-                CompanySetupWizard()
-                    .environmentObject(appCore)
             }
             .task { appCore.onboardingManager?.markCompleted("dashboard-view-kpis") }
             .navigationDestination(for: DashboardDestination.self) { dest in
@@ -230,7 +231,7 @@ struct DashboardView: View {
 
                     // Step 3 uses a sheet instead of NavigationLink
                     Button {
-                        showCreateJobSheet = true
+                        activeSheet = .createJob
                     } label: {
                         checklistItemLabel(
                             step: 3,
@@ -276,7 +277,7 @@ struct DashboardView: View {
                 // Resume company setup (admin only)
                 if !hasCompletedCompanySetup && appCore.hasPermission("manage_jobs") {
                     Button {
-                        showCompanySetupWizard = true
+                        activeSheet = .companySetup
                     } label: {
                         Label("Resume Company Setup", systemImage: "arrow.right.circle.fill")
                             .font(.subheadline)
@@ -532,6 +533,7 @@ struct DashboardView: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("clockStatusBanner")
     }
 
     // MARK: - Duration Update
@@ -565,23 +567,28 @@ struct DashboardView: View {
                 DSKPICard(title: "Part Types", value: "\(stats.partTypes)", icon: "list.clipboard", color: .blue) {
                     activeSheet = .kpiDetail(.partTypes)
                 }
+                .accessibilityIdentifier("kpi_partTypes")
                 DSKPICard(title: "Total Stock", value: "\(stats.totalStock)", icon: "shippingbox.fill", color: .teal) {
                     activeSheet = .kpiDetail(.totalStock)
                 }
+                .accessibilityIdentifier("kpi_totalStock")
             }
             // Row 2: Active Jobs + Pending Orders
             LazyVGrid(columns: twoColumns, spacing: DS.Space.md) {
                 DSKPICard(title: "Active Jobs", value: "\(stats.activeJobs)", icon: "hammer", color: .orange) {
                     activeSheet = .kpiDetail(.activeJobs)
                 }
+                .accessibilityIdentifier("kpi_activeJobs")
                 DSKPICard(title: "Pending Orders", value: "\(stats.pendingOrders)", icon: "cart", color: .purple) {
                     activeSheet = .kpiDetail(.pendingOrders)
                 }
+                .accessibilityIdentifier("kpi_pendingOrders")
             }
             // Row 3: Low Stock (full width)
             DSKPICard(title: "Low Stock", value: "\(stats.lowStockCount)", icon: "exclamationmark.triangle", color: stats.lowStockCount > 0 ? .red : .green) {
                 activeSheet = .kpiDetail(.lowStock)
             }
+            .accessibilityIdentifier("kpi_lowStock")
         }
         .padding(.horizontal, DS.Space.lg)
     }
@@ -812,23 +819,28 @@ struct DashboardView: View {
                         DSQuickActionButton(title: "Scan QR", icon: "qrcode.viewfinder", color: .purple)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("quickAction_scanQR")
 
                     NavigationLink(value: DashboardDestination.clock) {
                         DSQuickActionButton(title: "Clock In", icon: "clock.badge.checkmark.fill", color: .green)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("quickAction_clockIn")
 
                     NavigationLink(value: DashboardDestination.dailyReport) {
                         DSQuickActionButton(title: "Daily Report", icon: "doc.text.magnifyingglass", color: .indigo)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("quickAction_dailyReport")
 
                     DSQuickActionButton(title: "Move Stock", icon: "arrow.left.arrow.right", color: .orange) {
                         navigateToModule("warehouse")
                     }
+                    .accessibilityIdentifier("quickAction_moveStock")
                     DSQuickActionButton(title: "New Order", icon: "plus.circle.fill", color: .blue) {
                         navigateToModule("orders")
                     }
+                    .accessibilityIdentifier("quickAction_newOrder")
                 }
                 .padding(.horizontal, DS.Space.lg)
             }

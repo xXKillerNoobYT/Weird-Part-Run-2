@@ -38,7 +38,8 @@ class OnboardingProgressManager: ObservableObject {
     /// Returns tasks for a page filtered by user's hat permissions.
     func tasksForPage(_ pageId: String, permissions: [String]) -> [OnboardingTask] {
         onboardingTaskRegistry[pageId]?.filter { task in
-            task.requiredPermission == nil || permissions.contains(task.requiredPermission!)
+            guard let permission = task.requiredPermission else { return true }
+            return permissions.contains(permission)
         } ?? []
     }
 
@@ -46,7 +47,8 @@ class OnboardingProgressManager: ObservableObject {
     func moduleProgress(_ moduleId: String, permissions: [String]) -> (completed: Int, total: Int) {
         let moduleTasks = onboardingTaskRegistry.filter { $0.key.hasPrefix(moduleId) }
         let available = moduleTasks.values.flatMap { $0 }.filter { task in
-            task.requiredPermission == nil || permissions.contains(task.requiredPermission!)
+            guard let permission = task.requiredPermission else { return true }
+            return permissions.contains(permission)
         }
         let done = available.filter { completedTasks.contains($0.id) }
         return (done.count, available.count)
@@ -55,7 +57,8 @@ class OnboardingProgressManager: ObservableObject {
     /// Overall progress across all modules.
     func overallProgress(permissions: [String]) -> (completed: Int, total: Int) {
         let available = onboardingTaskRegistry.values.flatMap { $0 }.filter { task in
-            task.requiredPermission == nil || permissions.contains(task.requiredPermission!)
+            guard let permission = task.requiredPermission else { return true }
+            return permissions.contains(permission)
         }
         let done = available.filter { completedTasks.contains($0.id) }
         return (done.count, available.count)

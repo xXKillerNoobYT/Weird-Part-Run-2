@@ -96,7 +96,7 @@ struct ThemesPage: View {
                 ("How to Use It", "Select a mode, tap a color preset, choose a font, then tap Save Theme. Changes apply across the entire app on this device."),
             ])
         }
-        .onAppear { loadTheme() }
+        .task { loadTheme() }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") { errorMessage = nil }
         } message: {

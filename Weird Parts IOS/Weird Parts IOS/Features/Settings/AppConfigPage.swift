@@ -116,7 +116,7 @@ struct AppConfigPage: View {
                 ("How to Use It", "Adjust values for each setting and tap Save. Auto-lock controls how long before the app locks. Stale data warning triggers when sync data is old. Payment tracking enables invoice and payment monitoring per customer."),
             ])
         }
-        .onAppear { loadConfig() }
+        .task { loadConfig() }
         .alert("Error", isPresented: Binding(get: { loadError != nil || actionError != nil }, set: { if !$0 { loadError = nil; actionError = nil } })) {
             Button("OK") { loadError = nil; actionError = nil }
         } message: {

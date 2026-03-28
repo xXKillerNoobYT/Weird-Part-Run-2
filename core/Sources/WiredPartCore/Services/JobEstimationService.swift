@@ -422,7 +422,7 @@ public final class JobEstimationService: Sendable {
             return try db.writer.write { dbConn in
                 // Calculate actual hours worked so far from labor entries
                 let actualHours = try Double.fetchOne(dbConn, sql: """
-                    SELECT COALESCE(SUM(hours_worked), 0) FROM labor_entries
+                    SELECT COALESCE(SUM(regular_hours + overtime_hours), 0) FROM labor_entries
                     WHERE job_id = ? AND deleted_at IS NULL
                     """, arguments: [jobId]) ?? 0
 
@@ -699,9 +699,9 @@ public final class JobEstimationService: Sendable {
 
             let avgHoursPerDay = try Double.fetchOne(dbConn, sql: """
                 SELECT AVG(daily_hours) FROM (
-                    SELECT date(clock_in) as work_date, SUM(hours_worked) as daily_hours
+                    SELECT date(clock_in) as work_date, SUM(regular_hours + overtime_hours) as daily_hours
                     FROM labor_entries
-                    WHERE clock_in >= ? AND deleted_at IS NULL AND hours_worked > 0
+                    WHERE clock_in >= ? AND deleted_at IS NULL AND (regular_hours + overtime_hours) > 0
                     GROUP BY user_id, date(clock_in)
                 )
                 """, arguments: [sinceDate]) ?? 8.0

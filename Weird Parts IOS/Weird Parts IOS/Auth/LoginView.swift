@@ -46,6 +46,7 @@ struct LoginView: View {
                             Image(systemName: "chevron.left")
                             Text("Back")
                         }
+                        .accessibilityIdentifier("loginBackButton")
                         Spacer()
                     }
                     .padding(.horizontal)
@@ -61,11 +62,13 @@ struct LoginView: View {
                         .frame(maxWidth: 200)
                         .multilineTextAlignment(.center)
                         .onSubmit { attemptLogin() }
+                        .accessibilityIdentifier("loginPINField")
 
                     if let error = errorMessage {
                         Text(error)
                             .font(.caption)
                             .foregroundStyle(.red)
+                            .accessibilityIdentifier("loginErrorMessage")
                     }
 
                     Button {
@@ -81,6 +84,7 @@ struct LoginView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(pin.count < 4 || isLoading)
+                    .accessibilityIdentifier("loginSignInButton")
                 }
                 .padding()
             } else {
@@ -142,9 +146,11 @@ struct LoginView: View {
                                     )
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityIdentifier("loginUserRow_\(user.id ?? 0)")
                             }
                         }
                         .padding(.horizontal)
+                        .accessibilityIdentifier("loginUserList")
                     }
                 }
             }
@@ -152,6 +158,7 @@ struct LoginView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("loginView")
         .background(Color(.systemBackground))
         .onAppear { loadUsers() }
     }

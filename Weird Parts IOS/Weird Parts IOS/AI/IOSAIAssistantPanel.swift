@@ -721,11 +721,11 @@ struct IOSAIAssistantPanel: View {
     private func buildNavigationContext(permissions: [String]) -> String {
         var lines: [String] = ["App Navigation Structure:"]
         for module in appModules {
-            let hasAccess = module.permission == nil || permissions.contains(module.permission!)
+            let hasAccess = module.permission.map { permissions.contains($0) } ?? true
             let accessNote = hasAccess ? "" : " [NO ACCESS]"
             lines.append("- \(module.label) (\(module.icon))\(accessNote)")
             for tab in module.tabs {
-                let tabAccess = tab.permission == nil || permissions.contains(tab.permission!)
+                let tabAccess = tab.permission.map { permissions.contains($0) } ?? true
                 let tabNote = tabAccess ? "" : " [NO ACCESS]"
                 lines.append("  - \(tab.label): \(tab.path)\(tabNote)")
             }

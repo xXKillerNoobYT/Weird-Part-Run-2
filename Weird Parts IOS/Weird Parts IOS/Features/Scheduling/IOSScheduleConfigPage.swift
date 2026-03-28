@@ -93,7 +93,7 @@ struct IOSScheduleConfigPage: View {
                 ("Tips", "These are global defaults. Individual schedule entries can still override these times. The overtime threshold is used for reporting and alerts, not for blocking assignments.")
             ])
         }
-        .onAppear { loadConfig() }
+        .task { loadConfig() }
         .alert("Configuration Saved", isPresented: $showSaveConfirmation) {
             Button("OK", role: .cancel) { }
         }
