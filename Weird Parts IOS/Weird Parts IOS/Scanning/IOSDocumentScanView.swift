@@ -165,7 +165,7 @@ struct IOSDocumentScanView: View {
             showResults = true
 
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "scan document")
         }
 
         isProcessing = false

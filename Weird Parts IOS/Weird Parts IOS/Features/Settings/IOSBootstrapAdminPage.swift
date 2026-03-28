@@ -154,7 +154,7 @@ struct IOSBootstrapAdminPage: View {
         do {
             bootstrapDevices = try settingsService.listBootstrapDevices()
         } catch {
-            errorMessage = "Failed to load: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load")
             bootstrapDevices = []
         }
         isLoading = false

@@ -975,7 +975,7 @@ struct IOSJobDetailTabView: View {
             // Load job stages with computed statuses
             jobStages = try service.listJobStages(forJobId: jobId)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load job data")
         }
         isLoading = false
     }
@@ -988,7 +988,7 @@ struct IOSJobDetailTabView: View {
         do {
             teamMembers = try service.getTeamMembers(jobId: jobId)
         } catch {
-            tabError = error.localizedDescription
+            tabError = userFriendlyError(error, context: "load job details")
         }
     }
 
@@ -1000,7 +1000,7 @@ struct IOSJobDetailTabView: View {
         do {
             jobParts = try service.getJobParts(jobId: jobId)
         } catch {
-            tabError = error.localizedDescription
+            tabError = userFriendlyError(error, context: "load job details")
         }
     }
 
@@ -1012,7 +1012,7 @@ struct IOSJobDetailTabView: View {
         do {
             jobJPOs = try service.listJPOs(jobId: jobId)
         } catch {
-            tabError = error.localizedDescription
+            tabError = userFriendlyError(error, context: "load job details")
         }
     }
 
@@ -1024,7 +1024,7 @@ struct IOSJobDetailTabView: View {
         do {
             jobQAThreads = try service.listQAThreads(jobId: jobId)
         } catch {
-            tabError = error.localizedDescription
+            tabError = userFriendlyError(error, context: "load job details")
         }
     }
 
@@ -1040,7 +1040,7 @@ struct IOSJobDetailTabView: View {
         do {
             jobSupplierChannels = try service.listSupplierChannelsForJob(jobId: jobId, userId: userId)
         } catch {
-            tabError = error.localizedDescription
+            tabError = userFriendlyError(error, context: "load job details")
         }
     }
 
@@ -1399,7 +1399,7 @@ private struct CreateJobSupplierChannelSheet: View {
             onCreated()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load job details")
         }
         isSaving = false
     }

@@ -210,7 +210,7 @@ struct IOSAuditSetupView: View {
             onAuditCreated?(sessionId)
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "start audit")
         }
         isSaving = false
     }

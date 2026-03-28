@@ -353,7 +353,7 @@ public final class NotebooksService: Sendable {
             } else {
                 try dbConn.execute(
                     sql: """
-                        INSERT INTO notebook_sections (notebook_id, title, sort_order, created_at)
+                        INSERT INTO notebook_sections (notebook_id, name, sort_order, created_at)
                         VALUES (?, 'General', 0, datetime('now'))
                         """,
                     arguments: [notebookId]

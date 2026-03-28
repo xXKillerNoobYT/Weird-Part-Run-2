@@ -66,11 +66,14 @@ struct IOSPurchaseOrdersPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "orders-pos")
+            SkippedModuleHint(moduleId: "orders")
             statusPicker
             StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
             kpiSummary
             poList
         }
+        .task { appCore.onboardingManager?.markCompleted("po-view-list") }
         .navigationTitle("Purchase Orders")
         .searchable(text: $searchText, prompt: "Search POs...")
         .toolbar {
@@ -451,7 +454,7 @@ struct IOSPurchaseOrdersPage: View {
             }
             loadData()
         } catch {
-            actionMessage = "Failed: \(error.localizedDescription)"
+            actionMessage = userFriendlyError(error, context: "load orders")
         }
     }
 
@@ -471,7 +474,7 @@ struct IOSPurchaseOrdersPage: View {
                 ? allPurchaseOrders
                 : allPurchaseOrders.filter { $0.status == statusFilter }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load purchase orders")
         }
         isLoading = false
     }

@@ -33,7 +33,7 @@ struct IOSCustomerDetailPage: View {
     }
 
     private var hasFinancials: Bool {
-        appCore.hasPermission("view_job_financials") || appCore.hasPermission("admin")
+        appCore.hasPermission("view_job_financials")
     }
 
     var body: some View {
@@ -335,7 +335,7 @@ struct IOSCustomerDetailPage: View {
                 paymentRecords = (try? service.getPaymentRecords(customerId: customer.id)) ?? []
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load customer details")
         }
     }
 }
@@ -468,7 +468,7 @@ private struct AddCustomerContactSheet: View {
             onSave()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load customer")
         }
     }
 }
@@ -539,7 +539,7 @@ private struct AddCommunicationSheet: View {
             onSave()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load customer")
         }
     }
 }
@@ -613,7 +613,7 @@ private struct AddPaymentSheet: View {
             onSave()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load customer")
         }
     }
 }

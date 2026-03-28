@@ -570,7 +570,7 @@ struct IOSNotebookDetailPage: View {
             try service.classifyTodoWork(entryId: entryId, classification: classification, classifiedBy: userId)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -584,7 +584,7 @@ struct IOSNotebookDetailPage: View {
             try service.reviewClassification(entryId: entryId, reviewedBy: userId, approved: true, newClassification: nil)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -681,7 +681,7 @@ struct IOSNotebookDetailPage: View {
             NavigationStack {
                 PanelScheduleBuilder(schedule: $panelSchedule) { saved in
                     panelSchedule = saved
-                    // TODO: Persist panel schedule data to notebook metadata
+                    persistPanelSchedule(saved)
                 }
                 .navigationTitle("Panel Schedule")
                 .navigationBarTitleDisplayMode(.inline)
@@ -741,6 +741,9 @@ struct IOSNotebookDetailPage: View {
             // Check for sync conflicts on this notebook's entries (62J)
             blockConflicts = (try? service.detectBlockConflicts(notebookId: notebookId)) ?? []
 
+            // Load panel schedule from first panel_schedule block entry
+            loadPanelScheduleFromEntries(service: service)
+
             // Check if this notebook belongs to a warranty job
             if let jobId = notebook?.jobId, let jobsService = appCore.jobsService {
                 if let job = try? jobsService.getJob(id: jobId) {
@@ -751,9 +754,117 @@ struct IOSNotebookDetailPage: View {
                 }
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load notebooks")
         }
         isLoading = false
+    }
+
+    // MARK: - Panel Schedule Persistence
+
+    /// Load panel schedule data from the first block entry with type "panel_schedule".
+    private func loadPanelScheduleFromEntries(service: NotebooksService) {
+        guard let groups = hierarchy?.groups else { return }
+        // Search all block entries for a panel_schedule type
+        for group in groups {
+            for section in group.sections {
+                for entry in section.entries where entry.blockType == "panel_schedule" {
+                    if let data = entry.blockData?.data(using: .utf8),
+                       let schedule = try? JSONDecoder().decode(PanelSchedule.self, from: data) {
+                        panelSchedule = schedule
+                        return
+                    }
+                }
+            }
+        }
+        // Also check ungrouped sections
+        if let ungrouped = hierarchy?.ungroupedSections {
+            for section in ungrouped {
+                for entry in section.entries where entry.blockType == "panel_schedule" {
+                    if let data = entry.blockData?.data(using: .utf8),
+                       let schedule = try? JSONDecoder().decode(PanelSchedule.self, from: data) {
+                        panelSchedule = schedule
+                        return
+                    }
+                }
+            }
+        }
+    }
+
+    /// Persist panel schedule to a block entry with type "panel_schedule".
+    private func persistPanelSchedule(_ schedule: PanelSchedule) {
+        guard let service = appCore.notebooksService else {
+            loadError = "Service not available"
+            return
+        }
+        guard let notebookId = notebook?.id else {
+            loadError = "No notebook loaded"
+            return
+        }
+        guard let json = try? JSONEncoder().encode(schedule),
+              let jsonString = String(data: json, encoding: .utf8) else {
+            loadError = "Failed to encode panel schedule"
+            return
+        }
+
+        do {
+            if let existingEntryId = findPanelScheduleEntryId() {
+                // Update existing panel schedule entry
+                try service.updateBlockEntry(entryId: existingEntryId, content: nil, blockData: jsonString)
+            } else {
+                // Create new panel_schedule block entry in the first available section
+                guard let sectionId = findOrCreateDefaultSectionId(service: service, notebookId: notebookId) else {
+                    loadError = "No section available for panel schedule"
+                    return
+                }
+                let userId = appCore.currentUser?.id ?? 1
+                _ = try service.createBlockEntry(
+                    sectionId: sectionId,
+                    blockType: "panel_schedule",
+                    title: "Panel Schedule",
+                    content: nil,
+                    blockData: jsonString,
+                    createdBy: userId
+                )
+            }
+            // Reload to reflect saved state
+            loadData()
+        } catch {
+            loadError = userFriendlyError(error, context: "save panel schedule")
+        }
+    }
+
+    /// Find the first available section ID, or create a default section if none exist.
+    private func findOrCreateDefaultSectionId(service: NotebooksService, notebookId: Int64) -> Int64? {
+        // Check grouped sections first
+        if let sectionId = hierarchy?.groups.first?.sections.first?.id {
+            return sectionId
+        }
+        // Check ungrouped sections
+        if let sectionId = hierarchy?.ungroupedSections.first?.id {
+            return sectionId
+        }
+        // No sections exist — create a default one
+        return try? service.createSection(notebookId: notebookId, groupId: nil, name: "General")
+    }
+
+    private func findPanelScheduleEntryId() -> Int64? {
+        if let groups = hierarchy?.groups {
+            for group in groups {
+                for section in group.sections {
+                    for entry in section.entries where entry.blockType == "panel_schedule" {
+                        return entry.id
+                    }
+                }
+            }
+        }
+        if let ungrouped = hierarchy?.ungroupedSections {
+            for section in ungrouped {
+                for entry in section.entries where entry.blockType == "panel_schedule" {
+                    return entry.id
+                }
+            }
+        }
+        return nil
     }
 
     private func createSectionGroup(name: String) {
@@ -765,7 +876,7 @@ struct IOSNotebookDetailPage: View {
             _ = try service.createSectionGroup(notebookId: notebookId, name: name)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -778,7 +889,7 @@ struct IOSNotebookDetailPage: View {
             _ = try service.createSection(notebookId: notebookId, groupId: groupId, name: name)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -791,7 +902,7 @@ struct IOSNotebookDetailPage: View {
             try service.updateSectionGroup(groupId: groupId, name: name)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -804,7 +915,7 @@ struct IOSNotebookDetailPage: View {
             try service.updateSection(sectionId: sectionId, name: name)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -817,7 +928,7 @@ struct IOSNotebookDetailPage: View {
             try service.deleteSectionGroup(groupId: groupId)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -830,7 +941,7 @@ struct IOSNotebookDetailPage: View {
             try service.deleteSection(sectionId: sectionId)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -843,7 +954,7 @@ struct IOSNotebookDetailPage: View {
             try service.deleteBlockEntry(entryId: entryId)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -858,7 +969,7 @@ struct IOSNotebookDetailPage: View {
             try service.resolveBlockConflict(conflictLogId: conflictLogId, keepVersion: keepVersion)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -872,7 +983,7 @@ struct IOSNotebookDetailPage: View {
             activeSheet = nil
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 }

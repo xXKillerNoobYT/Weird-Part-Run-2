@@ -320,7 +320,7 @@ struct IOSWarehouseReturnsPage: View {
             try service.updateReturnStatus(returnId: returnId, status: status)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -337,7 +337,7 @@ struct IOSWarehouseReturnsPage: View {
         do {
             allReturns = try service.listReturns(status: nil)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load warehouse returns")
         }
         isLoading = false
     }

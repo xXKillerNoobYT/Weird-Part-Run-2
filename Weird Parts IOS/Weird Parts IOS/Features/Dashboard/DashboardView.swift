@@ -54,6 +54,10 @@ struct DashboardView: View {
 
     // Onboarding checklist persistence
     @AppStorage("onboarding_checklist_dismissed") private var checklistDismissed = false
+    @AppStorage("hasCompletedCompanySetup") private var hasCompletedCompanySetup = false
+    @State private var warehouseHasFloorPlan = false
+    @State private var showCreateJobSheet = false
+    @State private var showCompanySetupWizard = false
 
     @State private var isLoading = true
     @State private var loadError: String?
@@ -69,8 +73,18 @@ struct DashboardView: View {
                     greeting
                         .padding(.horizontal, DS.Space.lg)
 
+                    OnboardingBanner(pageId: "dashboard-home")
+                        .padding(.horizontal, DS.Space.lg)
+
+                    SkippedModuleHint(moduleId: "dashboard")
+                        .padding(.horizontal, DS.Space.lg)
+
                     clockStatusBanner
                         .padding(.horizontal, DS.Space.lg)
+
+                    gettingStartedChecklist
+
+                    onboardingProgressSection
 
                     if isLoading {
                         DSLoadingState()
@@ -130,8 +144,18 @@ struct DashboardView: View {
                 case .kpiDetail(let detail):
                     KPIDetailSheet(type: detail)
                         .environmentObject(appCore)
+                        .task { appCore.onboardingManager?.markCompleted("dashboard-tap-kpi") }
                 }
             }
+            .sheet(isPresented: $showCreateJobSheet) {
+                IOSCreateJobSheet()
+                    .environmentObject(appCore)
+            }
+            .sheet(isPresented: $showCompanySetupWizard) {
+                CompanySetupWizard()
+                    .environmentObject(appCore)
+            }
+            .task { appCore.onboardingManager?.markCompleted("dashboard-view-kpis") }
             .navigationDestination(for: DashboardDestination.self) { dest in
                 switch dest {
                 case .scanner:
@@ -142,6 +166,270 @@ struct DashboardView: View {
                     DashboardDailyReportPage()
                 }
             }
+        }
+    }
+
+    // MARK: - First-Launch Detection
+
+    /// True if the app has no meaningful data — indicates first-launch or empty state.
+    private var isFirstLaunchState: Bool {
+        stats.activeJobs == 0 &&
+        stats.partTypes == 0 &&
+        stats.totalStock == 0
+    }
+
+    // MARK: - Getting Started Checklist
+
+    @ViewBuilder
+    private var gettingStartedChecklist: some View {
+        if isFirstLaunchState && !checklistDismissed {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(.blue)
+                        .font(.title2)
+                    Text("Getting Started")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    Spacer()
+                    Button {
+                        withAnimation { checklistDismissed = true }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Text("Welcome to WiredPart! Complete these steps to set up your business.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                VStack(spacing: 12) {
+                    checklistItem(
+                        step: 1,
+                        title: "Add Your Team",
+                        subtitle: "Add employees so they can clock in and get assigned to jobs.",
+                        icon: "person.badge.plus",
+                        color: .blue,
+                        isComplete: stats.employeeCount > 0
+                    ) {
+                        IOSEmployeesPage().environmentObject(appCore)
+                    }
+
+                    checklistItem(
+                        step: 2,
+                        title: "Set Up Parts Catalog",
+                        subtitle: "Import or create your parts inventory so you can track stock and order materials.",
+                        icon: "wrench.and.screwdriver.fill",
+                        color: .green,
+                        isComplete: stats.partTypes > 0
+                    ) {
+                        PartsRouter(tabId: "parts-import-export").environmentObject(appCore)
+                    }
+
+                    // Step 3 uses a sheet instead of NavigationLink
+                    Button {
+                        showCreateJobSheet = true
+                    } label: {
+                        checklistItemLabel(
+                            step: 3,
+                            title: "Create Your First Job",
+                            subtitle: "Jobs are the core of WiredPart — create one to start tracking work.",
+                            icon: "briefcase.fill",
+                            color: .orange,
+                            isComplete: stats.activeJobs > 0
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(stats.activeJobs > 0)
+
+                    checklistItem(
+                        step: 4,
+                        title: "Configure Your Warehouse",
+                        subtitle: "Set up warehouse locations and bins so parts can be tracked on shelves.",
+                        icon: "building.2.fill",
+                        color: .purple,
+                        isComplete: warehouseHasFloorPlan
+                    ) {
+                        WarehouseOnboardingWizard().environmentObject(appCore)
+                    }
+                }
+
+                // Progress indicator
+                let completed = [
+                    stats.employeeCount > 0,
+                    stats.partTypes > 0,
+                    stats.activeJobs > 0,
+                    warehouseHasFloorPlan,
+                ].filter { $0 }.count
+
+                HStack {
+                    Text("\(completed) of 4 complete")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    ProgressView(value: Double(completed), total: 4.0)
+                        .frame(width: 100)
+                }
+
+                // Resume company setup (admin only)
+                if !hasCompletedCompanySetup && appCore.hasPermission("manage_jobs") {
+                    Button {
+                        showCompanySetupWizard = true
+                    } label: {
+                        Label("Resume Company Setup", systemImage: "arrow.right.circle.fill")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+
+                // Tour button
+                if appCore.onboardingManager?.isOnboardingActive != true {
+                    Button {
+                        withAnimation { appCore.onboardingManager?.isOnboardingActive = true }
+                    } label: {
+                        Label("Take the Full App Tour", systemImage: "graduationcap.fill")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(.systemBackground))
+                    .shadow(color: .black.opacity(0.1), radius: 8, y: 2)
+            )
+            .padding(.horizontal, DS.Space.lg)
+        }
+    }
+
+    private func checklistItem<Destination: View>(
+        step: Int,
+        title: String,
+        subtitle: String,
+        icon: String,
+        color: Color,
+        isComplete: Bool,
+        @ViewBuilder destination: @escaping () -> Destination
+    ) -> some View {
+        NavigationLink {
+            destination()
+        } label: {
+            checklistItemLabel(step: step, title: title, subtitle: subtitle, icon: icon, color: color, isComplete: isComplete)
+        }
+        .buttonStyle(.plain)
+        .disabled(isComplete)
+    }
+
+    private func checklistItemLabel(
+        step: Int,
+        title: String,
+        subtitle: String,
+        icon: String,
+        color: Color,
+        isComplete: Bool
+    ) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(isComplete ? Color.green : color.opacity(0.15))
+                    .frame(width: 36, height: 36)
+                if isComplete {
+                    Image(systemName: "checkmark")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.white)
+                } else {
+                    Text("\(step)")
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .foregroundStyle(color)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .strikethrough(isComplete)
+                    .foregroundStyle(isComplete ? .secondary : .primary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Spacer()
+
+            if !isComplete {
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - Onboarding Progress
+
+    @ViewBuilder
+    private var onboardingProgressSection: some View {
+        if let manager = appCore.onboardingManager, manager.isOnboardingActive {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "graduationcap.fill")
+                        .foregroundStyle(.blue)
+                    Text("App Tour Progress")
+                        .font(.headline)
+                    Spacer()
+                    let overall = manager.overallProgress(permissions: appCore.permissions)
+                    Text("\(overall.completed)/\(overall.total)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                ForEach(appModules, id: \.id) { module in
+                    let progress = manager.moduleProgress(module.id, permissions: appCore.permissions)
+                    if progress.total > 0 {
+                        HStack {
+                            Image(systemName: module.icon)
+                                .font(.caption)
+                                .frame(width: 24)
+                                .foregroundStyle(.secondary)
+                            Text(module.label)
+                                .font(.subheadline)
+                            Spacer()
+                            Text("\(progress.completed)/\(progress.total)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            ProgressView(value: Double(progress.completed), total: max(Double(progress.total), 1))
+                                .frame(width: 60)
+                        }
+                    }
+                }
+
+                Button {
+                    withAnimation { manager.isOnboardingActive = false }
+                } label: {
+                    Text("End Tour")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color(.systemBackground))
+                    .shadow(color: .black.opacity(0.1), radius: 8, y: 2)
+            )
+            .padding(.horizontal, DS.Space.lg)
         }
     }
 
@@ -582,12 +870,14 @@ struct DashboardView: View {
 
             // KPI summary via DashboardService
             let kpi = try service.getKPISummary()
+            let empCount = (try? service.getEmployeeCount()) ?? 0
             let newStats = DashboardStats(
                 partTypes: kpi.partTypes,
                 totalStock: kpi.totalStock,
                 activeJobs: kpi.activeJobs,
                 pendingOrders: kpi.pendingOrders,
-                lowStockCount: kpi.lowStockAlerts
+                lowStockCount: kpi.lowStockAlerts,
+                employeeCount: empCount
             )
 
             // Alerts via DashboardService
@@ -612,7 +902,11 @@ struct DashboardView: View {
             let bgSummary = try? bgService?.last24HoursSummary()
             let bgRecent = (try? bgService?.recentTasks(limit: 3)) ?? []
 
+            // Warehouse floor plan check for onboarding checklist
+            let hasFloorPlan = (try? appCore.warehouseService?.listFloorPlans().count ?? 0) ?? 0 > 0
+
             await MainActor.run {
+                warehouseHasFloorPlan = hasFloorPlan
                 stats = newStats
                 certAlerts = certs
                 vehicleAlerts = vAlerts
@@ -637,7 +931,7 @@ struct DashboardView: View {
             await loadChartData()
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load dashboard")
                 isLoading = false
             }
         }
@@ -694,7 +988,7 @@ struct DashboardView: View {
                 stockChartData = stockLevels
                 spendingChartData = spending
             }
-        } catch { loadError = error.localizedDescription }
+        } catch { loadError = userFriendlyError(error, context: "load dashboard") }
     }
 }
 

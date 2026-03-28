@@ -22,7 +22,11 @@ struct IOSCustomersPage: View {
     @State private var activeSheet: ActiveSheet?
 
     var body: some View {
-        customerList
+        VStack(spacing: 0) {
+            OnboardingBanner(pageId: "people-customers")
+            customerList
+        }
+            .task { appCore.onboardingManager?.markCompleted("customers-view") }
             .navigationTitle("Customers")
             .searchable(text: $searchText, prompt: "Search customers...")
             .onChange(of: searchText) { loadData() }
@@ -143,7 +147,7 @@ struct IOSCustomersPage: View {
                 search: searchText.isEmpty ? nil : searchText
             )
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load customers")
         }
         isLoading = false
     }
@@ -220,7 +224,7 @@ private struct AddCustomerSheet: View {
             onSave()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load customers")
         }
     }
 }

@@ -145,7 +145,7 @@ private class ScannerDelegate: NSObject, DataScannerViewControllerDelegate {
         _ dataScanner: DataScannerViewController,
         becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable
     ) {
-        continuation?.yield(.error("Scanner became unavailable: \(error.localizedDescription)"))
+        continuation?.yield(.error(userFriendlyError(error, context: "scan item")))
     }
 }
 #else

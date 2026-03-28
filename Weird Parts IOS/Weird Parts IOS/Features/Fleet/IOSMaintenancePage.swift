@@ -32,9 +32,11 @@ struct IOSMaintenancePage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "fleet-maintenance")
             StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
             maintenanceList
         }
+            .task { appCore.onboardingManager?.markCompleted("fleet-maintenance-view") }
             .navigationTitle("Maintenance")
             .searchable(text: $searchText, prompt: "Search maintenance records...")
             .refreshable { loadData() }
@@ -153,7 +155,7 @@ struct IOSMaintenancePage: View {
         do {
             records = try service.listMaintenanceRecords()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load maintenance data")
         }
         isLoading = false
     }

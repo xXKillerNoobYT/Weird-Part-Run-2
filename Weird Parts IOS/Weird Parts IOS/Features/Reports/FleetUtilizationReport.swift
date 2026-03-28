@@ -98,6 +98,7 @@ struct FleetUtilizationReport: View {
                 ("Tips", "Vehicles consistently below 40% utilization might be candidates for reassignment or removal from the fleet. If utilization drops during certain months, plan maintenance during those slow periods.")
             ])
         }
+        .refreshable { loadData() }
         .onAppear { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
@@ -124,7 +125,7 @@ struct FleetUtilizationReport: View {
                 startDate: startDate, endDate: endDate
             )
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
     }

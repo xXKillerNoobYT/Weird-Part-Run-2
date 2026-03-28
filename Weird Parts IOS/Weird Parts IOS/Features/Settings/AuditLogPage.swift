@@ -155,7 +155,7 @@ struct AuditLogPage: View {
         do {
             entries = try settingsService.listAuditLog(limit: limit)
         } catch {
-            errorMessage = "Failed to load audit log: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load audit log")
         }
         isLoading = false
     }

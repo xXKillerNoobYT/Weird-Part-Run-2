@@ -151,7 +151,7 @@ struct PartHistoryView: View {
         do {
             entries = try service.getPartChangeLog(partId: partId)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load part history")
         }
         isLoading = false
     }

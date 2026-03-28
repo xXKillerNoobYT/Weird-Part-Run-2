@@ -531,7 +531,7 @@ struct PricingTierSetSheet: View {
                 brands = results.map(\.brand)
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load pricing overrides")
         }
     }
 
@@ -563,7 +563,7 @@ struct PricingTierSetSheet: View {
 
             step = .preview
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
     }
 
@@ -611,7 +611,7 @@ struct PricingTierSetSheet: View {
 
             step = .done
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }

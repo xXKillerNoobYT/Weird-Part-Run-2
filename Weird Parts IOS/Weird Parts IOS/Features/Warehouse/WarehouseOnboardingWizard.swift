@@ -1,13 +1,50 @@
 import SwiftUI
 import WiredPartCore
 
+/// Data about a single area, used across wizard steps 3-6.
+struct WizardAreaInfo: Identifiable {
+    let id: Int64
+    let areaCode: String
+    let fullLocationCode: String
+    let unitName: String
+    let levelCode: String
+}
+
+/// Load all areas for a floor plan with context info (unit name, level code).
+func loadAllWizardAreas(floorPlanId: Int64, service: WarehouseService) throws -> [WizardAreaInfo] {
+    let units = try service.listStorageUnits(floorPlanId: floorPlanId)
+    var areas: [WizardAreaInfo] = []
+    for unit in units {
+        guard let unitId = unit.id else { continue }
+        let levels = try service.listLevelsForUnit(unitId: unitId)
+        for level in levels {
+            guard let levelId = level.id else { continue }
+            let levelAreas = try service.listAreasForLevel(levelId: levelId)
+            for area in levelAreas {
+                guard let areaId = area.id else { continue }
+                areas.append(WizardAreaInfo(
+                    id: areaId,
+                    areaCode: area.areaCode,
+                    fullLocationCode: area.fullLocationCode
+                        ?? "\(unit.name)-\(level.levelCode)-\(area.areaCode)",
+                    unitName: unit.name,
+                    levelCode: level.levelCode
+                ))
+            }
+        }
+    }
+    return areas
+}
+
+// MARK: - Main Wizard
+
 /// 6-step guided warehouse setup wizard.
 ///
-/// Step 1: Define Space — name + measurements + features
-/// Step 2: Place Units — add storage units to the floor plan
-/// Step 3: Number Everything — sticker checklist
-/// Step 4: Walk the Floor — identify parts per area
-/// Step 5: Count Everything — enter counts
+/// Step 1: Define Space — name + measurements
+/// Step 2: Place Units — add storage units inline
+/// Step 3: Number Everything — interactive sticker checklist
+/// Step 4: Walk the Floor — per-area part assignment
+/// Step 5: Count Everything — per-area counting (hidden system counts)
 /// Step 6: Set Targets — MIN/TARGET/MAX per part
 struct WarehouseOnboardingWizard: View {
     @EnvironmentObject private var appCore: AppCore
@@ -17,17 +54,12 @@ struct WarehouseOnboardingWizard: View {
     @State private var currentStep = 1
     @State private var floorPlanId: Int64?
     @State private var loadError: String?
-    @State private var isQuickCount = false
+    @State private var completedWizardSteps: Set<Int> = []
 
     // Step 1 state
     @State private var planName = "Main Warehouse"
     @State private var widthFeet = 40
     @State private var lengthFeet = 60
-
-    // Step tracking
-    @State private var step4AreasWalked: Set<Int64> = []
-    @State private var step5PartsCounted: Set<Int64> = []
-    @State private var step6TargetsSet: Set<Int64> = []
 
     private let totalSteps = 6
     private let stepLabels = [
@@ -38,42 +70,48 @@ struct WarehouseOnboardingWizard: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Progress bar
                 progressBar
+                errorBanner
 
-                // Error banner
-                if let error = loadError {
-                    HStack(spacing: 8) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                        Text(error)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button { loadError = nil } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 6)
-                    .background(Color.orange.opacity(0.1))
-                }
-
-                // Step content
                 TabView(selection: $currentStep) {
                     step1DefineSpace.tag(1)
-                    step2PlaceUnits.tag(2)
-                    step3NumberEverything.tag(3)
-                    step4WalkTheFloor.tag(4)
-                    step5CountEverything.tag(5)
-                    step6SetTargets.tag(6)
+
+                    if let fpId = floorPlanId {
+                        WarehouseWizardStep2(
+                            floorPlanId: fpId,
+                            stepError: $loadError
+                        ).tag(2)
+
+                        WarehouseWizardStep3(
+                            floorPlanId: fpId,
+                            stepError: $loadError
+                        ).tag(3)
+
+                        WarehouseWizardStep4(
+                            floorPlanId: fpId,
+                            stepError: $loadError
+                        ).tag(4)
+
+                        WarehouseWizardStep5(
+                            floorPlanId: fpId,
+                            stepError: $loadError
+                        ).tag(5)
+
+                        WarehouseWizardStep6(
+                            floorPlanId: fpId,
+                            stepError: $loadError
+                        ).tag(6)
+                    } else {
+                        incompleteStepView.tag(2)
+                        incompleteStepView.tag(3)
+                        incompleteStepView.tag(4)
+                        incompleteStepView.tag(5)
+                        incompleteStepView.tag(6)
+                    }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
                 .animation(.easeInOut, value: currentStep)
 
-                // Navigation buttons
                 navigationButtons
             }
             .navigationTitle(stepLabels[currentStep - 1])
@@ -87,13 +125,61 @@ struct WarehouseOnboardingWizard: View {
         }
     }
 
+    // MARK: - Incomplete Step Placeholder
+
+    @ViewBuilder
+    private var incompleteStepView: some View {
+        ContentUnavailableView {
+            Label("Complete Step 1 First", systemImage: "1.circle")
+        } description: {
+            Text("Create a floor plan before setting up storage units.")
+        }
+    }
+
+    // MARK: - Error Banner
+
+    @ViewBuilder
+    private var errorBanner: some View {
+        if let error = loadError {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button { loadError = nil } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 6)
+            .background(Color.orange.opacity(0.1))
+        }
+    }
+
     // MARK: - Progress Bar
 
     @ViewBuilder
     private var progressBar: some View {
         VStack(spacing: 4) {
-            ProgressView(value: Double(currentStep), total: Double(totalSteps))
-                .tint(.blue)
+            // Clickable step dots
+            HStack(spacing: 8) {
+                ForEach(0..<totalSteps, id: \.self) { step in
+                    Circle()
+                        .fill(step + 1 == currentStep ? .blue :
+                              completedWizardSteps.contains(step + 1) ? .green :
+                              .gray.opacity(0.3))
+                        .frame(width: 10, height: 10)
+                        .onTapGesture {
+                            if step + 1 <= currentStep || completedWizardSteps.contains(step + 1) {
+                                withAnimation { currentStep = step + 1 }
+                            }
+                        }
+                }
+            }
 
             HStack {
                 Text("Step \(currentStep) of \(totalSteps)")
@@ -123,214 +209,11 @@ struct WarehouseOnboardingWizard: View {
             }
 
             Section {
-                Text("Measure your warehouse space — width and length in feet. Don't worry about being exact; you can adjust later.")
+                Text("Measure your warehouse — width and length in feet. Don't worry about being exact; you can adjust later.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
-    }
-
-    // MARK: - Step 2: Place Units
-
-    @ViewBuilder
-    private var step2PlaceUnits: some View {
-        VStack(spacing: 16) {
-            if floorPlanId != nil {
-                Text("Use the Locations page to add storage units to your floor plan.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding()
-
-                Image(systemName: "cabinet.fill")
-                    .font(.system(size: 60))
-                    .foregroundStyle(.blue.opacity(0.5))
-
-                Text("Add shelving, racks, gang boxes, and other storage units from the toolbar. Position them on the grid.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 40)
-            } else {
-                Text("Complete Step 1 first to create a floor plan.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-        }
-        .padding(.top, 40)
-    }
-
-    // MARK: - Step 3: Number Everything
-
-    @ViewBuilder
-    private var step3NumberEverything: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "tag.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(.green)
-
-            Text("Sticker Checklist")
-                .font(.title3)
-                .fontWeight(.semibold)
-
-            Text("Write location codes on stickers and place them on each shelf, area, and bin. Use the Sticker Checklist from any unit's context menu.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 30)
-
-            VStack(alignment: .leading, spacing: 8) {
-                stickerExample("R01-U01-G0-A01", label: "Ground Zero, Area 1")
-                stickerExample("R01-U01-S02-A04", label: "Shelf 2, Area 4")
-                stickerExample("R02-U03-ST-A01", label: "Top, Area 1")
-            }
-            .padding()
-            .background(Color(.tertiarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .padding(.horizontal)
-
-            Spacer()
-        }
-        .padding(.top, 30)
-    }
-
-    @ViewBuilder
-    private func stickerExample(_ code: String, label: String) -> some View {
-        HStack {
-            Image(systemName: "tag")
-                .foregroundStyle(.green)
-            VStack(alignment: .leading) {
-                Text(code)
-                    .font(.subheadline)
-                    .monospaced()
-                    .fontWeight(.medium)
-                Text(label)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    // MARK: - Step 4: Walk the Floor
-
-    @ViewBuilder
-    private var step4WalkTheFloor: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "figure.walk")
-                .font(.system(size: 48))
-                .foregroundStyle(.orange)
-
-            Text("Walk the Floor")
-                .font(.title3)
-                .fontWeight(.semibold)
-
-            Text("Go to each location and identify what parts are there. Scan QR codes, search by name, or add new parts on the spot.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 30)
-
-            if !step4AreasWalked.isEmpty {
-                Text("\(step4AreasWalked.count) areas walked so far")
-                    .font(.caption)
-                    .foregroundStyle(.blue)
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 12)
-                    .background(.blue.opacity(0.1))
-                    .clipShape(Capsule())
-            }
-
-            Text("Use the Locations page to tap into units, levels, and areas. Assign parts to each location as you go.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 30)
-
-            Spacer()
-        }
-        .padding(.top, 30)
-    }
-
-    // MARK: - Step 5: Count Everything
-
-    @ViewBuilder
-    private var step5CountEverything: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "number.circle.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(.purple)
-
-            Text("Count Everything")
-                .font(.title3)
-                .fontWeight(.semibold)
-
-            Text("For each area you've identified parts in, enter the count. The system counts are hidden — enter what you actually see.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 30)
-
-            if !step5PartsCounted.isEmpty {
-                Text("\(step5PartsCounted.count) parts counted")
-                    .font(.caption)
-                    .foregroundStyle(.purple)
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 12)
-                    .background(.purple.opacity(0.1))
-                    .clipShape(Capsule())
-            }
-
-            Text("Use the Audit feature to count stock in each location. The system will compare your counts against expected quantities.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 30)
-
-            Spacer()
-        }
-        .padding(.top, 30)
-    }
-
-    // MARK: - Step 6: Set Targets
-
-    @ViewBuilder
-    private var step6SetTargets: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "target")
-                .font(.system(size: 48))
-                .foregroundStyle(.red)
-
-            Text("Set Stock Targets")
-                .font(.title3)
-                .fontWeight(.semibold)
-
-            Text("Set MIN, TARGET, and MAX stock levels for each part. The system will suggest values based on usage history and forecasting data.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 30)
-
-            if !step6TargetsSet.isEmpty {
-                Text("\(step6TargetsSet.count) targets configured")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 12)
-                    .background(.red.opacity(0.1))
-                    .clipShape(Capsule())
-            }
-
-            Text("Navigate to Settings > Stock Targets to configure min/max levels for your inventory items.")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 30)
-
-            Spacer()
-        }
-        .padding(.top, 30)
     }
 
     // MARK: - Navigation Buttons
@@ -351,10 +234,13 @@ struct WarehouseOnboardingWizard: View {
             if currentStep < totalSteps {
                 Button {
                     completeCurrentStep()
-                    withAnimation { currentStep += 1 }
                 } label: {
-                    Label(currentStep == 1 && floorPlanId == nil ? "Create & Continue" : "Next", systemImage: "chevron.right")
-                        .frame(maxWidth: .infinity)
+                    Label(
+                        currentStep == 1 && floorPlanId == nil
+                            ? "Create & Continue" : "Next",
+                        systemImage: "chevron.right"
+                    )
+                    .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
             } else {
@@ -366,6 +252,19 @@ struct WarehouseOnboardingWizard: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.green)
+            }
+
+            // Skip for Now (steps 2-5 only)
+            if currentStep > 1 && currentStep < totalSteps {
+                Button {
+                    completedWizardSteps.insert(currentStep)
+                    withAnimation { currentStep += 1 }
+                } label: {
+                    Text("Skip")
+                        .font(.subheadline)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
             }
         }
         .padding()
@@ -384,9 +283,14 @@ struct WarehouseOnboardingWizard: View {
                 progress = existing
                 currentStep = existing.currentStep
                 floorPlanId = existing.floorPlanId
+
+                // Restore completed steps
+                if existing.step1Complete { completedWizardSteps.insert(1) }
+                if existing.step2Complete { completedWizardSteps.insert(2) }
+                if existing.step3Complete { completedWizardSteps.insert(3) }
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load warehouse setup")
         }
     }
 
@@ -414,58 +318,49 @@ struct WarehouseOnboardingWizard: View {
                         step1Complete: true, floorPlanId: plan.id
                     )
                 }
+                completedWizardSteps.insert(1)
+                withAnimation { currentStep = 2 }
             } catch {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "create floor plan")
             }
             return
         }
 
-        // Save progress for current step
-        guard let id = progress?.id else { return }
+        completedWizardSteps.insert(currentStep)
+
+        // Save progress to the database
+        guard let id = progress?.id else {
+            withAnimation { currentStep = min(currentStep + 1, totalSteps) }
+            return
+        }
         do {
+            let nextStep = min(currentStep + 1, totalSteps)
             switch currentStep {
             case 1:
-                try service.updateOnboardingStep(id: id, currentStep: 2, step1Complete: true)
+                try service.updateOnboardingStep(id: id, currentStep: nextStep, step1Complete: true)
             case 2:
-                try service.updateOnboardingStep(id: id, currentStep: 3, step2Complete: true)
+                try service.updateOnboardingStep(id: id, currentStep: nextStep, step2Complete: true)
             case 3:
-                try service.updateOnboardingStep(id: id, currentStep: 4, step3Complete: true)
-            case 4:
-                try service.updateOnboardingStep(id: id, currentStep: 5)
-            case 5:
-                try service.updateOnboardingStep(id: id, currentStep: 6)
+                try service.updateOnboardingStep(id: id, currentStep: nextStep, step3Complete: true)
             default:
-                break
+                try service.updateOnboardingStep(id: id, currentStep: nextStep)
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "save progress")
         }
+        withAnimation { currentStep = min(currentStep + 1, totalSteps) }
     }
 
     private func saveAndExit() {
-        guard let service = appCore.warehouseService, let id = progress?.id else {
-            loadError = "Warehouse service not available"
-            dismiss()
-            return
-        }
-        do {
-            try service.updateOnboardingStep(id: id, currentStep: currentStep)
-        } catch {
-            // Best-effort save
+        if let service = appCore.warehouseService, let id = progress?.id {
+            try? service.updateOnboardingStep(id: id, currentStep: currentStep)
         }
         dismiss()
     }
 
     private func finishOnboarding() {
-        guard let service = appCore.warehouseService, let id = progress?.id else {
-            loadError = "Warehouse service not available"
-            dismiss()
-            return
-        }
-        do {
-            try service.completeOnboarding(id: id)
-        } catch {
-            // Best-effort
+        if let service = appCore.warehouseService, let id = progress?.id {
+            try? service.completeOnboarding(id: id)
         }
         dismiss()
     }
@@ -548,7 +443,6 @@ struct WarehouseQuickCountWizard: View {
     }
 
     private func startQuickCount() {
-        // Navigate to audit or inventory page for quick counting
         dismiss()
         NotificationCenter.default.post(
             name: .navigateToModule,

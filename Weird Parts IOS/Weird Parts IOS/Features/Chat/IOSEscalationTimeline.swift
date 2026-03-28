@@ -217,7 +217,7 @@ struct IOSEscalationTimeline: View {
         do {
             steps = try service.getEscalationHistory(threadId: thread.id)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load escalation timeline")
         }
         isLoading = false
     }
@@ -232,7 +232,7 @@ struct IOSEscalationTimeline: View {
             try service.escalateThread(threadId: thread.id, escalatedBy: userId, notes: nil)
             loadSteps()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "process escalation")
         }
     }
 
@@ -253,7 +253,7 @@ struct IOSEscalationTimeline: View {
             showPushBackSheet = false
             loadSteps()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "process escalation")
         }
     }
 

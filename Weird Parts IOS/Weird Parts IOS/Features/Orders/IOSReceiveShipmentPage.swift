@@ -861,7 +861,7 @@ struct IOSReceiveShipmentPage: View {
             activeSessionId = sessionId
             loadSessionItems()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "receive shipment")
         }
     }
 
@@ -882,7 +882,7 @@ struct IOSReceiveShipmentPage: View {
                 }
             }
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "receive shipment")
         }
     }
 
@@ -994,7 +994,7 @@ struct IOSReceiveShipmentPage: View {
             }
         } catch {
             await MainActor.run {
-                actionError = error.localizedDescription
+                actionError = userFriendlyError(error, context: "receive shipment")
                 isCompleting = false
             }
         }
@@ -1027,7 +1027,7 @@ struct IOSReceiveShipmentPage: View {
             let partial = try service.listPurchaseOrders(status: "partial")
             purchaseOrders.append(contentsOf: partial)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load shipment data")
         }
         isLoading = false
     }

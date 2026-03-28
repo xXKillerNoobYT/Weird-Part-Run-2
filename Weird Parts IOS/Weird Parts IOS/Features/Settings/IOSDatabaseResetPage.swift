@@ -218,7 +218,7 @@ struct IOSDatabaseResetPage: View {
                 adminUsers = try resetService.getAdminUsers()
             }
         } catch {
-            errorMessage = "Failed to check device status: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "check device status")
         }
     }
 
@@ -259,7 +259,7 @@ struct IOSDatabaseResetPage: View {
                 return
             }
         } catch {
-            errorMessage = "Authentication failed: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "reset database")
             return
         }
 
@@ -272,7 +272,7 @@ struct IOSDatabaseResetPage: View {
                 resetPhase = .complete
             } catch {
                 resetPhase = .idle
-                errorMessage = "Reset failed: \(error.localizedDescription)"
+                errorMessage = userFriendlyError(error, context: "reset database")
             }
         }
     }

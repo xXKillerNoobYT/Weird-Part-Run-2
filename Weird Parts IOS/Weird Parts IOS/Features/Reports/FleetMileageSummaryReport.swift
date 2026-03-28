@@ -98,6 +98,7 @@ struct FleetMileageSummaryReport: View {
                 ("Tips", "Vehicles with very high mileage may need oil changes or tire rotations sooner. Compare mileage against fuel costs to spot vehicles with poor fuel efficiency.")
             ])
         }
+        .refreshable { loadData() }
         .onAppear { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
@@ -120,7 +121,7 @@ struct FleetMileageSummaryReport: View {
                 startDate: startDate, endDate: endDate
             )
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
     }

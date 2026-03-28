@@ -49,7 +49,13 @@ struct NewUserWelcomeView: View {
             .padding(.horizontal, 24)
 
             Button {
-                withAnimation { hasSeenWelcome = true }
+                withAnimation {
+                    hasSeenWelcome = true
+                    // Auto-start the guided onboarding tour for new users
+                    if let manager = appCore.onboardingManager {
+                        manager.isOnboardingActive = true
+                    }
+                }
             } label: {
                 Text("Got It — Let's Go!")
                     .fontWeight(.semibold)

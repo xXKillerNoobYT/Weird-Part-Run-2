@@ -267,7 +267,7 @@ struct IOSEmployeeDetailPage: View {
             // Reload hats
             allHats = (try? service.getAllHatsWithAssignment(employeeId: employeeId)) ?? []
         } catch {
-            loadError = "Failed to update hat: \(error.localizedDescription)"
+            loadError = userFriendlyError(error, context: "update hat")
         }
     }
 
@@ -282,9 +282,9 @@ struct IOSEmployeeDetailPage: View {
         do {
             employee = try service.getEmployeeDetail(id: employeeId)
             allHats = try service.getAllHatsWithAssignment(employeeId: employeeId)
-            canManageHats = appCore.hasPermission("manage_people") || appCore.hasPermission("admin")
+            canManageHats = appCore.hasPermission("manage_people")
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load employee details")
         }
         isLoading = false
     }
@@ -344,7 +344,7 @@ private struct EditEmployeeContactSheet: View {
             try onSave(trimmedName, email, phone)
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load employee")
         }
         isSaving = false
     }

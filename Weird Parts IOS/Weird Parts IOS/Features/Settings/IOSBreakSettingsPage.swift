@@ -409,7 +409,7 @@ struct IOSBreakSettingsPage: View {
             loadCompanyPolicies()
             loadBonuses()
         } catch {
-            errorMessage = "Failed to load settings: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load settings")
         }
         isLoading = false
     }
@@ -422,7 +422,7 @@ struct IOSBreakSettingsPage: View {
         do {
             allPolicies = try breakSvc.getAllPolicies()
         } catch {
-            errorMessage = "Failed to load policies: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load policies")
         }
     }
 
@@ -542,7 +542,7 @@ struct IOSBreakSettingsPage: View {
             loadSettings()
         } catch {
             successMessage = nil
-            errorMessage = "Save failed: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "save settings")
         }
     }
 }

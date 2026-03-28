@@ -164,7 +164,7 @@ struct SmartDeleteSheet: View {
         do {
             inventoryCheck = try service.checkInventoryForDeletion(entityType: entityType, entityId: entityId)
         } catch {
-            self.error = error.localizedDescription
+            self.error = userFriendlyError(error, context: "delete parts")
         }
         isLoading = false
     }
@@ -183,7 +183,7 @@ struct SmartDeleteSheet: View {
             await onComplete()
             dismiss()
         } catch {
-            self.error = error.localizedDescription
+            self.error = userFriendlyError(error, context: "delete parts")
         }
         isProcessing = false
     }
@@ -207,7 +207,7 @@ struct SmartDeleteSheet: View {
             await onComplete()
             dismiss()
         } catch {
-            self.error = error.localizedDescription
+            self.error = userFriendlyError(error, context: "delete parts")
         }
         isProcessing = false
     }

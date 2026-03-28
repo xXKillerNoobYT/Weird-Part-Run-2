@@ -37,10 +37,12 @@ struct IOSTimeOffPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "scheduling-time-off")
             statusPicker
             StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
             timeOffContent
         }
+        .task { appCore.onboardingManager?.markCompleted("timeoff-view") }
             .navigationTitle("Time Off")
             .searchable(text: $searchText, prompt: "Search requests...")
             .toolbar {
@@ -263,7 +265,7 @@ struct IOSTimeOffPage: View {
             )
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -280,7 +282,7 @@ struct IOSTimeOffPage: View {
             )
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -299,7 +301,7 @@ struct IOSTimeOffPage: View {
                 ? allRequests
                 : allRequests.filter { $0.status == statusFilter }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load time off data")
         }
         isLoading = false
     }

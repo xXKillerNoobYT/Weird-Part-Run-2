@@ -77,6 +77,8 @@ struct PartsCompanionsPage: View {
                 .padding(.horizontal)
             }
 
+            OnboardingBanner(pageId: "parts-companions")
+
             // Tabs
             Picker("View", selection: $activeTab) {
                 Text("Rules").tag(CompanionTab.rules)
@@ -171,7 +173,7 @@ struct PartsCompanionsPage: View {
                     do {
                         try service.adminLockPoll(pollId: pollId, result: lockAction, lockedBy: userId)
                         await loadData()
-                    } catch { actionError = error.localizedDescription }
+                    } catch { actionError = userFriendlyError(error, context: "complete action") }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -188,7 +190,7 @@ struct PartsCompanionsPage: View {
                     do {
                         _ = try service.adminSkipPoll(pollId: pollId)
                         await loadData()
-                    } catch { actionError = error.localizedDescription }
+                    } catch { actionError = userFriendlyError(error, context: "complete action") }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -196,7 +198,10 @@ struct PartsCompanionsPage: View {
             Text("This poll will be closed and a -50 point penalty applied. A replacement poll will be created from the next-best suggestion.")
         }
         .background(DS.Background.page)
-        .task { await loadData() }
+        .task {
+            await loadData()
+            appCore.onboardingManager?.markCompleted("companions-view")
+        }
         .onAppear { postCompanionsContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .companionsPageInactive, object: nil)
@@ -881,7 +886,7 @@ struct PartsCompanionsPage: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load companion parts")
                 isLoading = false
             }
         }
@@ -899,7 +904,7 @@ struct PartsCompanionsPage: View {
             await loadData()
         } catch {
             await MainActor.run {
-                actionError = "Delete failed: \(error.localizedDescription)"
+                actionError = userFriendlyError(error, context: "complete action")
             }
         }
     }
@@ -915,7 +920,7 @@ struct PartsCompanionsPage: View {
             await loadData()
         } catch {
             await MainActor.run {
-                actionError = "Toggle failed: \(error.localizedDescription)"
+                actionError = userFriendlyError(error, context: "complete action")
             }
         }
     }
@@ -930,7 +935,7 @@ struct PartsCompanionsPage: View {
             await loadData()
         } catch {
             await MainActor.run {
-                actionError = "Restore failed: \(error.localizedDescription)"
+                actionError = userFriendlyError(error, context: "complete action")
             }
         }
     }
@@ -945,7 +950,7 @@ struct PartsCompanionsPage: View {
             await loadData()
         } catch {
             await MainActor.run {
-                actionError = "Vote failed: \(error.localizedDescription)"
+                actionError = userFriendlyError(error, context: "complete action")
             }
         }
     }
@@ -960,7 +965,7 @@ struct PartsCompanionsPage: View {
             await loadData()
         } catch {
             await MainActor.run {
-                actionError = "Delete failed: \(error.localizedDescription)"
+                actionError = userFriendlyError(error, context: "complete action")
             }
         }
     }
@@ -1292,7 +1297,7 @@ private struct CompanionRuleFormSheet: View {
             await onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }
@@ -1389,7 +1394,7 @@ private struct AlternativeFormSheet: View {
                 return PartPickerItem(id: id, name: item.part.name)
             }
         } catch {
-            saveError = "Failed to load parts: \(error.localizedDescription)"
+            saveError = userFriendlyError(error, context: "load parts")
         }
     }
 
@@ -1413,7 +1418,7 @@ private struct AlternativeFormSheet: View {
             )
         } catch {
             await MainActor.run {
-                saveError = "Save failed: \(error.localizedDescription)"
+                saveError = userFriendlyError(error, context: "save data")
             }
         }
     }

@@ -51,6 +51,8 @@ struct WarehouseLocationsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "warehouse-locations")
+
             if isLoading {
                 ProgressView("Loading floor plans...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -85,9 +87,13 @@ struct WarehouseLocationsPage: View {
             sheetContent(for: sheet)
                 .environmentObject(appCore)
         }
+        .searchable(text: $searchText, prompt: "Search locations...")
         .refreshable { loadData() }
         .background(DS.Background.page)
-        .task { loadData() }
+        .task {
+            loadData()
+            appCore.onboardingManager?.markCompleted("wh-locations-view")
+        }
     }
 
     // MARK: - Floor Plan Content
@@ -413,7 +419,7 @@ struct WarehouseLocationsPage: View {
             try service.updateStorageUnit(id: unitId, gridWidth: newW, gridHeight: newH, rotation: newRotation)
             loadPlanData()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load locations")
         }
     }
 
@@ -426,7 +432,7 @@ struct WarehouseLocationsPage: View {
             try service.deleteStorageUnit(id: unitId)
             loadPlanData()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load locations")
         }
     }
 
@@ -449,7 +455,7 @@ struct WarehouseLocationsPage: View {
             }
             loadPlanData()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load locations")
         }
         isLoading = false
     }
@@ -464,7 +470,7 @@ struct WarehouseLocationsPage: View {
             storageUnits = try service.listStorageUnits(floorPlanId: planId)
             floorFeatures = try service.listFloorFeatures(floorPlanId: planId)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load locations")
         }
     }
 
@@ -599,7 +605,7 @@ private struct CreateFloorPlanSheet: View {
             onCreated()
             dismiss()
         } catch {
-            self.error = error.localizedDescription
+            self.error = userFriendlyError(error, context: "load locations")
         }
     }
 }
@@ -740,7 +746,7 @@ private struct AddStorageUnitSheet: View {
             onCreated()
             dismiss()
         } catch {
-            self.error = error.localizedDescription
+            self.error = userFriendlyError(error, context: "load locations")
         }
     }
 }
@@ -835,7 +841,7 @@ private struct EditStorageUnitSheet: View {
             onUpdated()
             dismiss()
         } catch {
-            self.error = error.localizedDescription
+            self.error = userFriendlyError(error, context: "load locations")
         }
     }
 }
@@ -976,7 +982,7 @@ private struct StorageUnitDetailSheet: View {
         do {
             levels = try service.listLevelsForUnit(unitId: unitId)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load locations")
         }
     }
 
@@ -988,7 +994,7 @@ private struct StorageUnitDetailSheet: View {
         do {
             areasForLevel[levelId] = try service.listAreasForLevel(levelId: levelId)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load locations")
         }
     }
 
@@ -1079,7 +1085,7 @@ private struct AddFloorFeatureSheet: View {
             onCreated()
             dismiss()
         } catch {
-            self.error = error.localizedDescription
+            self.error = userFriendlyError(error, context: "load locations")
         }
     }
 }

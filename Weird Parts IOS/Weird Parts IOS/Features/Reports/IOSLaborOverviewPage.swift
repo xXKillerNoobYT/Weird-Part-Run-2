@@ -159,7 +159,7 @@ struct IOSLaborOverviewPage: View {
             totalHours = timesheetRows.reduce(0) { $0 + $1.totalHours }
             uniqueWorkers = timesheetRows.count
         } catch {
-            loadError = "Failed to load labor data: \(error.localizedDescription)"
+            loadError = userFriendlyError(error, context: "load labor data")
         }
         isLoading = false
     }

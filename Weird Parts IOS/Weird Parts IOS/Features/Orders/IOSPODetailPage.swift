@@ -992,7 +992,7 @@ struct IOSPODetailPage: View {
             activeChannelId = channelId
             loadSupplierChannels()
         } catch {
-            actionMessage = "Failed to create channel: \(error.localizedDescription)"
+            actionMessage = userFriendlyError(error, context: "create channel")
         }
     }
 
@@ -1014,7 +1014,7 @@ struct IOSPODetailPage: View {
             newSupplierMessage = ""
             loadChannelMessages(channelId: channelId)
         } catch {
-            actionMessage = "Failed to send: \(error.localizedDescription)"
+            actionMessage = userFriendlyError(error, context: "send")
         }
     }
 
@@ -1033,7 +1033,7 @@ struct IOSPODetailPage: View {
             loadData()
             actionMessage = "ETA updated to \(dateStr)."
         } catch {
-            actionMessage = "Failed to update ETA: \(error.localizedDescription)"
+            actionMessage = userFriendlyError(error, context: "update eta")
         }
     }
 
@@ -1101,7 +1101,7 @@ struct IOSPODetailPage: View {
             loadData()
             actionMessage = "Double order \(poNumber) created successfully."
         } catch {
-            actionMessage = "Failed to create double order: \(error.localizedDescription)"
+            actionMessage = userFriendlyError(error, context: "create double order")
         }
     }
 
@@ -1145,7 +1145,7 @@ struct IOSPODetailPage: View {
             loadData()
             actionMessage = "Issue report submitted and logged."
         } catch {
-            actionMessage = "Failed to submit issue: \(error.localizedDescription)"
+            actionMessage = userFriendlyError(error, context: "submit issue")
         }
     }
 
@@ -1171,7 +1171,7 @@ struct IOSPODetailPage: View {
             activeSheet = nil
             actionMessage = "DM channel created with \(name). Open Chat to continue the conversation."
         } catch {
-            actionMessage = "Failed to create DM: \(error.localizedDescription)"
+            actionMessage = userFriendlyError(error, context: "create dm")
         }
     }
 
@@ -2044,7 +2044,7 @@ struct IOSPODetailPage: View {
                 actionMessage = "PO marked as Submitted. Remember to send the order to the supplier."
             }
         } catch {
-            actionMessage = "Failed to update status: \(error.localizedDescription)"
+            actionMessage = userFriendlyError(error, context: "update status")
         }
     }
 
@@ -2058,7 +2058,7 @@ struct IOSPODetailPage: View {
             try service.deletePO(id: poId)
             dismiss()
         } catch {
-            actionMessage = "Failed to delete draft: \(error.localizedDescription)"
+            actionMessage = userFriendlyError(error, context: "delete draft")
         }
     }
 
@@ -2073,7 +2073,7 @@ struct IOSPODetailPage: View {
             try service.updatePOLineItem(lineId: lineId, quantity: quantity, unitPrice: unitPrice)
             loadData()
         } catch {
-            actionMessage = "Failed to update: \(error.localizedDescription)"
+            actionMessage = userFriendlyError(error, context: "update")
         }
     }
 
@@ -2091,7 +2091,7 @@ struct IOSPODetailPage: View {
             newNoteText = ""
             loadData()
         } catch {
-            actionMessage = "Failed to add note: \(error.localizedDescription)"
+            actionMessage = userFriendlyError(error, context: "add note")
         }
     }
 
@@ -2099,7 +2099,7 @@ struct IOSPODetailPage: View {
 
     /// Load per-item details for a specific receipt session.
     private func loadReceiptEntryItems(sessionId: Int64) {
-        guard let service = appCore.ordersService else { return }
+        guard let service = appCore.ordersService else { loadError = "Service not available"; return }
         receiptEntryItems[sessionId] = (try? service.getReceiptHistoryItems(sessionId: sessionId)) ?? []
     }
 
@@ -2199,7 +2199,7 @@ struct IOSPODetailPage: View {
             // Load receipt history entries from receiving_sessions (62P)
             receiptHistoryEntries = (try? service.getReceiptHistoryEntries(poId: poId)) ?? []
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load PO details")
         }
         isLoading = false
     }

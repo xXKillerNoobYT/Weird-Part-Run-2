@@ -109,7 +109,7 @@ struct PDFSettingsPage: View {
             paymentTerms = pdf.paymentTerms
             deliveryNotes = pdf.deliveryNotes
         } catch {
-            errorMessage = "Failed to load: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load")
         }
     }
 
@@ -134,7 +134,7 @@ struct PDFSettingsPage: View {
                 saved = false
             }
         } catch {
-            errorMessage = "Failed to save: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "save")
         }
     }
 }

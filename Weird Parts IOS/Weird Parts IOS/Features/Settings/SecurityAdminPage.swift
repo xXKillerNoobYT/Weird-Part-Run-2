@@ -162,7 +162,7 @@ struct SecurityAdminPage: View {
             devices = try authService.listRegisteredDevices()
             sessions = try authService.listActiveSessions()
         } catch {
-            errorMessage = "Failed to load: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load")
         }
         isLoading = false
     }
@@ -179,7 +179,7 @@ struct SecurityAdminPage: View {
             selectedSessionId = nil
             Task { loadData() }
         } catch {
-            errorMessage = "Force logout failed: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load security settings")
         }
     }
 }

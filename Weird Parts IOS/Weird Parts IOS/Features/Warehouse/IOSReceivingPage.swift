@@ -43,6 +43,8 @@ struct IOSReceivingPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "warehouse-receiving")
+
             // Smart card filters
             if !sessions.isEmpty {
                 smartCardFilters
@@ -50,6 +52,7 @@ struct IOSReceivingPage: View {
 
             sessionList
         }
+        .task { appCore.onboardingManager?.markCompleted("wh-receiving-view") }
         .navigationTitle("Receiving")
         .searchable(text: $searchText, prompt: "Search receiving sessions...")
         .refreshable { loadData() }
@@ -323,7 +326,7 @@ struct IOSReceivingPage: View {
         do {
             sessions = try service.getActiveSessions()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load receiving data")
         }
         isLoading = false
     }

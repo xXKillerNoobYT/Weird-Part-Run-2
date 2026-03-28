@@ -26,9 +26,11 @@ struct IOSReturnsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "orders-returns")
             smartCardFilters
             returnsList
         }
+        .task { appCore.onboardingManager?.markCompleted("returns-view") }
         .navigationTitle("Returns")
         .searchable(text: $searchText, prompt: "Search returns...")
         .toolbar {
@@ -231,7 +233,7 @@ struct IOSReturnsPage: View {
             // Load all returns for client-side filtering (enables smart card counts)
             allReturns = try service.listReturns(status: nil)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load returns")
         }
         isLoading = false
     }

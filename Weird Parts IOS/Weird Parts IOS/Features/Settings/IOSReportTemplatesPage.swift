@@ -242,7 +242,7 @@ struct IOSReportTemplatesPage: View {
         do {
             templates = try service.getSavedReports(userId: userId)
         } catch {
-            loadError = "Failed to load: \(error.localizedDescription)"
+            loadError = userFriendlyError(error, context: "load")
         }
         isLoading = false
     }
@@ -271,7 +271,7 @@ struct IOSReportTemplatesPage: View {
             newIsShared = false
             loadTemplates()
         } catch {
-            actionError = "Create failed: \(error.localizedDescription)"
+            actionError = userFriendlyError(error, context: "save template")
         }
     }
 
@@ -287,7 +287,7 @@ struct IOSReportTemplatesPage: View {
             deleteCandidate = nil
             loadTemplates()
         } catch {
-            actionError = "Delete failed: \(error.localizedDescription)"
+            actionError = userFriendlyError(error, context: "save template")
         }
     }
 }

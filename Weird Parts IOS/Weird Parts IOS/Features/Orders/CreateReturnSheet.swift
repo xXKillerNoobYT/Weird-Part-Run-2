@@ -86,7 +86,7 @@ struct CreateReturnSheet: View {
         do {
             suppliers = try service.listSuppliers()
         } catch {
-            saveError = "Could not load suppliers: \(error.localizedDescription)"
+            saveError = userFriendlyError(error, context: "load suppliers")
         }
     }
 
@@ -106,7 +106,7 @@ struct CreateReturnSheet: View {
             onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "create return")
         }
         isSaving = false
     }

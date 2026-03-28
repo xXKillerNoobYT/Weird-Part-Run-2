@@ -40,6 +40,9 @@ struct WarehouseDashboardPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "warehouse-dashboard")
+            SkippedModuleHint(moduleId: "warehouse")
+
             if isLoading {
                 ProgressView("Loading warehouse...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -63,6 +66,7 @@ struct WarehouseDashboardPage: View {
         }
         .task {
             loadData()
+            appCore.onboardingManager?.markCompleted("wh-dashboard-view")
             // Auto-show onboarding wizard if warehouse has no floor plans
             if let service = appCore.warehouseService {
                 let plans = (try? service.listFloorPlans()) ?? []
@@ -472,7 +476,7 @@ struct WarehouseDashboardPage: View {
             auditSummary = try service.getAuditSummary()
             recentMovements = try service.listMovements(limit: 10)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load warehouse dashboard")
         }
         isLoading = false
     }

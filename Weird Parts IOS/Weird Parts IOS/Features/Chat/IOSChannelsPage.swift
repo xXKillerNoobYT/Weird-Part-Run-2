@@ -57,7 +57,12 @@ struct IOSChannelsPage: View {
     }
 
     var body: some View {
-        channelList
+        VStack(spacing: 0) {
+            OnboardingBanner(pageId: "chat-channels")
+            SkippedModuleHint(moduleId: "chat")
+            channelList
+        }
+            .task { appCore.onboardingManager?.markCompleted("chat-view-channels") }
             .navigationTitle("Chat")
             .searchable(text: $searchText, prompt: "Search conversations...")
             .toolbar {
@@ -412,7 +417,7 @@ struct IOSChannelsPage: View {
         do {
             inboxItems = try service.getUnifiedInbox(userId: userId)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load channels")
         }
         isLoading = false
     }

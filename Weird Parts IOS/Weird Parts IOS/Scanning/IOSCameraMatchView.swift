@@ -169,7 +169,7 @@ struct IOSCameraMatchView: View {
             generator.notificationOccurred(matchResults.isEmpty ? .warning : .success)
 
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "match item")
         }
 
         isProcessing = false

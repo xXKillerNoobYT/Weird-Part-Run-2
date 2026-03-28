@@ -180,7 +180,7 @@ struct IOSDispatchPreferencesPage: View {
             crewHistoryMonths = Int(map["dispatch_crew_history_months"] ?? "") ?? 3
             crewContinuityWeight = map["dispatch_crew_continuity_weight"] ?? "medium"
         } catch {
-            loadError = "Failed to load: \(error.localizedDescription)"
+            loadError = userFriendlyError(error, context: "load")
         }
         isLoading = false
     }
@@ -208,7 +208,7 @@ struct IOSDispatchPreferencesPage: View {
             try service.upsertSettingsMap(data, category: "dispatch")
             saveError = nil
         } catch {
-            saveError = "Save failed: \(error.localizedDescription)"
+            saveError = userFriendlyError(error, context: "save data")
         }
     }
 }

@@ -16,22 +16,30 @@ struct IOSVehiclesPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
-    @State private var showCreateVehicle = false
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
 
     private enum ActiveSheet: Identifiable {
+        case createVehicle
         case help
-        var id: String { "help" }
+        var id: String {
+            switch self {
+            case .createVehicle: return "createVehicle"
+            case .help: return "help"
+            }
+        }
     }
 
     private let statusOptions = ["all", "active", "inactive", "maintenance", "retired"]
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "fleet-vehicles")
+            SkippedModuleHint(moduleId: "fleet")
             statusPicker
             vehicleList
         }
+        .task { appCore.onboardingManager?.markCompleted("fleet-vehicles-view") }
         .navigationTitle("Vehicles")
         .searchable(text: $searchText, prompt: "Search vehicles...")
         .onChange(of: searchText) { loadData() }
@@ -64,7 +72,7 @@ struct IOSVehiclesPage: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    showCreateVehicle = true
+                    activeSheet = .createVehicle
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -76,20 +84,22 @@ struct IOSVehiclesPage: View {
                 }
             }
         }
-        .sheet(isPresented: $showCreateVehicle) {
-            IOSCreateVehicleSheet(onSaved: { loadData() })
-        }
-        .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(
-                title: "Vehicles Help",
-                sections: [
-                    ("Overview", "This page lists all vehicles in the fleet. Each row shows the vehicle number, name, make/model, type, status, assigned driver, and current odometer reading."),
-                    ("Filtering", "Use the status pills at the top to filter by Active, Inactive, Maintenance, or Retired vehicles. Tap All to see everything. Use the search bar to find vehicles by name, number, make, model, or driver."),
-                    ("Adding a Vehicle", "Tap the + button in the top-right corner to add a new vehicle. You need the manage_fleet permission to add vehicles."),
-                    ("Vehicle Detail", "Tap any vehicle row to open its detail page with tabs for overview, parts, tools, assignments, maintenance, usage, and inspections."),
-                    ("Tips", "Pull down to refresh the list. Status badges are color-coded: green for active, orange for maintenance, red for retired, and gray for inactive.")
-                ]
-            )
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .createVehicle:
+                IOSCreateVehicleSheet(onSaved: { loadData() })
+            case .help:
+                PageHelpSheet(
+                    title: "Vehicles Help",
+                    sections: [
+                        ("Overview", "This page lists all vehicles in the fleet. Each row shows the vehicle number, name, make/model, type, status, assigned driver, and current odometer reading."),
+                        ("Filtering", "Use the status pills at the top to filter by Active, Inactive, Maintenance, or Retired vehicles. Tap All to see everything. Use the search bar to find vehicles by name, number, make, model, or driver."),
+                        ("Adding a Vehicle", "Tap the + button in the top-right corner to add a new vehicle. You need the manage_fleet permission to add vehicles."),
+                        ("Vehicle Detail", "Tap any vehicle row to open its detail page with tabs for overview, parts, tools, assignments, maintenance, usage, and inspections."),
+                        ("Tips", "Pull down to refresh the list. Status badges are color-coded: green for active, orange for maintenance, red for retired, and gray for inactive.")
+                    ]
+                )
+            }
         }
     }
 
@@ -135,7 +145,7 @@ struct IOSVehiclesPage: View {
                 message: searchText.isEmpty ? "Add your first vehicle to get started." : "No vehicles match your criteria.",
                 actionLabel: searchText.isEmpty ? "Add Vehicle" : nil
             ) {
-                showCreateVehicle = true
+                activeSheet = .createVehicle
             }
         } else {
             List(filteredVehicles, id: \.id) { vehicle in
@@ -259,7 +269,7 @@ struct IOSVehiclesPage: View {
                 ? allVehicles
                 : allVehicles.filter { $0.status == statusFilter }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load vehicles")
         }
         isLoading = false
     }

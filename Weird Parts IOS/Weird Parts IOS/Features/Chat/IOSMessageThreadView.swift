@@ -316,7 +316,7 @@ struct IOSMessageThreadView: View {
             let ids = messages.map(\.id)
             messageAttachments = try service.getAttachmentsForMessages(messageIds: ids)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load messages")
         }
         isLoading = false
     }
@@ -365,9 +365,10 @@ struct IOSMessageThreadView: View {
             }
             messageText = ""
             pendingAttachments = []
+            appCore.onboardingManager?.markCompleted("chat-send-message")
             loadMessages()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "send message")
         }
         isSending = false
     }
@@ -388,7 +389,7 @@ struct IOSMessageThreadView: View {
                     loadThreadInfo()
                 }
             } catch {
-                actionError = error.localizedDescription
+                actionError = userFriendlyError(error, context: "send message")
             }
         case .addPeople, .escalate, .pushBack, .approve, .reject:
             break // Wired in later prompts (42D)

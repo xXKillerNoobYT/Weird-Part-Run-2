@@ -351,7 +351,7 @@ struct IOSTrailerDetailPage: View {
                 locationHistory = try fleet.getTrailerLocationHistory(trailerId: trailerId)
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load trailer details")
         }
         isLoading = false
     }

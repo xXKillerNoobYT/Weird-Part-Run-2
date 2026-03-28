@@ -127,7 +127,7 @@ struct IOSIntegrationsPage: View {
                 )
             }
         } catch {
-            errorMessage = "Failed to load integrations: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load integrations")
             integrations = []
         }
         isLoading = false
@@ -143,7 +143,7 @@ struct IOSIntegrationsPage: View {
         do {
             try settingsService.toggleIntegration(id, enabled: enabled)
         } catch {
-            errorMessage = "Failed to update: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "update")
         }
     }
 

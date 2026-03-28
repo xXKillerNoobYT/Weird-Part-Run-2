@@ -165,7 +165,7 @@ struct IOSToolPoliciesPage: View {
             tradeTimeoutDays = Int(map["tool_policy_trade_timeout_days"] ?? "") ?? 7
             requireTradeCondition = (map["tool_policy_require_trade_condition"] ?? "true") == "true"
         } catch {
-            loadError = "Failed to load: \(error.localizedDescription)"
+            loadError = userFriendlyError(error, context: "load")
         }
         isLoading = false
     }
@@ -193,7 +193,7 @@ struct IOSToolPoliciesPage: View {
             try service.upsertSettingsMap(data, category: "tool_policy")
             saveError = nil
         } catch {
-            saveError = "Save failed: \(error.localizedDescription)"
+            saveError = userFriendlyError(error, context: "save order")
         }
     }
 }

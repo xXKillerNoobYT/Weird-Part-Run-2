@@ -117,7 +117,7 @@ struct IOSScheduleConfigPage: View {
             ], category: "scheduling")
             showSaveConfirmation = true
         } catch {
-            saveError = "Failed to save: \(error.localizedDescription)"
+            saveError = userFriendlyError(error, context: "save")
         }
         isSaving = false
     }
@@ -136,7 +136,7 @@ struct IOSScheduleConfigPage: View {
             if let v = settings["weekend_scheduling"] { enableWeekendScheduling = v == "1" }
             if let v = settings["default_break_minutes"], let n = Int(v) { defaultBreakMinutes = n }
         } catch {
-            loadErrorMsg = "Failed to load settings: \(error.localizedDescription)"
+            loadErrorMsg = userFriendlyError(error, context: "load settings")
         }
     }
 }

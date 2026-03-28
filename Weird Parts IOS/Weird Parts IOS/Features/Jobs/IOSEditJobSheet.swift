@@ -153,7 +153,7 @@ struct IOSEditJobSheet: View {
             onUpdated?()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "save job")
         }
         isSaving = false
     }

@@ -84,6 +84,8 @@ struct IOSStagingPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "warehouse-staging")
+
             // Tab picker
             Picker("View", selection: $activeTab) {
                 ForEach(StagingTab.allCases, id: \.self) { tab in
@@ -171,7 +173,10 @@ struct IOSStagingPage: View {
                 )
             }
         }
-        .task { loadData() }
+        .task {
+            loadData()
+            appCore.onboardingManager?.markCompleted("wh-staging-view")
+        }
     }
 
     // MARK: - Items Tab Toolbar
@@ -732,7 +737,7 @@ struct IOSStagingPage: View {
             try service.clearStagingTag(id: id)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "update staging")
         }
     }
 
@@ -770,7 +775,7 @@ struct IOSStagingPage: View {
             newBoxSize = "normal"
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "update staging")
         }
     }
 
@@ -783,7 +788,7 @@ struct IOSStagingPage: View {
             _ = try service.markBoxFull(boxId: boxId)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "update staging")
         }
     }
 
@@ -796,7 +801,7 @@ struct IOSStagingPage: View {
             try service.markBoxOpen(boxId: boxId)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "update staging")
         }
     }
 
@@ -809,7 +814,7 @@ struct IOSStagingPage: View {
             try service.deleteStagingBox(boxId: boxId)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "update staging")
         }
     }
 
@@ -830,7 +835,7 @@ struct IOSStagingPage: View {
                 jobs = try jobsService.listJobs(status: "active", limit: 200)
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load staging area")
         }
         isLoading = false
     }

@@ -43,6 +43,7 @@ struct IOSProcurementPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "orders-procurement")
             smartCardFilters
             if isLoading {
                 ProgressView("Loading procurement data...")
@@ -83,7 +84,10 @@ struct IOSProcurementPage: View {
         }
         .searchable(text: $searchText, prompt: "Search parts...")
         .refreshable { loadData() }
-        .task { loadData() }
+        .task {
+            loadData()
+            appCore.onboardingManager?.markCompleted("procurement-view")
+        }
         .alert("Error", isPresented: .constant(generateError != nil)) {
             Button("OK") { generateError = nil }
         } message: {
@@ -559,7 +563,7 @@ struct IOSProcurementPage: View {
                 checkedParts.remove(item.id)
             }
         } catch {
-            generateError = error.localizedDescription
+            generateError = userFriendlyError(error, context: "generate document")
         }
     }
 
@@ -962,7 +966,7 @@ struct IOSProcurementPage: View {
             // Reload to reflect updated stock levels
             loadData()
         } catch {
-            pullActionError = "Pull failed for \(item.partName): \(error.localizedDescription)"
+            pullActionError = userFriendlyError(error, context: "load procurement")
         }
     }
 
@@ -1018,7 +1022,7 @@ struct IOSProcurementPage: View {
                 }
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load procurement data")
         }
         isLoading = false
     }

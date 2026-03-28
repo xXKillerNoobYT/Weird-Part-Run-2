@@ -111,7 +111,7 @@ struct IOSTruckToolsPage: View {
             // Get active checkouts (tools currently out on trucks)
             checkouts = try service.listCheckouts(active: true)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load truck tools")
         }
         isLoading = false
     }

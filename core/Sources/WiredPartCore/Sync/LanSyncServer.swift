@@ -264,9 +264,10 @@ public final class LanSyncServer: Sendable {
 
         connection.start(queue: .global(qos: .userInitiated))
 
-        // Read up to 1 MB of request data
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 1_048_576) { data, _, isComplete, error in
-            guard let data, error == nil else {
+        // Accumulate data until we have the full HTTP request (headers + body).
+        // URLSession may split headers and body across TCP packets.
+        readFullHTTPRequest(connection: connection, accumulated: Data()) { data in
+            guard let data else {
                 connection.cancel()
                 return
             }
@@ -279,6 +280,63 @@ public final class LanSyncServer: Sendable {
                 })
             }
         }
+    }
+
+    /// Reads from the connection until we have the complete HTTP request
+    /// (headers + full body per Content-Length). Calls completion with the
+    /// accumulated data, or nil on error.
+    private func readFullHTTPRequest(
+        connection: NWConnection,
+        accumulated: Data,
+        completion: @escaping (Data?) -> Void
+    ) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1_048_576) { [weak self] data, _, isComplete, error in
+            guard let data, error == nil else {
+                completion(accumulated.isEmpty ? nil : accumulated)
+                return
+            }
+
+            var buffer = accumulated
+            buffer.append(data)
+
+            // Check if we have the full request
+            let separator = Data([0x0D, 0x0A, 0x0D, 0x0A]) // \r\n\r\n
+            if let separatorRange = buffer.range(of: separator) {
+                // Parse Content-Length from headers
+                let headerData = buffer[buffer.startIndex..<separatorRange.lowerBound]
+                let bodyStart = separatorRange.upperBound
+                let currentBodyLength = buffer.count - bodyStart
+
+                if let headerString = String(data: headerData, encoding: .utf8) {
+                    let contentLength = Self.parseContentLength(from: headerString)
+                    if currentBodyLength >= contentLength {
+                        // We have the full request
+                        completion(buffer)
+                        return
+                    }
+                }
+            }
+
+            // Need more data — keep reading
+            if isComplete {
+                // Connection closed — use what we have
+                completion(buffer)
+            } else {
+                self?.readFullHTTPRequest(connection: connection, accumulated: buffer, completion: completion)
+            }
+        }
+    }
+
+    /// Extract Content-Length value from raw HTTP header string.
+    private static func parseContentLength(from headers: String) -> Int {
+        for line in headers.components(separatedBy: "\r\n") {
+            let lower = line.lowercased()
+            if lower.hasPrefix("content-length:") {
+                let value = line[line.index(line.startIndex, offsetBy: 15)...].trimmingCharacters(in: .whitespaces)
+                return Int(value) ?? 0
+            }
+        }
+        return 0
     }
 
     // MARK: - HTTP Parsing & Routing

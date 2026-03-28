@@ -147,7 +147,7 @@ struct IOSTrailerLocationsPage: View {
         do {
             trailers = try fleet.listTrailers()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load trailer locations")
         }
         isLoading = false
     }

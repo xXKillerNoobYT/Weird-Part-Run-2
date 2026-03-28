@@ -87,6 +87,13 @@ struct IOSMainView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+        .overlay {
+            NewUserWelcomeView()
+                .environmentObject(appCore)
+        }
+        .overlay {
+            ModuleTourView()
+        }
         .onAppear {
             tabPrefs.load(userId: appCore.currentUser?.id)
         }

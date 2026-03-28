@@ -102,6 +102,10 @@ struct IOSAuditPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            FirstVisitHint(pageId: "audit", message: "Tap 'Audit This Shelf' to count parts. The system hides expected counts so you count fresh.")
+
+            OnboardingBanner(pageId: "warehouse-audit")
+
             if isLoading {
                 ProgressView("Loading audit data...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -138,7 +142,10 @@ struct IOSAuditPage: View {
             Text(actionError ?? "")
         }
         .refreshable { loadData() }
-        .task { loadData() }
+        .task {
+            loadData()
+            appCore.onboardingManager?.markCompleted("wh-audit-view")
+        }
     }
 
     // MARK: - Sheet Content
@@ -743,7 +750,7 @@ struct IOSAuditPage: View {
             activeSession = try service.startAuditSession(startedBy: userId)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -760,7 +767,7 @@ struct IOSAuditPage: View {
             activeSheet = .sessionSummary(session)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -818,7 +825,7 @@ struct IOSAuditPage: View {
                 varianceDollars: auditCount.varianceDollars
             )
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -947,7 +954,7 @@ struct IOSAuditPage: View {
             loadNameCaches(service: service)
 
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load audit data")
         }
         isLoading = false
     }
@@ -1045,7 +1052,7 @@ private struct MisplacedPartSheet: View {
             onSave()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load audit")
         }
         isSaving = false
     }

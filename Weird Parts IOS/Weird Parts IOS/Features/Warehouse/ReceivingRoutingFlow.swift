@@ -951,7 +951,7 @@ struct ReceivingRoutingFlow: View {
             jobLink = try service.getJobLinkForPOLine(poLineId: poLineId)
             isProcessing = false
         } catch {
-            routingError = error.localizedDescription
+            routingError = userFriendlyError(error, context: "route receiving")
             isProcessing = false
         }
     }
@@ -989,7 +989,7 @@ struct ReceivingRoutingFlow: View {
                 // Will auto-advance via .task modifier in the view
             }
         } catch {
-            routingError = error.localizedDescription
+            routingError = userFriendlyError(error, context: "route receiving")
             isProcessing = false
         }
     }
@@ -1021,7 +1021,7 @@ struct ReceivingRoutingFlow: View {
             stockLevels = try service.getPartStockLevels(partId: partId)
             isProcessing = false
         } catch {
-            routingError = error.localizedDescription
+            routingError = userFriendlyError(error, context: "route receiving")
             isProcessing = false
         }
     }
@@ -1052,7 +1052,7 @@ struct ReceivingRoutingFlow: View {
             withAnimation { currentStep = .routeConfirmed }
             onRouteComplete(.stageForJob(jobId: link.jobId, jobName: link.jobName, jpoId: link.jpoId))
         } catch {
-            routingError = error.localizedDescription
+            routingError = userFriendlyError(error, context: "route receiving")
             isProcessing = false
         }
     }
@@ -1082,7 +1082,7 @@ struct ReceivingRoutingFlow: View {
             withAnimation { currentStep = .routeConfirmed }
             onRouteComplete(.suggestStaging(demands: [demand]))
         } catch {
-            routingError = error.localizedDescription
+            routingError = userFriendlyError(error, context: "route receiving")
             isProcessing = false
         }
     }
@@ -1112,7 +1112,7 @@ struct ReceivingRoutingFlow: View {
             withAnimation { currentStep = .routeConfirmed }
             onRouteComplete(.damagedReturn)
         } catch {
-            routingError = error.localizedDescription
+            routingError = userFriendlyError(error, context: "route receiving")
             isProcessing = false
         }
     }
@@ -1143,7 +1143,7 @@ struct ReceivingRoutingFlow: View {
                 onRouteComplete(.usedWriteOff(levels: levels))
             }
         } catch {
-            routingError = error.localizedDescription
+            routingError = userFriendlyError(error, context: "route receiving")
             isProcessing = false
         }
     }

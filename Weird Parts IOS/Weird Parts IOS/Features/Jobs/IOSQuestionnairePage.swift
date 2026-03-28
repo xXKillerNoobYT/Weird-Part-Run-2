@@ -211,6 +211,7 @@ struct IOSQuestionnairePage: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .refreshable { loadQuestions() }
         }
     }
 
@@ -314,7 +315,7 @@ struct IOSQuestionnairePage: View {
             onComplete?()
             dismiss()
         } catch {
-            errorMessage = "Failed to save responses: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "save responses")
         }
         isSubmitting = false
     }
@@ -379,7 +380,7 @@ struct IOSQuestionnairePage: View {
         } catch {
             let msg = String(describing: error)
             if !msg.contains("no such table") {
-                errorMessage = "Failed to load questions: \(error.localizedDescription)"
+                errorMessage = userFriendlyError(error, context: "load questions")
             }
         }
 

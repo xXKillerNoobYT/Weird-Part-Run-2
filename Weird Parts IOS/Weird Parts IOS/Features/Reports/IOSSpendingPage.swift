@@ -218,7 +218,7 @@ struct IOSSpendingPage: View {
         do {
             summary = try service.getSpendingSummary(days: selectedDays)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
     }

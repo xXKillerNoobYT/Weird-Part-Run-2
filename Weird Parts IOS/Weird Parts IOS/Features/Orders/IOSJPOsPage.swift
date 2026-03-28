@@ -37,6 +37,7 @@ struct IOSJPOsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "orders-jpos")
             statusPicker
 
             // Pending KPI line
@@ -78,7 +79,10 @@ struct IOSJPOsPage: View {
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
         }
-        .task { loadData() }
+        .task {
+            loadData()
+            appCore.onboardingManager?.markCompleted("jpo-view-list")
+        }
         .onAppear {
             NotificationCenter.default.post(
                 name: .jposPageActive,
@@ -292,7 +296,7 @@ struct IOSJPOsPage: View {
             // Load all JPOs for counts, then filter in-memory
             allJPOs = try service.listJPOs(status: nil, limit: 500)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load job parts orders")
         }
         isLoading = false
     }

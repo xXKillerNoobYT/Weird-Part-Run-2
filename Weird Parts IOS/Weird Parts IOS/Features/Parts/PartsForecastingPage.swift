@@ -45,6 +45,8 @@ struct PartsForecastingPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "parts-forecasting")
+
             if isLoading {
                 ProgressView("Loading forecast data...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -130,7 +132,7 @@ struct PartsForecastingPage: View {
                             try service.dismissRecommendation(id: recId, userId: userId, reason: dismissReason)
                             await loadRecommendations()
                         } catch {
-                            loadError = "Dismiss failed: \(error.localizedDescription)"
+                            loadError = userFriendlyError(error, context: "load forecast")
                         }
                         dismissReason = ""
                         dismissingRecommendation = nil
@@ -146,6 +148,7 @@ struct PartsForecastingPage: View {
             loadLocations()
             await loadData()
             await loadRecommendations()
+            appCore.onboardingManager?.markCompleted("forecast-view")
         }
         .onAppear { postForecastContext() }
         .onDisappear {
@@ -475,7 +478,7 @@ struct PartsForecastingPage: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load forecasting data")
                 isLoading = false
             }
         }
@@ -493,7 +496,7 @@ struct PartsForecastingPage: View {
             await loadData()
         } catch {
             await MainActor.run {
-                loadError = "Recalculation failed: \(error.localizedDescription)"
+                loadError = userFriendlyError(error, context: "load forecast")
             }
         }
         await MainActor.run {
@@ -594,7 +597,7 @@ struct PartsForecastingPage: View {
             await loadRecommendations()
             await loadData()
         } catch {
-            loadError = "Approve failed: \(error.localizedDescription)"
+            loadError = userFriendlyError(error, context: "load forecast")
         }
     }
 
@@ -1099,7 +1102,7 @@ private struct ForecastDetailSheet: View {
                         withAnimation { toastMessage = nil }
                     }
                 } catch {
-                    editError = "Failed to add to wishlist: \(error.localizedDescription)"
+                    editError = userFriendlyError(error, context: "add to wishlist")
                 }
             } label: {
                 Label("Add to Wishlist", systemImage: "heart")
@@ -1173,7 +1176,7 @@ private struct ForecastDetailSheet: View {
             }
         } catch {
             await MainActor.run {
-                editError = "Save failed: \(error.localizedDescription)"
+                editError = userFriendlyError(error, context: "load forecast")
                 isSaving = false
             }
         }

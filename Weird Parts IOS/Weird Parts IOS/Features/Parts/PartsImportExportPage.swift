@@ -33,6 +33,8 @@ struct PartsImportExportPage: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
+                OnboardingBanner(pageId: "parts-import-export")
+
                 if isLoading {
                     ProgressView("Loading stats...")
                         .frame(maxWidth: .infinity)
@@ -109,7 +111,10 @@ struct PartsImportExportPage: View {
             }
         }
         .background(DS.Background.page)
-        .task { await loadStats() }
+        .task {
+            await loadStats()
+            appCore.onboardingManager?.markCompleted("import-view")
+        }
     }
 
     // MARK: - Stats Section
@@ -404,7 +409,7 @@ struct PartsImportExportPage: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load import data")
                 isLoading = false
             }
         }
@@ -439,7 +444,7 @@ struct PartsImportExportPage: View {
             await MainActor.run { exportStatus = .idle }
         } catch {
             await MainActor.run {
-                exportStatus = .error("Export failed: \(error.localizedDescription)")
+                exportStatus = .error(userFriendlyError(error, context: "import parts"))
             }
         }
     }
@@ -529,7 +534,7 @@ struct PartsImportExportPage: View {
             }
         } catch {
             await MainActor.run {
-                importStatus = .error("Failed to read file: \(error.localizedDescription)")
+                importStatus = .error(userFriendlyError(error, context: "read file"))
             }
         }
     }

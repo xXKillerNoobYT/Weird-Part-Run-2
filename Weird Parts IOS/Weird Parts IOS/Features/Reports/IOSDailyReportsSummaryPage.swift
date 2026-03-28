@@ -230,7 +230,7 @@ struct IOSDailyReportsSummaryPage: View {
         do {
             rows = try service.getDailyReportSummary(date: dateString)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
     }

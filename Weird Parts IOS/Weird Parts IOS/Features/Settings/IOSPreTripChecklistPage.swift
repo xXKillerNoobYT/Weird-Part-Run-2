@@ -318,7 +318,7 @@ struct IOSPreTripChecklistPage: View {
             try service.upsertSetting(key: "pretrip_checklist_config", value: json, category: "pretrip")
             saveError = nil
         } catch {
-            saveError = "Save failed: \(error.localizedDescription)"
+            saveError = userFriendlyError(error, context: "save data")
         }
     }
 

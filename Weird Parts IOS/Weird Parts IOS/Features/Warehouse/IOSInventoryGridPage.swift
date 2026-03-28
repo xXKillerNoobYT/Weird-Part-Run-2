@@ -44,6 +44,8 @@ struct IOSInventoryGridPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "warehouse-inventory")
+
             // Location picker
             locationPicker
 
@@ -123,6 +125,7 @@ struct IOSInventoryGridPage: View {
             selectedLocationId = Int64(lastLocationId)
             loadLocations()
             loadData()
+            appCore.onboardingManager?.markCompleted("wh-inventory-view")
         }
     }
 
@@ -345,7 +348,7 @@ struct IOSInventoryGridPage: View {
                 locationId: item.locationId
             )
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -385,7 +388,7 @@ struct IOSInventoryGridPage: View {
         do {
             items = try service.getStockAtLocation(locationType: selectedLocationType, locationId: selectedLocationId)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load inventory")
         }
         isLoading = false
     }

@@ -74,6 +74,7 @@ extension AppDatabase {
         registerMigration057WishlistItems(&migrator)
         registerMigration058BackgroundTaskLog(&migrator)
         registerMigration059MultiUserAuditAssignments(&migrator)
+        registerMigration060PermissionKeysExpansion(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4546,6 +4547,45 @@ extension AppDatabase {
                 on: "multi_user_audit_assignments",
                 columns: ["part_id", "audit_session_id"]
             )
+        }
+    }
+}
+
+// MARK: - Migration 060: Permission Keys Expansion (39A)
+
+extension AppDatabase {
+    private static func registerMigration060PermissionKeysExpansion(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("060_permission_keys_expansion") { db in
+            // New fine-grained permission keys for jobs, scheduling, approvals, and admin.
+            // These complement existing keys (manage_jobs, manage_fleet, etc.) with
+            // more granular controls for viewing financials, creating jobs, self-assigning, etc.
+
+            let newPermissions: [(key: String, hatNames: [String])] = [
+                // Jobs
+                ("view_job_financials", ["Admin", "Manager", "Office"]),
+                ("create_jobs", ["Admin", "Manager", "Lead", "Office"]),
+                ("self_assign_ready_jobs", ["Admin", "Manager", "Lead", "Worker"]),
+                ("self_assign_contact_jobs", ["Admin", "Manager", "Worker"]),
+                ("view_all_jobs", ["Admin", "Manager", "Lead", "Office"]),
+                ("view_job_reports", ["Admin", "Manager", "Lead", "Office"]),
+                // Scheduling
+                ("approve_time_off", ["Admin", "Manager", "Office"]),
+                // Orders
+                ("approve_orders", ["Admin", "Manager", "Office"]),
+                // Reports
+                ("view_spending", ["Admin", "Manager", "Office"]),
+                // Settings / Audit
+                ("view_audit_log", ["Admin"]),
+            ]
+
+            for perm in newPermissions {
+                for hatName in perm.hatNames {
+                    try db.execute(sql: """
+                        INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key)
+                        SELECT id, ? FROM hats WHERE name = ?
+                        """, arguments: [perm.key, hatName])
+                }
+            }
         }
     }
 }

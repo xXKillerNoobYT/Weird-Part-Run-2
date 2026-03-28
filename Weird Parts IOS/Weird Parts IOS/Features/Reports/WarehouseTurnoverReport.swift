@@ -99,6 +99,7 @@ struct WarehouseTurnoverReport: View {
                 ("Tips", "High-turnover parts should always be well-stocked to avoid job delays. If a part has lots of movements but low current stock, consider increasing your reorder target. Low-turnover parts taking up shelf space might be candidates for reduction.")
             ])
         }
+        .refreshable { loadData() }
         .onAppear { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
@@ -120,7 +121,7 @@ struct WarehouseTurnoverReport: View {
                 startDate: startDate, endDate: endDate
             )
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
     }

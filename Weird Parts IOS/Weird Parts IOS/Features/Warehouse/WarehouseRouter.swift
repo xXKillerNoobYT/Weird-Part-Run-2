@@ -41,6 +41,8 @@ struct WarehouseRouter: View {
             IOSWarehouseLeaderboardPage()
         case "warehouse-settings":
             IOSWarehouseSettingsPage()
+        case "warehouse-organization":
+            IOSOrganizationAuditPage()
         default:
             ErrorStateView(message: "Unknown warehouse page: \(tabId)") { }
         }

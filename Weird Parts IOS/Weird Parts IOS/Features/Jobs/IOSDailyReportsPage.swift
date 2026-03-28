@@ -263,7 +263,7 @@ struct IOSDailyReportsPage: View {
         do {
             reports = try service.getDailyReportSummary(date: dateStr)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load daily reports")
         }
         isLoading = false
     }

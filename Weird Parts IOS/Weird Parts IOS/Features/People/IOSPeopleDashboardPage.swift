@@ -22,18 +22,25 @@ struct IOSPeopleDashboardPage: View {
     }
 
     var body: some View {
-        Group {
-            if isLoading {
-                ProgressView("Loading...")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = loadError {
-                ErrorStateView(message: error) { loadData() }
-            } else {
-                dashboardContent
+        VStack(spacing: 0) {
+            OnboardingBanner(pageId: "people-dashboard")
+
+            Group {
+                if isLoading {
+                    ProgressView("Loading...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = loadError {
+                    ErrorStateView(message: error) { loadData() }
+                } else {
+                    dashboardContent
+                }
             }
         }
         .navigationTitle("People")
-        .task { loadData() }
+        .task {
+            loadData()
+            appCore.onboardingManager?.markCompleted("people-dashboard-view")
+        }
         .refreshable { loadData() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -258,7 +265,7 @@ struct IOSPeopleDashboardPage: View {
 
             loadError = nil
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load people dashboard")
         }
         isLoading = false
     }

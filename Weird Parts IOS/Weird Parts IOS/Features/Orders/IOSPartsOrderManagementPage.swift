@@ -418,7 +418,7 @@ struct IOSPartsOrderManagementPage: View {
         do {
             suppliers = try service.getSuppliersWithActivePOs()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load parts orders")
         }
     }
 
@@ -433,7 +433,7 @@ struct IOSPartsOrderManagementPage: View {
         do {
             allRows = try service.getPartsForSupplier(supplierId: suppId)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load parts orders")
         }
         isLoading = false
     }

@@ -147,7 +147,7 @@ struct IOSMileagePage: View {
         do {
             mileageLogs = try service.listMileageLogs()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load mileage data")
         }
         isLoading = false
     }

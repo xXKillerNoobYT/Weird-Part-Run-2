@@ -71,9 +71,12 @@ struct JobsListPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "jobs-list")
+            SkippedModuleHint(moduleId: "jobs")
             smartCards
             jobsList
         }
+        .task { appCore.onboardingManager?.markCompleted("jobs-view-list") }
         .navigationTitle("Jobs")
         .searchable(text: $searchText, prompt: "Search jobs...")
         .toolbar {
@@ -383,7 +386,7 @@ struct JobsListPage: View {
             statusCounts = counts
             applyFilterAndSort()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load jobs")
         }
         isLoading = false
     }

@@ -137,7 +137,7 @@ struct IOSKeyManagementPage: View {
             keyCreatedAt = keyInfo.createdAt
             keyRotatedAt = keyInfo.rotatedAt
         } catch {
-            errorMessage = "Failed to load key info: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load key info")
         }
         isLoading = false
     }

@@ -385,7 +385,7 @@ struct IOSOrganizationAuditPage: View {
             consolidationVotes = try service.getActiveConsolidationVotes()
             warehouseScore = try service.getWarehouseOverallScore()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load organization audit")
         }
         isLoading = false
     }
@@ -525,7 +525,7 @@ private struct OrgChecklistSheet: View {
             onSave()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load audit")
         }
         isSaving = false
     }
@@ -637,7 +637,7 @@ private struct ConsolidationDetailSheet: View {
             onSave()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load audit")
         }
         isSaving = false
     }
@@ -731,7 +731,7 @@ private struct ManagerOverrideSheet: View {
             onSave()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load audit")
         }
         isSaving = false
     }

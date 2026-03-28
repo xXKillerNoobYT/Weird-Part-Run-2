@@ -137,7 +137,7 @@ struct IOSWarehouseExecPage: View {
             totalStock = dashboard.kpis.totalStock
             pendingStagingCount = dashboard.pendingStagingCount
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load warehouse data")
         }
         isLoading = false
     }

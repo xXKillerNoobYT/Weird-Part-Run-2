@@ -47,6 +47,8 @@ struct IOSMyTruckPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "fleet-my-truck")
+
             if isLoading {
                 ProgressView("Loading your vehicle...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -60,7 +62,10 @@ struct IOSMyTruckPage: View {
         }
         .navigationTitle("My Truck")
         .refreshable { loadData() }
-        .task { loadData() }
+        .task {
+            loadData()
+            appCore.onboardingManager?.markCompleted("fleet-my-truck")
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
@@ -479,7 +484,7 @@ struct IOSMyTruckPage: View {
                 recentFuel = []
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load truck data")
         }
         isLoading = false
     }
@@ -598,7 +603,7 @@ private struct LogFuelSheet: View {
             try fleet.logFuelLevel(vehicleId: vehicleId, fuelLevel: fuelPercent / 100.0)
             onComplete()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save vehicle data")
         }
         isSaving = false
     }
@@ -726,7 +731,7 @@ private struct AddTransferItemSheet: View {
             )
             onComplete()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save vehicle data")
         }
         isSaving = false
     }

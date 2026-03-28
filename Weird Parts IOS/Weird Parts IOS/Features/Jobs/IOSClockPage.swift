@@ -127,6 +127,7 @@ struct IOSClockPage: View {
                 }
             }
             .refreshable { loadData() }
+            .task { appCore.onboardingManager?.markCompleted("clock-in") }
             .task {
                 locationManager.requestPermission()
                 if locationManager.permissionDenied {
@@ -239,6 +240,12 @@ struct IOSClockPage: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             List {
+                FirstVisitHint(pageId: "clock", message: "Tap a job to clock in. Use the GPS-sorted list to find nearby jobs quickly.")
+
+                OnboardingBanner(pageId: "dashboard-clock")
+
+                SkippedModuleHint(moduleId: "clock")
+
                 // Error banner
                 if let errorMessage {
                     Section {
@@ -1023,9 +1030,10 @@ struct IOSClockPage: View {
                     }
                 }
                 errorMessage = nil
+                appCore.onboardingManager?.markCompleted("clock-in")
                 loadData()
             } catch {
-                errorMessage = "Clock in failed: \(error.localizedDescription)"
+                errorMessage = userFriendlyError(error, context: "clock in")
             }
         }
     }
@@ -1051,10 +1059,11 @@ struct IOSClockPage: View {
                 linkedJobName = nil
                 isShopClockIn = false
                 lastLaborEntryId = entryId
+                appCore.onboardingManager?.markCompleted("clock-out")
                 activeSheet = .questionnaire(entryId)
                 loadData()
             } catch {
-                errorMessage = "Clock out failed: \(error.localizedDescription)"
+                errorMessage = userFriendlyError(error, context: "clock out")
             }
         }
     }
@@ -1080,11 +1089,12 @@ struct IOSClockPage: View {
                 activityStatus = "break"
                 breakBudgetMinutes = 15
                 errorMessage = nil
+                appCore.onboardingManager?.markCompleted("clock-break")
                 startBreakTimer()
             }
         } catch {
             await MainActor.run {
-                errorMessage = "Break start failed: \(error.localizedDescription)"
+                errorMessage = userFriendlyError(error, context: "start break")
             }
         }
     }
@@ -1118,7 +1128,7 @@ struct IOSClockPage: View {
             }
         } catch {
             await MainActor.run {
-                errorMessage = "Lunch start failed: \(error.localizedDescription)"
+                errorMessage = userFriendlyError(error, context: "start lunch")
             }
         }
     }
@@ -1144,7 +1154,7 @@ struct IOSClockPage: View {
             }
         } catch {
             await MainActor.run {
-                errorMessage = "End break failed: \(error.localizedDescription)"
+                errorMessage = userFriendlyError(error, context: "end break")
             }
         }
     }
@@ -1217,7 +1227,7 @@ struct IOSClockPage: View {
             }
         } catch {
             await MainActor.run {
-                errorMessage = "Supply run toggle failed: \(error.localizedDescription)"
+                errorMessage = userFriendlyError(error, context: "toggle supply run")
             }
         }
     }
@@ -1264,7 +1274,7 @@ struct IOSClockPage: View {
             loadData()
         } catch {
             await MainActor.run {
-                errorMessage = "Switch failed: \(error.localizedDescription)"
+                errorMessage = userFriendlyError(error, context: "switch job")
             }
         }
     }
@@ -1333,7 +1343,7 @@ struct IOSClockPage: View {
             }
         } catch {
             await MainActor.run {
-                errorMessage = "Failed to complete to-do: \(error.localizedDescription)"
+                errorMessage = userFriendlyError(error, context: "complete to-do")
             }
         }
     }
@@ -1525,7 +1535,7 @@ struct IOSClockPage: View {
             }
         } catch {
             await MainActor.run {
-                errorMessage = error.localizedDescription
+                errorMessage = userFriendlyError(error, context: "update clock")
                 isLoading = false
             }
         }

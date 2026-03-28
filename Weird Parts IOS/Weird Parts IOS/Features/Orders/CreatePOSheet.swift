@@ -136,7 +136,7 @@ struct CreatePOSheet: View {
                 search: supplierSearch.isEmpty ? nil : supplierSearch
             )
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load PO data")
         }
     }
 
@@ -154,10 +154,11 @@ struct CreatePOSheet: View {
                 supplierId: supplierId,
                 notes: notes.isEmpty ? nil : notes
             )
+            appCore.onboardingManager?.markCompleted("po-create")
             onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save order")
         }
         isSaving = false
     }

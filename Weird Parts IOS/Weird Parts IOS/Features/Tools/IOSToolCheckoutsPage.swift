@@ -29,9 +29,11 @@ struct IOSToolCheckoutsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "tools-checkouts")
             filterToggle
             checkoutList
         }
+        .task { appCore.onboardingManager?.markCompleted("tools-checkouts-view") }
         .navigationTitle("Tool Checkouts")
         .searchable(text: $searchText, prompt: "Search checkouts...")
         .toolbar {
@@ -272,7 +274,7 @@ struct IOSToolCheckoutsPage: View {
         do {
             checkouts = try service.listCheckouts(active: showActiveOnly)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load checkouts")
         }
         isLoading = false
     }

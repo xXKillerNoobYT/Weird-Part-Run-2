@@ -81,9 +81,11 @@ struct IOSDispatchPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "scheduling-dispatch")
             weekHeader
             boardContent
         }
+        .task { appCore.onboardingManager?.markCompleted("dispatch-view") }
         .navigationTitle("Dispatch Board")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -461,7 +463,7 @@ struct IOSDispatchPage: View {
             )
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -486,7 +488,7 @@ struct IOSDispatchPage: View {
                 weekEnd: weekEndStr
             )
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load dispatch data")
         }
         isLoading = false
     }

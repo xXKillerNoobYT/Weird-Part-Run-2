@@ -339,7 +339,7 @@ struct IOSAuditSummaryView: View {
             partToResolve = nil
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -352,7 +352,7 @@ struct IOSAuditSummaryView: View {
             try service.finalizeAuditSession(sessionId: sessionId)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -370,7 +370,7 @@ struct IOSAuditSummaryView: View {
             accuracy = try service.getAuditAccuracy()
             multiUserSummaries = try service.getMultiUserAuditAssignments(sessionId: sessionId)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load audit summary")
         }
         isLoading = false
     }
@@ -462,7 +462,7 @@ private struct AdjustDiscrepancySheet: View {
             onAdjust()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load audit summary")
         }
         isSaving = false
     }

@@ -140,7 +140,7 @@ struct CompanyProfilesPage: View {
         do {
             profiles = try service.listCompanyProfiles()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "save company profile")
         }
     }
 
@@ -154,7 +154,7 @@ struct CompanyProfilesPage: View {
             try service.deleteCompanyProfile(id)
             loadProfiles()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "save company profile")
         }
     }
 }
@@ -280,7 +280,7 @@ private struct CompanyProfileEditor: View {
             }
             onSave(record)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "save company profile")
         }
     }
 }

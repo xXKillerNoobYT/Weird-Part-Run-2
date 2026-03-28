@@ -287,7 +287,7 @@ struct TypeBrandColorSection: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load type brands")
                 isLoading = false
             }
         }
@@ -321,7 +321,7 @@ struct TypeBrandColorSection: View {
             }
             await onRefresh()
         } catch {
-            loadError = "Toggle failed: \(error.localizedDescription)"
+            loadError = userFriendlyError(error, context: "load brands")
         }
     }
 }

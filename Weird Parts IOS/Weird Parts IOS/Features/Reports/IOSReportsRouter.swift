@@ -376,7 +376,7 @@ private struct CustomReportsView: View {
         do {
             savedReports = try service.getSavedReports(userId: userId)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load reports")
         }
     }
 
@@ -390,7 +390,7 @@ private struct CustomReportsView: View {
             do {
                 try service.deleteSavedReport(reportId: report.id)
             } catch {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load reports")
             }
         }
         savedReports.remove(atOffsets: offsets)
@@ -482,7 +482,7 @@ private struct SharedReportsView: View {
         do {
             sharedReports = try service.getSavedReports(userId: userId).filter { $0.isShared }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load reports")
         }
     }
 }

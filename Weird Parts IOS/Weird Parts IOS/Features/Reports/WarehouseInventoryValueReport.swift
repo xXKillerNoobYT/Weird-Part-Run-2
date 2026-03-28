@@ -93,6 +93,7 @@ struct WarehouseInventoryValueReport: View {
                 ("Tips", "If one category holds most of the value, make sure those items are being tracked carefully. High on-order value means money is committed but not yet in the warehouse. Export this report for insurance or accounting reviews.")
             ])
         }
+        .refreshable { loadData() }
         .onAppear { loadData() }
     }
 
@@ -110,7 +111,7 @@ struct WarehouseInventoryValueReport: View {
         do {
             valueData = try service.getInventoryValueReport()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
     }

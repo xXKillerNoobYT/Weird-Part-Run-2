@@ -1418,7 +1418,7 @@ public final class DashboardService: Sendable {
                 """, arguments: [nbId])
             if sectionId == nil {
                 try conn.execute(sql: """
-                    INSERT INTO notebook_sections (notebook_id, title, sort_order, created_at)
+                    INSERT INTO notebook_sections (notebook_id, name, sort_order, created_at)
                     VALUES (?, 'Reports', 0, datetime('now'))
                     """, arguments: [nbId])
                 sectionId = conn.lastInsertedRowID
@@ -1489,7 +1489,7 @@ public final class DashboardService: Sendable {
                 """, arguments: [nbId])
             if sectionId == nil {
                 try conn.execute(sql: """
-                    INSERT INTO notebook_sections (notebook_id, title, sort_order, created_at)
+                    INSERT INTO notebook_sections (notebook_id, name, sort_order, created_at)
                     VALUES (?, 'Problems', 0, datetime('now'))
                     """, arguments: [nbId])
                 sectionId = conn.lastInsertedRowID

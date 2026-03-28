@@ -175,10 +175,11 @@ struct IOSCreateJobSheet: View {
                 budgetLimit: Double(budgetLimit),
                 createdBy: appCore.currentUser?.id
             )
+            appCore.onboardingManager?.markCompleted("jobs-create")
             onCreated?()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "create job")
         }
         isSaving = false
     }

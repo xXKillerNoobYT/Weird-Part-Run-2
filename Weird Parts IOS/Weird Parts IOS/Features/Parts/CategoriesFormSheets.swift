@@ -27,9 +27,12 @@ struct CategoryFormSheet: View {
                 Section("Category Details") {
                     TextField("Name", text: $name)
                         .frame(minHeight: 44)
+                        .accessibilityIdentifier("categoryNameField")
                     TextField("Description (optional)", text: $description)
                         .frame(minHeight: 44)
+                        .accessibilityIdentifier("categoryDescriptionField")
                     Stepper("Sort Order: \(sortOrder)", value: $sortOrder, in: 0...999)
+                        .accessibilityIdentifier("categorySortOrderStepper")
                 }
 
                 if let error = saveError {
@@ -37,14 +40,17 @@ struct CategoryFormSheet: View {
                         Label(error, systemImage: "exclamationmark.triangle.fill")
                             .foregroundStyle(.red)
                             .font(.subheadline)
+                            .accessibilityIdentifier("categoryFormError")
                     }
                 }
             }
+            .accessibilityIdentifier("categoryFormSheet")
             .navigationTitle(category == nil ? "New Category" : "Edit Category")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .accessibilityIdentifier("categoryFormCancelButton")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
@@ -57,6 +63,7 @@ struct CategoryFormSheet: View {
                         }
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                    .accessibilityIdentifier("categoryFormSaveButton")
                 }
             }
             .onAppear {
@@ -74,10 +81,12 @@ struct CategoryFormSheet: View {
         saveError = nil
         do {
             try await save()
+            // Notify all observers that hierarchy data changed
+            notifyDataChanged(.partsHierarchy)
             await onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }
@@ -119,8 +128,10 @@ struct StyleFormSheet: View {
                 Section("Style Details") {
                     TextField("Name", text: $name)
                         .frame(minHeight: 44)
+                        .accessibilityIdentifier("styleNameField")
                     TextField("Description (optional)", text: $description)
                         .frame(minHeight: 44)
+                        .accessibilityIdentifier("styleDescriptionField")
                     Stepper("Sort Order: \(sortOrder)", value: $sortOrder, in: 0...999)
                 }
 
@@ -132,11 +143,13 @@ struct StyleFormSheet: View {
                     }
                 }
             }
+            .accessibilityIdentifier("styleFormSheet")
             .navigationTitle(style == nil ? "New Style" : "Edit Style")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .accessibilityIdentifier("styleFormCancelButton")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
@@ -149,6 +162,7 @@ struct StyleFormSheet: View {
                         }
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                    .accessibilityIdentifier("styleFormSaveButton")
                 }
             }
             .onAppear {
@@ -166,10 +180,11 @@ struct StyleFormSheet: View {
         saveError = nil
         do {
             try await save()
+            notifyDataChanged(.partsHierarchy)
             await onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }
@@ -211,8 +226,10 @@ struct TypeFormSheet: View {
                 Section("Type Details") {
                     TextField("Name", text: $name)
                         .frame(minHeight: 44)
+                        .accessibilityIdentifier("typeNameField")
                     TextField("Description (optional)", text: $description)
                         .frame(minHeight: 44)
+                        .accessibilityIdentifier("typeDescriptionField")
                     Stepper("Sort Order: \(sortOrder)", value: $sortOrder, in: 0...999)
                 }
 
@@ -224,11 +241,13 @@ struct TypeFormSheet: View {
                     }
                 }
             }
+            .accessibilityIdentifier("typeFormSheet")
             .navigationTitle(type == nil ? "New Type" : "Edit Type")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .accessibilityIdentifier("typeFormCancelButton")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
@@ -241,6 +260,7 @@ struct TypeFormSheet: View {
                         }
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                    .accessibilityIdentifier("typeFormSaveButton")
                 }
             }
             .onAppear {
@@ -258,10 +278,11 @@ struct TypeFormSheet: View {
         saveError = nil
         do {
             try await save()
+            notifyDataChanged(.partsHierarchy)
             await onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }
@@ -319,6 +340,7 @@ struct ColorFormSheet: View {
                 Section("Color Name") {
                     TextField("e.g. Matte Black, Brushed Silver", text: $name)
                         .frame(minHeight: 44)
+                        .accessibilityIdentifier("colorNameField")
                 }
 
                 Section {
@@ -409,11 +431,13 @@ struct ColorFormSheet: View {
                     }
                 }
             }
+            .accessibilityIdentifier("colorFormSheet")
             .navigationTitle(color == nil ? "New Color" : "Edit Color")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .accessibilityIdentifier("colorFormCancelButton")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
@@ -426,6 +450,7 @@ struct ColorFormSheet: View {
                         }
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                    .accessibilityIdentifier("colorFormSaveButton")
                 }
             }
             .onAppear {
@@ -497,10 +522,11 @@ struct ColorFormSheet: View {
         saveError = nil
         do {
             try await save()
+            notifyDataChanged(.partsHierarchy)
             await onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }

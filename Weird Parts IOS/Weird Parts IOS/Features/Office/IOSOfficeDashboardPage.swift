@@ -33,6 +33,9 @@ struct IOSOfficeDashboardPage: View {
 
     var body: some View {
         List {
+            OnboardingBanner(pageId: "office-dashboard")
+            SkippedModuleHint(moduleId: "office")
+
             if isLoading {
                 Section {
                     HStack {
@@ -70,18 +73,52 @@ struct IOSOfficeDashboardPage: View {
                 }
             }
         }
-        .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(
-                title: "Office Dashboard Help",
-                sections: [
-                    ("What This Page Does", "Your morning command center. Shows an AI-generated daily briefing, items that need your attention (color-coded by priority), today's crew schedule, a financial snapshot, and background task status."),
-                    ("How to Use It", "Pull down to refresh all sections. The AI briefing updates hourly and highlights key things you should know. Attention items are sorted by urgency: red means overdue, orange is high priority. The financial snapshot compares this week and month to previous periods so you can spot spending trends."),
-                    ("Financial Snapshot", "Only visible if you have the 'view financials' permission. Shows weekly and monthly spend with comparisons to the prior period, plus outstanding PO value."),
-                    ("Tips", "Check this page first thing each morning. The briefing and attention items give you a quick read on what matters today without digging through individual pages.")
-                ]
-            )
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                PageHelpSheet(
+                    title: "Office Dashboard Help",
+                    sections: [
+                        ("What This Page Does", "Your morning command center. Shows an AI-generated daily briefing, items that need your attention (color-coded by priority), today's crew schedule, a financial snapshot, and background task status."),
+                        ("How to Use It", "Pull down to refresh all sections. The AI briefing updates hourly and highlights key things you should know. Attention items are sorted by urgency: red means overdue, orange is high priority. The financial snapshot compares this week and month to previous periods so you can spot spending trends."),
+                        ("Financial Snapshot", "Only visible if you have the 'view financials' permission. Shows weekly and monthly spend with comparisons to the prior period, plus outstanding PO value."),
+                        ("Tips", "Check this page first thing each morning. The briefing and attention items give you a quick read on what matters today without digging through individual pages.")
+                    ]
+                )
+            case .attentionDetail(let item):
+                NavigationStack {
+                    List {
+                        Section("Details") {
+                            LabeledContent("Type", value: item.itemType.replacingOccurrences(of: "_", with: " ").capitalized)
+                            LabeledContent("Priority") {
+                                Text(String(describing: item.priority).capitalized)
+                                    .foregroundStyle(colorForPriority(item.priority))
+                                    .fontWeight(.semibold)
+                            }
+                            LabeledContent("Created", value: item.createdAt.formatted(date: .abbreviated, time: .shortened))
+                        }
+                        Section("Description") {
+                            Text(item.subtitle)
+                                .font(.body)
+                        }
+                        Section("Suggested Action") {
+                            Text(suggestedAction(for: item))
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .navigationTitle(item.title)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { activeSheet = nil }
+                        }
+                    }
+                }
+            }
         }
         .refreshable { loadData() }
+        .task { appCore.onboardingManager?.markCompleted("office-view") }
         .onAppear { loadData() }
     }
 
@@ -147,7 +184,7 @@ struct IOSOfficeDashboardPage: View {
             } else {
                 ForEach(attentionItems) { item in
                     Button {
-                        selectedAttentionItem = item
+                        activeSheet = .attentionDetail(item)
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: iconForPriority(item.priority))
@@ -292,7 +329,7 @@ struct IOSOfficeDashboardPage: View {
                 }
                 .buttonStyle(.plain)
                 NavigationLink {
-                    IOSReportsRouter()
+                    IOSReportsRouter(tabId: "reports-hub")
                         .environmentObject(appCore)
                 } label: {
                     quickActionLabel("View Reports", icon: "chart.bar.fill", color: .green)
@@ -401,9 +438,21 @@ struct IOSOfficeDashboardPage: View {
                 financialSnapshot = try service.getFinancialSnapshot()
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load office dashboard")
         }
 
         isLoading = false
+    }
+
+    private func suggestedAction(for item: DashboardService.AttentionItem) -> String {
+        switch item.itemType {
+        case "overdue_po": return "Go to Orders → Purchase Orders to follow up with the supplier."
+        case "low_stock": return "Go to Parts → Catalog to check stock levels and create a reorder."
+        case "pending_approval": return "Go to Office → Approvals to review and approve."
+        case "overdue_job": return "Go to Jobs to check status and update the timeline."
+        case "maintenance_due": return "Go to Fleet → Maintenance to schedule service."
+        case "expiring_cert": return "Go to People → Employee Detail to renew the certification."
+        default: return "Review this item and take appropriate action."
+        }
     }
 }

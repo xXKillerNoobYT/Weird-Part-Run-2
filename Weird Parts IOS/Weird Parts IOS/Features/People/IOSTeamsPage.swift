@@ -236,7 +236,7 @@ struct IOSTeamsPage: View {
         do {
             teams = try service.listTeams()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load teams")
         }
         isLoading = false
     }
@@ -297,7 +297,7 @@ private struct AddTeamSheet: View {
             onSave()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load teams")
         }
     }
 }

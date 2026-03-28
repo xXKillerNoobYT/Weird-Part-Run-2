@@ -235,7 +235,7 @@ struct IOSEstimationSettingsPage: View {
         do {
             questions = try svc.getAllQuestions()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load estimation settings")
         }
     }
 
@@ -248,7 +248,7 @@ struct IOSEstimationSettingsPage: View {
             effectiveness = try svc.analyzeQuestionEffectiveness()
             showEffectiveness = true
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "save settings")
         }
     }
 
@@ -263,7 +263,7 @@ struct IOSEstimationSettingsPage: View {
             try svc.rejectQuestion(questionId: qid, rejectedBy: userId, reason: "Deactivated from settings")
             await loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "save settings")
         }
     }
 
@@ -277,7 +277,7 @@ struct IOSEstimationSettingsPage: View {
             try svc.updateQuestion(questionId: qid, isActive: true)
             await loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "save settings")
         }
     }
 
@@ -400,7 +400,7 @@ private struct AddEstimationQuestionSheet: View {
             await onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save settings")
         }
     }
 }
@@ -482,7 +482,7 @@ private struct EditEstimationQuestionSheet: View {
             await onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save settings")
         }
     }
 }

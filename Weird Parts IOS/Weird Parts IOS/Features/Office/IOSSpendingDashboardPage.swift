@@ -127,7 +127,7 @@ struct IOSSpendingDashboardPage: View {
             // Parts cost: sum of (qty_consumed * unit_cost_at_consume) across all jobs
             totalPartsCost = try jobsService.getTotalPartsCost()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load spending data")
         }
         isLoading = false
     }

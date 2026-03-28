@@ -120,7 +120,7 @@ struct IOSSupplierBridgePage: View {
         do {
             bridges = try chatService.listSupplierBridges()
         } catch {
-            errorMessage = "Failed to load: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load")
             bridges = []
         }
         isLoading = false

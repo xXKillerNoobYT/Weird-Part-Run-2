@@ -255,7 +255,7 @@ struct IOSTeamDetailPage: View {
             members = memberList
             assignedJobs = jobs
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load team details")
         }
         isLoading = false
     }
@@ -270,7 +270,7 @@ struct IOSTeamDetailPage: View {
             actionError = nil
             await loadData()
         } catch {
-            actionError = "Failed to remove member: \(error.localizedDescription)"
+            actionError = userFriendlyError(error, context: "remove member")
         }
     }
 
@@ -282,7 +282,7 @@ struct IOSTeamDetailPage: View {
         do {
             try service.deleteTeam(teamId: teamId)
         } catch {
-            actionError = "Failed to delete team: \(error.localizedDescription)"
+            actionError = userFriendlyError(error, context: "delete team")
         }
     }
 }
@@ -350,7 +350,7 @@ private struct EditTeamSheet: View {
             onSave()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load team")
         }
     }
 }
@@ -432,7 +432,7 @@ private struct AddMemberSheet: View {
         do {
             employees = try service.getAvailableEmployeesForTeam(teamId: teamId)
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load team")
         }
         isLoading = false
     }
@@ -448,7 +448,7 @@ private struct AddMemberSheet: View {
             employees.removeAll { $0.id == employee.id }
             onAdd()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load team")
         }
     }
 }

@@ -143,7 +143,7 @@ struct SyncWaitingView: View {
             try await syncManager.performInitialSync()
             syncComplete = true
         } catch {
-            syncError = error.localizedDescription
+            syncError = userFriendlyError(error, context: "sync data")
         }
     }
 }

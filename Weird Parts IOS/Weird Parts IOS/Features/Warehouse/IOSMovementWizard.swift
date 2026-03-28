@@ -67,6 +67,8 @@ struct IOSMovementWizard: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                FirstVisitHint(pageId: "movementWizard", message: "Follow the 5 steps to move parts. The system guides you through each one.")
+
                 wizardStepper
                 Divider()
                 ScrollView {
@@ -931,9 +933,10 @@ struct IOSMovementWizard: View {
             }
             isExecuting = false
             executeSuccess = true
+            appCore.onboardingManager?.markCompleted("wh-movement-start")
         } catch {
             isExecuting = false
-            executeError = error.localizedDescription
+            executeError = userFriendlyError(error, context: "save movement")
         }
     }
 }

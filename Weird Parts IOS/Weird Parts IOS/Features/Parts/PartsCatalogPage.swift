@@ -88,6 +88,9 @@ struct PartsCatalogPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "parts-catalog")
+            SkippedModuleHint(moduleId: "parts")
+
             // Fixed search bar — always visible, never scrolls away
             searchBar
 
@@ -123,6 +126,10 @@ struct PartsCatalogPage: View {
                 selectedColorId = parsed.colorId
                 selectedBrandId = parsed.brandId
                 lowStockOnly = parsed.lowStock
+            }
+
+            if !trimmed.isEmpty {
+                appCore.onboardingManager?.markCompleted("catalog-search")
             }
 
             resetAndLoad()
@@ -967,7 +974,7 @@ struct PartsCatalogPage: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load parts catalog")
                 isLoading = false
             }
         }
@@ -1043,7 +1050,7 @@ struct PartsCatalogPage: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load parts catalog")
                 isLoading = false
             }
         }
@@ -1089,7 +1096,7 @@ struct PartsCatalogPage: View {
             try service.deletePart(id: part.id)
             await loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 }
@@ -1241,7 +1248,7 @@ private struct QuickEditSheet: View {
             await MainActor.run { dismiss() }
         } catch {
             await MainActor.run {
-                saveError = error.localizedDescription
+                saveError = userFriendlyError(error, context: "save data")
                 isSaving = false
             }
         }
@@ -1382,7 +1389,7 @@ private struct PartFormSheet: View {
                 )
             }
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
     }
 }
@@ -1485,6 +1492,7 @@ private struct PartDetailSheet: View {
                 }
             }
             .task { await loadStock() }
+            .task { appCore.onboardingManager?.markCompleted("catalog-detail") }
         }
     }
 
@@ -1509,7 +1517,7 @@ private struct PartDetailSheet: View {
                 warehouseNames = names
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load parts catalog")
         }
     }
 }

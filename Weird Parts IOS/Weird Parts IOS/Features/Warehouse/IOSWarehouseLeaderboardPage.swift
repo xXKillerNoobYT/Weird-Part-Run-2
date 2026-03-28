@@ -39,8 +39,7 @@ struct IOSWarehouseLeaderboardPage: View {
     }
 
     private var isManager: Bool {
-        appCore.hasPermission("manage_warehouse") ||
-        appCore.hasPermission("admin")
+        appCore.hasPermission("manage_warehouse")
     }
 
     var body: some View {
@@ -261,7 +260,7 @@ struct IOSWarehouseLeaderboardPage: View {
                 }
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load leaderboard")
         }
         isLoading = false
     }

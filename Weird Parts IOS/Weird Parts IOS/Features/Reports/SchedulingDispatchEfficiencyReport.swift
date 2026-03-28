@@ -103,6 +103,7 @@ struct SchedulingDispatchEfficiencyReport: View {
                 ("Tips", "A completion rate below 80% means jobs are being scheduled but not finished. Look at the days with the lowest rates to find patterns. Weather, missing materials, or crew shortages are common causes.")
             ])
         }
+        .refreshable { loadData() }
         .onAppear { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
@@ -128,7 +129,7 @@ struct SchedulingDispatchEfficiencyReport: View {
                 startDate: startDate, endDate: endDate
             )
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
     }

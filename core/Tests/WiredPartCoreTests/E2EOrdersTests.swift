@@ -6,32 +6,29 @@ import GRDB
 /// End-to-end tests for orders and procurement.
 ///
 /// Covers: JPO creation → PO lifecycle → returns → order stats.
-/// Note: The OrdersService references table `jpos` but the migration creates `job_parts_orders`.
-/// Similarly, `po_lines` doesn't exist (migration creates `po_line_items`).
-/// Tests that call these service methods verify they handle schema mismatches gracefully.
 @Suite("E2E: Orders & Procurement")
 struct E2EOrdersTests {
 
     // MARK: - JPO Lifecycle
 
-    @Test("Create JPO via service (schema mismatch test)")
+    @Test("Create JPO via service")
     func testCreateJPO() throws {
         let env = try E2ETestHelpers.setUp()
         let jobId = try E2ETestHelpers.seedJob(env)
 
-        // OrdersService.createJPO inserts into 'jpos' table but migration creates 'job_parts_orders'
-        do {
-            let jpoId = try env.orders.createJPO(
-                jobId: jobId,
-                requestedBy: env.adminUserId,
-                priority: "high",
-                notes: "Need wire for panel"
-            )
-            #expect(jpoId > 0)
-        } catch {
-            // Expected: table name mismatch between service and migration
-            #expect(error.localizedDescription.contains("no such table"))
+        let jpoId = try env.orders.createJPO(
+            jobId: jobId,
+            requestedBy: env.adminUserId,
+            priority: "high",
+            notes: "Need wire for panel"
+        )
+        #expect(jpoId > 0)
+
+        // Verify the JPO was persisted
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM job_parts_orders WHERE id = ?", arguments: [jpoId])!
         }
+        #expect(count == 1)
     }
 
     @Test("JPO direct insert and query via correct table name")

@@ -16,12 +16,13 @@ struct DatabaseTests {
         #expect(tableExists)
     }
 
-    @Test("All 19 migrations apply successfully")
+    @Test("All 61 migrations (000-060) apply successfully")
     func testAllMigrationsApply() throws {
         let db = try AppDatabase.openInMemoryDatabase()
 
-        // Check a table from each migration
+        // Check at least one representative table from each migration group
         let tables = [
+            // Core foundation (000-008)
             "_change_log",       // 000
             "users",             // 001
             "parts",             // 002
@@ -31,16 +32,57 @@ struct DatabaseTests {
             "vehicles",          // 006
             "chat_channels",     // 007
             "_conflict_log",     // 008
+            // People & scheduling (009-011)
             "certifications",    // 009
             "billing_periods",   // 010
             "pto_policies",      // 011
+            // Fleet & tools (012-013)
             "job_trailers",      // 012
             "tool_depreciation_entries", // 013
+            // Contacts & costs (014-017)
             "entity_contacts",   // 014
             "job_team_members",  // 015
             "companion_rules",   // 016
             "hat_permissions",   // 017
+            // AI & profiles (018-019)
             "_text_history",     // 018
+            "business_profiles", // 019
+            // Warehouse & stock (020-021)
+            "warehouse_locations", // 020
+            // Notebooks & auth (022-024)
+            // Pricing & suppliers (025-028)
+            "pricing_rules",     // 025
+            // Forecasting (029-031)
+            // JPO & staging (032-035)
+            "staging_boxes",     // 035
+            // Clock & chat (036-037)
+            "chat_attachments",  // 037
+            // Notebook hierarchy (038-039)
+            "notebook_templates", // 039
+            // Warehouse floor plans (040)
+            "warehouse_floor_plans", // 040
+            "warehouse_floor_features",
+            "warehouse_storage_units",
+            "warehouse_storage_levels",
+            // Audit & compliance (041-042)
+            "part_confidence",   // 041
+            "break_records",     // 042
+            // Payment & classification (043-045)
+            "payment_tracking",  // 043
+            // Scheduling & estimation (046-047)
+            "estimation_questions", // 047
+            // Tools detail (048-050)
+            "tool_parts",        // 048
+            // Vehicle & trailer (051-053)
+            "pre_trip_inspections", // 053
+            // Reports & office (054-055)
+            "saved_reports",     // 054
+            // AI conversations (056)
+            "ai_conversations",  // 056
+            // Wishlist & background tasks (057-058)
+            "wishlist_items",    // 057
+            "background_task_log", // 058
+            // Audit assignments & permissions (059-060)
         ]
 
         for table in tables {
@@ -49,6 +91,11 @@ struct DatabaseTests {
             }
             #expect(exists, "Table \(table) should exist after migrations")
         }
+    }
+
+    @Test("Schema version is 61")
+    func testSchemaVersion() throws {
+        #expect(AppDatabase.schemaVersion == 61)
     }
 
     @Test("Users table has correct columns")
@@ -121,7 +168,7 @@ struct DatabaseTests {
         let count = try db.writer.read { db -> Int in
             try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM company_cost_settings")!
         }
-        #expect(count == 3, "Should have 3 default cost settings")
+        #expect(count == 6, "Should have 6 default cost settings (3 from migration 014 + 3 from migration 019)")
     }
 
     @Test("Parts table includes cost tracking columns from migration 014")

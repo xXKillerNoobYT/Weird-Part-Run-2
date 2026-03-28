@@ -120,7 +120,7 @@ struct ThemesPage: View {
             primaryColor = theme.primaryColor
             fontFamily = theme.fontFamily
         } catch {
-            errorMessage = "Failed to load: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load")
         }
     }
 
@@ -142,7 +142,7 @@ struct ThemesPage: View {
                 saved = false
             }
         } catch {
-            errorMessage = "Failed to save: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "save")
         }
     }
 }

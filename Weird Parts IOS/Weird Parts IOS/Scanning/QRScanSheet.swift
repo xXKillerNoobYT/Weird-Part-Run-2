@@ -239,7 +239,7 @@ struct QRScanSheet: View {
                     }
                 }
             } catch {
-                scanError = error.localizedDescription
+                scanError = userFriendlyError(error, context: "scan item")
                 isScanning = false
             }
         }
@@ -311,7 +311,7 @@ struct QRScanSheet: View {
             }
         } catch {
             await MainActor.run {
-                scanError = "Scan error: \(error.localizedDescription)"
+                scanError = userFriendlyError(error, context: "scan item")
                 isProcessing = false
             }
         }

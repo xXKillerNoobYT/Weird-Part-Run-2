@@ -171,22 +171,15 @@ struct IOSJPODetailPage: View {
             }
         case .viewMovement(let movementId):
             NavigationStack {
-                VStack(spacing: DS.Space.lg) {
-                    Image(systemName: "arrow.left.arrow.right")
-                        .font(.system(size: 48))
-                        .foregroundStyle(.secondary)
-                    Text("Movement #\(movementId)")
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                    Text("View this movement in Warehouse → Movements for full details.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .navigationTitle("Movement")
-                .navigationBarTitleDisplayMode(.inline)
+                JPOMovementDetailContent(movementId: movementId)
+                    .environmentObject(appCore)
+                    .navigationTitle("Movement")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { activeSheet = nil }
+                        }
+                    }
             }
         case .bulkHold:
             NavigationStack {
@@ -690,7 +683,7 @@ struct IOSJPODetailPage: View {
             }
         } catch {
             // On error, fall back to standard procurement flow
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "process order")
             sendToProcurement(lineId)
         }
     }
@@ -733,7 +726,7 @@ struct IOSJPODetailPage: View {
 
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "process order")
         }
     }
 
@@ -751,7 +744,7 @@ struct IOSJPODetailPage: View {
             )
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "process order")
         }
     }
 
@@ -825,7 +818,7 @@ struct IOSJPODetailPage: View {
             activeSheet = .viewChat(channelId)
         } catch {
             holdQuestion = ""
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "process order")
         }
     }
 
@@ -851,7 +844,7 @@ struct IOSJPODetailPage: View {
                                             reason: reason,
                                             updatedBy: appCore.currentUser?.id)
             loadData()
-        } catch { actionError = error.localizedDescription }
+        } catch { actionError = userFriendlyError(error, context: "process order") }
     }
 
     private func approveSelected() {
@@ -905,7 +898,7 @@ struct IOSJPODetailPage: View {
                     updatedBy: userId
                 )
             } catch {
-                actionError = error.localizedDescription
+                actionError = userFriendlyError(error, context: "process order")
             }
         }
 
@@ -931,7 +924,7 @@ struct IOSJPODetailPage: View {
         do {
             try service.updateJPODeliveryOption(jpoId: jpoId, option: option)
             loadData()
-        } catch { actionError = error.localizedDescription }
+        } catch { actionError = userFriendlyError(error, context: "process order") }
     }
 
     // MARK: - Helpers
@@ -971,7 +964,7 @@ struct IOSJPODetailPage: View {
         do {
             jpo = try service.getJPODetail(id: jpoId)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load JPO details")
         }
         isLoading = false
     }
@@ -1106,7 +1099,92 @@ private struct AddJPOLineItemSheet: View {
             onSave()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "process order")
         }
+    }
+}
+
+// MARK: - Movement Detail Content
+
+private struct JPOMovementDetailContent: View {
+    @EnvironmentObject var appCore: AppCore
+    let movementId: Int64
+
+    @State private var movement: WarehouseService.MovementRow?
+    @State private var isLoading = true
+    @State private var loadError: String?
+
+    var body: some View {
+        Group {
+            if isLoading {
+                ProgressView("Loading movement...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+            } else if let m = movement {
+                List {
+                    Section("Movement Info") {
+                        LabeledContent("Type", value: m.movementType.replacingOccurrences(of: "_", with: " ").capitalized)
+                        LabeledContent("Quantity", value: "\(m.qty)")
+                        if let reason = m.reason, !reason.isEmpty {
+                            LabeledContent("Reason", value: reason)
+                        }
+                    }
+
+                    Section("Part") {
+                        LabeledContent("Name", value: m.partName)
+                    }
+
+                    Section("Locations") {
+                        if let fromType = m.fromLocationType {
+                            LabeledContent("From", value: "\(fromType.capitalized) #\(m.fromLocationId ?? 0)")
+                        }
+                        if let toType = m.toLocationType {
+                            LabeledContent("To", value: "\(toType.capitalized) #\(m.toLocationId ?? 0)")
+                        }
+                    }
+
+                    Section("Details") {
+                        if let byName = m.performedByName, !byName.isEmpty {
+                            LabeledContent("Performed By", value: byName)
+                        }
+                        if let date = m.createdAt {
+                            LabeledContent("Date", value: String(date.prefix(16)))
+                        }
+                        if let notes = m.notes, !notes.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Notes")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(notes)
+                                    .font(.subheadline)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.insetGrouped)
+            } else {
+                ContentUnavailableView(
+                    "Movement Not Found",
+                    systemImage: "questionmark.circle",
+                    description: Text("Movement #\(movementId) could not be loaded.")
+                )
+            }
+        }
+        .task { loadMovement() }
+    }
+
+    private func loadMovement() {
+        guard let service = appCore.warehouseService else {
+            loadError = "Warehouse service not available"
+            isLoading = false
+            return
+        }
+        do {
+            movement = try service.getMovement(id: movementId)
+        } catch {
+            loadError = userFriendlyError(error, context: "load movement")
+        }
+        isLoading = false
     }
 }

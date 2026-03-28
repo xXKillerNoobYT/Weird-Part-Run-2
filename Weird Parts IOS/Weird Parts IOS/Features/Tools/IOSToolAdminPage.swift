@@ -136,7 +136,7 @@ struct IOSToolAdminPage: View {
             tools = try service.listTools()
             stats = try service.getToolsStats()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load tool admin")
         }
         isLoading = false
     }

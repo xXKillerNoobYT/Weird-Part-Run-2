@@ -316,7 +316,7 @@ struct CompanionSandboxSheet: View {
             loadError = "Service not available"
             return
         }
-        do { categories = try service.listCategories() } catch { loadError = error.localizedDescription }
+        do { categories = try service.listCategories() } catch { loadError = userFriendlyError(error, context: "load companion data") }
     }
 
     private func analyze() async {
@@ -392,7 +392,7 @@ struct CompanionSandboxSheet: View {
             }
 
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load companion data")
         }
 
         isAnalyzing = false

@@ -230,7 +230,7 @@ struct IOSEstimationQuestionnairePage: View {
             // Load AI suggestions
             suggestions = try svc.getJobSpecificSuggestions(jobId: jobId)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load questionnaire")
         }
     }
 
@@ -266,7 +266,7 @@ struct IOSEstimationQuestionnairePage: View {
             // Refresh historical averages
             historicalAvg = try svc.getHistoricalAverage()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "save settings")
         }
 
         isSaving = false

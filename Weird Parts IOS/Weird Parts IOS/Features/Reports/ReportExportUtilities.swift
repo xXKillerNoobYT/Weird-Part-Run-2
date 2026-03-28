@@ -221,7 +221,7 @@ struct ReportExportToolbar: ViewModifier {
             exportURL = url
             showShareSheet = true
         } catch {
-            exportError = "Failed to create PDF: \(error.localizedDescription)"
+            exportError = userFriendlyError(error, context: "create pdf")
         }
     }
 
@@ -235,7 +235,7 @@ struct ReportExportToolbar: ViewModifier {
             exportURL = url
             showShareSheet = true
         } catch {
-            exportError = "Failed to create CSV: \(error.localizedDescription)"
+            exportError = userFriendlyError(error, context: "create csv")
         }
     }
 

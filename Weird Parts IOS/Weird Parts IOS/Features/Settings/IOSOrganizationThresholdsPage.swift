@@ -187,7 +187,7 @@ struct IOSOrganizationThresholdsPage: View {
             showOnDashboard = (map["org_show_on_dashboard"] ?? "true") == "true"
             includeInDailyReport = (map["org_include_in_daily_report"] ?? "false") == "true"
         } catch {
-            loadError = "Failed to load: \(error.localizedDescription)"
+            loadError = userFriendlyError(error, context: "load")
         }
         isLoading = false
     }
@@ -215,7 +215,7 @@ struct IOSOrganizationThresholdsPage: View {
             try service.upsertSettingsMap(data, category: "org")
             saveError = nil
         } catch {
-            saveError = "Save failed: \(error.localizedDescription)"
+            saveError = userFriendlyError(error, context: "save data")
         }
     }
 }

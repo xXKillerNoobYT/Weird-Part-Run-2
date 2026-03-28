@@ -94,6 +94,7 @@ struct FleetFuelCostReport: View {
                 ("Tips", "If one vehicle's cost per gallon is much higher than the rest, check that fuel logs are entered correctly. Compare month-over-month to spot trends in fuel pricing or vehicle efficiency.")
             ])
         }
+        .refreshable { loadData() }
         .onAppear { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
@@ -116,7 +117,7 @@ struct FleetFuelCostReport: View {
                 startDate: startDate, endDate: endDate
             )
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
     }

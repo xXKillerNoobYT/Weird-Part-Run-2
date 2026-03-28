@@ -170,7 +170,7 @@ struct IOSProfitabilityPage: View {
         do {
             rows = try service.getProfitabilitySummary()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
     }

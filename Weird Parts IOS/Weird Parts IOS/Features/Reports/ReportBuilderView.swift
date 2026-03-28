@@ -166,7 +166,7 @@ struct ReportBuilderView: View {
             rows: generatedRows
         )
         .alert("Report Saved", isPresented: $savedSuccessfully) {
-            Button("OK") {}
+            Button("OK") { savedSuccessfully = false }
         } message: {
             Text("'\(reportName)' has been saved and can be re-run from the Custom Reports list.")
         }
@@ -483,7 +483,7 @@ struct ReportBuilderView: View {
                 filters: [:]
             )
         } catch {
-            generateError = error.localizedDescription
+            generateError = userFriendlyError(error, context: "generate document")
         }
         isGenerating = false
     }
@@ -509,7 +509,7 @@ struct ReportBuilderView: View {
             )
             savedSuccessfully = true
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save daily report")
         }
     }
 }

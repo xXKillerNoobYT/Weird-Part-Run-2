@@ -148,6 +148,7 @@ struct PreTripInspectionView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .refreshable { loadChecklist() }
     }
 
     // MARK: - Progress Section
@@ -315,7 +316,7 @@ struct PreTripInspectionView: View {
                 loadError = "No checklist items found for vehicle type \"\(vehicleType)\""
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load inspection data")
         }
 
         isLoading = false
@@ -359,7 +360,7 @@ struct PreTripInspectionView: View {
             onComplete?(result)
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save inspection")
         }
 
         isSaving = false

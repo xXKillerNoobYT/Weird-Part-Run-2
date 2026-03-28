@@ -45,6 +45,8 @@ struct DashboardDailyReportPage: View {
 
     var body: some View {
         ScrollView {
+            OnboardingBanner(pageId: "dashboard-report")
+
             if isLoading {
                 DSLoadingState()
                     .padding(.top, DS.Space.jumbo)
@@ -120,7 +122,10 @@ struct DashboardDailyReportPage: View {
                 }
             }
         }
-        .task { await loadData() }
+        .task {
+            await loadData()
+            appCore.onboardingManager?.markCompleted("daily-report-view")
+        }
         .onReceive(refreshTimer) { _ in
             Task { await loadData() }
         }
@@ -246,7 +251,7 @@ struct DashboardDailyReportPage: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load daily report")
                 isLoading = false
             }
         }
@@ -364,7 +369,7 @@ struct DashboardDailyReportPage: View {
             }
             Task { await loadData() }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load daily report")
         }
     }
 
@@ -731,7 +736,7 @@ private struct ReportProblemSheet: View {
             isSaving = false
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save daily report")
             isSaving = false
         }
     }
@@ -968,7 +973,7 @@ private struct SubmitDailyReportSheet: View {
             isSaving = false
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save daily report")
             isSaving = false
         }
     }

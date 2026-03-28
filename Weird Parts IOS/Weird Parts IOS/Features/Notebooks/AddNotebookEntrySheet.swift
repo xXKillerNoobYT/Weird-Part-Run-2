@@ -304,7 +304,7 @@ struct AddNotebookEntrySheet: View {
             onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save notebook")
         }
         isSaving = false
     }

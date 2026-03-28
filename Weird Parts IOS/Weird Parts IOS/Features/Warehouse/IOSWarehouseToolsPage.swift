@@ -251,7 +251,7 @@ struct IOSWarehouseToolsPage: View {
             try service.checkoutTool(toolId: tool.id, userId: userId)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -265,7 +265,7 @@ struct IOSWarehouseToolsPage: View {
             try service.returnTool(toolId: tool.id, userId: userId)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -278,7 +278,7 @@ struct IOSWarehouseToolsPage: View {
             try service.markToolMaintenance(toolId: tool.id)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 
@@ -295,7 +295,7 @@ struct IOSWarehouseToolsPage: View {
         do {
             tools = try service.listTools()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load warehouse tools")
         }
         isLoading = false
     }

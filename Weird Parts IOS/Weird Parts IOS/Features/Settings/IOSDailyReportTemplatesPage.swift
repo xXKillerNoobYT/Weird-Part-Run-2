@@ -251,7 +251,7 @@ struct IOSDailyReportTemplatesPage: View {
             try service.upsertSetting(key: "daily_report_template", value: json, category: "templates")
             saveError = nil
         } catch {
-            saveError = "Save failed: \(error.localizedDescription)"
+            saveError = userFriendlyError(error, context: "save daily report")
         }
     }
 

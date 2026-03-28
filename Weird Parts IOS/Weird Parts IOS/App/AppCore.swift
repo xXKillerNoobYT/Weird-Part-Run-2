@@ -50,6 +50,9 @@ final class AppCore: ObservableObject {
     /// Central registry for AI-activated page filters (prompt 62S).
     public let aiFilterRegistry = AIFilterRegistry()
 
+    /// Guided onboarding progress tracker (per-user).
+    @Published public var onboardingManager: OnboardingProgressManager?
+
     // MARK: - Lifecycle
 
     init() {
@@ -237,7 +240,7 @@ final class AppCore: ObservableObject {
                 }
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "start app")
         }
     }
 
@@ -268,12 +271,15 @@ final class AppCore: ObservableObject {
                 currentUser = result.auth.user
                 currentToken = result.auth.token
                 permissions = result.permissions
+                if let userId = result.auth.user?.id {
+                    onboardingManager = OnboardingProgressManager(userId: userId)
+                }
                 return nil // no error
             } else {
                 return result.auth.message
             }
         } catch {
-            return error.localizedDescription
+            return userFriendlyError(error, context: "start app")
         }
     }
 
@@ -282,6 +288,7 @@ final class AppCore: ObservableObject {
         currentUser = nil
         currentToken = nil
         permissions = []
+        onboardingManager = nil
     }
 
     /// Run the first-device bootstrap, creating the admin user and default data.
@@ -302,12 +309,15 @@ final class AppCore: ObservableObject {
                 currentToken = result.seed.token
                 needsBootstrap = false
                 permissions = result.permissions
+                if let userId = result.seed.user?.id {
+                    onboardingManager = OnboardingProgressManager(userId: userId)
+                }
                 return nil
             } else {
                 return result.seed.message
             }
         } catch {
-            return error.localizedDescription
+            return userFriendlyError(error, context: "start app")
         }
     }
 

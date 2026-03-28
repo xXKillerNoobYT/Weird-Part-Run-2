@@ -175,7 +175,7 @@ struct IOSWarehouseSettingsPage: View {
             isSaving = false
             showSaveConfirmation = true
         } catch {
-            errorMessage = "Failed to save: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "save")
             isSaving = false
         }
     }
@@ -200,7 +200,7 @@ struct IOSWarehouseSettingsPage: View {
             if let v = s["audit_frequency_days"], let n = Int(v) { auditFrequencyDays = n }
             if let v = s["require_photo_on_discrepancy"] { requirePhotoOnDiscrepancy = v == "1" }
         } catch {
-            errorMessage = "Failed to load: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load")
         }
         isLoadingSettings = false
     }

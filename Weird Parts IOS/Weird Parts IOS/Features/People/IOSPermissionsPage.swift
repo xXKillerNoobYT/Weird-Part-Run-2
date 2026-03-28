@@ -186,7 +186,7 @@ struct IOSPermissionsPage: View {
         do {
             hatPermissions = try auth.getHatPermissions(hatId)
         } catch {
-            loadError = "Failed to load permissions: \(error.localizedDescription)"
+            loadError = userFriendlyError(error, context: "load permissions")
         }
     }
 
@@ -207,7 +207,7 @@ struct IOSPermissionsPage: View {
                 hatPermissions.removeAll { $0 == key }
             }
         } catch {
-            loadError = "Failed to update permission: \(error.localizedDescription)"
+            loadError = userFriendlyError(error, context: "update permission")
         }
     }
 
@@ -228,7 +228,7 @@ struct IOSPermissionsPage: View {
                 selectHat(first)
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load permissions")
         }
         isLoading = false
     }

@@ -144,7 +144,7 @@ private struct PartTypesDetailView: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load KPI details")
                 isLoading = false
             }
         }
@@ -208,7 +208,7 @@ private struct CategoryPartsListView: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load KPI details")
                 isLoading = false
             }
         }
@@ -283,7 +283,7 @@ private struct TotalStockDetailView: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load KPI details")
                 isLoading = false
             }
         }
@@ -359,7 +359,7 @@ private struct LocationTypeStockView: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load KPI details")
                 isLoading = false
             }
         }
@@ -437,7 +437,7 @@ private struct ActiveJobsDetailView: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load KPI details")
                 isLoading = false
             }
         }
@@ -524,7 +524,7 @@ private struct JobKPIDetailView: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load KPI details")
                 isLoading = false
             }
         }
@@ -600,7 +600,7 @@ private struct PendingOrdersDetailView: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load KPI details")
                 isLoading = false
             }
         }
@@ -700,7 +700,7 @@ private struct POKPIDetailView: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load KPI details")
                 isLoading = false
             }
         }
@@ -782,7 +782,7 @@ private struct LowStockDetailView: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load KPI details")
                 isLoading = false
             }
         }
@@ -877,7 +877,7 @@ private struct LowStockPartDetailView: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load KPI details")
                 isLoading = false
             }
         }

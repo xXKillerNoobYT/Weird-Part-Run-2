@@ -8,6 +8,8 @@ import WiredPartCore
 /// the app root to show IOSMainView.
 struct OnboardingCompleteView: View {
     @EnvironmentObject private var appCore: AppCore
+    @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
     @State private var showCheckmark = false
 
@@ -47,6 +49,8 @@ struct OnboardingCompleteView: View {
 
             // Enter App
             Button {
+                hasSeenWelcome = true  // Admin already onboarded — skip the new-user welcome
+                hasCompletedOnboarding = true  // Skip the guided walkthrough too — admin just set up the company
                 appCore.completeOnboarding()
             } label: {
                 Text("Get Started")

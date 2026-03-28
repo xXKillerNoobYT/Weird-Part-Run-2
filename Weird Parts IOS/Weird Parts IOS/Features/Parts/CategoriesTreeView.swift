@@ -70,13 +70,16 @@ struct CategoriesTreeView: View {
                     Button { activeSheet = .addCategory } label: {
                         Label("New Category", systemImage: "folder.badge.plus")
                     }
+                    .accessibilityIdentifier("addCategoryMenuItem")
                     Button { activeSheet = .addColor } label: {
                         Label("New Color", systemImage: "paintpalette")
                     }
+                    .accessibilityIdentifier("addColorMenuItem")
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.title3)
                 }
+                .accessibilityIdentifier("categoriesAddMenu")
             }
             .padding(.horizontal, DS.Space.lg)
             .padding(.vertical, DS.Space.md)
@@ -91,6 +94,7 @@ struct CategoriesTreeView: View {
                 TextField("Search hierarchy...", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.subheadline)
+                    .accessibilityIdentifier("categoriesSearchField")
                 if !searchText.isEmpty {
                     Button {
                         searchText = ""
@@ -139,6 +143,7 @@ struct CategoriesTreeView: View {
                                     .padding(.vertical, 10)
                             }
                             .buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("createFirstCategoryButton")
 
                             Button {
                                 activeSheet = .help
@@ -164,6 +169,7 @@ struct CategoriesTreeView: View {
                     }
                     .padding(.vertical, DS.Space.sm)
                 }
+                .accessibilityIdentifier("categoriesTreeList")
             }
         }
         .onChange(of: searchText) {
@@ -186,7 +192,11 @@ struct CategoriesTreeView: View {
                 }
             }
         }
-        .sheet(item: $activeSheet) { sheet in
+        .sheet(item: $activeSheet, onDismiss: {
+            // Safety net: always refresh when any sheet closes,
+            // even if the save callback didn't fire (e.g. user pulled down to dismiss)
+            Task { await onRefresh() }
+        }) { sheet in
             switch sheet {
             case .addCategory:
                 CategoryFormSheet(category: nil) { await onRefresh() }
@@ -286,6 +296,7 @@ struct CategoriesTreeView: View {
                     }
                 }
             }
+            .accessibilityIdentifier("categoryRow_\(catId)")
 
             // Children (styles)
             if isExpanded {
@@ -311,6 +322,7 @@ struct CategoriesTreeView: View {
                 .buttonStyle(.plain)
                 .padding(.leading, DS.Space.lg + DS.Space.xl + 14)
                 .padding(.vertical, DS.Space.xs)
+                .accessibilityIdentifier("addStyleButton_\(catId)")
             }
         }
     }

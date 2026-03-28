@@ -181,7 +181,7 @@ struct IOSDataExportPage: View {
             availableTables = try settingsService.listDatabaseTables()
             dbSizeText = "N/A"
         } catch {
-            errorMessage = "Failed to load tables: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load tables")
         }
         isLoading = false
     }
@@ -250,7 +250,7 @@ struct IOSDataExportPage: View {
                 showShareSheet = true
             }
         } catch {
-            errorMessage = "Export failed: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "export data")
             isExporting = false
         }
     }
@@ -279,7 +279,7 @@ struct IOSDataExportPage: View {
             exportSuccess = true
             showShareSheet = true
         } catch {
-            errorMessage = "Export failed: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "export data")
         }
         isExporting = false
     }

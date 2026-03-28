@@ -15,5 +15,14 @@ func userFriendlyError(_ error: Error, context: String = "load data") -> String 
     if raw.contains("database is locked") {
         return "The database is busy. Please try again in a moment."
     }
+    if raw.contains("disk I/O error") || raw.contains("disk full") {
+        return "Storage problem. Check your device has enough space."
+    }
+    if raw.contains("connection") || raw.contains("timeout") || raw.contains("network") {
+        return "Connection issue. Check your network and try again."
+    }
+    if raw.contains("not found") && !raw.contains("no such table") {
+        return "Item not found. It may have been deleted."
+    }
     return "Couldn't \(context). Pull down to retry."
 }

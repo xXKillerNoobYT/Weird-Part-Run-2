@@ -187,7 +187,7 @@ struct IOSWeeklyAvailabilityPage: View {
         do {
             rows = try service.getWeeklyAvailability(weekStartDate: weekStart)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load availability")
         }
         isLoading = false
     }

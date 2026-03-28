@@ -48,6 +48,7 @@ struct IOSUnifiedApprovalsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "office-approvals")
             smartCardFilters
             approvalList
         }
@@ -72,7 +73,7 @@ struct IOSUnifiedApprovalsPage: View {
                 ]
             )
         }
-        .task { loadData() }
+        .task { loadData(); appCore.onboardingManager?.markCompleted("approvals-view") }
         .alert("Error", isPresented: .constant(actionError != nil)) {
             Button("OK") { actionError = nil }
         } message: {
@@ -572,7 +573,7 @@ struct IOSUnifiedApprovalsPage: View {
             try service.updateJPOStatus(id: id, status: "approved")
             pendingJPOs.removeAll { $0.id == id }
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "process approval")
         }
         processingId = nil
     }
@@ -587,7 +588,7 @@ struct IOSUnifiedApprovalsPage: View {
             try service.updateJPOStatus(id: id, status: "rejected", reason: reason)
             pendingJPOs.removeAll { $0.id == id }
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "process approval")
         }
         processingId = nil
     }
@@ -604,7 +605,7 @@ struct IOSUnifiedApprovalsPage: View {
             try service.approveScheduledDeletion(id: id, approvedBy: appCore.currentUser?.id)
             pendingDeletions.removeAll { $0.id == id }
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "process approval")
         }
         processingId = nil
     }
@@ -619,7 +620,7 @@ struct IOSUnifiedApprovalsPage: View {
             try service.cancelScheduledDeletion(id: id)
             pendingDeletions.removeAll { $0.id == id }
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "process approval")
         }
         processingId = nil
     }
@@ -636,7 +637,7 @@ struct IOSUnifiedApprovalsPage: View {
             try service.updateTimeOffStatus(id: id, status: "approved", approvedBy: appCore.currentUser?.id)
             pendingTimeOff.removeAll { $0.id == id }
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "process approval")
         }
         processingId = nil
     }
@@ -651,7 +652,7 @@ struct IOSUnifiedApprovalsPage: View {
             try service.updateTimeOffStatus(id: id, status: "denied", approvedBy: appCore.currentUser?.id)
             pendingTimeOff.removeAll { $0.id == id }
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "process approval")
         }
         processingId = nil
     }
@@ -672,7 +673,7 @@ struct IOSUnifiedApprovalsPage: View {
             try service.approveToolEdit(editId: editId, approverId: userId)
             pendingToolEdits.removeAll { $0.id == editId }
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "process approval")
         }
         processingId = nil
     }
@@ -691,7 +692,7 @@ struct IOSUnifiedApprovalsPage: View {
             try service.rejectToolEdit(editId: editId, rejectedBy: userId)
             pendingToolEdits.removeAll { $0.id == editId }
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "process approval")
         }
         processingId = nil
     }
@@ -707,7 +708,7 @@ struct IOSUnifiedApprovalsPage: View {
             do {
                 pendingJPOs = try ordersService.listJPOs(status: "pending")
             } catch {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load approvals")
             }
         }
 
@@ -716,7 +717,7 @@ struct IOSUnifiedApprovalsPage: View {
             do {
                 pendingDeletions = try partsService.listScheduledDeletions(status: "pending_approval")
             } catch {
-                if loadError == nil { loadError = error.localizedDescription }
+                if loadError == nil { loadError = userFriendlyError(error, context: "load approvals") }
             }
         }
 
@@ -725,7 +726,7 @@ struct IOSUnifiedApprovalsPage: View {
             do {
                 pendingTimeOff = try schedulingService.listTimeOffRequests(status: "pending")
             } catch {
-                if loadError == nil { loadError = error.localizedDescription }
+                if loadError == nil { loadError = userFriendlyError(error, context: "load approvals") }
             }
         }
 
@@ -734,7 +735,7 @@ struct IOSUnifiedApprovalsPage: View {
             do {
                 pendingToolEdits = try toolsService.listPendingToolEdits()
             } catch {
-                if loadError == nil { loadError = error.localizedDescription }
+                if loadError == nil { loadError = userFriendlyError(error, context: "load approvals") }
             }
         }
 

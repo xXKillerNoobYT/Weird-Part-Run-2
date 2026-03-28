@@ -245,7 +245,7 @@ struct CategoriesColorPicker: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load colors")
                 isLoading = false
             }
         }
@@ -292,7 +292,7 @@ struct CategoriesColorPicker: View {
             await onRefresh()
         } catch {
             await MainActor.run {
-                errorMessage = "Failed to create catalog entry: \(error.localizedDescription)"
+                errorMessage = userFriendlyError(error, context: "create catalog entry")
             }
             // errorMessage already set above for UI display
         }

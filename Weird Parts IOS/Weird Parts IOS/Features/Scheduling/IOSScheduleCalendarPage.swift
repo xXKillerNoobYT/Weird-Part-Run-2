@@ -52,6 +52,9 @@ struct IOSScheduleCalendarPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "scheduling-calendar")
+            SkippedModuleHint(moduleId: "scheduling")
+
             // Week/Month toggle
             Picker("View", selection: $calendarMode) {
                 ForEach(CalendarMode.allCases, id: \.self) { mode in
@@ -103,6 +106,7 @@ struct IOSScheduleCalendarPage: View {
         }
         .refreshable { loadData() }
         .task { loadData() }
+        .task { appCore.onboardingManager?.markCompleted("schedule-view") }
         .onAppear {
             let dateStr = ISO8601DateFormatter.dateOnlyFormatter.string(from: selectedDate)
             NotificationCenter.default.post(
@@ -473,7 +477,7 @@ struct IOSScheduleCalendarPage: View {
                 )
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load schedule")
         }
         isLoading = false
     }

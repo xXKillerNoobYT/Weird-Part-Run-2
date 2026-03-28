@@ -86,6 +86,7 @@ struct SchedulingPipelineReport: View {
                 ("Tips", "Too many jobs in 'pending' may mean approvals are bottlenecked. If 'on hold' keeps growing, follow up on what is blocking those jobs. A healthy pipeline has most jobs in 'active' or 'scheduled'.")
             ])
         }
+        .refreshable { loadData() }
         .onAppear { loadData() }
     }
 
@@ -118,7 +119,7 @@ struct SchedulingPipelineReport: View {
         do {
             pipelineData = try service.getPipelineSummaryReport()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
     }

@@ -73,7 +73,7 @@ struct IOSCreateTrailerSheet: View {
             onSaved?()
             dismiss()
         } catch {
-            errorMessage = "Failed to create trailer: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "create trailer")
         }
         isSaving = false
     }

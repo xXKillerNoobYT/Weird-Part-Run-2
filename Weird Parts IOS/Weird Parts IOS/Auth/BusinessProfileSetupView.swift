@@ -190,7 +190,7 @@ struct BusinessProfileSetupView: View {
                 _ = try settingsService.createBusinessProfile(profile)
                 navigateToAdmin = true
             } catch {
-                errorMessage = "Failed to save profile: \(error.localizedDescription)"
+                errorMessage = userFriendlyError(error, context: "save profile")
             }
             isLoading = false
         }

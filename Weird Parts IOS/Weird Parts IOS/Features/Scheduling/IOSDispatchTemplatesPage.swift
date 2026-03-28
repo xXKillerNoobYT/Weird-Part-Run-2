@@ -130,7 +130,7 @@ struct IOSDispatchTemplatesPage: View {
         do {
             templates = try service.listDispatchTemplates()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load dispatch templates")
         }
         isLoading = false
     }

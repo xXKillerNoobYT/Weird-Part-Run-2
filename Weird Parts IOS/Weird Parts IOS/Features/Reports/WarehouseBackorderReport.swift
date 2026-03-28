@@ -103,6 +103,7 @@ struct WarehouseBackorderReport: View {
                 ("Tips", "Check this page before planning jobs that need specific parts. If expected dates are missing, follow up with the supplier. Parts that have been backordered for a long time may need to be re-ordered from a different supplier.")
             ])
         }
+        .refreshable { loadData() }
         .onAppear { loadData() }
     }
 
@@ -119,7 +120,7 @@ struct WarehouseBackorderReport: View {
         do {
             backorderData = try service.getBackorderReport()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
     }

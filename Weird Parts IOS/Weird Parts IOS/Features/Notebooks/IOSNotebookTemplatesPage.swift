@@ -189,7 +189,7 @@ struct IOSNotebookTemplatesPage: View {
                 templates = try service.getTemplates()
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load notebooks")
         }
         isLoading = false
     }
@@ -203,7 +203,7 @@ struct IOSNotebookTemplatesPage: View {
             try service.deleteTemplate(templateId: templateId)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "save template")
         }
     }
 
@@ -217,7 +217,7 @@ struct IOSNotebookTemplatesPage: View {
             try service.seedDefaultTemplates(createdBy: userId)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "save template")
         }
     }
 }

@@ -215,7 +215,7 @@ struct IOSBookkeeperExportPage: View {
                 endDate: endDateString
             )
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
     }

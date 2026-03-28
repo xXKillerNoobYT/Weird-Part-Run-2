@@ -96,7 +96,7 @@ struct SupplierPickerSheet: View {
         do {
             suppliers = try service.listSuppliers()
         } catch {
-            generateError = error.localizedDescription
+            generateError = userFriendlyError(error, context: "generate document")
         }
     }
 
@@ -112,7 +112,7 @@ struct SupplierPickerSheet: View {
             onGenerated()
             dismiss()
         } catch {
-            generateError = error.localizedDescription
+            generateError = userFriendlyError(error, context: "generate document")
         }
         isGenerating = false
     }

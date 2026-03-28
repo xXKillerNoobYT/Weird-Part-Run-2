@@ -99,7 +99,7 @@ struct BillingPayPage: View {
             payPeriodType = pay.periodType
             payStartDay = pay.startDay
         } catch {
-            errorMessage = "Failed to load: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load")
         }
     }
 
@@ -121,7 +121,7 @@ struct BillingPayPage: View {
                 saved = false
             }
         } catch {
-            errorMessage = "Failed to save: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "save")
         }
     }
 }

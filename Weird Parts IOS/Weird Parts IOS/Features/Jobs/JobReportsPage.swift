@@ -36,9 +36,11 @@ struct JobReportsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "jobs-reports")
             StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
             reportContent
         }
+        .task { appCore.onboardingManager?.markCompleted("job-reports-view") }
             .navigationTitle("Daily Reports")
             .searchable(text: $searchText, prompt: "Search by job name or date...")
             .toolbar {
@@ -143,7 +145,7 @@ struct JobReportsPage: View {
         do {
             reports = try service.listReports()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load job reports")
         }
         isLoading = false
     }

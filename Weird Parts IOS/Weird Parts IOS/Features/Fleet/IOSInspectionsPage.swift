@@ -146,7 +146,7 @@ struct IOSInspectionsPage: View {
         do {
             inspections = try service.listInspections()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load inspections")
         }
 
         isLoading = false

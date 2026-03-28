@@ -33,9 +33,11 @@ struct IOSQuestionsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "chat-questions")
             smartCardBar
             questionsList
         }
+        .task { appCore.onboardingManager?.markCompleted("qa-view") }
         .navigationTitle("Q&A")
         .searchable(text: $searchText, prompt: "Search questions...")
         .toolbar {
@@ -295,7 +297,7 @@ struct IOSQuestionsPage: View {
             // Load all threads — filtering is done client-side via smart cards
             threads = try service.listQAThreads()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load questions")
         }
         isLoading = false
     }

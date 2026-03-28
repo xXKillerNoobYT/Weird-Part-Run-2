@@ -294,7 +294,7 @@ struct QRLabelPrintSheet: View {
         printController.present(animated: true) { _, completed, error in
             isPrinting = false
             if let error = error {
-                printError = error.localizedDescription
+                printError = userFriendlyError(error, context: "print labels")
             } else if completed {
                 dismiss()
             }

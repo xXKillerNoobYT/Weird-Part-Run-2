@@ -228,7 +228,7 @@ struct IOSContractorDetailPage: View {
             jobHistory = try service.getContractorJobHistory(contractorId: contractor.id)
             notes = try service.getContractorNotes(contractorId: contractor.id)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load contractor details")
         }
     }
 }
@@ -341,7 +341,7 @@ private struct AddContractorNoteSheet: View {
             onSave()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load contractor")
         }
     }
 }

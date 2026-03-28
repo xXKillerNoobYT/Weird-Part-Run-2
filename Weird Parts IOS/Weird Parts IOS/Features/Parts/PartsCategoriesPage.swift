@@ -14,30 +14,43 @@ struct PartsCategoriesPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
+    /// Incremented after each successful data load to force view identity refresh.
+    @State private var dataVersion = 0
 
     private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
     var body: some View {
-        Group {
-            if isLoading {
-                ProgressView("Loading hierarchy...")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let error = loadError {
-                ErrorStateView(message: error) {
-                    Task { await loadHierarchy() }
+        VStack(spacing: 0) {
+            OnboardingBanner(pageId: "parts-categories")
+
+            Group {
+                if isLoading {
+                    ProgressView("Loading hierarchy...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .accessibilityIdentifier("categoriesLoadingIndicator")
+                } else if let error = loadError {
+                    ErrorStateView(message: error) {
+                        Task { await loadHierarchy() }
+                    }
+                    .accessibilityIdentifier("categoriesErrorState")
+                } else if DeviceContext.isLargeScreen {
+                    splitLayout
+                } else {
+                    compactLayout
                 }
-            } else if DeviceContext.isLargeScreen {
-                splitLayout
-            } else {
-                compactLayout
             }
+            // Force SwiftUI to rebuild the view tree when data changes.
+            // This prevents stale data from persisting after sheet edits.
+            .id(dataVersion)
         }
+        .accessibilityIdentifier("partsCategoriesPage")
         .background(DS.Background.page)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityIdentifier("categoriesHelpButton")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -50,8 +63,15 @@ struct PartsCategoriesPage: View {
                 ]
             )
         }
-        .task { await loadHierarchy() }
+        .task {
+            await loadHierarchy()
+            appCore.onboardingManager?.markCompleted("categories-browse")
+        }
         .refreshable { await loadHierarchy() }
+        // Auto-refresh when any hierarchy data changes (safety net for notification-based updates)
+        .onDataChange(.partsHierarchy) {
+            await loadHierarchy()
+        }
     }
 
     // MARK: - Split Layout (iPad / Mac)
@@ -111,15 +131,19 @@ struct PartsCategoriesPage: View {
             return
         }
         do {
-            let tree = try service.getHierarchy()
+            // Run the (synchronous) GRDB read off the main thread to avoid blocking UI
+            let tree = try await Task.detached(priority: .userInitiated) {
+                try service.getHierarchy()
+            }.value
             await MainActor.run {
                 hierarchy = tree
                 isLoading = false
                 loadError = nil
+                dataVersion += 1
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load categories")
                 isLoading = false
             }
         }

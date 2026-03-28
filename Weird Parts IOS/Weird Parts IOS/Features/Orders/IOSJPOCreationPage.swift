@@ -106,6 +106,8 @@ struct IOSJPOCreationPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            FirstVisitHint(pageId: "jpoCreation", message: "Search for parts on the left, add them to your cart. The AI suggests related parts on the right.")
+
             jobHeader
 
             Divider()
@@ -776,7 +778,7 @@ struct IOSJPOCreationPage: View {
             let details = try service.getPart(id: partId)
             addToCart(part: details.part, quantity: quantity)
         } catch {
-            submitError = error.localizedDescription
+            submitError = userFriendlyError(error, context: "submit data")
         }
     }
 
@@ -913,7 +915,7 @@ struct IOSJPOCreationPage: View {
         do {
             jobs = try jobsService.listJobs(status: "active", limit: 100)
         } catch {
-            submitError = error.localizedDescription
+            submitError = userFriendlyError(error, context: "submit data")
         }
 
         // Check if user is clocked in
@@ -928,7 +930,7 @@ struct IOSJPOCreationPage: View {
                 selectedJobName = activeEntry.jobName
             }
         } catch {
-            submitError = error.localizedDescription
+            submitError = userFriendlyError(error, context: "submit data")
         }
     }
 
@@ -1015,6 +1017,8 @@ struct IOSJPOCreationPage: View {
                 lines: lines
             )
 
+            appCore.onboardingManager?.markCompleted("jpo-create")
+
             // Show success toast with routing summary
             let transfers = cartItems.filter { $0.stockStatus == .inStock }.count
             let pending = cartItems.count - transfers
@@ -1029,7 +1033,7 @@ struct IOSJPOCreationPage: View {
                 dismiss()
             }
         } catch {
-            submitError = error.localizedDescription
+            submitError = userFriendlyError(error, context: "submit data")
             isSubmitting = false
         }
     }

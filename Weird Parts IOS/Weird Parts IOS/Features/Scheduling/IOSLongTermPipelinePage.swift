@@ -168,7 +168,7 @@ struct IOSLongTermPipelinePage: View {
             timelineMonths = try service.getLongTermTimeline(months: 36)
             aiWarnings = service.getCapacityWarnings(timeline: timelineMonths)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load pipeline data")
         }
         isLoading = false
     }

@@ -69,6 +69,7 @@ struct IOSJobDetailPage: View {
             }
             .refreshable { loadData() }
             .task { loadData() }
+            .task { appCore.onboardingManager?.markCompleted("jobs-tap-detail") }
     }
 
     // MARK: - Content
@@ -326,7 +327,7 @@ struct IOSJobDetailPage: View {
             teamMembers = try service.getTeamMembers(jobId: jobId)
             laborSummary = try service.getLaborSummary(jobId: jobId)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load job details")
         }
         isLoading = false
     }

@@ -5,14 +5,14 @@ import SwiftUI
 struct OnboardingBanner: View {
     let pageId: String
     @EnvironmentObject private var appCore: AppCore
-    @EnvironmentObject private var onboardingManager: OnboardingProgressManager
 
     var body: some View {
-        let permissions = appCore.permissions
-        let tasks = onboardingManager.tasksForPage(pageId, permissions: permissions)
-        let incomplete = tasks.filter { !onboardingManager.isCompleted($0.id) }
+        if let onboardingManager = appCore.onboardingManager {
+            let permissions = appCore.permissions
+            let tasks = onboardingManager.tasksForPage(pageId, permissions: permissions)
+            let incomplete = tasks.filter { !onboardingManager.isCompleted($0.id) }
 
-        if onboardingManager.isOnboardingActive && !tasks.isEmpty {
+            if onboardingManager.isOnboardingActive && !tasks.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Image(systemName: "graduationcap.fill")
@@ -63,6 +63,7 @@ struct OnboardingBanner: View {
             .background(Color.blue.opacity(0.05))
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .padding(.horizontal)
+            }
         }
     }
 }

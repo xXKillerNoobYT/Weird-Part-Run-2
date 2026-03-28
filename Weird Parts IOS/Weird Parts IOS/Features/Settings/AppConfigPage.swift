@@ -77,6 +77,17 @@ struct AppConfigPage: View {
                 Text("When enabled, track invoices and payments per customer. Shows payment status on customer detail pages.")
             }
 
+            Section("Onboarding") {
+                Button {
+                    if let manager = appCore.onboardingManager {
+                        manager.resetProgress()
+                        manager.isOnboardingActive = true
+                    }
+                } label: {
+                    Label("Restart App Tour", systemImage: "arrow.counterclockwise")
+                }
+            }
+
             Section {
                 Button {
                     saveConfig()
@@ -139,7 +150,7 @@ struct AppConfigPage: View {
                 autoPaymentHold = paySettings?.autoHold ?? false
             }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load settings")
         }
     }
 
@@ -171,7 +182,7 @@ struct AppConfigPage: View {
                 saved = false
             }
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "complete action")
         }
     }
 }

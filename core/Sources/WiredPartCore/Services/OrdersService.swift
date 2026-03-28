@@ -608,14 +608,15 @@ public final class OrdersService: Sendable {
         notes: String? = nil
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            let orderNumber = "JPO-\(jobId)-\(Int(Date().timeIntervalSince1970))"
             try dbConn.execute(
                 sql: """
                     INSERT INTO job_parts_orders
-                    (job_id, requested_by, status, priority, notes,
+                    (job_id, order_number, requested_by, status, priority, notes,
                      created_at, updated_at)
-                    VALUES (?, ?, 'draft', ?, ?, datetime('now'), datetime('now'))
+                    VALUES (?, ?, ?, 'draft', ?, ?, datetime('now'), datetime('now'))
                     """,
-                arguments: [jobId, requestedBy, priority, notes]
+                arguments: [jobId, orderNumber, requestedBy, priority, notes]
             )
             return dbConn.lastInsertedRowID
         }
@@ -959,12 +960,13 @@ public final class OrdersService: Sendable {
     ) throws -> Int64 {
         try db.writer.write { dbConn in
             // 1. Create the JPO
+            let orderNumber = "JPO-\(jobId)-\(Int(Date().timeIntervalSince1970))"
             try dbConn.execute(sql: """
                 INSERT INTO job_parts_orders
-                (job_id, requested_by, status, priority, delivery_option, notes,
+                (job_id, order_number, requested_by, status, priority, delivery_option, notes,
                  created_at, updated_at)
-                VALUES (?, ?, 'pending', ?, ?, ?, datetime('now'), datetime('now'))
-                """, arguments: [jobId, requestedBy, priority, deliveryOption, notes])
+                VALUES (?, ?, ?, 'pending', ?, ?, ?, datetime('now'), datetime('now'))
+                """, arguments: [jobId, orderNumber, requestedBy, priority, deliveryOption, notes])
             let jpoId = dbConn.lastInsertedRowID
 
             // 2. Insert each line and smart-route

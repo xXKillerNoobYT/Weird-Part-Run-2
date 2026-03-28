@@ -267,7 +267,7 @@ struct DevicePairingView: View {
             // Navigate to the sync waiting screen for initial download
             navigateToSync = true
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "pair device")
         }
         isConnecting = false
     }

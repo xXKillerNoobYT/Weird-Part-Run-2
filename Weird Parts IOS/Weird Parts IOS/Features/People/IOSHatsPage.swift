@@ -23,7 +23,11 @@ struct IOSHatsPage: View {
     @State private var activeSheet: ActiveSheet?
 
     var body: some View {
-        hatList
+        VStack(spacing: 0) {
+            OnboardingBanner(pageId: "people-hats")
+            hatList
+        }
+            .task { appCore.onboardingManager?.markCompleted("hats-view") }
             .navigationTitle("Hats & Roles")
             .searchable(text: $searchText, prompt: "Search hats...")
             .onChange(of: searchText) { /* local filter only */ }
@@ -171,7 +175,7 @@ struct IOSHatsPage: View {
             try service.deleteHat(id: hat.id)
             loadData()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load roles")
         }
     }
 
@@ -186,7 +190,7 @@ struct IOSHatsPage: View {
         do {
             hats = try service.listHats()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load roles")
         }
         isLoading = false
     }
@@ -247,7 +251,7 @@ private struct AddHatSheet: View {
             onSave()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load hats")
         }
     }
 }

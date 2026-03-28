@@ -14,49 +14,49 @@ struct AuthServiceTests {
 
     @Test("hashPin produces consistent SHA-256 hex")
     func testHashPinConsistent() throws {
-        let hash1 = AuthService.hashPin("1234")
-        let hash2 = AuthService.hashPin("1234")
+        let hash1 = AuthService.hashPin("1234", salt: "test-salt")
+        let hash2 = AuthService.hashPin("1234", salt: "test-salt")
         #expect(hash1 == hash2)
         #expect(hash1.count == 64) // SHA-256 = 32 bytes = 64 hex chars
     }
 
     @Test("hashPin produces different hashes for different PINs")
     func testHashPinDifferent() throws {
-        let hash1 = AuthService.hashPin("1234")
-        let hash2 = AuthService.hashPin("5678")
+        let hash1 = AuthService.hashPin("1234", salt: "test-salt")
+        let hash2 = AuthService.hashPin("5678", salt: "test-salt")
         #expect(hash1 != hash2)
     }
 
     @Test("verifyPinLocally returns true for correct PIN")
     func testVerifyPinCorrect() throws {
         let pin = "9876"
-        let hash = AuthService.hashPin(pin)
-        #expect(AuthService.verifyPinLocally(pin: pin, storedHash: hash))
+        let hash = AuthService.hashPin(pin, salt: "test-salt")
+        #expect(AuthService.verifyPinLocally(pin: pin, storedHash: hash, salt: "test-salt"))
     }
 
     @Test("verifyPinLocally returns false for wrong PIN")
     func testVerifyPinWrong() throws {
-        let hash = AuthService.hashPin("1234")
-        #expect(!AuthService.verifyPinLocally(pin: "0000", storedHash: hash))
+        let hash = AuthService.hashPin("1234", salt: "test-salt")
+        #expect(!AuthService.verifyPinLocally(pin: "0000", storedHash: hash, salt: "test-salt"))
     }
 
     @Test("verifyPinLocally returns false for bcrypt hash")
     func testVerifyPinBcrypt() throws {
-        #expect(!AuthService.verifyPinLocally(pin: "1234", storedHash: "$2b$12$someBcryptHash"))
+        #expect(!AuthService.verifyPinLocally(pin: "1234", storedHash: "$2b$12$someBcryptHash", salt: "test-salt"))
     }
 
     // MARK: - Token Generation & Parsing
 
     @Test("generateLocalToken produces valid base64")
     func testGenerateToken() throws {
-        let token = AuthService.generateLocalToken(userId: 42)
+        let token = try #require(AuthService.generateLocalToken(userId: 42))
         #expect(!token.isEmpty)
         #expect(Data(base64Encoded: token) != nil)
     }
 
     @Test("parseLocalToken round-trips correctly")
     func testParseToken() throws {
-        let token = AuthService.generateLocalToken(userId: 42)
+        let token = try #require(AuthService.generateLocalToken(userId: 42))
         let payload = AuthService.parseLocalToken(token)
         #expect(payload != nil)
         #expect(payload?.sub == 42)

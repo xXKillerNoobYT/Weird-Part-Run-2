@@ -165,10 +165,11 @@ struct CreateNotebookSheet: View {
                 try service.applyJobTemplate(templateId: tid, notebookId: nbId, createdBy: userId)
             }
 
+            appCore.onboardingManager?.markCompleted("notebooks-create")
             onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save notebook")
         }
         isSaving = false
     }

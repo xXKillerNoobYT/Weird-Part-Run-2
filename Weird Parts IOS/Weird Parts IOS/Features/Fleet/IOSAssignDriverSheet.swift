@@ -137,7 +137,7 @@ struct IOSAssignDriverSheet: View {
         do {
             employees = try service.listEmployees()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load driver data")
         }
         isLoading = false
     }
@@ -164,7 +164,7 @@ struct IOSAssignDriverSheet: View {
             onSaved?()
             dismiss()
         } catch {
-            actionError = "Failed to assign driver: \(error.localizedDescription)"
+            actionError = userFriendlyError(error, context: "assign driver")
         }
         isSaving = false
     }

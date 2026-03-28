@@ -118,7 +118,7 @@ struct IOSCreateVehicleSheet: View {
             onSaved?()
             dismiss()
         } catch {
-            errorMessage = "Failed to create vehicle: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "create vehicle")
         }
         isSaving = false
     }

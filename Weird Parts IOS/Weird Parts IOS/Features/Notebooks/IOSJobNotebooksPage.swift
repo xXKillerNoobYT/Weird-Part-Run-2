@@ -15,6 +15,7 @@ struct IOSJobNotebooksPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
+    @State private var statusCounts: [String: Int] = [:]
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
 
@@ -33,9 +34,11 @@ struct IOSJobNotebooksPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "notebooks-job-notebooks")
             statusPicker
             notebookList
         }
+        .task { appCore.onboardingManager?.markCompleted("job-notebooks-view") }
         .navigationTitle("Job Notebooks")
         .searchable(text: $searchText, prompt: "Search job notebooks...")
         .toolbar {
@@ -63,22 +66,20 @@ struct IOSJobNotebooksPage: View {
     private var statusPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(statusOptions, id: \.self) { status in
-                    Button {
-                        statusFilter = status
-                        loadData()
-                    } label: {
-                        Text(status == "all" ? "All" : status.capitalized)
-                            .font(.caption)
-                            .fontWeight(statusFilter == status ? .bold : .regular)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(statusFilter == status ? Color.accentColor : Color.secondary.opacity(0.2))
-                            )
-                            .foregroundStyle(statusFilter == status ? .white : .primary)
-                    }
-                    .buttonStyle(.plain)
+                let total = statusCounts.values.reduce(0, +)
+                SmartFilterCard(
+                    title: "All",
+                    count: total,
+                    isSelected: statusFilter == "all",
+                    action: { statusFilter = "all"; loadData() }
+                )
+                ForEach(statusOptions.dropFirst(), id: \.self) { status in
+                    SmartFilterCard(
+                        title: status.capitalized,
+                        count: statusCounts[status] ?? 0,
+                        isSelected: statusFilter == status,
+                        action: { statusFilter = status; loadData() }
+                    )
                 }
             }
             .padding(.horizontal)
@@ -197,8 +198,16 @@ struct IOSJobNotebooksPage: View {
         loadError = nil
         do {
             notebooks = try service.listNotebooks(notebookType: "job")
+            // Load status counts for SmartFilterCard
+            if statusCounts.isEmpty {
+                var counts: [String: Int] = [:]
+                for nb in notebooks {
+                    counts[nb.status, default: 0] += 1
+                }
+                statusCounts = counts
+            }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load notebooks")
         }
         isLoading = false
     }

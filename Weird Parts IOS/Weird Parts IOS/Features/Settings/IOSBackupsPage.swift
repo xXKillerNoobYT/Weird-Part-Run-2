@@ -242,7 +242,7 @@ struct IOSBackupsPage: View {
                 backupSuccess = false
             }
         } catch {
-            errorMessage = "Backup failed: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "manage backups")
         }
         isCreatingBackup = false
     }

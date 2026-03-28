@@ -103,7 +103,7 @@ struct IOSQAQuestionForm: View {
         do {
             jobs = try service.listJobs(status: "active", limit: 200)
         } catch {
-            errorMessage = "Failed to load jobs: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load jobs")
         }
     }
 
@@ -150,7 +150,7 @@ struct IOSQAQuestionForm: View {
             dismiss()
         } catch {
             isSaving = false
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load messages")
         }
     }
 }

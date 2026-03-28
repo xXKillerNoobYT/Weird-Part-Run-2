@@ -21,6 +21,8 @@ struct PartsPricingPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "parts-pricing")
+
             // Filter bar
             filterBar
 
@@ -88,7 +90,10 @@ struct PartsPricingPage: View {
             }
         }
         .background(DS.Background.page)
-        .task { await loadData() }
+        .task {
+            await loadData()
+            appCore.onboardingManager?.markCompleted("pricing-view")
+        }
         .onAppear { postPricingContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .pricingPageInactive, object: nil)
@@ -628,7 +633,7 @@ struct PartsPricingPage: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load pricing data")
                 isLoading = false
             }
         }
@@ -1049,7 +1054,7 @@ struct PricingEditSheet: View {
             priceHistory = try service.getPriceHistory(partId: row.id, limit: 10)
             supplierCosts = try service.getPartSupplierCosts(partId: row.id)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load pricing data")
         }
     }
 
@@ -1088,7 +1093,7 @@ struct PricingEditSheet: View {
             await onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }

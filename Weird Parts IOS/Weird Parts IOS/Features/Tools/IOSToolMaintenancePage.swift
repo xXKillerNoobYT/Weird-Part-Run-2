@@ -101,7 +101,7 @@ struct IOSToolMaintenancePage: View {
         do {
             tools = try service.listTools()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load maintenance records")
         }
         isLoading = false
     }

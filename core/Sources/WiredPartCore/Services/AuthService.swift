@@ -629,6 +629,10 @@ public final class AuthService: Sendable {
                 "use_chat", "ask_qa", "send_rfi",
                 "view_customers", "view_contractors",
                 "manage_remote_sync",
+                // 39A expanded keys
+                "view_job_financials", "create_jobs", "self_assign_ready_jobs", "self_assign_contact_jobs",
+                "view_all_jobs", "view_job_reports", "approve_time_off", "approve_orders",
+                "view_spending", "view_audit_log",
             ],
             "Manager": [
                 "view_parts_catalog", "edit_parts_catalog", "edit_pricing", "show_dollar_values",
@@ -643,6 +647,10 @@ public final class AuthService: Sendable {
                 "view_schedule", "manage_schedule", "dispatch_employees",
                 "use_chat", "view_chat", "manage_chat", "ask_qa", "send_rfi",
                 "view_customers", "view_contractors",
+                // 39A expanded keys
+                "view_job_financials", "create_jobs", "self_assign_ready_jobs", "self_assign_contact_jobs",
+                "view_all_jobs", "view_job_reports", "approve_time_off", "approve_orders",
+                "view_spending",
             ],
             "Office": [
                 "view_parts_catalog", "edit_parts_catalog", "show_dollar_values",
@@ -652,6 +660,9 @@ public final class AuthService: Sendable {
                 "view_scheduling", "manage_scheduling", "view_schedule", "dispatch_employees",
                 "use_chat", "view_chat", "ask_qa",
                 "view_customers", "view_contractors",
+                // 39A expanded keys
+                "view_job_financials", "create_jobs", "view_all_jobs", "view_job_reports",
+                "approve_time_off", "approve_orders", "view_spending",
             ],
             "Lead": [
                 "view_parts_catalog", "view_warehouse", "view_trucks", "move_stock_truck",
@@ -660,12 +671,17 @@ public final class AuthService: Sendable {
                 "view_fleet", "view_tools", "view_scheduling", "view_schedule",
                 "use_chat", "view_chat", "ask_qa",
                 "view_customers",
+                // 39A expanded keys
+                "create_jobs", "self_assign_ready_jobs", "view_all_jobs",
+                "view_job_reports", "manage_warehouse",
             ],
             "Worker": [
                 "view_parts_catalog", "view_warehouse", "view_trucks", "move_stock_truck",
                 "view_jobs", "clock_in_out", "view_labor", "view_orders",
                 "view_fleet", "view_tools", "view_schedule",
                 "use_chat", "view_chat",
+                // 39A expanded keys
+                "self_assign_ready_jobs", "self_assign_contact_jobs",
             ],
             "Apprentice": [
                 "view_parts_catalog", "view_trucks", "view_jobs", "clock_in_out", "view_labor",

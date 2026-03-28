@@ -183,8 +183,8 @@ struct IOSUpdateProtocolPage: View {
             availableVersion = settings.availableVersion
             updateChannel = settings.updateChannel
         } catch {
-            if !error.localizedDescription.contains("no such table") {
-                errorMessage = "Failed to load update settings: \(error.localizedDescription)"
+            if !userFriendlyError(error, context: "save settings").contains("no such table") {
+                errorMessage = userFriendlyError(error, context: "load update settings")
             }
         }
         isLoading = false
@@ -220,7 +220,7 @@ struct IOSUpdateProtocolPage: View {
             }
             lastCheckTime = now
         } catch {
-            errorMessage = "Check failed: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "save settings")
         }
         isCheckingUpdate = false
     }
@@ -233,7 +233,7 @@ struct IOSUpdateProtocolPage: View {
         do {
             try settingsService.saveUpdateChannel(updateChannel)
         } catch {
-            errorMessage = "Failed to save channel: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "save channel")
         }
     }
 }

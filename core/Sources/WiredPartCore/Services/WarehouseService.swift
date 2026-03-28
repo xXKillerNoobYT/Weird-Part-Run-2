@@ -502,6 +502,40 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    /// Fetch a single movement by ID with part name and performer name.
+    public func getMovement(id: Int64) throws -> MovementRow? {
+        try db.writer.read { dbConn -> MovementRow? in
+            let sql = """
+                SELECT sm.*,
+                       p.name AS part_name,
+                       COALESCE(u.display_name, u.email, 'Unknown') AS performed_by_name
+                FROM stock_movements sm
+                LEFT JOIN parts p ON p.id = sm.part_id
+                LEFT JOIN users u ON u.id = sm.performed_by
+                WHERE sm.id = ? AND sm.deleted_at IS NULL
+                """
+            guard let row = try Row.fetchOne(dbConn, sql: sql, arguments: [id]) else {
+                return nil
+            }
+            return MovementRow(
+                id: row["id"] as Int64,
+                partId: row["part_id"] as Int64,
+                partName: (row["part_name"] as String?) ?? "Unknown Part",
+                qty: row["qty"] as Int,
+                fromLocationType: row["from_location_type"] as String?,
+                fromLocationId: row["from_location_id"] as Int64?,
+                toLocationType: row["to_location_type"] as String?,
+                toLocationId: row["to_location_id"] as Int64?,
+                movementType: row["movement_type"] as String,
+                reason: row["reason"] as String?,
+                notes: row["notes"] as String?,
+                performedBy: row["performed_by"] as Int64,
+                performedByName: row["performed_by_name"] as String?,
+                createdAt: row["created_at"] as String?
+            )
+        }
+    }
+
     /// Record a new stock movement and adjust stock accordingly.
     ///
     /// - Returns: The new movement's row ID.
@@ -2284,6 +2318,55 @@ public final class WarehouseService: Sendable {
             if let isConfigured = isConfigured { unit.isConfigured = isConfigured }
             try unit.update(dbConn)
         }
+    }
+
+    /// Convenience: create a storage unit with all levels and areas in one call.
+    ///
+    /// Creates the unit record, then `levels` level records, each with
+    /// `areasPerLevel` area records. Location codes are auto-generated.
+    @discardableResult
+    public func createStorageUnit(
+        floorPlanId: Int64,
+        name: String,
+        unitType: String,
+        levels: Int,
+        areasPerLevel: Int
+    ) throws -> WarehouseStorageUnit {
+        let existingUnits = try listStorageUnits(floorPlanId: floorPlanId)
+        let unitIndex = existingUnits.count + 1
+        let rowNumber = String(format: "R%02d", 1)
+        let unitNumber = String(format: "U%02d", unitIndex)
+
+        let unit = try addStorageUnit(
+            floorPlanId: floorPlanId,
+            name: name,
+            unitType: unitType,
+            rowNumber: rowNumber,
+            unitNumber: unitNumber
+        )
+
+        guard let unitId = unit.id else { return unit }
+
+        for levelIdx in 1...levels {
+            let levelCode = String(format: "S%02d", levelIdx)
+            let level = try addStorageLevel(
+                unitId: unitId,
+                levelCode: levelCode,
+                levelName: "Level \(levelIdx)",
+                order: levelIdx,
+                areaCount: areasPerLevel
+            )
+
+            guard let levelId = level.id else { continue }
+
+            for areaIdx in 1...areasPerLevel {
+                _ = try addStorageArea(levelId: levelId, areaNumber: areaIdx)
+            }
+        }
+
+        try updateStorageUnit(id: unitId, isConfigured: true)
+
+        return unit
     }
 
     /// Soft delete a storage unit.

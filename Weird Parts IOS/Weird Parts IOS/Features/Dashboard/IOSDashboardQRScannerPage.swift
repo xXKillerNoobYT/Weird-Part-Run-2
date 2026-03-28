@@ -24,11 +24,25 @@ struct IOSDashboardQRScannerPage: View {
     @State private var scanError: String?
     @State private var isProcessing = false
 
+    // Location navigation state
+    @State private var currentLocationInfo: WarehouseService.LocationScanInfo?
+    @State private var directionResult: WarehouseService.DirectionResult?
+    @State private var userPositionAreaId: Int64?
+
     // Manual entry
     @State private var manualCode = ""
     @State private var activeSheet: ActiveSheet?
 
-    private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
+    private enum ActiveSheet: Identifiable {
+        case help
+        case scannedDetail
+        var id: String {
+            switch self {
+            case .help: return "help"
+            case .scannedDetail: return "scannedDetail"
+            }
+        }
+    }
 
     #if os(iOS) && !targetEnvironment(macCatalyst)
     @State private var scanner: IOSQRScanner?
@@ -36,6 +50,8 @@ struct IOSDashboardQRScannerPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "dashboard-scanner")
+
             #if os(iOS) && !targetEnvironment(macCatalyst)
             if DataScannerViewController.isSupported {
                 // Camera viewfinder (top half)
@@ -52,6 +68,7 @@ struct IOSDashboardQRScannerPage: View {
             #endif
         }
         .background(Color.black)
+        .task { appCore.onboardingManager?.markCompleted("scanner-open") }
         .navigationTitle("QR Scanner")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -61,15 +78,58 @@ struct IOSDashboardQRScannerPage: View {
                 }
             }
         }
-        .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(
-                title: "QR Scanner Help",
-                sections: [
-                    ("Scanning", "Point the camera at any WiredPart QR code. The scanner runs continuously and shows item info in real time as you scan."),
-                    ("Lock & Actions", "Tap the lock button to freeze on a result and see quick actions. Tap Resume Scanning to continue. Quick actions auto-lock the camera."),
-                    ("Manual Entry", "No camera? Type or paste a code in the manual entry field below the camera view to look up items directly.")
-                ]
-            )
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                PageHelpSheet(
+                    title: "QR Scanner Help",
+                    sections: [
+                        ("Scanning", "Point the camera at any WiredPart QR code. The scanner runs continuously and shows item info in real time as you scan."),
+                        ("Lock & Actions", "Tap the lock button to freeze on a result and see quick actions. Tap Resume Scanning to continue. Quick actions auto-lock the camera."),
+                        ("Manual Entry", "No camera? Type or paste a code in the manual entry field below the camera view to look up items directly.")
+                    ]
+                )
+            case .scannedDetail:
+                NavigationStack {
+                    if let result = currentResult {
+                        List {
+                            Section("Scanned Item") {
+                                LabeledContent("Code", value: result.code)
+                                if let type = result.entityType {
+                                    LabeledContent("Type", value: type.rawValue.capitalized)
+                                }
+                                if !result.entityTitle.isEmpty {
+                                    LabeledContent("Name", value: result.entityTitle)
+                                }
+                            }
+                            if !result.detailFields.isEmpty {
+                                Section("Details") {
+                                    ForEach(result.detailFields, id: \.key) { field in
+                                        LabeledContent(field.key, value: field.value)
+                                    }
+                                }
+                            }
+                            if let locations = result.stockLocations, !locations.isEmpty {
+                                Section("Stock Locations") {
+                                    ForEach(locations, id: \.label) { loc in
+                                        LabeledContent(loc.label, value: "\(loc.qty)")
+                                    }
+                                }
+                            }
+                        }
+                        .navigationTitle("Item Details")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Done") { activeSheet = nil }
+                            }
+                        }
+                    } else {
+                        Text("No scanned item")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
         .onAppear {
             #if os(iOS) && !targetEnvironment(macCatalyst)
@@ -77,6 +137,10 @@ struct IOSDashboardQRScannerPage: View {
                 startContinuousScanning()
             }
             #endif
+            // Load user's last known warehouse position for direction guidance
+            if let service = appCore.warehouseService {
+                userPositionAreaId = try? service.getUserCurrentPosition(userId: 1)
+            }
         }
         .onDisappear {
             #if os(iOS) && !targetEnvironment(macCatalyst)
@@ -164,19 +228,17 @@ struct IOSDashboardQRScannerPage: View {
             VStack(alignment: .leading, spacing: DS.Space.sm) {
                 // Header row
                 HStack(spacing: DS.Space.md) {
-                    Image(systemName: result.isFound ? "checkmark.circle.fill" : "questionmark.circle.fill")
+                    Image(systemName: result.isLocation ? "mappin.circle.fill" : (result.isFound ? "checkmark.circle.fill" : "questionmark.circle.fill"))
                         .font(.title2)
-                        .foregroundStyle(result.isFound ? .green : .orange)
+                        .foregroundStyle(result.isLocation ? .blue : (result.isFound ? .green : .orange))
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(result.isFound ? result.entityTitle : "Not Found")
                             .font(.headline)
                             .lineLimit(1)
-                        if let type = result.entityType {
-                            Text(type.rawValue.capitalized)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        Text(result.isLocation ? "Warehouse Location" : (result.entityType?.rawValue.capitalized ?? ""))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
 
                     Spacer()
@@ -197,8 +259,18 @@ struct IOSDashboardQRScannerPage: View {
                     }
                 }
 
+                // Location contents (warehouse locations)
+                if result.isLocation, let locInfo = currentLocationInfo {
+                    locationContentsSection(locInfo)
+                }
+
+                // Direction guidance
+                if let direction = directionResult {
+                    directionGuidanceRow(direction)
+                }
+
                 // Stock locations (parts)
-                if result.isFound, let stockLocs = result.stockLocations, !stockLocs.isEmpty {
+                if !result.isLocation, result.isFound, let stockLocs = result.stockLocations, !stockLocs.isEmpty {
                     HStack(spacing: DS.Space.md) {
                         ForEach(stockLocs, id: \.label) { loc in
                             VStack(spacing: 2) {
@@ -357,28 +429,42 @@ struct IOSDashboardQRScannerPage: View {
 
     @ViewBuilder
     private func quickActions(for result: ScanResultData) -> some View {
-        switch result.entityType {
-        case .part:
-            DSQuickActionButton(title: "Move Stock", icon: "arrow.left.arrow.right", color: .orange) {
+        if result.isLocation {
+            DSQuickActionButton(title: "Quick Audit", icon: "checklist", color: .orange) {
                 autoLockAction { navigateToModule("warehouse") }
             }
-            DSQuickActionButton(title: "View Part", icon: "info.circle", color: .blue) {
-                autoLockAction { navigateToModule("parts") }
+            DSQuickActionButton(title: "Assign Part", icon: "plus.circle", color: .green) {
+                autoLockAction { navigateToModule("warehouse") }
             }
-        case .tool:
-            DSQuickActionButton(title: "Check Status", icon: "wrench.and.screwdriver", color: .blue) {
-                autoLockAction { navigateToModule("tools") }
+            DSQuickActionButton(title: "Floor Plan", icon: "map", color: .blue) {
+                autoLockAction { navigateToModule("warehouse") }
             }
-        case .job:
-            DSQuickActionButton(title: "View Job", icon: "hammer", color: .orange) {
-                autoLockAction { navigateToModule("jobs") }
+        } else {
+            switch result.entityType {
+            case .part:
+                DSQuickActionButton(title: "Move Stock", icon: "arrow.left.arrow.right", color: .orange) {
+                    autoLockAction { navigateToModule("warehouse") }
+                }
+                DSQuickActionButton(title: "View Part", icon: "info.circle", color: .blue) {
+                    autoLockAction { navigateToModule("parts") }
+                }
+            case .tool:
+                DSQuickActionButton(title: "Check Status", icon: "wrench.and.screwdriver", color: .blue) {
+                    autoLockAction { navigateToModule("tools") }
+                }
+            case .job:
+                DSQuickActionButton(title: "View Job", icon: "hammer", color: .orange) {
+                    autoLockAction { navigateToModule("jobs") }
+                }
+            case .vehicle:
+                DSQuickActionButton(title: "View Fleet", icon: "car", color: .green) {
+                    autoLockAction { navigateToModule("fleet") }
+                }
+            default:
+                DSQuickActionButton(title: "Details", icon: "info.circle", color: .blue) {
+                    autoLockAction { activeSheet = .scannedDetail }
+                }
             }
-        case .vehicle:
-            DSQuickActionButton(title: "View Fleet", icon: "car", color: .green) {
-                autoLockAction { navigateToModule("fleet") }
-            }
-        default:
-            DSQuickActionButton(title: "Details", icon: "info.circle", color: .blue) {}
         }
 
         DSQuickActionButton(title: "Scan Next", icon: "qrcode.viewfinder", color: .purple) {
@@ -447,7 +533,7 @@ struct IOSDashboardQRScannerPage: View {
                     }
                 }
             } catch {
-                scanError = error.localizedDescription
+                scanError = userFriendlyError(error, context: "scan item")
                 isScanning = false
             }
         }
@@ -480,6 +566,47 @@ struct IOSDashboardQRScannerPage: View {
         }
 
         do {
+            // Check if this is a warehouse location code first
+            if let locationInfo = try processLocationCode(code) {
+                let scanData = ScanResultData(
+                    code: code,
+                    isFound: true,
+                    entityType: .bin,
+                    entityId: locationInfo.areaId,
+                    entityTitle: locationInfo.fullLocationCode,
+                    stockLocations: nil,
+                    detailFields: [
+                        DetailField(key: "Unit", value: locationInfo.unitName),
+                        DetailField(key: "Level", value: locationInfo.levelName),
+                        DetailField(key: "Area", value: locationInfo.areaCode)
+                    ],
+                    isLocation: true
+                )
+
+                // Compute directions from user's last known position
+                var directions: WarehouseService.DirectionResult?
+                if let fromAreaId = userPositionAreaId, let service = appCore.warehouseService {
+                    directions = try? service.getDirections(fromAreaId: fromAreaId, toAreaId: locationInfo.areaId)
+                }
+
+                // Update user position to this scanned location
+                if let service = appCore.warehouseService {
+                    try? service.setUserCurrentPosition(userId: 1, areaId: locationInfo.areaId)
+                }
+
+                await MainActor.run {
+                    currentLocationInfo = locationInfo
+                    directionResult = directions
+                    userPositionAreaId = locationInfo.areaId
+                    currentResult = scanData
+                    lastResult = scanData
+                    isProcessing = false
+                    if autoLock { isLocked = true }
+                }
+                return
+            }
+
+            // Standard QR processing for non-location codes
             let result = try dashboardService.processQRScan(code)
 
             var stockLocations: [StockLocation]?
@@ -501,6 +628,8 @@ struct IOSDashboardQRScannerPage: View {
             )
 
             await MainActor.run {
+                currentLocationInfo = nil
+                directionResult = nil
                 currentResult = scanData
                 lastResult = scanData // Remember it
                 isProcessing = false
@@ -508,7 +637,7 @@ struct IOSDashboardQRScannerPage: View {
             }
         } catch {
             await MainActor.run {
-                scanError = error.localizedDescription
+                scanError = userFriendlyError(error, context: "scan item")
                 isProcessing = false
             }
         }
@@ -576,6 +705,83 @@ struct IOSDashboardQRScannerPage: View {
         return details
     }
 
+    // MARK: - Location Processing
+
+    /// Check if the code matches a warehouse location and return its info.
+    private func processLocationCode(_ code: String) throws -> WarehouseService.LocationScanInfo? {
+        guard let service = appCore.warehouseService else { scanError = "Warehouse service not available"; return nil }
+        // Try looking up the code as a full_location_code
+        return try service.getLocationByQR(qrCode: code)
+    }
+
+    // MARK: - Location Contents Section
+
+    @ViewBuilder
+    private func locationContentsSection(_ locInfo: WarehouseService.LocationScanInfo) -> some View {
+        VStack(alignment: .leading, spacing: DS.Space.sm) {
+            if locInfo.parts.isEmpty {
+                HStack(spacing: DS.Space.sm) {
+                    Image(systemName: "tray")
+                        .foregroundStyle(.secondary)
+                    Text("Empty location — no parts assigned")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("Contents (\(locInfo.parts.count))")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.secondary)
+
+                ForEach(locInfo.parts.prefix(5), id: \.partId) { item in
+                    HStack(spacing: DS.Space.sm) {
+                        Image(systemName: item.isHome ? "house.fill" : "shippingbox")
+                            .font(.caption2)
+                            .foregroundStyle(item.isHome ? .green : .blue)
+                            .frame(width: 16)
+
+                        Text(item.partName)
+                            .font(.caption)
+                            .lineLimit(1)
+
+                        Spacer()
+
+                        if let pn = item.partNumber, !pn.isEmpty {
+                            Text(pn)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+
+                if locInfo.parts.count > 5 {
+                    Text("+\(locInfo.parts.count - 5) more")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    // MARK: - Direction Guidance
+
+    @ViewBuilder
+    private func directionGuidanceRow(_ direction: WarehouseService.DirectionResult) -> some View {
+        HStack(spacing: DS.Space.sm) {
+            Image(systemName: "location.fill")
+                .foregroundStyle(.blue)
+
+            Text(direction.instructions)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(.primary)
+        }
+        .padding(DS.Space.sm)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.blue.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
     private func navigateToModule(_ moduleId: String) {
         NotificationCenter.default.post(name: .navigateToModule, object: nil, userInfo: ["moduleId": moduleId])
     }
@@ -591,6 +797,7 @@ private struct ScanResultData {
     let entityTitle: String
     let stockLocations: [StockLocation]?
     let detailFields: [DetailField]
+    var isLocation: Bool = false
 }
 
 private struct StockLocation {

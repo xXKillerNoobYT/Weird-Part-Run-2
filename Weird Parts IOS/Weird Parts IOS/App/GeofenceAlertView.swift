@@ -234,7 +234,7 @@ struct GeofenceAlertView: View {
             activeEntryId = entry?.id
         } catch {
             await MainActor.run {
-                errorMessage = "Failed to load clock entry: \(error.localizedDescription)"
+                errorMessage = userFriendlyError(error, context: "load clock entry")
                 showError = true
                 isProcessing = false
             }
@@ -273,7 +273,7 @@ struct GeofenceAlertView: View {
             }
         } catch {
             await MainActor.run {
-                errorMessage = "Failed to process response: \(error.localizedDescription)"
+                errorMessage = userFriendlyError(error, context: "process response")
                 showError = true
                 isProcessing = false
             }
@@ -294,7 +294,7 @@ struct GeofenceAlertView: View {
             }
             loadError = nil
         } catch {
-            loadError = "Failed to load jobs: \(error.localizedDescription)"
+            loadError = userFriendlyError(error, context: "load jobs")
         }
     }
 

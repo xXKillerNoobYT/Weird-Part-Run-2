@@ -101,6 +101,7 @@ struct SchedulingCrewUtilizationReport: View {
                 ("Tips", "Aim for 70-85% utilization to leave room for unexpected tasks. If someone is at 100%, they have no buffer for urgent jobs. Spread work across the team when possible.")
             ])
         }
+        .refreshable { loadData() }
         .onAppear { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
@@ -125,7 +126,7 @@ struct SchedulingCrewUtilizationReport: View {
                 startDate: startDate, endDate: endDate
             )
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
     }

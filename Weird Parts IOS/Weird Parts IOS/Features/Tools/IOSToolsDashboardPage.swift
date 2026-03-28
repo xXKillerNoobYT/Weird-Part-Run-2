@@ -23,7 +23,11 @@ struct IOSToolsDashboardPage: View {
     }
 
     var body: some View {
-        dashboardContent
+        VStack(spacing: 0) {
+            OnboardingBanner(pageId: "tools-dashboard")
+            dashboardContent
+        }
+            .task { appCore.onboardingManager?.markCompleted("tools-dashboard-view") }
             .navigationTitle("Tools Overview")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -222,7 +226,7 @@ struct IOSToolsDashboardPage: View {
             stats = try service.getToolsStats()
             recentCheckouts = try service.listCheckouts(active: false)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load tools dashboard")
         }
         isLoading = false
     }

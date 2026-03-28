@@ -58,6 +58,7 @@ struct WarehouseMovementsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "warehouse-movements")
             smartCardFilters
             StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
 
@@ -93,7 +94,10 @@ struct WarehouseMovementsPage: View {
             sheetContent(for: sheet)
         }
         .background(DS.Background.page)
-        .task { loadData() }
+        .task {
+            loadData()
+            appCore.onboardingManager?.markCompleted("wh-movements-view")
+        }
         .onChange(of: dateRange) { loadData() }
         .onChange(of: customStart) { loadData() }
         .onChange(of: customEnd) { loadData() }
@@ -288,7 +292,7 @@ struct WarehouseMovementsPage: View {
         do {
             movements = try service.listMovements(limit: 200)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load movements")
         }
         isLoading = false
     }

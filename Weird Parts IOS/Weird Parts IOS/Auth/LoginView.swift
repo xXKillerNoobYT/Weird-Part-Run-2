@@ -167,7 +167,7 @@ struct LoginView: View {
         do {
             users = try authService.getActiveUsers()
         } catch {
-            errorMessage = "Failed to load users: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load users")
         }
         usersLoaded = true
     }

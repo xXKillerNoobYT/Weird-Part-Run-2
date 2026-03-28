@@ -754,7 +754,7 @@ struct IOSToolDetailPage: View {
             maintenanceConfigs = (try? service.getMaintenanceConfigs(toolId: toolId)) ?? []
             nextMaintenanceDue = try? service.calculateNextMaintenanceDate(toolId: toolId)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load tool details")
         }
         isLoading = false
     }
@@ -842,7 +842,7 @@ struct ToolCheckoutSheet: View {
             )
             onComplete()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }
@@ -936,7 +936,7 @@ struct ToolReturnSheet: View {
             )
             onComplete()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }
@@ -1059,7 +1059,7 @@ struct ToolEditSheet: View {
             )
             onComplete(result)
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }
@@ -1146,7 +1146,7 @@ struct ToolReportIssueSheet: View {
             }
             onComplete()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }
@@ -1258,7 +1258,7 @@ struct ToolApproveEditSheet: View {
             try service.approveToolEdit(editId: editId, approverId: userId)
             onComplete()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }
@@ -1372,7 +1372,7 @@ struct ToolTradeSheet: View {
             )
             onComplete()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }
@@ -1387,7 +1387,7 @@ struct ToolTradeSheet: View {
             employees = try service.listEmployees(status: "active")
                 .filter { $0.id != currentId }
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
     }
 }
@@ -1481,7 +1481,7 @@ struct TradeResponseSheet: View {
             )
             onComplete()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }
@@ -1578,7 +1578,7 @@ struct LostStolenReportSheet: View {
             )
             onComplete()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }
@@ -1732,7 +1732,7 @@ struct MaintenanceConfigSheet: View {
             )
             onComplete()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }

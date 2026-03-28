@@ -60,6 +60,7 @@ struct CategoriesBrandSection: View {
                 }
             }
         }
+        .refreshable { await loadBrandData() }
         .task { await loadBrandData() }
     }
 
@@ -227,7 +228,7 @@ struct CategoriesBrandSection: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load category brands")
                 isLoading = false
             }
         }
@@ -252,7 +253,7 @@ struct CategoriesBrandSection: View {
                 linkedBrandIds.insert(brandId)
             }
         } catch {
-            loadError = "Toggle failed: \(error.localizedDescription)"
+            loadError = userFriendlyError(error, context: "load brands")
         }
     }
 }

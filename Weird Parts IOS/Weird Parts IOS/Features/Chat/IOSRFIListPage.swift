@@ -326,7 +326,7 @@ struct IOSRFIListPage: View {
             threads = try service.listQAThreads()
             supplierQuestions = try service.listSupplierQuestions()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load RFIs")
         }
         isLoading = false
     }

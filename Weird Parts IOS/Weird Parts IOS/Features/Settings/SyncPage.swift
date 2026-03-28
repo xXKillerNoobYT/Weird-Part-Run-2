@@ -206,7 +206,7 @@ struct SyncPage: View {
             syncInterval = map["sync_interval"] ?? "30"
             autoSync = map["auto_sync"] != "false"
         } catch {
-            errorMessage = "Failed to load settings: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load settings")
         }
     }
 
@@ -236,7 +236,7 @@ struct SyncPage: View {
                 saved = false
             }
         } catch {
-            errorMessage = "Failed to save: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "save")
         }
     }
 }

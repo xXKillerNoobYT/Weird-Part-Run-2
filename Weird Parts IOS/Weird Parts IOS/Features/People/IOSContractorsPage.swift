@@ -131,7 +131,7 @@ struct IOSContractorsPage: View {
             let query = searchText.isEmpty ? nil : searchText
             contractors = try service.listContractors(search: query)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load contractors")
         }
         isLoading = false
     }
@@ -206,7 +206,7 @@ private struct AddContractorSheet: View {
             onSave()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load contractors")
         }
     }
 }

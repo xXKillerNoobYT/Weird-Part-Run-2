@@ -14,6 +14,7 @@ struct IOSEmployeesPage: View {
     @State private var isLoading = true
     @State private var searchText = ""
     @State private var statusFilter = "all"
+    @State private var statusCounts: [String: Int] = [:]
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
 
@@ -35,9 +36,12 @@ struct IOSEmployeesPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "people-employees")
+            SkippedModuleHint(moduleId: "people")
             statusPicker
             employeeList
         }
+        .task { appCore.onboardingManager?.markCompleted("people-view") }
         .navigationTitle("Employees")
         .searchable(text: $searchText, prompt: "Search employees...")
         .onChange(of: searchText) { loadData() }
@@ -101,22 +105,20 @@ struct IOSEmployeesPage: View {
     private var statusPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(statusOptions, id: \.self) { status in
-                    Button {
-                        statusFilter = status
-                        loadData()
-                    } label: {
-                        Text(status == "all" ? "All" : status.capitalized)
-                            .font(.caption)
-                            .fontWeight(statusFilter == status ? .bold : .regular)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(statusFilter == status ? Color.accentColor : Color.secondary.opacity(0.2))
-                            )
-                            .foregroundStyle(statusFilter == status ? .white : .primary)
-                    }
-                    .buttonStyle(.plain)
+                let total = statusCounts.values.reduce(0, +)
+                SmartFilterCard(
+                    title: "All",
+                    count: total,
+                    isSelected: statusFilter == "all",
+                    action: { statusFilter = "all"; loadData() }
+                )
+                ForEach(statusOptions.dropFirst(), id: \.self) { status in
+                    SmartFilterCard(
+                        title: status.capitalized,
+                        count: statusCounts[status] ?? 0,
+                        isSelected: statusFilter == status,
+                        action: { statusFilter = status; loadData() }
+                    )
                 }
             }
             .padding(.horizontal)
@@ -237,8 +239,17 @@ struct IOSEmployeesPage: View {
                 search: searchText.isEmpty ? nil : searchText,
                 status: statusFilter == "all" ? nil : statusFilter
             )
+            // Load status counts for SmartFilterCard
+            if statusCounts.isEmpty {
+                let allEmployees = try service.listEmployees(search: nil, status: nil)
+                var counts: [String: Int] = [:]
+                for emp in allEmployees {
+                    counts[emp.status, default: 0] += 1
+                }
+                statusCounts = counts
+            }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load employees")
         }
         isLoading = false
     }
@@ -322,7 +333,7 @@ private struct AddEmployeeSheet: View {
             onSave()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load employees")
         }
     }
 }

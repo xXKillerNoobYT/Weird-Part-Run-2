@@ -204,10 +204,22 @@
 ## Current Progress
 
 Started: 2026-03-15
-Last completed: 64A-guided-onboarding-walkthrough.md ✅ POST-GATE PROMPTS COMPLETE
+Last completed: 64B-comprehensive-guided-onboarding.md ✅ POST-GATE PROMPTS COMPLETE
 63B-final-9-fixes.md ✅ (2026-03-26) — 9 audit fixes: QR button, AI dispatch, panel persist, SmartFilterCard ×3, error messages ×165, silent guards, popup audit, dead code, attention items
 64A-guided-onboarding-walkthrough.md ✅ (2026-03-26) — 4-part onboarding: interactive checklist, welcome overlay, module tour, first-visit hints
-Next: 64C-ui-stability-errors-popups.md (Tier 8, prompt 138)
+64B-comprehensive-guided-onboarding.md ✅ (2026-03-26) — OnboardingProgressManager, 50+ tasks, banner on 48 pages, 13 action completions, progress dashboard, restart in settings, auto-start for new users
+64C-ui-stability-errors-popups.md ✅ (2026-03-26) — Full stability pass: 1 sheet dismiss fix (QR scanner), 1 alert reset fix (ReportBuilder), all 16 services verified, 274 table fallbacks verified, 50+ sheets + 47+ alerts all clean
+65A-guided-onboarding-walkthrough.md ✅ (2026-03-26) — 15-module walkthrough, hat-filtered, resume-capable, SkippedModuleHint on 13 pages, wired into app root
+65B-company-setup-wizard.md ✅ (2026-03-26) — 8-step admin wizard, wired in app root, resume from dashboard, persistence, auto-detect employees/jobs
+65C-warehouse-setup-fix.md ✅ (2026-03-26) — 6 functional wizard steps, split into 6 files, createStorageUnit convenience method, IOSOrganizationAuditPage wired
+66A-office-dashboard-dead-buttons.md ✅ (2026-03-26) — ALREADY COMPLETE: 4 Quick Action NavigationLinks, attention detail sheet, QR Details wired
+66B-old-chips-to-smart-cards.md ✅ (2026-03-26) — ALREADY COMPLETE: all 3 pages (ToolRegistry, Employees, JobNotebooks) already use SmartFilterCard with counts
+66C-user-friendly-error-messages.md ✅ (2026-03-26) — 306 replacements across 128 files, 3 new error cases, zero raw errors in UI code
+64D-silent-guard-returns.md ✅ (2026-03-26) — 11 silent guards fixed (5 wishlist, 1 QR scanner, 5 wizard steps), zero remaining
+64E-panel-schedule-persist.md ✅ (2026-03-26) — persistPanelSchedule rebuilt, findOrCreateDefaultSectionId added, load-on-open verified
+64F-ai-dispatch-surface.md ✅ (2026-03-26) — Apply/Dismiss buttons, recordDispatcherChoice wiring, error handling, NavigationStack wrapper
+64G-jpo-movement-detail.md ✅ (2026-03-26) — getMovement(id:) added, JPOMovementDetailContent replaces stub, full detail view
+Next: Tier 9 Final Verification (prompt 152)
 
 ## To Start
 

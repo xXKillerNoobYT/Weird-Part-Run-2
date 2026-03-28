@@ -4876,12 +4876,12 @@ public final class PartsService: Sendable {
                 headers += ["category", "style", "type", "brand", "color"]
             }
             if groups.contains(.pricing) {
-                columns += ["p.company_cost_price", "p.company_markup_percent",
+                columns += ["p.company_cost_price AS cost_price", "p.company_markup_percent AS markup_percent",
                              "ROUND(p.company_cost_price * (1.0 + p.company_markup_percent / 100.0), 2) AS sell_price"]
                 headers += ["cost_price", "markup_percent", "sell_price"]
             }
             if groups.contains(.stockLevels) {
-                columns += ["p.min_stock_level", "p.target_stock_level", "p.max_stock_level",
+                columns += ["p.min_stock_level AS min_stock", "p.target_stock_level AS target_stock", "p.max_stock_level AS max_stock",
                              "COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) AS current_stock"]
                 headers += ["min_stock", "target_stock", "max_stock", "current_stock"]
             }
@@ -4913,13 +4913,17 @@ public final class PartsService: Sendable {
                 var values: [String] = []
                 for header in headers {
                     let colName = header == "type" ? "part_type_name" : header
-                    if let strVal: String = row[colName] {
-                        values.append(csvEscape(strVal))
-                    } else if let dblVal: Double = row[colName] {
-                        values.append(String(dblVal))
-                    } else if let intVal: Int = row[colName] {
-                        values.append(String(intVal))
-                    } else {
+                    let dbValue: DatabaseValue = row[colName]
+                    switch dbValue.storage {
+                    case .null:
+                        values.append("")
+                    case .int64(let v):
+                        values.append(String(v))
+                    case .double(let v):
+                        values.append(String(v))
+                    case .string(let v):
+                        values.append(csvEscape(v))
+                    case .blob:
                         values.append("")
                     }
                 }

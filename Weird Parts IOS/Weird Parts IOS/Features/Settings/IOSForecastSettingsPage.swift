@@ -230,7 +230,7 @@ struct IOSForecastSettingsPage: View {
             recalcHour = Int(map["forecast_recalc_hour"] ?? "") ?? 2
             categorySuggestionMonths = Int(map["forecast_category_suggestion_months"] ?? "") ?? 6
         } catch {
-            loadError = "Failed to load: \(error.localizedDescription)"
+            loadError = userFriendlyError(error, context: "load")
         }
         isLoading = false
     }
@@ -266,7 +266,7 @@ struct IOSForecastSettingsPage: View {
             try service.upsertSettingsMap(data, category: "forecast")
             saveError = nil
         } catch {
-            saveError = "Save failed: \(error.localizedDescription)"
+            saveError = userFriendlyError(error, context: "save data")
         }
     }
 }

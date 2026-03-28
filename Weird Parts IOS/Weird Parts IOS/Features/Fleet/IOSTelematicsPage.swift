@@ -163,7 +163,7 @@ struct IOSTelematicsPage: View {
         do {
             locations = try service.listTelematicsData()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load telematics data")
         }
 
         isLoading = false

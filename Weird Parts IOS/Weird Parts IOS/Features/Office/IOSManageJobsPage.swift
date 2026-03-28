@@ -254,7 +254,7 @@ struct IOSManageJobsPage: View {
                 : allJobs.filter { $0.status == statusFilter }
             stats = try service.getJobStats()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load jobs")
         }
         isLoading = false
     }

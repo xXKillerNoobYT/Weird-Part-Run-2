@@ -290,7 +290,7 @@ struct IOSWeeklyReviewSheet: View {
             todosCompleted = todoSummary.completedTodos
             todosTotal = todoSummary.totalTodos
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load weekly review")
         }
         isLoading = false
     }
@@ -338,7 +338,7 @@ struct IOSWeeklyReviewSheet: View {
             )
             showingSuccess = true
         } catch {
-            submitError = error.localizedDescription
+            submitError = userFriendlyError(error, context: "submit review")
         }
 
         isSubmitting = false

@@ -23,7 +23,11 @@ struct IOSToolKitsPage: View {
     }
 
     var body: some View {
-        kitContent
+        VStack(spacing: 0) {
+            OnboardingBanner(pageId: "tools-kits")
+            kitContent
+        }
+            .task { appCore.onboardingManager?.markCompleted("tools-kits-view") }
             .navigationTitle("Tool Kits")
             .searchable(text: $searchText, prompt: "Search kits...")
             .toolbar {
@@ -142,7 +146,7 @@ struct IOSToolKitsPage: View {
         do {
             kits = try service.listToolKits()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load tool kits")
         }
         isLoading = false
     }

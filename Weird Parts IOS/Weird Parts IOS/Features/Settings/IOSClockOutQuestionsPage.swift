@@ -247,7 +247,7 @@ struct IOSClockOutQuestionsPage: View {
         do {
             questions = try settingsService.listClockOutQuestions()
         } catch {
-            errorMessage = "Failed to load questions: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load questions")
             questions = []
         }
         isLoading = false
@@ -269,7 +269,7 @@ struct IOSClockOutQuestionsPage: View {
             activeSheet = nil
             Task { loadData() }
         } catch {
-            errorMessage = "Failed to save: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "save")
         }
     }
 
@@ -288,7 +288,7 @@ struct IOSClockOutQuestionsPage: View {
             activeSheet = nil
             Task { loadData() }
         } catch {
-            errorMessage = "Failed to update: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "update")
         }
     }
 
@@ -308,7 +308,7 @@ struct IOSClockOutQuestionsPage: View {
             questionToDelete = nil
             Task { loadData() }
         } catch {
-            errorMessage = "Failed to delete: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "delete")
         }
     }
 }

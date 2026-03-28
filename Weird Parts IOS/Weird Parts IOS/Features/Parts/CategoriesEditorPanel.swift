@@ -50,7 +50,10 @@ struct CategoriesEditorPanel: View {
                 emptySelection
             }
         }
-        .sheet(item: $activeSheet) { sheet in
+        .sheet(item: $activeSheet, onDismiss: {
+            // Safety net: always refresh when any sheet closes
+            Task { await onRefresh() }
+        }) { sheet in
             switch sheet {
             case .addStyle(let catId):
                 StyleFormSheet(style: nil, categoryId: catId) { await onRefresh() }
@@ -550,6 +553,7 @@ struct CategoriesEditorPanel: View {
             Label("Edit", systemImage: "pencil")
         }
         .buttonStyle(.bordered)
+        .accessibilityIdentifier("editCategoryButton")
     }
 
     @ViewBuilder
@@ -561,6 +565,7 @@ struct CategoriesEditorPanel: View {
         }
         .buttonStyle(.bordered)
         .tint(.red)
+        .accessibilityIdentifier("deleteCategoryButton")
     }
 
     @ViewBuilder
@@ -571,6 +576,7 @@ struct CategoriesEditorPanel: View {
             Label("Edit", systemImage: "pencil")
         }
         .buttonStyle(.bordered)
+        .accessibilityIdentifier("editStyleButton")
     }
 
     @ViewBuilder
@@ -582,6 +588,7 @@ struct CategoriesEditorPanel: View {
         }
         .buttonStyle(.bordered)
         .tint(.red)
+        .accessibilityIdentifier("deleteStyleButton")
     }
 
     @ViewBuilder
@@ -592,6 +599,7 @@ struct CategoriesEditorPanel: View {
             Label("Edit", systemImage: "pencil")
         }
         .buttonStyle(.bordered)
+        .accessibilityIdentifier("editTypeButton")
     }
 
     @ViewBuilder
@@ -603,6 +611,7 @@ struct CategoriesEditorPanel: View {
         }
         .buttonStyle(.bordered)
         .tint(.red)
+        .accessibilityIdentifier("deleteTypeButton")
     }
 
     @ViewBuilder
@@ -613,6 +622,7 @@ struct CategoriesEditorPanel: View {
             Label("Edit", systemImage: "pencil")
         }
         .buttonStyle(.bordered)
+        .accessibilityIdentifier("editColorButton")
     }
 
     @ViewBuilder
@@ -624,6 +634,7 @@ struct CategoriesEditorPanel: View {
         }
         .buttonStyle(.bordered)
         .tint(.red)
+        .accessibilityIdentifier("deleteColorButton")
     }
 
     // MARK: - Stat Pill

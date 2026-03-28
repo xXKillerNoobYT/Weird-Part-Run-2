@@ -90,7 +90,7 @@ struct NotificationPrefsPage: View {
             syncStatus = map["sync_status"] != "false"
             soundEnabled = map["sound_enabled"] != "false"
         } catch {
-            errorMessage = "Failed to load: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load")
         }
     }
 
@@ -113,7 +113,7 @@ struct NotificationPrefsPage: View {
                 saved = false
             }
         } catch {
-            errorMessage = "Failed to save: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "save")
         }
     }
 }

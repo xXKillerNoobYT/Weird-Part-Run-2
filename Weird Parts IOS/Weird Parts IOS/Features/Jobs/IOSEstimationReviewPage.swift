@@ -161,7 +161,7 @@ struct IOSEstimationReviewPage: View {
                 ?? svc.getLatestResult(jobId: jobId, stage: "pre_start")
                 ?? svc.getLatestResult(jobId: jobId, stage: "during")
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load estimation review")
         }
     }
 }
@@ -231,7 +231,7 @@ private struct WeeklyReviewSheet: View {
             await onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save settings")
         }
         isSaving = false
     }
@@ -330,7 +330,7 @@ private struct EndOfJobReviewSheet: View {
             await onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save settings")
         }
         isSaving = false
     }

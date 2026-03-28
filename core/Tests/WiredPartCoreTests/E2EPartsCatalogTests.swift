@@ -310,7 +310,7 @@ struct E2EPartsCatalogTests {
         _ = try env.parts.createPart(categoryId: catId, name: "CSV Part 1", code: "CSV-001")
         _ = try env.parts.createPart(categoryId: catId, name: "CSV Part 2", code: "CSV-002")
 
-        let csv = try env.parts.exportPartsCSV()
+        let csv = try env.parts.exportPartsCSV(groups: Set(PartsService.ExportFieldGroup.allCases))
         #expect(csv.contains("CSV Part 1"))
         #expect(csv.contains("CSV Part 2"))
         #expect(csv.contains("CSV-001"))

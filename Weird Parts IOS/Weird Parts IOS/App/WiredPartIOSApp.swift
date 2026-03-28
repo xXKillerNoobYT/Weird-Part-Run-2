@@ -10,6 +10,25 @@ import WiredPartCore
 struct WiredPartIOSApp: App {
     @StateObject private var appCore = AppCore()
     @StateObject private var tabPrefs = TabBarPreferences()
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage("hasCompletedCompanySetup") private var hasCompletedCompanySetup = false
+
+    init() {
+        // Existing users who already went through the app don't need the walkthrough or setup wizard
+        if UserDefaults.standard.bool(forKey: "hasSeenWelcome") {
+            if !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
+                UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
+            }
+            if !UserDefaults.standard.bool(forKey: "hasCompletedCompanySetup") {
+                UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
+            }
+        }
+    }
+
+    /// True if the current user has admin-level permissions.
+    private var isAdmin: Bool {
+        appCore.hasPermission("manage_people") && appCore.hasPermission("manage_jobs")
+    }
 
     /// Resolved color scheme from the user's theme setting.
     private var resolvedColorScheme: ColorScheme? {
@@ -37,6 +56,12 @@ struct WiredPartIOSApp: App {
                             .environmentObject(appCore)
                     } else if appCore.currentUser == nil {
                         LoginView()
+                            .environmentObject(appCore)
+                    } else if isAdmin && !hasCompletedCompanySetup {
+                        CompanySetupWizard()
+                            .environmentObject(appCore)
+                    } else if !hasCompletedOnboarding {
+                        OnboardingWalkthroughView()
                             .environmentObject(appCore)
                     } else {
                         IOSMainView()

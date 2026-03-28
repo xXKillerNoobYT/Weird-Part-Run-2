@@ -189,7 +189,7 @@ struct IOSAIConfigPage: View {
             try service.upsertSetting(key: key, value: value, category: "ai")
             saveError = nil
         } catch {
-            saveError = "Save failed: \(error.localizedDescription)"
+            saveError = userFriendlyError(error, context: "save data")
         }
     }
 }

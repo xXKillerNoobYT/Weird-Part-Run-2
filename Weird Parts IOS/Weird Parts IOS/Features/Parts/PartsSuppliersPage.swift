@@ -47,6 +47,8 @@ struct PartsSuppliersPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "parts-suppliers")
+
             // Active/All toggle + sort
             HStack {
                 Picker("Filter", selection: Binding(
@@ -125,7 +127,10 @@ struct PartsSuppliersPage: View {
             }
         }
         .background(DS.Background.page)
-        .task { await loadData() }
+        .task {
+            await loadData()
+            appCore.onboardingManager?.markCompleted("suppliers-view")
+        }
         .onAppear { postSuppliersContext() }
         .onDisappear {
             NotificationCenter.default.post(name: .suppliersPageInactive, object: nil)
@@ -359,7 +364,7 @@ struct PartsSuppliersPage: View {
             suppliers = rows
             isLoading = false
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load suppliers")
             isLoading = false
         }
     }
@@ -392,7 +397,7 @@ struct PartsSuppliersPage: View {
             deleteError = nil
             await loadData()
         } catch {
-            deleteError = "Failed to delete \(supplier.name): \(error.localizedDescription)"
+            deleteError = userFriendlyError(error, context: "load suppliers")
         }
     }
 }
@@ -570,7 +575,7 @@ private struct SupplierFormSheet: View {
             await onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }
@@ -631,13 +636,24 @@ private struct SupplierDetailSheet: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
 
+    // Single active-sheet enum to avoid multiple .sheet conflicts
+    enum ActiveSheet: Identifiable {
+        case addContact
+
+        var id: String {
+            switch self {
+            case .addContact: return "addContact"
+            }
+        }
+    }
+
     @State private var linkedBrands: [(brandId: Int64, brandName: String, partCount: Int)] = []
     @State private var recentPOs: [(poId: Int64, poNumber: String, status: String, total: Double, date: String)] = []
     @State private var supplierScores: PartsService.SupplierScores?
     @State private var contacts: [PartsService.SupplierContact] = []
     @State private var partCount = 0
     @State private var isLoading = true
-    @State private var showAddContact = false
+    @State private var activeSheet: ActiveSheet?
     @State private var supplierChannelId: Int64?
     @State private var contactToRemove: PartsService.SupplierContact?
     @State private var showRemoveContactConfirm = false
@@ -707,13 +723,16 @@ private struct SupplierDetailSheet: View {
                 }
             }
             .task { await loadAllDetails() }
-            .sheet(isPresented: $showAddContact) {
-                AddSupplierContactSheet(supplierId: supplier.id) {
-                    if let service = appCore.partsService {
-                        contacts = (try? service.getSupplierContacts(supplierId: supplier.id)) ?? []
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .addContact:
+                    AddSupplierContactSheet(supplierId: supplier.id) {
+                        if let service = appCore.partsService {
+                            contacts = (try? service.getSupplierContacts(supplierId: supplier.id)) ?? []
+                        }
                     }
+                    .environmentObject(appCore)
                 }
-                .environmentObject(appCore)
             }
         }
     }
@@ -946,7 +965,7 @@ private struct SupplierDetailSheet: View {
                 Text("Contacts (\(contacts.count))")
                 Spacer()
                 Button {
-                    showAddContact = true
+                    activeSheet = .addContact
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.title3)
@@ -1226,7 +1245,7 @@ private struct AddSupplierContactSheet: View {
             onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }

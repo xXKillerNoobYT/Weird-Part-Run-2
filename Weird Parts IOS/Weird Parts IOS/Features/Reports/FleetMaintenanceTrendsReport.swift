@@ -99,6 +99,7 @@ struct FleetMaintenanceTrendsReport: View {
                 ("Tips", "If a single vehicle keeps showing up with high costs, it may be time to consider replacing it. Track trends month over month to budget for upcoming maintenance needs.")
             ])
         }
+        .refreshable { loadData() }
         .onAppear { loadData() }
         .onChange(of: startDate) { _, _ in loadData() }
         .onChange(of: endDate) { _, _ in loadData() }
@@ -125,7 +126,7 @@ struct FleetMaintenanceTrendsReport: View {
                 startDate: startDate, endDate: endDate
             )
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load reports")
         }
         isLoading = false
     }

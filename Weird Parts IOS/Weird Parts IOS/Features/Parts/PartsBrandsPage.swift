@@ -33,6 +33,8 @@ struct PartsBrandsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "parts-brands")
+
             if isLoading {
                 ProgressView("Loading brands...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -78,7 +80,10 @@ struct PartsBrandsPage: View {
             }
         }
         .background(DS.Background.page)
-        .task { await loadData() }
+        .task {
+            await loadData()
+            appCore.onboardingManager?.markCompleted("brands-view")
+        }
         .alert("Delete Brand?", isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) { brandToDelete = nil }
             Button("Delete", role: .destructive) {
@@ -242,7 +247,7 @@ struct PartsBrandsPage: View {
             isLoading = false
             loadError = nil
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load brands")
             isLoading = false
         }
     }
@@ -260,7 +265,7 @@ struct PartsBrandsPage: View {
             deleteError = nil
             await loadData()
         } catch {
-            deleteError = "Failed to delete \(brand.name): \(error.localizedDescription)"
+            deleteError = userFriendlyError(error, context: "load brands")
         }
     }
 }
@@ -353,7 +358,7 @@ private struct BrandFormSheet: View {
             await onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save data")
         }
         isSaving = false
     }
@@ -521,7 +526,7 @@ private struct BrandDetailSheet: View {
             linkedSuppliers = try service.getBrandSuppliers(brandId: brand.id)
             isLoading = false
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load brands")
             isLoading = false
         }
     }
@@ -714,7 +719,7 @@ struct BrandSupplierPickerSheet: View {
             }
             isLoading = false
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load brands")
             isLoading = false
         }
     }
@@ -739,7 +744,7 @@ struct BrandSupplierPickerSheet: View {
         } catch {
             await MainActor.run {
                 isSaving = false
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load brands")
             }
         }
     }

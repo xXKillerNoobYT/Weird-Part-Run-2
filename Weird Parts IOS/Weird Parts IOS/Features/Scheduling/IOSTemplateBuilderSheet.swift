@@ -97,7 +97,7 @@ struct IOSTemplateBuilderSheet: View {
             isSaving = false
             dismiss()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "save template")
             isSaving = false
         }
     }

@@ -26,6 +26,8 @@ struct IOSFleetDashboardPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "fleet-dashboard")
+
             if isLoading {
                 ProgressView("Loading fleet dashboard...")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -38,7 +40,10 @@ struct IOSFleetDashboardPage: View {
         .navigationTitle("Fleet Dashboard")
         .refreshable { loadData() }
         .background(DS.Background.page)
-        .task { loadData() }
+        .task {
+            loadData()
+            appCore.onboardingManager?.markCompleted("fleet-dashboard-view")
+        }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
@@ -559,7 +564,7 @@ struct IOSFleetDashboardPage: View {
             upcomingMaintenance = try service.getUpcomingFleetMaintenance(limit: 10)
             recentMaintenance = try service.listMaintenanceRecords(limit: 5)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load fleet dashboard")
         }
 
         isLoading = false

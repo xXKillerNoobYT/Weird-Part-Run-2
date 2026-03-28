@@ -26,9 +26,11 @@ struct IOSWishlistPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "orders-wishlist")
             smartCardFilters
             wishlistList
         }
+        .task { appCore.onboardingManager?.markCompleted("wishlist-view") }
         .navigationTitle("Wishlist")
         .searchable(text: $searchText, prompt: "Search wishlist...")
         .toolbar {
@@ -298,54 +300,58 @@ struct IOSWishlistPage: View {
 
     private func approveItem(_ item: WishlistItem) {
         guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
-        guard let id = item.id else { return }
+        guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
         let approver = appCore.currentUser?.displayName ?? "Unknown"
         do {
             try service.approveItem(id: id, by: approver)
             loadData()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load wishlist")
         }
     }
 
     private func dismissItem(_ item: WishlistItem) {
-        guard let service = appCore.wishlistService, let id = item.id else { return }
+        guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
+        guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
         let dismisser = appCore.currentUser?.displayName ?? "Unknown"
         do {
             try service.dismissItem(id: id, by: dismisser)
             loadData()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load wishlist")
         }
     }
 
     private func sendToProcurement(_ item: WishlistItem) {
-        guard let service = appCore.wishlistService, let id = item.id else { return }
+        guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
+        guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
         do {
             try service.sendToProcurement(id: id)
             loadData()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load wishlist")
         }
     }
 
     private func reopenItem(_ item: WishlistItem) {
-        guard let service = appCore.wishlistService, let id = item.id else { return }
+        guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
+        guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
         do {
             try service.reopenItem(id: id)
             loadData()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load wishlist")
         }
     }
 
     private func deleteItem(_ item: WishlistItem) {
-        guard let service = appCore.wishlistService, let id = item.id else { return }
+        guard let service = appCore.wishlistService else { loadError = "Service not available"; return }
+        guard let id = item.id else { loadError = "Invalid item — missing ID"; return }
         do {
             try service.deleteItem(id: id)
             loadData()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load wishlist")
         }
     }
 
@@ -362,7 +368,7 @@ struct IOSWishlistPage: View {
         do {
             allItems = try service.listItems(status: nil)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load wishlist")
         }
         isLoading = false
     }
@@ -498,7 +504,7 @@ private struct AddWishlistItemSheet: View {
             onSave()
             dismiss()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save wishlist")
             isSaving = false
         }
     }

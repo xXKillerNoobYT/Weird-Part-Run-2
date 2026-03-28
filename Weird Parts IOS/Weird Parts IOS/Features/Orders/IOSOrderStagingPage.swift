@@ -21,12 +21,17 @@ struct IOSOrderStagingPage: View {
     @State private var loadError: String?
     @State private var actionError: String?
     @State private var searchText = ""
-    @State private var showStageSettings = false
     @State private var activeSheet: ActiveSheet?
 
     private enum ActiveSheet: Identifiable {
         case help
-        var id: String { "help" }
+        case stageSettings
+        var id: String {
+            switch self {
+            case .help: "help"
+            case .stageSettings: "stageSettings"
+            }
+        }
     }
 
     var body: some View {
@@ -41,7 +46,7 @@ struct IOSOrderStagingPage: View {
         .searchable(text: $searchText, prompt: "Search parts...")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button { showStageSettings = true } label: {
+                Button { activeSheet = .stageSettings } label: {
                     Image(systemName: "gearshape")
                 }
             }
@@ -54,21 +59,23 @@ struct IOSOrderStagingPage: View {
         .searchable(text: $searchText, prompt: "Search parts...")
         .refreshable { loadData() }
         .task { await loadInitialData() }
-        .sheet(isPresented: $showStageSettings) {
-            StageSettingsSheet(onSave: { loadData() })
-                .environmentObject(appCore)
-        }
-        .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(
-                title: "Job Stage Planner Help",
-                sections: [
-                    ("What This Page Does", "Shows all parts across all JPOs for a job, organized by construction stage (e.g., Rough-in, Prep/Makeup, Trim-out). Parts for future stages are held back and auto-release when the current stage completes."),
-                    ("How to Use It", "Select a job from the picker at the top. Use the stage cards to filter by stage. Each part shows its JPO number, quantity, and current status. When a stage is done, tap 'Mark Stage Complete' to release the next stage's parts."),
-                    ("Held Parts", "Parts with a lock icon are held for a future stage. They won't be ordered or pulled until their stage becomes active. If you need a held part early, tap 'Request Early' to override the hold."),
-                    ("Stage Settings", "Tap the gear icon to configure stages and map part categories to specific stages. This controls which parts auto-assign to which construction phase."),
-                    ("Tips", "Pull down to refresh. The stage cards show part counts so you can see at a glance how much work is in each phase. If your clocked-in job auto-selects, you can change it with the picker.")
-                ]
-            )
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                PageHelpSheet(
+                    title: "Job Stage Planner Help",
+                    sections: [
+                        ("What This Page Does", "Shows all parts across all JPOs for a job, organized by construction stage (e.g., Rough-in, Prep/Makeup, Trim-out). Parts for future stages are held back and auto-release when the current stage completes."),
+                        ("How to Use It", "Select a job from the picker at the top. Use the stage cards to filter by stage. Each part shows its JPO number, quantity, and current status. When a stage is done, tap 'Mark Stage Complete' to release the next stage's parts."),
+                        ("Held Parts", "Parts with a lock icon are held for a future stage. They won't be ordered or pulled until their stage becomes active. If you need a held part early, tap 'Request Early' to override the hold."),
+                        ("Stage Settings", "Tap the gear icon to configure stages and map part categories to specific stages. This controls which parts auto-assign to which construction phase."),
+                        ("Tips", "Pull down to refresh. The stage cards show part counts so you can see at a glance how much work is in each phase. If your clocked-in job auto-selects, you can change it with the picker.")
+                    ]
+                )
+            case .stageSettings:
+                StageSettingsSheet(onSave: { loadData() })
+                    .environmentObject(appCore)
+            }
         }
         .alert("Error", isPresented: .constant(actionError != nil)) {
             Button("OK") { actionError = nil }
@@ -347,7 +354,7 @@ struct IOSOrderStagingPage: View {
             try service.markStageComplete(jobId: jobId, stageId: stageId)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "update staging")
         }
     }
 
@@ -360,7 +367,7 @@ struct IOSOrderStagingPage: View {
             try service.requestEarlyRelease(jpoLineId: jpoLineId)
             loadData()
         } catch {
-            actionError = error.localizedDescription
+            actionError = userFriendlyError(error, context: "update staging")
         }
     }
 
@@ -375,7 +382,7 @@ struct IOSOrderStagingPage: View {
         do {
             jobs = try jobsService.listJobs(status: "active", limit: 100)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load order staging")
         }
 
         // Auto-select if user is clocked into a job
@@ -406,7 +413,7 @@ struct IOSOrderStagingPage: View {
             stages = try service.getJobStages()
             parts = try service.getJobStageParts(jobId: jobId)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load order staging")
         }
         isLoading = false
     }
@@ -506,7 +513,7 @@ private struct StageSettingsSheet: View {
             stages = try service.getJobStages()
             mappings = try service.getCategoryStageMappings()
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save staging")
         }
         isLoading = false
     }
@@ -519,7 +526,7 @@ private struct StageSettingsSheet: View {
         do {
             try service.updateCategoryStageMapping(categoryId: categoryId, stageId: stageId)
         } catch {
-            saveError = error.localizedDescription
+            saveError = userFriendlyError(error, context: "save staging")
         }
     }
 }

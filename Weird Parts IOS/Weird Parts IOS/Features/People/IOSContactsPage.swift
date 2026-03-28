@@ -268,7 +268,7 @@ struct IOSContactsPage: View {
             inactiveContacts = result.inactive
             typeCounts = try service.getContactTypeCounts()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load contacts")
         }
         isLoading = false
     }
@@ -352,7 +352,7 @@ private struct AddContactSheet: View {
             onSave()
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = userFriendlyError(error, context: "load contacts")
         }
     }
 }

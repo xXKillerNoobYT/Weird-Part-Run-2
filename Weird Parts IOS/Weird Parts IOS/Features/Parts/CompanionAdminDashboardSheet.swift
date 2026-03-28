@@ -125,6 +125,7 @@ struct CompanionAdminDashboardSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .refreshable { await loadData() }
             .task { await loadData() }
             .alert("Error", isPresented: Binding<Bool>(
                 get: { loadError != nil },
@@ -188,7 +189,7 @@ struct CompanionAdminDashboardSheet: View {
             }
         } catch {
             await MainActor.run {
-                loadError = error.localizedDescription
+                loadError = userFriendlyError(error, context: "load companion admin data")
                 isLoading = false
             }
         }

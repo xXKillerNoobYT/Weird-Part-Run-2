@@ -63,9 +63,11 @@ struct LaborPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "jobs-labor")
             StandardFilterBar(selectedRange: $dateRange, customStart: $customStart, customEnd: $customEnd)
             laborContent
         }
+        .task { appCore.onboardingManager?.markCompleted("labor-view") }
             .navigationTitle("Labor")
             .searchable(text: $searchText, prompt: "Search by employee or job...")
             .toolbar {
@@ -262,7 +264,7 @@ struct LaborPage: View {
             jobOptions = try service.listJobs(status: "active")
             activeSheet = .clockIn
         } catch {
-            errorMessage = "Failed to load options: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load options")
         }
     }
 
@@ -282,7 +284,7 @@ struct LaborPage: View {
             errorMessage = nil
             loadData()
         } catch {
-            errorMessage = "Clock in failed: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "clock in")
         }
     }
 
@@ -296,7 +298,7 @@ struct LaborPage: View {
             errorMessage = nil
             loadData()
         } catch {
-            errorMessage = "Clock out failed: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "clock out")
         }
     }
 
@@ -326,7 +328,7 @@ struct LaborPage: View {
             activeEntries = allEntries.filter { $0.clockOut == nil }
             recentEntries = Array(allEntries.prefix(50))
         } catch {
-            errorMessage = "Failed to load labor data: \(error.localizedDescription)"
+            errorMessage = userFriendlyError(error, context: "load labor data")
         }
         isLoading = false
     }

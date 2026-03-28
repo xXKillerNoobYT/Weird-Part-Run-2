@@ -35,9 +35,12 @@ struct IOSNotebooksListPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            OnboardingBanner(pageId: "notebooks-all")
+            SkippedModuleHint(moduleId: "notebooks")
             typePicker
             notebookList
         }
+        .task { appCore.onboardingManager?.markCompleted("notebooks-view") }
         .navigationTitle("Notebooks")
         .searchable(text: $searchText, prompt: "Search notebooks...")
         .toolbar {
@@ -255,7 +258,7 @@ struct IOSNotebooksListPage: View {
                 ? allNotebooks
                 : allNotebooks.filter { $0.notebookType == typeFilter }
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load notebooks")
         }
         isLoading = false
     }

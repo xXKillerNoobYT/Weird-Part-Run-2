@@ -582,7 +582,7 @@ struct IOSVehicleDetailPage: View {
             // Load current tab data
             loadTabDataIfNeeded(selectedTab)
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load vehicle details")
         }
         isLoading = false
     }
@@ -616,7 +616,7 @@ struct IOSVehicleDetailPage: View {
             }
             loadedTabs.insert(tab)
         } catch {
-            tabLoadError = error.localizedDescription
+            tabLoadError = userFriendlyError(error, context: "load vehicle details")
         }
     }
 }

@@ -149,7 +149,7 @@ struct IOSFuelPage: View {
         do {
             fuelLogs = try service.listFuelLogs()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load fuel data")
         }
         isLoading = false
     }

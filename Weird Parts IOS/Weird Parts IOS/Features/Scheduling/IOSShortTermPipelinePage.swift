@@ -18,13 +18,15 @@ struct IOSShortTermPipelinePage: View {
         case callback
         case schedule
         case help
+        case aiSuggestions
         var id: String { rawValue }
     }
     @State private var activeSheet: ActiveSheet?
     @State private var selectedItem: SchedulingService.PipelineItem?
 
-    // Toast
-    @State private var showComingSoon = false
+    // AI Dispatch
+    @State private var aiSuggestions: [AIDispatchService.DispatchSuggestion] = []
+    @State private var isLoadingAI = false
 
     // Search-filtered base
     private var searchFilteredItems: [SchedulingService.PipelineItem] {
@@ -81,10 +83,15 @@ struct IOSShortTermPipelinePage: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    withAnimation { showComingSoon = true }
+                    loadAISuggestions()
                 } label: {
-                    Label("AI Suggest", systemImage: "sparkles")
+                    if isLoadingAI {
+                        ProgressView()
+                    } else {
+                        Label("AI Suggest", systemImage: "sparkles")
+                    }
                 }
+                .disabled(isLoadingAI)
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
@@ -117,28 +124,22 @@ struct IOSShortTermPipelinePage: View {
                     ("Callbacks", "When a callback is due, it appears in the Callbacks Due section. You can mark it complete with notes, or snooze it for 1 day, 3 days, or 1 week."),
                     ("Tips", "Keep each category at or above its target number for a healthy pipeline. 'Start Anytime' jobs are your safety net for crew that finishes early. Small Jobs are great gap fillers between bigger projects.")
                 ])
+            case .aiSuggestions:
+                NavigationStack {
+                    aiSuggestionsSheet
+                        .navigationTitle("AI Dispatch Suggestions")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Done") { activeSheet = nil }
+                            }
+                        }
+                }
             }
         }
         .searchable(text: $searchText, prompt: "Search jobs...")
         .refreshable { loadData() }
         .task { loadData() }
-        .overlay(alignment: .bottom) {
-            if showComingSoon {
-                Text("AI suggestions coming in a future update")
-                    .font(.subheadline)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial)
-                    .cornerRadius(8)
-                    .padding(.bottom, 20)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .onAppear {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                            withAnimation { showComingSoon = false }
-                        }
-                    }
-            }
-        }
     }
 
     // MARK: - Content
@@ -292,7 +293,7 @@ struct IOSShortTermPipelinePage: View {
             try service.markCallbackComplete(jobId: jobId, notes: notes)
             loadData()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load pipeline data")
         }
         activeSheet = nil
     }
@@ -309,7 +310,7 @@ struct IOSShortTermPipelinePage: View {
             try service.snoozeCallback(jobId: jobId, until: f.string(from: target))
             loadData()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load pipeline data")
         }
         activeSheet = nil
     }
@@ -327,9 +328,175 @@ struct IOSShortTermPipelinePage: View {
         do {
             pipelineItems = try service.getShortTermPipeline()
         } catch {
-            loadError = error.localizedDescription
+            loadError = userFriendlyError(error, context: "load pipeline data")
         }
         isLoading = false
+    }
+
+    // MARK: - AI Dispatch
+
+    private func loadAISuggestions() {
+        guard let service = appCore.aiDispatchService else {
+            aiSuggestions = []
+            activeSheet = .aiSuggestions
+            return
+        }
+        isLoadingAI = true
+        do {
+            aiSuggestions = try service.generateSuggestions(date: todayString)
+        } catch {
+            aiSuggestions = []
+            loadError = userFriendlyError(error, context: "generate AI suggestions")
+        }
+        isLoadingAI = false
+        activeSheet = .aiSuggestions
+    }
+
+    private func applyAISuggestion(_ suggestion: AIDispatchService.DispatchSuggestion) {
+        guard let aiService = appCore.aiDispatchService else {
+            loadError = "AI dispatch service not available"
+            return
+        }
+        guard let schedService = appCore.schedulingService else {
+            loadError = "Scheduling service not available"
+            return
+        }
+
+        do {
+            // Record the dispatcher's choice for AI learning
+            try aiService.recordDispatcherChoice(
+                date: todayString,
+                chosenRank: suggestion.rank,
+                wasModified: false
+            )
+
+            // Apply each assignment as a dispatch entry
+            for assignment in suggestion.assignments {
+                _ = try schedService.createDispatch(
+                    jobId: assignment.jobId,
+                    userId: assignment.employeeId,
+                    date: todayString,
+                    notes: "AI dispatch (option \(suggestion.rank), score \(assignment.matchScore))"
+                )
+            }
+
+            activeSheet = nil
+            loadData()
+        } catch {
+            loadError = userFriendlyError(error, context: "apply AI suggestion")
+        }
+    }
+
+    private func dismissAISuggestions() {
+        // Record that the dispatcher dismissed all suggestions (rank 0 = none chosen)
+        if let aiService = appCore.aiDispatchService {
+            try? aiService.recordDispatcherChoice(
+                date: todayString,
+                chosenRank: 0,
+                wasModified: false
+            )
+        }
+        activeSheet = nil
+    }
+
+    @ViewBuilder
+    private var aiSuggestionsSheet: some View {
+        NavigationStack {
+            if aiSuggestions.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: "sparkles")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                    Text("No Suggestions Available")
+                        .font(.headline)
+                    Text("AI dispatch needs available workers and jobs needing crew to generate suggestions.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    ForEach(aiSuggestions) { suggestion in
+                        Section("Option \(suggestion.rank)  —  \(suggestion.totalPoints) pts") {
+                            ForEach(suggestion.assignments) { assignment in
+                                HStack(spacing: 12) {
+                                    Image(systemName: "person.fill")
+                                        .foregroundStyle(.blue)
+                                        .frame(width: 20)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(assignment.employeeName)
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                        Text(assignment.jobName)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Text(assignment.timeSlot)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text("\(assignment.matchScore)")
+                                        .font(.caption)
+                                        .fontWeight(.bold)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 2)
+                                        .background(Color.green.opacity(0.15))
+                                        .foregroundStyle(.green)
+                                        .clipShape(Capsule())
+                                }
+                            }
+                            if !suggestion.reasoning.isEmpty {
+                                DisclosureGroup("Reasoning") {
+                                    ForEach(suggestion.reasoning) { factor in
+                                        HStack {
+                                            Text(factor.description)
+                                                .font(.caption)
+                                            Spacer()
+                                            Text("\(factor.points > 0 ? "+" : "")\(factor.points)")
+                                                .font(.caption)
+                                                .fontWeight(.bold)
+                                                .foregroundStyle(factor.isPositive ? .green : .red)
+                                        }
+                                    }
+                                }
+                                .font(.caption)
+                            }
+                            // Apply button for this suggestion
+                            HStack(spacing: 12) {
+                                Button {
+                                    applyAISuggestion(suggestion)
+                                } label: {
+                                    Label("Apply This Plan", systemImage: "checkmark.circle.fill")
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.green)
+                            }
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        }
+                    }
+                    // Dismiss all suggestions
+                    Section {
+                        Button(role: .destructive) {
+                            dismissAISuggestions()
+                        } label: {
+                            Label("Dismiss All Suggestions", systemImage: "xmark.circle")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+                .listStyle(.insetGrouped)
+            }
+        }
+        .navigationTitle("AI Suggestions")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Close") { activeSheet = nil }
+            }
+        }
     }
 }
 
