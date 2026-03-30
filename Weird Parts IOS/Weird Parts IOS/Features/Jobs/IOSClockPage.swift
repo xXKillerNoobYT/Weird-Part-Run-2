@@ -973,8 +973,11 @@ struct IOSClockPage: View {
                     notes: "Self-assigned from Flex Pool"
                 )
             } catch {
-                // Non-fatal: clock-in still works even if dispatch creation fails
-                print("Flex pool dispatch creation failed: \(error.localizedDescription)")
+                // Non-fatal: clock-in still works even if dispatch creation fails.
+                // Show a subtle warning so the dispatcher knows.
+                await MainActor.run {
+                    errorMessage = "Clocked in, but dispatch record could not be created."
+                }
             }
         }
 
