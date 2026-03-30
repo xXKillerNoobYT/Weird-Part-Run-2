@@ -76,6 +76,7 @@ extension AppDatabase {
         registerMigration059MultiUserAuditAssignments(&migrator)
         registerMigration060PermissionKeysExpansion(&migrator)
         registerMigration061AuditSessionMetadata(&migrator)
+        registerMigration062AuditCountedQty(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4567,6 +4568,18 @@ extension AppDatabase {
                 t.add(column: "sample_size", .integer)
                 t.add(column: "include_zero_stock", .integer).notNull().defaults(to: 1)
                 t.add(column: "notes", .text)
+            }
+        }
+    }
+}
+
+extension AppDatabase {
+    private static func registerMigration062AuditCountedQty(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("062_audit_counted_qty") { db in
+            // Add counted_qty column to stock table so physical audit counts
+            // can be persisted and compared against the system quantity (qty).
+            try db.alter(table: "stock") { t in
+                t.add(column: "counted_qty", .integer)
             }
         }
     }

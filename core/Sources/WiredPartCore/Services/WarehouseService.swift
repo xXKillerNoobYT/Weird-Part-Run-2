@@ -1277,6 +1277,7 @@ public final class WarehouseService: Sendable {
                 WHERE location_type = 'warehouse' AND deleted_at IS NULL
                   AND last_counted IS NOT NULL
                   AND date(last_counted) = date('now')
+                  AND counted_qty IS NOT NULL
                 """
         )
 
@@ -1286,6 +1287,8 @@ public final class WarehouseService: Sendable {
                 WHERE location_type = 'warehouse' AND deleted_at IS NULL
                   AND last_counted IS NOT NULL
                   AND date(last_counted) = date('now')
+                  AND counted_qty IS NOT NULL
+                  AND counted_qty != qty
                 """
         )
 
@@ -1303,7 +1306,7 @@ public final class WarehouseService: Sendable {
             totalParts: totalParts,
             countedParts: countedParts,
             discrepancies: discrepancies,
-            lastAuditDate: lastDate ?? nil
+            lastAuditDate: lastDate
         )
     }
 
@@ -1315,10 +1318,12 @@ public final class WarehouseService: Sendable {
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
-                    UPDATE stock SET last_counted = datetime('now')
+                    UPDATE stock
+                    SET last_counted = datetime('now'),
+                        counted_qty  = ?
                     WHERE id = ? AND deleted_at IS NULL
                     """,
-                arguments: [stockId]
+                arguments: [countedQty, stockId]
             )
         }
     }
@@ -1330,8 +1335,8 @@ public final class WarehouseService: Sendable {
                 let rows = try Row.fetchAll(
                     dbConn,
                     sql: """
-                        SELECT s.part_id, s.location_type, s.location_id, s.qty,
-                               s.last_counted,
+                        SELECT s.part_id, s.location_type, s.location_id,
+                               s.qty, s.counted_qty, s.last_counted,
                                p.name AS part_name, p.code AS part_code
                         FROM stock s
                         LEFT JOIN parts p ON p.id = s.part_id
@@ -1339,12 +1344,14 @@ public final class WarehouseService: Sendable {
                           AND s.deleted_at IS NULL
                           AND s.last_counted IS NOT NULL
                           AND date(s.last_counted) = date('now')
+                          AND s.counted_qty IS NOT NULL
                         ORDER BY p.name
                         """
                 )
                 return rows.compactMap { row -> AuditDiscrepancy? in
                     let partId: Int64 = row["part_id"] ?? 0
-                    let qty: Int = row["qty"] ?? 0
+                    let systemQty: Int = row["qty"] ?? 0
+                    let countedQty: Int = row["counted_qty"] ?? systemQty
 
                     return AuditDiscrepancy(
                         partId: partId,
@@ -1352,9 +1359,9 @@ public final class WarehouseService: Sendable {
                         partCode: row["part_code"] as String?,
                         locationType: row["location_type"] ?? "warehouse",
                         locationId: row["location_id"] ?? 1,
-                        systemQty: qty,
-                        countedQty: qty, // Will be updated when actual count integration is added
-                        difference: 0,
+                        systemQty: systemQty,
+                        countedQty: countedQty,
+                        difference: countedQty - systemQty,
                         lastCounted: row["last_counted"] as String?
                     )
                 }

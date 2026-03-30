@@ -406,4 +406,80 @@ struct WarehouseAuditTests {
         let report = try env.warehouse.getTurnoverReport(startDate: start, endDate: Date())
         #expect(report.count >= 0)
     }
+
+    // MARK: - PE-020: Audit Count Recording & Discrepancy Calculation
+
+    /// Helper: seed a stock row and return its stock table ID.
+    private func seedStockAndGetId(_ env: E2ETestHelpers.TestEnvironment, partId: Int64, qty: Int) throws -> Int64 {
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: qty)
+        // Look up the stock row ID created by the movement
+        let stockId = try env.db.writer.read { dbConn in
+            try Int64.fetchOne(
+                dbConn,
+                sql: "SELECT id FROM stock WHERE part_id = ? AND location_type = 'warehouse' AND deleted_at IS NULL",
+                arguments: [partId]
+            )
+        }
+        return stockId!
+    }
+
+    @Test("recordAuditCount persists counted_qty")
+    func testRecordAuditCountPersists() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let stockId = try seedStockAndGetId(env, partId: partId, qty: 10)
+
+        // Record a physical count of 5
+        try env.warehouse.recordAuditCount(stockId: stockId, countedQty: 5)
+
+        // Read back and verify
+        let row = try env.db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: "SELECT counted_qty, last_counted FROM stock WHERE id = ?", arguments: [stockId])
+        }
+        #expect(row != nil)
+        #expect((row!["counted_qty"] as Int?) == 5)
+        #expect((row!["last_counted"] as String?) != nil)
+    }
+
+    @Test("getAuditDiscrepancies returns non-zero difference")
+    func testAuditDiscrepanciesRealDifference() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let stockId = try seedStockAndGetId(env, partId: partId, qty: 10)
+
+        // Record a physical count of 7 (system has 10, so difference = -3)
+        try env.warehouse.recordAuditCount(stockId: stockId, countedQty: 7)
+
+        let discrepancies = try env.warehouse.getAuditDiscrepancies()
+        #expect(discrepancies.count == 1)
+        #expect(discrepancies[0].systemQty == 10)
+        #expect(discrepancies[0].countedQty == 7)
+        #expect(discrepancies[0].difference == -3)
+    }
+
+    @Test("getAuditSummary counts real discrepancies")
+    func testAuditSummaryRealDiscrepancies() throws {
+        let env = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+
+        // Create 3 parts with stock
+        let p1 = try E2ETestHelpers.seedPart(env, name: "Part A", categoryId: catId)
+        let p2 = try E2ETestHelpers.seedPart(env, name: "Part B", categoryId: catId)
+        let p3 = try E2ETestHelpers.seedPart(env, name: "Part C", categoryId: catId)
+        let s1 = try seedStockAndGetId(env, partId: p1, qty: 10)
+        let s2 = try seedStockAndGetId(env, partId: p2, qty: 20)
+        let s3 = try seedStockAndGetId(env, partId: p3, qty: 30)
+
+        // Count 2 matching and 1 mismatch
+        try env.warehouse.recordAuditCount(stockId: s1, countedQty: 10) // matches
+        try env.warehouse.recordAuditCount(stockId: s2, countedQty: 20) // matches
+        try env.warehouse.recordAuditCount(stockId: s3, countedQty: 25) // mismatch: 25 != 30
+
+        let summary = try env.warehouse.getAuditSummary()
+        #expect(summary.countedParts == 3)
+        #expect(summary.discrepancies == 1)
+        #expect(summary.totalParts >= 3)
+    }
 }
