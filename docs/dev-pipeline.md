@@ -454,3 +454,21 @@ _Appended by dev-pipeline-manager each run._
 - Issues processed: 0 (auth not available in automated context)
 - Bugs fixed: 1 (UserDefaults stale onboarding flags causing fresh-DB devices to skip onboarding)
 - Pipeline health: ✅ Phase 1 COMPLETE — 279 prompts archived, Phase 2 HIG + security queue ready
+
+### End-of-Day Sync — 2026-03-29 (Run 2)
+
+- Files committed: 7 (AuthService.swift, AuthServiceTests.swift, AppDatabase+Migrations.swift, WarehouseService.swift, WarehouseAuditTests.swift, AppCore.swift, dev-pipeline.md + 8 DevTODO files)
+- Commits created: 4 (security, feat/audit, debug/iOS, docs)
+- Push status: ✅ success (ace5318 → origin/main)
+- Tests: 736/736 passing (49 suites, 0 failures)
+- Agent runs today: 7/7 healthy
+  - hunt-fix-verify ✅ — 9 iterations, 68 SQL bugs fixed
+  - test-coverage-maintenance ✅ — 736 tests (audit tests +3 this run)
+  - plan-enforcer ✅ — plans aligned, PE-020 audit schema complete
+  - dev-improvement-scanner ✅ — PE-011, PE-012, PE-008e fixed
+  - dev-pipeline-manager ✅ — Phase 2 queue active
+  - github-issues-sync ✅ — 12 open issues (#4-#15) processed; DevTODO files created
+  - github-sync-and-review ✅ — this run
+- Issues processed: 12 (#4 partial, #5-#15 documented in DevTODO)
+- Bugs fixed: 2 (PE-020 audit counted_qty schema + discrepancy calculation; brute-force PIN lockout + HMAC token signing)
+- Pipeline health: ✅ OK — Phase 2 security (#6 #7 fixed) advancing; accessibility queue ready (#11-#15 in DevTODO)
