@@ -406,6 +406,7 @@ public final class BreakService: Sendable {
     /// Accepts ISO8601 datetime strings or short "HH:mm" time strings.
     /// Returns in the same format as the input.
     public func getRoundedTime(time: String, roundingMinutes: Int = 15) -> String {
+        guard roundingMinutes > 0 else { return time }
         // Handle short "HH:mm" format
         let isShortTime = time.count <= 5 && time.contains(":")
         if isShortTime {

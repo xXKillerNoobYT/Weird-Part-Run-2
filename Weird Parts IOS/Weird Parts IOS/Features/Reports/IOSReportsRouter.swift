@@ -311,6 +311,8 @@ private struct CustomReportsView: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var savedReports: [ReportsService.SavedReport] = []
     @State private var loadError: String?
+    @State private var deleteOffsets: IndexSet?
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
         List {
@@ -359,12 +361,29 @@ private struct CustomReportsView: View {
                             }
                         }
                     }
-                    .onDelete(perform: deleteReports)
+                    .onDelete { offsets in
+                        deleteOffsets = offsets
+                        showDeleteConfirmation = true
+                    }
                 }
             }
         }
         .listStyle(.insetGrouped)
         .task { loadSavedReports() }
+        .confirmationDialog(
+            "Delete Report?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let offsets = deleteOffsets {
+                    deleteReports(at: offsets)
+                }
+            }
+            Button("Cancel", role: .cancel) { deleteOffsets = nil }
+        } message: {
+            Text("This saved report will be permanently removed.")
+        }
     }
 
     private func loadSavedReports() {

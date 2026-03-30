@@ -206,6 +206,8 @@ struct IOSJPOCreationPage: View {
             Text("Suggested: \(confirmOriginalQty). Shop stock: \(stock). Adjust if needed.")
         }
         .alert("Different Job", isPresented: $showJobVerification) {
+            // "Yes" intentionally has no body — selectedJobId is already set to the
+            // new job; dismissing the alert is sufficient to confirm the selection.
             Button("Yes, for \(selectedJobName)") { }
             Button("No, use clocked-in job", role: .cancel) {
                 if let cId = clockedInJobId,

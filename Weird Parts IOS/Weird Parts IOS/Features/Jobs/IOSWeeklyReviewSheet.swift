@@ -43,8 +43,10 @@ struct IOSWeeklyReviewSheet: View {
         let weekday = calendar.component(.weekday, from: today)
         // weekday: 1 = Sunday, 2 = Monday, ..., 7 = Saturday
         let daysFromMonday = (weekday + 5) % 7 // Monday = 0
-        let monday = calendar.date(byAdding: .day, value: -daysFromMonday, to: today)!
-        let sunday = calendar.date(byAdding: .day, value: 6, to: monday)!
+        let monday = calendar.date(byAdding: .day, value: -daysFromMonday, to: today)
+            ?? today.addingTimeInterval(-Double(daysFromMonday) * 86400)
+        let sunday = calendar.date(byAdding: .day, value: 6, to: monday)
+            ?? monday.addingTimeInterval(6 * 86400)
         return (monday, sunday)
     }
 

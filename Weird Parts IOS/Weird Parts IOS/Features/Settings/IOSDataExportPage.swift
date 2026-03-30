@@ -23,22 +23,22 @@ struct IOSDataExportPage: View {
 
     private let formats = ["csv", "json"]
 
+    private var canExport: Bool {
+        appCore.hasPermission("export_reports")
+    }
+
     // MARK: - Body
 
     var body: some View {
-        Form {
-            databaseInfoSection
-            formatSection
-            tablesSection
-            exportActionsSection
-            infoSection
-
-            if let errorMessage {
-                Section {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.red)
-                        .font(.callout)
-                }
+        Group {
+            if canExport {
+                exportForm
+            } else {
+                ContentUnavailableView(
+                    "Access Restricted",
+                    systemImage: "lock.shield",
+                    description: Text("Data export requires the Export Reports permission. Contact your administrator.")
+                )
             }
         }
         .navigationTitle("Data Export")
@@ -55,7 +55,25 @@ struct IOSDataExportPage: View {
                 ("How to Use It", "Select a format (CSV or JSON), check the tables you want to export, then tap Export. Use 'Export Full Database' for a complete SQLite backup. Exported files are saved to the app's Documents folder."),
             ])
         }
-        .task { loadData() }
+        .task { if canExport { loadData() } }
+    }
+
+    private var exportForm: some View {
+        Form {
+            databaseInfoSection
+            formatSection
+            tablesSection
+            exportActionsSection
+            infoSection
+
+            if let errorMessage {
+                Section {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
+                        .font(.callout)
+                }
+            }
+        }
     }
 
     private enum ActiveSheet: Identifiable {

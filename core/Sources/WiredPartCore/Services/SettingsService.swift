@@ -483,7 +483,7 @@ public final class SettingsService: Sendable {
                 }
             }
         } catch {
-            if String(describing: error).contains("no such table") { return [] }
+            if isTableNotFoundError(error) { return [] }
             throw error
         }
     }
@@ -522,7 +522,7 @@ public final class SettingsService: Sendable {
                 )
             }
         } catch {
-            if String(describing: error).contains("no such table") {
+            if isTableNotFoundError(error) {
                 return DeviceKeyInfo(fingerprint: nil, createdAt: nil, rotatedAt: nil)
             }
             throw error
@@ -562,7 +562,7 @@ public final class SettingsService: Sendable {
                 }
             }
         } catch {
-            if String(describing: error).contains("no such table") { return [] }
+            if isTableNotFoundError(error) { return [] }
             throw error
         }
     }
@@ -601,7 +601,7 @@ public final class SettingsService: Sendable {
                 }
             }
         } catch {
-            if String(describing: error).contains("no such table") { return [] }
+            if isTableNotFoundError(error) { return [] }
             throw error
         }
     }
@@ -637,7 +637,7 @@ public final class SettingsService: Sendable {
                 }
             }
         } catch {
-            if String(describing: error).contains("no such table") { return [] }
+            if isTableNotFoundError(error) { return [] }
             throw error
         }
     }
@@ -676,5 +676,12 @@ public final class SettingsService: Sendable {
 
     public enum SettingsError: Error, Sendable {
         case companyProfileNotFound(Int64)
+    }
+
+    // MARK: - Helpers
+
+    private func isTableNotFoundError(_ error: Error) -> Bool {
+        let message = String(describing: error)
+        return message.contains("no such table") || message.contains("no such column")
     }
 }

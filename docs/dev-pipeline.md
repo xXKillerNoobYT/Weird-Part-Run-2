@@ -1,6 +1,6 @@
 # WiredPart Development Pipeline
 
-> **Last updated:** 2026-03-29 (weekly-cleanup run 1)
+> **Last updated:** 2026-03-29 (dev-improvement-scanner run 3)
 > **Auto-maintained by:** dev-pipeline-manager (orchestrator)
 
 ---
@@ -34,7 +34,7 @@ Every feature, bug, or improvement follows this cycle:
 | Build | 0 errors, 0 warnings | 2026-03-29 |
 | Tests | 733/733 passing | 2026-03-29 |
 | Plan Alignment | ✅ 3 drift items tracked (PE-001, PE-002, PE-010 all resolved) | 2026-03-29 |
-| Feature Polish | 13 items tracked (2 fixed, 1 new: 67A) | 2026-03-29 |
+| Feature Polish | 17 items tracked (2 fixed, 2 new: PE-011, PE-012) | 2026-03-29 |
 | GitHub Issues | ✅ 0 open issues | 2026-03-29 |
 | Q&A Backlog | Empty (no pending questions) | 2026-03-29 |
 | Agent Health | All 8 agents enabled | 2026-03-29 |
@@ -57,6 +57,8 @@ Every feature, bug, or improvement follows this cycle:
 | PE-008 | Security core fixes: unsigned tokens, brute-force, hardcoded salt, LAN HTTP | 9 — needs core fixes | Open | Needs Swift implementation |
 | PE-009 | Apple HIG: 55 hardcoded fonts, 12 tap targets, sparse a11y labels (180+ views) | 9 — needs Xcode prompts | Open | Prompts not yet written |
 | PE-010 | `createAuditSession()` silently dropped zone/sampleSize/notes — v2 schema only saved session_type+started_by. | 13 — complete | ✅ Migration 061 adds columns; SQL insert updated | Option A chosen |
+| PE-011 | 12 force unwraps in `ReportDateRange.swift` (shared utility used by all date-filtered pages) — including `cal.dateInterval(of: .weekOfYear)!` which is locale-dependent | 8 — improve | 🔲 Xcode prompt needed | Medium severity — crash here breaks all date-range pages |
+| PE-012 | `Calendar.current.date(byAdding: .day, value: -7, to: Date())!` default value pattern in 15 files — should be `Date().addingTimeInterval(-7*86400)` | 8 — improve | 🔲 Quick batch fix | Low severity — cannot fail in practice but bad pattern |
 
 ---
 
@@ -181,7 +183,7 @@ Every feature, bug, or improvement follows this cycle:
 | Data Integrity | createAuditSession hardcodes started_by=1 — all sessions attributed to admin | Medium — wrong audit attribution | Quick | 7 | ✅ Core fixed; Xcode 67A |
 | Data Integrity | autoSaveToJobNotebook hardcodes created_by=1 — wrong note authorship | Medium — bad change tracking | Quick | 7 | ✅ Core fixed; Xcode 67A |
 | Runtime Safety | Dead button in IOSJPOCreationPage.swift:209 | Medium — user confusion | Quick | 8 | 🔲 Xcode prompt needed |
-| Apple HIG | 55 hardcoded font sizes bypass Dynamic Type | High — accessibility | Medium | 9 | 🔲 Xcode prompt needed |
+| Apple HIG | 88 hardcoded font sizes bypass Dynamic Type (across 51 files — revised up from 55) | High — accessibility | Medium | 9 | 🔲 Xcode prompt needed |
 | Apple HIG | 12 undersized tap targets (< 44x44pt) | High — touch usability | Quick | 9 | 🔲 Xcode prompt needed |
 | Apple HIG | 5 swipe-to-delete without confirmation | Medium — data safety | Quick | 9 | 🔲 Xcode prompt needed |
 | Apple HIG | Sparse accessibility labels (~8/180+ views) | High — VoiceOver | Large | 9 | 🔲 Xcode prompt series |
@@ -191,6 +193,9 @@ Every feature, bug, or improvement follows this cycle:
 | Security | Data export not gated behind admin permission | Medium — data exfiltration | Quick | 9 | 🔲 Xcode prompt needed |
 | Security | Hardcoded legacy salt in PIN hashing | Medium — rainbow tables | Quick | 9 | 🔲 Core fix needed |
 | Security | LAN sync uses plain HTTP | Medium — eavesdropping | Medium | 9 | 🔲 Core fix needed |
+| Runtime Safety | 12 force unwraps in ReportDateRange.swift — locale-dependent `dateInterval(of: .weekOfYear)!` | Medium — crash all date-filtered pages | Quick | 8 | 🔲 Xcode prompt needed (PE-011) |
+| Runtime Safety | `Calendar.current.date(byAdding:)!` default value in 15 files — should use `Date().addingTimeInterval()` | Low — practically safe | Quick | 8 | 🔲 Batch fix (PE-012) |
+| IOSClockPage | Uncommitted improvement: flex pool dispatch failure now shows errorMessage instead of silent print() | Low — already fixed in working tree | — | — | ⏳ Needs commit |
 
 ---
 
@@ -211,7 +216,7 @@ Every feature, bug, or improvement follows this cycle:
 | hunt-fix-verify | 2026-03-29 | 51 SQL bugs, 143 missing tests | 51 SQL bugs, 143 tests added | ✅ Healthy |
 | test-coverage-maintenance | 2026-03-29 | Coverage gaps in 4 services; +42 tests this run (SchedulingService pipeline/capacity/reports, ChatService supplier messaging/attachments/thread info); fixed listSupplierBridges SQL column bug | +185 tests total | ✅ Healthy |
 | plan-enforcer | 2026-03-29 (run 2) | 1 new drift item (PE-010: audit data loss), iter 7 changes verified | Registry updated | ✅ Healthy |
-| dev-improvement-scanner | 2026-03-29 (run 2) | 8 schema fixes, 2 hardcoded-user-1 bugs | 2 core fixes + prompt 67A created | ✅ Healthy |
+| dev-improvement-scanner | 2026-03-29 (run 3) | 2 new PEs (force unwraps), 1 IOSClockPage fix note, HIG count updated 55→88, IOSDataExportPage security confirmed | PE-011 + PE-012 tracked; pipeline updated | ✅ Healthy |
 | dev-pipeline-manager | 2026-03-29 (run 2) | PE-002 resolved, 3 new PEs, prompt queue audited | Pipeline updated | ✅ Healthy |
 | github-issues-sync | - | - | - | ⚠️ Pending first run (auth required) |
 | github-sync-and-review | 2026-03-29 | 4 commits | Committed, push pending | ⚠️ Push blocked (SSH) |
@@ -222,6 +227,53 @@ Every feature, bug, or improvement follows this cycle:
 ## Pipeline Daily Summary Log
 
 _Appended by dev-pipeline-manager each run._
+
+---
+
+### 2026-03-29 — Dev Improvement Scanner Run 3 (Safety + Security + HIG Audit)
+
+**Scope:** Full A-F scan per SKILL.md. Focused on runtime safety, security, Apple HIG, and UX polish.
+
+**Part A — Runtime Safety:**
+- ✅ Zero `as!` force casts in core
+- ✅ Zero `try!` in core
+- ✅ Zero empty `catch {}` blocks — all catch blocks rethrow or use `isTableNotFoundError` pattern
+- ✅ `BinarySyncManager.deserialize` protected by `guard data.count >= 36`
+- ✅ `WarehouseService partAssignments[0]` safe — inside `Dictionary(grouping:)` map which guarantees non-empty groups
+- ✅ `LanSyncServer parts[0]/parts[1]` safe — protected by `guard parts.count >= 2`
+- 🔲 **NEW PE-011**: 12 force unwraps in `ReportDateRange.swift` (shared utility). Most benign, but `cal.dateInterval(of: .weekOfYear, for:)!` is locale-dependent and could crash on unusual calendar locales. Breaks all date-filtered pages simultaneously.
+- 🔲 **NEW PE-012**: `Calendar.current.date(byAdding: .day, value: -7, to: Date())!` default value pattern in 15 files. Low risk but should be `Date().addingTimeInterval(-7*86400)`.
+
+**Part B — Security:**
+- ✅ No hardcoded user IDs (`created_by = 1`) anywhere — PE-006 fix verified clean
+- ✅ PIN hashing uses 10,000-iteration SHA-256 with per-user salt (migration in place for legacy devices)
+- ✅ All SQL is parameterized — no string concatenation in queries
+- 🔲 PE-008 confirmed: unsigned tokens (plain base64 JSON), no brute-force protection, hardcoded legacy salt `:wiredpart`, LAN HTTP — all still open
+- 🔲 `IOSDataExportPage` confirmed: zero permission check. Any active user can export the full database. `export_reports` permission key exists in the permission map but is never checked at the iOS page level.
+- Note: `AuthService.listRegisteredDevices/listActiveSessions` use inline `String(describing:).contains("no such table")` instead of the `isTableNotFoundError` helper — minor inconsistency, not tracked.
+
+**Part C — Apple HIG:**
+- ✅ Zero `NavigationView` — all pages use `NavigationStack`
+- ✅ Zero `print()` in Features/ — only in App/ system managers (appropriate diagnostic logs)
+- ✅ Zero TODO/FIXME in iOS codebase
+- 🔲 **Updated PE-009**: hardcoded `.font(.system(size:))` count is **88 occurrences across 51 files** (was previously estimated at 55 — current grep confirms higher count)
+- 🔲 `IOSJPOCreationPage.swift:209` dead button confirmed: `Button("Yes, for \(selectedJobName)") { }` — empty action
+
+**Part D — UX Polish:**
+- ✅ Pull-to-refresh: 133 `.refreshable` occurrences across 123 files — excellent coverage
+- ✅ `EmptyStateView`: 47 occurrences across 37 files — good but not 100% coverage
+- ✅ `ErrorStateView` and `errorMessage` patterns used consistently
+
+**Part E — IOSClockPage Uncommitted Fix:**
+- Uncommitted modification in git status: `IOSClockPage.swift` changed from `print("Flex pool dispatch creation failed: ...")` to setting `errorMessage = "Clocked in, but dispatch record could not be created."` — this is a quality improvement (silent failure → visible warning).
+- Needs commit. Not a new PE — already good code waiting in working tree.
+
+**Summary:**
+- New PEs added: 2 (PE-011, PE-012)
+- PE-009 count updated: 55 → 88 hardcoded fonts
+- Confirmed all known PE-008 security items still open
+- No new SQL integrity issues found (iter 7-9 fixes held)
+- No force casts, no try!, no empty catches, no hardcoded user IDs found
 
 ---
 

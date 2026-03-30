@@ -399,6 +399,13 @@ public final class AuthService: Sendable {
 
     // MARK: - Auth Errors
 
+    /// Returns true when the error is a "no such table" SQLite error.
+    /// Used to gracefully handle first-launch states before all migrations run.
+    private static func isTableNotFoundError(_ error: Error) -> Bool {
+        let message = String(describing: error)
+        return message.contains("no such table") || message.contains("no such column")
+    }
+
     public enum AuthError: Error, Sendable {
         case invalidToken
         case tokenExpired
@@ -450,7 +457,7 @@ public final class AuthService: Sendable {
                 }
             }
         } catch {
-            if String(describing: error).contains("no such table") { return [] }
+            if Self.isTableNotFoundError(error) { return [] }
             throw error
         }
     }
@@ -476,7 +483,7 @@ public final class AuthService: Sendable {
                 }
             }
         } catch {
-            if String(describing: error).contains("no such table") { return [] }
+            if Self.isTableNotFoundError(error) { return [] }
             throw error
         }
     }

@@ -48,7 +48,7 @@ struct LaborPage: View {
     }
 
     @State private var dateRange: ReportDateRange = .thisWeek
-    @State private var customStart: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+    @State private var customStart: Date = Date().addingTimeInterval(-7 * 86400)
     @State private var customEnd: Date = Date()
 
     // Clock-in form state

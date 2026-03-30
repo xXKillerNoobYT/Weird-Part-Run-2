@@ -9,6 +9,8 @@ struct WarehouseWizardStep2: View {
 
     @State private var addedUnits: [WarehouseStorageUnit] = []
     @State private var showAddUnitSheet = false
+    @State private var deleteOffsets: IndexSet?
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,9 +48,24 @@ struct WarehouseWizardStep2: View {
                                 .foregroundStyle(.green)
                         }
                     }
-                    .onDelete(perform: deleteUnits)
+                    .onDelete { offsets in
+                        deleteOffsets = offsets
+                        showDeleteConfirmation = true
+                    }
                 }
                 .listStyle(.insetGrouped)
+                .confirmationDialog(
+                    "Remove Storage Unit?",
+                    isPresented: $showDeleteConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Remove", role: .destructive) {
+                        if let offsets = deleteOffsets { deleteUnits(at: offsets) }
+                    }
+                    Button("Cancel", role: .cancel) { deleteOffsets = nil }
+                } message: {
+                    Text("This storage unit will be permanently removed from the floor plan.")
+                }
             } else {
                 ContentUnavailableView {
                     Label("No Storage Units", systemImage: "cabinet.fill")

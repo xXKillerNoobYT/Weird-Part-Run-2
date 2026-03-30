@@ -1,5 +1,17 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import WiredPartCore
+
+/// Lightweight Codable wrapper for drag-and-drop of storage units on the floor plan grid.
+/// Uses `.json` content type so no custom UTType registration in Info.plist is required.
+private struct DraggableUnit: Codable, Transferable {
+    let id: Int64
+    let name: String
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .json)
+    }
+}
 
 /// Warehouse Locations — floor plan grid editor + storage hierarchy drill-down.
 ///
@@ -22,6 +34,7 @@ struct WarehouseLocationsPage: View {
     // Grid state
     @State private var gridScale: CGFloat = 1.0
     @State private var gridOffset: CGSize = .zero
+    @State private var isGridDropTargeted = false
 
     enum ActiveSheet: Identifiable {
         case addUnit(String)
@@ -217,11 +230,31 @@ struct WarehouseLocationsPage: View {
                     ForEach(storageUnits.filter({ $0.gridX != nil && $0.gridY != nil }), id: \.id) { unit in
                         storageUnitView(unit, cellSize: cellSize)
                     }
+
+                    // Drop zone highlight (visible while dragging a unit over the grid)
+                    if isGridDropTargeted {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(.blue.opacity(0.08))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .strokeBorder(.blue.opacity(0.3), style: StrokeStyle(lineWidth: 2, dash: [6]))
+                            )
+                            .frame(width: CGFloat(gridCols) * cellSize, height: CGFloat(gridRows) * cellSize)
+                            .allowsHitTesting(false)
+                    }
                 }
                 .frame(
                     width: max(CGFloat(gridCols) * cellSize, geo.size.width),
                     height: max(CGFloat(gridRows) * cellSize, geo.size.height)
                 )
+                .dropDestination(for: DraggableUnit.self) { items, location in
+                    guard let dropped = items.first else { return false }
+                    let targetX = min(max(0, Int(location.x / cellSize)), gridCols - 1)
+                    let targetY = min(max(0, Int(location.y / cellSize)), gridRows - 1)
+                    return moveUnit(unitId: dropped.id, toGridX: targetX, gridY: targetY)
+                } isTargeted: { targeted in
+                    isGridDropTargeted = targeted
+                }
             }
         }
     }
@@ -279,6 +312,7 @@ struct WarehouseLocationsPage: View {
             }
             .frame(width: w - 2, height: h - 2)
             .offset(x: x + 1, y: y + 1)
+            .draggable(DraggableUnit(id: unit.id ?? 0, name: unit.name))
             .onTapGesture {
                 activeSheet = .unitDetail(unit)
             }
@@ -384,7 +418,7 @@ struct WarehouseLocationsPage: View {
         case .editUnit(let unit):
             EditStorageUnitSheet(unit: unit) { loadPlanData() }
         case .unitDetail(let unit):
-            StorageUnitDetailSheet(unit: unit)
+            StorageUnitDetailSheet(unit: unit, floorPlanName: selectedPlan?.name ?? "Floor Plan")
         case .addFeature:
             if let planId = selectedPlanId {
                 AddFloorFeatureSheet(floorPlanId: planId) { loadPlanData() }
@@ -433,6 +467,19 @@ struct WarehouseLocationsPage: View {
             loadPlanData()
         } catch {
             loadError = userFriendlyError(error, context: "load locations")
+        }
+    }
+
+    /// Moves a storage unit to a new grid position via drag-and-drop.
+    private func moveUnit(unitId: Int64, toGridX gridX: Int, gridY: Int) -> Bool {
+        guard let service = appCore.warehouseService else { return false }
+        do {
+            try service.updateStorageUnit(id: unitId, gridX: gridX, gridY: gridY)
+            loadPlanData()
+            return true
+        } catch {
+            loadError = userFriendlyError(error, context: "move unit")
+            return false
         }
     }
 
@@ -852,8 +899,10 @@ private struct StorageUnitDetailSheet: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
     let unit: WarehouseStorageUnit
+    let floorPlanName: String
 
     @State private var levels: [WarehouseStorageLevel] = []
+    @State private var copiedPath = false
     @State private var expandedLevelId: Int64?
     @State private var areasForLevel: [Int64: [WarehouseStorageArea]] = [:]
     @State private var areaContents: [Int64: [WarehouseService.AreaContentsItem]] = [:]
@@ -868,6 +917,38 @@ private struct StorageUnitDetailSheet: View {
                     if let un = unit.unitNumber { LabeledContent("Unit", value: un) }
                     if unit.isMovable {
                         LabeledContent("Location", value: unit.currentLocationType?.capitalized ?? "Shop")
+                    }
+                }
+
+                Section("Navigate Here") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        directionRow(step: 1, icon: "building.2", text: floorPlanName)
+                        if let row = unit.rowNumber {
+                            directionRow(step: 2, icon: "arrow.turn.down.right", text: "Row \(row)")
+                        }
+                        directionRow(
+                            step: unit.rowNumber != nil ? 3 : 2,
+                            icon: "cabinet.fill",
+                            text: "\(unit.name) — \(unit.unitType.replacingOccurrences(of: "_", with: " ").capitalized)"
+                        )
+                        if let x = unit.gridX, let y = unit.gridY {
+                            directionRow(
+                                step: (unit.rowNumber != nil ? 3 : 2) + 1,
+                                icon: "mappin.and.ellipse",
+                                text: "Grid position (\(x), \(y))"
+                            )
+                        }
+                    }
+                    .padding(.vertical, 4)
+
+                    Button {
+                        var path = floorPlanName
+                        if let row = unit.rowNumber { path += " → Row \(row)" }
+                        path += " → \(unit.name)"
+                        UIPasteboard.general.string = path
+                        copiedPath = true
+                    } label: {
+                        Label(copiedPath ? "Copied!" : "Copy Location Path", systemImage: copiedPath ? "checkmark.circle.fill" : "doc.on.doc")
                     }
                 }
 
@@ -971,6 +1052,27 @@ private struct StorageUnitDetailSheet: View {
             if let areaId = area.id {
                 loadAreaContents(areaId: areaId)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func directionRow(step: Int, icon: String, text: String) -> some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(.blue.opacity(0.15))
+                    .frame(width: 28, height: 28)
+                Text("\(step)")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.blue)
+            }
+            Image(systemName: icon)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+            Text(text)
+                .font(.subheadline)
         }
     }
 
