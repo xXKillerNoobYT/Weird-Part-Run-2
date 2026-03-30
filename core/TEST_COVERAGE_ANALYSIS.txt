@@ -1,0 +1,410 @@
+=============================================================================
+                    TEST COVERAGE ANALYSIS REPORT
+           WiredPartCore Services vs. Test Files
+=============================================================================
+
+SUMMARY:
+--------
+Total Services: 21
+Services with dedicated test files: 12
+Services with ZERO test files: 9
+
+CRITICAL GAPS (No Dedicated Tests):
+===================================
+
+1. AIDispatchService (3 public methods)
+   - generateSuggestions(date: String) -> [DispatchSuggestion]
+   - recordDispatcherChoice(date: String, chosenRank: Int, wasModified: Bool)
+   - getDispatchContext(date: String) -> String
+   UNTESTED: All core dispatch logic, learning mechanism, scoring algorithms
+   E2E Coverage: NONE detected
+
+2. ChatService (18+ public methods)
+   - getUnifiedInbox(userId: Int64) -> [InboxItem]
+   - getTotalUnreadCount(userId: Int64) -> Int
+   - listChannels(userId: Int64) -> [ChannelListItem]
+   - getMessages(channelId: Int64, limit: Int) -> [MessageRow]
+   - sendMessage(channelId: Int64, senderId: Int64, content: String) -> Int64
+   - createChannel(...) 
+   - listQAThreads(...) [2 overloads]
+   - createQAThread(...)
+   - getChatStats() -> ChatStats
+   - ensureOfficeChannel()
+   - syncOfficeChannelMembers()
+   - createJPOHoldThread(...)
+   - getJPOHoldThread(partName: String, jpoNumber: String) -> ChannelListItem?
+   - sendMessageWithAttachments(...)
+   UNTESTED: All messaging, threading, channel management, unread tracking
+   E2E Coverage: Mentioned in E2ECrossServiceTests.swift but no dedicated tests
+   RISK: HIGH - Chat is core collaboration feature
+
+3. FleetService (15+ public methods)
+   - listVehicles(status: String?) -> [VehicleListItem]
+   - getVehicleDetail(id: Int64) -> VehicleDetail?
+   - listMaintenanceRecords(...) -> [MaintenanceRow]
+   - listMileageLogs(...) -> [MileageRow]
+   - listFuelLogs(...) -> [FuelRow]
+   - listTrailers(status: String?) -> [TrailerListItem]
+   - getFleetStats() -> FleetStats
+   - getFleetDashboardStats() -> FleetDashboardStats
+   - getVehicleStatusList() -> [VehicleStatusItem]
+   - getUpcomingFleetMaintenance(limit: Int) -> [FleetMaintenanceItem]
+   - listInspections(limit: Int) -> [InspectionRow]
+   - listTelematicsData() -> [VehicleLocationRow]
+   - createVehicle(...)
+   - createTrailer(...)
+   - assignDriver(...)
+   UNTESTED: All fleet operations, maintenance tracking, mileage/fuel logs
+   E2E Coverage: Mentioned in E2EFleetPeopleTests.swift but no dedicated tests
+   RISK: HIGH - Fleet management is operational
+
+4. JobsService (14+ public methods)
+   - listJobs(...) -> [JobListItem]
+   - getJob(id: Int64) -> JobDetail
+   - createJob(...) -> Int64
+   - updateJob(...) 
+   - getJobStats() -> JobStats
+   - getJobsForCustomer(customerId: Int64) -> [JobListItem]
+   - setWarranty(jobId: Int64, startDate: Date, durationDays: Int)
+   - isWarrantyActive(jobId: Int64) -> Bool
+   - warrantyDaysRemaining(jobId: Int64) -> Int?
+   - setPaymentHold(jobId: Int64, amount: Double, reason: String?)
+   - removePaymentHold(jobId: Int64)
+   - isJobOnPaymentHold(jobId: Int64) -> Bool
+   - setJobContinuous(jobId: Int64, schedule: ContinuousSchedule?)
+   - getContinuousJobs(userId: Int64) -> [JobListItem]
+   - clockIn(...)
+   UNTESTED: Warranty management, payment holds, continuous scheduling
+   E2E Coverage: Mentioned in E2EJobsLaborTests.swift but no dedicated tests
+   RISK: CRITICAL - Core business feature
+
+5. OrdersService (16+ public methods)
+   - listJPOs(...) [2 overloads] -> [JPOListItem]
+   - getJPODetail(id: Int64) -> JPODetail
+   - createJPO(...) -> Int64
+   - updateJPOStatus(id: Int64, status: String, reason: String?)
+   - addJPOLineItem(...) -> Int64
+   - updateJPOLineStatus(lineId: Int64, status: String, reason: String?, updatedBy: Int64?)
+   - holdJPOLineWithChat(...)
+   - deriveJPOStatusFromLineStatuses(_ statuses: [String]) -> String
+   - smartRouteJPOLine(lineId: Int64, partId: Int64, userId: Int64) -> String
+   - setJPOLineTransferId(lineId: Int64, transferId: Int64)
+   - cancelJPOLineTransfer(lineId: Int64, reversedBy: Int64, warehouseService: WarehouseService)
+   - updateJPODeliveryOption(jpoId: Int64, option: String)
+   - createJPOWithLines(...) -> JPODetail
+   - getProcurementDemand() -> [ProcurementItem]
+   UNTESTED: Order creation, status updates, line item management, routing
+   E2E Coverage: Mentioned in E2EOrdersTests.swift but no dedicated tests
+   RISK: CRITICAL - Procurement core process
+
+6. PartsService (15+ public methods)
+   - getHierarchy() -> HierarchyTree
+   - listCategories() -> [PartCategory]
+   - createCategory(name: String, description: String?) -> Int64
+   - updateCategory(id: Int64, name: String?, description: String?, sortOrder: Int?)
+   - deleteCategory(id: Int64)
+   - listStyles(categoryId: Int64) -> [PartStyle]
+   - listStyles() -> [PartStyle]
+   - createStyle(categoryId: Int64, name: String, description: String?, sortOrder: Int) -> Int64
+   - updateStyle(id: Int64, name: String?, description: String?, sortOrder: Int?)
+   - deleteStyle(id: Int64)
+   - listTypes(styleId: Int64) -> [PartType]
+   - listTypes() -> [PartType]
+   - getType(id: Int64) -> PartType
+   - createType(styleId: Int64, name: String, description: String?, sortOrder: Int) -> Int64
+   - updateType(id: Int64, name: String?, description: String?, sortOrder: Int?)
+   UNTESTED: Catalog management, hierarchy navigation, CRUD operations
+   E2E Coverage: Mentioned in E2EPartsCatalogTests.swift but no dedicated tests
+   RISK: MEDIUM-HIGH - Core product catalog
+
+7. PeopleService (16+ public methods)
+   - listEmployees(...) -> [EmployeeListItem]
+   - getEmployeeDetail(id: Int64) -> EmployeeDetail
+   - listCustomers(search: String?) -> [CustomerListItem]
+   - listContractors(search: String?) -> [ContractorListItem]
+   - listContacts(...) -> [ContactListItem]
+   - listTeams() -> [TeamListItem]
+   - listHats() -> [HatListItem]
+   - getPeopleStats() -> PeopleStats
+   - createCustomer(...) -> Int64
+   - createContact(...) -> Int64
+   - createContractor(...) -> Int64
+   - createTeam(name: String, description: String?) -> Int64
+   - getTeamDetail(teamId: Int64) -> TeamDetail?
+   - getTeamMembers(teamId: Int64) -> [TeamMemberDetail]
+   - getTeamJobs(teamId: Int64) -> [TeamJobSummary]
+   UNTESTED: Employee/customer/contractor/team CRUD, team operations
+   E2E Coverage: Mentioned in E2EFleetPeopleTests.swift but no dedicated tests
+   RISK: MEDIUM - People directory is operational
+
+8. ReportsService (12+ public methods)
+   - getTimesheetData(startDate: String, endDate: String) -> [TimesheetRow]
+   - getDailyReportSummary(date: String) -> [DailyReportSummaryRow]
+   - getSpendingSummary(days: Int) -> SpendingSummary
+   - getProfitabilitySummary() -> [JobProfitRow]
+   - getPreBillingData(startDate: String, endDate: String) -> [PreBillingRow]
+   - getBookkeeperLaborSummary(startDate: String, endDate: String) -> [BookkeeperLaborRow]
+   - getBookkeeperMaterialPOs(startDate: String, endDate: String) -> [BookkeeperMaterialRow]
+   - getReportsStats() -> ReportsStats
+   - generateCustomReport(...) -> String (CSV/JSON)
+   - saveReportConfig(...) -> Int64
+   - getSavedReports(userId: Int64) -> [SavedReport]
+   - deleteSavedReport(reportId: Int64)
+   - markReportRun(reportId: Int64)
+   UNTESTED: All report generation, data aggregation, financial summaries
+   E2E Coverage: Mentioned in E2ESettingsReportsTests.swift but no dedicated tests
+   RISK: HIGH - Financial reporting is critical
+
+9. WarehouseService (20+ public methods)
+   - getWarehouseKPIs() -> WarehouseKPI
+   - getDashboardKPIs() -> DashboardKPIs
+   - getRecentActivity(limit: Int) -> [ActivityEntry]
+   - getInventoryGrid(...) -> InventoryGrid
+   - validateMovement(...) -> (isValid: Bool, errors: [String])
+   - previewMovement(...) -> [LocationStock]
+   - listMovements(...) -> [MovementRow]
+   - getMovement(id: Int64) -> MovementRow?
+   - createMovement(...) -> Int64
+   - executeMovement(id: Int64, userId: Int64, deviceId: String?, timestamp: Date?) -> String
+   - getLocationStock(search: String?) -> [LocationStock]
+   - getStockQty(partId: Int64, locationType: String, locationId: Int64) -> Int
+   - getStockAtLocation(locationType: String, locationId: Int64) -> [LocationStock]
+   - getStagedItems() -> [StagedItem]
+   - createStagingTag(...)
+   UNTESTED: Inventory operations, stock movements, location management
+   E2E Coverage: Mentioned in E2EWarehouseTests.swift but no dedicated tests
+   RISK: CRITICAL - Warehouse is core operational system
+
+
+SERVICES WITH LOW TEST COVERAGE (< 15 tests):
+===============================================
+
+1. BackgroundTaskService - 8 tests
+   ✓ startTask, completeTask, failTask
+   ✓ recentTasks, tasksByType, runningTasks
+   ✓ last24HoursSummary
+   ✓ cleanupOldEntries, cleanupStaleTasks
+   COVERAGE: Good coverage of core lifecycle
+   GAPS: Edge cases, concurrent operations, recovery scenarios
+
+2. BreakService - 11 tests
+   ✓ Break policy CRUD (3 tests)
+   ✓ Break bonus CRUD (2 tests)
+   ✓ Break record lifecycle (3 tests)
+   ✓ Company settings (2 tests)
+   ✓ Compliance calculation (1 test)
+   ✓ Rounding logic (1 test)
+   GAPS: autoFillBreaksForDay not explicitly tested, time zone edge cases
+
+3. DailyReportGenerator - 3 tests (VERY LOW)
+   UNTESTED: Most of the report generation logic
+   RISK: HIGH - Daily operations depend on this
+
+4. JobEstimationService - 17 tests
+   COVERAGE: Moderate, covers main estimation logic
+   GAPS: Complex scenarios, estimation adjustments
+
+5. DeviceResetService - 15 tests
+   COVERAGE: Good basic coverage
+   GAPS: Recovery scenarios, partial reset handling
+
+6. WishlistService - 10 tests (LOW)
+   COVERAGE: Basic add/remove/list operations
+   GAPS: Sorting, filtering, aggregation logic
+
+
+SERVICES WITH GOOD COVERAGE (20+ tests):
+=========================================
+
+1. AuthService - 22 tests
+   ✓ PIN hashing (2)
+   ✓ Token generation & parsing (3)
+   ✓ Seed first admin (4)
+   ✓ Authentication (3)
+   ✓ Permissions (3)
+   ✓ User profile (2)
+   ✓ Active users (1)
+   COVERAGE: Excellent, all core auth flows covered
+   
+2. DashboardService - 25 tests
+   COVERAGE: Excellent, comprehensive dashboard metrics
+   
+3. NotebooksService - 29 tests
+   COVERAGE: Excellent, extensive notebook operations
+   
+4. SchedulingService - 28 tests
+   COVERAGE: Excellent, detailed schedule management
+   
+5. ToolsService - 40 tests
+   COVERAGE: Excellent, most comprehensive test suite
+
+
+CROSS-SERVICE E2E TEST FILES:
+=============================
+
+1. E2EAuthBootstrapTests.swift
+   Coverage: Auth, Bootstrap, Settings, Parts
+   
+2. E2ECrossServiceTests.swift
+   Coverage: Multi-service workflows
+   - Chat, Dashboard, Fleet, Job, Notebook, Order, Part, People, Report, Setting, Tool, Warehouse
+   
+3. E2EFleetPeopleTests.swift
+   Coverage: Fleet, People, Jobs, Schedules, Chat, Notebooks, Tools
+   
+4. E2EJobsLaborTests.swift
+   Coverage: Jobs, Labor, Dashboard, Parts, Reports
+   
+5. E2EOrdersTests.swift
+   Coverage: Orders, Jobs, Parts
+   
+6. E2EPartsCatalogTests.swift
+   Coverage: Parts/Catalog
+   
+7. E2ESettingsReportsTests.swift
+   Coverage: Settings, Reports, Jobs, Parts
+   
+8. E2EWarehouseTests.swift
+   Coverage: Warehouse
+   
+9. E2ETestHelpers.swift
+   Helper file for test setup
+
+
+RECOMMENDATIONS (Priority Order):
+==================================
+
+CRITICAL (Create dedicated test files immediately):
+
+1. **AIDispatchService** - 0 tests
+   Priority: HIGH (business logic intensive)
+   Recommended tests:
+   - generateSuggestions: greedy assignment vs team continuity vs diversity options
+   - scoring algorithm with various worker/job combinations
+   - recordDispatcherChoice: learning mechanism
+   - getDispatchContext: context string generation
+   Estimated: 12-15 tests
+
+2. **JobsService** - 0 tests
+   Priority: CRITICAL (core domain)
+   Recommended tests:
+   - createJob, updateJob, listJobs with filters
+   - warranty lifecycle: set, check active, check days remaining
+   - payment hold lifecycle: set, check, remove
+   - continuous scheduling: set, getContinuousJobs
+   - clockIn operations
+   Estimated: 20-25 tests
+
+3. **OrdersService** - 0 tests
+   Priority: CRITICAL (procurement)
+   Recommended tests:
+   - JPO CRUD: create, list, get, update status
+   - Line item operations: add, update status, transfer
+   - JPO status derivation from line statuses
+   - Smart routing logic
+   - Procurement demand calculation
+   - JPO delivery options
+   Estimated: 22-28 tests
+
+4. **WarehouseService** - 0 tests
+   Priority: CRITICAL (core operations)
+   Recommended tests:
+   - Inventory grid retrieval and filtering
+   - Movement creation: validate, preview, execute
+   - Stock queries: getStockQty, getStockAtLocation
+   - Staging operations: createStagingTag, getStagedItems
+   - Location management
+   - KPI calculations
+   Estimated: 25-30 tests
+
+HIGH PRIORITY:
+
+5. **ReportsService** - 0 tests
+   Priority: HIGH (financial/operational reporting)
+   Recommended tests:
+   - Timesheet data aggregation
+   - Daily report summaries
+   - Spending summaries
+   - Profitability calculations
+   - Pre-billing data
+   - Bookkeeper reports (labor, materials)
+   - Custom report generation
+   - Report config CRUD
+   Estimated: 15-20 tests
+
+6. **PartsService** - 0 tests
+   Priority: HIGH (catalog core)
+   Recommended tests:
+   - Category CRUD: create, read, update, delete
+   - Style CRUD with category relationships
+   - Type CRUD with style relationships
+   - getHierarchy: tree structure validation
+   - Sort order management
+   Estimated: 15-18 tests
+
+7. **ChatService** - 0 tests
+   Priority: MEDIUM-HIGH (collaboration)
+   Recommended tests:
+   - Channel operations: list, create
+   - Message operations: send, get, with attachments
+   - Inbox: unified inbox, unread count
+   - QA threads: create, list, status
+   - Office channel management
+   - JPO hold threads
+   Estimated: 18-22 tests
+
+8. **PeopleService** - 0 tests
+   Priority: MEDIUM (directory)
+   Recommended tests:
+   - Employee CRUD: create, list, get detail
+   - Customer CRUD and search
+   - Contractor CRUD and search
+   - Contact CRUD and search
+   - Team operations: create, list, get members, get jobs
+   - Hat listing and operations
+   Estimated: 16-20 tests
+
+9. **FleetService** - 0 tests
+   Priority: MEDIUM (operational)
+   Recommended tests:
+   - Vehicle operations: list, create, assign driver
+   - Maintenance records: list, create
+   - Mileage and fuel logs
+   - Trailer operations
+   - Fleet stats and dashboard stats
+   - Inspections and telematics
+   Estimated: 18-22 tests
+
+MEDIUM PRIORITY:
+
+10. **DailyReportGenerator** - 3 tests
+    Current: Minimal coverage
+    Add tests for:
+    - Report generation logic
+    - Scheduling integration
+    - Error handling
+    Estimated: Add 10-12 more tests
+
+11. **WishlistService** - 10 tests
+    Current: Basic coverage
+    Add tests for:
+    - Sorting and filtering
+    - Aggregations
+    - Advanced queries
+    Estimated: Add 8-10 more tests
+
+
+SUMMARY STATISTICS:
+====================
+
+Total Public Methods across all services: ~180
+Currently tested (dedicated + E2E): ~120 (67%)
+Currently untested: ~60 (33%)
+
+Services needing immediate attention: 9
+Services with adequate coverage: 12
+
+Test files to create: 9
+Estimated new tests needed: ~150-180 tests
+
+=============================================================================

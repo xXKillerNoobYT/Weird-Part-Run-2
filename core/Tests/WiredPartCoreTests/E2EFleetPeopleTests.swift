@@ -93,50 +93,38 @@ struct E2EFleetPeopleTests {
         #expect(perms.contains("manage_people"))
     }
 
-    @Test("People service: employee listing")
+    @Test("People service: employee listing succeeds with correct SQL")
     func testEmployeeListing() throws {
         let env = try E2ETestHelpers.setUp()
-        // PeopleService.listEmployees() queries u.status which doesn't exist in migration.
-        do {
-            let employees = try env.people.listEmployees()
-            #expect(employees.count >= 0)
-        } catch {
-            // Expected: service SQL references non-existent columns (u.status, h.deleted_at)
-            #expect(error.localizedDescription.contains("no such column"))
-        }
+        let employees = try env.people.listEmployees()
+        // Admin user seeded by bootstrap
+        #expect(employees.count >= 1)
     }
 
-    @Test("People service: stats query")
+    @Test("People service: stats query uses correct table names")
     func testPeopleStats() throws {
         let env = try E2ETestHelpers.setUp()
-        do {
-            let stats = try env.people.getPeopleStats()
-            #expect(stats.totalEmployees >= 0)
-        } catch {
-            #expect(error.localizedDescription.contains("no such column"))
-        }
+        let stats = try env.people.getPeopleStats()
+        // Admin user exists, is_active = 1
+        #expect(stats.totalEmployees >= 1)
+        #expect(stats.activeEmployees >= 1)
+        #expect(stats.totalCustomers >= 0)
+        #expect(stats.totalContacts >= 0)
     }
 
-    @Test("People service: customer listing")
+    @Test("People service: customer listing succeeds")
     func testCustomerListing() throws {
         let env = try E2ETestHelpers.setUp()
-        do {
-            let customers = try env.people.listCustomers()
-            #expect(customers.count >= 0)
-        } catch {
-            #expect(error.localizedDescription.contains("no such column"))
-        }
+        let customers = try env.people.listCustomers()
+        #expect(customers.count >= 0)
     }
 
-    @Test("People service: hat listing")
+    @Test("People service: hat listing succeeds")
     func testHatListing() throws {
         let env = try E2ETestHelpers.setUp()
-        do {
-            let hats = try env.people.listHats()
-            #expect(hats.count >= 0)
-        } catch {
-            #expect(error.localizedDescription.contains("no such column"))
-        }
+        let hats = try env.people.listHats()
+        // 7 hats from bootstrap
+        #expect(hats.count == 7)
     }
 
     @Test("Hats exist from bootstrap via auth service")
@@ -219,6 +207,69 @@ struct E2EFleetPeopleTests {
             // Known schema mismatch — time_off_requests table doesn't exist
             #expect(error.localizedDescription.contains("no such table"))
         }
+    }
+
+    @Test("Scheduling: dispatch board with seeded job dispatch")
+    func testDispatchBoardWithData() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        // Seed a dispatch entry for today
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO job_dispatch (job_id, user_id, dispatch_date, status, created_at, updated_at)
+                VALUES (\(jobId), \(env.adminUserId), '2026-03-15', 'pending', datetime('now'), datetime('now'))
+                """)
+        }
+
+        let board = try env.scheduling.getDispatchBoard(date: "2026-03-15")
+        #expect(board.count >= 1)
+        #expect(board.first?.jobName == "Test Job")
+    }
+
+    @Test("Scheduling: short-term pipeline uses correct columns")
+    func testShortTermPipeline() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Seed an active job with estimated_hours and due_date
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO jobs (job_number, job_name, customer_name, status, estimated_hours, due_date, created_by, created_at, updated_at)
+                VALUES ('J-PIPE', 'Pipeline Test Job', 'Pipeline Customer', 'active', 16, '2026-04-01', \(env.adminUserId), datetime('now'), datetime('now'))
+                """)
+        }
+
+        let pipeline = try env.scheduling.getShortTermPipeline()
+        #expect(pipeline.count >= 1)
+
+        // The seeded job has 16 hours = 2 estimated_days → should be "small_job"
+        if let item = pipeline.first(where: { $0.jobName == "Pipeline Test Job" }) {
+            #expect(item.estimatedDays == 2)
+            #expect(item.callbackDate == "2026-04-01")
+            #expect(item.pipelineCategory == "small_job")
+        }
+    }
+
+    @Test("Scheduling: snooze and complete callback use due_date")
+    func testSnoozeAndCompleteCallback() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        // Snooze sets due_date
+        try env.scheduling.snoozeCallback(jobId: jobId, until: "2026-05-01")
+
+        let dueDate = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT due_date FROM jobs WHERE id = ?", arguments: [jobId])
+        }
+        #expect(dueDate == "2026-05-01")
+
+        // Mark complete clears due_date
+        try env.scheduling.markCallbackComplete(jobId: jobId, notes: "Done")
+
+        let clearedDate = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT due_date FROM jobs WHERE id = ?", arguments: [jobId])
+        }
+        #expect(clearedDate == nil)
     }
 
     // MARK: - Chat
