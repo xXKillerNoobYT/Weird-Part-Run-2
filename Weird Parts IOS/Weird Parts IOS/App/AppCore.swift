@@ -68,6 +68,14 @@ final class AppCore: ObservableObject {
             // priority inversion (user-interactive main thread waiting on
             // GRDB's default-QoS pool semaphore).
             let path = try Self.databasePath()
+
+            #if DEBUG
+            // In development: detect new builds and wipe the old database so the
+            // app always starts with the setup/onboarding flow after a rebuild,
+            // just like a fresh install would. This prevents stale user data from
+            // persisting across clean builds on the simulator.
+            Self.resetDatabaseIfNewBuild(atPath: path)
+            #endif
             let result = try await Task.detached(priority: .userInitiated) {
                 // Production safety: back up before migration so we can roll back
                 #if !DEBUG
@@ -408,6 +416,39 @@ final class AppCore: ObservableObject {
         loadError = nil
         await bootstrap()
     }
+
+    // MARK: - Debug Build Detection
+
+    #if DEBUG
+    /// Detect when a new app binary has been built and delete the old database
+    /// so the app always starts with the setup/onboarding flow after a clean build.
+    ///
+    /// Compares the executable's modification date with a stored value in
+    /// UserDefaults. When they differ, a new build was installed — wipe the
+    /// stale database and onboarding flags so bootstrap() sees a fresh state.
+    private static func resetDatabaseIfNewBuild(atPath dbPath: String) {
+        guard let execURL = Bundle.main.executableURL,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: execURL.path),
+              let modDate = attrs[.modificationDate] as? Date else { return }
+
+        let buildDateKey = "debug_last_binary_mod_date"
+        let storedDate = UserDefaults.standard.object(forKey: buildDateKey) as? Date
+
+        if let storedDate, storedDate != modDate {
+            print("[AppCore] New build detected — wiping database for fresh start")
+            let fm = FileManager.default
+            try? fm.removeItem(atPath: dbPath)
+            try? fm.removeItem(atPath: dbPath + "-wal")
+            try? fm.removeItem(atPath: dbPath + "-shm")
+            // Clear stale onboarding / session flags
+            UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+            UserDefaults.standard.removeObject(forKey: "hasCompletedCompanySetup")
+            UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
+        }
+
+        UserDefaults.standard.set(modDate, forKey: buildDateKey)
+    }
+    #endif
 
     // MARK: - Database Path
 
