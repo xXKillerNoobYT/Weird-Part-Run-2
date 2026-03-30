@@ -1,6 +1,6 @@
 # WiredPart Development Pipeline
 
-> **Last updated:** 2026-03-29 (dev-improvement-scanner run 3)
+> **Last updated:** 2026-03-29 (dev-pipeline-manager run 3 — Phase 1 complete, Phase 2 begin)
 > **Auto-maintained by:** dev-pipeline-manager (orchestrator)
 
 ---
@@ -33,8 +33,9 @@ Every feature, bug, or improvement follows this cycle:
 |------|--------|-------------|
 | Build | 0 errors, 0 warnings | 2026-03-29 |
 | Tests | 733/733 passing | 2026-03-29 |
-| Plan Alignment | ✅ 3 drift items tracked (PE-001, PE-002, PE-010 all resolved) | 2026-03-29 |
-| Feature Polish | 17 items tracked (2 fixed, 2 new: PE-011, PE-012) | 2026-03-29 |
+| Plan Alignment | ✅ All Phase 1 work aligned. 2 new unplanned features documented (warehouse drag-drop, nav path) | 2026-03-29 |
+| Feature Polish | 20 items tracked (PE-011 ✅, PE-012 ✅, PE-008e ✅ fixed since last run) | 2026-03-29 |
+| Xcode Prompts | **Phase 1 COMPLETE** — 279 prompts archived. Phase 2 queue: 8 items needing prompt writing | 2026-03-29 |
 | GitHub Issues | ✅ 0 open issues | 2026-03-29 |
 | Q&A Backlog | Empty (no pending questions) | 2026-03-29 |
 | Agent Health | All 8 agents enabled | 2026-03-29 |
@@ -47,71 +48,64 @@ Every feature, bug, or improvement follows this cycle:
 
 | ID | Item | Step | Status | Owner |
 |----|------|------|--------|-------|
-| PE-001 | Tool naming drift: "Tool Registry"→"All Tools", "Tool Admin"→"Management" | 10 — Xcode prompt ready | Open | Prompt 47F |
-| PE-002 | ~~Verify 35C-35I still needed~~ **RESOLVED** — GRDB+DispatchQueue+print() all gone; 35C/35G/35I moot; 35F keep; 35D/35E/35H keep (secondary fixes) | 11 — audited | ✅ Closed | See notes below |
-| PE-003 | Flex pool UI missing from Scheduling — plan describes self-assign section | 10 — Xcode prompt ready | Open | Prompt 46C |
-| PE-004 | 35A: Wire 2 TODO submit buttons in Daily Report | 10 — Xcode prompt ready | Open | Prompt 35A |
-| PE-005 | 66A: Fix 6 dead navigation buttons on Office Dashboard | 10 — Xcode prompt ready | Open | Prompt 66A |
-| PE-006 | 67A: Pass real userId to createAuditSession + autoSaveToJobNotebook (2 iOS call sites) | 13 — complete | ✅ Fixed directly (2026-03-29) | IOSAuditSetupView + IOSMessageThreadView |
+| PE-001 | Tool naming drift: "Tool Registry"→"All Tools", "Tool Admin"→"Management" | 10 — Phase 2 prompt needed | Open | Write new prompt |
+| PE-002 | ~~Verify 35C-35I still needed~~ **RESOLVED** | 13 — complete | ✅ Closed | All prompts run or skipped |
+| PE-003 | Flex pool UI missing from Scheduling — plan describes self-assign section | 10 — Phase 2 prompt needed | Open | Write new prompt |
+| PE-004 | ~~Wire 2 TODO submit buttons in Daily Report (35A)~~ | 13 — complete | ✅ Closed — 35A archived 2026-03-29 | — |
+| PE-005 | ~~Fix 6 dead navigation buttons on Office Dashboard (66A)~~ | 13 — complete | ✅ Closed — 66A already complete; archived 2026-03-29 | — |
+| PE-006 | 67A: Pass real userId to createAuditSession + autoSaveToJobNotebook | 13 — complete | ✅ Fixed directly (2026-03-29) | IOSAuditSetupView + IOSMessageThreadView |
 | PE-007 | Test coverage gaps: PeopleService 38%, ChatService 42%, SettingsService 43% | 7 — fine-tune | Open | test-coverage-maintenance agent |
-| PE-008 | Security core fixes: unsigned tokens, brute-force, hardcoded salt, LAN HTTP | 9 — needs core fixes | Open | Needs Swift implementation |
-| PE-009 | Apple HIG: 55 hardcoded fonts, 12 tap targets, sparse a11y labels (180+ views) | 9 — needs Xcode prompts | Open | Prompts not yet written |
-| PE-010 | `createAuditSession()` silently dropped zone/sampleSize/notes — v2 schema only saved session_type+started_by. | 13 — complete | ✅ Migration 061 adds columns; SQL insert updated | Option A chosen |
-| PE-011 | 12 force unwraps in `ReportDateRange.swift` (shared utility used by all date-filtered pages) — including `cal.dateInterval(of: .weekOfYear)!` which is locale-dependent | 8 — improve | 🔲 Xcode prompt needed | Medium severity — crash here breaks all date-range pages |
-| PE-012 | `Calendar.current.date(byAdding: .day, value: -7, to: Date())!` default value pattern in 15 files — should be `Date().addingTimeInterval(-7*86400)` | 8 — improve | 🔲 Quick batch fix | Low severity — cannot fail in practice but bad pattern |
+| PE-008 | Security core fixes: unsigned tokens, brute-force, hardcoded salt, LAN HTTP (PE-008e export guard ✅ fixed) | 9 — needs core fixes | Open (a-d) | Needs Swift implementation |
+| PE-009 | Apple HIG: 88 hardcoded fonts, 12 tap targets, 6 remaining swipe-to-delete without confirmation, a11y labels | 9 — needs Xcode prompts | Open (a-e) | Prompts not yet written |
+| PE-010 | `createAuditSession()` silently dropped zone/sampleSize/notes | 13 — complete | ✅ Migration 061 adds columns; SQL insert updated | Option A chosen |
+| PE-011 | 12 force unwraps in `ReportDateRange.swift` | 13 — complete | ✅ Fixed in commit 4b0c71a — guard/let + addingTimeInterval fallbacks | Closed |
+| PE-012 | `Calendar.current.date(byAdding:)!` in 15 files | 13 — complete | ✅ Fixed in commit 4b0c71a — all 15 files updated to addingTimeInterval | Closed |
+| PE-013 | Unplanned: `WarehouseLocationsPage` gained drag-and-drop floor plan + `StorageUnitDetailSheet` navigation path — not in warehouse plan | 11 — audit | 🔲 Document in ios-warehouse-pages.md | Low — quality improvement |
 
 ---
 
 ## PE-002 Resolution Notes
 
-**Verification (2026-03-29):** Full grep across all 35C-35I target files. Zero `import GRDB`, zero `dbQueue`, zero `DispatchQueue`, zero `print()` error patterns found anywhere in Scheduling, Settings, Fleet, Companion, or Reports feature files.
-
-| Prompt | Status | Reason |
-|--------|--------|--------|
-| 35C — Scheduling raw SQL | **SKIP** | GRDB gone, DispatchQueue gone, loadError already present in both files |
-| 35D — GeofenceAlertView | **KEEP** | ErrorStateView wiring and error feedback for GPS events still unverified |
-| 35E — Fleet GRDB + ErrorStateView | **KEEP** | ErrorStateView may still be missing from 6 Fleet pages — needs Xcode AI to verify and wire |
-| 35F — Audit session ID + PO delete | **KEEP (HIGH PRIORITY)** | Real bugs: session ID 0 in finalize, no nav back after delete, reject reason discarded |
-| 35G — Settings GRDB | **SKIP** | GRDB gone, DispatchQueue gone — all 10 Settings pages already clean |
-| 35H — Companion GRDB + hats delete | **PARTIAL** | GRDB done; hat delete confirmation dialog may still be missing — keep for that |
-| 35I — Reports + Tools GRDB | **SKIP** | GRDB already removed from PreBilling, BookkeeperExport, ToolKits |
-
-**Action:** Do not run 35C, 35G, 35I — they will make unnecessary changes to already-clean files. Run 35F first (highest value), then 35D, 35E, 35H.
+**All Phase 1 prompts archived to `done/` as of 2026-03-29.** GRDB fully removed from all iOS files. All 35A-35I, 66A-66C prompts complete or skipped as moot.
 
 ---
 
 ## Next Up (Priority Order)
 
-1. **Run prompt 35F** (Audit Session ID + PO Delete Nav) — real bugs with clear user impact
-2. **Run prompt 67A** (User Attribution fix) — 2 call sites attributing actions to admin instead of real user
-3. Push pending local commits to GitHub (SSH not available in automated context — manual push needed)
-4. Run 35D, 35E, 35H — verify ErrorStateView wiring and hat delete confirmation
-5. Run 66A (Office Dashboard Dead Buttons) — 6 dead navigation buttons
-6. Run 35A (Daily Report Submit Stubs) — two TODO submit buttons not yet wired
-7. Write HIG accessibility prompts (PE-009) — 55 hardcoded fonts, 12 tap targets
+> **Phase 1 COMPLETE.** All 279 Xcode AI prompts archived in `done/`. Working tree is clean, pushed to origin/main. Phase 2 begins — writing Xcode prompts for HIG polish + security.
+
+1. **Write + run PE-009c prompt** (swipe-to-delete confirmations in 6 remaining files: IOSPreTripChecklistPage, IOSClockOutQuestionsPage, IOSReportTemplatesPage ×2, WarehouseWizardStep2, AddNotebookEntrySheet)
+2. **Write + run PE-001 prompt** (Tool page rename: "Tool Registry"→"All Tools", "Tool Admin"→"Management")
+3. **Write + run PE-009a prompt** (Dynamic Type: 88 hardcoded `.font(.system(size:))` → `.font(.title2)` / `.font(.body)` etc. across 51 files)
+4. **Write + run PE-009b prompt** (12 undersized tap targets — add `.frame(minWidth: 44, minHeight: 44)`)
+5. **Fix PE-008a-d** (core Swift: unsigned tokens, brute-force, legacy salt, LAN HTTP — direct Swift edits)
+6. **Write PE-009d prompt** (color-only status indicators — add text/icon labels alongside)
+7. **Write PE-009e prompt series** (accessibility labels — start with most-used pages)
+8. **Write PE-003 prompt** (flex pool self-assign section on Scheduling page)
 
 ---
 
 ## Backlog
 
-> Sorted by priority. Items move to "Next Up" when Q&A is answered and plan is ready.
+> Sorted by priority. Phase 1 Xcode prompts ALL complete. Backlog is now HIG + security only.
 
 | Priority | Item | Source | Step | Blocked By |
 |----------|------|--------|------|------------|
-| 1 | Run 35F — Audit session ID 0 + PO delete nav + reject reason | Bug (3 real crashes/data issues) | 10 | Nothing — run now |
-| 2 | ~~Run 67A — User attribution in audit + notebook~~ | Data integrity | ✅ Fixed 2026-03-29 | — |
-| 3 | Run 35D — GeofenceAlertView ErrorStateView | Error UX (silent GPS failures) | 10 | Nothing — run now |
-| 4 | Run 35E — Fleet ErrorStateView in 6 pages | Error UX (silent failures) | 10 | Nothing — run now |
-| 5 | Run 35H — Hat delete confirmation | Data safety (no confirmation on delete) | 10 | Nothing — run now |
-| 6 | Run 66A — Office Dashboard dead buttons (6) | UX (broken navigation) | 10 | Nothing — run now |
-| 7 | Run 35A — Daily Report submit stubs (2 buttons) | Functional completeness | 10 | Nothing — run now |
-| 8 | Run 35B — Job Detail tab fixes (5 print catches) | Error visibility | 10 | Nothing — run now |
-| 9 | Write PE-009 prompts — HIG accessibility (fonts, tap targets, a11y labels) | Accessibility/App Store | 10 | Prompt writing needed first |
-| 10 | Fix PE-008 security items — unsigned tokens, brute-force, salt, LAN HTTP | Security | 9 | Core Swift implementation |
-| 11 | Write test coverage for PeopleService (47 methods, 18 tested) | Quality | 7 | test-coverage-maintenance |
-| 12 | Write test coverage for ChatService (33 methods, 14 tested) | Quality | 7 | test-coverage-maintenance |
-| 13 | Write test coverage for SettingsService (40 methods, 17 tested) | Quality | 7 | test-coverage-maintenance |
-| — | Run prompts 34A, 36A–52F (feature expansion) | Feature work | 10 | Lower priority than bug fixes |
+| 1 | Write PE-009c prompt — swipe-to-delete in 6 files | HIG / data safety | 10 | Write prompt first |
+| 2 | Write PE-001 prompt — Tool naming rename | Plan alignment | 10 | Write prompt first |
+| 3 | Write PE-009a prompt — Dynamic Type (88 fonts in 51 files) | Accessibility / App Store | 10 | Write prompt first |
+| 4 | Write PE-009b prompt — tap targets (12 undersized) | Touch usability | 10 | Write prompt first |
+| 5 | Fix PE-008a — unsigned session tokens | Security (high) | 9 | Core Swift edit |
+| 6 | Fix PE-008b — no brute-force protection on PIN | Security (high) | 9 | Core Swift edit |
+| 7 | Fix PE-008c — hardcoded legacy salt `:wiredpart` | Security (medium) | 9 | Core Swift edit |
+| 8 | Fix PE-008d — LAN sync plain HTTP | Security (medium) | 9 | Larger change (TLS) |
+| 9 | Write PE-009d prompt — color-only status indicators | Accessibility | 10 | Write prompt first |
+| 10 | Write PE-009e prompt series — a11y labels (180+ views) | VoiceOver | 10 | Large effort |
+| 11 | Write PE-003 prompt — flex pool self-assign on Scheduling | Plan alignment | 10 | Write prompt first |
+| 12 | Write test coverage for PeopleService (47 methods, ~18 tested) | Quality | 7 | test-coverage-maintenance |
+| 13 | Write test coverage for ChatService (33 methods, ~14 tested) | Quality | 7 | test-coverage-maintenance |
+| 14 | Write test coverage for SettingsService (40 methods, ~17 tested) | Quality | 7 | test-coverage-maintenance |
+| 15 | Document PE-013 warehouse drag-drop in ios-warehouse-pages.md | Plan alignment | 11 | Low priority |
 
 ---
 
@@ -119,10 +113,16 @@ Every feature, bug, or improvement follows this cycle:
 
 | Date | What | Step Completed | Commits |
 |------|------|----------------|---------|
+| 2026-03-29 | **Phase 1 COMPLETE** — all 279 Xcode AI prompts archived in `done/` | Steps 10-13 | 740f480 |
+| 2026-03-29 | PE-011 fixed: ReportDateRange.swift 12 force unwraps → guard/let + fallbacks | Steps 8-13 | 4b0c71a |
+| 2026-03-29 | PE-012 fixed: Calendar force unwraps in 15 iOS files → addingTimeInterval() | Steps 8-13 | 4b0c71a |
+| 2026-03-29 | PE-008e fixed: IOSDataExportPage export guard (export_reports permission) | Steps 9-13 | 4b0c71a |
+| 2026-03-29 | PE-009c partial: swipe-to-delete confirmation in IOSReportsRouter | Steps 9-10 | 4b0c71a |
+| 2026-03-29 | WarehouseLocationsPage: drag-and-drop floor plan + navigation path in detail | Steps 5-13 | 4b0c71a |
+| 2026-03-29 | AuthService/SettingsService: `isTableNotFoundError` helper extracted | Steps 8-13 | 4b0c71a |
+| 2026-03-29 | IOSClockPage: flex pool dispatch failure → visible errorMessage (silent→ UX) | Step 8 | 740f480 |
 | 2026-03-29 | Fix PE-006 (67A): userId attribution in audit session + notebook auto-save | Steps 10-13 | Direct iOS fix |
-| 2026-03-29 | 15 SQL bugs fixed, 128 new tests, 7 agents created | Steps 5-7, 12-13 | c116544+ |
-| 2026-03-28 | 31 SQL bugs fixed, sheet dismiss fixes | Steps 5-7 | Iteration 1-3 |
-| 2026-03-26 | Tier 8 Xcode prompts complete (65A-66C) | Steps 5-11 | Multiple |
+| 2026-03-29 | 68 SQL bugs fixed total, 733 tests, all Phase 1 Xcode prompts done | Steps 5-7, 12-13 | Multiple |
 
 ---
 
@@ -193,9 +193,11 @@ Every feature, bug, or improvement follows this cycle:
 | Security | Data export not gated behind admin permission | Medium — data exfiltration | Quick | 9 | 🔲 Xcode prompt needed |
 | Security | Hardcoded legacy salt in PIN hashing | Medium — rainbow tables | Quick | 9 | 🔲 Core fix needed |
 | Security | LAN sync uses plain HTTP | Medium — eavesdropping | Medium | 9 | 🔲 Core fix needed |
-| Runtime Safety | 12 force unwraps in ReportDateRange.swift — locale-dependent `dateInterval(of: .weekOfYear)!` | Medium — crash all date-filtered pages | Quick | 8 | 🔲 Xcode prompt needed (PE-011) |
-| Runtime Safety | `Calendar.current.date(byAdding:)!` default value in 15 files — should use `Date().addingTimeInterval()` | Low — practically safe | Quick | 8 | 🔲 Batch fix (PE-012) |
-| IOSClockPage | Uncommitted improvement: flex pool dispatch failure now shows errorMessage instead of silent print() | Low — already fixed in working tree | — | — | ⏳ Needs commit |
+| Runtime Safety | 12 force unwraps in ReportDateRange.swift | Medium — crash all date-filtered pages | Quick | 13 | ✅ Fixed (4b0c71a) — guard/let + addingTimeInterval fallbacks |
+| Runtime Safety | `Calendar.current.date(byAdding:)!` in 15 files | Low — practically safe | Quick | 13 | ✅ Fixed (4b0c71a) — all 15 files updated |
+| IOSClockPage | Flex pool dispatch failure now shows errorMessage instead of silent print() | Low | — | 13 | ✅ Fixed (740f480) |
+| Security | Data export not gated behind admin permission | Medium — data exfiltration | Quick | 13 | ✅ Fixed (4b0c71a) — export_reports permission check added |
+| Unplanned | WarehouseLocationsPage drag-and-drop + StorageUnitDetailSheet nav path | Medium — UX improvement | Medium | 11 | ⬜ Document in ios-warehouse-pages.md (PE-013) |
 
 ---
 
@@ -213,20 +215,51 @@ Every feature, bug, or improvement follows this cycle:
 
 | Agent | Last Run | Items Found | Items Fixed | Health |
 |-------|----------|-------------|-------------|--------|
-| hunt-fix-verify | 2026-03-29 | 51 SQL bugs, 143 missing tests | 51 SQL bugs, 143 tests added | ✅ Healthy |
-| test-coverage-maintenance | 2026-03-29 | Coverage gaps in 4 services; +42 tests this run (SchedulingService pipeline/capacity/reports, ChatService supplier messaging/attachments/thread info); fixed listSupplierBridges SQL column bug | +185 tests total | ✅ Healthy |
-| plan-enforcer | 2026-03-29 (run 2) | 1 new drift item (PE-010: audit data loss), iter 7 changes verified | Registry updated | ✅ Healthy |
-| dev-improvement-scanner | 2026-03-29 (run 3) | 2 new PEs (force unwraps), 1 IOSClockPage fix note, HIG count updated 55→88, IOSDataExportPage security confirmed | PE-011 + PE-012 tracked; pipeline updated | ✅ Healthy |
-| dev-pipeline-manager | 2026-03-29 (run 2) | PE-002 resolved, 3 new PEs, prompt queue audited | Pipeline updated | ✅ Healthy |
-| github-issues-sync | - | - | - | ⚠️ Pending first run (auth required) |
-| github-sync-and-review | 2026-03-29 | 4 commits | Committed, push pending | ⚠️ Push blocked (SSH) |
-| weekly-cleanup | 2026-03-29 (Sun) | 4 .DS_Store files | Removed; dead code scan: clean | ✅ Healthy |
+| hunt-fix-verify | 2026-03-29 | 68 SQL bugs total, 188 tests added over 9 iterations | All found items fixed | ✅ Healthy — no new items since last run |
+| test-coverage-maintenance | 2026-03-29 | Coverage gaps in PeopleService (38%), ChatService (42%), SettingsService (43%) | +185 tests total (733 passing) | ✅ Healthy — gaps remain, needs more runs |
+| plan-enforcer | 2026-03-29 (run 2) | PE-010 drift item, iter 7 changes verified | Registry updated | ✅ Healthy — PE-013 unplanned warehouse changes need documenting |
+| dev-improvement-scanner | 2026-03-29 (run 3) | PE-011, PE-012 found; PE-008e confirmed | All 3 now fixed in latest commits | ✅ Healthy |
+| dev-pipeline-manager | 2026-03-29 (run 3) | Phase 1 complete, PE-011/012/008e all closed, PE-013 new | Pipeline updated | ✅ Healthy |
+| github-issues-sync | — | — | — | ⚠️ Pending first run (auth required) |
+| github-sync-and-review | 2026-03-29 22:07 | 2 new commits (740f480, 4b0c71a) | Pushed to origin/main ✅ | ✅ Healthy — branch up to date |
+| weekly-cleanup | 2026-03-29 (Sun) | 4 .DS_Store files | Removed; dead code scan: clean | ✅ Healthy — next run 2026-04-05 |
 
 ---
 
 ## Pipeline Daily Summary Log
 
 _Appended by dev-pipeline-manager each run._
+
+---
+
+### 2026-03-29 — Pipeline Manager Run 3 (Phase 1 Complete — Phase 2 Launch)
+
+**Input:** 0 new GitHub issues, 0 new plans, 2 new commits since last run (740f480, 4b0c71a)
+
+**Changes since last pipeline run:**
+
+| Commit | What |
+|--------|------|
+| 740f480 | IOSClockPage: flex pool failure → visible errorMessage. Archived 9 prompts (35A, 35B, 35D, 35E, 35H, 66A, 66B, 66C) to done/ |
+| 4b0c71a | PE-011 fixed (ReportDateRange 12 force unwraps). PE-012 fixed (Calendar! in 15 files). PE-008e fixed (export guard). IOSReportsRouter swipe-to-delete confirmation. WarehouseLocationsPage drag-and-drop + nav path. AuthService/SettingsService isTableNotFoundError helper extracted. BreakService divide-by-zero guard. |
+
+**Phase status:**
+- **Phase 1 Xcode AI Prompts: COMPLETE** — all 279 prompts archived in `xcode-ai/fix-prompts/done/`
+- **Phase 2 begins** — HIG accessibility polish, security hardening, test coverage
+- Phase 2 queue: 8 items in `xcode-ai/fix-prompts/00-fix-order.md` — all need prompt files written first
+
+**PEs closed this run:** PE-011 ✅, PE-012 ✅, PE-008e ✅ (3 items)
+**PEs opened:** PE-013 (unplanned WarehouseLocations features — document in plan)
+**Plans created:** 0
+**Q&A generated:** 0 (no new feature work needing owner input)
+**New Xcode prompts written:** 0 (Phase 2 prompts not yet written)
+**Tests:** 733/733 passing (no new tests this run)
+**Build:** ✅ 0 errors, 0 warnings
+**Commits pushed:** ✅ origin/main up to date
+**Agent health:** 7/8 healthy, github-issues-sync still pending auth
+**Active PEs:** 5 open (PE-001, PE-003, PE-007, PE-008a-d, PE-009a-e, PE-013)
+**Backlog size:** 15 items (0 blocked on Q&A)
+**Next priority:** Write PE-009c prompt (6 remaining swipe-to-delete without confirmation)
 
 ---
 

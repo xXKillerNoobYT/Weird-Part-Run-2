@@ -305,3 +305,21 @@ Added during implementation (not in original plan). A gamification/engagement pa
 - Rankings across warehouse team
 
 **Note:** Good UX addition for worker motivation. Design spec needed if this expands. For now, document as an enhancement beyond the original plan scope.
+
+### `WarehouseLocationsPage` — Drag-and-Drop Floor Plan (PE-013, 2026-03-29)
+
+Unplanned enhancement added in commit 4b0c71a. Extends the floor plan grid with:
+
+**Drag-and-drop repositioning:**
+- `DraggableUnit` — lightweight `Codable + Transferable` struct using `.json` UTType (no Info.plist registration needed)
+- Storage unit tiles are `.draggable(DraggableUnit(...))` — user can drag units to new grid positions
+- Grid has `.dropDestination(for: DraggableUnit.self)` — computes target `(gridX, gridY)` from drop location ÷ cell size
+- Drop highlight overlay (`isGridDropTargeted` state) shows dashed blue border while dragging
+- On drop: calls `warehouseService.updateStorageUnit(id:gridX:gridY:)` then reloads
+
+**StorageUnitDetailSheet navigation path:**
+- Added `floorPlanName: String` parameter (passed from parent)
+- "Navigate Here" section shows step-by-step path: Floor Plan → Row N → Shelf N → Area N
+- Copy-to-clipboard button with 1.5s checkmark feedback (`copiedPath` state)
+
+**Note:** These are quality-of-life improvements to the floor plan interaction. No service changes needed — `updateStorageUnit(id:gridX:gridY:)` already existed. Fully consistent with the plan's vision of an interactive floor plan editor.
