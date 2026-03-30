@@ -1086,7 +1086,7 @@ public final class FleetService: Sendable {
                 let toolCount = try Int.fetchOne(dbConn, sql: """
                     SELECT COUNT(*) FROM tool_checkouts tc
                     JOIN tools t ON tc.tool_id = t.id
-                    WHERE tc.checked_out_by = ? AND tc.returned_at IS NULL
+                    WHERE tc.checked_out_by = ? AND tc.checked_in_at IS NULL
                     AND t.deleted_at IS NULL
                     """, arguments: [userId]) ?? 0
 
@@ -1241,12 +1241,12 @@ public final class FleetService: Sendable {
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT tc.id, t.name AS tool_name, t.tool_number,
                            COALESCE(u.display_name, u.email, 'Unknown') AS checked_out_by,
-                           COALESCE(tc.condition_at_checkout, 'good') AS condition,
+                           COALESCE(tc.checkout_condition, 'good') AS condition,
                            tc.checked_out_at
                     FROM tool_checkouts tc
                     JOIN tools t ON tc.tool_id = t.id
                     JOIN users u ON tc.checked_out_by = u.id
-                    WHERE tc.returned_at IS NULL
+                    WHERE tc.checked_in_at IS NULL
                     AND tc.checked_out_by IN (
                         SELECT user_id FROM vehicle_assignments
                         WHERE vehicle_id = ? AND is_active = 1 AND deleted_at IS NULL

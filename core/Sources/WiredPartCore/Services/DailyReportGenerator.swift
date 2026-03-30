@@ -103,14 +103,18 @@ public final class DailyReportGenerator: Sendable {
                 breaks.append(BreakSummary(type: "break", startTime: "", durationMinutes: totalBreakMinutes))
             }
 
-            let todoRows = try Row.fetchAll(dbConn, sql: """
-                SELECT te.name, te.current_stage
-                FROM todo_entries te
-                WHERE te.job_id = ? AND date(te.updated_at) = ?
-                  AND te.current_stage IN ('complete', 'punch_list', 'in_progress')
-                ORDER BY te.updated_at DESC
+            // notebook_entries connected via sections → notebooks → notebooks.job_id
+            let todoRows = (try? Row.fetchAll(dbConn, sql: """
+                SELECT ne.title AS name, COALESCE(ne.task_status, 'in_progress') AS current_stage
+                FROM notebook_entries ne
+                JOIN notebook_sections ns ON ns.id = ne.section_id
+                JOIN notebooks nb ON nb.id = ns.notebook_id
+                WHERE nb.job_id = ? AND date(ne.updated_at) = ?
+                  AND ne.entry_type = 'todo'
+                  AND ne.task_status IN ('complete', 'punch_list', 'in_progress')
+                ORDER BY ne.updated_at DESC
                 LIMIT 50
-                """, arguments: [jobId, dateStr])
+                """, arguments: [jobId, dateStr])) ?? []
 
             let todos = todoRows.map { row in
                 TodoSummary(name: row["name"] ?? "", stage: row["current_stage"] ?? "")
@@ -145,7 +149,7 @@ public final class DailyReportGenerator: Sendable {
 
             let messagesCount = try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM chat_messages
-                WHERE user_id = ? AND date(created_at) = ?
+                WHERE sender_id = ? AND date(created_at) = ?
                   AND deleted_at IS NULL
                 """, arguments: [userId, dateStr]) ?? 0
 

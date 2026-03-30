@@ -1339,7 +1339,7 @@ public final class PartsService: Sendable {
                 let sql = """
                     SELECT s.*,
                            COALESCE((SELECT COUNT(*) FROM brand_supplier_links bsl WHERE bsl.supplier_id = s.id AND bsl.deleted_at IS NULL), 0) AS brand_count,
-                           COALESCE((SELECT COUNT(*) FROM part_suppliers ps WHERE ps.supplier_id = s.id AND ps.deleted_at IS NULL), 0) AS part_count
+                           COALESCE((SELECT COUNT(*) FROM part_supplier_links ps WHERE ps.supplier_id = s.id AND ps.deleted_at IS NULL), 0) AS part_count
                     FROM suppliers s
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY s.name ASC
@@ -5367,7 +5367,7 @@ public final class PartsService: Sendable {
                 SELECT b.id, b.name, COUNT(DISTINCT ps.part_id) AS part_count
                 FROM brand_supplier_links bs
                 JOIN brands b ON b.id = bs.brand_id AND b.deleted_at IS NULL
-                LEFT JOIN part_suppliers ps ON ps.supplier_id = bs.supplier_id AND ps.deleted_at IS NULL
+                LEFT JOIN part_supplier_links ps ON ps.supplier_id = bs.supplier_id AND ps.deleted_at IS NULL
                 WHERE bs.supplier_id = ? AND bs.deleted_at IS NULL
                 GROUP BY b.id
                 ORDER BY b.name ASC
@@ -5408,7 +5408,7 @@ public final class PartsService: Sendable {
     public func getSupplierPartCount(supplierId: Int64) throws -> Int {
         try db.writer.read { dbConn in
             let row = try Row.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) AS cnt FROM part_suppliers
+                SELECT COUNT(*) AS cnt FROM part_supplier_links
                 WHERE supplier_id = ? AND deleted_at IS NULL
                 """, arguments: [supplierId])
             return row?["cnt"] ?? 0
@@ -5508,7 +5508,7 @@ public final class PartsService: Sendable {
             let rows = try Row.fetchAll(dbConn, sql: """
                 SELECT ps.supplier_id, s.name AS supplier_name,
                        ps.supplier_cost_price, ps.supplier_part_number, ps.is_preferred
-                FROM part_suppliers ps
+                FROM part_supplier_links ps
                 JOIN suppliers s ON s.id = ps.supplier_id AND s.deleted_at IS NULL
                 WHERE ps.part_id = ? AND ps.deleted_at IS NULL
                 ORDER BY ps.is_preferred DESC, s.name ASC
@@ -5537,7 +5537,7 @@ public final class PartsService: Sendable {
 
             let suppliers = try Row.fetchAll(dbConn, sql: """
                 SELECT s.*,
-                    (SELECT COUNT(*) FROM part_suppliers WHERE supplier_id = s.id AND deleted_at IS NULL) AS part_count,
+                    (SELECT COUNT(*) FROM part_supplier_links WHERE supplier_id = s.id AND deleted_at IS NULL) AS part_count,
                     (SELECT COUNT(*) FROM brand_supplier_links WHERE supplier_id = s.id AND deleted_at IS NULL) AS brand_count,
                     (SELECT COUNT(*) FROM purchase_orders WHERE supplier_id = s.id AND deleted_at IS NULL) AS po_count
                 FROM suppliers s

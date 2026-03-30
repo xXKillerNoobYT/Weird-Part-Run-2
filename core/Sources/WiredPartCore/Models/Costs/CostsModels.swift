@@ -133,6 +133,12 @@ public struct PriceHistory: Codable, FetchableRecord, MutablePersistableRecord, 
         case createdAt = "created_at"
     }
 
+    public mutating func willInsert(_ db: Database) throws {
+        if createdAt == nil {
+            createdAt = ISO8601DateFormatter().string(from: Date())
+        }
+    }
+
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }
 

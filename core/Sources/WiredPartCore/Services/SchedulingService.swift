@@ -689,9 +689,8 @@ public final class SchedulingService: Sendable {
             return try db.writer.read { dbConn -> [DispatchJobRow] in
                 let sql = """
                     SELECT j.id, j.job_name,
-                           js.stage_name
+                           j.status AS stage_name
                     FROM jobs j
-                    LEFT JOIN job_stages js ON js.job_id = j.id AND js.is_current = 1 AND js.deleted_at IS NULL
                     WHERE j.status = 'active'
                       AND j.deleted_at IS NULL
                     ORDER BY j.job_name
@@ -719,7 +718,7 @@ public final class SchedulingService: Sendable {
                     SELECT u.id, COALESCE(u.display_name, u.email, 'Unknown') AS name
                     FROM users u
                     WHERE u.deleted_at IS NULL
-                      AND u.status = 'active'
+                      AND u.is_active = 1
                       AND u.id NOT IN (
                           SELECT DISTINCT jd.user_id FROM job_dispatch jd
                           WHERE jd.dispatch_date >= ?
@@ -1058,15 +1057,13 @@ public final class SchedulingService: Sendable {
                 let sql = """
                     SELECT j.id, j.job_name,
                            COALESCE(j.customer_name, 'Unknown') AS customer_name,
-                           j.estimated_days,
+                           CAST(COALESCE(j.estimated_hours, 0) / 8 AS INTEGER) AS estimated_days,
                            j.notes,
-                           j.callback_date,
-                           j.callback_snoozed_until,
+                           j.due_date AS callback_date,
                            (SELECT COUNT(*) FROM job_dispatch jd
                             WHERE jd.job_id = j.id
                               AND jd.dispatch_date >= date('now')
-                              AND jd.deleted_at IS NULL) AS future_dispatches,
-                           COALESCE(j.is_favorite_gc, 0) AS is_favorite_gc
+                              AND jd.deleted_at IS NULL) AS future_dispatches
                     FROM jobs j
                     WHERE j.status = 'active'
                       AND j.deleted_at IS NULL
@@ -1080,16 +1077,12 @@ public final class SchedulingService: Sendable {
                     let customerName: String = row["customer_name"] ?? "Unknown"
                     let estimatedDays: Int? = row["estimated_days"] as Int?
                     let futureDispatches: Int = row["future_dispatches"] ?? 0
-                    let isFavoriteGC: Bool = (row["is_favorite_gc"] as Int?) == 1
                     let callbackDate: String? = row["callback_date"] as String?
-                    let callbackSnoozed: String? = row["callback_snoozed_until"] as String?
                     let notes: String? = row["notes"] as String?
 
                     // Categorize
                     let category: String
-                    if isFavoriteGC {
-                        category = "favorite_gc"
-                    } else if let days = estimatedDays, days <= 2 {
+                    if let days = estimatedDays, days <= 2 {
                         category = "small_job"
                     } else if futureDispatches == 0 {
                         category = "start_anytime"
@@ -1103,7 +1096,7 @@ public final class SchedulingService: Sendable {
                         estimatedDays: estimatedDays,
                         pipelineCategory: category,
                         callbackDate: callbackDate,
-                        callbackSnoozedUntil: callbackSnoozed,
+                        callbackSnoozedUntil: nil,
                         notes: notes
                     )
                 }
@@ -1114,27 +1107,27 @@ public final class SchedulingService: Sendable {
         }
     }
 
-    /// Snooze a callback to a future date.
+    /// Snooze a callback to a future date (updates the job's due_date).
     public func snoozeCallback(jobId: Int64, until: String) throws {
         try db.writer.write { dbConn in
             try dbConn.execute(
-                sql: "UPDATE jobs SET callback_snoozed_until = ? WHERE id = ?",
+                sql: "UPDATE jobs SET due_date = ?, updated_at = datetime('now') WHERE id = ?",
                 arguments: [until, jobId]
             )
         }
     }
 
-    /// Mark a callback as complete (clear the callback date).
+    /// Mark a callback as complete (clear the due date).
     public func markCallbackComplete(jobId: Int64, notes: String?) throws {
         try db.writer.write { dbConn in
             if let notes, !notes.isEmpty {
                 try dbConn.execute(
-                    sql: "UPDATE jobs SET callback_date = NULL, callback_snoozed_until = NULL, notes = COALESCE(notes || '\n', '') || ? WHERE id = ?",
+                    sql: "UPDATE jobs SET due_date = NULL, notes = COALESCE(notes || '\n', '') || ?, updated_at = datetime('now') WHERE id = ?",
                     arguments: [notes, jobId]
                 )
             } else {
                 try dbConn.execute(
-                    sql: "UPDATE jobs SET callback_date = NULL, callback_snoozed_until = NULL WHERE id = ?",
+                    sql: "UPDATE jobs SET due_date = NULL, updated_at = datetime('now') WHERE id = ?",
                     arguments: [jobId]
                 )
             }
@@ -1253,7 +1246,7 @@ public final class SchedulingService: Sendable {
 
     /// Get active crew member count.
     private func getActiveCrewSize() throws -> Int {
-        try safeCount(sql: "SELECT COUNT(*) FROM users WHERE status = 'active' AND deleted_at IS NULL")
+        try safeCount(sql: "SELECT COUNT(*) FROM users WHERE is_active = 1 AND deleted_at IS NULL")
     }
 
     /// Get jobs that are scheduled within a month range.
@@ -1261,7 +1254,9 @@ public final class SchedulingService: Sendable {
         do {
             return try db.writer.read { dbConn -> [JobSummary] in
                 let sql = """
-                    SELECT DISTINCT j.id, j.job_name, j.estimated_days, j.status
+                    SELECT DISTINCT j.id, j.job_name,
+                           CAST(COALESCE(j.estimated_hours, 0) / 8 AS INTEGER) AS estimated_days,
+                           j.status
                     FROM jobs j
                     WHERE j.deleted_at IS NULL
                       AND j.status IN ('active', 'scheduled', 'pending')
@@ -1379,7 +1374,8 @@ public final class SchedulingService: Sendable {
                     LEFT JOIN job_dispatch jd ON jd.user_id = u.id
                         AND jd.deleted_at IS NULL
                         AND jd.dispatch_date >= ? AND jd.dispatch_date <= ?
-                    WHERE u.deleted_at IS NULL AND u.is_active = 1 AND u.role != 'admin'
+                    WHERE u.deleted_at IS NULL AND u.is_active = 1
+                      AND u.id NOT IN (SELECT uh.user_id FROM user_hats uh JOIN hats h ON h.id = uh.hat_id WHERE h.name = 'admin')
                     GROUP BY u.id
                     HAVING dispatch_count > 0
                     ORDER BY scheduled_hours DESC

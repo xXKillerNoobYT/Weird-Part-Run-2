@@ -510,7 +510,7 @@ public final class ReportsService: Sendable {
     /// and total labor hours this month.
     public func getReportsStats() throws -> ReportsStats {
         let openPeriods = try safeCount(
-            sql: "SELECT COUNT(*) FROM billing_periods WHERE status = 'open' AND deleted_at IS NULL"
+            sql: "SELECT COUNT(*) FROM billing_periods WHERE locked_at IS NULL AND deleted_at IS NULL"
         )
 
         // Pending timesheets = labor entries from this month that are still clocked in
@@ -689,10 +689,10 @@ public final class ReportsService: Sendable {
             return try db.writer.read { dbConn -> [[String]] in
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT COALESCE(u.display_name, u.email, 'Unknown') AS employee_name,
-                           le.work_date AS date,
-                           ROUND(le.hours_regular + le.hours_overtime, 2) AS hours,
-                           COALESCE(j.name, '') AS job_name,
-                           COALESCE(le.activity_type, '') AS activity_type,
+                           date(le.clock_in) AS date,
+                           ROUND(le.regular_hours + le.overtime_hours, 2) AS hours,
+                           COALESCE(j.job_name, '') AS job_name,
+                           COALESCE(le.status, '') AS activity_type,
                            COALESCE(le.clock_in, '') AS clock_in,
                            COALESCE(le.clock_out, '') AS clock_out,
                            COALESCE(le.notes, '') AS notes
@@ -700,8 +700,8 @@ public final class ReportsService: Sendable {
                     LEFT JOIN users u ON u.id = le.user_id
                     LEFT JOIN jobs j ON j.id = le.job_id
                     WHERE le.deleted_at IS NULL
-                      AND le.work_date >= ? AND le.work_date <= ?
-                    ORDER BY le.work_date DESC, employee_name
+                      AND date(le.clock_in) >= ? AND date(le.clock_in) <= ?
+                    ORDER BY le.clock_in DESC, employee_name
                     """, arguments: [startStr, endStr])
                 return rows.map { row in
                     columns.map { col in
@@ -732,7 +732,7 @@ public final class ReportsService: Sendable {
                     SELECT COALESCE(p.name, 'Unknown') AS part_name,
                            COALESCE(pc.name, '') AS category,
                            ABS(sm.qty) AS quantity_used,
-                           COALESCE(j.name, '') AS job_name,
+                           COALESCE(j.job_name, '') AS job_name,
                            date(sm.created_at) AS date,
                            COALESCE(sm.unit_cost_at_move, p.company_cost_price, 0) AS cost,
                            ABS(sm.qty) * COALESCE(sm.unit_cost_at_move, p.company_cost_price, 0) AS total_cost
@@ -770,13 +770,13 @@ public final class ReportsService: Sendable {
         do {
             return try db.writer.read { dbConn -> [[String]] in
                 let rows = try Row.fetchAll(dbConn, sql: """
-                    SELECT j.name AS job_name,
-                           COALESCE((SELECT SUM(le.hours_regular * COALESCE(ew.hourly_rate, 0) +
-                                               le.hours_overtime * COALESCE(ew.hourly_rate, 0) * 1.5)
+                    SELECT j.job_name AS job_name,
+                           COALESCE((SELECT SUM(le.regular_hours * COALESCE(u2.pay_rate, 0) +
+                                               le.overtime_hours * COALESCE(u2.pay_rate, 0) * 1.5)
                                      FROM labor_entries le
-                                     LEFT JOIN employee_wages ew ON ew.user_id = le.user_id
+                                     LEFT JOIN users u2 ON u2.id = le.user_id
                                      WHERE le.job_id = j.id AND le.deleted_at IS NULL
-                                       AND le.work_date >= ? AND le.work_date <= ?), 0) AS labor_cost,
+                                       AND date(le.clock_in) >= ? AND date(le.clock_in) <= ?), 0) AS labor_cost,
                            COALESCE((SELECT SUM(ABS(sm.qty) * COALESCE(sm.unit_cost_at_move, 0))
                                      FROM stock_movements sm
                                      WHERE sm.job_id = j.id AND sm.deleted_at IS NULL
@@ -784,7 +784,7 @@ public final class ReportsService: Sendable {
                            COALESCE(j.budget_amount, 0) AS budget
                     FROM jobs j
                     WHERE j.deleted_at IS NULL AND j.status != 'archived'
-                    ORDER BY j.name
+                    ORDER BY j.job_name
                     """, arguments: [startStr, endStr, startStr, endStr])
                 return rows.map { row in
                     let labor: Double = row["labor_cost"] ?? 0
@@ -818,12 +818,12 @@ public final class ReportsService: Sendable {
                     SELECT COALESCE(t.name, 'Unknown') AS tool_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS employee_name,
                            tc.checked_out_at AS checkout_date,
-                           COALESCE(tc.returned_at, '') AS return_date,
-                           COALESCE(tc.condition_out, '') AS condition_out,
-                           COALESCE(tc.condition_in, '') AS condition_in
+                           COALESCE(tc.checked_in_at, '') AS return_date,
+                           COALESCE(tc.checkout_condition, '') AS condition_out,
+                           COALESCE(tc.return_condition, '') AS condition_in
                     FROM tool_checkouts tc
                     LEFT JOIN tools t ON t.id = tc.tool_id
-                    LEFT JOIN users u ON u.id = tc.user_id
+                    LEFT JOIN users u ON u.id = tc.checked_out_by
                     WHERE tc.deleted_at IS NULL
                       AND date(tc.checked_out_at) >= ? AND date(tc.checked_out_at) <= ?
                     ORDER BY tc.checked_out_at DESC

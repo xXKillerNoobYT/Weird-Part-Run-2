@@ -519,7 +519,7 @@ public final class ChatService: Sendable {
                 try dbConn.execute(sql: """
                     INSERT INTO chat_channels
                     (name, channel_type, created_by, is_system, is_active, created_at, updated_at)
-                    VALUES ('Office', 'office', 0, 1, 1, datetime('now'), datetime('now'))
+                    VALUES ('Office', 'office', 1, 1, 1, datetime('now'), datetime('now'))
                     """)
 
                 let channelId = dbConn.lastInsertedRowID
@@ -1028,7 +1028,7 @@ public final class ChatService: Sendable {
                 // Get channel members
                 let memberRows = try Row.fetchAll(dbConn, sql: """
                     SELECT ccm.id, ccm.user_id, ccm.role,
-                           COALESCE(u.display_name, u.first_name || ' ' || u.last_name, u.email, 'Unknown') AS name
+                           COALESCE(u.display_name, u.email, 'Unknown') AS name
                     FROM chat_channel_members ccm
                     LEFT JOIN users u ON u.id = ccm.user_id
                     WHERE ccm.channel_id = ? AND ccm.left_at IS NULL AND ccm.deleted_at IS NULL
@@ -1112,7 +1112,7 @@ public final class ChatService: Sendable {
                 // Get escalation records
                 let escRows = try Row.fetchAll(dbConn, sql: """
                     SELECT qe.id, qe.from_level, qe.to_level, qe.reason, qe.created_at,
-                           COALESCE(u.display_name, u.first_name || ' ' || u.last_name, u.email, 'Unknown') AS escalated_by_name
+                           COALESCE(u.display_name, u.email, 'Unknown') AS escalated_by_name
                     FROM qa_escalations qe
                     LEFT JOIN users u ON u.id = qe.escalated_by
                     WHERE qe.thread_id = ?
@@ -1514,7 +1514,7 @@ public final class ChatService: Sendable {
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT sb.id, sb.status, sb.protocol, sb.last_sync_at,
                            COALESCE(s.name, 'Unknown Supplier') AS supplier_name
-                    FROM supplier_bridges sb
+                    FROM supplier_channel_bridges sb
                     LEFT JOIN suppliers s ON s.id = sb.supplier_id
                     ORDER BY s.name ASC
                 """)

@@ -821,12 +821,11 @@ public final class JobsService: Sendable {
             return try db.writer.read { dbConn -> [JobListItem] in
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT j.id, j.job_number, j.job_name,
-                           c.company_name AS customer_name,
+                           j.customer_name,
                            j.status, j.priority, j.job_type,
                            (SELECT COUNT(*) FROM job_team_members WHERE job_id = j.id AND deleted_at IS NULL) AS team_count,
                            j.start_date, j.due_date
                     FROM jobs j
-                    LEFT JOIN customers c ON j.customer_id = c.id
                     INNER JOIN job_team_members tm ON tm.job_id = j.id AND tm.user_id = ? AND tm.deleted_at IS NULL
                     WHERE j.is_continuous = 1 AND j.deleted_at IS NULL
                     ORDER BY j.job_name ASC

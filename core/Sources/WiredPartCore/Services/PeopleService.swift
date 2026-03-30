@@ -262,7 +262,7 @@ public final class PeopleService: Sendable {
                            GROUP_CONCAT(h.name, ', ') AS hat_names
                     FROM users u
                     LEFT JOIN user_hats uh ON uh.user_id = u.id
-                    LEFT JOIN hats h ON h.id = uh.hat_id AND h.deleted_at IS NULL
+                    LEFT JOIN hats h ON h.id = uh.hat_id
                     WHERE \(whereClauses.joined(separator: " AND "))
                     GROUP BY u.id
                     ORDER BY u.display_name ASC, u.email ASC
@@ -314,7 +314,7 @@ public final class PeopleService: Sendable {
                         SELECT h.id, h.name, h.description
                         FROM hats h
                         JOIN user_hats uh ON uh.hat_id = h.id
-                        WHERE uh.user_id = ? AND h.deleted_at IS NULL
+                        WHERE uh.user_id = ?
                         ORDER BY h.name ASC
                         """,
                     arguments: [id]
@@ -390,7 +390,7 @@ public final class PeopleService: Sendable {
                 var args: [DatabaseValueConvertible?] = []
 
                 if let search, !search.isEmpty {
-                    whereClauses.append("(c.company_name LIKE ? OR u.display_name LIKE ? OR u.email LIKE ?)")
+                    whereClauses.append("(c.company_name LIKE ? OR c.name LIKE ? OR c.email LIKE ?)")
                     let pattern = "%\(search)%"
                     args.append(pattern)
                     args.append(pattern)
@@ -399,12 +399,11 @@ public final class PeopleService: Sendable {
 
                 let sql = """
                     SELECT c.id, c.company_name,
-                           COALESCE(u.display_name, u.email) AS contact_name,
-                           u.email, u.phone
+                           c.name AS contact_name,
+                           c.email, c.phone
                     FROM customers c
-                    LEFT JOIN users u ON u.id = c.user_id
                     WHERE \(whereClauses.joined(separator: " AND "))
-                    ORDER BY c.company_name ASC
+                    ORDER BY COALESCE(c.company_name, c.name) ASC
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
@@ -428,36 +427,37 @@ public final class PeopleService: Sendable {
     // MARK: - 3. Contractors
     // =========================================================================
 
-    /// List contractors (contacts with contact_type = 'contractor') with optional search.
+    /// List contractors (general_contractors table) with optional search.
     public func listContractors(search: String? = nil) throws -> [ContractorListItem] {
         do {
             return try db.writer.read { dbConn -> [ContractorListItem] in
-                var whereClauses = ["co.deleted_at IS NULL", "co.contact_type = 'contractor'"]
+                var whereClauses = ["gc.deleted_at IS NULL"]
                 var args: [DatabaseValueConvertible?] = []
 
                 if let search, !search.isEmpty {
-                    whereClauses.append("(co.first_name LIKE ? OR co.last_name LIKE ? OR co.company LIKE ? OR co.email LIKE ?)")
+                    whereClauses.append("(gc.company_name LIKE ? OR gc.contact_name LIKE ? OR gc.email LIKE ?)")
                     let pattern = "%\(search)%"
-                    args.append(pattern)
                     args.append(pattern)
                     args.append(pattern)
                     args.append(pattern)
                 }
 
                 let sql = """
-                    SELECT co.id, co.first_name, co.last_name, co.company, co.email, co.phone
-                    FROM contacts co
+                    SELECT gc.id, gc.contact_name, gc.company_name, gc.email, gc.phone
+                    FROM general_contractors gc
                     WHERE \(whereClauses.joined(separator: " AND "))
-                    ORDER BY co.last_name ASC, co.first_name ASC
+                    ORDER BY gc.company_name ASC
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.map { row in
-                    ContractorListItem(
+                    let contactName = (row["contact_name"] as String?) ?? ""
+                    let parts = contactName.split(separator: " ", maxSplits: 1)
+                    return ContractorListItem(
                         id: row["id"] ?? 0,
-                        firstName: row["first_name"] ?? "",
-                        lastName: row["last_name"] ?? "",
-                        company: row["company"] as String?,
+                        firstName: parts.first.map(String.init) ?? contactName,
+                        lastName: parts.count > 1 ? String(parts[1]) : "",
+                        company: row["company_name"] as String?,
                         email: row["email"] as String?,
                         phone: row["phone"] as String?
                     )
@@ -473,7 +473,7 @@ public final class PeopleService: Sendable {
     // MARK: - 4. Contacts
     // =========================================================================
 
-    /// List all contacts with optional search and contact type filter.
+    /// List all entity contacts with optional search and entity type filter.
     public func listContacts(
         search: String? = nil,
         contactType: String? = nil
@@ -484,7 +484,7 @@ public final class PeopleService: Sendable {
                 var args: [DatabaseValueConvertible?] = []
 
                 if let search, !search.isEmpty {
-                    whereClauses.append("(co.first_name LIKE ? OR co.last_name LIKE ? OR co.company LIKE ? OR co.email LIKE ?)")
+                    whereClauses.append("(co.first_name LIKE ? OR co.last_name LIKE ? OR co.role LIKE ? OR co.email LIKE ?)")
                     let pattern = "%\(search)%"
                     args.append(pattern)
                     args.append(pattern)
@@ -492,14 +492,14 @@ public final class PeopleService: Sendable {
                     args.append(pattern)
                 }
                 if let contactType, !contactType.isEmpty {
-                    whereClauses.append("co.contact_type = ?")
+                    whereClauses.append("co.entity_type = ?")
                     args.append(contactType)
                 }
 
                 let sql = """
-                    SELECT co.id, co.first_name, co.last_name, co.company,
-                           co.email, co.phone, co.contact_type
-                    FROM contacts co
+                    SELECT co.id, co.first_name, co.last_name, co.role,
+                           co.email, co.phone, co.entity_type
+                    FROM entity_contacts co
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY co.last_name ASC, co.first_name ASC
                     """
@@ -510,10 +510,10 @@ public final class PeopleService: Sendable {
                         id: row["id"] ?? 0,
                         firstName: row["first_name"] ?? "",
                         lastName: row["last_name"] ?? "",
-                        company: row["company"] as String?,
+                        company: row["role"] as String?,
                         email: row["email"] as String?,
                         phone: row["phone"] as String?,
-                        contactType: row["contact_type"] as String?
+                        contactType: row["entity_type"] as String?
                     )
                 }
             }
@@ -572,7 +572,6 @@ public final class PeopleService: Sendable {
                            COALESCE((SELECT COUNT(*) FROM user_hats uh
                                      WHERE uh.hat_id = h.id), 0) AS user_count
                     FROM hats h
-                    WHERE h.deleted_at IS NULL
                     ORDER BY h.name ASC
                     """
 
@@ -602,13 +601,13 @@ public final class PeopleService: Sendable {
             sql: "SELECT COUNT(*) FROM users WHERE deleted_at IS NULL"
         )
         let activeEmployees = try safeCount(
-            sql: "SELECT COUNT(*) FROM users WHERE status = 'active' AND deleted_at IS NULL"
+            sql: "SELECT COUNT(*) FROM users WHERE is_active = 1 AND deleted_at IS NULL"
         )
         let totalCustomers = try safeCount(
             sql: "SELECT COUNT(*) FROM customers WHERE deleted_at IS NULL"
         )
         let totalContacts = try safeCount(
-            sql: "SELECT COUNT(*) FROM contacts WHERE deleted_at IS NULL"
+            sql: "SELECT COUNT(*) FROM entity_contacts WHERE deleted_at IS NULL"
         )
         return PeopleStats(
             totalEmployees: totalEmployees,
@@ -890,9 +889,9 @@ public final class PeopleService: Sendable {
             return try db.writer.read { dbConn in
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT u.id, COALESCE(u.display_name, u.email) AS display_name,
-                           u.email, u.phone, u.status
+                           u.email, u.phone, u.is_active
                     FROM users u
-                    WHERE u.status = 'active' AND u.deleted_at IS NULL
+                    WHERE u.is_active = 1 AND u.deleted_at IS NULL
                       AND u.id NOT IN (
                         SELECT tm.user_id FROM employee_team_members tm
                         WHERE tm.team_id = ? AND tm.deleted_at IS NULL
@@ -933,11 +932,11 @@ public final class PeopleService: Sendable {
         }
     }
 
-    /// Delete a hat by ID (soft delete).
+    /// Delete a hat by ID (hard delete — hats table has no deleted_at).
     public func deleteHat(id: Int64) throws {
         try db.writer.write { dbConn in
             try dbConn.execute(
-                sql: "UPDATE hats SET deleted_at = datetime('now') WHERE id = ?",
+                sql: "DELETE FROM hats WHERE id = ?",
                 arguments: [id]
             )
         }
@@ -973,7 +972,6 @@ public final class PeopleService: Sendable {
                        CASE WHEN uh.id IS NOT NULL THEN 1 ELSE 0 END as is_assigned
                 FROM hats h
                 LEFT JOIN user_hats uh ON uh.hat_id = h.id AND uh.user_id = ? AND uh.deleted_at IS NULL
-                WHERE h.deleted_at IS NULL
                 ORDER BY h.name ASC
                 """, arguments: [employeeId])
 
@@ -1075,8 +1073,8 @@ public final class PeopleService: Sendable {
             return try db.writer.read { dbConn in
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT le.id, le.user_id,
-                           COALESCE(u.display_name, u.first_name || ' ' || u.last_name, u.email, 'Unknown') as name,
-                           COALESCE(j.job_name, j.name, 'Shop') as job_name,
+                           COALESCE(u.display_name, u.email, 'Unknown') as name,
+                           COALESCE(j.job_name, 'Shop') as job_name,
                            le.clock_in,
                            ne.title as current_todo
                     FROM labor_entries le
@@ -1114,22 +1112,23 @@ public final class PeopleService: Sendable {
         }
     }
 
-    /// Get employees who are off today (from time_off_requests).
+    /// Get employees who are off today (from schedule_exceptions).
     public func getEmployeesOffToday() throws -> [EmployeeSummary] {
         let today = formatDateYMD(Date())
         do {
             return try db.writer.read { dbConn in
                 let rows = try Row.fetchAll(dbConn, sql: """
-                    SELECT tor.id, tor.user_id,
-                           COALESCE(u.display_name, u.first_name || ' ' || u.last_name, u.email, 'Unknown') as name,
-                           tor.request_type as off_reason
-                    FROM time_off_requests tor
-                    LEFT JOIN users u ON u.id = tor.user_id
-                    WHERE tor.status = 'approved'
-                      AND tor.start_date <= ? AND tor.end_date >= ?
-                      AND tor.deleted_at IS NULL
+                    SELECT se.id, se.user_id,
+                           COALESCE(u.display_name, u.email, 'Unknown') as name,
+                           se.exception_type as off_reason
+                    FROM schedule_exceptions se
+                    LEFT JOIN users u ON u.id = se.user_id
+                    WHERE se.is_approved = 1
+                      AND se.exception_date = ?
+                      AND se.exception_type = 'time_off'
+                      AND se.deleted_at IS NULL
                     ORDER BY u.display_name ASC
-                    """, arguments: [today, today])
+                    """, arguments: [today])
 
                 return rows.map { row in
                     EmployeeSummary(
@@ -1156,18 +1155,18 @@ public final class PeopleService: Sendable {
             return try db.writer.read { dbConn in
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT ec.id,
-                           COALESCE(u.display_name, u.first_name || ' ' || u.last_name, 'Unknown') as employee_name,
+                           COALESCE(u.display_name, 'Unknown') as employee_name,
                            ec.cert_name,
-                           ec.expiration_date
-                    FROM employee_certifications ec
+                           ec.expiry_date
+                    FROM certifications ec
                     LEFT JOIN users u ON u.id = ec.user_id
-                    WHERE ec.expiration_date >= ? AND ec.expiration_date <= ?
+                    WHERE ec.expiry_date >= ? AND ec.expiry_date <= ?
                       AND ec.deleted_at IS NULL
-                    ORDER BY ec.expiration_date ASC
+                    ORDER BY ec.expiry_date ASC
                     """, arguments: [todayStr, futureStr])
 
                 return rows.compactMap { row -> CertificationAlert? in
-                    let expiryStr: String = row["expiration_date"] ?? ""
+                    let expiryStr: String = row["expiry_date"] ?? ""
                     let f = DateFormatter()
                     f.dateFormat = "yyyy-MM-dd"
                     guard let expiryDate = f.date(from: expiryStr) else { return nil }
@@ -1192,18 +1191,16 @@ public final class PeopleService: Sendable {
         do {
             return try db.writer.read { dbConn in
                 let rows = try Row.fetchAll(dbConn, sql: """
-                    SELECT se.id, t.name as team_name,
-                           COALESCE(j.job_name, j.name, 'Unassigned') as job_name,
-                           (SELECT COUNT(*) FROM team_members tm WHERE tm.team_id = t.id AND tm.deleted_at IS NULL) as member_count
-                    FROM schedule_entries se
-                    LEFT JOIN teams t ON t.id = se.team_id
-                    LEFT JOIN jobs j ON j.id = se.job_id
-                    WHERE date(se.start_date) <= ? AND date(se.end_date) >= ?
-                      AND se.deleted_at IS NULL
-                      AND se.team_id IS NOT NULL
-                    GROUP BY se.team_id, se.job_id
-                    ORDER BY t.name ASC
-                    """, arguments: [today, today])
+                    SELECT et.id, et.name as team_name,
+                           COALESCE(j.job_name, 'Unassigned') as job_name,
+                           (SELECT COUNT(*) FROM employee_team_members etm WHERE etm.team_id = et.id AND etm.deleted_at IS NULL) as member_count
+                    FROM employee_teams et
+                    LEFT JOIN job_dispatch jd ON jd.dispatch_date = ? AND jd.deleted_at IS NULL
+                    LEFT JOIN jobs j ON j.id = jd.job_id
+                    WHERE et.is_active = 1 AND et.deleted_at IS NULL
+                    GROUP BY et.id
+                    ORDER BY et.name ASC
+                    """, arguments: [today])
 
                 return rows.map { row in
                     TeamAssignment(
@@ -1278,7 +1275,7 @@ public final class PeopleService: Sendable {
         try db.writer.read { dbConn in
             // Customer base info
             let custRow = try Row.fetchOne(dbConn, sql: """
-                SELECT id, COALESCE(company_name, name) as company_name, contact_name, email, phone, address, customer_type
+                SELECT id, COALESCE(company_name, name) as company_name, name as contact_name, email, phone, address, 'standard' as customer_type
                 FROM customers WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [customerId])
 
@@ -1307,7 +1304,7 @@ public final class PeopleService: Sendable {
 
             // Job history
             let jobRows = try Row.fetchAll(dbConn, sql: """
-                SELECT j.id, COALESCE(j.job_name, j.name, '') as name,
+                SELECT j.id, COALESCE(j.job_name, '') as name,
                        COALESCE(j.job_number, '') as job_number, COALESCE(j.status, 'unknown') as status,
                        j.start_date
                 FROM jobs j
@@ -1355,7 +1352,7 @@ public final class PeopleService: Sendable {
             // Communication log
             let commRows = try Row.fetchAll(dbConn, sql: """
                 SELECT cc.id, cc.comm_type, cc.content,
-                       COALESCE(u.display_name, u.first_name || ' ' || u.last_name, 'System') as created_by,
+                       COALESCE(u.display_name, 'System') as created_by,
                        cc.created_at
                 FROM customer_communications cc
                 LEFT JOIN users u ON u.id = cc.created_by
@@ -1456,11 +1453,11 @@ public final class PeopleService: Sendable {
         try db.writer.read { dbConn in
             // Contractors are linked via subcontractor_schedules or job_general_contractors
             let rows = try Row.fetchAll(dbConn, sql: """
-                SELECT DISTINCT j.id, COALESCE(j.job_name, j.name, '') as name,
-                       COALESCE(j.status, 'unknown') as status, j.end_date as completed_date
+                SELECT DISTINCT j.id, COALESCE(j.job_name, '') as name,
+                       COALESCE(j.status, 'unknown') as status, j.completed_date
                 FROM jobs j
-                LEFT JOIN subcontractor_schedules ss ON ss.job_id = j.id AND ss.contractor_id = ?
-                LEFT JOIN job_general_contractors jgc ON jgc.job_id = j.id AND jgc.contractor_id = ?
+                LEFT JOIN subcontractor_schedules ss ON ss.job_id = j.id AND ss.gc_id = ?
+                LEFT JOIN job_general_contractors jgc ON jgc.job_id = j.id AND jgc.gc_id = ?
                 WHERE (ss.id IS NOT NULL OR jgc.id IS NOT NULL) AND j.deleted_at IS NULL
                 ORDER BY j.created_at DESC
                 LIMIT 50
@@ -1482,7 +1479,7 @@ public final class PeopleService: Sendable {
         try db.writer.read { dbConn in
             let rows = try Row.fetchAll(dbConn, sql: """
                 SELECT cn.id, cn.content,
-                       COALESCE(u.display_name, u.first_name || ' ' || u.last_name, 'System') as created_by,
+                       COALESCE(u.display_name, 'System') as created_by,
                        cn.created_at
                 FROM contractor_notes cn
                 LEFT JOIN users u ON u.id = cn.created_by

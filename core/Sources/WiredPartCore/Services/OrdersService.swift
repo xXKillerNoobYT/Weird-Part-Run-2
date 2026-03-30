@@ -1824,8 +1824,8 @@ public final class OrdersService: Sendable {
             // Record in status history
             try dbConn.execute(
                 sql: """
-                    INSERT INTO order_status_history (order_type, order_id, old_status, new_status, changed_at)
-                    VALUES ('purchase_order', ?, (SELECT status FROM purchase_orders WHERE id = ?), ?, datetime('now'))
+                    INSERT INTO order_status_history (entity_type, entity_id, old_status, new_status, changed_by, created_at)
+                    VALUES ('purchase_order', ?, (SELECT status FROM purchase_orders WHERE id = ?), ?, 1, datetime('now'))
                     """,
                 arguments: [id, id, status]
             )
@@ -2133,7 +2133,7 @@ public final class OrdersService: Sendable {
                        li.qty_ordered, li.qty_received, li.unit_cost,
                        li.status AS line_status,
                        po.expected_delivery, po.order_date,
-                       jpo.job_id, j.name AS job_name
+                       jpo.job_id, j.job_name AS job_name
                 FROM po_line_items li
                 JOIN purchase_orders po ON po.id = li.po_id
                 LEFT JOIN parts p ON p.id = li.part_id
@@ -2256,8 +2256,8 @@ public final class OrdersService: Sendable {
                 sql: """
                     INSERT INTO returns
                     (return_number, return_type, reason, supplier_id, po_id, job_id,
-                     status, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 'pending', datetime('now'), datetime('now'))
+                     status, initiated_by, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'pending', 1, datetime('now'), datetime('now'))
                     """,
                 arguments: [returnNumber, returnType, reason, supplierId, poId, jobId]
             )

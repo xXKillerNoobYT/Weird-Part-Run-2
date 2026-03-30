@@ -186,7 +186,7 @@ public final class AIDispatchService: Sendable {
         }
         context += "\nJobs Needing Workers (\(jobs.count)):\n"
         for j in jobs {
-            context += "- \(j.name) (ID: \(j.id), est. \(j.estimatedDays ?? 0) days)\n"
+            context += "- \(j.name) (ID: \(j.id), est. \(j.estimatedHours ?? 0) hours)\n"
         }
         return context
     }
@@ -203,7 +203,7 @@ public final class AIDispatchService: Sendable {
     private struct JobInfo: Sendable {
         let id: Int64
         let name: String
-        let estimatedDays: Int?
+        let estimatedHours: Double?
     }
 
     /// Get workers available on a given date (not on time off).
@@ -213,7 +213,7 @@ public final class AIDispatchService: Sendable {
                 let sql = """
                     SELECT u.id, COALESCE(u.display_name, u.email, 'Unknown') AS name
                     FROM users u
-                    WHERE u.status = 'active' AND u.deleted_at IS NULL
+                    WHERE u.is_active = 1 AND u.deleted_at IS NULL
                       AND u.id NOT IN (
                           SELECT se.user_id FROM schedule_exceptions se
                           WHERE se.exception_date = ? AND se.exception_type = 'time_off'
@@ -237,7 +237,7 @@ public final class AIDispatchService: Sendable {
         do {
             return try db.writer.read { dbConn -> [JobInfo] in
                 let sql = """
-                    SELECT j.id, j.job_name AS name, j.estimated_days
+                    SELECT j.id, j.job_name AS name, j.estimated_hours
                     FROM jobs j
                     WHERE j.status = 'active' AND j.deleted_at IS NULL
                     ORDER BY j.job_name
@@ -245,7 +245,7 @@ public final class AIDispatchService: Sendable {
                     """
                 let rows = try Row.fetchAll(dbConn, sql: sql)
                 return rows.map { row in
-                    JobInfo(id: row["id"] ?? 0, name: row["name"] ?? "", estimatedDays: row["estimated_days"] as Int?)
+                    JobInfo(id: row["id"] ?? 0, name: row["name"] ?? "", estimatedHours: row["estimated_hours"] as Double?)
                 }
             }
         } catch {
