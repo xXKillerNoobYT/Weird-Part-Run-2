@@ -152,7 +152,12 @@ final class AppCore: ObservableObject {
             }
 
             if result.users.isEmpty && !result.hasProfile {
-                // Brand-new device — show two-path onboarding
+                // Brand-new device — show two-path onboarding.
+                // Clear stale UserDefaults flags so a fresh-build DB doesn't
+                // inherit "already completed" flags from a previous install.
+                UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+                UserDefaults.standard.removeObject(forKey: "hasCompletedCompanySetup")
+                UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
                 needsOnboarding = true
                 needsBootstrap = false
             } else if result.users.isEmpty && result.hasProfile {
@@ -387,10 +392,14 @@ final class AppCore: ObservableObject {
         // 3. Delete the database file
         try DeviceResetService.deleteDatabaseFile(atPath: dbPath)
 
-        // 4. Clear saved session
+        // 4. Clear saved session and all onboarding UserDefaults flags so the
+        //    fresh DB is not skipped by stale "already completed" flags.
         currentUser = nil
         currentToken = nil
         permissions = []
+        UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+        UserDefaults.standard.removeObject(forKey: "hasCompletedCompanySetup")
+        UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
 
         // 5. Re-bootstrap — will detect no users/profile and set needsOnboarding = true
         isReady = false
