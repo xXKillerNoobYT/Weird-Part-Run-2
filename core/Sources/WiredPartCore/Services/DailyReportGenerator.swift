@@ -135,7 +135,7 @@ public final class DailyReportGenerator: Sendable {
             }
 
             let qaRows = try Row.fetchAll(dbConn, sql: """
-                SELECT qt.question, qt.status
+                SELECT qt.subject AS question, qt.status
                 FROM qa_threads qt
                 WHERE qt.job_id = ? AND date(qt.created_at) = ?
                   AND qt.deleted_at IS NULL

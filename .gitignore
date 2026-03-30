@@ -18,7 +18,7 @@ Package.resolved
 *.db-shm
 
 # OS
-.DS_Store
+**/.DS_Store
 Thumbs.db
 
 # IDE

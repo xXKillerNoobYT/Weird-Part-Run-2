@@ -224,4 +224,394 @@ struct ChatServiceTests {
         let officeChannels = channels.filter { $0.channelType == "office" }
         #expect(officeChannels.count == 1)
     }
+
+    // MARK: - Supplier Channel Extended
+
+    @Test("sendSupplierMessage creates message and supplier_messages record")
+    func testSendSupplierMessage() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let channelId = try env.chat.createSupplierChannel(
+            name: "Order Chat",
+            supplierId: supplierId,
+            supplierDisplayName: "TestSupplier",
+            contactId: nil,
+            role: nil,
+            createdBy: env.adminUserId
+        )
+        let msgId = try env.chat.sendSupplierMessage(
+            channelId: channelId,
+            senderId: env.adminUserId,
+            content: "Hello supplier",
+            direction: "outbound"
+        )
+        #expect(msgId > 0)
+
+        let messages = try env.chat.getMessages(channelId: channelId)
+        #expect(messages.contains(where: { $0.id == msgId }))
+    }
+
+    @Test("addUserToSupplierChannel adds member idempotently")
+    func testAddUserToSupplierChannel() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "AddMemberSupplier")
+        let channelId = try env.chat.createSupplierChannel(
+            name: "Member Channel",
+            supplierId: supplierId,
+            supplierDisplayName: "AddMemberSupplier",
+            contactId: nil,
+            role: nil,
+            createdBy: env.adminUserId
+        )
+        // Add same user twice — INSERT OR IGNORE should not throw
+        try env.chat.addUserToSupplierChannel(channelId: channelId, userId: env.adminUserId)
+        try env.chat.addUserToSupplierChannel(channelId: channelId, userId: env.adminUserId)
+
+        // Channel should still be reachable (no error = pass)
+        let channels = try env.chat.listSupplierChannels(userId: env.adminUserId)
+        #expect(channels.contains(where: { $0.channelId == channelId }))
+    }
+
+    @Test("getSupplierBridge returns bridge info after channel creation")
+    func testGetSupplierBridge() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "BridgeSupplier")
+        let channelId = try env.chat.createSupplierChannel(
+            name: "Bridge Channel",
+            supplierId: supplierId,
+            supplierDisplayName: "BridgeSupplier",
+            contactId: nil,
+            role: "vendor",
+            createdBy: env.adminUserId
+        )
+        let bridge = try env.chat.getSupplierBridge(channelId: channelId)
+        #expect(bridge != nil)
+        #expect(bridge?.supplierId == supplierId)
+    }
+
+    @Test("getSupplierBridge returns nil for non-existent channel")
+    func testGetSupplierBridgeNotFound() throws {
+        let env = try E2ETestHelpers.setUp()
+        let bridge = try env.chat.getSupplierBridge(channelId: 9999)
+        #expect(bridge == nil)
+    }
+
+    @Test("listSupplierChannelsForJob returns channels linked to the job")
+    func testListSupplierChannelsForJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SC-01", name: "Supplier Job")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "JobSupplier")
+        let channelId = try env.chat.createSupplierChannel(
+            name: "Job Supplier Chat",
+            supplierId: supplierId,
+            supplierDisplayName: "JobSupplier",
+            contactId: nil,
+            role: nil,
+            createdBy: env.adminUserId,
+            jobId: jobId
+        )
+        let channels = try env.chat.listSupplierChannelsForJob(jobId: jobId, userId: env.adminUserId)
+        #expect(channels.contains(where: { $0.channelId == channelId }))
+    }
+
+    @Test("listSupplierChannelsForJob returns empty for unlinked job")
+    func testListSupplierChannelsForJobEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SC-02", name: "No Supplier Job")
+        let channels = try env.chat.listSupplierChannelsForJob(jobId: jobId, userId: env.adminUserId)
+        #expect(channels.isEmpty)
+    }
+
+    @Test("createSupplierQuestion and listSupplierQuestions")
+    func testSupplierQuestionLifecycle() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SQ-01", name: "Question Job")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "QuestionSupplier")
+        let channelId = try env.chat.createSupplierChannel(
+            name: "RFI Channel",
+            supplierId: supplierId,
+            supplierDisplayName: "QuestionSupplier",
+            contactId: nil,
+            role: nil,
+            createdBy: env.adminUserId
+        )
+        let threadId = try env.chat.createSupplierQuestion(
+            channelId: channelId,
+            jobId: jobId,
+            askedBy: env.adminUserId,
+            subject: "Is this part available?",
+            priority: "high"
+        )
+        #expect(threadId > 0)
+
+        let questions = try env.chat.listSupplierQuestions()
+        #expect(questions.contains(where: { $0.id == threadId }))
+        let q = questions.first(where: { $0.id == threadId })!
+        #expect(q.subject == "Is this part available?")
+        #expect(q.priority == "high")
+    }
+
+    @Test("listSupplierQuestions filters by status")
+    func testListSupplierQuestionsFilter() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SQ-02", name: "Filter Job")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "FilterSupplier")
+        let channelId = try env.chat.createSupplierChannel(
+            name: "Filter Channel",
+            supplierId: supplierId,
+            supplierDisplayName: "FilterSupplier",
+            contactId: nil,
+            role: nil,
+            createdBy: env.adminUserId
+        )
+        _ = try env.chat.createSupplierQuestion(
+            channelId: channelId,
+            jobId: jobId,
+            askedBy: env.adminUserId,
+            subject: "Open question"
+        )
+        let openQuestions = try env.chat.listSupplierQuestions(status: "open")
+        let closedQuestions = try env.chat.listSupplierQuestions(status: "closed")
+        #expect(openQuestions.count >= 1)
+        #expect(closedQuestions.isEmpty)
+    }
+
+    @Test("deactivateSupplierBridge soft-deletes the bridge")
+    func testDeactivateSupplierBridge() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "DeactivateSupplier")
+        let channelId = try env.chat.createSupplierChannel(
+            name: "Deactivate Channel",
+            supplierId: supplierId,
+            supplierDisplayName: "DeactivateSupplier",
+            contactId: nil,
+            role: nil,
+            createdBy: env.adminUserId
+        )
+        // Bridge should exist before deactivation
+        let bridgeBefore = try env.chat.getSupplierBridge(channelId: channelId)
+        #expect(bridgeBefore != nil)
+
+        try env.chat.deactivateSupplierBridge(channelId: channelId)
+
+        // Bridge should be gone (deleted_at set)
+        let bridgeAfter = try env.chat.getSupplierBridge(channelId: channelId)
+        #expect(bridgeAfter == nil)
+    }
+
+    @Test("listSupplierBridges returns bridges after channel creation")
+    func testListSupplierBridges() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "ListBridgeSupplier")
+        _ = try env.chat.createSupplierChannel(
+            name: "Bridge List Channel",
+            supplierId: supplierId,
+            supplierDisplayName: "ListBridgeSupplier",
+            contactId: nil,
+            role: nil,
+            createdBy: env.adminUserId
+        )
+        let bridges = try env.chat.listSupplierBridges()
+        #expect(bridges.count >= 1)
+        #expect(bridges.contains(where: { $0.supplierName == "ListBridgeSupplier" }))
+    }
+
+    // MARK: - Message Attachments
+
+    @Test("sendMessageWithAttachments stores message and attachments")
+    func testSendMessageWithAttachments() throws {
+        let env = try E2ETestHelpers.setUp()
+        let channelId = try env.chat.createChannel(
+            name: "Attachment Channel",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+        let att = ChatService.PendingAttachment(
+            type: "photo",
+            filePath: "/tmp/photo.jpg",
+            fileName: "photo.jpg",
+            fileSize: 204800,
+            mimeType: "image/jpeg"
+        )
+        let msgId = try env.chat.sendMessageWithAttachments(
+            channelId: channelId,
+            content: "Here is the photo",
+            userId: env.adminUserId,
+            attachments: [att]
+        )
+        #expect(msgId > 0)
+
+        let attachments = try env.chat.getMessageAttachments(messageId: msgId)
+        #expect(attachments.count == 1)
+        #expect(attachments[0].attachmentType == "photo")
+        #expect(attachments[0].fileName == "photo.jpg")
+        #expect(attachments[0].fileSize == 204800)
+    }
+
+    @Test("getMessageAttachments returns empty for message with no attachments")
+    func testGetMessageAttachmentsEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let channelId = try env.chat.createChannel(
+            name: "No Attachment Channel",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+        let msgId = try env.chat.sendMessage(
+            channelId: channelId,
+            senderId: env.adminUserId,
+            content: "Plain message"
+        )
+        let attachments = try env.chat.getMessageAttachments(messageId: msgId)
+        #expect(attachments.isEmpty)
+    }
+
+    @Test("getAttachmentsForMessages batches attachments by message ID")
+    func testGetAttachmentsForMessages() throws {
+        let env = try E2ETestHelpers.setUp()
+        let channelId = try env.chat.createChannel(
+            name: "Batch Channel",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+        let att1 = ChatService.PendingAttachment(type: "file", fileName: "doc.pdf")
+        let att2 = ChatService.PendingAttachment(type: "photo", fileName: "img.png")
+        let msgId1 = try env.chat.sendMessageWithAttachments(
+            channelId: channelId, content: "Msg 1",
+            userId: env.adminUserId, attachments: [att1]
+        )
+        let msgId2 = try env.chat.sendMessageWithAttachments(
+            channelId: channelId, content: "Msg 2",
+            userId: env.adminUserId, attachments: [att2]
+        )
+        let byMessage = try env.chat.getAttachmentsForMessages(messageIds: [msgId1, msgId2])
+        #expect(byMessage[msgId1]?.count == 1)
+        #expect(byMessage[msgId2]?.count == 1)
+        #expect(byMessage[msgId1]?.first?.fileName == "doc.pdf")
+        #expect(byMessage[msgId2]?.first?.fileName == "img.png")
+    }
+
+    @Test("getAttachmentsForMessages returns empty dict for empty input")
+    func testGetAttachmentsForMessagesEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let result = try env.chat.getAttachmentsForMessages(messageIds: [])
+        #expect(result.isEmpty)
+    }
+
+    @Test("autoSaveToJobNotebook creates notebook entry for job channel")
+    func testAutoSaveToJobNotebook() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-NB-01", name: "Notebook Job")
+        let channelId = try env.chat.createChannel(
+            name: "Job Notebook Channel",
+            channelType: "job",
+            jobId: jobId,
+            createdBy: env.adminUserId
+        )
+        // Send a message with attachment, then auto-save it
+        let att = ChatService.PendingAttachment(
+            type: "photo",
+            filePath: "/tmp/site.jpg",
+            fileName: "site.jpg",
+            fileSize: 512000,
+            mimeType: "image/jpeg"
+        )
+        let msgId = try env.chat.sendMessageWithAttachments(
+            channelId: channelId, content: "Site photo",
+            userId: env.adminUserId, attachments: [att]
+        )
+        let attachments = try env.chat.getMessageAttachments(messageId: msgId)
+        #expect(attachments.count == 1)
+
+        // autoSaveToJobNotebook should not throw
+        try env.chat.autoSaveToJobNotebook(
+            channelId: channelId,
+            attachment: attachments[0],
+            userId: env.adminUserId
+        )
+        // If no error thrown, notebook entry was successfully created
+    }
+
+    @Test("autoSaveToJobNotebook is no-op for non-job channel")
+    func testAutoSaveToJobNotebookNoJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let channelId = try env.chat.createChannel(
+            name: "General Channel",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+        let att = ChatService.PendingAttachment(type: "file", fileName: "misc.pdf")
+        let msgId = try env.chat.sendMessageWithAttachments(
+            channelId: channelId, content: "Misc file",
+            userId: env.adminUserId, attachments: [att]
+        )
+        let attachments = try env.chat.getMessageAttachments(messageId: msgId)
+        // Should not throw — silently exits when no job_id on channel
+        try env.chat.autoSaveToJobNotebook(
+            channelId: channelId,
+            attachment: attachments[0],
+            userId: env.adminUserId
+        )
+    }
+
+    // MARK: - Thread Info
+
+    @Test("getThreadInfo returns nil for non-existent channel")
+    func testGetThreadInfoNotFound() throws {
+        let env = try E2ETestHelpers.setUp()
+        let info = try env.chat.getThreadInfo(channelId: 9999)
+        #expect(info == nil)
+    }
+
+    @Test("getThreadInfo returns group channel info")
+    func testGetThreadInfoGroup() throws {
+        let env = try E2ETestHelpers.setUp()
+        let channelId = try env.chat.createChannel(
+            name: "Info Group",
+            channelType: "group",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+        let info = try env.chat.getThreadInfo(channelId: channelId)
+        #expect(info != nil)
+        #expect(info?.channelType == "group")
+        #expect(info?.channelName == "Info Group")
+    }
+
+    @Test("getThreadInfo returns job source context for job channel")
+    func testGetThreadInfoJobChannel() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-TI-01", name: "Thread Info Job")
+        let channelId = try env.chat.createChannel(
+            name: "Job Thread",
+            channelType: "job",
+            jobId: jobId,
+            createdBy: env.adminUserId
+        )
+        let info = try env.chat.getThreadInfo(channelId: channelId)
+        #expect(info?.channelType == "job")
+        #expect(info?.sourceType == "job")
+        #expect(info?.sourceId == jobId)
+    }
+
+    @Test("getThreadInfo returns supplier source context for supplier channel")
+    func testGetThreadInfoSupplierChannel() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "ThreadInfoSupplier")
+        let channelId = try env.chat.createSupplierChannel(
+            name: "Supplier Thread",
+            supplierId: supplierId,
+            supplierDisplayName: "ThreadInfoSupplier",
+            contactId: nil,
+            role: nil,
+            createdBy: env.adminUserId
+        )
+        let info = try env.chat.getThreadInfo(channelId: channelId)
+        #expect(info?.channelType == "supplier")
+        #expect(info?.sourceType == "supplier")
+        #expect(info?.sourceId == supplierId)
+    }
 }

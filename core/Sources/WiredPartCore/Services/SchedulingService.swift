@@ -1375,7 +1375,7 @@ public final class SchedulingService: Sendable {
                         AND jd.deleted_at IS NULL
                         AND jd.dispatch_date >= ? AND jd.dispatch_date <= ?
                     WHERE u.deleted_at IS NULL AND u.is_active = 1
-                      AND u.id NOT IN (SELECT uh.user_id FROM user_hats uh JOIN hats h ON h.id = uh.hat_id WHERE h.name = 'admin')
+                      AND u.id NOT IN (SELECT uh.user_id FROM user_hats uh JOIN hats h ON h.id = uh.hat_id WHERE h.name = 'Admin')
                     GROUP BY u.id
                     HAVING dispatch_count > 0
                     ORDER BY scheduled_hours DESC

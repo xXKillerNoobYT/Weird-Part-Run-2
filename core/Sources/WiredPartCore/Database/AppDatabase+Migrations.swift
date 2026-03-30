@@ -75,6 +75,7 @@ extension AppDatabase {
         registerMigration058BackgroundTaskLog(&migrator)
         registerMigration059MultiUserAuditAssignments(&migrator)
         registerMigration060PermissionKeysExpansion(&migrator)
+        registerMigration061AuditSessionMetadata(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4552,6 +4553,24 @@ extension AppDatabase {
 }
 
 // MARK: - Migration 060: Permission Keys Expansion (39A)
+
+extension AppDatabase {
+    private static func registerMigration061AuditSessionMetadata(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("061_audit_session_metadata") { db in
+            // Add zone/scope metadata columns to audit_sessions_v2.
+            // These were silently dropped when createAuditSession() migrated from
+            // audit_sessions (v1) to audit_sessions_v2 — the v2 schema only had
+            // session_type + started_by. IOSAuditSetupView collects zone, spot-check
+            // count, include_zero_stock, and notes; this migration ensures they persist.
+            try db.alter(table: "audit_sessions_v2") { t in
+                t.add(column: "zone", .text)
+                t.add(column: "sample_size", .integer)
+                t.add(column: "include_zero_stock", .integer).notNull().defaults(to: 1)
+                t.add(column: "notes", .text)
+            }
+        }
+    }
+}
 
 extension AppDatabase {
     private static func registerMigration060PermissionKeysExpansion(_ migrator: inout DatabaseMigrator) {

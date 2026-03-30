@@ -1008,7 +1008,7 @@ public final class WarehouseService: Sendable {
                     sql: """
                         SELECT rsi.*,
                                pli.part_id,
-                               pli.unit_price,
+                               pli.unit_cost,
                                p.name AS part_name,
                                p.code AS part_code
                         FROM receiving_session_items rsi
@@ -1030,7 +1030,7 @@ public final class WarehouseService: Sendable {
                         expectedQty: row["expected_qty"] ?? 0,
                         receivedQty: row["received_qty"] ?? 0,
                         actualCost: row["actual_cost"] as Double?,
-                        unitPrice: row["unit_price"] as Double?,
+                        unitPrice: row["unit_cost"] as Double?,
                         scannedAt: row["scanned_at"] as String?,
                         notes: row["notes"] as String?
                     )
@@ -1377,15 +1377,17 @@ public final class WarehouseService: Sendable {
         zone: String?,
         sampleSize: Int?,
         includeZeroStock: Bool,
-        notes: String?
+        notes: String?,
+        userId: Int64 = 1
     ) throws -> Int64 {
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
-                    INSERT INTO audit_sessions (scope, zone, sample_size, include_zero_stock, notes, status, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, 'active', datetime('now'), datetime('now'))
+                    INSERT INTO audit_sessions_v2
+                        (session_type, started_by, zone, sample_size, include_zero_stock, notes, status, started_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'active', datetime('now'))
                     """,
-                arguments: [scope, zone, sampleSize, includeZeroStock ? 1 : 0, notes]
+                arguments: [scope, userId, zone, sampleSize, includeZeroStock ? 1 : 0, notes]
             )
             return dbConn.lastInsertedRowID
         }
@@ -1396,7 +1398,7 @@ public final class WarehouseService: Sendable {
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
-                    UPDATE audit_sessions SET status = 'completed', completed_at = datetime('now'), updated_at = datetime('now')
+                    UPDATE audit_sessions_v2 SET status = 'completed', completed_at = datetime('now')
                     WHERE id = ?
                     """,
                 arguments: [sessionId]
@@ -2002,7 +2004,7 @@ public final class WarehouseService: Sendable {
 
                 let sql = """
                     SELECT jl.id AS jpo_line_id, jl.qty_requested,
-                           COALESCE(jl.qty_fulfilled, 0) AS qty_fulfilled,
+                           COALESCE(jl.qty_received, 0) AS qty_fulfilled,
                            jpo.id AS jpo_id, jpo.job_id,
                            COALESCE(j.job_name, 'Unknown Job') AS job_name
                     FROM jpo_line_items jl
@@ -2142,13 +2144,13 @@ public final class WarehouseService: Sendable {
     private static func locationDisplayName(type: String, id: Int64) -> String {
         switch type {
         case "warehouse":
-            return "Warehouse #\(id)"
+            return "Warehouse \(id)"
         case "truck":
-            return "Truck #\(id)"
+            return "Truck \(id)"
         case "trailer":
-            return "Trailer #\(id)"
+            return "Trailer \(id)"
         case "job":
-            return "Job #\(id)"
+            return "Job \(id)"
         case "pulled":
             return "Pulled Staging"
         default:
@@ -3466,7 +3468,7 @@ public final class WarehouseService: Sendable {
     public func getPartCode(partId: Int64) throws -> String? {
         try db.writer.read { dbConn in
             try String.fetchOne(dbConn, sql: """
-                SELECT part_number FROM parts WHERE id = ?
+                SELECT code FROM parts WHERE id = ?
                 """, arguments: [partId])
         }
     }

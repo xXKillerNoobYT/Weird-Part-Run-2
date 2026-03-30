@@ -195,4 +195,36 @@ struct ReportsServiceTests {
             #expect(first[0] == "Test Wrench")  // tool_name
         }
     }
+
+    // MARK: - Job Costs Report (budget_limit fix)
+
+    @Test("Job costs report uses budget_limit column correctly")
+    func testJobCostsReport() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        // Set budget_limit on the job
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE jobs SET budget_limit = 50000.0 WHERE id = ?",
+                arguments: [jobId]
+            )
+        }
+
+        let columns = ["job_name", "labor_cost", "material_cost", "total_cost", "budget", "variance"]
+        let rows = try env.reports.generateCustomReport(
+            type: "job_costs",
+            columns: columns,
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date.distantFuture,
+            filters: [:]
+        )
+        #expect(rows.count >= 1)
+        // Verify budget column reads correctly (no crash = budget_limit column is correct)
+        if let first = rows.first {
+            #expect(first.count == columns.count)
+            // budget column should be "50000.00"
+            #expect(first[4] == "50000.00")
+        }
+    }
 }

@@ -136,91 +136,155 @@ Run these prompts in order. Each one ends with "start prompt N next" so you can 
 | 33F | Receiving Routing Flow | Full condition check + smart routing (used/damaged/good → staging/shelf/returns) | DONE |
 | 33G | Staging Box Management | Physical box system: sizes, labels, full/open, contents view, move-all | DONE |
 | 33H | Duplicate Wizard Cleanup | Delete inline wizard from WarehouseMovementsPage, use IOSMovementWizard | DONE |
-| 34A | UI Quality Audit | Sheet dismiss, sticky buttons, navigation links, data display, form validation | |
-| 35A | Daily Report Submit Stubs | Wire 2 TODO submit buttons + remove service bypass + raw SQL in Dashboard | |
-| 35B | Job Detail Tab Fixes | 5 print() catches → state, client-side→server-side filtering, dead code | |
-| 35C | Scheduling Raw SQL | IOSSubSchedulePage + IOSWeeklyAvailabilityPage: GRDB removal + error states | |
-| 35D | GeofenceAlertView Fix | Remove GRDB + raw SQL, fix silent clock-in/out errors, show error feedback | |
-| 35E | Fleet GRDB + ErrorStateView | Remove GRDB from 2 pages, wire ErrorStateView in 6 pages, remove print() | |
-| 35F | Audit Session ID + PO Delete Nav | Fix hardcoded session ID 0, navigate back after draft delete, save reject reason | |
-| 35G | Settings GRDB Removal | Remove GRDB + raw SQL from 10 Settings pages, replace DispatchQueue | |
-| 35H | Companion GRDB + Hats Delete | Remove GRDB from 2 Companion sheets, add hat delete confirmation | |
-| 35I | Reports + Tools GRDB | Remove GRDB from PreBilling, BookkeeperExport, ToolKits | |
-| 36A | Floor Plan Migration | 7 tables: floor_plans, features, units, levels, areas, bins, assignments + 15 service methods | |
-| 36B | Floor Plan Editor UI | Grid view, drag-drop units, drill-in levels→areas→bins, sticker checklist, movable section | |
-| 36C | Floor Plan Navigation | Warehouse GPS directions, QR scan full location view, user position tracking | |
-| 36D | Onboarding Wizard | 6-step progressive setup, Quick Count mode, Save & Exit, AI suggestions | |
-| 37A | Audit Confidence Migration | 8 tables: confidence, sessions, counts, misplaced, user ratings, org ratings, consolidation | |
-| 37B | Audit Count Tab UI | Hidden counts, speed mode, misplaced cart, quick audit prompts, walking path queue | |
-| 37C | Organization Tab | Consolidation voting, org checklist, rating rollup area→unit→row→warehouse | |
-| 37D | User Ratings + Leaderboard | Leaderboard for all, detail for managers, multi-user consensus, training suggestions | |
-| 38A | Break/Lunch Compliance | 4-tier policy (state+company), break_records, auto-fill, 15-min rounding, state presets | |
-| 38B | Break/Lunch UI | Clock page buttons, settings page, clock-out questionnaire, bonus tracking | |
-| 39A | Hats Permission Audit | Cross-cutting: replace hardcoded role checks with hasPermission(), seed new permission keys | |
-| 40A | Clock To-Do Integration | Clock-in to-do picker, Mark Done + Pick Next, work type selector (New/Warranty) | |
-| 40B | Clock Live Timer | Live elapsed timer, today's hours per job/to-do, Switch Job one-action button | |
-| 41A | Teams Detail Page | IOSTeamDetailPage with members/roles/jobs, smart cards on list page, add/remove members | |
-| 42A | Chat Unified Inbox | Unified inbox all message types, smart cards, unread badges, message preview | |
-| 42B | Chat Thread Info | iMessage-style expandable info panel: source context, escalation, people, quick actions | |
-| 42C | Chat Attachments | Photo/file/part-ref attachments, composer buttons, auto-save to job notebook | |
-| 42D | Q&A Escalation | Visual escalation ladder (Worker⇄Lead⇄Manager⇄Office), push back, smart cards on Q&A/RFI | |
-| 43A | Notebook Structure | Migration: section_groups, sections, block-based entries (9 block types), hierarchy service | |
-| 43B | Notebook Detail Rebuild | Hierarchical layout, collapsible sections, block rendering, shortcut commands (/h1, /checklist) | |
-| 43C | Notebook Templates | Job starter templates, page templates, template editor, "Create from Template" | |
-| 43D | Panel Schedule | Panel schedule builder: circuit grid, breaker types, 240V spanning, PDF export | |
-| 43E | Daily Report System | Auto-generated daily report from clock/to-do data, AI verification, user notes, templates | |
-| 44A | People Dashboard | Who's working (live), who's off, expiring certs, team assignments, smart cards | |
-| 44B | Employee Detail Rebuild | Remove GRDB/raw SQL, service layer edits, hat visibility rules, edit contact sheet | |
-| 44C | Customer Detail Full | Contacts, billing (hat-gated), job history, communication log, lifetime stats | |
-| 44D | Contractor Detail | Qualifications, rating (subs only), job history, notes, ActiveSheet fix | |
-| 44E | Contacts Redesign | Smart cards by type, active/inactive sections, sort options, type badges | |
-| 44F | Payment Tracking | Company setting enable/disable, green-to-red status bar, overdue alerts, payment records | |
-| 45A | Jobs List Redesign | Smart cards (8 statuses), AI summary, stage bar, dual progress, payment hold privacy | |
-| 45B | Job Detail Dashboard | Overview tab as dashboard: metrics, AI summary, today's activity, quick actions, warranty | |
-| 45C | Job Types & Status | Migration: warranty fields, continuous job, payment hold, clock-in blocking | |
-| 45D | Warranty To-Do | Work classification (regular/warranty), manager review, reclassification tracking, warranty timer | |
-| 46A | Scheduling Calendar | Month view, day dots/badges, tap detail, half-day scheduling (AM/PM) | |
-| 46B | Dispatch Board | Gantt-style board, employee bars, half-day, unassigned pool, time-off conflict warnings | |
-| 46C | Short-Term Pipeline | Start Anytime/Schedule Needed/Favorite GC/Small Jobs, callback snooze, AI crew suggestions | |
-| 46D | Long-Term Pipeline | 3-year timeline, monthly capacity bars, bid tracker, AI capacity warnings | |
-| 46E | AI Dispatch | 3 suggestions with points scoring, dedicated AI chat, learning from picks, early finish | |
-| 46F | Job Estimation | Questionnaire system, stage-aware, "?" unknowns, AI learning after 15+ jobs, capacity calc | |
-| 47A | Tools Dashboard Redesign | Smart cards (Total/Checked Out/Maint Due/Missing), QR-first quick actions, recent checkouts | |
-| 47B | Tool Detail Rebuild | Contents checklist, REQUIRED condition check, 2yr version history, edit-without-permission | |
-| 47C | Kit Management | 4 kit types, missing tools status, full inspection checklist, restock consumables, kit history | |
-| 47D | Tool Trade | Trade flow with condition checks, 7-day timeout, lost/stolen reporting (company vs personal) | |
-| 47E | Tool Maintenance Types | 5 maintenance types: time/usage/schedule/decay/condition, confidence decay math | |
-| 47F | Tool Management Page | Rename Admin→Management, bulk ops, categories, policies, locations, audit trail | |
-| 48A | My Vehicle Primary | Smart cards, Truck Stock vs Transfer Area (MIN/TARGET/MAX), quick actions, trailer | |
-| 48B | Vehicle Detail Tabs | 7 tabs: Overview, Parts, Tools, Assignments, Maintenance, Usage, Inspections | |
-| 48C | Trailer Mini Warehouse | Storage units, own MIN/TARGET/MAX, shop vs field rules, location history | |
-| 48D | Pre-Trip Inspection | Customizable checklist per vehicle type, 4 sections, Pass/Fail/Conditional, clock-in tie | |
-| 48E | Fleet Dashboard KPIs | Smart cards (vehicles/active/maint/inspect/trailers), cost summary (hat-gated), maintenance | |
-| 49A | Reports Categories | Reorganize: Labor, Financial, Fleet, Warehouse, Scheduling, Custom, Shared categories | |
-| 49B | Reports Export | [Export PDF] + [Export CSV] toolbar on every report page, UIGraphicsPDFRenderer | |
-| 49C | Fleet/Warehouse/Scheduling Reports | 10 new report pages: fuel, maint trends, mileage, utilization, inventory, backorders, etc. | |
-| 49D | Report Builder | Pick type→fields→filters→generate, save configs, run saved reports with new dates | |
-| 50A | Office Dashboard | AI daily briefing (cached 1hr), Needs Attention (priority colors), schedule, financials | |
-| 50B | Unified Approvals | JPO + deletion + tool edit + warranty + time-off in one queue, inline actions, sorted by age | |
-| 50C | Office Chat Channel | Auto-created Office channel, hat-gated membership, "Office" badge in inbox | |
-| 50D | Office Router Cleanup | Remove report routes, add Dashboard/Approvals/Pipeline/Teams/Reports tabs | |
-| 51A | Standard Filter Bar | Reusable StandardFilterBar: quick date filters + custom range + page-specific filters, apply to all pages | |
-| 52A | Settings Grouped Nav | Reorganize SettingsRouter into 10 grouped sections with search | |
-| 52B | Settings Operations Pages | Break/Lunch Policy, Tool Policies, Pre-Trip Checklists, Dispatch Preferences | |
-| 52C | Settings Warehouse Pages | Forecast Config, Organization Thresholds, Audit Settings | |
-| 52D | Settings Template Pages | Daily Report Templates, Job Estimation Questions, Report Templates | |
-| 52E | Settings Functional Features | Wire Backups, Export, Update Check, AI Config, Sync Now to real code | |
-| 52F | Settings Sync Classification | Sync scope indicators (company/personal/device) on all settings | | |
-| 66A | Office Dashboard Dead Buttons | Fix 6 dead/TODO navigation buttons on Office Dashboard + QR Scanner Details | |
-| 66B | Old Chips to Smart Cards (3) | Convert IOSToolRegistryPage, IOSEmployeesPage, IOSJobNotebooksPage filter chips to SmartFilterCard | |
-| 66C | User-Friendly Error Messages | Add 3 new error cases to UserFriendlyError + replace ~165 remaining error.localizedDescription | |
-| 64D | Silent Guard Returns | Fix last 6 silent guard-let returns (5 in Wishlist, 1 in QR Scanner) that don't set error state | |
-| 64E | Panel Schedule Persist | Wire panel schedule save through NotebooksService — create-or-update + load-on-open | |
-| 64F | AI Dispatch Surface | Add Apply/Dismiss buttons to AI suggestion sheet, wire recordDispatcherChoice + dispatch creation | |
-| 64G | JPO Movement Detail | Replace "Coming Soon" movement stub with real detail view using WarehouseService | |
-| 65A | Guided Onboarding Walkthrough | Comprehensive per-module onboarding with hat filtering, progress tracking, post-onboarding hints | |
-| 65B | Company Setup Wizard | 8-step new company data entry wizard for admins (profile, employees, hats, job, parts, warehouse, breaks) | |
-| 65C | Warehouse Setup Fix | Fix broken Steps 2-6 in warehouse wizard — functional unit placement, sticker checklist, part assignment, counting, targets | |
+| 34A | UI Quality Audit | Sheet dismiss, sticky buttons, navigation links, data display, form validation | ✅ done (verified 2026-03-29) |
+| 35A | Daily Report Submit Stubs | Wire 2 TODO submit buttons + remove service bypass + raw SQL in Dashboard | ✅ done (verified 2026-03-29) |
+| 35B | Job Detail Tab Fixes | 5 print() catches → state, client-side→server-side filtering, dead code | ✅ done (verified 2026-03-29) |
+| 35C | ~~Scheduling Raw SQL~~ | ~~IOSSubSchedulePage + IOSWeeklyAvailabilityPage: GRDB removal + error states~~ | **SKIP** — GRDB/DispatchQueue already removed (verified 2026-03-29) |
+| 35D | GeofenceAlertView Fix | Remove GRDB + raw SQL, fix silent clock-in/out errors, show error feedback | ✅ done (verified 2026-03-29) |
+| 35E | Fleet GRDB + ErrorStateView | Remove GRDB from 2 pages, wire ErrorStateView in 6 pages, remove print() | ✅ done (verified 2026-03-29) |
+| 35F | Audit Session ID + PO Delete Nav | Fix hardcoded session ID 0, navigate back after draft delete, save reject reason | ✅ done (verified 2026-03-29) |
+| 35G | ~~Settings GRDB Removal~~ | ~~Remove GRDB + raw SQL from 10 Settings pages, replace DispatchQueue~~ | **SKIP** — all 10 Settings pages already clean (verified 2026-03-29) |
+| 35H | Companion GRDB + Hats Delete | Remove GRDB from 2 Companion sheets, add hat delete confirmation | ✅ done (verified 2026-03-29) |
+| 35I | ~~Reports + Tools GRDB~~ | ~~Remove GRDB from PreBilling, BookkeeperExport, ToolKits~~ | **SKIP** — GRDB already removed (verified 2026-03-29) |
+| 36A | Floor Plan Migration | 7 tables: floor_plans, features, units, levels, areas, bins, assignments + 15 service methods | ✅ done (verified 2026-03-29) |
+| 36B | Floor Plan Editor UI | Grid view, drag-drop units, drill-in levels→areas→bins, sticker checklist, movable section | ✅ done (verified 2026-03-29) |
+| 36C | Floor Plan Navigation | Warehouse GPS directions, QR scan full location view, user position tracking | ✅ done (verified 2026-03-29) |
+| 36D | Onboarding Wizard | 6-step progressive setup, Quick Count mode, Save & Exit, AI suggestions | ✅ done (verified 2026-03-29) |
+| 37A | Audit Confidence Migration | 8 tables: confidence, sessions, counts, misplaced, user ratings, org ratings, consolidation | ✅ done (verified 2026-03-29) |
+| 37B | Audit Count Tab UI | Hidden counts, speed mode, misplaced cart, quick audit prompts, walking path queue | ✅ done (verified 2026-03-29) |
+| 37C | Organization Tab | Consolidation voting, org checklist, rating rollup area→unit→row→warehouse | ✅ done (verified 2026-03-29) |
+| 37D | User Ratings + Leaderboard | Leaderboard for all, detail for managers, multi-user consensus, training suggestions | ✅ done (verified 2026-03-29) |
+| 38A | Break/Lunch Compliance | 4-tier policy (state+company), break_records, auto-fill, 15-min rounding, state presets | ✅ done (verified 2026-03-29) |
+| 38B | Break/Lunch UI | Clock page buttons, settings page, clock-out questionnaire, bonus tracking | ✅ done (verified 2026-03-29) |
+| 39A | Hats Permission Audit | Cross-cutting: replace hardcoded role checks with hasPermission(), seed new permission keys | ✅ done (verified 2026-03-29) |
+| 40A | Clock To-Do Integration | Clock-in to-do picker, Mark Done + Pick Next, work type selector (New/Warranty) | ✅ done (verified 2026-03-29) |
+| 40B | Clock Live Timer | Live elapsed timer, today's hours per job/to-do, Switch Job one-action button | ✅ done (verified 2026-03-29) |
+| 41A | Teams Detail Page | IOSTeamDetailPage with members/roles/jobs, smart cards on list page, add/remove members | ✅ done (verified 2026-03-29) |
+| 42A | Chat Unified Inbox | Unified inbox all message types, smart cards, unread badges, message preview | ✅ done (verified 2026-03-29) |
+| 42B | Chat Thread Info | iMessage-style expandable info panel: source context, escalation, people, quick actions | ✅ done (verified 2026-03-29) |
+| 42C | Chat Attachments | Photo/file/part-ref attachments, composer buttons, auto-save to job notebook | ✅ done (verified 2026-03-29) |
+| 42D | Q&A Escalation | Visual escalation ladder (Worker⇄Lead⇄Manager⇄Office), push back, smart cards on Q&A/RFI | ✅ done (verified 2026-03-29) |
+| 43A | Notebook Structure | Migration: section_groups, sections, block-based entries (9 block types), hierarchy service | ✅ done (verified 2026-03-29) |
+| 43B | Notebook Detail Rebuild | Hierarchical layout, collapsible sections, block rendering, shortcut commands (/h1, /checklist) | ✅ done (verified 2026-03-29) |
+| 43C | Notebook Templates | Job starter templates, page templates, template editor, "Create from Template" | ✅ done (verified 2026-03-29) |
+| 43D | Panel Schedule | Panel schedule builder: circuit grid, breaker types, 240V spanning, PDF export | ✅ done (verified 2026-03-29) |
+| 43E | Daily Report System | Auto-generated daily report from clock/to-do data, AI verification, user notes, templates | ✅ done (verified 2026-03-29) |
+| 44A | People Dashboard | Who's working (live), who's off, expiring certs, team assignments, smart cards | ✅ done (verified 2026-03-29) |
+| 44B | Employee Detail Rebuild | Remove GRDB/raw SQL, service layer edits, hat visibility rules, edit contact sheet | ✅ done (verified 2026-03-29) |
+| 44C | Customer Detail Full | Contacts, billing (hat-gated), job history, communication log, lifetime stats | ✅ done (verified 2026-03-29) |
+| 44D | Contractor Detail | Qualifications, rating (subs only), job history, notes, ActiveSheet fix | ✅ done (verified 2026-03-29) |
+| 44E | Contacts Redesign | Smart cards by type, active/inactive sections, sort options, type badges | ✅ done (verified 2026-03-29) |
+| 44F | Payment Tracking | Company setting enable/disable, green-to-red status bar, overdue alerts, payment records | ✅ done (verified 2026-03-29) |
+| 45A | Jobs List Redesign | Smart cards (8 statuses), AI summary, stage bar, dual progress, payment hold privacy | ✅ done (verified 2026-03-29) |
+| 45B | Job Detail Dashboard | Overview tab as dashboard: metrics, AI summary, today's activity, quick actions, warranty | ✅ done (verified 2026-03-29) |
+| 45C | Job Types & Status | Migration: warranty fields, continuous job, payment hold, clock-in blocking | ✅ done (verified 2026-03-29) |
+| 45D | Warranty To-Do | Work classification (regular/warranty), manager review, reclassification tracking, warranty timer | ✅ done (verified 2026-03-29) |
+| 46A | Scheduling Calendar | Month view, day dots/badges, tap detail, half-day scheduling (AM/PM) | ✅ done (verified 2026-03-29) |
+| 46B | Dispatch Board | Gantt-style board, employee bars, half-day, unassigned pool, time-off conflict warnings | ✅ done (verified 2026-03-29) |
+| 46C | Short-Term Pipeline | Start Anytime/Schedule Needed/Favorite GC/Small Jobs, callback snooze, AI crew suggestions | ✅ done (verified 2026-03-29) |
+| 46D | Long-Term Pipeline | 3-year timeline, monthly capacity bars, bid tracker, AI capacity warnings | ✅ done (verified 2026-03-29) |
+| 46E | AI Dispatch | 3 suggestions with points scoring, dedicated AI chat, learning from picks, early finish | ✅ done (verified 2026-03-29) |
+| 46F | Job Estimation | Questionnaire system, stage-aware, "?" unknowns, AI learning after 15+ jobs, capacity calc | ✅ done (verified 2026-03-29) |
+| 47A | Tools Dashboard Redesign | Smart cards (Total/Checked Out/Maint Due/Missing), QR-first quick actions, recent checkouts | ✅ done (verified 2026-03-29) |
+| 47B | Tool Detail Rebuild | Contents checklist, REQUIRED condition check, 2yr version history, edit-without-permission | ✅ done (verified 2026-03-29) |
+| 47C | Kit Management | 4 kit types, missing tools status, full inspection checklist, restock consumables, kit history | ✅ done (verified 2026-03-29) |
+| 47D | Tool Trade | Trade flow with condition checks, 7-day timeout, lost/stolen reporting (company vs personal) | ✅ done (verified 2026-03-29) |
+| 47E | Tool Maintenance Types | 5 maintenance types: time/usage/schedule/decay/condition, confidence decay math | ✅ done (verified 2026-03-29) |
+| 47F | Tool Management Page | Rename Admin→Management, bulk ops, categories, policies, locations, audit trail | ✅ done (verified 2026-03-29) |
+| 48A | My Vehicle Primary | Smart cards, Truck Stock vs Transfer Area (MIN/TARGET/MAX), quick actions, trailer | ✅ done (verified 2026-03-29) |
+| 48B | Vehicle Detail Tabs | 7 tabs: Overview, Parts, Tools, Assignments, Maintenance, Usage, Inspections | ✅ done (verified 2026-03-29) |
+| 48C | Trailer Mini Warehouse | Storage units, own MIN/TARGET/MAX, shop vs field rules, location history | ✅ done (verified 2026-03-29) |
+| 48D | Pre-Trip Inspection | Customizable checklist per vehicle type, 4 sections, Pass/Fail/Conditional, clock-in tie | ✅ done (verified 2026-03-29) |
+| 48E | Fleet Dashboard KPIs | Smart cards (vehicles/active/maint/inspect/trailers), cost summary (hat-gated), maintenance | ✅ done (verified 2026-03-29) |
+| 49A | Reports Categories | Reorganize: Labor, Financial, Fleet, Warehouse, Scheduling, Custom, Shared categories | ✅ done (verified 2026-03-29) |
+| 49B | Reports Export | [Export PDF] + [Export CSV] toolbar on every report page, UIGraphicsPDFRenderer | ✅ done (verified 2026-03-29) |
+| 49C | Fleet/Warehouse/Scheduling Reports | 10 new report pages: fuel, maint trends, mileage, utilization, inventory, backorders, etc. | ✅ done (verified 2026-03-29) |
+| 49D | Report Builder | Pick type→fields→filters→generate, save configs, run saved reports with new dates | ✅ done (verified 2026-03-29) |
+| 50A | Office Dashboard | AI daily briefing (cached 1hr), Needs Attention (priority colors), schedule, financials | ✅ done (verified 2026-03-29) |
+| 50B | Unified Approvals | JPO + deletion + tool edit + warranty + time-off in one queue, inline actions, sorted by age | ✅ done (verified 2026-03-29) |
+| 50C | Office Chat Channel | Auto-created Office channel, hat-gated membership, "Office" badge in inbox | ✅ done (verified 2026-03-29) |
+| 50D | Office Router Cleanup | Remove report routes, add Dashboard/Approvals/Pipeline/Teams/Reports tabs | ✅ done (verified 2026-03-29) |
+| 51A | Standard Filter Bar | Reusable StandardFilterBar: quick date filters + custom range + page-specific filters, apply to all pages | ✅ done (verified 2026-03-29) |
+| 52A | Settings Grouped Nav | Reorganize SettingsRouter into 10 grouped sections with search | ✅ done (verified 2026-03-29) |
+| 52B | Settings Operations Pages | Break/Lunch Policy, Tool Policies, Pre-Trip Checklists, Dispatch Preferences | ✅ done (verified 2026-03-29) |
+| 52C | Settings Warehouse Pages | Forecast Config, Organization Thresholds, Audit Settings | ✅ done (verified 2026-03-29) |
+| 52D | Settings Template Pages | Daily Report Templates, Job Estimation Questions, Report Templates | ✅ done (verified 2026-03-29) |
+| 52E | Settings Functional Features | Wire Backups, Export, Update Check, AI Config, Sync Now to real code | ✅ done (verified 2026-03-29) |
+| 52F | Settings Sync Classification | Sync scope indicators (company/personal/device) on all settings | ✅ done (verified 2026-03-29) |
+| 53A | Safe Update System | #if DEBUG erase, backupDatabase(), restoreDatabase(), pre-migration backup | ✅ done (verified 2026-03-29) |
+| 54A | Bluetooth Sync Activation | IOSSyncManager, SyncEngine, ChangeTracker, MultipeerManager wiring | ✅ done (verified 2026-03-29) |
+| 54B | Sync Conflict Resolution UI | SyncConflictReviewPage, conflict notification banner, sync history | ✅ done (verified 2026-03-29) |
+| 54C | Sync Device Pairing | Device pairing flow, performInitialSync, background continuous sync | ✅ done (verified 2026-03-29) |
+| 54D | AI Sync Conflict Resolution | SyncConflictClassifier (5-level), AI merge, AIConflictResolutionView | ✅ done (verified 2026-03-29) |
+| 55A | Final GRDB Cleanup | Remove GRDB from last 5 UI files | ✅ done — covered by 32D-E bulk passes |
+| 56A | Full End-to-End Audit | Comprehensive audit specification | META — covered by 57A + 60-62 series |
+| 57A | Final Cleanup Audit | Issue specification with file-by-file breakdown | META — fixes tracked in 60-62 series |
+| 58A | Help Buttons All Pages | PageHelpSheet on all pages | ✅ done — same as 60G |
+| **60A** | **Standard Date Filter Bar** | **Reusable StandardFilterBar component + wire to all list pages** | **✅ done (verified 2026-03-29)** |
+| **60B** | **JPO Cart Builder Wiring** | **3-panel creation page: search/cart/suggestions, auto-fill from clock** | **✅ done (verified 2026-03-29)** |
+| **60C** | **AI Conversation Memory** | **In-memory message history for FoundationModelsService** | **✅ done (verified 2026-03-29)** |
+| **60D** | **Office Dashboard** | **IOSOfficeDashboardPage: AI briefing, attention items, schedule, financials** | **✅ done (verified 2026-03-29)** |
+| **60E** | **Job Detail Dashboard** | **Overview tab with metric cards, stage progression bar, quick actions** | **✅ done (verified 2026-03-29)** |
+| **60F** | **Receiving Back Confirmation** | **Confirmation dialog before discarding receiving data** | **✅ done (verified 2026-03-29)** |
+| **60G** | **Help Buttons Visible** | **Help buttons in toolbar on 150+ pages** | **✅ done (verified 2026-03-29)** |
+| **60H** | **First Launch Checklist** | **Getting Started checklist on dashboard for new users** | **✅ done (verified 2026-03-29)** |
+| **60I** | **Silent Guard Bulk Fix** | **All guard-let-service returns set loadError/actionError** | **✅ done (verified 2026-03-29)** |
+| **60J** | **Submit to Supplier Rename** | **"Mark as Submitted" + confirmation dialog + banner** | **✅ done (verified 2026-03-29)** |
+| **60K** | **Stock Human Names** | **Warehouse location names from DB, "Warehouse #" fallback fixed** | **✅ done (verified 2026-03-29)** |
+| **60L** | **Broken Sidebar Routes** | **/orders/parts + /orders/wishlist wired in NavigationConfig + router** | **✅ done (verified 2026-03-29)** |
+| **60M** | **AI Page Context All** | **12+ page contexts in AI assistant panel** | **✅ done (verified 2026-03-29)** |
+| **60N** | **AI Help Integration** | **HelpContentRegistry integrated with AI panel** | **✅ done (verified 2026-03-29)** |
+| **60O** | **Wishlist Migration** | **Migration 057, WishlistService, functional IOSWishlistPage** | **✅ done (verified 2026-03-29)** |
+| **60P** | **Unified Approvals** | **IOSUnifiedApprovalsPage: JPO + deletion + time-off + tool edit** | **✅ done (verified 2026-03-29)** |
+| **60Q** | **Dispatch Drag Drop** | **DraggableWorker, .dropDestination, .draggable, conflict checking** | **✅ done (verified 2026-03-29)** |
+| **60R** | **Flex Pool** | **Flex pool section on clock page, self-assign + clock-in** | **✅ done (verified 2026-03-29)** |
+| **60S** | **Job Stage Bars** | **JobStageProgressBar component on job list + detail** | **✅ done (verified 2026-03-29)** |
+| **60T** | **Background Task Log** | **Migration 058, BackgroundTaskService, dashboard integration** | **✅ done (verified 2026-03-29)** |
+| **61A** | **Priority Colors Timeline** | **TimelinePriorityColor: time-based red/orange/yellow/green** | **✅ done (verified 2026-03-29)** |
+| **61B** | **Old Chips to Smart Cards** | **SmartFilterCard on 10+ pages, zero old filter Capsule bars** | **✅ done (verified 2026-03-29)** |
+| **61C** | **Auto-Fill Job Context** | **Q&A + Notebook forms auto-fill from active clock entry** | **✅ done (verified 2026-03-29)** |
+| **61D** | **Touch Targets 44px** | **minHeight: 44 on primary action buttons** | **✅ done (verified 2026-03-29)** |
+| **61E** | **Dead Buttons Fix** | **Zero empty closure buttons remain** | **✅ done (verified 2026-03-29)** |
+| **61F** | **Orphaned Pages Wire** | **All pages reachable via router/navigation** | **✅ done (verified 2026-03-29)** |
+| **61G** | **Placeholder NavLinks** | **Zero NavigationLinks to bare Text() placeholders** | **✅ done (verified 2026-03-29)** |
+| **61H** | **People Dashboard Tab** | **people-dashboard tab in NavigationConfig, IOSPeopleDashboardPage wired** | **✅ done (verified 2026-03-29)** |
+| **61I** | **Clock Break Explain** | **"End your break first to clock out" explanation shown** | **✅ done (verified 2026-03-29)** |
+| **61J** | **Questionnaire Skip Guard** | **Skip hidden when hasUnansweredRequired, submit disabled until allRequiredAnswered** | **✅ done (verified 2026-03-29)** |
+| **61K** | **Receiving Barcode Scan** | **Per-part barcode scan, auto-scroll to matched item** | **✅ done (verified 2026-03-29)** |
+| **61L** | **Receiving Default Expected** | **Qty defaults to expectedQty, "Reset to Expected" button** | **✅ done (verified 2026-03-29)** |
+| **62A** | **Refreshable Bulk** | **.refreshable on list pages, SearchableList wrapper** | **✅ done (verified 2026-03-29)** |
+| **62B** | **Searchable Bulk** | **.searchable on 73+ files** | **✅ done (verified 2026-03-29)** |
+| **62C** | **AI Dispatch Wire** | **AIDispatchService wired to AppCore** | **✅ done (verified 2026-03-29)** |
+| **62D** | **Orphan Models Cleanup** | **CostsModels audited, all structs retained as ACTIVE** | **✅ done (verified 2026-03-29)** |
+| **62E** | **Table Not Found Fallback** | **isTableNotFoundError in Break/DailyReport/AIDispatch/JobEstimation services** | **✅ done (verified 2026-03-29)** |
+| **62F** | **Receiving Price Format** | **%.2f format (not %.5f)** | **✅ done (verified 2026-03-29)** |
+| **62G** | **PO Number Safe** | **MAX-based generation prevents duplicates** | **✅ done (verified 2026-03-29)** |
+| **62H** | **Receiving Unrouted Warning** | **showUnroutedWarning + confirmationDialog before completion** | **✅ done (verified 2026-03-29)** |
+| **62I** | **PO Line Edit Sheet** | **POLineEditSheet struct, sheet(item:) pattern** | **✅ done (verified 2026-03-29)** |
+| **62J** | **Notebook AI Merge** | **NotebookBlockConflict, detectBlockConflicts, resolveBlockConflict** | **✅ done (verified 2026-03-29)** |
+| **62K** | **Weekly Review** | **IOSWeeklyReviewSheet, submitWeeklyReview, test coverage** | **✅ done (verified 2026-03-29)** |
+| **62L** | **Multi-User Audit** | **multi_user_audit_assignments table + service methods** | **✅ done (verified 2026-03-29)** |
+| **62M** | **JPO Hold Chat** | **Hold with chat thread link, lineStatus tracking** | **✅ done (verified 2026-03-29)** |
+| **62N** | **PO Job Grouping** | **Line items grouped by job in PO detail** | **✅ done (verified 2026-03-29)** |
+| **62O** | **PO Delivery Timeline** | **DeliveryTimelineBar component on PO detail** | **✅ done (verified 2026-03-29)** |
+| **62P** | **PO Receipt History** | **receiptHistorySection in PO detail** | **✅ done (verified 2026-03-29)** |
+| **62Q** | **JPO Bulk Hold Fix** | **bulkHoldReason TextEditor, all items get reason** | **✅ done (verified 2026-03-29)** |
+| **62R** | **Location Permission** | **requestPermission checks .notDetermined only** | **✅ done (verified 2026-03-29)** |
+| **62S** | **AI Filter All Pages** | **AIFilterRegistry on 6+ pages beyond catalog** | **✅ done (verified 2026-03-29)** |
+| **62T** | **Audit Checklist Save** | **Audit results documented with 331 items** | **✅ done (verified 2026-03-29)** |
+| 63A | Final Gate | Verification checkpoint (build, grep GRDB, counts) | META — gate check, not code |
+| 63B | Final 9 Audit Fixes | Dashboard QR, AI dispatch, panel persist, chips, errors, guards, popups, dead code, office | ✅ done — tracked as 66A-C + 64D-F |
+| 64A | Guided Onboarding Walkthrough | Getting Started checklist, NewUserWelcomeView, ModuleTourView | ✅ done — same as 65A |
+| 64B | Comprehensive Per-Page Onboarding | OnboardingProgressManager, per-page tasks, OnboardingBanner, hat-aware | ✅ done — same as 65A |
+| 64C | UI Stability: Errors + Popups | Silent guards, isTableNotFoundError, user-friendly errors, sheet dismiss | ✅ done — covered by 32B/C, 60I, 62E, 66C |
+| 64D | Silent Guard Returns | Fix last 6 silent guard-let returns (5 in Wishlist, 1 in QR Scanner) that don't set error state | ✅ done (verified 2026-03-29) |
+| 64E | Panel Schedule Persist | Wire panel schedule save through NotebooksService — create-or-update + load-on-open | ✅ done (verified 2026-03-29) |
+| 64F | AI Dispatch Surface | Add Apply/Dismiss buttons to AI suggestion sheet, wire recordDispatcherChoice + dispatch creation | ✅ done (verified 2026-03-29) |
+| 64G | JPO Movement Detail | Replace "Coming Soon" movement stub with real detail view using WarehouseService | ✅ done (verified 2026-03-29) |
+| 65A | Guided Onboarding Walkthrough | Comprehensive per-module onboarding with hat filtering, progress tracking, post-onboarding hints | ✅ done (verified 2026-03-29) |
+| 65B | Company Setup Wizard | 8-step new company data entry wizard for admins (profile, employees, hats, job, parts, warehouse, breaks) | ✅ done (verified 2026-03-29) |
+| 65C | Warehouse Setup Fix | Fix broken Steps 2-6 in warehouse wizard — functional unit placement, sticker checklist, part assignment, counting, targets | ✅ done (verified 2026-03-29) |
+| 67A | Audit + Notebook User Attribution | Pass real userId to createAuditSession and autoSaveToJobNotebook — two call sites using default user 1 | ✅ done |
 
 ## Prompt 01 Results (2026-03-18)
 

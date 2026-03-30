@@ -1130,7 +1130,7 @@ public final class JobsService: Sendable {
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
-                    UPDATE labor_entries SET linked_todo_id = ?, updated_at = datetime('now')
+                    UPDATE labor_entries SET linked_todo_id = ?
                     WHERE id = ?
                     """,
                 arguments: [todoId, clockEntryId]
@@ -1143,7 +1143,7 @@ public final class JobsService: Sendable {
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
-                    UPDATE labor_entries SET work_type = ?, updated_at = datetime('now')
+                    UPDATE labor_entries SET work_type = ?
                     WHERE id = ?
                     """,
                 arguments: [workType, clockEntryId]

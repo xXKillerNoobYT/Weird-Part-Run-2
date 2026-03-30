@@ -137,7 +137,7 @@ struct IOSInventoryGridPage: View {
                 .foregroundStyle(.blue)
 
             if allLocations.isEmpty {
-                Text("Warehouse #1")
+                Text("Default Warehouse")
                     .font(.subheadline)
                     .fontWeight(.medium)
             } else {

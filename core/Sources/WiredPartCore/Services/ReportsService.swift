@@ -781,7 +781,7 @@ public final class ReportsService: Sendable {
                                      FROM stock_movements sm
                                      WHERE sm.job_id = j.id AND sm.deleted_at IS NULL
                                        AND date(sm.created_at) >= ? AND date(sm.created_at) <= ?), 0) AS material_cost,
-                           COALESCE(j.budget_amount, 0) AS budget
+                           COALESCE(j.budget_limit, 0) AS budget
                     FROM jobs j
                     WHERE j.deleted_at IS NULL AND j.status != 'archived'
                     ORDER BY j.job_name
@@ -888,7 +888,7 @@ public final class ReportsService: Sendable {
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT po.po_number, COALESCE(s.name, 'Unknown') AS supplier_name,
                            COALESCE(po.order_date, date(po.created_at)) AS order_date,
-                           COALESCE(po.total_amount, 0) AS total,
+                           COALESCE(po.total_cost, 0) AS total,
                            COALESCE(po.status, '') AS status,
                            (SELECT COUNT(*) FROM po_line_items pol WHERE pol.po_id = po.id AND pol.deleted_at IS NULL) AS items_count
                     FROM purchase_orders po

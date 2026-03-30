@@ -282,3 +282,26 @@ Warehouse-specific view of tools in the warehouse. Not a redirect to the Tools s
 | 31G | Inventory Grid: remove hardcoded location, group by type, location picker | Queued |
 | 31H | Returns + Tools + Network + Settings: display→actionable, platform guards, cleanup | Queued |
 | 31I | Router update: fix unknown route handling | Queued |
+
+---
+
+## Unplanned Files (Documented for Record — plan-enforcer 2026-03-29)
+
+### `WarehouseOnboardingWizard` + `WarehouseWizardStep2-6`
+
+Added by Prompt 65C fix (Warehouse Setup Fix). A 6-step guided onboarding wizard for new warehouse setup:
+- Step 2: Unit placement on floor plan
+- Step 3: Sticker checklist
+- Step 4: Part assignment to locations
+- Step 5: Initial counting
+- Step 6: Target setting
+
+**Purpose:** First-time warehouse setup experience for new companies. Complements the `WarehouseOnboardingWizard` entry point. Prompt 36D describes the design intent for floor plans; 65C was the initial fix to make wizard functional.
+
+### `IOSWarehouseLeaderboardPage`
+
+Added during implementation (not in original plan). A gamification/engagement page showing warehouse staff performance:
+- Productivity metrics per worker
+- Rankings across warehouse team
+
+**Note:** Good UX addition for worker motivation. Design spec needed if this expands. For now, document as an enhancement beyond the original plan scope.

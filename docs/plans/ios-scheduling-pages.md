@@ -439,4 +439,20 @@ Key service methods:
 
 ---
 
-*Last updated: 2026-03-23*
+---
+
+## 12. Unplanned Files (Documented for Record)
+
+### `IOSScheduleConfigPage`
+
+Added during implementation (not in original plan). A settings/configuration page for scheduling globals:
+- Work day start/end times (24hr format)
+- Lunch and break duration defaults
+- Overtime threshold (default 40 hrs/week)
+- Weekend scheduling toggle
+
+**Note:** Overlaps with Settings → Operations (prompt 52B). Could be moved under Settings or kept under Scheduling navigation. No action required — functionality is appropriate and correctly implemented via SettingsService.
+
+---
+
+*Last updated: 2026-03-23 (plan-enforcer audit: 2026-03-29)*

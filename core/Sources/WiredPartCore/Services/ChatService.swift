@@ -879,7 +879,7 @@ public final class ChatService: Sendable {
 
     /// Auto-save photo/file attachments from a job-linked channel to the job's notebook.
     /// Best-effort — failures are silently ignored to not block message sending.
-    public func autoSaveToJobNotebook(channelId: Int64, attachment: MessageAttachment) throws {
+    public func autoSaveToJobNotebook(channelId: Int64, attachment: MessageAttachment, userId: Int64 = 1) throws {
         try db.writer.write { dbConn in
             // Get job ID from channel
             guard let row = try Row.fetchOne(dbConn, sql: """
@@ -897,10 +897,24 @@ public final class ChatService: Sendable {
                 notebookId = existing["id"] ?? 0
             } else {
                 try dbConn.execute(sql: """
-                    INSERT INTO notebooks (job_id, title, notebook_type, status, created_at, updated_at)
-                    VALUES (?, 'Job Notebook', 'job', 'active', datetime('now'), datetime('now'))
-                    """, arguments: [jobId])
+                    INSERT INTO notebooks (job_id, title, created_by, created_at, updated_at)
+                    VALUES (?, 'Job Notebook', ?, datetime('now'), datetime('now'))
+                    """, arguments: [jobId, userId])
                 notebookId = dbConn.lastInsertedRowID
+            }
+
+            // Get or create a default section for this notebook
+            let sectionId: Int64
+            if let existingSection = try Row.fetchOne(dbConn, sql: """
+                SELECT id FROM notebook_sections WHERE notebook_id = ? AND deleted_at IS NULL ORDER BY sort_order LIMIT 1
+                """, arguments: [notebookId]) {
+                sectionId = existingSection["id"] ?? 0
+            } else {
+                try dbConn.execute(sql: """
+                    INSERT INTO notebook_sections (notebook_id, name, section_type, sort_order, created_at)
+                    VALUES (?, 'General', 'notes', 0, datetime('now'))
+                    """, arguments: [notebookId])
+                sectionId = dbConn.lastInsertedRowID
             }
 
             // Save as notebook entry
@@ -908,9 +922,9 @@ public final class ChatService: Sendable {
             let content = attachment.filePath ?? attachment.referenceLabel ?? ""
             try dbConn.execute(sql: """
                 INSERT INTO notebook_entries
-                (notebook_id, entry_type, title, content, status, created_at, updated_at)
-                VALUES (?, 'attachment', ?, ?, 'active', datetime('now'), datetime('now'))
-                """, arguments: [notebookId, title, content])
+                (section_id, entry_type, title, content, created_by, created_at)
+                VALUES (?, 'attachment', ?, ?, ?, datetime('now'))
+                """, arguments: [sectionId, title, content, userId])
         }
     }
 
@@ -1512,19 +1526,20 @@ public final class ChatService: Sendable {
         do {
             return try db.writer.read { dbConn in
                 let rows = try Row.fetchAll(dbConn, sql: """
-                    SELECT sb.id, sb.status, sb.protocol, sb.last_sync_at,
+                    SELECT sb.id, sb.is_active, sb.last_seen_at,
                            COALESCE(s.name, 'Unknown Supplier') AS supplier_name
                     FROM supplier_channel_bridges sb
                     LEFT JOIN suppliers s ON s.id = sb.supplier_id
                     ORDER BY s.name ASC
                 """)
-                return rows.map { row in
-                    SupplierBridgeRow(
+                return rows.map { row -> SupplierBridgeRow in
+                    let isActive: Int = row["is_active"] ?? 1
+                    return SupplierBridgeRow(
                         id: "\(row["id"] as Int64? ?? 0)",
                         supplierName: row["supplier_name"] as? String ?? "Unknown",
-                        status: row["status"] as? String ?? "unknown",
-                        protocol_: row["protocol"] as? String ?? "HTTP",
-                        lastSyncAt: row["last_sync_at"] as? String
+                        status: isActive == 1 ? "active" : "inactive",
+                        protocol_: "HTTP",
+                        lastSyncAt: row["last_seen_at"] as? String
                     )
                 }
             }

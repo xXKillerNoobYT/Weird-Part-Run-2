@@ -205,7 +205,8 @@ struct IOSAuditSetupView: View {
                 zone: selectedZone.isEmpty ? nil : selectedZone,
                 sampleSize: auditScope == .spotCheck ? spotCheckCount : nil,
                 includeZeroStock: includeZeroStock,
-                notes: notes.isEmpty ? nil : notes
+                notes: notes.isEmpty ? nil : notes,
+                userId: appCore.currentUser?.id ?? 1
             )
             onAuditCreated?(sessionId)
             dismiss()

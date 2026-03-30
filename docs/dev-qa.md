@@ -12,20 +12,15 @@
 2. Each question includes context about the current build and proposed changes
 3. Questions are tagged by role perspective: Owner, Manager, Employee, Developer, User
 4. Answer the questions by editing this file (write answers below each question)
-5. Once answered, the dev-pipeline-manager integrates answers into the plan
+5. Once answered, the dev-pipeline-manager integrates answers into the plan and **removes the question from this file**
 6. Unanswered questions block the feature from being auto-built
+7. **This file only contains unanswered/unprocessed questions.** Once processed, they're gone — design decisions live in `docs/plans/`.
 
 ---
 
 ## Pending Questions
 
 _No pending questions — pipeline will populate as new work is identified._
-
----
-
-## Answered Questions (Archive)
-
-_Answered questions move here with their answers for future reference._
 
 ---
 

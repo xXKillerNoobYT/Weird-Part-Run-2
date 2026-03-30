@@ -240,4 +240,78 @@ struct WarehouseServiceExtTests {
         let leaderboard = try env.warehouse.getWarehouseLeaderboard()
         #expect(leaderboard.count >= 0)
     }
+
+    // MARK: - Active JPO Demand (qty_received fix)
+
+    @Test("getActiveJPODemandForPart uses qty_received column correctly")
+    func testActiveJPODemand() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        // Create a JPO with a line item for this part
+        let jpoId = try env.orders.createJPOWithLines(
+            jobId: jobId,
+            requestedBy: env.adminUserId,
+            priority: "normal",
+            deliveryOption: "delivery",
+            notes: nil,
+            lines: [(partId: partId, quantity: 10)]
+        )
+        #expect(jpoId > 0)
+
+        // Update JPO status so it qualifies (pending or approved)
+        try env.orders.updateJPOStatus(id: jpoId, status: "approved")
+
+        // Query demand — this will crash if qty_fulfilled column doesn't exist
+        let demand = try env.warehouse.getActiveJPODemandForPart(partId: partId)
+        #expect(demand.count >= 1)
+        if let first = demand.first {
+            #expect(first.qtyRequested == 10)
+            #expect(first.qtyFulfilled == 0) // Nothing received yet
+        }
+    }
+
+    // MARK: - Receiving Session Items (unit_cost fix)
+
+    @Test("getSessionItems reads unit_cost column correctly")
+    func testSessionItemsUnitCost() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+
+        // Create a PO with a line item
+        let poId = try env.orders.createPurchaseOrder(
+            poNumber: "PO-TEST-001",
+            supplierId: supplierId
+        )
+        // Add a line item with a known unit_cost
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO po_line_items (po_id, part_id, qty_ordered, unit_cost, created_at)
+                    VALUES (?, ?, 5, 12.50, datetime('now'))
+                    """,
+                arguments: [poId, partId]
+            )
+        }
+
+        // Start a receiving session (pre-populates items from PO line items)
+        let sessionId = try env.warehouse.startReceivingSession(
+            poId: poId,
+            startedBy: env.adminUserId
+        )
+        #expect(sessionId > 0)
+
+        // Get session items — this tests that unit_cost is read correctly (not unit_price)
+        let items = try env.warehouse.getSessionItems(sessionId: sessionId)
+        #expect(items.count >= 1)
+        if let first = items.first {
+            #expect(first.expectedQty == 5)
+            // unit_cost should now be read correctly (was nil before the fix)
+            #expect(first.unitPrice == 12.50)
+        }
+    }
 }

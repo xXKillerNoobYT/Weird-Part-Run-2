@@ -359,7 +359,7 @@ struct IOSMessageThreadView: View {
                 for att in pendingAttachments where att.type == "photo" || att.type == "file" {
                     if let attachments = try? service.getMessageAttachments(messageId: msgId),
                        let saved = attachments.first(where: { $0.attachmentType == att.type }) {
-                        try? service.autoSaveToJobNotebook(channelId: channelId, attachment: saved)
+                        try? service.autoSaveToJobNotebook(channelId: channelId, attachment: saved, userId: appCore.currentUser?.id ?? 1)
                     }
                 }
             }

@@ -5386,7 +5386,7 @@ public final class PartsService: Sendable {
         try db.writer.read { dbConn in
             let rows = try Row.fetchAll(dbConn, sql: """
                 SELECT id, po_number, status,
-                       COALESCE((SELECT SUM(qty * unit_price) FROM po_line_items WHERE po_id = purchase_orders.id AND deleted_at IS NULL), 0) AS total,
+                       COALESCE((SELECT SUM(qty * unit_cost) FROM po_line_items WHERE po_id = purchase_orders.id AND deleted_at IS NULL), 0) AS total,
                        created_at
                 FROM purchase_orders
                 WHERE supplier_id = ? AND deleted_at IS NULL

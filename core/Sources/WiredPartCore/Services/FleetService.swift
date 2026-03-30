@@ -859,14 +859,14 @@ public final class FleetService: Sendable {
         do {
             return try db.writer.read { dbConn -> [InspectionRow] in
                 let sql = """
-                    SELECT vi.id, vi.inspection_date, vi.result, vi.notes, vi.odometer_reading,
+                    SELECT ir.id, ir.performed_at AS inspection_date, ir.result, ir.notes, ir.odometer_reading,
                            COALESCE(v.vehicle_name, v.vehicle_number, 'Unknown') AS vehicle_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS inspector_name
-                    FROM vehicle_inspections vi
-                    LEFT JOIN vehicles v ON v.id = vi.vehicle_id
-                    LEFT JOIN users u ON u.id = vi.inspector_id
-                    WHERE vi.deleted_at IS NULL
-                    ORDER BY vi.inspection_date DESC
+                    FROM inspection_records ir
+                    LEFT JOIN vehicles v ON v.id = ir.vehicle_id
+                    LEFT JOIN users u ON u.id = ir.inspector_id
+                    WHERE ir.deleted_at IS NULL
+                    ORDER BY ir.performed_at DESC
                     LIMIT ?
                     """
 
@@ -1727,7 +1727,7 @@ public final class FleetService: Sendable {
             // Update vehicle readings if provided
             if let odometer = odometerReading {
                 try dbConn.execute(sql: """
-                    UPDATE vehicles SET odometer = ?, updated_at = datetime('now')
+                    UPDATE vehicles SET current_odometer = ?, updated_at = datetime('now')
                     WHERE id = ?
                     """, arguments: [odometer, vehicleId])
             }

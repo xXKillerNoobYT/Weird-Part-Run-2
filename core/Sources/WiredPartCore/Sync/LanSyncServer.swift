@@ -288,7 +288,7 @@ public final class LanSyncServer: Sendable {
     private func readFullHTTPRequest(
         connection: NWConnection,
         accumulated: Data,
-        completion: @escaping (Data?) -> Void
+        completion: @Sendable @escaping (Data?) -> Void
     ) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 1_048_576) { [weak self] data, _, isComplete, error in
             guard let data, error == nil else {
