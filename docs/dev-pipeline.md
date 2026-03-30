@@ -423,3 +423,23 @@ _Appended by dev-pipeline-manager each run._
 **Q&A pipeline:** Clean — no pending questions.
 
 **Backlog delta:** +1 item (PE-010). Total active PEs: 9 (PE-001, 003, 004, 005, 007, 008, 009, 010). PE-006 closed.
+
+---
+
+### End-of-Day Sync — 2026-03-29
+
+- Files committed: 5 (AppCore.swift, dev-pipeline.md, hunt-fix-tracker.md, ios-warehouse-pages.md, 00-fix-order.md)
+- Commits created: 2 (`fix(onboarding)` + `docs(pipeline)`)
+- Push status: ✅ success (4b0c71a → 66ff644 → origin/main)
+- Tests: 733/733 passing (49 suites, 0 failures)
+- Agent runs today: 6/7 healthy (github-issues-sync ⚠️ still pending auth)
+  - hunt-fix-verify ✅ — 9 iterations, 68 SQL bugs fixed, Phase 1 complete
+  - test-coverage-maintenance ✅ — 733 tests, coverage gaps remain in PeopleService/ChatService/SettingsService
+  - plan-enforcer ✅ — PE-013 warehouse drag-drop documented, all Phase 1 changes aligned
+  - dev-improvement-scanner ✅ — PE-011, PE-012, PE-008e found and fixed
+  - dev-pipeline-manager ✅ — Phase 2 queue established (8 items)
+  - github-sync-and-review ✅ — this run
+  - github-issues-sync ⚠️ — pending auth, 0 issues processed
+- Issues processed: 0 (auth not available in automated context)
+- Bugs fixed: 1 (UserDefaults stale onboarding flags causing fresh-DB devices to skip onboarding)
+- Pipeline health: ✅ Phase 1 COMPLETE — 279 prompts archived, Phase 2 HIG + security queue ready
