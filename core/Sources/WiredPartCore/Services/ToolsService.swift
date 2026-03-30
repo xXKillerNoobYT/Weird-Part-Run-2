@@ -335,7 +335,7 @@ public final class ToolsService: Sendable {
             // Create checkout record
             try dbConn.execute(
                 sql: """
-                    INSERT INTO tool_checkouts (tool_id, checked_out_by, checked_out_at, notes, created_at)
+                    INSERT INTO tool_checkouts (tool_id, checked_out_by, checked_out_at, checkout_notes, created_at)
                     VALUES (?, ?, datetime('now'), ?, datetime('now'))
                     """,
                 arguments: [toolId, userId, notes]

@@ -301,11 +301,13 @@ struct JobsServiceTests {
         let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
 
         let notesBefore = try env.jobs.getLaborEntryNotes(laborEntryId: laborEntryId)
-        #expect(notesBefore == nil || notesBefore?.isEmpty == true || notesBefore?.contains("[SUPPLY RUN]") == false)
+        #expect(notesBefore == nil || notesBefore?.isEmpty == true)
 
-        _ = try env.jobs.toggleSupplyRun(laborEntryId: laborEntryId)
+        let result = try env.jobs.toggleSupplyRun(laborEntryId: laborEntryId)
+        #expect(result == "supply_run")
+
         let notesAfter = try env.jobs.getLaborEntryNotes(laborEntryId: laborEntryId)
-        #expect(notesAfter?.contains("[SUPPLY RUN]") == true)
+        #expect(notesAfter?.contains("supply_run_start") == true)
 
         try env.jobs.clockOut(laborEntryId: laborEntryId)
     }

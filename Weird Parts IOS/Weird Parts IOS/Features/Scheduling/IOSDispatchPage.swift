@@ -35,7 +35,6 @@ struct IOSDispatchPage: View {
     @State private var loadError: String?
 
     // Assignment flow
-    @State private var showAssignSheet = false
     @State private var selectedJobId: Int64?
     @State private var selectedDate: String?
     @State private var selectedWorkerId: Int64?
@@ -55,7 +54,13 @@ struct IOSDispatchPage: View {
 
     private enum ActiveSheet: Identifiable {
         case help
-        var id: String { "help" }
+        case assign
+        var id: String {
+            switch self {
+            case .help: return "help"
+            case .assign: return "assign"
+            }
+        }
     }
 
     private let calendar = Calendar.current
@@ -93,7 +98,7 @@ struct IOSDispatchPage: View {
                     selectedJobId = nil
                     selectedDate = dateString(Date())
                     selectedWorkerId = nil
-                    showAssignSheet = true
+                    activeSheet = .assign
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -104,27 +109,29 @@ struct IOSDispatchPage: View {
                 }
             }
         }
-        .sheet(isPresented: $showAssignSheet) {
-            DispatchAssignSheet(
-                jobId: selectedJobId,
-                date: selectedDate ?? dateString(Date()),
-                workerId: selectedWorkerId,
-                jobRows: jobRows,
-                unassignedWorkers: unassignedWorkers,
-                onAssign: { jobId, userId, date, timeSlot in
-                    createAssignment(jobId: jobId, userId: userId, date: date, timeSlot: timeSlot)
-                }
-            )
-            .environmentObject(appCore)
-        }
-        .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Dispatch Board Help", sections: [
-                ("What This Page Does", "The Dispatch Board is a Gantt-style weekly view showing which workers are assigned to which jobs each day. Colored bars indicate time slots: blue for AM, green for PM, and orange for full day."),
-                ("How to Use It", "Navigate between weeks using the left/right arrows. Tap an empty cell on a job row to assign a worker to that job and day. Tap a worker in the Unassigned section to start an assignment for them. Use the + button to create a new assignment from scratch."),
-                ("Drag & Drop", "Press and hold an unassigned worker chip, then drag it onto a job row. The row highlights blue when targeted. Dropping creates a full-day assignment for today (or the week start if today is not in the displayed week). Time-off conflicts are checked automatically."),
-                ("Time-Off Conflicts", "If you assign someone who has approved time off that day, you will see a conflict warning. You can choose to assign them anyway or cancel."),
-                ("Tips", "Red 'Unassigned Workers' at the bottom means people have no work scheduled that week. Aim to keep this section empty by assigning everyone to jobs.")
-            ])
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .assign:
+                DispatchAssignSheet(
+                    jobId: selectedJobId,
+                    date: selectedDate ?? dateString(Date()),
+                    workerId: selectedWorkerId,
+                    jobRows: jobRows,
+                    unassignedWorkers: unassignedWorkers,
+                    onAssign: { jobId, userId, date, timeSlot in
+                        createAssignment(jobId: jobId, userId: userId, date: date, timeSlot: timeSlot)
+                    }
+                )
+                .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(title: "Dispatch Board Help", sections: [
+                    ("What This Page Does", "The Dispatch Board is a Gantt-style weekly view showing which workers are assigned to which jobs each day. Colored bars indicate time slots: blue for AM, green for PM, and orange for full day."),
+                    ("How to Use It", "Navigate between weeks using the left/right arrows. Tap an empty cell on a job row to assign a worker to that job and day. Tap a worker in the Unassigned section to start an assignment for them. Use the + button to create a new assignment from scratch."),
+                    ("Drag & Drop", "Press and hold an unassigned worker chip, then drag it onto a job row. The row highlights blue when targeted. Dropping creates a full-day assignment for today (or the week start if today is not in the displayed week). Time-off conflicts are checked automatically."),
+                    ("Time-Off Conflicts", "If you assign someone who has approved time off that day, you will see a conflict warning. You can choose to assign them anyway or cancel."),
+                    ("Tips", "Red 'Unassigned Workers' at the bottom means people have no work scheduled that week. Aim to keep this section empty by assigning everyone to jobs.")
+                ])
+            }
         }
         .alert("Time-Off Conflict", isPresented: $showConflictAlert) {
             Button("Assign Anyway", role: .destructive) {
@@ -319,7 +326,7 @@ struct IOSDispatchPage: View {
                     selectedJobId = row.id
                     selectedDate = dayStr
                     selectedWorkerId = nil
-                    showAssignSheet = true
+                    activeSheet = .assign
                 } label: {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(Color(.systemGray5))
@@ -375,7 +382,7 @@ struct IOSDispatchPage: View {
                             selectedWorkerId = worker.id
                             selectedJobId = nil
                             selectedDate = dateString(Date())
-                            showAssignSheet = true
+                            activeSheet = .assign
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "line.3.horizontal")

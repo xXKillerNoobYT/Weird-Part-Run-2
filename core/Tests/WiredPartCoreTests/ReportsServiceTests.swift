@@ -149,4 +149,50 @@ struct ReportsServiceTests {
         )
         try env.reports.markReportRun(reportId: reportId)
     }
+
+    // MARK: - Tool Checkout Report
+
+    @Test("Tool checkout report returns empty on fresh DB")
+    func testToolCheckoutReportEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let rows = try env.reports.generateCustomReport(
+            type: "tool_checkouts",
+            columns: ["tool_name", "employee_name", "checkout_date", "return_date", "condition_out", "condition_in"],
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date.distantFuture,
+            filters: [:]
+        )
+        #expect(rows.isEmpty)
+    }
+
+    @Test("Tool checkout report returns rows after checkout")
+    func testToolCheckoutReportWithData() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Insert a tool directly
+        let toolId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO tools (tool_number, name, category, status, has_kit, created_at, updated_at)
+                VALUES ('T-R001', 'Test Wrench', 'hand_tools', 'available', 0, datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+        // Checkout and return
+        try env.tools.checkoutTool(toolId: toolId, userId: env.adminUserId)
+        try env.tools.returnTool(toolId: toolId, userId: env.adminUserId)
+
+        let columns = ["tool_name", "employee_name", "checkout_date", "return_date", "condition_out", "condition_in"]
+        let rows = try env.reports.generateCustomReport(
+            type: "tool_checkouts",
+            columns: columns,
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date.distantFuture,
+            filters: [:]
+        )
+        #expect(rows.count >= 1)
+        // Verify columns map correctly (no crash = SQL columns are correct)
+        if let first = rows.first {
+            #expect(first.count == columns.count)
+            #expect(first[0] == "Test Wrench")  // tool_name
+        }
+    }
 }
