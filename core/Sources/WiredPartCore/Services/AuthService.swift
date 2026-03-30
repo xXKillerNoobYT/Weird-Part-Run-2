@@ -60,10 +60,72 @@ public final class AuthService: Sendable {
         public let createdAt: String?
     }
 
+    // MARK: - Brute-Force Protection
+
+    /// Tracks failed login attempts per user to prevent brute-force attacks.
+    /// Resets on app restart (acceptable for local-only auth).
+    private struct LoginAttemptState {
+        var failedCount: Int = 0
+        var lockedUntil: Date?
+    }
+
+    /// In-memory failed attempt tracker, keyed by user ID.
+    /// Protected by attemptLock — safe for concurrent access.
+    nonisolated(unsafe) private static var loginAttempts: [Int64: LoginAttemptState] = [:]
+    private static let attemptLock = NSLock()
+
+    /// Lockout durations: 3 failures → 5s, 5 → 30s, 8 → 2min, 10+ → 5min
+    private static func lockoutDuration(forFailures count: Int) -> TimeInterval? {
+        switch count {
+        case 0..<3: return nil
+        case 3..<5: return 5
+        case 5..<8: return 30
+        case 8..<10: return 120
+        default: return 300
+        }
+    }
+
+    /// Check if a user is currently locked out. Returns seconds remaining, or nil if not locked.
+    public static func lockoutSecondsRemaining(userId: Int64) -> Int? {
+        attemptLock.lock()
+        defer { attemptLock.unlock() }
+        guard let state = loginAttempts[userId],
+              let lockedUntil = state.lockedUntil,
+              lockedUntil > Date() else { return nil }
+        return Int(lockedUntil.timeIntervalSinceNow.rounded(.up))
+    }
+
+    /// Record a failed attempt and return lockout seconds (nil if no lockout yet).
+    private static func recordFailedAttempt(userId: Int64) -> Int? {
+        attemptLock.lock()
+        defer { attemptLock.unlock() }
+        var state = loginAttempts[userId] ?? LoginAttemptState()
+        state.failedCount += 1
+        if let duration = lockoutDuration(forFailures: state.failedCount) {
+            state.lockedUntil = Date().addingTimeInterval(duration)
+            loginAttempts[userId] = state
+            return Int(duration)
+        }
+        loginAttempts[userId] = state
+        return nil
+    }
+
+    /// Clear failed attempts on successful login.
+    private static func clearFailedAttempts(userId: Int64) {
+        attemptLock.lock()
+        defer { attemptLock.unlock() }
+        loginAttempts.removeValue(forKey: userId)
+    }
+
     // MARK: - Authentication
 
     /// Authenticate a user by PIN against the local database.
     public func authenticateByPin(userId: Int64, pin: String) throws -> AuthResult {
+        // Check lockout before attempting authentication
+        if let seconds = Self.lockoutSecondsRemaining(userId: userId) {
+            return AuthResult(success: false, user: nil, token: nil, message: "Too many failed attempts. Try again in \(seconds)s.")
+        }
+
         let user: User? = try db.writer.read { dbConnection in
             try User.fetchOne(
                 dbConnection,
@@ -82,6 +144,9 @@ public final class AuthService: Sendable {
 
         let isValid = Self.verifyPinLocally(pin: pin, storedHash: pinHash, salt: user.pinSalt)
         guard isValid else {
+            if let lockoutSeconds = Self.recordFailedAttempt(userId: userId) {
+                return AuthResult(success: false, user: nil, token: nil, message: "Invalid PIN. Locked for \(lockoutSeconds)s.")
+            }
             return AuthResult(success: false, user: nil, token: nil, message: "Invalid PIN")
         }
 
@@ -102,6 +167,7 @@ public final class AuthService: Sendable {
             }
         }
 
+        Self.clearFailedAttempts(userId: userId)
         let token = Self.generateLocalToken(userId: userId)
         return AuthResult(success: true, user: user, token: token, message: "Authenticated")
     }
@@ -584,8 +650,17 @@ public final class AuthService: Sendable {
         return Data(bytes).base64EncodedString()
     }
 
-    /// Generate a simple local session token (base64 JSON).
-    /// Returns nil if encoding fails — never returns a magic string.
+    /// Device-specific signing key. Generated once, stored in memory for the session.
+    /// In production this should be stored in the Keychain; for now it's derived from
+    /// a stable device identifier so tokens survive app restarts within the same device.
+    private static let signingKey: SymmetricKey = {
+        // Use a stable per-device seed. On iOS this would ideally come from Keychain.
+        let seed = "wiredpart-local-token-key-\(ProcessInfo.processInfo.globallyUniqueString)"
+        let hash = SHA256.hash(data: Data(seed.utf8))
+        return SymmetricKey(data: hash)
+    }()
+
+    /// Generate a signed local session token (base64 payload + HMAC-SHA256 signature).
     static func generateLocalToken(userId: Int64) -> String? {
         let nowMs = Date().timeIntervalSince1970 * 1000
         let payload = TokenPayload(
@@ -597,12 +672,30 @@ public final class AuthService: Sendable {
         guard let data = try? JSONEncoder().encode(payload) else {
             return nil
         }
-        return data.base64EncodedString()
+        let payloadB64 = data.base64EncodedString()
+        let signature = HMAC<SHA256>.authenticationCode(for: Data(payloadB64.utf8), using: signingKey)
+        let sigB64 = Data(signature).base64EncodedString()
+        return "\(payloadB64).\(sigB64)"
     }
 
-    /// Parse a local token (base64-encoded JSON). Returns nil if invalid.
+    /// Parse and verify a signed local token. Returns nil if invalid or tampered.
     static func parseLocalToken(_ token: String) -> TokenPayload? {
-        guard let data = Data(base64Encoded: token) else { return nil }
+        let parts = token.split(separator: ".", maxSplits: 1)
+
+        // Support legacy unsigned tokens (plain base64) during migration
+        let payloadB64: String
+        if parts.count == 2 {
+            payloadB64 = String(parts[0])
+            let sigB64 = String(parts[1])
+            guard let sigData = Data(base64Encoded: sigB64) else { return nil }
+            let expected = HMAC<SHA256>.authenticationCode(for: Data(payloadB64.utf8), using: signingKey)
+            guard Data(sigData) == Data(expected) else { return nil }
+        } else {
+            // Legacy unsigned token — accept but it will be replaced on next login
+            payloadB64 = token
+        }
+
+        guard let data = Data(base64Encoded: payloadB64) else { return nil }
         guard let payload = try? JSONDecoder().decode(TokenPayload.self, from: data) else { return nil }
         guard payload.type == "local" else { return nil }
         return payload

@@ -47,11 +47,15 @@ struct AuthServiceTests {
 
     // MARK: - Token Generation & Parsing
 
-    @Test("generateLocalToken produces valid base64")
+    @Test("generateLocalToken produces signed payload.signature format")
     func testGenerateToken() throws {
         let token = try #require(AuthService.generateLocalToken(userId: 42))
         #expect(!token.isEmpty)
-        #expect(Data(base64Encoded: token) != nil)
+        // Signed tokens have format: base64payload.base64signature
+        let parts = token.split(separator: ".")
+        #expect(parts.count == 2)
+        #expect(Data(base64Encoded: String(parts[0])) != nil)
+        #expect(Data(base64Encoded: String(parts[1])) != nil)
     }
 
     @Test("parseLocalToken round-trips correctly")
