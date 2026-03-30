@@ -168,9 +168,19 @@ Plans are living documents that build our project's institutional memory. Treat 
 
 **Key active plan documents:**
 
+- `docs/plans/hunt-fix-verify-loop.md` — **Hunt-Fix-Verify Loop** — autonomous bug-hunting process with 7 scanners, priority-based fixing, and final verification gate. Tracker at `docs/hunt-fix-tracker.md`
 - `docs/plans/ios-page-review-tracker.md` — master tracking of all iOS page reviews, decisions, and remaining work
 - `docs/plans/inventory-intelligence-system.md` — forecasting, wishlist, procurement redesign, movements, MIN/TARGET/MAX rules
 - `docs/plans/forecasting-page-redesign.md` — focused design spec for forecasting prompts 23A-23H
+
+**Hunt-Fix-Verify Loop (Bug Hunting Protocol):**
+
+When performing bug hunts or quality sweeps, follow `docs/plans/hunt-fix-verify-loop.md`. This defines:
+- **7 scanners** (compile, tests, code patterns, SQL integrity, problems folder, master issues, plan alignment)
+- **Priority order** for fixes (compile > tests > SQL > user-reported > T1 > silent errors > T2 > patterns > T3 > plans)
+- **Fix protocol** (read → understand root cause → fix → test → build → verify → mark fixed)
+- **Final verification gate** (ALL scanners must pass simultaneously)
+- **Tracker** at `docs/hunt-fix-tracker.md` — updated each iteration
 
 **Current plan history:**
 

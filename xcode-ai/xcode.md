@@ -22,9 +22,19 @@ The `docs/plans/` folder is the **source of truth** for all design goals and dec
 - Keep all design decisions with reasoning — don't delete old decisions, mark them as superseded if changed
 
 **Key plan documents:**
+- `docs/plans/hunt-fix-verify-loop.md` — **Hunt-Fix-Verify Loop** — autonomous bug-hunting process with 7 scanners, priority-based fixing, and final verification gate. Tracker at `docs/hunt-fix-tracker.md`. Use this plan when hunting bugs, fixing issues, or verifying quality.
 - `docs/plans/ios-page-review-tracker.md` — master tracking of all page reviews and decisions
 - `docs/plans/inventory-intelligence-system.md` — forecasting, wishlist, procurement, movements
 - `docs/plans/forecasting-page-redesign.md` — focused plan for 23A-23H prompt chain
+
+**Hunt-Fix-Verify Loop (Bug Hunting Protocol):**
+
+When performing bug hunts, quality sweeps, or fixing issues, follow `docs/plans/hunt-fix-verify-loop.md`:
+- **7 scanners** run each cycle: compile, tests, code patterns, SQL integrity, problems folder, master issues, plan alignment
+- **Priority order** for fixes: compile > tests > SQL > user-reported > T1 > silent errors > T2 > patterns > T3 > plans
+- **Fix protocol**: read → understand root cause → fix → test → build → verify → mark fixed in `docs/hunt-fix-tracker.md`
+- **Final verification gate**: ALL scanners must pass simultaneously before declaring DONE
+- Every fix must follow existing code patterns and be verified against `AppDatabase+Migrations.swift` for SQL changes
 
 ---
 
