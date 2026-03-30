@@ -28,6 +28,14 @@
 | PE-009e | *(write prompt series)* | Accessibility labels — ~8 set across 180+ views | ⬜ needs prompt |
 | PE-011 | *(closed)* | 12 force unwraps in `ReportDateRange.swift` — fixed in commit 4b0c71a | ✅ closed |
 | PE-012 | *(closed)* | `Calendar.current.date(byAdding:)!` in 15 files — fixed in commit 4b0c71a (all 15 files updated) | ✅ closed |
+| PE-013 | *(closed)* | **A1** Stale `init()` migration re-fires on fresh build — `hasSeenWelcome` now consumed (removed) after applying bypass, so a subsequent fresh DB build re-detects empty DB and clears flags | ✅ fixed (github-issues-sync 2026-03-29) |
+| PE-014 | *(closed)* | **A2** `performDatabaseReset()` didn't clear UserDefaults onboarding flags — now clears `hasCompletedOnboarding`, `hasCompletedCompanySetup`, `hasSeenWelcome` | ✅ fixed (github-issues-sync 2026-03-29) |
+| PE-015 | *(closed)* | **A3** Fresh DB with stale UserDefaults skipped wizards — `bootstrap()` now clears onboarding flags when DB is empty (no users + no profile) | ✅ fixed (github-issues-sync 2026-03-29) |
+| PE-016 | *(closed)* | **C5** `localRow!` force unwraps in `ConflictResolver.swift` lines 358 + 414 — replaced with `guard let existingRow = localRow` pattern | ✅ fixed (github-issues-sync 2026-03-29) |
+| PE-017 | *(note)* | **B3** Issue reports multi-user audit backend missing — both `getMultiUserAuditAssignments()` and `resolveMultiUserAudit()` ARE implemented (WarehouseService.swift lines 3883+, 3975+) | ✅ not an issue |
+| PE-018 | *(note)* | **C3** Migration 039 `try? db.drop()` — intentional "drop if exists" pattern; GRDB wraps each migration in a transaction so `try db.create()` failure rolls back cleanly | ✅ not a risk |
+| PE-019 | *(note)* | **C2** CompanySetupWizard partial save — uses `try` (not `try?`), each step has its own `do/catch` with `saveError` feedback; not a silent failure | ✅ acceptable |
+| PE-020 | `PE-020-audit-count-recording.md` | **B1+B2+B4** Audit count recording broken — needs migration to add `counted_qty` column, fix `recordAuditCount()`, `getAuditDiscrepancies()`, `getAuditSummary()` | ⬜ needs core swift work |
 
 ---
 

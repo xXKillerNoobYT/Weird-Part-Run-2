@@ -337,7 +337,7 @@ public enum ConflictResolver {
         // Check if record exists locally
         let localRow = try getLocalRecord(db: db, tableName: table, recordId: recordId)
 
-        if localRow == nil {
+        guard let existingRow = localRow else {
             // Record doesn't exist locally — plain INSERT
             let columns = recordDataFields.keys.sorted()
             let placeholders = columns.map { _ in "?" }.joined(separator: ", ")
@@ -349,18 +349,18 @@ public enum ConflictResolver {
                 arguments: StatementArguments(values)
             )
             return 0
-        } else {
-            // Record exists — field-level LWW merge
-            return try fieldLevelMerge(
-                db: db,
-                table: table,
-                recordId: recordId,
-                localRow: localRow!,
-                incomingFields: recordDataFields,
-                change: change,
-                localDeviceId: localDeviceId
-            )
         }
+
+        // Record exists — field-level LWW merge
+        return try fieldLevelMerge(
+            db: db,
+            table: table,
+            recordId: recordId,
+            localRow: existingRow,
+            incomingFields: recordDataFields,
+            change: change,
+            localDeviceId: localDeviceId
+        )
     }
 
     /// Apply an UPDATE change with changed_fields — field-level LWW merge.
@@ -389,7 +389,7 @@ public enum ConflictResolver {
         // Check if record exists locally
         let localRow = try getLocalRecord(db: db, tableName: table, recordId: recordId)
 
-        if localRow == nil {
+        guard let existingRow = localRow else {
             // Record doesn't exist locally
             if let recordDataFields = parseJsonField(change.recordData) {
                 // We have full record data — INSERT it
@@ -411,7 +411,7 @@ public enum ConflictResolver {
             db: db,
             table: table,
             recordId: recordId,
-            localRow: localRow!,
+            localRow: existingRow,
             incomingFields: incomingFields,
             change: change,
             localDeviceId: localDeviceId

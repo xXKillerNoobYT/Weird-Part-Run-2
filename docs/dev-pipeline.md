@@ -205,7 +205,7 @@ Every feature, bug, or improvement follows this cycle:
 
 | # | Title | Type | Lifecycle Step | Action | Status |
 |---|-------|------|---------------|--------|--------|
-| _Auto-populated by github-issues-sync_ | | | | | |
+| [#4](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/4) | Start up problems (fresh build / onboarding bug report) | Bug (multi-item) | Fixed (partial) + Plan created | Fixed A1+A2+A3 (UserDefaults/bootstrap), C5 (force unwraps); B3 not a bug; PE-020 created for B1/B2/B4 audit schema; C1 noted | 🟡 Open — PE-020 audit work pending |
 
 ---
 
@@ -220,7 +220,7 @@ Every feature, bug, or improvement follows this cycle:
 | plan-enforcer | 2026-03-29 (run 2) | PE-010 drift item, iter 7 changes verified | Registry updated | ✅ Healthy — PE-013 unplanned warehouse changes need documenting |
 | dev-improvement-scanner | 2026-03-29 (run 3) | PE-011, PE-012 found; PE-008e confirmed | All 3 now fixed in latest commits | ✅ Healthy |
 | dev-pipeline-manager | 2026-03-29 (run 3) | Phase 1 complete, PE-011/012/008e all closed, PE-013 new | Pipeline updated | ✅ Healthy |
-| github-issues-sync | — | — | — | ⚠️ Pending first run (auth required) |
+| github-issues-sync | 2026-03-29 | 1 issue (#4, 20 sub-bugs) | 4 fixed directly; 1 prompt created (PE-020); 3 noted as non-issues | ✅ Healthy — first successful run |
 | github-sync-and-review | 2026-03-29 22:07 | 2 new commits (740f480, 4b0c71a) | Pushed to origin/main ✅ | ✅ Healthy — branch up to date |
 | weekly-cleanup | 2026-03-29 (Sun) | 4 .DS_Store files | Removed; dead code scan: clean | ✅ Healthy — next run 2026-04-05 |
 

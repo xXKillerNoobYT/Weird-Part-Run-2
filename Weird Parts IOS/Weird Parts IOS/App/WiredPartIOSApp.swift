@@ -14,7 +14,10 @@ struct WiredPartIOSApp: App {
     @AppStorage("hasCompletedCompanySetup") private var hasCompletedCompanySetup = false
 
     init() {
-        // Existing users who already went through the app don't need the walkthrough or setup wizard
+        // One-time migration: users who already completed the old welcome flow
+        // don't need to re-run the walkthrough or company-setup wizard.
+        // Consume hasSeenWelcome immediately so this never re-fires on a
+        // subsequent fresh build where the DB is empty but UserDefaults persisted.
         if UserDefaults.standard.bool(forKey: "hasSeenWelcome") {
             if !UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
                 UserDefaults.standard.set(true, forKey: "hasCompletedOnboarding")
@@ -22,6 +25,9 @@ struct WiredPartIOSApp: App {
             if !UserDefaults.standard.bool(forKey: "hasCompletedCompanySetup") {
                 UserDefaults.standard.set(true, forKey: "hasCompletedCompanySetup")
             }
+            // Clear the trigger so a future fresh-DB build doesn't re-apply
+            // these flags before bootstrap() can detect the empty database.
+            UserDefaults.standard.removeObject(forKey: "hasSeenWelcome")
         }
     }
 
