@@ -15,7 +15,6 @@ struct IOSQuestionsPage: View {
     @State private var searchText = ""
     @State private var statusFilter: QAFilter = .all
     @State private var loadError: String?
-    @State private var actionError: String?
     private enum ActiveSheet: String, Identifiable {
         case askQuestion
         case help

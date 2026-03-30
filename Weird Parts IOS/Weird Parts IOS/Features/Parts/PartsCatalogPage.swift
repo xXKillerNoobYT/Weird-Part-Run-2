@@ -272,6 +272,14 @@ struct PartsCatalogPage: View {
             }
         }
         .task { await loadLookups(); await loadData() }
+        .alert("Error", isPresented: Binding<Bool>(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
+            Button("OK") { actionError = nil }
+        } message: {
+            Text(actionError ?? "")
+        }
     }
 
     // MARK: - Search Bar

@@ -671,6 +671,7 @@ private struct ReportProblemSheet: View {
     @State private var wasAutoFilled = false
 
     var body: some View {
+        let dismissSheet = { dismiss() }
         NavigationStack {
             Form {
                 Section {
@@ -704,7 +705,7 @@ private struct ReportProblemSheet: View {
             .navigationTitle("Report Problem")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismissSheet() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Submit") {
                         submitProblem()

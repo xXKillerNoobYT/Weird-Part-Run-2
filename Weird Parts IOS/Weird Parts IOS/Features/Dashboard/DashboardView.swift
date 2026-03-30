@@ -133,29 +133,6 @@ struct DashboardView: View {
                     }
                 }
             }
-            .sheet(item: $activeSheet) { sheet in
-                switch sheet {
-                case .help:
-                    PageHelpSheet(
-                        title: "Dashboard Help",
-                        sections: [
-                            ("Overview", "Your daily command center. See clock status, KPI stats, charts, alerts, and quick actions all in one place."),
-                            ("KPI Cards", "Tap any KPI card to see detailed breakdowns. Cards show part types, total stock, active jobs, pending orders, and low stock warnings."),
-                            ("Quick Actions", "Use the quick action buttons at the bottom to scan QR codes, clock in/out, view the daily report, move stock, or create new orders.")
-                        ]
-                    )
-                case .kpiDetail(let detail):
-                    KPIDetailSheet(type: detail)
-                        .environmentObject(appCore)
-                        .task { appCore.onboardingManager?.markCompleted("dashboard-tap-kpi") }
-                case .createJob:
-                    IOSCreateJobSheet()
-                        .environmentObject(appCore)
-                case .companySetup:
-                    CompanySetupWizard()
-                        .environmentObject(appCore)
-                }
-            }
             .task { appCore.onboardingManager?.markCompleted("dashboard-view-kpis") }
             .navigationDestination(for: DashboardDestination.self) { dest in
                 switch dest {
@@ -166,6 +143,31 @@ struct DashboardView: View {
                 case .dailyReport:
                     DashboardDailyReportPage()
                 }
+            }
+        }
+        // Sheet placed OUTSIDE NavigationStack so @Environment(\.dismiss) in sheet content
+        // binds to the sheet's dismiss, not the outer NavigationStack's dismiss.
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                PageHelpSheet(
+                    title: "Dashboard Help",
+                    sections: [
+                        ("Overview", "Your daily command center. See clock status, KPI stats, charts, alerts, and quick actions all in one place."),
+                        ("KPI Cards", "Tap any KPI card to see detailed breakdowns. Cards show part types, total stock, active jobs, pending orders, and low stock warnings."),
+                        ("Quick Actions", "Use the quick action buttons at the bottom to scan QR codes, clock in/out, view the daily report, move stock, or create new orders.")
+                    ]
+                )
+            case .kpiDetail(let detail):
+                KPIDetailSheet(type: detail)
+                    .environmentObject(appCore)
+                    .task { appCore.onboardingManager?.markCompleted("dashboard-tap-kpi") }
+            case .createJob:
+                IOSCreateJobSheet()
+                    .environmentObject(appCore)
+            case .companySetup:
+                CompanySetupWizard()
+                    .environmentObject(appCore)
             }
         }
     }

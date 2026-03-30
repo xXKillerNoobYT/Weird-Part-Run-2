@@ -57,11 +57,10 @@ enum KPIDetailType: Identifiable {
 /// Dispatches to the correct detail view based on which KPI card was tapped.
 struct KPIDetailSheet: View {
     @EnvironmentObject private var appCore: AppCore
-    @Environment(\.dismiss) private var dismiss
     let type: KPIDetailType
 
     var body: some View {
-        NavigationStack {
+        SheetDismissWrapper(title: type.title) {
             Group {
                 switch type {
                 case .partTypes:
@@ -74,13 +73,6 @@ struct KPIDetailSheet: View {
                     PendingOrdersDetailView()
                 case .lowStock:
                     LowStockDetailView()
-                }
-            }
-            .navigationTitle(type.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
                 }
             }
         }

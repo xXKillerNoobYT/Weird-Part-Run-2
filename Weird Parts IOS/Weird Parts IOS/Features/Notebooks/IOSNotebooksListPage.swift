@@ -17,7 +17,6 @@ struct IOSNotebooksListPage: View {
     @State private var searchText = ""
     @State private var typeFilter = "all"
     @State private var loadError: String?
-    @State private var showCreateNotebook = false
     @State private var activeSheet: ActiveSheet?
 
     private let typeOptions = ["all", "general", "job", "daily_report", "checklist"]
@@ -26,9 +25,11 @@ struct IOSNotebooksListPage: View {
 
     private enum ActiveSheet: Identifiable {
         case help
+        case createNotebook
         var id: String {
             switch self {
             case .help: return "help"
+            case .createNotebook: return "create"
             }
         }
     }
@@ -45,7 +46,7 @@ struct IOSNotebooksListPage: View {
         .searchable(text: $searchText, prompt: "Search notebooks...")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button { showCreateNotebook = true } label: {
+                Button { activeSheet = .createNotebook } label: {
                     Image(systemName: "plus")
                 }
             }
@@ -55,17 +56,19 @@ struct IOSNotebooksListPage: View {
                 }
             }
         }
-        .sheet(isPresented: $showCreateNotebook) {
-            CreateNotebookSheet(onSave: { loadData() })
-                .environmentObject(appCore)
-        }
-        .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Notebooks Help", sections: [
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .createNotebook:
+                CreateNotebookSheet(onSave: { loadData() })
+                    .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(title: "Notebooks Help", sections: [
                 ("What This Page Does", "Displays all notebooks in the system. Notebooks are organized documents that hold structured entries such as text blocks, checklists, photos, and part references. They can be general-purpose or linked to specific jobs."),
                 ("How to Use It", "Use the type filter chips at the top to narrow by notebook type (General, Job, Daily Report, or Checklist). Use the search bar to find notebooks by title, job name, or author. Tap a notebook to view its full contents. Pull down to refresh the list."),
                 ("Creating a Notebook", "Tap the + button in the toolbar to create a new notebook. You can choose a type, assign it to a job, and optionally start from a template."),
                 ("Notebook Types", "General notebooks are standalone. Job notebooks are linked to a specific job. Daily Report notebooks track daily progress. Checklist notebooks contain to-do items that can be checked off.")
             ])
+            }
         }
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
@@ -139,7 +142,9 @@ struct IOSNotebooksListPage: View {
             }
         } else {
             List(filteredNotebooks, id: \.id) { notebook in
-                notebookRow(notebook)
+                NavigationLink(destination: IOSNotebookDetailPage(notebookId: notebook.id).environmentObject(appCore)) {
+                    notebookRow(notebook)
+                }
             }
             .listStyle(.insetGrouped)
         }

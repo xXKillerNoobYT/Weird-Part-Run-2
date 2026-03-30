@@ -668,7 +668,9 @@ struct CompanySetupWizard: View {
                 completedSteps.insert(1)
                 saveProgress()
             }
-        } catch {}
+        } catch {
+            // Non-fatal: wizard step check — employee list may fail if service is initializing
+        }
     }
 
     private func checkJobCount() async {
@@ -679,7 +681,9 @@ struct CompanySetupWizard: View {
                 completedSteps.insert(3)
                 saveProgress()
             }
-        } catch {}
+        } catch {
+            // Non-fatal: wizard step check — job list may fail if service is initializing
+        }
     }
 
     // MARK: - Persistence
