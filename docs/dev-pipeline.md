@@ -36,7 +36,7 @@ Every feature, bug, or improvement follows this cycle:
 | Plan Alignment | ✅ All Phase 1 work aligned. 2 new unplanned features documented (warehouse drag-drop, nav path) | 2026-03-29 |
 | Feature Polish | 20 items tracked (PE-011 ✅, PE-012 ✅, PE-008e ✅ fixed since last run) | 2026-03-29 |
 | Xcode Prompts | **Phase 1 COMPLETE** — 279 prompts archived. Phase 2 queue: 8 items needing prompt writing | 2026-03-29 |
-| GitHub Issues | ✅ 0 open issues | 2026-03-29 |
+| GitHub Issues | 12 open (#4-#15) — 4 security, 4 accessibility, 2 UI, 2 bug | 2026-03-29 |
 | Q&A Backlog | Empty (no pending questions) | 2026-03-29 |
 | Agent Health | All 8 agents enabled | 2026-03-29 |
 
@@ -206,6 +206,17 @@ Every feature, bug, or improvement follows this cycle:
 | # | Title | Type | Lifecycle Step | Action | Status |
 |---|-------|------|---------------|--------|--------|
 | [#4](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/4) | Start up problems (fresh build / onboarding bug report) | Bug (multi-item) | Fixed (partial) + Plan created | Fixed A1+A2+A3 (UserDefaults/bootstrap), C5 (force unwraps); B3 not a bug; PE-020 created for B1/B2/B4 audit schema; C1 noted | 🟡 Open — PE-020 audit work pending |
+| [#5](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/5) | Dead button in JPO Creation | Bug | Step 8 | Needs Xcode prompt — empty action closure | 🔴 Open |
+| [#6](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/6) | Unsigned session tokens | Security | Step 9 | Core fix — add HMAC-SHA256 signing | 🔴 Open |
+| [#7](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/7) | No brute-force protection on PIN | Security | Step 9 | Core fix — exponential backoff | 🔴 Open |
+| [#8](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/8) | Data export not gated behind admin | Security | Step 9 | Xcode prompt — add permission check | 🔴 Open |
+| [#9](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/9) | Hardcoded legacy salt in PIN hashing | Security | Step 9 | Core fix — force re-hash | 🔴 Open |
+| [#10](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/10) | LAN sync uses plain HTTP | Security | Step 9 | Core fix — add TLS or payload encryption | 🔴 Open |
+| [#11](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/11) | 55 hardcoded font sizes bypass Dynamic Type | Accessibility | Step 9 | Xcode prompt series | 🔴 Open |
+| [#12](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/12) | 12 undersized tap targets (< 44x44pt) | Accessibility | Step 9 | Xcode prompt | 🔴 Open |
+| [#13](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/13) | 5 swipe-to-delete without confirmation | UI | Step 9 | Xcode prompt | 🔴 Open |
+| [#14](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/14) | Sparse accessibility labels (~8/180+ views) | Accessibility | Step 9 | Xcode prompt series (large) | 🔴 Open |
+| [#15](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/15) | 9+ color-only status indicators | Accessibility | Step 9 | Xcode prompt | 🔴 Open |
 
 ---
 
