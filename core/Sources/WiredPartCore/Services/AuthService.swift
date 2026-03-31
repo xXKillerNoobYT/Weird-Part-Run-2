@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import GRDB
+import Security
 
 /// Local Auth Service — PIN authentication + first-run bootstrap.
 ///
@@ -650,14 +651,36 @@ public final class AuthService: Sendable {
         return Data(bytes).base64EncodedString()
     }
 
-    /// Device-specific signing key. Generated once, stored in memory for the session.
-    /// In production this should be stored in the Keychain; for now it's derived from
-    /// a stable device identifier so tokens survive app restarts within the same device.
+    /// Device-specific signing key. Persisted in the Keychain so tokens survive app
+    /// restarts. On first launch a cryptographically random 256-bit key is generated
+    /// and stored; subsequent launches load the same key. Wiping the device or
+    /// reinstalling the app generates a fresh key (invalidating old tokens, which
+    /// is the expected behavior).
     private static let signingKey: SymmetricKey = {
-        // Use a stable per-device seed. On iOS this would ideally come from Keychain.
-        let seed = "wiredpart-local-token-key-\(ProcessInfo.processInfo.globallyUniqueString)"
-        let hash = SHA256.hash(data: Data(seed.utf8))
-        return SymmetricKey(data: hash)
+        let service = "com.wiredpart.token-signing-key"
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecSuccess, let data = result as? Data, data.count == 32 {
+            return SymmetricKey(data: data)
+        }
+        // Generate a new 256-bit key and persist it.
+        var keyBytes = [UInt8](repeating: 0, count: 32)
+        _ = SecRandomCopyBytes(kSecRandomDefault, 32, &keyBytes)
+        let keyData = Data(keyBytes)
+        let addQuery: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecValueData: keyData,
+            kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+        SecItemAdd(addQuery as CFDictionary, nil)
+        return SymmetricKey(data: keyData)
     }()
 
     /// Generate a signed local session token (base64 payload + HMAC-SHA256 signature).

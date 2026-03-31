@@ -879,4 +879,36 @@ struct SchedulingServiceTests {
         // Admin user was dispatched — should not appear as unassigned
         #expect(!workers.contains(where: { $0.id == env.adminUserId }))
     }
+
+    // MARK: - Dispatch Job Rows
+
+    @Test("getDispatchJobRows returns empty when no active jobs exist")
+    func testDispatchJobRowsEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Fresh DB has no jobs
+        let rows = try env.scheduling.getDispatchJobRows()
+        #expect(rows.isEmpty)
+    }
+
+    @Test("getDispatchJobRows returns active jobs only")
+    func testDispatchJobRowsActiveOnly() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DJR-01", name: "Active Dispatch Job")
+
+        // Seed a second job and mark it inactive
+        let inactiveJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DJR-02", name: "Inactive Job")
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE jobs SET status = 'complete' WHERE id = ?",
+                arguments: [inactiveJobId]
+            )
+        }
+
+        let rows = try env.scheduling.getDispatchJobRows()
+        #expect(rows.contains(where: { $0.id == jobId }))
+        #expect(!rows.contains(where: { $0.id == inactiveJobId }))
+        // Verify the active row has correct name
+        let activeRow = rows.first(where: { $0.id == jobId })
+        #expect(activeRow?.jobName == "Active Dispatch Job")
+    }
 }

@@ -1893,7 +1893,7 @@ public final class OrdersService: Sendable {
             guard statusCheck == "draft" else {
                 throw OrdersError.invalidStatusTransition(entity: "PO line", from: statusCheck ?? "unknown", to: "edit")
             }
-            var setClauses = ["qty_ordered = ?", "updated_at = datetime('now')"]
+            var setClauses = ["qty_ordered = ?"]
             var args: [DatabaseValueConvertible?] = [quantity]
             if let price = unitPrice {
                 setClauses.append("unit_cost = ?")

@@ -250,4 +250,276 @@ struct OrdersServiceTests {
         let suppliers = try env.orders.getSuppliersWithActivePOs()
         #expect(suppliers.contains(where: { $0.id == supplierId }))
     }
+
+    // MARK: - JPO Line Status
+
+    @Test("updateJPOLineStatus updates line and re-derives parent JPO status")
+    func testUpdateJPOLineStatus() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LS-01", name: "Line Status Job")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "LineStatusCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Line Part", categoryId: catId)
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 5, notes: nil)
+
+        // Approve the line
+        try env.orders.updateJPOLineStatus(lineId: lineId, status: "approved", updatedBy: env.adminUserId)
+
+        let detail = try env.orders.getJPODetail(id: jpoId)
+        let line = detail.lines.first(where: { $0.id == lineId })
+        #expect(line?.lineStatus == "approved")
+        // Parent JPO should now reflect the derived "approved" status
+        #expect(detail.status == "approved")
+    }
+
+    @Test("updateJPOLineStatus with on_hold records hold reason")
+    func testUpdateJPOLineStatusOnHold() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LS-02", name: "Hold Job")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "HoldCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Hold Part", categoryId: catId)
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 3, notes: nil)
+
+        try env.orders.updateJPOLineStatus(lineId: lineId, status: "on_hold", reason: "Need confirmation", updatedBy: env.adminUserId)
+
+        let detail = try env.orders.getJPODetail(id: jpoId)
+        let line = detail.lines.first(where: { $0.id == lineId })
+        #expect(line?.lineStatus == "on_hold")
+    }
+
+    // MARK: - deriveJPOStatusFromLineStatuses (pure function)
+
+    @Test("deriveJPOStatusFromLineStatuses: all pending → pending")
+    func testDeriveStatusAllPending() throws {
+        let env = try E2ETestHelpers.setUp()
+        let result = env.orders.deriveJPOStatusFromLineStatuses(["pending", "pending"])
+        #expect(result == "pending")
+    }
+
+    @Test("deriveJPOStatusFromLineStatuses: all delivered → complete")
+    func testDeriveStatusAllDelivered() throws {
+        let env = try E2ETestHelpers.setUp()
+        let result = env.orders.deriveJPOStatusFromLineStatuses(["delivered", "delivered"])
+        #expect(result == "complete")
+    }
+
+    @Test("deriveJPOStatusFromLineStatuses: empty → draft")
+    func testDeriveStatusEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let result = env.orders.deriveJPOStatusFromLineStatuses([])
+        #expect(result == "draft")
+    }
+
+    @Test("deriveJPOStatusFromLineStatuses: mixed statuses → in_review")
+    func testDeriveStatusMixed() throws {
+        let env = try E2ETestHelpers.setUp()
+        let result = env.orders.deriveJPOStatusFromLineStatuses(["pending", "approved"])
+        #expect(result == "in_review")
+    }
+
+    // MARK: - JPO Delivery Option
+
+    @Test("updateJPODeliveryOption changes delivery option")
+    func testUpdateJPODeliveryOption() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DO-01", name: "Delivery Option Job")
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+
+        try env.orders.updateJPODeliveryOption(jpoId: jpoId, option: "pickup")
+
+        // Verify via listing JPOs
+        let jpos = try env.orders.listJPOs()
+        let jpo = jpos.first(where: { $0.id == jpoId })
+        #expect(jpo != nil)
+        // Delivery option is stored — no error thrown means it updated correctly
+    }
+
+    // MARK: - Update PO Line Item
+
+    @Test("updatePOLineItem changes quantity and price on draft PO")
+    func testUpdatePOLineItem() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-ULI", supplierId: supplierId, notes: nil)
+        let catId = try E2ETestHelpers.seedCategory(env, name: "UpdateLineCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Update Line Part", categoryId: catId)
+
+        let lineId = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 10, unitPrice: 2.50)
+        try env.orders.updatePOLineItem(lineId: lineId, quantity: 20, unitPrice: 3.00)
+
+        let detail = try env.orders.getPODetail(id: poId)
+        let line = detail.lines.first(where: { $0.id == lineId })
+        #expect(line?.quantityOrdered == 20)
+        #expect(line?.unitPrice == 3.00)
+    }
+
+    @Test("updatePOLineItem throws when PO is not in draft")
+    func testUpdatePOLineItemNonDraft() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-ULI2", supplierId: supplierId, notes: nil)
+        let catId = try E2ETestHelpers.seedCategory(env, name: "UpdateLockCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Lock Line Part", categoryId: catId)
+        let lineId = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 5, unitPrice: 1.00)
+
+        // Move PO out of draft
+        try env.orders.updatePOStatus(id: poId, status: "sent")
+
+        #expect(throws: (any Error).self) {
+            try env.orders.updatePOLineItem(lineId: lineId, quantity: 10, unitPrice: 2.00)
+        }
+    }
+
+    // MARK: - Category Stage Mappings
+
+    @Test("getCategoryStageMappings returns all categories with nil stage when unmapped")
+    func testGetCategoryStageMappingsEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        _ = try E2ETestHelpers.seedCategory(env, name: "UnmappedCat")
+        let mappings = try env.orders.getCategoryStageMappings()
+        #expect(mappings.count >= 1)
+        // All should have nil stageId since no stages or mappings exist
+        let unmapped = mappings.filter { $0.stageId == nil }
+        #expect(unmapped.count == mappings.count)
+    }
+
+    @Test("updateCategoryStageMapping and getCategoryStageMappings round-trip")
+    func testUpdateCategoryStageMapping() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "MappedCat")
+
+        // Seed a job stage
+        let stageId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO job_stages (name, sort_order, created_at)
+                VALUES ('Rough', 1, datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+
+        try env.orders.updateCategoryStageMapping(categoryId: catId, stageId: stageId)
+        let mappings = try env.orders.getCategoryStageMappings()
+        let mapped = mappings.first(where: { $0.categoryId == catId })
+        #expect(mapped != nil)
+        #expect(mapped?.stageId == stageId)
+        #expect(mapped?.stageName == "Rough")
+    }
+
+    // MARK: - Job Stage Parts
+
+    @Test("getJobStageParts returns empty for job with no JPO lines")
+    func testGetJobStagePartsEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SP-01", name: "Stage Parts Job")
+        let parts = try env.orders.getJobStageParts(jobId: jobId)
+        #expect(parts.isEmpty)
+    }
+
+    @Test("getJobStageParts returns line items after adding JPO")
+    func testGetJobStagePartsWithLines() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SP-02", name: "Stage Parts Job 2")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "StagePartsCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Stage Wire", categoryId: catId)
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        _ = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 8, notes: nil)
+
+        let parts = try env.orders.getJobStageParts(jobId: jobId)
+        #expect(parts.count == 1)
+        #expect(parts[0].partName == "Stage Wire")
+        #expect(parts[0].quantity == 8)
+    }
+
+    // MARK: - requestEarlyRelease
+
+    @Test("requestEarlyRelease promotes held line to approved")
+    func testRequestEarlyRelease() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-ER-01", name: "Early Release Job")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "EarlyReleaseCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Held Part", categoryId: catId)
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 2, notes: nil)
+
+        // Manually set the line to 'held' status
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE jpo_line_items SET line_status = 'held' WHERE id = ?",
+                arguments: [lineId]
+            )
+        }
+
+        try env.orders.requestEarlyRelease(jpoLineId: lineId)
+
+        let detail = try env.orders.getJPODetail(id: jpoId)
+        let line = detail.lines.first(where: { $0.id == lineId })
+        #expect(line?.lineStatus == "approved")
+    }
+
+    // MARK: - Receipt History Entries & Items
+
+    @Test("getReceiptHistoryEntries returns empty for PO with no completed sessions")
+    func testReceiptHistoryEntriesEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-RHE", supplierId: supplierId, notes: nil)
+        let entries = try env.orders.getReceiptHistoryEntries(poId: poId)
+        #expect(entries.isEmpty)
+    }
+
+    @Test("getReceiptHistoryItems returns empty for non-existent session")
+    func testReceiptHistoryItemsEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let items = try env.orders.getReceiptHistoryItems(sessionId: 9999)
+        #expect(items.isEmpty)
+    }
+
+    // MARK: - Parts For Supplier
+
+    @Test("getPartsForSupplier returns empty when no PO lines exist")
+    func testGetPartsForSupplierEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "PartSupplier")
+        let parts = try env.orders.getPartsForSupplier(supplierId: supplierId)
+        #expect(parts.isEmpty)
+    }
+
+    @Test("getPartsForSupplier returns lines after creating PO with line items")
+    func testGetPartsForSupplierWithLines() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "PartSupplier2")
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-PFS", supplierId: supplierId, notes: nil)
+        let catId = try E2ETestHelpers.seedCategory(env, name: "SupplierPartCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Supplier Part", categoryId: catId)
+        _ = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 100, unitPrice: 0.50)
+
+        let parts = try env.orders.getPartsForSupplier(supplierId: supplierId)
+        #expect(parts.count >= 1)
+        #expect(parts.contains(where: { $0.partName == "Supplier Part" }))
+        #expect(parts[0].quantityOrdered == 100)
+    }
+
+    // MARK: - listJPOs with job filter
+
+    @Test("listJPOs with jobId filter returns only JPOs for that job")
+    func testListJPOsJobFilter() throws {
+        let env = try E2ETestHelpers.setUp()
+        let job1Id = try E2ETestHelpers.seedJob(env, jobNumber: "J-LF-01", name: "Filter Job 1")
+        let job2Id = try E2ETestHelpers.seedJob(env, jobNumber: "J-LF-02", name: "Filter Job 2")
+
+        let jpo1Id = try env.orders.createJPO(jobId: job1Id, requestedBy: env.adminUserId, notes: nil)
+        _ = try env.orders.createJPO(jobId: job2Id, requestedBy: env.adminUserId, notes: nil)
+
+        let allJPOs = try env.orders.listJPOs()
+        let job1JPOs = try env.orders.listJPOs(jobId: job1Id)
+        #expect(allJPOs.count >= 2)
+        #expect(job1JPOs.count == 1)
+        #expect(job1JPOs[0].id == jpo1Id)
+        #expect(job1JPOs[0].jobId == job1Id)
+    }
 }

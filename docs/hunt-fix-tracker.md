@@ -495,3 +495,82 @@ These bugs were in `generateToolCheckoutsReport` — would crash any time a user
 
 **No new bugs found requiring fixes this iteration.**
 
+
+
+---
+
+### Iteration 10 — Test Coverage Expansion: OrdersService + Schema Bug (2026-03-30, automated)
+
+**Build:** ✅ 0 errors, 0 warnings
+**Tests:** ✅ 759/759 passing (was 736 — +23 new tests)
+
+**Coverage analysis:**
+| Service | Methods | Tested Before | Tested After | New Tests |
+|---------|---------|--------------|--------------|-----------|
+| OrdersService | 40+ | ~15 | ~30 | 20 new tests |
+| SchedulingService | 28 | 26 | 28 | 2 new tests |
+| ChatService | 30+ | 28 | 29 | 1 new test |
+
+**New tests added this run:**
+- `updateJPOLineStatus` — updates line status and re-derives parent JPO status
+- `updateJPOLineStatus` with on_hold — records hold reason
+- `deriveJPOStatusFromLineStatuses` — 4 scenarios (pure function): all-pending, all-delivered, empty, mixed
+- `updateJPODeliveryOption` — changes delivery option on unlocked JPO
+- `updatePOLineItem` — updates qty+price on draft PO (also found bug)
+- `updatePOLineItem` guard — throws when PO is not in draft status
+- `getCategoryStageMappings` — returns all categories with nil stageId when unmapped
+- `updateCategoryStageMapping` + `getCategoryStageMappings` — full round-trip
+- `getJobStageParts` — empty and with JPO lines
+- `requestEarlyRelease` — promotes held line to approved
+- `getReceiptHistoryEntries` — empty on fresh PO (queries `receiving_sessions`)
+- `getReceiptHistoryItems` — empty for non-existent session
+- `getPartsForSupplier` — empty and with PO lines
+- `listJPOs(jobId:)` — filter by job isolates results correctly
+- `getDispatchJobRows` — empty and active-only filter
+- `syncOfficeChannelMembers` — no-op when no office channel, and with office channel
+
+**Bug found and fixed:**
+| Service | Method | Bug | Fix |
+|---------|--------|-----|-----|
+| OrdersService | `updatePOLineItem` | Referenced `updated_at` column in UPDATE but `po_line_items` has no such column (SQLite error 1) | Removed `updated_at = datetime('now')` from SET clause — consistent with schema |
+
+**Self-annealing loop applied:** Test → Error → Read schema → Fix service → Re-test ✅
+
+---
+
+## Iteration 10 — Security Hardening + Tracker Sync (2026-03-30, automated)
+
+**Build:** ✅ 0 errors, 0 warnings
+**Tests:** ✅ 759/759 passing — all 49 suites clean (+23 from audit tests now fully exercised)
+
+**Scanner results:**
+
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Compile | ✅ PASS | 0 errors, 0 warnings |
+| Tests | ✅ PASS | 759/759 passing — all 49 suites clean |
+| Code Patterns | ✅ PASS | All `print()` in iOS are inside `#Preview` blocks (compile-excluded). `Button { }` empty closures are all `role: .cancel` (correct) or intentionally guarded (with comment). `Text("Coming Soon")` is in `PlaceholderView` struct (intentional stub). |
+| SQL Integrity | ✅ PASS | `BackgroundTaskService` fully verified against migration 058. `WarehouseService` `counted_qty`/`last_counted` verified in `stock` table (migration 062). `MultiUserAuditAssignment` column mapping verified. `OrdersService` `partDemand` force unwraps are nil-guarded (safe). |
+| Runtime Safety | ✅ PASS | `partDemand[partId]!` in OrdersService (lines 1059-1060) is inside `if != nil` guard — logically safe. No unguarded subscripts. |
+| Edge Cases | ✅ PASS | All services return empty gracefully on `isTableNotFoundError`. |
+| Problems Folder | ✅ PASS | `docs/Problomes/` does not exist. |
+| Master Issues | ⚠️ | 20 T1, 25 T2, 20 T3 — mostly iOS UI features needing Xcode prompts. PE items tracked in fix-order. |
+| Plan Alignment | ✅ PASS | `dev-qa.md` clean — no pending questions. Recent commits match planned work. |
+| Security | ✅ PASS | Token signing key now Keychain-backed (PE-021). HMAC-SHA256 verified. Brute-force lockout verified. Legacy PIN salt in `legacyHashPin()` is migration-only (PE-008c, tracked). |
+
+**Changes made this iteration:**
+
+| Item | Action | Files Changed |
+|------|--------|---------------|
+| PE-021 | **Fixed:** Token signing key moved from ephemeral UUID to Keychain-backed 256-bit random key | `AuthService.swift` |
+| PE-020 | **Closed:** All three audit count bugs already fixed in prior commits + tests exist | `00-fix-order.md` (tracker updated) |
+| PE-008a | **Closed in tracker:** HMAC-SHA256 signing already implemented (b3eef3b) | `00-fix-order.md` |
+| PE-008b | **Closed in tracker:** Brute-force lockout already implemented (b3eef3b) | `00-fix-order.md` |
+| DevTODO-16 | **Marked done:** Token signing key fix complete | `16-token-signing-key-keychain.md` |
+
+**Self-annealing applied:**
+- Discovered PE-020/PE-021/PE-008a/PE-008b already implemented but not marked closed → updated tracker to reflect reality
+- Implemented PE-021 directly in core (Keychain API, no Xcode AI needed) → build + 759 tests pass
+
+**No new GitHub issues filed** — all findings were either already fixed or tracked.
+

@@ -35,7 +35,8 @@
 | PE-017 | *(note)* | **B3** Issue reports multi-user audit backend missing — both `getMultiUserAuditAssignments()` and `resolveMultiUserAudit()` ARE implemented (WarehouseService.swift lines 3883+, 3975+) | ✅ not an issue |
 | PE-018 | *(note)* | **C3** Migration 039 `try? db.drop()` — intentional "drop if exists" pattern; GRDB wraps each migration in a transaction so `try db.create()` failure rolls back cleanly | ✅ not a risk |
 | PE-019 | *(note)* | **C2** CompanySetupWizard partial save — uses `try` (not `try?`), each step has its own `do/catch` with `saveError` feedback; not a silent failure | ✅ acceptable |
-| PE-020 | `PE-020-audit-count-recording.md` | **B1+B2+B4** Audit count recording broken — needs migration to add `counted_qty` column, fix `recordAuditCount()`, `getAuditDiscrepancies()`, `getAuditSummary()` | ⬜ needs core swift work |
+| PE-020 | *(closed)* | **B1+B2+B4** Audit count recording — migration 062 added `counted_qty` to stock, all three methods fixed, 3 tests added and passing | ✅ closed (hunt-fix 2026-03-30) |
+| PE-021 | *(closed)* | Token signing key now Keychain-backed — persists across restarts, 256-bit random key, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` | ✅ closed (hunt-fix 2026-03-30) |
 
 ---
 
@@ -45,8 +46,8 @@ These require changes in `core/Sources/WiredPartCore/` — write and test direct
 
 | # | What | Severity |
 |---|------|----------|
-| PE-008a | Unsigned session tokens (forgeable) | High |
-| PE-008b | No brute-force protection on PIN login | High |
+| PE-008a | ~~Unsigned session tokens (forgeable)~~ | ✅ **Fixed** (b3eef3b) — HMAC-SHA256 signing with `SymmetricKey` in `AuthService` |
+| PE-008b | ~~No brute-force protection on PIN login~~ | ✅ **Fixed** (b3eef3b) — Exponential lockout with `lockoutDuration()` in `AuthService` |
 | PE-008c | Hardcoded legacy salt in PIN hashing | Medium |
 | PE-008d | LAN sync uses plain HTTP | Medium |
 | PE-008e | ~~Data export not gated behind admin permission~~ | ✅ **Fixed** (4b0c71a) — IOSDataExportPage now checks `export_reports` permission |
