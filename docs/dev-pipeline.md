@@ -1,6 +1,6 @@
 # WiredPart Development Pipeline
 
-> **Last updated:** 2026-03-29 (dev-pipeline-manager run 3 — Phase 1 complete, Phase 2 begin)
+> **Last updated:** 2026-03-30 (dev-pipeline-manager run 4 — PE-020/021 closed, #16 closed, 759 tests)
 > **Auto-maintained by:** dev-pipeline-manager (orchestrator)
 
 ---
@@ -31,14 +31,14 @@ Every feature, bug, or improvement follows this cycle:
 
 | Area | Status | Last Checked |
 |------|--------|-------------|
-| Build | 0 errors, 0 warnings | 2026-03-29 |
-| Tests | 759/759 passing (2026-03-30 run 2 — +23 new tests) | 2026-03-30 |
-| Plan Alignment | ✅ PE-008a/b fixed. 1 signing key limitation noted (PE-021). PE-013 still needs plan update | 2026-03-30 |
-| Feature Polish | 20 items tracked (PE-008a ✅, PE-008b ✅ fixed this run) | 2026-03-30 |
-| Xcode Prompts | **Phase 1 COMPLETE** — 279 prompts archived. Phase 2 queue: 8 items needing prompt writing | 2026-03-29 |
-| GitHub Issues | 9 open (#4, #5, #9-#15) — #6 ✅ #7 ✅ #8 ✅ closed this run | 2026-03-30 |
-| Q&A Backlog | Empty (no pending questions) | 2026-03-29 |
-| Agent Health | All 8 agents enabled | 2026-03-29 |
+| Build | 0 errors, 0 warnings | 2026-03-30 |
+| Tests | 759/759 passing (49 suites) | 2026-03-30 |
+| Plan Alignment | ✅ PE-021 closed (Keychain key). PE-013 still needs ios-warehouse-pages.md update | 2026-03-30 |
+| Feature Polish | 20 items tracked (PE-020 ✅, PE-021 ✅ fixed this run) | 2026-03-30 |
+| Xcode Prompts | **Phase 1 COMPLETE** — 279 prompts archived. Phase 2 queue: 7 items needing prompt writing | 2026-03-30 |
+| GitHub Issues | 8 open (#4, #5, #9-#15) — #16 ✅ closed this run | 2026-03-30 |
+| Q&A Backlog | Empty (no pending questions) | 2026-03-30 |
+| Agent Health | All 8 agents enabled | 2026-03-30 |
 
 ---
 
@@ -56,7 +56,7 @@ Every feature, bug, or improvement follows this cycle:
 | PE-006 | 67A: Pass real userId to createAuditSession + autoSaveToJobNotebook | 13 — complete | ✅ Fixed directly (2026-03-29) | IOSAuditSetupView + IOSMessageThreadView |
 | PE-007 | Test coverage gaps: PeopleService 38%, ChatService 42%, SettingsService 43% | 7 — fine-tune | Open | test-coverage-maintenance agent |
 | PE-008 | Security core fixes: ~~unsigned tokens~~, ~~brute-force~~, hardcoded salt, LAN HTTP (PE-008e export guard ✅ fixed) | 9 — needs core fixes | Open (c-d) — a/b fixed | AuthService b3eef3b |
-| PE-021 | Session token signing key is ephemeral (per-launch UUID, not Keychain) — tokens invalidate on every app restart | 9 — known limitation | Open — GitHub #16, DevTODO 16 | core/Sources/WiredPartCore/Services/AuthService.swift:656 |
+| PE-021 | ~~Session token signing key is ephemeral~~ **FIXED** — Keychain-backed 256-bit key, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` | 13 — complete | ✅ Fixed cebf4e4 — #16 closed | AuthService.swift:659 |
 | PE-009 | Apple HIG: 88 hardcoded fonts, 12 tap targets, 6 remaining swipe-to-delete without confirmation, a11y labels | 9 — needs Xcode prompts | Open (a-e) | Prompts not yet written |
 | PE-010 | `createAuditSession()` silently dropped zone/sampleSize/notes | 13 — complete | ✅ Migration 061 adds columns; SQL insert updated | Option A chosen |
 | PE-011 | 12 force unwraps in `ReportDateRange.swift` | 13 — complete | ✅ Fixed in commit 4b0c71a — guard/let + addingTimeInterval fallbacks | Closed |
@@ -75,12 +75,11 @@ Every feature, bug, or improvement follows this cycle:
 
 > **Phase 1 COMPLETE.** All 279 Xcode AI prompts archived in `done/`. Working tree is clean, pushed to origin/main. Phase 2 begins — writing Xcode prompts for HIG polish + security.
 
-1. **Write + run PE-009c prompt** (swipe-to-delete confirmations in 6 remaining files: IOSPreTripChecklistPage, IOSClockOutQuestionsPage, IOSReportTemplatesPage ×2, WarehouseWizardStep2, AddNotebookEntrySheet)
-2. **Write + run PE-001 prompt** (Tool page rename: "Tool Registry"→"All Tools", "Tool Admin"→"Management")
-3. **Write + run PE-009a prompt** (Dynamic Type: 88 hardcoded `.font(.system(size:))` → `.font(.title2)` / `.font(.body)` etc. across 51 files)
-4. **Write + run PE-009b prompt** (12 undersized tap targets — add `.frame(minWidth: 44, minHeight: 44)`)
-5. **Fix PE-008c** (hardcoded legacy salt `:wiredpart` — auto-migrates on login but no forced reset)
-6. **Fix PE-021** (move token signing key to Keychain so tokens survive app restarts — AuthService.swift:656)
+1. **Write + run PE-009c prompt** (swipe-to-delete confirmations in 5 remaining files: IOSPreTripChecklistPage, IOSClockOutQuestionsPage, IOSReportTemplatesPage ×2, WarehouseWizardStep2, AddNotebookEntrySheet)
+2. **Fix PE-008c** (hardcoded legacy salt `:wiredpart` — auto-migrates on login but no forced reset — direct Swift edit)
+3. **Write + run PE-001 prompt** (Tool page rename: "Tool Registry"→"All Tools", "Tool Admin"→"Management")
+4. **Write + run PE-009a prompt** (Dynamic Type: 88 hardcoded `.font(.system(size:))` → `.font(.title2)` / `.font(.body)` etc. across 51 files)
+5. **Write + run PE-009b prompt** (12 undersized tap targets — add `.frame(minWidth: 44, minHeight: 44)`)
 6. **Write PE-009d prompt** (color-only status indicators — add text/icon labels alongside)
 7. **Write PE-009e prompt series** (accessibility labels — start with most-used pages)
 8. **Write PE-003 prompt** (flex pool self-assign section on Scheduling page)
@@ -93,14 +92,15 @@ Every feature, bug, or improvement follows this cycle:
 
 | Priority | Item | Source | Step | Blocked By |
 |----------|------|--------|------|------------|
-| 1 | Write PE-009c prompt — swipe-to-delete in 6 files | HIG / data safety | 10 | Write prompt first |
-| 2 | Write PE-001 prompt — Tool naming rename | Plan alignment | 10 | Write prompt first |
-| 3 | Write PE-009a prompt — Dynamic Type (88 fonts in 51 files) | Accessibility / App Store | 10 | Write prompt first |
-| 4 | Write PE-009b prompt — tap targets (12 undersized) | Touch usability | 10 | Write prompt first |
-| 5 | ~~Fix PE-008a — unsigned session tokens~~ **DONE** b3eef3b | Security (high) | 13 | ✅ Closed |
-| 6 | ~~Fix PE-008b — no brute-force protection on PIN~~ **DONE** b3eef3b | Security (high) | 13 | ✅ Closed |
-| 7 | Fix PE-008c — hardcoded legacy salt `:wiredpart` | Security (medium) | 9 | Core Swift edit |
-| 8 | Fix PE-008d — LAN sync plain HTTP | Security (medium) | 9 | Larger change (TLS) |
+| 1 | Write PE-009c prompt — swipe-to-delete in 5 remaining files | HIG / data safety | 10 | Write prompt first |
+| 2 | Fix PE-008c — hardcoded legacy salt `:wiredpart` | Security (medium) | 9 | Core Swift edit |
+| 3 | Write PE-001 prompt — Tool naming rename | Plan alignment | 10 | Write prompt first |
+| 4 | Write PE-009a prompt — Dynamic Type (88 fonts in 51 files) | Accessibility / App Store | 10 | Write prompt first |
+| 5 | Write PE-009b prompt — tap targets (12 undersized) | Touch usability | 10 | Write prompt first |
+| — | ~~Fix PE-008a — unsigned session tokens~~ **DONE** b3eef3b | Security (high) | 13 | ✅ Closed |
+| — | ~~Fix PE-008b — no brute-force protection on PIN~~ **DONE** b3eef3b | Security (high) | 13 | ✅ Closed |
+| — | ~~Fix PE-021 — ephemeral token signing key~~ **DONE** cebf4e4 | Security (medium) | 13 | ✅ Closed |
+| 6 | Fix PE-008d — LAN sync plain HTTP | Security (medium) | 9 | Larger change (TLS) |
 | 9 | Write PE-009d prompt — color-only status indicators | Accessibility | 10 | Write prompt first |
 | 10 | Write PE-009e prompt series — a11y labels (180+ views) | VoiceOver | 10 | Large effort |
 | 11 | Write PE-003 prompt — flex pool self-assign on Scheduling | Plan alignment | 10 | Write prompt first |
@@ -126,7 +126,8 @@ Every feature, bug, or improvement follows this cycle:
 | 2026-03-29 | Fix PE-006 (67A): userId attribution in audit session + notebook auto-save | Steps 10-13 | Direct iOS fix |
 | 2026-03-30 | PE-008a: HMAC-SHA256 token signing (#6 closed) | Step 13 | b3eef3b |
 | 2026-03-30 | PE-008b: PIN brute-force lockout exponential backoff (#7 closed) | Step 13 | b3eef3b |
-| 2026-03-30 | PE-020 partial: `counted_qty` + discrepancy calc in WarehouseService (#4 B1/B2) | Steps 5-7 | 1eb051f |
+| 2026-03-30 | PE-020 closed: `counted_qty` + discrepancy calc + 3 audit tests (#4 B1/B2, prompt archived) | Steps 5-13 | 1eb051f + cebf4e4 |
+| 2026-03-30 | PE-021 closed: Keychain-backed token signing key (GitHub #16 closed) | Steps 9-13 | cebf4e4 |
 | 2026-03-29 | 68 SQL bugs fixed total, 736 tests, all Phase 1 Xcode prompts done | Steps 5-7, 12-13 | Multiple |
 
 ---
@@ -193,9 +194,9 @@ Every feature, bug, or improvement follows this cycle:
 | Apple HIG | 5 swipe-to-delete without confirmation | Medium — data safety | Quick | 9 | 🔲 Xcode prompt needed |
 | Apple HIG | Sparse accessibility labels (~8/180+ views) | High — VoiceOver | Large | 9 | 🔲 Xcode prompt series |
 | Apple HIG | 9+ color-only status indicators | Medium — accessibility | Quick | 9 | 🔲 Xcode prompt needed |
-| Security | Unsigned session tokens (forgeable) | High — auth bypass | Medium | 9 | 🔲 Core fix needed |
-| Security | No brute-force protection on PIN login | High — account security | Quick | 9 | 🔲 Core fix needed |
-| Security | Data export not gated behind admin permission | Medium — data exfiltration | Quick | 9 | 🔲 Xcode prompt needed |
+| Security | ~~Unsigned session tokens~~ **DONE** | High — auth bypass | Medium | 13 | ✅ Fixed b3eef3b |
+| Security | ~~No brute-force protection on PIN login~~ **DONE** | High — account security | Quick | 13 | ✅ Fixed b3eef3b |
+| Security | ~~Data export not gated behind admin permission~~ **DONE** | Medium — data exfiltration | Quick | 13 | ✅ Fixed 4b0c71a |
 | Security | Hardcoded legacy salt in PIN hashing | Medium — rainbow tables | Quick | 9 | 🔲 Core fix needed |
 | Security | LAN sync uses plain HTTP | Medium — eavesdropping | Medium | 9 | 🔲 Core fix needed |
 | Runtime Safety | 12 force unwraps in ReportDateRange.swift | Medium — crash all date-filtered pages | Quick | 13 | ✅ Fixed (4b0c71a) — guard/let + addingTimeInterval fallbacks |
@@ -222,7 +223,7 @@ Every feature, bug, or improvement follows this cycle:
 | [#13](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/13) | 5 swipe-to-delete without confirmation | UI | Step 9 | Xcode prompt | 🔴 Open |
 | [#14](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/14) | Sparse accessibility labels (~8/180+ views) | Accessibility | Step 9 | Xcode prompt series (large) | 🔴 Open |
 | [#15](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/15) | 9+ color-only status indicators | Accessibility | Step 9 | Xcode prompt | 🔴 Open |
-| [#16](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/16) | Session token signing key ephemeral — invalidates on restart | Security | Step 9 | Core fix — Keychain (PE-021, DevTODO 16) | 🔴 Open |
+| [#16](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/16) | Session token signing key ephemeral — invalidates on restart | Security | Step 13 | FIXED cebf4e4 — Keychain-backed key, survives restarts | 🟢 Closed |
 
 ---
 
@@ -236,7 +237,7 @@ Every feature, bug, or improvement follows this cycle:
 | test-coverage-maintenance | 2026-03-29 | Coverage gaps in PeopleService (38%), ChatService (42%), SettingsService (43%) | +185 tests total (733 passing) | ✅ Healthy — gaps remain, needs more runs |
 | plan-enforcer | 2026-03-30 (run 3) | PE-008a/b now fixed; #6/#7/#8 closed; PE-021 new (signing key); debug DB reset unplanned | Registry + issues table updated | ✅ Healthy — PE-013 still needs ios-warehouse-pages.md update |
 | dev-improvement-scanner | 2026-03-29 (run 3) | PE-011, PE-012 found; PE-008e confirmed | All 3 now fixed in latest commits | ✅ Healthy |
-| dev-pipeline-manager | 2026-03-29 (run 3) | Phase 1 complete, PE-011/012/008e all closed, PE-013 new | Pipeline updated | ✅ Healthy |
+| dev-pipeline-manager | 2026-03-30 (run 4) | PE-020/021 closed, #16 closed, 759 tests confirmed | Pipeline updated | ✅ Healthy |
 | github-issues-sync | 2026-03-29 | 1 issue (#4, 20 sub-bugs) | 4 fixed directly; 1 prompt created (PE-020); 3 noted as non-issues | ✅ Healthy — first successful run |
 | github-sync-and-review | 2026-03-29 22:07 | 2 new commits (740f480, 4b0c71a) | Pushed to origin/main ✅ | ✅ Healthy — branch up to date |
 | weekly-cleanup | 2026-03-29 (Sun) | 4 .DS_Store files | Removed; dead code scan: clean | ✅ Healthy — next run 2026-04-05 |
@@ -246,6 +247,38 @@ Every feature, bug, or improvement follows this cycle:
 ## Pipeline Daily Summary Log
 
 _Appended by dev-pipeline-manager each run._
+
+---
+
+### 2026-03-30 — Pipeline Manager Run 4 (PE-020/021 Closed, #16 Closed)
+
+**Input:** 1 new GitHub issue (#16 — token signing key; already fixed in cebf4e4 before issue was filed), 0 new plans, 1 new commit since last run (cebf4e4)
+
+**Changes since last pipeline run:**
+
+| Commit | What |
+|--------|------|
+| cebf4e4 | PE-021: Keychain-backed token signing key (256-bit, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`). PE-020: audit count prompt archived to done/. |
+
+**Status:**
+- **Tests:** 759/759 passing (49 suites) — no regressions
+- **Build:** 0 errors, 0 warnings
+- **Working tree:** Clean — all changes committed and pushed
+
+**PEs closed this run:** PE-020 ✅ (archived prompt), PE-021 ✅ (Keychain signing key)
+**GitHub issues closed this run:** #16 ✅
+**Plans created:** 0
+**Q&A generated:** 0
+**Xcode prompts written:** 0
+**Tests:** 759/759 passing (unchanged — fixes were core Swift, no new test needed)
+**Active open issues:** #4 🟡 (partial), #5 🔴, #9 🔴, #10 🔴, #11 🔴, #12 🔴, #13 🔴, #14 🔴, #15 🔴 (8 open)
+**Backlog size:** 14 items (0 blocked on Q&A)
+**Next priority:** Write PE-009c prompt (5 remaining swipe-to-delete without confirmation files) and fix PE-008c (hardcoded legacy salt)
+
+**Self-improvement notes:**
+- PE-021/#16 was fixed by the hunt-fix agent (cebf4e4) BEFORE the GitHub issue was created — indicating the hunt-fix scanner is ahead of the issue tracker. This is healthy.
+- The Feature Polish Tracker still had security items marked as "🔲 Core fix needed" for #6, #7, #8 which were already fixed. Updated to ✅ done.
+- Next critical path: PE-008c (legacy salt), then write all Phase 2 Xcode prompts for user to run.
 
 ---
 

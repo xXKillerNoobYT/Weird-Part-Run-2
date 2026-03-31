@@ -1,7 +1,7 @@
 # Hunt-Fix-Verify Loop Tracker
 
 > **Started:** 2026-03-28
-> **Status:** PHASE 1 COMPLETE — 9 iterations, 68 SQL bugs, 733 tests passing, all prompts archived
+> **Status:** PHASE 1 COMPLETE — 9 iterations, 68 SQL bugs, 759 tests passing, all prompts archived. PE-020 (counted_qty) + PE-021 (Keychain signing key) closed 2026-03-30.
 
 ---
 
