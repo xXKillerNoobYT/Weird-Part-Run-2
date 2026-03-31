@@ -142,11 +142,13 @@ struct PartsCatalogPage: View {
                 } label: {
                     Image(systemName: showPricing ? "dollarsign.circle.fill" : "dollarsign.circle")
                 }
+                .accessibilityLabel(showPricing ? "Hide pricing" : "Show pricing")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
@@ -154,16 +156,19 @@ struct PartsCatalogPage: View {
                 } label: {
                     Image(systemName: "printer")
                 }
+                .accessibilityLabel("Print labels")
                 Button {
                     activeSheet = .qrScanner
                 } label: {
                     Image(systemName: "qrcode.viewfinder")
                 }
+                .accessibilityLabel("Scan QR code")
                 Button {
                     activeSheet = .addPart
                 } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Add new part")
             }
         }
         .onChange(of: showPricing) {
@@ -289,6 +294,7 @@ struct PartsCatalogPage: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
 
             TextField("Search parts by name, code, or brand...", text: $searchText)
                 .textFieldStyle(.plain)
@@ -303,6 +309,7 @@ struct PartsCatalogPage: View {
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(.horizontal, 14)
@@ -465,12 +472,14 @@ struct PartsCatalogPage: View {
             HStack(spacing: 4) {
                 Image(systemName: icon)
                     .font(.caption2)
+                    .accessibilityHidden(true)
                 Text(selection.flatMap { sel in options.first { $0.0 == sel }?.1 } ?? label)
                     .font(.caption)
                     .fontWeight(selection != nil ? .semibold : .regular)
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.caption2).bold()
+                    .accessibilityHidden(true)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
@@ -524,6 +533,7 @@ struct PartsCatalogPage: View {
                 if sortField == field {
                     Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
                         .font(.caption2)
+                        .accessibilityHidden(true)
                 }
             }
             .foregroundStyle(sortField == field ? .primary : .secondary)
@@ -595,6 +605,7 @@ struct PartsCatalogPage: View {
                     Image(systemName: "wrench.and.screwdriver.fill")
                         .font(.title3)
                         .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
                 }
                 .frame(width: 40, height: 40)
                 .background(Color(.tertiarySystemGroupedBackground))
@@ -605,6 +616,7 @@ struct PartsCatalogPage: View {
                         .fill(.orange)
                         .frame(width: 10, height: 10)
                         .offset(x: 3, y: -3)
+                        .accessibilityLabel("Low stock")
                 }
             }
 
@@ -688,6 +700,7 @@ struct PartsCatalogPage: View {
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
         .frame(minHeight: 56)
     }
@@ -743,8 +756,9 @@ struct PartsCatalogPage: View {
     private var emptyState: some View {
         VStack(spacing: 16) {
             Image(systemName: "wrench.and.screwdriver")
-                .font(.system(size: 48))
+                .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Text("No Parts Found")
                 .font(.title3)
                 .fontWeight(.semibold)
@@ -935,6 +949,7 @@ struct PartsCatalogPage: View {
                 Image(systemName: "sparkles")
                     .font(.caption2)
                     .foregroundStyle(.blue)
+                    .accessibilityHidden(true)
                 Text("Smart search applied filters")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -1492,6 +1507,7 @@ private struct PartDetailSheet: View {
                     } label: {
                         Image(systemName: "pencil")
                     }
+                    .accessibilityLabel("Edit part")
                 }
             }
             .sheet(isPresented: $showEditForm) {

@@ -109,6 +109,7 @@ struct IOSAuditSetupView: View {
                 Image(systemName: scope.icon)
                     .foregroundStyle(auditScope == scope ? Color.accentColor : .secondary)
                     .frame(width: 28)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(scope.rawValue)
@@ -124,6 +125,7 @@ struct IOSAuditSetupView: View {
                 if auditScope == scope {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(Color.accentColor)
+                        .accessibilityLabel("Selected")
                 }
             }
         }

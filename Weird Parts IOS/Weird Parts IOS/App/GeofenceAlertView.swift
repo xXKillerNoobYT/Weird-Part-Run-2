@@ -49,7 +49,7 @@ struct GeofenceAlertView: View {
                     // Warning header
                     VStack(spacing: 12) {
                         Image(systemName: "location.slash.fill")
-                            .font(.system(size: 48))
+                            .decorativeIconFont(48)
                             .foregroundStyle(.orange)
 
                         Text("You've Left the Job Area")

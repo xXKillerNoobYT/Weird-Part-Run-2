@@ -131,6 +131,7 @@ struct DashboardView: View {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
+                    .accessibilityLabel("Help")
                 }
             }
             .task { appCore.onboardingManager?.markCompleted("dashboard-view-kpis") }
@@ -191,6 +192,7 @@ struct DashboardView: View {
                     Image(systemName: "sparkles")
                         .foregroundStyle(.blue)
                         .font(.title2)
+                        .accessibilityHidden(true)
                     Text("Getting Started")
                         .font(.title2)
                         .fontWeight(.bold)
@@ -202,6 +204,7 @@ struct DashboardView: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss checklist")
                 }
 
                 Text("Welcome to WiredPart! Complete these steps to set up your business.")
@@ -375,6 +378,7 @@ struct DashboardView: View {
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
             }
         }
         .contentShape(Rectangle())
@@ -389,6 +393,7 @@ struct DashboardView: View {
                 HStack {
                     Image(systemName: "graduationcap.fill")
                         .foregroundStyle(.blue)
+                        .accessibilityHidden(true)
                     Text("App Tour Progress")
                         .font(.headline)
                     Spacer()
@@ -406,6 +411,7 @@ struct DashboardView: View {
                                 .font(.caption)
                                 .frame(width: 24)
                                 .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
                             Text(module.label)
                                 .font(.subheadline)
                             Spacer()
@@ -476,6 +482,7 @@ struct DashboardView: View {
                 Circle()
                     .fill(isCurrentlyClockedIn ? Color.green : Color.gray)
                     .frame(width: 10, height: 10)
+                    .accessibilityLabel(isCurrentlyClockedIn ? "Status: clocked in" : "Status: not clocked in")
 
                 if isCurrentlyClockedIn {
                     VStack(alignment: .leading, spacing: DS.Space.xxxs) {
@@ -505,6 +512,7 @@ struct DashboardView: View {
                     Image(systemName: "chevron.right")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 } else {
                     Text("Not clocked in")
                         .font(.subheadline)
@@ -520,6 +528,7 @@ struct DashboardView: View {
                     Image(systemName: "chevron.right")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 }
             }
             .padding(DS.Space.md)
@@ -642,6 +651,7 @@ struct DashboardView: View {
                 HStack(spacing: DS.Space.sm) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(DS.SemanticColor.success)
+                        .accessibilityHidden(true)
                     Text("No upcoming expiry alerts")
                         .foregroundStyle(.secondary)
                 }
@@ -659,6 +669,7 @@ struct DashboardView: View {
             HStack(spacing: DS.Space.xs) {
                 Image(systemName: icon)
                     .foregroundStyle(color)
+                    .accessibilityHidden(true)
                 Text(title)
                     .dsStyle(.sectionTitle)
             }
@@ -668,6 +679,7 @@ struct DashboardView: View {
                     Circle()
                         .fill(DS.SemanticColor.tint(color))
                         .frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
                     Text(item)
                         .dsStyle(.detail)
                         .foregroundStyle(.secondary)
@@ -690,6 +702,7 @@ struct DashboardView: View {
                 HStack(spacing: DS.Space.xs) {
                     Image(systemName: "gearshape.2.fill")
                         .foregroundStyle(.indigo)
+                        .accessibilityHidden(true)
                     Text("Background Tasks")
                         .dsStyle(.sectionTitle)
                     Spacer()
@@ -743,6 +756,7 @@ struct DashboardView: View {
                                 .font(.caption)
                                 .foregroundStyle(colorForStatus(task.status))
                                 .frame(width: 16)
+                                .accessibilityLabel("Status: \(task.status)")
 
                             VStack(alignment: .leading, spacing: DS.Space.xxxs) {
                                 Text(task.taskName)

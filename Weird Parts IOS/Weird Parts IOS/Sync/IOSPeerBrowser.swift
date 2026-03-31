@@ -81,7 +81,7 @@ struct IOSPeerBrowser: View {
     private var emptyState: some View {
         VStack(spacing: 16) {
             Image(systemName: "antenna.radiowaves.left.and.right")
-                .font(.system(size: 48))
+                .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
 
             Text("No Devices Found")

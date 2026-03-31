@@ -48,6 +48,7 @@ struct IOSContractorDetailPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .refreshable { loadData() }
@@ -133,6 +134,7 @@ struct IOSContractorDetailPage: View {
                                 .foregroundStyle(ratingColor(r.overallScore))
                             Image(systemName: "star.fill")
                                 .foregroundStyle(ratingColor(r.overallScore))
+                                .accessibilityHidden(true)
                         }
                     } else {
                         Text("No ratings yet")

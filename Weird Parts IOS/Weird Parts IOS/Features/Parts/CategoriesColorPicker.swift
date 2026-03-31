@@ -127,7 +127,7 @@ struct CategoriesColorPicker: View {
                             )
                             .overlay {
                                 Image(systemName: "nosign")
-                                    .font(.system(size: 14))
+                                    .font(.subheadline)
                                     .foregroundStyle(.secondary)
                             }
                     }

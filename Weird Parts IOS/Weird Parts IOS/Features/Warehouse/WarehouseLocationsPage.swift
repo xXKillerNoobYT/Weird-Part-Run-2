@@ -89,11 +89,13 @@ struct WarehouseLocationsPage: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Add location or feature")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -276,9 +278,10 @@ struct WarehouseLocationsPage: View {
                 VStack(spacing: 1) {
                     Image(systemName: featureIcon(feature.featureType))
                         .font(.caption2)
+                        .accessibilityHidden(true)
                     if let label = feature.label {
                         Text(label)
-                            .font(.system(size: 8))
+                            .font(.caption2)
                     }
                 }
                 .foregroundStyle(featureColor(feature.featureType))
@@ -303,10 +306,10 @@ struct WarehouseLocationsPage: View {
             .overlay {
                 VStack(spacing: 1) {
                     Text(unit.name)
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.caption).bold()
                         .lineLimit(1)
                     Text(unitTypeLabel(unit.unitType))
-                        .font(.system(size: 7))
+                        .font(.caption2)
                 }
                 .foregroundStyle(.white)
             }
@@ -383,7 +386,7 @@ struct WarehouseLocationsPage: View {
     private var noFloorPlanState: some View {
         VStack(spacing: 16) {
             Image(systemName: "map")
-                .font(.system(size: 48))
+                .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
             Text("No Floor Plans")
                 .font(.title3)
@@ -1021,8 +1024,8 @@ private struct StorageUnitDetailSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                if area.hasQrCode { Image(systemName: "qrcode").font(.caption).foregroundStyle(.blue) }
-                if area.hasSticker { Image(systemName: "tag.fill").font(.caption).foregroundStyle(.green) }
+                if area.hasQrCode { Image(systemName: "qrcode").font(.caption).foregroundStyle(.blue).accessibilityLabel("Has QR code") }
+                if area.hasSticker { Image(systemName: "tag.fill").font(.caption).foregroundStyle(.green).accessibilityLabel("Has sticker") }
             }
 
             if let areaId = area.id, let contents = areaContents[areaId] {
@@ -1036,6 +1039,7 @@ private struct StorageUnitDetailSheet: View {
                             Circle()
                                 .fill(item.isHome ? Color.green : Color.gray)
                                 .frame(width: 6, height: 6)
+                                .accessibilityLabel(item.isHome ? "Status: Home location" : "Status: Not home location")
                             Text(item.partName)
                                 .font(.caption)
                             if let pn = item.partNumber {
@@ -1071,6 +1075,7 @@ private struct StorageUnitDetailSheet: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .frame(width: 20)
+                .accessibilityHidden(true)
             Text(text)
                 .font(.subheadline)
         }
@@ -1238,6 +1243,7 @@ private struct StickerChecklistSheet: View {
                                                   ? "checkmark.circle.fill" : "circle")
                                                 .foregroundStyle(checkedCodes.contains(code) ? .green : .gray)
                                         }
+                                        .accessibilityLabel(checkedCodes.contains(code) ? "Sticker applied" : "Sticker not applied")
 
                                         VStack(alignment: .leading) {
                                             Text(code)

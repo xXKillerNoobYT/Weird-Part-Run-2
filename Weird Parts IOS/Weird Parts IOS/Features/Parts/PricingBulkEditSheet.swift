@@ -291,7 +291,7 @@ struct PricingBulkEditSheet: View {
     private var completeView: some View {
         VStack(spacing: 20) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 64))
+                .decorativeIconFont(64)
                 .foregroundStyle(.green)
             Text("Bulk Update Applied")
                 .font(.title2)

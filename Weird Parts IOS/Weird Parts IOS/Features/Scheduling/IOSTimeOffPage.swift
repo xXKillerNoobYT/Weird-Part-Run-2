@@ -50,11 +50,13 @@ struct IOSTimeOffPage: View {
                     Button { activeSheet = .requestTimeOff } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel("Request time off")
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
+                    .accessibilityLabel("Help")
                 }
             }
             .sheet(item: $activeSheet) { sheet in
@@ -166,6 +168,7 @@ struct IOSTimeOffPage: View {
                     .font(.title2)
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 36)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(request.userName)
@@ -178,6 +181,7 @@ struct IOSTimeOffPage: View {
                             Image(systemName: "arrow.right")
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
                             Text(formatDate(request.endDate))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)

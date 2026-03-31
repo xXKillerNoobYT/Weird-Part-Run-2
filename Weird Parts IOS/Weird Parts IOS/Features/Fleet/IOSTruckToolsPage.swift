@@ -44,6 +44,7 @@ struct IOSTruckToolsPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -65,6 +66,7 @@ struct IOSTruckToolsPage: View {
                 Image(systemName: "wrench.fill")
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 28)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(checkout.toolName)

@@ -91,12 +91,14 @@ struct JobsListPage: View {
                     } label: {
                         Image(systemName: "arrow.up.arrow.down")
                     }
+                    .accessibilityLabel("Sort jobs")
 
                     Button {
                         activeSheet = .createJob
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel("Create new job")
                     .accessibilityIdentifier("createJobButton")
                     .requiresPermission("manage_jobs")
                 }
@@ -105,6 +107,7 @@ struct JobsListPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -312,6 +315,7 @@ struct JobsListPage: View {
                 return AnyView(
                     HStack(spacing: 2) {
                         Image(systemName: "dollarsign.circle.fill")
+                            .accessibilityHidden(true)
                         Text("Payment Hold")
                     }
                     .font(.system(.caption2, weight: .semibold))

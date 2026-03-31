@@ -230,6 +230,7 @@ private struct TotalStockDetailView: View {
                             Image(systemName: group.icon)
                                 .foregroundStyle(group.color)
                                 .frame(width: 28)
+                                .accessibilityHidden(true)
                             VStack(alignment: .leading) {
                                 Text(group.displayName)
                                     .dsStyle(.label)
@@ -809,6 +810,7 @@ private struct LowStockPartDetailView: View {
                                 Image(systemName: LocationGroupSummary.iconFor(locationType: item.locationType))
                                     .foregroundStyle(LocationGroupSummary.colorFor(locationType: item.locationType))
                                     .frame(width: 24)
+                                    .accessibilityHidden(true)
                                 VStack(alignment: .leading) {
                                     Text(LocationGroupSummary.displayNameFor(locationType: item.locationType))
                                         .dsStyle(.label)

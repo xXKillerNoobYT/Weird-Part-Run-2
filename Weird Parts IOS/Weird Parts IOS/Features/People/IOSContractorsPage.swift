@@ -54,11 +54,13 @@ struct IOSContractorsPage: View {
                 Button { activeSheet = .create } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Add contractor")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in

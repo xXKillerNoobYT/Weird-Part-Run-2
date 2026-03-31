@@ -47,6 +47,7 @@ struct IOSFuelPage: View {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
+                    .accessibilityLabel("Help")
                 }
             }
             .sheet(item: $activeSheet) { _ in
@@ -101,6 +102,7 @@ struct IOSFuelPage: View {
                 .font(.title3)
                 .foregroundStyle(.green)
                 .frame(width: 32)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(log.vehicleName)

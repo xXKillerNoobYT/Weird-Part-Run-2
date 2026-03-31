@@ -96,12 +96,12 @@ struct DeliveryTimelineBar: View {
             HStack {
                 if !isReceived {
                     Text("Day \(daysElapsed)")
-                        .font(.system(size: 9))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text(statusText)
-                    .font(.system(size: 9))
+                    .font(.caption)
                     .fontWeight(daysRemaining ?? 0 < 0 && !isReceived ? .bold : .regular)
                     .foregroundStyle(color)
             }

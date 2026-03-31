@@ -36,7 +36,7 @@ struct BusinessProfileSetupView: View {
                 // Header
                 VStack(spacing: 8) {
                     Image(systemName: "building.2.fill")
-                        .font(.system(size: 48))
+                        .decorativeIconFont(48)
                         .foregroundStyle(Color.accentColor)
                     Text("Your Business")
                         .font(.title)

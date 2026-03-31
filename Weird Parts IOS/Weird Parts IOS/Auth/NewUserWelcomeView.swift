@@ -16,7 +16,7 @@ struct NewUserWelcomeView: View {
     private var welcomeOverlay: some View {
         VStack(spacing: 24) {
             Image(systemName: "hand.wave.fill")
-                .font(.system(size: 64))
+                .decorativeIconFont(64)
                 .foregroundStyle(.blue)
 
             Text("Welcome to WiredPart!")

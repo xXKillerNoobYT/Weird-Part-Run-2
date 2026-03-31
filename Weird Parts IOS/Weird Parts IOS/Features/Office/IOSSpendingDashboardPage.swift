@@ -76,6 +76,7 @@ struct IOSSpendingDashboardPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -153,6 +154,7 @@ private struct SpendCard: View {
             Image(systemName: icon)
                 .font(.title2)
                 .foregroundStyle(color)
+                .accessibilityHidden(true)
             Text(value)
                 .font(.headline)
                 .fontWeight(.bold)
@@ -180,6 +182,7 @@ private struct SpendingRow: View {
             Circle()
                 .fill(color)
                 .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
             Text(label)
                 .font(.subheadline)
             Spacer()
@@ -187,6 +190,8 @@ private struct SpendingRow: View {
                 .font(.subheadline)
                 .fontWeight(.medium)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(value)")
         .padding(12)
         .dsCard()
     }

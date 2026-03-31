@@ -64,14 +64,17 @@ struct IOSEmployeesPage: View {
                 Button { activeSheet = .badgeScanner } label: {
                     Image(systemName: "qrcode.viewfinder")
                 }
+                .accessibilityLabel("Scan employee badge")
                 Button { activeSheet = .addEmployee } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Add employee")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -168,6 +171,7 @@ struct IOSEmployeesPage: View {
                 .font(.title2)
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 36)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(employee.displayName)

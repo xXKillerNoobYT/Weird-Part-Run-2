@@ -41,12 +41,14 @@ struct IOSTrailersPage: View {
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel("Add trailer")
                     .requiresPermission("manage_fleet")
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
+                    .accessibilityLabel("Help")
                 }
             }
             .sheet(item: $activeSheet) { sheet in
@@ -111,6 +113,7 @@ struct IOSTrailersPage: View {
                 .font(.title3)
                 .foregroundStyle(.indigo)
                 .frame(width: 32)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {

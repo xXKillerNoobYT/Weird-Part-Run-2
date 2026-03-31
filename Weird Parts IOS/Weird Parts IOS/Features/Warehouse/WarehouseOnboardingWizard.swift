@@ -377,7 +377,7 @@ struct WarehouseQuickCountWizard: View {
         NavigationStack {
             VStack(spacing: 24) {
                 Image(systemName: "number.circle.fill")
-                    .font(.system(size: 64))
+                    .decorativeIconFont(64)
                     .foregroundStyle(.purple)
 
                 Text("Quick Count")

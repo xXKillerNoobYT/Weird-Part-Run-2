@@ -35,7 +35,7 @@ struct DevicePairingView: View {
             // Header
             VStack(spacing: 12) {
                 Image(systemName: "antenna.radiowaves.left.and.right")
-                    .font(.system(size: 56))
+                    .decorativeIconFont(56)
                     .foregroundStyle(Color.accentColor)
                     .symbolRenderingMode(.hierarchical)
 
@@ -170,7 +170,7 @@ struct DevicePairingView: View {
     private func shopFoundSection(_ shop: DiscoveredShop) -> some View {
         VStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 36))
+                .font(.largeTitle)
                 .foregroundStyle(.green)
 
             Text("Shop Computer Found")

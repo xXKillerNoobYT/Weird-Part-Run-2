@@ -79,7 +79,9 @@ struct IOSPurchaseOrdersPage: View {
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button { activeSheet = .qrScanner } label: { Image(systemName: "qrcode.viewfinder") }
+                    .accessibilityLabel("Scan QR code")
                 Button { activeSheet = .createPO } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("Create purchase order")
             }
             ToolbarItem(placement: .secondaryAction) {
                 Menu {
@@ -103,6 +105,7 @@ struct IOSPurchaseOrdersPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in

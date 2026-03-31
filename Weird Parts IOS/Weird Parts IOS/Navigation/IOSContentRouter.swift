@@ -354,7 +354,7 @@ struct PlaceholderView: View {
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "hammer.fill")
-                .font(.system(size: 48))
+                .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
             Text("Coming Soon")
                 .font(.title2)

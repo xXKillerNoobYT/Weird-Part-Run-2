@@ -23,7 +23,7 @@ struct OnboardingWelcomeView: View {
                 // Logo & Branding
                 VStack(spacing: 12) {
                     Image(systemName: "wrench.and.screwdriver.fill")
-                        .font(.system(size: 72))
+                        .decorativeIconFont(72)
                         .foregroundStyle(Color.accentColor)
                         .symbolRenderingMode(.hierarchical)
 

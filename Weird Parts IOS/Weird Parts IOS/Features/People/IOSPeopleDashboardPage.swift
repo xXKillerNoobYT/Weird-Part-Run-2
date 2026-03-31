@@ -47,6 +47,7 @@ struct IOSPeopleDashboardPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -94,6 +95,7 @@ struct IOSPeopleDashboardPage: View {
                             Circle()
                                 .fill(.green)
                                 .frame(width: 8, height: 8)
+                                .accessibilityLabel("Status: Clocked in")
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(worker.name).font(.headline)
                                 Text(worker.jobName ?? "No job")
@@ -165,6 +167,7 @@ struct IOSPeopleDashboardPage: View {
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
+                            .accessibilityHidden(true)
                         Text("Certifications Expiring Soon")
                     }
                 }
@@ -197,6 +200,7 @@ struct IOSPeopleDashboardPage: View {
                         HStack {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(.red)
+                                .accessibilityHidden(true)
                             VStack(alignment: .leading) {
                                 Text(alert.customerName).font(.headline)
                                 Text("\(alert.overdueDays) days overdue")

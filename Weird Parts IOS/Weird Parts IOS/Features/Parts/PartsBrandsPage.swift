@@ -53,11 +53,13 @@ struct PartsBrandsPage: View {
                 Button { activeSheet = .addBrand } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Add brand")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -139,6 +141,7 @@ struct PartsBrandsPage: View {
                             .frame(width: 36, height: 36)
                             .background(Color(.tertiarySystemGroupedBackground))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .accessibilityHidden(true)
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(brand.name)
@@ -174,6 +177,7 @@ struct PartsBrandsPage: View {
                         Image(systemName: "chevron.right")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
                     }
                     .frame(minHeight: 56)
                 }
@@ -203,7 +207,7 @@ struct PartsBrandsPage: View {
     private var emptyState: some View {
         VStack(spacing: 16) {
             Image(systemName: "tag")
-                .font(.system(size: 48))
+                .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
             Text("No Brands Yet")
                 .font(.title3)
@@ -449,6 +453,7 @@ private struct BrandDetailSheet: View {
                                 Image(systemName: "building.2.fill")
                                     .foregroundStyle(.blue)
                                     .frame(width: 32, height: 32)
+                                    .accessibilityHidden(true)
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(supplier.name)
@@ -465,6 +470,7 @@ private struct BrandDetailSheet: View {
 
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(.green)
+                                    .accessibilityLabel("Status: Linked")
                             }
                             .frame(minHeight: 44)
                         }
@@ -494,6 +500,7 @@ private struct BrandDetailSheet: View {
                     } label: {
                         Image(systemName: "pencil")
                     }
+                    .accessibilityLabel("Edit brand")
                 }
             }
             .sheet(item: $activeDetailSheet) { sheet in
@@ -572,7 +579,7 @@ struct BrandSupplierPickerSheet: View {
                 } else if allSuppliers.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "building.2")
-                            .font(.system(size: 40))
+                            .font(.largeTitle)
                             .foregroundStyle(.secondary)
                         Text("No Suppliers")
                             .font(.headline)

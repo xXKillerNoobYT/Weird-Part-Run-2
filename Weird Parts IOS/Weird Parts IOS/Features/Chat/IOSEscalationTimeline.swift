@@ -71,6 +71,7 @@ struct IOSEscalationTimeline: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -118,6 +119,7 @@ struct IOSEscalationTimeline: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                         .font(.caption)
+                        .accessibilityHidden(true)
                     Text(answer)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -142,10 +144,12 @@ struct IOSEscalationTimeline: View {
                         Circle()
                             .fill(step.isCurrent ? Color.blue : step.isComplete ? Color.green : Color.gray.opacity(0.3))
                             .frame(width: 12, height: 12)
+                            .accessibilityLabel(step.isCurrent ? "Status: Current level" : step.isComplete ? "Status: Completed" : "Status: Not yet reached")
                         if index < steps.count - 1 {
                             Rectangle()
                                 .fill(step.isComplete ? Color.green : Color.gray.opacity(0.3))
                                 .frame(width: 2, height: 40)
+                                .accessibilityHidden(true)
                         }
                     }
 

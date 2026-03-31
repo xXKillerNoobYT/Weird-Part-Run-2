@@ -83,11 +83,13 @@ struct IOSScheduleCalendarPage: View {
                 Button { activeSheet = .createEntry } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Add schedule entry")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -140,6 +142,7 @@ struct IOSScheduleCalendarPage: View {
                 } label: {
                     Image(systemName: "chevron.left")
                 }
+                .accessibilityLabel("Previous month")
 
                 Spacer()
 
@@ -156,6 +159,7 @@ struct IOSScheduleCalendarPage: View {
                 } label: {
                     Image(systemName: "chevron.right")
                 }
+                .accessibilityLabel("Next month")
             }
             .padding(.horizontal)
             .padding(.vertical, 10)
@@ -258,6 +262,7 @@ struct IOSScheduleCalendarPage: View {
                                 Image(systemName: "moon.fill")
                                     .foregroundStyle(.orange)
                                     .font(.caption)
+                                    .accessibilityHidden(true)
                                 Text(entry.employeeName)
                                 Spacer()
                                 Text("Time Off")
@@ -304,6 +309,7 @@ struct IOSScheduleCalendarPage: View {
             } label: {
                 Image(systemName: "chevron.left")
             }
+            .accessibilityLabel("Previous week")
 
             Spacer()
 
@@ -319,6 +325,7 @@ struct IOSScheduleCalendarPage: View {
             } label: {
                 Image(systemName: "chevron.right")
             }
+            .accessibilityLabel("Next week")
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
@@ -522,21 +529,25 @@ private struct DayCell: View {
                         Circle()
                             .fill(.blue)
                             .frame(width: 5, height: 5)
+                            .accessibilityLabel("Status: AM shift scheduled")
                     }
                     if summary.pmCount > 0 {
                         Circle()
                             .fill(.green)
                             .frame(width: 5, height: 5)
+                            .accessibilityLabel("Status: PM shift scheduled")
                     }
                     if summary.fullDayCount > 0 {
                         Circle()
                             .fill(.orange)
                             .frame(width: 5, height: 5)
+                            .accessibilityLabel("Status: Full day scheduled")
                     }
                     if summary.timeOffCount > 0 {
                         Circle()
                             .fill(.red)
                             .frame(width: 4, height: 4)
+                            .accessibilityLabel("Status: Time off")
                     }
                 }
             } else {

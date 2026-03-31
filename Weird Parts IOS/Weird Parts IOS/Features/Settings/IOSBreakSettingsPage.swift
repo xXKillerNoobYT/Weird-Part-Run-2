@@ -70,6 +70,7 @@ struct IOSBreakSettingsPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -183,6 +184,7 @@ struct IOSBreakSettingsPage: View {
             HStack {
                 Image(systemName: "checkmark.shield.fill")
                     .foregroundStyle(.green)
+                    .accessibilityHidden(true)
                 Text("State Required — Paid")
             }
         } footer: {
@@ -207,6 +209,7 @@ struct IOSBreakSettingsPage: View {
             HStack {
                 Image(systemName: "shield.fill")
                     .foregroundStyle(.blue)
+                    .accessibilityHidden(true)
                 Text("State Required — Offered Unpaid")
             }
         } footer: {
@@ -229,6 +232,7 @@ struct IOSBreakSettingsPage: View {
             HStack {
                 Image(systemName: "star.fill")
                     .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
                 Text("Company Extra — Paid")
             }
         } footer: {
@@ -251,6 +255,7 @@ struct IOSBreakSettingsPage: View {
             HStack {
                 Image(systemName: "gift.fill")
                     .foregroundStyle(.purple)
+                    .accessibilityHidden(true)
                 Text("Company Extra — Offered")
             }
         } footer: {
@@ -293,6 +298,7 @@ struct IOSBreakSettingsPage: View {
             HStack {
                 Image(systemName: "dollarsign.circle.fill")
                     .foregroundStyle(.green)
+                    .accessibilityHidden(true)
                 Text("Bonuses")
             }
         }
@@ -333,6 +339,7 @@ struct IOSBreakSettingsPage: View {
             HStack {
                 Image(systemName: "list.clipboard.fill")
                     .foregroundStyle(.indigo)
+                    .accessibilityHidden(true)
                 Text("Full Breakdown")
             }
         }
@@ -379,6 +386,7 @@ struct IOSBreakSettingsPage: View {
             HStack {
                 Image(systemName: "clock.arrow.circlepath")
                     .foregroundStyle(.teal)
+                    .accessibilityHidden(true)
                 Text("Auto-Fill & Timing")
             }
         } footer: {

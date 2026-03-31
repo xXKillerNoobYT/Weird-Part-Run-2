@@ -151,6 +151,7 @@ struct ReportBuilderView: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -181,6 +182,7 @@ struct ReportBuilderView: View {
                     Circle()
                         .fill(s.rawValue <= step.rawValue ? Color.indigo : Color.gray.opacity(0.3))
                         .frame(width: 28, height: 28)
+                        .accessibilityHidden(true)
                         .overlay(
                             Text("\(s.rawValue + 1)")
                                 .font(.caption2)
@@ -227,6 +229,7 @@ struct ReportBuilderView: View {
                             .font(.title3)
                             .foregroundStyle(.indigo)
                             .frame(width: 30)
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(type.displayName)
                                 .font(.subheadline)
@@ -239,6 +242,7 @@ struct ReportBuilderView: View {
                         if selectedType == type {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.indigo)
+                                .accessibilityLabel("Selected")
                         }
                     }
                     .foregroundStyle(.primary)
@@ -388,6 +392,7 @@ struct ReportBuilderView: View {
                 HStack {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
+                        .accessibilityHidden(true)
                     Text("\(generatedRows.count) rows generated")
                         .font(.subheadline)
                 }

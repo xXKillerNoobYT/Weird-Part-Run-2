@@ -13,6 +13,7 @@ struct IOSDeviceManagementPage: View {
                     Image(systemName: "iphone")
                         .font(.title2)
                         .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(UIDevice.current.name)
                             .fontWeight(.medium)
@@ -22,6 +23,7 @@ struct IOSDeviceManagementPage: View {
                     }
                     Spacer()
                     Circle().fill(.green).frame(width: 10, height: 10)
+                        .accessibilityLabel("Status: Active")
                 }
             }
 
@@ -49,6 +51,7 @@ struct IOSDeviceManagementPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in

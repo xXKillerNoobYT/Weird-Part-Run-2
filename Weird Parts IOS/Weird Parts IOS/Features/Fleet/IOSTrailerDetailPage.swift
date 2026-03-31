@@ -57,6 +57,7 @@ struct IOSTrailerDetailPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -83,6 +84,7 @@ struct IOSTrailerDetailPage: View {
             HStack {
                 Image(systemName: trailer.isAtShop ? "building.2.fill" : "map.fill")
                     .foregroundStyle(trailer.isAtShop ? .green : .blue)
+                    .accessibilityHidden(true)
                 Text(trailer.isAtShop ? "At Shop" : "In Field")
                     .font(.caption).fontWeight(.medium)
                 Spacer()
@@ -140,6 +142,7 @@ struct IOSTrailerDetailPage: View {
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
+                            .accessibilityHidden(true)
                         Text("\(belowMin.count) item\(belowMin.count == 1 ? "" : "s") below MIN")
                             .font(.subheadline)
                     }
@@ -147,6 +150,7 @@ struct IOSTrailerDetailPage: View {
                     HStack {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
+                            .accessibilityHidden(true)
                         Text("All stock levels OK")
                             .font(.subheadline)
                     }
@@ -155,6 +159,7 @@ struct IOSTrailerDetailPage: View {
                 HStack {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
+                        .accessibilityHidden(true)
                     Text("At shop — restock as needed")
                         .font(.subheadline)
                 }
@@ -245,6 +250,7 @@ struct IOSTrailerDetailPage: View {
                 } header: {
                     HStack {
                         Image(systemName: storageIcon(unit.unitType))
+                            .accessibilityHidden(true)
                         Text(unit.name)
                     }
                 }
@@ -279,6 +285,7 @@ struct IOSTrailerDetailPage: View {
                     HStack {
                         Image(systemName: locationIcon(record.locationType))
                             .foregroundStyle(locationColor(record.locationType))
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(record.locationLabel ?? record.locationType.capitalized)
                                 .font(.subheadline)

@@ -51,6 +51,7 @@ struct PartsCategoriesPage: View {
                     Image(systemName: "questionmark.circle")
                 }
                 .accessibilityIdentifier("categoriesHelpButton")
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in

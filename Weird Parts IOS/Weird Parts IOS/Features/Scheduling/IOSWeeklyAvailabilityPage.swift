@@ -56,6 +56,7 @@ struct IOSWeeklyAvailabilityPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -81,6 +82,7 @@ struct IOSWeeklyAvailabilityPage: View {
             } label: {
                 Image(systemName: "chevron.left")
             }
+            .accessibilityLabel("Previous week")
 
             Spacer()
 
@@ -96,6 +98,7 @@ struct IOSWeeklyAvailabilityPage: View {
             } label: {
                 Image(systemName: "chevron.right")
             }
+            .accessibilityLabel("Next week")
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
@@ -169,6 +172,7 @@ struct IOSWeeklyAvailabilityPage: View {
                     .fill(dayIndex < row.days.count && row.days[dayIndex] ? Color.green : Color.red.opacity(0.3))
                     .frame(width: 14, height: 14)
                     .frame(width: 30)
+                    .accessibilityLabel(dayIndex < row.days.count && row.days[dayIndex] ? "Status: Available" : "Status: Unavailable")
             }
         }
         .padding(.vertical, 2)

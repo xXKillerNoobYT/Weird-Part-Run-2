@@ -61,11 +61,13 @@ struct PartsPricingPage: View {
                 } label: {
                     Image(systemName: viewMode.icon)
                 }
+                .accessibilityLabel("View mode")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
             ToolbarItem(placement: .primaryAction) {
                 Menu {
@@ -87,6 +89,7 @@ struct PartsPricingPage: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
+                .accessibilityLabel("Pricing actions")
             }
         }
         .background(DS.Background.page)
@@ -291,6 +294,7 @@ struct PartsPricingPage: View {
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
         .frame(minHeight: 56)
     }
@@ -435,7 +439,7 @@ struct PartsPricingPage: View {
                                             .lineLimit(1)
                                         if let code = row.code {
                                             Text(code)
-                                                .font(.system(size: 9))
+                                                .font(.caption)
                                                 .foregroundStyle(.secondary)
                                         }
                                     }
@@ -515,11 +519,11 @@ struct PartsPricingPage: View {
         HStack(spacing: 2) {
             if isInherited {
                 Image(systemName: "arrow.down.circle.fill")
-                    .font(.system(size: 8))
+                    .font(.caption2)
             }
             Text(isInherited ? "from \(level)" : level)
         }
-        .font(.system(size: 9))
+        .font(.caption)
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
         .background(isInherited ? Color.orange.opacity(0.15) : Color.green.opacity(0.15))
@@ -533,7 +537,7 @@ struct PartsPricingPage: View {
     private var emptyState: some View {
         VStack(spacing: 16) {
             Image(systemName: "dollarsign.circle")
-                .font(.system(size: 48))
+                .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
             Text("No Pricing Data")
                 .font(.title3)
@@ -1032,11 +1036,11 @@ struct PricingEditSheet: View {
         HStack(spacing: 2) {
             if isInherited {
                 Image(systemName: "arrow.down.circle.fill")
-                    .font(.system(size: 8))
+                    .font(.caption2)
             }
             Text(isInherited ? "from \(level)" : level)
         }
-        .font(.system(size: 9))
+        .font(.caption)
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
         .background(isInherited ? Color.orange.opacity(0.15) : Color.green.opacity(0.15))

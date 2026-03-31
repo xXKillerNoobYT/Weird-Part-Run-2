@@ -38,11 +38,13 @@ struct IOSHatsPage: View {
                     Button { activeSheet = .addHat } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel("Add hat")
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
+                    .accessibilityLabel("Help")
                 }
             }
             .sheet(item: $activeSheet) { sheet in
@@ -127,6 +129,7 @@ struct IOSHatsPage: View {
                 .font(.title3)
                 .foregroundStyle(Color.purple)
                 .frame(width: 32)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(hat.name)

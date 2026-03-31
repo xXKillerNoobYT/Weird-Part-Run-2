@@ -51,6 +51,7 @@ struct IOSWarehouseToolsPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -182,6 +183,7 @@ struct IOSWarehouseToolsPage: View {
             Image(systemName: toolIcon(for: tool.status))
                 .foregroundStyle(toolColor(for: tool.status))
                 .frame(width: 28)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(tool.name)

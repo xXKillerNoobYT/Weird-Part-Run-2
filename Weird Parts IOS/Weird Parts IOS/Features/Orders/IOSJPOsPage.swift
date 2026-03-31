@@ -63,17 +63,20 @@ struct IOSJPOsPage: View {
                 Button { activeSheet = .qrScanner } label: {
                     Image(systemName: "qrcode.viewfinder")
                 }
+                .accessibilityLabel("Scan QR code")
                 NavigationLink {
                     IOSJPOCreationPage()
                         .environmentObject(appCore)
                 } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Create job purchase order")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -244,6 +247,7 @@ struct IOSJPOsPage: View {
                     HStack(spacing: 4) {
                         Image(systemName: "message.badge")
                             .foregroundStyle(.yellow)
+                            .accessibilityHidden(true)
                         Text("\(jpo.holdCount) question\(jpo.holdCount == 1 ? "" : "s")")
                             .font(.caption2)
                             .foregroundStyle(.yellow)

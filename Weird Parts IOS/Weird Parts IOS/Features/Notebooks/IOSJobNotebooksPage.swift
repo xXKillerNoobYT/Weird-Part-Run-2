@@ -46,6 +46,7 @@ struct IOSJobNotebooksPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -130,6 +131,7 @@ struct IOSJobNotebooksPage: View {
                 .font(.title3)
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 32)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(notebook.title)

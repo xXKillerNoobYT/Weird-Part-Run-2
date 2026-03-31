@@ -53,6 +53,7 @@ struct IOSCustomerDetailPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .refreshable { loadData() }
@@ -250,6 +251,7 @@ struct IOSCustomerDetailPage: View {
                             HStack {
                                 Image(systemName: commIcon(entry.commType))
                                     .foregroundStyle(.blue)
+                                    .accessibilityHidden(true)
                                 Text(entry.commType.capitalized)
                                     .font(.caption).bold()
                                 Spacer()
@@ -370,6 +372,7 @@ struct PaymentStatusBar: View {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
+                        .accessibilityHidden(true)
                     Text("Overdue: \(formatCurrency(status.totalOverdue))")
                         .font(.caption).foregroundStyle(.red)
                     if let days = status.oldestOverdueDays {

@@ -36,11 +36,13 @@ struct IOSWishlistPage: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .addItem } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("Add wishlist item")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in

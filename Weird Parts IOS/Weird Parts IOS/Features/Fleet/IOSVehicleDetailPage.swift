@@ -75,6 +75,7 @@ struct IOSVehicleDetailPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -258,6 +259,7 @@ struct IOSVehicleDetailPage: View {
                                 Text(part.sourceLocation ?? "?")
                                 Image(systemName: "arrow.right")
                                     .font(.caption2)
+                                    .accessibilityHidden(true)
                                 Text(part.destinationLocation ?? "?")
                             }
                             .font(.caption).foregroundStyle(.secondary)
@@ -358,6 +360,7 @@ struct IOSVehicleDetailPage: View {
                 Image(systemName: "house.fill")
                     .font(.caption)
                     .foregroundStyle(.blue)
+                    .accessibilityLabel("Status: Take-home vehicle")
             }
             if a.isActive {
                 Text("Active")
@@ -490,6 +493,7 @@ struct IOSVehicleDetailPage: View {
                     HStack {
                         Image(systemName: inspectionIcon(record.result))
                             .foregroundStyle(inspectionColor(record.result))
+                            .accessibilityLabel("Status: \(record.result.capitalized)")
                         VStack(alignment: .leading, spacing: 2) {
                             Text(record.inspectorName).font(.subheadline)
                             Text(String(record.performedAt.prefix(10)))

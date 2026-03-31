@@ -131,6 +131,7 @@ struct IOSAuditPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -240,6 +241,7 @@ struct IOSAuditPage: View {
                     HStack {
                         Image(systemName: "waveform.path.ecg")
                             .foregroundStyle(.green)
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Active Audit Session")
                                 .font(.subheadline)
@@ -339,6 +341,7 @@ struct IOSAuditPage: View {
                         Image(systemName: "chart.bar.fill")
                             .foregroundStyle(.purple)
                             .frame(width: 28)
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Organization Audit")
                                 .font(.subheadline)
@@ -444,6 +447,7 @@ struct IOSAuditPage: View {
                 HStack(spacing: 4) {
                     Image(systemName: "mappin.circle.fill")
                         .foregroundStyle(.blue)
+                        .accessibilityHidden(true)
                     Text(item.locationCode)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -454,6 +458,7 @@ struct IOSAuditPage: View {
             HStack(spacing: 8) {
                 Image(systemName: "gauge.low")
                     .foregroundStyle(confidenceColor(item.confidence))
+                    .accessibilityHidden(true)
                 Text("Confidence: \(Int(item.confidence))%")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -463,6 +468,7 @@ struct IOSAuditPage: View {
             HStack {
                 Image(systemName: "eye.slash")
                     .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
                 Text("System count hidden — count independently")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -477,7 +483,7 @@ struct IOSAuditPage: View {
                     .font(.headline)
 
                 TextField("0", text: $userCountInput)
-                    .font(.system(size: 48, weight: .bold, design: .rounded))
+                    .font(.system(.largeTitle, design: .rounded)).bold()
                     .multilineTextAlignment(.center)
                     .keyboardType(.numberPad)
                     .frame(width: 150)
@@ -521,7 +527,7 @@ struct IOSAuditPage: View {
 
             // Result icon
             Image(systemName: resultIcon(result.resultType))
-                .font(.system(size: 60))
+                .decorativeIconFont(60)
                 .foregroundStyle(resultColor(result.resultType))
 
             Text(resultLabel(result.resultType))
@@ -623,9 +629,11 @@ struct IOSAuditPage: View {
                     .stroke(confidenceColor(item.confidence), style: StrokeStyle(lineWidth: 3, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 Text("\(Int(item.confidence))%")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.caption).bold()
             }
             .frame(width: 36, height: 36)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Confidence: \(Int(item.confidence))%")
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.partName)
@@ -647,6 +655,7 @@ struct IOSAuditPage: View {
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
         .padding(.vertical, 2)
     }
@@ -657,6 +666,7 @@ struct IOSAuditPage: View {
         HStack(spacing: 12) {
             Image(systemName: session.status == "completed" ? "checkmark.circle.fill" : "clock.fill")
                 .foregroundStyle(session.status == "completed" ? .green : .orange)
+                .accessibilityLabel(session.status == "completed" ? "Status: Completed" : "Status: In progress")
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(session.sessionType.capitalized) Audit")

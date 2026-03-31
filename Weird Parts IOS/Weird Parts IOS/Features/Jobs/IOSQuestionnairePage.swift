@@ -160,6 +160,7 @@ struct IOSQuestionnairePage: View {
                     HStack {
                         Image(systemName: "cup.and.saucer")
                             .foregroundStyle(.purple)
+                            .accessibilityHidden(true)
                         Text("Break Verification")
                     }
                 }
@@ -170,6 +171,7 @@ struct IOSQuestionnairePage: View {
                         HStack {
                             Image(systemName: "link.badge.plus")
                                 .foregroundStyle(.blue)
+                                .accessibilityHidden(true)
                             Text("Companion Rule Votes")
                                 .font(.subheadline)
                                 .fontWeight(.medium)

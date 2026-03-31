@@ -73,6 +73,7 @@ struct AuditLogPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -99,6 +100,7 @@ struct AuditLogPage: View {
                 Image(systemName: iconForAction(entry.action))
                     .foregroundStyle(colorForAction(entry.action))
                     .font(.caption)
+                    .accessibilityHidden(true)
                 Text(entry.entityType.capitalized)
                     .font(.subheadline.weight(.medium))
                 Spacer()

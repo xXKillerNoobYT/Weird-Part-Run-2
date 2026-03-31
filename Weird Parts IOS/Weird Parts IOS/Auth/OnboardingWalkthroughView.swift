@@ -293,7 +293,7 @@ struct OnboardingWalkthroughView: View {
             Spacer()
 
             Image(systemName: "wrench.and.screwdriver.fill")
-                .font(.system(size: 72))
+                .decorativeIconFont(72)
                 .foregroundStyle(.blue)
 
             VStack(spacing: 8) {
@@ -368,7 +368,7 @@ struct OnboardingWalkthroughView: View {
                         // Module icon + title
                         VStack(spacing: 12) {
                             Image(systemName: module.icon)
-                                .font(.system(size: 56))
+                                .decorativeIconFont(56)
                                 .foregroundStyle(module.iconColor)
 
                             Text(module.title)
@@ -498,7 +498,7 @@ struct OnboardingWalkthroughView: View {
                 Spacer().frame(height: 40)
 
                 Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 72))
+                    .decorativeIconFont(72)
                     .foregroundStyle(.green)
 
                 Text("You're All Set!")

@@ -83,6 +83,7 @@ struct IOSJPODetailPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -365,6 +366,7 @@ struct IOSJPODetailPage: View {
                         .font(.title3)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(selectedLineIds.contains(line.id) ? "Deselect line item" : "Select line item")
 
                 // Status icon
                 lineStatusIcon(line.lineStatus)
@@ -437,6 +439,7 @@ struct IOSJPODetailPage: View {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.right.circle.fill")
                         .foregroundStyle(.blue)
+                        .accessibilityHidden(true)
                     Text("In stock — transfer request created")
                         .font(.caption)
                         .foregroundStyle(.blue)
@@ -471,6 +474,7 @@ struct IOSJPODetailPage: View {
                     HStack(spacing: 4) {
                         Image(systemName: "questionmark.circle")
                             .foregroundStyle(.yellow)
+                            .accessibilityHidden(true)
                         Text(reason)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -513,6 +517,7 @@ struct IOSJPODetailPage: View {
             HStack(spacing: 4) {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.red)
+                    .accessibilityHidden(true)
                 Text("Rejected: \(line.rejectReason ?? "No reason")")
                     .font(.caption)
                     .foregroundStyle(.red)
@@ -522,6 +527,7 @@ struct IOSJPODetailPage: View {
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle")
                     .foregroundStyle(.green)
+                    .accessibilityHidden(true)
                 Text("Approved — awaiting procurement")
                     .font(.caption)
                     .foregroundStyle(.green)
@@ -531,6 +537,7 @@ struct IOSJPODetailPage: View {
             HStack(spacing: 4) {
                 Image(systemName: "shippingbox")
                     .foregroundStyle(.blue)
+                    .accessibilityHidden(true)
                 Text("Ordered")
                     .font(.caption)
                     .foregroundStyle(.blue)
@@ -540,6 +547,7 @@ struct IOSJPODetailPage: View {
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
+                    .accessibilityHidden(true)
                 Text("Received at shop")
                     .font(.caption)
                     .foregroundStyle(.green)
@@ -549,6 +557,7 @@ struct IOSJPODetailPage: View {
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.seal.fill")
                     .foregroundStyle(.green)
+                    .accessibilityHidden(true)
                 Text("Delivered to job")
                     .font(.caption)
                     .foregroundStyle(.green)
@@ -558,6 +567,7 @@ struct IOSJPODetailPage: View {
             HStack(spacing: 4) {
                 Image(systemName: "clock.badge.exclamationmark")
                     .foregroundStyle(.red)
+                    .accessibilityHidden(true)
                 Text("On backorder")
                     .font(.caption)
                     .foregroundStyle(.red)
@@ -575,24 +585,34 @@ struct IOSJPODetailPage: View {
         switch status {
         case "pending":
             Image(systemName: "clock").foregroundStyle(.orange)
+                .accessibilityHidden(true)
         case "approved":
             Image(systemName: "checkmark.circle").foregroundStyle(.green)
+                .accessibilityHidden(true)
         case "on_hold":
             Image(systemName: "pause.circle.fill").foregroundStyle(.yellow)
+                .accessibilityHidden(true)
         case "rejected":
             Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                .accessibilityHidden(true)
         case "transfer":
             Image(systemName: "arrow.right.circle.fill").foregroundStyle(.blue)
+                .accessibilityHidden(true)
         case "ordered", "in_procurement":
             Image(systemName: "shippingbox").foregroundStyle(.blue)
+                .accessibilityHidden(true)
         case "received":
             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                .accessibilityHidden(true)
         case "backorder":
             Image(systemName: "clock.badge.exclamationmark").foregroundStyle(.red)
+                .accessibilityHidden(true)
         case "delivered":
             Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                .accessibilityHidden(true)
         default:
             Image(systemName: "circle").foregroundStyle(.secondary)
+                .accessibilityHidden(true)
         }
     }
 

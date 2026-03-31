@@ -32,7 +32,7 @@ struct AdminAccountSetupView: View {
                 // Header
                 VStack(spacing: 8) {
                     Image(systemName: "person.badge.key.fill")
-                        .font(.system(size: 48))
+                        .decorativeIconFont(48)
                         .foregroundStyle(Color.accentColor)
                     Text("Admin Account")
                         .font(.title)

@@ -108,6 +108,7 @@ struct PartsImportExportPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .background(DS.Background.page)
@@ -143,6 +144,7 @@ struct PartsImportExportPage: View {
             HStack {
                 Image(systemName: icon)
                     .foregroundStyle(color)
+                    .accessibilityHidden(true)
                 Spacer()
             }
             Text(value)
@@ -182,6 +184,7 @@ struct PartsImportExportPage: View {
                     Image(systemName: "square.and.arrow.up.fill")
                         .font(.title2)
                         .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Export Parts to CSV")
                             .font(.subheadline)
@@ -244,6 +247,7 @@ struct PartsImportExportPage: View {
                     HStack {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
+                            .accessibilityHidden(true)
                         Text(message)
                             .font(.subheadline)
                             .foregroundStyle(.green)
@@ -254,6 +258,7 @@ struct PartsImportExportPage: View {
                     HStack {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.red)
+                            .accessibilityHidden(true)
                         Text(message)
                             .font(.subheadline)
                             .foregroundStyle(.red)
@@ -280,6 +285,7 @@ struct PartsImportExportPage: View {
                     Image(systemName: "square.and.arrow.down.fill")
                         .font(.title2)
                         .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Import Parts from CSV")
                             .font(.subheadline)
@@ -312,6 +318,7 @@ struct PartsImportExportPage: View {
                         HStack {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
+                                .accessibilityHidden(true)
                             Text(message)
                                 .font(.subheadline)
                                 .foregroundStyle(.green)
@@ -328,6 +335,7 @@ struct PartsImportExportPage: View {
                         HStack {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundStyle(.red)
+                                .accessibilityHidden(true)
                             Text(message)
                                 .font(.subheadline)
                                 .foregroundStyle(.red)
@@ -363,6 +371,7 @@ struct PartsImportExportPage: View {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                             .font(.caption)
+                            .accessibilityHidden(true)
                         Text(col)
                             .font(.caption)
                             .monospaced()
@@ -378,6 +387,7 @@ struct PartsImportExportPage: View {
                         Image(systemName: "circle")
                             .foregroundStyle(.secondary)
                             .font(.caption)
+                            .accessibilityHidden(true)
                         Text(col)
                             .font(.caption)
                             .monospaced()
@@ -912,6 +922,7 @@ private struct ImportPreviewContent: View {
                 Image(systemName: "arrow.right")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("CSV")

@@ -55,6 +55,7 @@ struct IOSBookkeeperExportPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -133,6 +134,7 @@ struct IOSBookkeeperExportPage: View {
                 .font(.title2)
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 36)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(row.employeeName)
@@ -166,6 +168,7 @@ struct IOSBookkeeperExportPage: View {
                 .font(.title2)
                 .foregroundStyle(.blue)
                 .frame(width: 36)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(row.poNumber)

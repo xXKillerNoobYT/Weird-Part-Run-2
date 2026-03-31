@@ -40,6 +40,7 @@ struct IOSToolMaintenancePage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -73,6 +74,7 @@ struct IOSToolMaintenancePage: View {
                 Image(systemName: "wrench.fill")
                     .foregroundStyle(.orange)
                     .frame(width: 24)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(tool.name)
                         .fontWeight(.medium)

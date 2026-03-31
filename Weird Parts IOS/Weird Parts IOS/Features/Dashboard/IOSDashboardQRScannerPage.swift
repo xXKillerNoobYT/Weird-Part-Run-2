@@ -76,6 +76,7 @@ struct IOSDashboardQRScannerPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -257,6 +258,7 @@ struct IOSDashboardQRScannerPage: View {
                                     : Color(.secondarySystemGroupedBackground))
                             )
                     }
+                    .accessibilityLabel(isLocked ? "Unlock scanner" : "Lock scanner")
                 }
 
                 // Location contents (warehouse locations)
@@ -317,6 +319,7 @@ struct IOSDashboardQRScannerPage: View {
             VStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle")
                     .foregroundStyle(.red)
+                    .accessibilityHidden(true)
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(.red)
@@ -328,6 +331,7 @@ struct IOSDashboardQRScannerPage: View {
                 Image(systemName: "viewfinder")
                     .font(.title2)
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 Text("Point camera at a QR code")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -390,8 +394,9 @@ struct IOSDashboardQRScannerPage: View {
         ScrollView {
             VStack(spacing: DS.Space.xl) {
                 Image(systemName: "camera.badge.ellipsis")
-                    .font(.system(size: 48))
+                    .decorativeIconFont(48)
                     .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
                     .padding(.top, DS.Space.jumbo)
 
                 Text("Camera not available")
@@ -723,6 +728,7 @@ struct IOSDashboardQRScannerPage: View {
                 HStack(spacing: DS.Space.sm) {
                     Image(systemName: "tray")
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                     Text("Empty location — no parts assigned")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -739,6 +745,7 @@ struct IOSDashboardQRScannerPage: View {
                             .font(.caption2)
                             .foregroundStyle(item.isHome ? .green : .blue)
                             .frame(width: 16)
+                            .accessibilityLabel(item.isHome ? "Home location" : "Stored here")
 
                         Text(item.partName)
                             .font(.caption)
@@ -770,6 +777,7 @@ struct IOSDashboardQRScannerPage: View {
         HStack(spacing: DS.Space.sm) {
             Image(systemName: "location.fill")
                 .foregroundStyle(.blue)
+                .accessibilityHidden(true)
 
             Text(direction.instructions)
                 .font(.caption)

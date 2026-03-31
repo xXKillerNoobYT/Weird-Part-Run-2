@@ -50,6 +50,7 @@ struct IOSManageJobsPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .searchable(text: $searchText, prompt: "Search jobs...")
@@ -60,6 +61,7 @@ struct IOSManageJobsPage: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Create job")
                 .requiresPermission("manage_jobs")
             }
         }

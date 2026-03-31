@@ -119,6 +119,7 @@ struct QRScanSheet: View {
                 HStack(spacing: 8) {
                     Image(systemName: resultIsFound ? "checkmark.circle.fill" : "questionmark.circle.fill")
                         .foregroundStyle(resultIsFound ? .green : .orange)
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(resultIsFound ? "Found: \(title)" : "Not found: \(resultCode ?? "")")
                             .font(.subheadline)
@@ -136,6 +137,7 @@ struct QRScanSheet: View {
                 HStack(spacing: 8) {
                     Image(systemName: "viewfinder")
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                     Text("Point camera at a QR code")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -169,7 +171,7 @@ struct QRScanSheet: View {
             Spacer()
 
             Image(systemName: "camera.badge.ellipsis")
-                .font(.system(size: 48))
+                .decorativeIconFont(48)
                 .foregroundStyle(.tertiary)
 
             Text("Camera not available")
@@ -199,6 +201,7 @@ struct QRScanSheet: View {
                 HStack(spacing: 8) {
                     Image(systemName: resultIsFound ? "checkmark.circle.fill" : "questionmark.circle.fill")
                         .foregroundStyle(resultIsFound ? .green : .orange)
+                        .accessibilityHidden(true)
                     Text(resultIsFound ? "Found: \(title)" : "Not found")
                         .font(.subheadline)
                 }

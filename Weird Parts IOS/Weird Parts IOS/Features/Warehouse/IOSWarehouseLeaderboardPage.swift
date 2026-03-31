@@ -59,6 +59,7 @@ struct IOSWarehouseLeaderboardPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -131,6 +132,7 @@ struct IOSWarehouseLeaderboardPage: View {
                     HStack {
                         Image(systemName: "person.3.fill")
                             .foregroundStyle(.blue)
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Multi-User Consensus")
                                 .font(.subheadline)
@@ -159,6 +161,7 @@ struct IOSWarehouseLeaderboardPage: View {
             Image(systemName: rank == 1 ? "medal.fill" : rank == 2 ? "medal.fill" : "medal.fill")
                 .font(.title2)
                 .foregroundStyle(rank == 1 ? .yellow : rank == 2 ? Color(.systemGray3) : .orange)
+                .accessibilityLabel(rank == 1 ? "Gold medal" : rank == 2 ? "Silver medal" : "Bronze medal")
 
             Text(userNames[rating.userId] ?? "User")
                 .font(.caption)
@@ -228,6 +231,7 @@ struct IOSWarehouseLeaderboardPage: View {
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
         }
         .padding(.vertical, 2)
@@ -416,6 +420,7 @@ private struct UserRatingDetailSheet: View {
             Image(systemName: icon)
                 .foregroundStyle(.blue)
                 .frame(width: 24)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.subheadline)
@@ -472,6 +477,7 @@ private struct ConsensusInfoSheet: View {
                     HStack(spacing: 12) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("All Match").fontWeight(.medium)
                             Text("All users boosted, confidence → 100%").font(.caption).foregroundStyle(.secondary)
@@ -480,6 +486,7 @@ private struct ConsensusInfoSheet: View {
                     HStack(spacing: 12) {
                         Image(systemName: "person.2.fill")
                             .foregroundStyle(.orange)
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("2 Match, 1 Off").fontWeight(.medium)
                             Text("2 boosted, 1 lowered + training suggestion").font(.caption).foregroundStyle(.secondary)
@@ -488,6 +495,7 @@ private struct ConsensusInfoSheet: View {
                     HStack(spacing: 12) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.red)
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("All Different").fontWeight(.medium)
                             Text("All lowered, manager recount flagged").font(.caption).foregroundStyle(.secondary)

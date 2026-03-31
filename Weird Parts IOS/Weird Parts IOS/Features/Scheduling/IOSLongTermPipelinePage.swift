@@ -52,6 +52,7 @@ struct IOSLongTermPipelinePage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -80,6 +81,7 @@ struct IOSLongTermPipelinePage: View {
                                   ? "exclamationmark.triangle.fill"
                                   : "chart.bar.xaxis")
                                 .foregroundStyle(warning.isOvercommitted ? .red : .orange)
+                                .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(warning.message)
                                     .font(.subheadline)
@@ -219,6 +221,7 @@ private struct MonthCapacityRow: View {
                     Image(systemName: "chevron.up")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                 }
             }
         }

@@ -87,11 +87,13 @@ struct IOSEstimationSettingsPage: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Add question")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -141,14 +143,17 @@ struct IOSEstimationSettingsPage: View {
                 Label(question.questionGroup, systemImage: "tag")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityLabel("Group: \(question.questionGroup)")
 
                 Label(question.answerType, systemImage: "textformat")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityLabel("Answer type: \(question.answerType)")
 
                 Label(String(format: "%.1fx", question.weight), systemImage: "scalemass")
                     .font(.caption)
                     .foregroundStyle(.blue)
+                    .accessibilityLabel("Weight: \(String(format: "%.1f", question.weight))")
             }
         }
         .swipeActions(edge: .trailing) {

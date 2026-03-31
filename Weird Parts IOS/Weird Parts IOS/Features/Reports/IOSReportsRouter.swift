@@ -71,6 +71,7 @@ struct IOSReportsRouter: View {
                     } label: {
                         HStack(spacing: 4) {
                             Image(systemName: category.icon)
+                                .accessibilityHidden(true)
                             Text(category.rawValue)
                         }
                         .font(.subheadline)
@@ -442,6 +443,7 @@ private struct SharedReportsView: View {
                             .font(.title3)
                             .foregroundStyle(.pink)
                             .frame(width: 30)
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("View Public Report")
                                 .font(.subheadline)
@@ -482,6 +484,7 @@ private struct SharedReportsView: View {
                                 Image(systemName: "person.2.fill")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                    .accessibilityLabel("Shared report")
                             }
                         }
                     }
@@ -514,6 +517,7 @@ private func reportRow(_ title: String, icon: String, description: String) -> so
             .font(.title3)
             .foregroundStyle(.blue)
             .frame(width: 30)
+            .accessibilityHidden(true)
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
                 .font(.subheadline)

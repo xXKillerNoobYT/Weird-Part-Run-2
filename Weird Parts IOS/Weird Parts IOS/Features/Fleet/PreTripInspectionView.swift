@@ -227,6 +227,7 @@ struct PreTripInspectionView: View {
     private func sectionHeader(_ title: String, icon: String, count: Int, checked: Int) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
+                .accessibilityHidden(true)
             Text(title)
             Spacer()
             Text("\(checked)/\(count)")
@@ -382,6 +383,7 @@ private struct InspectionItemRow: View {
                     Image(systemName: "exclamationmark.circle.fill")
                         .foregroundStyle(.red)
                         .font(.caption)
+                        .accessibilityLabel("Critical item")
                 }
                 Spacer()
             }

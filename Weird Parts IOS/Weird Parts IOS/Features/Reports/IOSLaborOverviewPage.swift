@@ -49,6 +49,7 @@ struct IOSLaborOverviewPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -122,6 +123,7 @@ struct IOSLaborOverviewPage: View {
             Image(systemName: icon)
                 .foregroundStyle(color)
                 .frame(width: 24)
+                .accessibilityHidden(true)
             Text(label)
                 .foregroundStyle(.secondary)
             Spacer()

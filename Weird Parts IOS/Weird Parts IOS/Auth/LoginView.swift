@@ -20,7 +20,7 @@ struct LoginView: View {
             // Header
             VStack(spacing: 8) {
                 Image(systemName: "wrench.and.screwdriver.fill")
-                    .font(.system(size: 48))
+                    .decorativeIconFont(48)
                     .foregroundStyle(Color.accentColor)
                 Text("WiredPart")
                     .font(.largeTitle)
@@ -100,7 +100,7 @@ struct LoginView: View {
                 } else if users.isEmpty && usersLoaded {
                     VStack(spacing: 12) {
                         Image(systemName: "person.slash")
-                            .font(.system(size: 40))
+                            .font(.largeTitle)
                             .foregroundStyle(.secondary)
                         Text("No Users Found")
                             .font(.headline)

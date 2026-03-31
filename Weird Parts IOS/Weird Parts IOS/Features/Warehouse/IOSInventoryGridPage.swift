@@ -85,6 +85,7 @@ struct IOSInventoryGridPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -135,6 +136,7 @@ struct IOSInventoryGridPage: View {
         HStack(spacing: 8) {
             Image(systemName: "mappin.circle.fill")
                 .foregroundStyle(.blue)
+                .accessibilityHidden(true)
 
             if allLocations.isEmpty {
                 Text("Default Warehouse")

@@ -56,6 +56,7 @@ struct BluetoothPage: View {
                             Image(systemName: peerIcon(peer.state))
                                 .foregroundStyle(peerColor(peer.state))
                                 .font(.title3)
+                                .accessibilityHidden(true)
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(peer.name)
@@ -71,6 +72,7 @@ struct BluetoothPage: View {
                             if peer.state == "connected" {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(.green)
+                                    .accessibilityLabel("Status: Connected")
                             } else {
                                 Button("Sync") {
                                     Task { await syncManager.syncNow() }
@@ -107,6 +109,7 @@ struct BluetoothPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in

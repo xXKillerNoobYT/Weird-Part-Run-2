@@ -22,9 +22,48 @@ struct IOSBackupsPage: View {
     @State private var showRestoreAlert = false
     @State private var backupSuccess = false
 
+    private var canManageSettings: Bool {
+        appCore.hasPermission("manage_settings")
+    }
+
     // MARK: - Body
 
     var body: some View {
+        Group {
+            if canManageSettings {
+                backupsForm
+            } else {
+                ContentUnavailableView(
+                    "Access Restricted",
+                    systemImage: "lock.shield",
+                    description: Text("You don't have permission to manage backups.")
+                )
+            }
+        }
+        .navigationTitle("Backups")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .accessibilityLabel("Help")
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(title: "Backups Help", sections: [
+                ("What This Page Does", "Manages local database backups. Shows the last backup time, database size, and stored backup count. You can create new backups manually."),
+                ("How to Use It", "Tap 'Create Backup Now' to snapshot the current database. Automatic backups run daily. Up to 7 rolling backups are retained. Database restore must be done from the desktop application."),
+            ])
+        }
+        .task { if canManageSettings { loadData() } }
+        .alert("Restore Not Available", isPresented: $showRestoreAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Database restore must be performed from the desktop application to ensure data integrity. Connect this device to the shop server after restoring on desktop.")
+        }
+    }
+
+    private var backupsForm: some View {
         Form {
             statusSection
             actionsSection
@@ -38,26 +77,6 @@ struct IOSBackupsPage: View {
                         .font(.callout)
                 }
             }
-        }
-        .navigationTitle("Backups")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { activeSheet = .help } label: {
-                    Image(systemName: "questionmark.circle")
-                }
-            }
-        }
-        .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(title: "Backups Help", sections: [
-                ("What This Page Does", "Manages local database backups. Shows the last backup time, database size, and stored backup count. You can create new backups manually."),
-                ("How to Use It", "Tap 'Create Backup Now' to snapshot the current database. Automatic backups run daily. Up to 7 rolling backups are retained. Database restore must be done from the desktop application."),
-            ])
-        }
-        .task { loadData() }
-        .alert("Restore Not Available", isPresented: $showRestoreAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Database restore must be performed from the desktop application to ensure data integrity. Connect this device to the shop server after restoring on desktop.")
         }
     }
 

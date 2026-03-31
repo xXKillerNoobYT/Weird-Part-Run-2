@@ -217,11 +217,14 @@ struct IOSWeeklyReviewSheet: View {
                                 .foregroundStyle(
                                     selectedDelayFactors.contains(factor) ? .red : .secondary
                                 )
+                                .accessibilityHidden(true)
                                 Text(factor)
                                     .foregroundStyle(.primary)
                                     .font(.subheadline)
                             }
                         }
+                        .accessibilityLabel(factor)
+                        .accessibilityValue(selectedDelayFactors.contains(factor) ? "Selected" : "Not selected")
                     }
                 }
             }

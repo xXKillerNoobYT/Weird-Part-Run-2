@@ -37,11 +37,13 @@ struct IOSCustomersPage: View {
                     Button { activeSheet = .addCustomer } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel("Add customer")
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
+                    .accessibilityLabel("Help")
                 }
             }
             .sheet(item: $activeSheet) { sheet in
@@ -104,6 +106,7 @@ struct IOSCustomersPage: View {
                 .font(.title3)
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 32)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(customer.companyName ?? "No Company")

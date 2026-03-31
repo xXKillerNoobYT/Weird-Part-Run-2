@@ -86,11 +86,13 @@ struct IOSChannelsPage: View {
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel("Create new conversation")
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
+                    .accessibilityLabel("Help")
                 }
             }
             .sheet(item: $activeSheet) { sheet in
@@ -147,6 +149,7 @@ struct IOSChannelsPage: View {
                 HStack(spacing: 4) {
                     Image(systemName: icon)
                         .font(.caption2)
+                        .accessibilityHidden(true)
                     Text("\(count)")
                         .font(.system(.title3, weight: .bold))
                         .monospacedDigit()
@@ -274,10 +277,11 @@ struct IOSChannelsPage: View {
                     .font(.title2)
                     .foregroundStyle(colorForChannelType(item.channelType))
                     .frame(width: 36)
+                    .accessibilityHidden(true)
 
                 if item.channelType == "office" {
                     Text("Office")
-                        .font(.system(size: 7, weight: .bold))
+                        .font(.caption2).bold()
                         .foregroundStyle(.white)
                         .padding(.horizontal, 3)
                         .padding(.vertical, 1)
@@ -297,7 +301,7 @@ struct IOSChannelsPage: View {
                     // Orange HOLD badge for jpo_hold channels
                     if item.channelType == "jpo_hold" {
                         Text("HOLD")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.caption).bold()
                             .foregroundStyle(.white)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)

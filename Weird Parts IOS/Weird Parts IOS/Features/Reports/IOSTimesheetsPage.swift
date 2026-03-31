@@ -53,6 +53,7 @@ struct IOSTimesheetsPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -106,6 +107,7 @@ struct IOSTimesheetsPage: View {
                 .font(.title2)
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 36)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(row.userName)

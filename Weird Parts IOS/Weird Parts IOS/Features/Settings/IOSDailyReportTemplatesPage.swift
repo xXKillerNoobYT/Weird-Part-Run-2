@@ -68,6 +68,7 @@ struct IOSDailyReportTemplatesPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -116,6 +117,7 @@ struct IOSDailyReportTemplatesPage: View {
                             Image(systemName: "lock.fill")
                                 .foregroundStyle(.secondary)
                                 .font(.caption)
+                                .accessibilityLabel("Status: Locked")
                         }
                         Toggle(section.name, isOn: $section.enabled)
                             .disabled(section.locked)

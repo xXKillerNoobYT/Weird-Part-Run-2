@@ -70,6 +70,7 @@ struct IOSOrganizationAuditPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -169,6 +170,7 @@ struct IOSOrganizationAuditPage: View {
                     Image(systemName: "chart.bar")
                         .font(.title)
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                     Text("No organization ratings yet")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -204,7 +206,7 @@ struct IOSOrganizationAuditPage: View {
                     .stroke(scoreColor(rating.overallRating), style: StrokeStyle(lineWidth: 3, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 Text(String(format: "%.0f", rating.overallRating))
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.footnote).bold()
             }
             .frame(width: 36, height: 36)
 
@@ -234,6 +236,7 @@ struct IOSOrganizationAuditPage: View {
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
         .padding(.vertical, 2)
     }
@@ -241,10 +244,11 @@ struct IOSOrganizationAuditPage: View {
     private func checkIcon(_ passed: Bool, label: String) -> some View {
         VStack(spacing: 1) {
             Image(systemName: passed ? "checkmark.circle.fill" : "xmark.circle")
-                .font(.system(size: 10))
+                .font(.caption)
                 .foregroundStyle(passed ? .green : .red)
+                .accessibilityLabel(passed ? "\(label): Passed" : "\(label): Failed")
             Text(label)
-                .font(.system(size: 7))
+                .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
     }
@@ -259,6 +263,7 @@ struct IOSOrganizationAuditPage: View {
                     Image(systemName: "checkmark.seal")
                         .font(.title)
                         .foregroundStyle(.green)
+                        .accessibilityHidden(true)
                     Text("No consolidation needed")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -288,6 +293,7 @@ struct IOSOrganizationAuditPage: View {
             Image(systemName: "arrow.triangle.merge")
                 .foregroundStyle(.orange)
                 .frame(width: 28)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Part #\(vote.partId)")
@@ -301,6 +307,7 @@ struct IOSOrganizationAuditPage: View {
                     HStack(spacing: 4) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.caption2)
+                            .accessibilityHidden(true)
                         Text("Escalated — ignored \(vote.ignoreCount) times")
                             .font(.caption2)
                     }
@@ -330,6 +337,7 @@ struct IOSOrganizationAuditPage: View {
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
         .padding(.vertical, 2)
     }
@@ -570,6 +578,7 @@ private struct ConsolidationDetailSheet: View {
                                     if selectedAreaId == areaId {
                                         Image(systemName: "checkmark.circle.fill")
                                             .foregroundStyle(.blue)
+                                            .accessibilityLabel("Selected")
                                     }
                                 }
                             }
@@ -583,6 +592,7 @@ private struct ConsolidationDetailSheet: View {
                         HStack {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(.red)
+                                .accessibilityHidden(true)
                             Text("This consolidation has been ignored \(vote.ignoreCount) times. A decision is required.")
                                 .font(.caption)
                                 .foregroundStyle(.red)
@@ -678,6 +688,7 @@ private struct ManagerOverrideSheet: View {
                                 if selectedAreaId == areaId {
                                     Image(systemName: "checkmark.circle.fill")
                                         .foregroundStyle(.blue)
+                                        .accessibilityLabel("Selected")
                                 }
                             }
                         }

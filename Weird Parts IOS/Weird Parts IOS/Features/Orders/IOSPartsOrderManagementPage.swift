@@ -81,6 +81,7 @@ struct IOSPartsOrderManagementPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -294,6 +295,7 @@ struct IOSPartsOrderManagementPage: View {
                     .font(.title3)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(selectedPartIds.contains(row.id) ? "Deselect part" : "Select part")
 
             // Status icon
             statusIcon(row.lineStatus)
@@ -345,18 +347,22 @@ struct IOSPartsOrderManagementPage: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
                 .font(.caption)
+                .accessibilityHidden(true)
         case "backorder":
             Image(systemName: "clock.badge.exclamationmark")
                 .foregroundStyle(.red)
                 .font(.caption)
+                .accessibilityHidden(true)
         case "pending":
             Image(systemName: "hourglass")
                 .foregroundStyle(.blue)
                 .font(.caption)
+                .accessibilityHidden(true)
         default:
             Image(systemName: "circle")
                 .foregroundStyle(.secondary)
                 .font(.caption)
+                .accessibilityHidden(true)
         }
     }
 

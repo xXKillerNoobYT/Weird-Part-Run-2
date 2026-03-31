@@ -60,12 +60,14 @@ struct IOSContactsPage: View {
                     Button { activeSheet = .addContact } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel("Add contact")
                 }
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in

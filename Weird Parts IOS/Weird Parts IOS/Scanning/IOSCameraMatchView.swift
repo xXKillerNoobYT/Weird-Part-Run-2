@@ -36,7 +36,7 @@ struct IOSCameraMatchView: View {
                     } else {
                         VStack(spacing: 12) {
                             Image(systemName: "camera.viewfinder")
-                                .font(.system(size: 48))
+                                .decorativeIconFont(48)
                                 .foregroundStyle(.tertiary)
                             Text("Take a photo or select an image")
                                 .foregroundStyle(.secondary)
@@ -82,6 +82,7 @@ struct IOSCameraMatchView: View {
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
+                            .accessibilityHidden(true)
                         Text(error)
                             .font(.callout)
                     }

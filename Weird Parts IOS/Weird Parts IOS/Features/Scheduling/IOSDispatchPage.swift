@@ -102,11 +102,13 @@ struct IOSDispatchPage: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Add assignment")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -169,6 +171,7 @@ struct IOSDispatchPage: View {
             } label: {
                 Image(systemName: "chevron.left")
             }
+            .accessibilityLabel("Previous week")
 
             Spacer()
 
@@ -183,6 +186,7 @@ struct IOSDispatchPage: View {
             } label: {
                 Image(systemName: "chevron.right")
             }
+            .accessibilityLabel("Next week")
         }
         .padding()
     }
@@ -338,6 +342,7 @@ struct IOSDispatchPage: View {
                         }
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Assign worker")
             } else {
                 ForEach(workers, id: \.id) { worker in
                     Text(worker.employeeInitials)
@@ -388,6 +393,7 @@ struct IOSDispatchPage: View {
                                 Image(systemName: "line.3.horizontal")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
+                                    .accessibilityHidden(true)
                                 Text(worker.name)
                                     .font(.caption)
                             }

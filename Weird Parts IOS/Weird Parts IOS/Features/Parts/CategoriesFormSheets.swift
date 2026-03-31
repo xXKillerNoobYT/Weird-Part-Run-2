@@ -492,7 +492,7 @@ struct ColorFormSheet: View {
                         }
                     }
                 Text(name)
-                    .font(.system(size: 9))
+                    .font(.caption)
                     .lineLimit(1)
                     .foregroundStyle(.secondary)
             }

@@ -71,3 +71,27 @@ extension View {
         modifier(DSTypographyModifier(style: style))
     }
 }
+
+// MARK: - Decorative Icon Scaling
+
+/// Applies a scaled font size for decorative SF Symbol icons that are too large
+/// for standard text styles. The size scales with Dynamic Type via @ScaledMetric.
+struct DecorativeIconFontModifier: ViewModifier {
+    @ScaledMetric private var scaledSize: CGFloat
+
+    init(size: CGFloat) {
+        _scaledSize = ScaledMetric(wrappedValue: size, relativeTo: .largeTitle)
+    }
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: scaledSize))
+    }
+}
+
+extension View {
+    /// Apply a scaled font size for decorative icons (48pt+).
+    /// Uses @ScaledMetric internally so the icon scales with Dynamic Type.
+    func decorativeIconFont(_ size: CGFloat) -> some View {
+        modifier(DecorativeIconFontModifier(size: size))
+    }
+}

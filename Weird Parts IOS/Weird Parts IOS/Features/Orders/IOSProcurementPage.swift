@@ -67,6 +67,7 @@ struct IOSProcurementPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -275,6 +276,7 @@ struct IOSProcurementPage: View {
                         .foregroundStyle(checkedParts.contains(item.id) ? Color.accentColor : Color.secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(checkedParts.contains(item.id) ? "Deselect part" : "Select part")
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.partName)
@@ -347,6 +349,7 @@ struct IOSProcurementPage: View {
                 HStack(spacing: 4) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
+                        .accessibilityHidden(true)
                     Text("OVER MAX — mandatory pull of at least \(item.shopStock - item.maxStock)")
                         .font(.caption)
                         .foregroundStyle(.red)
@@ -358,6 +361,7 @@ struct IOSProcurementPage: View {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.down.circle.fill")
                         .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
                     Text("Below minimum stock level")
                         .font(.caption)
                         .foregroundStyle(.orange)
@@ -387,6 +391,7 @@ struct IOSProcurementPage: View {
                     Image(systemName: "lock.fill")
                         .font(.caption2)
                         .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
                     Text("Generic — supplier locked per job")
                         .font(.caption2)
                         .foregroundStyle(.orange)
@@ -412,6 +417,7 @@ struct IOSProcurementPage: View {
                 HStack {
                     Image(systemName: "doc.badge.plus")
                         .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
                     Text("Ready to Generate")
                         .font(.subheadline)
                         .fontWeight(.semibold)
@@ -656,6 +662,7 @@ struct IOSProcurementPage: View {
                 Image(systemName: "star.fill")
                     .font(.caption2)
                     .foregroundStyle(.yellow)
+                    .accessibilityLabel("Preferred supplier")
             }
 
             Text(supplier.name)
@@ -977,22 +984,27 @@ struct IOSProcurementPage: View {
             Image(systemName: "doc.text")
                 .foregroundStyle(.blue)
                 .font(.caption2)
+                .accessibilityHidden(true)
         case "wishlist":
             Image(systemName: "heart")
                 .foregroundStyle(.pink)
                 .font(.caption2)
+                .accessibilityHidden(true)
         case "forecast":
             Image(systemName: "chart.line.uptrend.xyaxis")
                 .foregroundStyle(.green)
                 .font(.caption2)
+                .accessibilityHidden(true)
         case "overstock":
             Image(systemName: "exclamationmark.triangle")
                 .foregroundStyle(.red)
                 .font(.caption2)
+                .accessibilityHidden(true)
         default:
             Image(systemName: "circle")
                 .foregroundStyle(.secondary)
                 .font(.caption2)
+                .accessibilityHidden(true)
         }
     }
 

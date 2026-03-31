@@ -80,14 +80,17 @@ struct WarehouseMovementsPage: View {
                 Button { activeSheet = .qrScanner } label: {
                     Image(systemName: "qrcode.viewfinder")
                 }
+                .accessibilityLabel("Scan QR code")
                 Button { activeSheet = .newMovement } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("New movement")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -223,6 +226,7 @@ struct WarehouseMovementsPage: View {
                 .frame(width: 36, height: 36)
                 .background(movementColor(movement.movementType).opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(movement.partName)
@@ -260,6 +264,7 @@ struct WarehouseMovementsPage: View {
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
         .frame(minHeight: 56)
     }

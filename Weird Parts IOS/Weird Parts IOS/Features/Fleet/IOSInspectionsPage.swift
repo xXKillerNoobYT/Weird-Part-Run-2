@@ -33,6 +33,7 @@ struct IOSInspectionsPage: View {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
+                    .accessibilityLabel("Help")
                 }
             }
             .sheet(item: $activeSheet) { _ in
@@ -87,6 +88,7 @@ struct IOSInspectionsPage: View {
                 .font(.title3)
                 .foregroundStyle(.blue)
                 .frame(width: 32)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {

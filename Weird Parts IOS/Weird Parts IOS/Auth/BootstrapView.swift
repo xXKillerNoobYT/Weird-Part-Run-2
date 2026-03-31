@@ -27,7 +27,7 @@ struct BootstrapView: View {
             // Header
             VStack(spacing: 8) {
                 Image(systemName: "star.circle.fill")
-                    .font(.system(size: 56))
+                    .decorativeIconFont(56)
                     .foregroundStyle(Color.accentColor)
                 Text("Welcome to WiredPart")
                     .font(.largeTitle)

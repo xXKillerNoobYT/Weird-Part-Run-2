@@ -34,6 +34,7 @@ struct IOSTelematicsPage: View {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
+                    .accessibilityLabel("Help")
                 }
             }
             .sheet(item: $activeSheet) { _ in
@@ -91,6 +92,7 @@ struct IOSTelematicsPage: View {
                     .font(.body)
                     .foregroundStyle(statusColor(location.status))
             }
+            .accessibilityLabel("Status: \(location.status.capitalized)")
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {

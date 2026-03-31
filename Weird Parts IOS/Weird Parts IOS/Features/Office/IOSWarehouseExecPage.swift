@@ -94,6 +94,7 @@ struct IOSWarehouseExecPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -156,6 +157,7 @@ private struct KPICard: View {
             Image(systemName: icon)
                 .font(.title2)
                 .foregroundStyle(color)
+                .accessibilityHidden(true)
             Text(value)
                 .font(.title2)
                 .fontWeight(.bold)
@@ -182,6 +184,7 @@ private struct QuickActionRow: View {
                 .font(.title3)
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 36, height: 36)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.subheadline)
@@ -194,6 +197,7 @@ private struct QuickActionRow: View {
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
         .padding(12)
         .dsCard()

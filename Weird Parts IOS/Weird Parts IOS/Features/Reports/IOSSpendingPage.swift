@@ -53,6 +53,7 @@ struct IOSSpendingPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -165,6 +166,7 @@ struct IOSSpendingPage: View {
                 Image(systemName: icon)
                     .font(.title3)
                     .foregroundStyle(color)
+                    .accessibilityHidden(true)
                 Spacer()
             }
 

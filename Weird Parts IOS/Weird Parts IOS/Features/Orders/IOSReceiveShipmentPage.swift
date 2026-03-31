@@ -166,12 +166,14 @@ struct IOSReceiveShipmentPage: View {
                     } label: {
                         Image(systemName: "qrcode.viewfinder")
                     }
+                    .accessibilityLabel("Scan QR code")
                 }
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -495,6 +497,7 @@ struct IOSReceiveShipmentPage: View {
                 } label: {
                     Image(systemName: "barcode.viewfinder")
                 }
+                .accessibilityLabel("Scan barcode")
             }
         }
         .alert("Barcode Not Found", isPresented: .constant(scanError != nil)) {
@@ -615,6 +618,7 @@ struct IOSReceiveShipmentPage: View {
                             .font(.title3)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Decrease quantity")
 
                     Text("\(receivedQtys[item.id] ?? item.expectedQty)")
                         .font(.title3)
@@ -634,6 +638,7 @@ struct IOSReceiveShipmentPage: View {
                             .font(.title3)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Increase quantity")
 
                     // Quick-fill to expected qty (shown when quantity differs)
                     if (receivedQtys[item.id] ?? item.expectedQty) != item.expectedQty {

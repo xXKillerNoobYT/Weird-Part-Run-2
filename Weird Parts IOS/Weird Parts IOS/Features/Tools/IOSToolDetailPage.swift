@@ -95,12 +95,14 @@ struct IOSToolDetailPage: View {
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
+                    .accessibilityLabel("Actions")
                 }
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -121,6 +123,7 @@ struct IOSToolDetailPage: View {
                     HStack {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
+                            .accessibilityHidden(true)
                         Text(msg).font(.subheadline)
                         Spacer()
                         Button { actionMessage = nil } label: {
@@ -128,6 +131,7 @@ struct IOSToolDetailPage: View {
                                 .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Dismiss message")
                     }
                 }
             }
@@ -138,6 +142,7 @@ struct IOSToolDetailPage: View {
                     HStack {
                         Image(systemName: "clock.badge.questionmark")
                             .foregroundStyle(.orange)
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(pendingEdits.count) edit(s) pending verification")
                                 .font(.subheadline).fontWeight(.medium)
@@ -285,6 +290,7 @@ struct IOSToolDetailPage: View {
                     HStack {
                         Image(systemName: kitStatusIcon(item.status))
                             .foregroundStyle(kitStatusColor(item.status))
+                            .accessibilityLabel("Status: \(item.status.capitalized)")
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.name).font(.subheadline)
@@ -370,6 +376,7 @@ struct IOSToolDetailPage: View {
                     Image(systemName: maintenanceTypeIcon(config.maintenanceType))
                         .foregroundStyle(config.isActive ? .blue : .secondary)
                         .frame(width: 24)
+                        .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(maintenanceTypeDisplayName(config.maintenanceType))
@@ -455,6 +462,7 @@ struct IOSToolDetailPage: View {
                     HStack {
                         Image(systemName: "arrow.triangle.swap")
                             .foregroundStyle(.blue)
+                            .accessibilityHidden(true)
                         Text("\(trade.fromName) → \(trade.toName)")
                             .font(.subheadline).fontWeight(.medium)
                     }
@@ -888,6 +896,7 @@ struct ToolReturnSheet: View {
                         HStack {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(.orange)
+                                .accessibilityHidden(true)
                             Text("Condition changed from \(lastCondition) to \(condition.rawValue)")
                                 .font(.caption)
                         }
@@ -988,6 +997,7 @@ struct ToolEditSheet: View {
                         HStack {
                             Image(systemName: "info.circle.fill")
                                 .foregroundStyle(.orange)
+                                .accessibilityHidden(true)
                             Text("Your edits will be submitted for manager verification.")
                                 .font(.caption)
                         }
@@ -1319,6 +1329,7 @@ struct ToolTradeSheet: View {
                                 if selectedUser == emp.id {
                                     Image(systemName: "checkmark.circle.fill")
                                         .foregroundStyle(.blue)
+                                        .accessibilityLabel("Selected")
                                 }
                             }
                             .contentShape(Rectangle())

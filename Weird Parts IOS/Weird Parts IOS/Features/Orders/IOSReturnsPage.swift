@@ -36,11 +36,13 @@ struct IOSReturnsPage: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .createReturn } label: { Image(systemName: "plus") }
+                    .accessibilityLabel("Create return")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in

@@ -59,6 +59,7 @@ struct WarehouseDashboardPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -241,6 +242,7 @@ struct WarehouseDashboardPage: View {
             Image(systemName: icon)
                 .font(.caption)
                 .foregroundStyle(color)
+                .accessibilityHidden(true)
             Text(value)
                 .font(.headline)
                 .fontWeight(.bold)
@@ -303,6 +305,7 @@ struct WarehouseDashboardPage: View {
             Image(systemName: icon)
                 .font(.title2)
                 .foregroundStyle(color)
+                .accessibilityHidden(true)
             Text(title)
                 .font(.caption)
                 .fontWeight(.medium)
@@ -346,6 +349,7 @@ struct WarehouseDashboardPage: View {
                 Image(systemName: icon)
                     .font(.subheadline)
                     .foregroundStyle(color)
+                    .accessibilityHidden(true)
                 Text(title)
                     .font(.subheadline)
                     .fontWeight(.medium)
@@ -354,6 +358,7 @@ struct WarehouseDashboardPage: View {
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -377,8 +382,9 @@ struct WarehouseDashboardPage: View {
             if filtered.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "tray")
-                        .font(.system(size: 32))
+                        .font(.largeTitle)
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                     Text(selectedFilter == nil ? "No recent movements" : "No matching activity")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -427,6 +433,7 @@ struct WarehouseDashboardPage: View {
                 .frame(width: 32, height: 32)
                 .background(movementColor(movement.movementType).opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(movement.partName)

@@ -124,6 +124,7 @@ struct IOSClockPage: View {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
+                    .accessibilityLabel("Help")
                 }
             }
             .refreshable { loadData() }
@@ -287,7 +288,7 @@ struct IOSClockPage: View {
                 // Live elapsed timer — large, readable display
                 VStack(spacing: 2) {
                     Text(elapsedText)
-                        .font(.system(size: 48, weight: .bold, design: .rounded))
+                        .font(.system(.largeTitle, design: .rounded)).bold()
                         .monospacedDigit()
                     Text("on \(entry.jobName)")
                         .font(.subheadline)
@@ -430,6 +431,7 @@ struct IOSClockPage: View {
             HStack {
                 Image(systemName: breakRecord.breakType == "break" ? "cup.and.saucer.fill" : "fork.knife")
                     .foregroundStyle(.white)
+                    .accessibilityHidden(true)
                 Text(breakRecord.breakType == "break" ? "Break Timer" : "Lunch Timer")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -500,6 +502,7 @@ struct IOSClockPage: View {
                     Image(systemName: "location.slash.fill")
                         .font(.title3)
                         .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Location Access Denied")
@@ -537,6 +540,7 @@ struct IOSClockPage: View {
                         .frame(width: 40, height: 40)
                         .background(Color.blue.opacity(0.1))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Shop / Warehouse")
@@ -551,6 +555,7 @@ struct IOSClockPage: View {
 
                     Image(systemName: "clock.badge.checkmark.fill")
                         .foregroundStyle(.green)
+                        .accessibilityHidden(true)
                 }
                 .frame(minHeight: 56)
                 .contentShape(Rectangle())
@@ -574,6 +579,7 @@ struct IOSClockPage: View {
                                 .frame(width: 40, height: 40)
                                 .background(Color.orange.opacity(0.1))
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .accessibilityHidden(true)
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(job.jobName)
@@ -607,6 +613,7 @@ struct IOSClockPage: View {
 
                             Image(systemName: "clock.badge.checkmark.fill")
                                 .foregroundStyle(.green)
+                                .accessibilityHidden(true)
                         }
                         .frame(minHeight: 56)
                         .contentShape(Rectangle())
@@ -656,6 +663,7 @@ struct IOSClockPage: View {
                                     .frame(width: 40, height: 40)
                                     .background(Color.green.opacity(0.1))
                                     .clipShape(RoundedRectangle(cornerRadius: 8))
+                                    .accessibilityHidden(true)
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(job.jobName)
@@ -709,6 +717,7 @@ struct IOSClockPage: View {
                         HStack {
                             Image(systemName: "link.circle.fill")
                                 .foregroundStyle(.blue)
+                                .accessibilityHidden(true)
                             Text("Linked to: \(linkedName)")
                                 .font(.subheadline)
                             Spacer()
@@ -828,6 +837,7 @@ struct IOSClockPage: View {
         Circle()
             .fill(isActive ? Color.green : Color.secondary.opacity(0.3))
             .frame(width: 8, height: 8)
+            .accessibilityLabel(isActive ? "Status: active" : "Status: completed")
     }
 
     // MARK: - Current Task Section
@@ -857,6 +867,7 @@ struct IOSClockPage: View {
                         HStack {
                             Image(systemName: "checkmark.circle")
                                 .foregroundStyle(.blue)
+                                .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(todo.title)
                                     .font(.headline)
@@ -1683,7 +1694,7 @@ private struct LunchUnpaidPromptSheet: View {
         NavigationStack {
             VStack(spacing: 24) {
                 Image(systemName: "fork.knife")
-                    .font(.system(size: 48))
+                    .decorativeIconFont(48)
                     .foregroundStyle(.blue)
 
                 Text("Paid Lunch Complete")

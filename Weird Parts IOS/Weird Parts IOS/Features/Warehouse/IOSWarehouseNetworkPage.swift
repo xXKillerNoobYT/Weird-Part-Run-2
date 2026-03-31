@@ -22,6 +22,7 @@ struct IOSWarehouseNetworkPage: View {
                     Image(systemName: "antenna.radiowaves.left.and.right")
                         .foregroundStyle(.green)
                         .font(.title2)
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Online")
                             .fontWeight(.medium)
@@ -33,6 +34,7 @@ struct IOSWarehouseNetworkPage: View {
                     Circle()
                         .fill(.green)
                         .frame(width: 10, height: 10)
+                        .accessibilityLabel("Status: Online")
                 }
             }
 
@@ -40,7 +42,7 @@ struct IOSWarehouseNetworkPage: View {
             Section("Connected Devices") {
                 VStack(spacing: 16) {
                     Image(systemName: "network")
-                        .font(.system(size: 40))
+                        .font(.largeTitle)
                         .foregroundStyle(.secondary)
                     Text("Network Discovery")
                         .font(.headline)
@@ -68,6 +70,7 @@ struct IOSWarehouseNetworkPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -87,6 +90,7 @@ struct IOSWarehouseNetworkPage: View {
             Image(systemName: icon)
                 .foregroundStyle(.blue)
                 .frame(width: 24)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
                     .fontWeight(.medium)

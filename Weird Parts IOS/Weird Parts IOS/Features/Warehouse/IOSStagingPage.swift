@@ -111,6 +111,7 @@ struct IOSStagingPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
             ToolbarItemGroup(placement: .primaryAction) {
                 if activeTab == .items {
@@ -121,6 +122,7 @@ struct IOSStagingPage: View {
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel("Create box")
                 }
             }
         }
@@ -199,6 +201,7 @@ struct IOSStagingPage: View {
             } label: {
                 Image(systemName: "checklist")
             }
+            .accessibilityLabel("Select items")
         }
     }
 
@@ -326,6 +329,7 @@ struct IOSStagingPage: View {
                             Image(systemName: selectedItems.contains(item.id) ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(selectedItems.contains(item.id) ? .green : .secondary)
                                 .font(.title3)
+                                .accessibilityLabel(selectedItems.contains(item.id) ? "Selected" : "Not selected")
                                 .padding(.trailing, 10)
                                 .onTapGesture {
                                     toggleSelection(item.id)
@@ -379,6 +383,7 @@ struct IOSStagingPage: View {
                 .font(.title3)
                 .foregroundStyle(Color.orange)
                 .frame(width: 32)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.partName)
@@ -470,6 +475,7 @@ struct IOSStagingPage: View {
                         HStack {
                             Image(systemName: "hammer.fill")
                                 .foregroundStyle(.purple)
+                                .accessibilityHidden(true)
                             Text(group.jobLabel)
                                 .fontWeight(.semibold)
                             Spacer()
@@ -529,6 +535,7 @@ struct IOSStagingPage: View {
                 Image(systemName: box.isFull ? "checkmark.circle.fill" : "circle.bottomhalf.filled")
                     .font(.title3)
                     .foregroundStyle(box.isFull ? .green : .orange)
+                    .accessibilityLabel(box.isFull ? "Status: Full" : "Status: Open")
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -576,6 +583,7 @@ struct IOSStagingPage: View {
                     .foregroundStyle(box.isFull ? .orange : .green)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(box.isFull ? "Reopen box" : "Mark box full")
         }
         .padding(.vertical, 4)
         .opacity(box.isFull ? 0.7 : 1.0)

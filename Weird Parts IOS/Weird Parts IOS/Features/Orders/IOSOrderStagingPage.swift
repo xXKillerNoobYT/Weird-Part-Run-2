@@ -49,11 +49,13 @@ struct IOSOrderStagingPage: View {
                 Button { activeSheet = .stageSettings } label: {
                     Image(systemName: "gearshape")
                 }
+                .accessibilityLabel("Stage settings")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .searchable(text: $searchText, prompt: "Search parts...")
@@ -260,6 +262,7 @@ struct IOSOrderStagingPage: View {
                             Image(systemName: "lock.fill")
                                 .font(.caption2)
                                 .foregroundStyle(.orange)
+                                .accessibilityLabel("Has held parts")
                         }
                     }
                 }
@@ -301,6 +304,7 @@ struct IOSOrderStagingPage: View {
                     HStack(spacing: 4) {
                         Image(systemName: "lock.fill")
                             .font(.caption2)
+                            .accessibilityHidden(true)
                         Text("HELD — releases after \(part.stageName ?? "stage") complete")
                             .font(.caption)
                     }

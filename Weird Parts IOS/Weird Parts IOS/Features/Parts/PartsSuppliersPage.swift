@@ -75,6 +75,7 @@ struct PartsSuppliersPage: View {
                 } label: {
                     Image(systemName: "arrow.up.arrow.down")
                         .frame(width: 44, height: 44)
+                        .accessibilityLabel("Sort suppliers")
                 }
             }
             .padding(.horizontal)
@@ -98,11 +99,13 @@ struct PartsSuppliersPage: View {
                 Button { activeSheet = .addSupplier } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Add supplier")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -226,6 +229,7 @@ struct PartsSuppliersPage: View {
                 .frame(width: 40, height: 40)
                 .background(Color(.tertiarySystemGroupedBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
@@ -289,6 +293,7 @@ struct PartsSuppliersPage: View {
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
         .frame(minHeight: 60)
     }
@@ -305,7 +310,7 @@ struct PartsSuppliersPage: View {
     private var emptyState: some View {
         VStack(spacing: 16) {
             Image(systemName: "building.2")
-                .font(.system(size: 48))
+                .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
             Text("No Suppliers Yet")
                 .font(.title3)

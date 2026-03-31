@@ -35,6 +35,7 @@ struct UsedStickerPicker: View {
                                 Image(systemName: "xmark")
                                     .font(.caption2)
                                     .foregroundStyle(.gray)
+                                    .accessibilityHidden(true)
                             } else {
                                 Text("\(position + 1)")
                                     .font(.caption2)
@@ -44,6 +45,7 @@ struct UsedStickerPicker: View {
                     }
                     .buttonStyle(.plain)
                     .frame(minHeight: 30)
+                    .accessibilityLabel(usedPositions.contains(position) ? "Position \(position + 1): Used" : "Position \(position + 1): Available")
                 }
             }
 
@@ -231,6 +233,7 @@ struct QRLabelPrintSheet: View {
             .scaledToFit()
             .frame(width: size, height: size)
             .foregroundStyle(Color.accentColor)
+            .accessibilityHidden(true)
     }
 
     private func textPlaceholder(content: QRLabelContent) -> some View {
@@ -246,7 +249,7 @@ struct QRLabelPrintSheet: View {
                 .lineLimit(1)
             if let sub = content.subtitle {
                 Text(sub)
-                    .font(.system(size: 8))
+                    .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }

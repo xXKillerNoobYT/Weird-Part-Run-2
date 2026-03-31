@@ -70,9 +70,11 @@ struct IOSReportTemplatesPage: View {
                     Button { activeSheet = .create } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel("Add template")
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
+                    .accessibilityLabel("Help")
                 }
             }
         }
@@ -161,6 +163,7 @@ struct IOSReportTemplatesPage: View {
             Image(systemName: reportTypeIcons[template.reportType] ?? "doc")
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 30)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(template.name)

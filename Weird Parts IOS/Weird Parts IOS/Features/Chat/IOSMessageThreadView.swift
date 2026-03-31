@@ -72,6 +72,7 @@ struct IOSMessageThreadView: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -128,6 +129,7 @@ struct IOSMessageThreadView: View {
                     Spacer()
                     Image(systemName: showInfoPanel ? "chevron.up" : "info.circle")
                         .foregroundStyle(.blue)
+                        .accessibilityHidden(true)
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 8)
@@ -202,12 +204,14 @@ struct IOSMessageThreadView: View {
                 Image(systemName: "photo")
                     .foregroundStyle(.blue)
             }
+            .accessibilityLabel("Attach photo")
 
             // File button
             Button { withAnimation { showComingSoon = true } } label: {
                 Image(systemName: "doc")
                     .foregroundStyle(.blue)
             }
+            .accessibilityLabel("Attach file")
 
             // Reference button (part/PO/job)
             Menu {
@@ -233,6 +237,7 @@ struct IOSMessageThreadView: View {
                 Image(systemName: "link")
                     .foregroundStyle(.blue)
             }
+            .accessibilityLabel("Add reference link")
 
             Spacer()
         }
@@ -249,6 +254,7 @@ struct IOSMessageThreadView: View {
                     HStack(spacing: 4) {
                         Image(systemName: iconForAttachmentType(att.type))
                             .font(.caption)
+                            .accessibilityHidden(true)
                         Text(att.referenceLabel ?? att.fileName ?? att.type)
                             .font(.caption)
                             .lineLimit(1)
@@ -259,6 +265,7 @@ struct IOSMessageThreadView: View {
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
+                        .accessibilityLabel("Remove attachment")
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -292,6 +299,7 @@ struct IOSMessageThreadView: View {
                         .foregroundStyle(Color.accentColor)
                 }
             }
+            .accessibilityLabel("Send message")
             .disabled(messageText.trimmingCharacters(in: .whitespaces).isEmpty && pendingAttachments.isEmpty || isSending)
         }
         .padding(.horizontal, 12)
@@ -421,6 +429,7 @@ struct AttachmentDisplay: View {
             HStack {
                 Image(systemName: "shippingbox.fill")
                     .foregroundStyle(.blue)
+                    .accessibilityHidden(true)
                 Text(attachment.referenceLabel ?? "Part")
                     .foregroundStyle(.blue)
                     .underline()
@@ -443,6 +452,7 @@ struct AttachmentDisplay: View {
                         .overlay {
                             Image(systemName: "photo")
                                 .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
                         }
                 }
             }
@@ -451,6 +461,7 @@ struct AttachmentDisplay: View {
             HStack {
                 Image(systemName: iconForRefType(attachment.attachmentType))
                     .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
                 Text(attachment.referenceLabel ?? "Reference")
                     .font(.caption)
             }
@@ -462,6 +473,7 @@ struct AttachmentDisplay: View {
             // File attachment
             HStack {
                 Image(systemName: "doc")
+                    .accessibilityHidden(true)
                 Text(attachment.fileName ?? "File")
                     .font(.caption)
             }
@@ -495,6 +507,7 @@ struct ThreadInfoPanel: View {
                 HStack {
                     Image(systemName: sourceIcon(sourceType))
                         .foregroundStyle(.blue)
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading) {
                         Text(sourceLabel(sourceType))
                             .font(.caption)
@@ -511,6 +524,7 @@ struct ThreadInfoPanel: View {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.up.arrow.down.circle")
                         .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
                     Text("Escalation Level:")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -522,11 +536,13 @@ struct ThreadInfoPanel: View {
                         Image(systemName: "arrow.up.circle.fill")
                             .foregroundStyle(.green)
                             .font(.caption)
+                            .accessibilityLabel("Status: Can escalate")
                     }
                     if info.canPushBack {
                         Image(systemName: "arrow.down.circle.fill")
                             .foregroundStyle(.orange)
                             .font(.caption)
+                            .accessibilityLabel("Status: Can push back")
                     }
                 }
                 .padding(.horizontal)

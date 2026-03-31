@@ -100,6 +100,7 @@ struct IOSPODetailPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -246,6 +247,7 @@ struct IOSPODetailPage: View {
                                             .font(.title3)
                                             .foregroundStyle(.green)
                                     }
+                                    .accessibilityLabel("Call supplier")
                                 }
                                 if let email = sup.email, !email.isEmpty,
                                    let url = URL(string: "mailto:\(email)") {
@@ -254,6 +256,7 @@ struct IOSPODetailPage: View {
                                             .font(.title3)
                                             .foregroundStyle(.blue)
                                     }
+                                    .accessibilityLabel("Email supplier")
                                 }
                             }
                         }
@@ -296,6 +299,7 @@ struct IOSPODetailPage: View {
                                         Image(systemName: "chevron.right")
                                             .font(.caption)
                                             .foregroundStyle(.tertiary)
+                                            .accessibilityHidden(true)
                                     }
                                 }
                                 .foregroundStyle(.primary)
@@ -341,6 +345,7 @@ struct IOSPODetailPage: View {
                                             .font(.title3)
                                             .foregroundStyle(Color.accentColor)
                                     }
+                                    .accessibilityLabel("Send message")
                                     .disabled(newSupplierMessage.trimmingCharacters(in: .whitespaces).isEmpty)
                                 }
                             }
@@ -351,8 +356,9 @@ struct IOSPODetailPage: View {
                     VStack(spacing: 16) {
                         Spacer()
                         Image(systemName: "bubble.left.and.bubble.right")
-                            .font(.system(size: 48))
+                            .decorativeIconFont(48)
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                         Text("No supplier channel yet")
                             .font(.headline)
                         Text("Create a bridge channel to communicate with this supplier about PO \(po?.poNumber ?? "").")
@@ -531,9 +537,11 @@ struct IOSPODetailPage: View {
                                         if selectedSupplierId == sup.id {
                                             Image(systemName: "checkmark.circle.fill")
                                                 .foregroundStyle(.green)
+                                                .accessibilityLabel("Selected")
                                         } else {
                                             Image(systemName: "circle")
                                                 .foregroundStyle(.tertiary)
+                                                .accessibilityLabel("Not selected")
                                         }
                                     }
                                 }
@@ -647,7 +655,7 @@ struct IOSPODetailPage: View {
                     VStack(spacing: 16) {
                         Spacer()
                         Image(systemName: "shippingbox")
-                            .font(.system(size: 48))
+                            .decorativeIconFont(48)
                             .foregroundStyle(.secondary)
                         Text("No receiving sessions recorded")
                             .font(.headline)
@@ -694,6 +702,7 @@ struct IOSPODetailPage: View {
                                         Circle()
                                             .fill(Color.green)
                                             .frame(width: 10, height: 10)
+                                            .accessibilityHidden(true)
                                         if batch.id != receiptBatches.last?.id {
                                             Rectangle()
                                                 .fill(Color.green.opacity(0.3))
@@ -742,6 +751,7 @@ struct IOSPODetailPage: View {
                                             if line.quantityReceived >= line.quantityOrdered {
                                                 Image(systemName: "checkmark.circle.fill")
                                                     .foregroundStyle(.green)
+                                                    .accessibilityLabel("Fully received")
                                             } else {
                                                 Text("\(line.quantityOrdered - line.quantityReceived) remaining")
                                                     .font(.caption2)
@@ -796,6 +806,7 @@ struct IOSPODetailPage: View {
                                             Image(systemName: "person.circle.fill")
                                                 .font(.title2)
                                                 .foregroundStyle(.blue)
+                                                .accessibilityHidden(true)
                                             VStack(alignment: .leading, spacing: 2) {
                                                 Text("Created by")
                                                     .font(.caption2)
@@ -855,6 +866,7 @@ struct IOSPODetailPage: View {
                                     Image(systemName: "person.circle.fill")
                                         .font(.title2)
                                         .foregroundStyle(.green)
+                                        .accessibilityHidden(true)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(submitter)
                                             .font(.subheadline)
@@ -887,7 +899,7 @@ struct IOSPODetailPage: View {
                     VStack(spacing: 16) {
                         Spacer()
                         Image(systemName: "person.fill.questionmark")
-                            .font(.system(size: 48))
+                            .decorativeIconFont(48)
                             .foregroundStyle(.secondary)
                         Text("No linked Job Part Orders")
                             .font(.headline)
@@ -1280,6 +1292,7 @@ struct IOSPODetailPage: View {
                         Image(systemName: jobGroupIcon(group.jobName))
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                         Text(group.jobName)
                             .font(.subheadline)
                             .fontWeight(.semibold)
@@ -1332,6 +1345,7 @@ struct IOSPODetailPage: View {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.caption2)
                                 .foregroundStyle(.orange)
+                                .accessibilityHidden(true)
                             Text("Price not verified recently")
                                 .font(.caption2)
                                 .foregroundStyle(.orange)
@@ -1426,22 +1440,27 @@ struct IOSPODetailPage: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
                 .font(.body)
+                .accessibilityLabel("Status: received")
         case "backorder":
             Image(systemName: "clock.badge.exclamationmark.fill")
                 .foregroundStyle(.red)
                 .font(.body)
+                .accessibilityLabel("Status: backorder")
         case "pending", "ordered":
             Image(systemName: "hourglass")
                 .foregroundStyle(.blue)
                 .font(.body)
+                .accessibilityLabel("Status: pending")
         case "cancelled":
             Image(systemName: "xmark.circle.fill")
                 .foregroundStyle(.red)
                 .font(.body)
+                .accessibilityLabel("Status: cancelled")
         default:
             Image(systemName: "circle")
                 .foregroundStyle(.secondary)
                 .font(.body)
+                .accessibilityLabel("Status: unknown")
         }
     }
 
@@ -1544,6 +1563,7 @@ struct IOSPODetailPage: View {
                         .fill(entry.hasDiscrepancies ? Color.orange : Color.green)
                         .frame(width: 8, height: 8)
                         .padding(.top, 6)
+                        .accessibilityLabel(entry.hasDiscrepancies ? "Has discrepancies" : "Received")
 
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
@@ -1555,9 +1575,9 @@ struct IOSPODetailPage: View {
                             if entry.hasDiscrepancies {
                                 HStack(spacing: 2) {
                                     Image(systemName: "exclamationmark.triangle.fill")
-                                        .font(.system(size: 9))
+                                        .font(.caption)
                                     Text("Discrepancy")
-                                        .font(.system(size: 9))
+                                        .font(.caption)
                                         .fontWeight(.semibold)
                                 }
                                 .foregroundStyle(.orange)
@@ -1647,10 +1667,12 @@ struct IOSPODetailPage: View {
                 Image(systemName: "exclamationmark.circle.fill")
                     .font(.caption2)
                     .foregroundStyle(.orange)
+                    .accessibilityLabel("Has discrepancy")
             } else {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.caption2)
                     .foregroundStyle(.green)
+                    .accessibilityLabel("Received correctly")
             }
 
             VStack(alignment: .leading, spacing: 1) {
@@ -1659,7 +1681,7 @@ struct IOSPODetailPage: View {
                     .fontWeight(.medium)
                 if let code = item.partCode, !code.isEmpty {
                     Text(code)
-                        .font(.system(size: 9, design: .monospaced))
+                        .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -1683,7 +1705,7 @@ struct IOSPODetailPage: View {
                 if item.hasDiscrepancy {
                     let diff = item.receivedQty - item.expectedQty
                     Text(diff > 0 ? "+\(diff) over" : "\(-diff) short")
-                        .font(.system(size: 9))
+                        .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundStyle(diff > 0 ? .blue : .red)
                 }
@@ -1694,6 +1716,7 @@ struct IOSPODetailPage: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .help(notes)
+                    .accessibilityLabel("Has notes")
             }
         }
         .padding(.vertical, 4)
@@ -1707,6 +1730,7 @@ struct IOSPODetailPage: View {
                 .fill(Color.green)
                 .frame(width: 8, height: 8)
                 .padding(.top, 6)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Received \(String(batch.receivedDate.prefix(10)))")
                     .font(.caption)
@@ -1859,6 +1883,7 @@ struct IOSPODetailPage: View {
                             .foregroundStyle(Color.accentColor)
                     }
                     .disabled(newNoteText.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityLabel("Add note")
                 }
 
                 if poNotes.isEmpty {

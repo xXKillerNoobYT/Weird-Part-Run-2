@@ -20,7 +20,7 @@ struct OnboardingCompleteView: View {
             // Animated checkmark
             VStack(spacing: 16) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 80))
+                    .decorativeIconFont(80)
                     .foregroundStyle(.green)
                     .scaleEffect(showCheckmark ? 1.0 : 0.5)
                     .opacity(showCheckmark ? 1.0 : 0.0)

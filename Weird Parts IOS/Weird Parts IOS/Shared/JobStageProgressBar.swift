@@ -56,7 +56,7 @@ struct JobStageProgressBar: View {
 
             if !compact {
                 Text(stage.name)
-                    .font(.system(size: 9, weight: stage.status == "in_progress" ? .semibold : .regular))
+                    .font(.caption).fontWeight(stage.status == "in_progress" ? .semibold : .regular)
                     .foregroundStyle(stage.status == "pending" ? .tertiary : .secondary)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)

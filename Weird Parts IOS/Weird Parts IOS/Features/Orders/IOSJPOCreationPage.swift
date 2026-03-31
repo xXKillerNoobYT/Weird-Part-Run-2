@@ -154,6 +154,7 @@ struct IOSJPOCreationPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -226,6 +227,7 @@ struct IOSJPOCreationPage: View {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
+                            .accessibilityHidden(true)
                         Text(successMessage)
                             .font(.subheadline)
                             .fontWeight(.medium)
@@ -323,11 +325,13 @@ struct IOSJPOCreationPage: View {
                     Label("Scan", systemImage: "qrcode.viewfinder")
                         .font(.caption)
                 }
+                .accessibilityLabel("Scan QR code")
             }
 
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 TextField("Search parts...", text: $searchText)
                     .textFieldStyle(.plain)
                     .onChange(of: searchText) { searchParts() }
@@ -341,6 +345,7 @@ struct IOSJPOCreationPage: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
                 }
             }
             .padding(8)
@@ -376,6 +381,7 @@ struct IOSJPOCreationPage: View {
                             HStack(spacing: 4) {
                                 Image(systemName: "clock")
                                     .font(.caption2)
+                                    .accessibilityHidden(true)
                                 Text(query)
                                     .font(.caption)
                             }
@@ -403,6 +409,7 @@ struct IOSJPOCreationPage: View {
                 Image(systemName: "bolt.fill")
                     .foregroundStyle(.yellow)
                     .font(.caption)
+                    .accessibilityLabel("Best match")
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -437,6 +444,7 @@ struct IOSJPOCreationPage: View {
                     .foregroundStyle(alreadyInCart(partId: part.id) ? .green : Color.accentColor)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(alreadyInCart(partId: part.id) ? "Already in cart" : "Add to cart")
         }
         .padding(.vertical, 4)
     }
@@ -448,6 +456,7 @@ struct IOSJPOCreationPage: View {
         let label = stock > 0 ? "\(stock) in stock" : "Out of stock"
         return HStack(spacing: 2) {
             Circle().fill(color).frame(width: 6, height: 6)
+                .accessibilityHidden(true)
             Text(label)
                 .font(.caption2)
                 .foregroundStyle(color)
@@ -466,6 +475,7 @@ struct IOSJPOCreationPage: View {
                     Image(systemName: "cart")
                         .font(.largeTitle)
                         .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                     Text("Add parts from search or suggestions")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -557,6 +567,7 @@ struct IOSJPOCreationPage: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Decrease quantity")
 
                 Text("\(cartItems[index].quantity)")
                     .font(.subheadline)
@@ -571,6 +582,7 @@ struct IOSJPOCreationPage: View {
                         .foregroundStyle(Color.accentColor)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Increase quantity")
             }
 
             // Remove button
@@ -582,6 +594,7 @@ struct IOSJPOCreationPage: View {
                     .foregroundStyle(.red)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Remove from cart")
         }
         .padding(.vertical, 4)
     }
@@ -677,6 +690,7 @@ struct IOSJPOCreationPage: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(width: 16)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(partName)

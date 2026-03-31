@@ -65,6 +65,7 @@ struct PartsCompanionsPage: View {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.yellow)
+                        .accessibilityHidden(true)
                     Text(error)
                         .font(.caption)
                     Spacer()
@@ -114,11 +115,13 @@ struct PartsCompanionsPage: View {
                         Button { activeSheet = .adminDashboard } label: {
                             Image(systemName: "chart.bar.xaxis")
                         }
+                        .accessibilityLabel("Admin dashboard")
                     }
 
                     Button { activeSheet = .testSandbox } label: {
                         Image(systemName: "flask")
                     }
+                    .accessibilityLabel("Test sandbox")
 
                     if activeTab != .polls {
                         Button {
@@ -130,6 +133,7 @@ struct PartsCompanionsPage: View {
                         } label: {
                             Image(systemName: "plus")
                         }
+                        .accessibilityLabel(activeTab == .rules ? "Add rule" : "Add alternative")
                     }
                 }
             }
@@ -137,6 +141,7 @@ struct PartsCompanionsPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -215,7 +220,7 @@ struct PartsCompanionsPage: View {
         if filteredRules.isEmpty {
             VStack(spacing: 16) {
                 Image(systemName: "link.badge.plus")
-                    .font(.system(size: 48))
+                    .decorativeIconFont(48)
                     .foregroundStyle(.secondary)
                 Text("No Companion Rules")
                     .font(.title3)
@@ -368,7 +373,7 @@ struct PartsCompanionsPage: View {
         if filteredAlternatives.isEmpty {
             VStack(spacing: 16) {
                 Image(systemName: "arrow.triangle.swap")
-                    .font(.system(size: 48))
+                    .decorativeIconFont(48)
                     .foregroundStyle(.secondary)
                 Text("No Part Alternatives")
                     .font(.title3)
@@ -735,7 +740,7 @@ struct PartsCompanionsPage: View {
     private var emptyPollsState: some View {
         VStack(spacing: 16) {
             Image(systemName: "chart.bar.doc.horizontal")
-                .font(.system(size: 48))
+                .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
             Text("No Active Polls")
                 .font(.title3)

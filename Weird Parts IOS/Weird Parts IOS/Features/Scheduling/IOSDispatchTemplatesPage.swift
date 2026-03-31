@@ -31,6 +31,7 @@ struct IOSDispatchTemplatesPage: View {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
+                    .accessibilityLabel("Help")
                 }
             }
             .sheet(item: $activeSheet) { _ in
@@ -84,6 +85,7 @@ struct IOSDispatchTemplatesPage: View {
                 .font(.title2)
                 .foregroundStyle(template.isActive ? Color.accentColor : .secondary)
                 .frame(width: 36)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(template.name)

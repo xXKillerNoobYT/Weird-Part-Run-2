@@ -34,6 +34,7 @@ struct IOSToolsDashboardPage: View {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
+                    .accessibilityLabel("Help")
                 }
             }
             .sheet(item: $activeSheet) { _ in
@@ -119,6 +120,7 @@ struct IOSToolsDashboardPage: View {
                 Image(systemName: icon)
                     .font(.title3)
                     .foregroundStyle(color)
+                    .accessibilityHidden(true)
                 Spacer()
             }
 
@@ -172,6 +174,7 @@ struct IOSToolsDashboardPage: View {
             Image(systemName: checkout.returnedAt == nil ? "arrow.up.right.circle.fill" : "arrow.down.left.circle.fill")
                 .foregroundStyle(checkout.returnedAt == nil ? .blue : .green)
                 .frame(width: 28)
+                .accessibilityLabel(checkout.returnedAt == nil ? "Status: Checked out" : "Status: Returned")
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(checkout.toolName)

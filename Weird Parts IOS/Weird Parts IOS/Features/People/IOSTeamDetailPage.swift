@@ -61,11 +61,13 @@ struct IOSTeamDetailPage: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
+                .accessibilityLabel("Team actions")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -216,6 +218,7 @@ struct IOSTeamDetailPage: View {
                             Image(systemName: "chevron.right")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
                         }
                     }
                 }
@@ -397,6 +400,7 @@ private struct AddMemberSheet: View {
                                 Spacer()
                                 Image(systemName: "plus.circle.fill")
                                     .foregroundStyle(.blue)
+                                    .accessibilityHidden(true)
                             }
                         }
                     }

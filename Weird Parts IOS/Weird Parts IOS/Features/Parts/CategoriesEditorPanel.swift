@@ -84,7 +84,7 @@ struct CategoriesEditorPanel: View {
         VStack(spacing: DS.Space.lg) {
             Spacer()
             Image(systemName: "sidebar.squares.left")
-                .font(.system(size: 48))
+                .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
             Text("Select an Item")
                 .font(.title3)

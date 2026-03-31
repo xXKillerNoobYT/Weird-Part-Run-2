@@ -49,6 +49,7 @@ struct IOSEmployeeDetailPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -173,6 +174,7 @@ struct IOSEmployeeDetailPage: View {
                             Image(systemName: "graduationcap.fill")
                                 .foregroundStyle(item.isAssigned ? Color.accentColor : .gray)
                                 .frame(width: 24)
+                                .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.hat.name)
                                     .fontWeight(.medium)
@@ -225,6 +227,7 @@ struct IOSEmployeeDetailPage: View {
                             Image(systemName: "person.3.fill")
                                 .foregroundStyle(Color.accentColor)
                                 .frame(width: 24)
+                                .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(membership.teamName)
                                     .fontWeight(.medium)

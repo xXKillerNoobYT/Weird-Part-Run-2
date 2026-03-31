@@ -45,6 +45,7 @@ struct SchedulingPipelineReport: View {
                             Circle()
                                 .fill(statusColor(row.status))
                                 .frame(width: 10, height: 10)
+                                .accessibilityLabel("Status: \(displayStatus(row.status))")
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(displayStatus(row.status))
                                     .font(.subheadline)
@@ -77,6 +78,7 @@ struct SchedulingPipelineReport: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in

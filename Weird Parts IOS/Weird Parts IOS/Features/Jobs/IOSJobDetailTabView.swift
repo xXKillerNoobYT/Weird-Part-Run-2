@@ -60,6 +60,7 @@ struct IOSJobDetailTabView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
                     Text(tabError)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -71,6 +72,7 @@ struct IOSJobDetailTabView: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss error")
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 6)
@@ -96,12 +98,14 @@ struct IOSJobDetailTabView: View {
                 } label: {
                     Image(systemName: "pencil")
                 }
+                .accessibilityLabel("Edit job")
                 .requiresPermission("manage_jobs")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -197,6 +201,7 @@ struct IOSJobDetailTabView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.red)
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Payment Hold")
                                 .font(.headline)
@@ -315,6 +320,7 @@ struct IOSJobDetailTabView: View {
                             HStack(spacing: 6) {
                                 Image(systemName: "sparkles")
                                     .foregroundStyle(.purple)
+                                    .accessibilityHidden(true)
                                 Text("Tap to generate AI summary")
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
@@ -327,6 +333,7 @@ struct IOSJobDetailTabView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "sparkles")
                         .foregroundStyle(.purple)
+                        .accessibilityHidden(true)
                     Text("AI Summary")
                 }
             }
@@ -517,6 +524,7 @@ struct IOSJobDetailTabView: View {
                         Image(systemName: "person.circle.fill")
                             .font(.title2)
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(member.userName)
                                 .font(.subheadline)
@@ -700,12 +708,14 @@ struct IOSJobDetailTabView: View {
                         Image(systemName: stage.icon)
                             .foregroundStyle(.blue)
                             .frame(width: 24)
+                            .accessibilityHidden(true)
                         Text(stage.label)
                             .font(.subheadline)
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
                     }
                     .padding(12)
                     .dsCard()
@@ -722,12 +732,14 @@ struct IOSJobDetailTabView: View {
                     Image(systemName: "chart.line.uptrend.xyaxis")
                         .foregroundStyle(.green)
                         .frame(width: 24)
+                        .accessibilityHidden(true)
                     Text("Reviews & Actuals")
                         .font(.subheadline)
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 }
                 .padding(12)
                 .dsCard()
@@ -866,6 +878,7 @@ struct IOSJobDetailTabView: View {
                         HStack {
                             Image(systemName: "building.2")
                                 .foregroundStyle(.orange)
+                                .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(channel.supplierName)
                                     .font(.subheadline)
@@ -944,6 +957,7 @@ struct IOSJobDetailTabView: View {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(.green)
                                     .font(.caption)
+                                    .accessibilityHidden(true)
                                 Text(answer)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -1122,7 +1136,7 @@ struct IOSJobDetailTabView: View {
             HStack {
                 ForEach(Array(stages.enumerated()), id: \.element.id) { i, stage in
                     Text(stage.label)
-                        .font(.system(size: 8))
+                        .font(.caption2)
                         .foregroundStyle(i <= currentIndex ? .primary : .tertiary)
                         .fontWeight(i == currentIndex ? .bold : .regular)
                         .frame(maxWidth: .infinity)
@@ -1241,6 +1255,7 @@ private struct MetricCard: View {
             HStack {
                 Image(systemName: icon)
                     .foregroundStyle(color)
+                    .accessibilityHidden(true)
                 Text(title)
                     .font(.caption)
                     .foregroundStyle(.secondary)

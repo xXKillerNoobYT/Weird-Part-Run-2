@@ -71,6 +71,7 @@ struct IOSOfficeDashboardPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -133,6 +134,7 @@ struct IOSOfficeDashboardPage: View {
                 HStack {
                     Image(systemName: "sparkles")
                         .foregroundStyle(.purple)
+                        .accessibilityHidden(true)
                     Text("Daily Briefing")
                         .font(.headline)
                     Spacer()
@@ -156,6 +158,7 @@ struct IOSOfficeDashboardPage: View {
                                     .fill(.blue)
                                     .frame(width: 6, height: 6)
                                     .padding(.top, 5)
+                                    .accessibilityHidden(true)
                                 Text(highlight)
                                     .font(.caption)
                             }
@@ -211,6 +214,7 @@ struct IOSOfficeDashboardPage: View {
                             Image(systemName: "chevron.right")
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
                         }
                     }
                     .buttonStyle(.plain)
@@ -302,6 +306,7 @@ struct IOSOfficeDashboardPage: View {
                     HStack {
                         Image(systemName: "dollarsign.circle.fill")
                             .foregroundStyle(.orange)
+                            .accessibilityHidden(true)
                         Text("Outstanding POs: \(formatCurrency(snapshot.outstandingPOValue))")
                             .font(.caption)
                     }
@@ -354,6 +359,7 @@ struct IOSOfficeDashboardPage: View {
                 Image(systemName: icon)
                     .font(.title2)
                     .foregroundStyle(color)
+                    .accessibilityHidden(true)
                 Text(title)
                     .font(.caption)
                     .fontWeight(.medium)
@@ -373,6 +379,7 @@ struct IOSOfficeDashboardPage: View {
             HStack {
                 Image(systemName: "arrow.triangle.2.circlepath")
                     .foregroundStyle(.blue)
+                    .accessibilityHidden(true)
                 Text("Last sync: Not available")
                     .font(.caption)
                     .foregroundStyle(.secondary)

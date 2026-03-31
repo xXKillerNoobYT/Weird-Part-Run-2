@@ -42,9 +42,11 @@ struct IOSJobDetailPage: View {
                         Button { activeSheet = .weeklyReview } label: {
                             Image(systemName: "calendar.badge.clock")
                         }
+                        .accessibilityLabel("Open weekly review")
                         Button { activeSheet = .help } label: {
                             Image(systemName: "questionmark.circle")
                         }
+                        .accessibilityLabel("Help")
                     }
                 }
             }
@@ -183,6 +185,7 @@ struct IOSJobDetailPage: View {
                             HStack {
                                 Image(systemName: "person.circle.fill")
                                     .foregroundStyle(Color.accentColor)
+                                    .accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(member.userName)
                                         .fontWeight(.medium)

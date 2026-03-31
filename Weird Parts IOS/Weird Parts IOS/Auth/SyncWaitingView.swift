@@ -84,7 +84,7 @@ struct SyncWaitingView: View {
     private var completedView: some View {
         VStack(spacing: 20) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 64))
+                .decorativeIconFont(64)
                 .foregroundStyle(.green)
 
             Text("Sync Complete!")
@@ -110,7 +110,7 @@ struct SyncWaitingView: View {
     private func errorView(_ error: String) -> some View {
         VStack(spacing: 20) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 48))
+                .decorativeIconFont(48)
                 .foregroundStyle(.orange)
 
             Text("Sync Error")

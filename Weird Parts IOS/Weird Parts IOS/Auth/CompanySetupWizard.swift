@@ -493,7 +493,7 @@ struct CompanySetupWizard: View {
             Spacer().frame(height: 20)
 
             Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 72))
+                .decorativeIconFont(72)
                 .foregroundStyle(.green)
 
             Text("You're Ready!")
@@ -545,7 +545,7 @@ struct CompanySetupWizard: View {
     private func stepHeader(icon: String, color: Color, title: String, subtitle: String) -> some View {
         VStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 48))
+                .decorativeIconFont(48)
                 .foregroundStyle(color)
 
             Text(title)

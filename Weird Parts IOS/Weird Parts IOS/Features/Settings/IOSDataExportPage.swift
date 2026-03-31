@@ -24,7 +24,7 @@ struct IOSDataExportPage: View {
     private let formats = ["csv", "json"]
 
     private var canExport: Bool {
-        appCore.hasPermission("export_reports")
+        appCore.hasPermission("manage_settings")
     }
 
     // MARK: - Body
@@ -37,7 +37,7 @@ struct IOSDataExportPage: View {
                 ContentUnavailableView(
                     "Access Restricted",
                     systemImage: "lock.shield",
-                    description: Text("Data export requires the Export Reports permission. Contact your administrator.")
+                    description: Text("You don't have permission to export data.")
                 )
             }
         }
@@ -47,6 +47,7 @@ struct IOSDataExportPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -131,6 +132,7 @@ struct IOSDataExportPage: View {
                         HStack {
                             Image(systemName: selectedTables.contains(table) ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(selectedTables.contains(table) ? .blue : .secondary)
+                                .accessibilityHidden(true)
                             Text(table)
                                 .foregroundStyle(.primary)
                                 .font(.subheadline.monospaced())

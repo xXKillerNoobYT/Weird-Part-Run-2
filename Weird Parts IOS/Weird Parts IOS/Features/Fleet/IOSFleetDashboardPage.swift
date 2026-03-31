@@ -49,6 +49,7 @@ struct IOSFleetDashboardPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -213,8 +214,9 @@ struct IOSFleetDashboardPage: View {
             if vehicles.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "car")
-                        .font(.system(size: 32))
+                        .font(.largeTitle)
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                     Text("No vehicles found")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -248,6 +250,7 @@ struct IOSFleetDashboardPage: View {
                 .font(.body)
                 .foregroundStyle(statusColor(vehicle.status))
                 .frame(width: 30)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(vehicle.vehicleName)
@@ -287,6 +290,7 @@ struct IOSFleetDashboardPage: View {
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -329,6 +333,7 @@ struct IOSFleetDashboardPage: View {
         VStack(spacing: 4) {
             Image(systemName: icon)
                 .foregroundStyle(color)
+                .accessibilityHidden(true)
             Text(String(format: "$%.2f", value))
                 .font(.headline)
             Text(title)
@@ -339,6 +344,7 @@ struct IOSFleetDashboardPage: View {
         .padding(.vertical, 8)
         .background(color.opacity(0.05))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Upcoming Maintenance
@@ -353,8 +359,9 @@ struct IOSFleetDashboardPage: View {
             if upcomingMaintenance.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "calendar.badge.checkmark")
-                        .font(.system(size: 28))
+                        .font(.title)
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                     Text("No upcoming maintenance")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -413,8 +420,9 @@ struct IOSFleetDashboardPage: View {
             if recentMaintenance.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "wrench.and.screwdriver")
-                        .font(.system(size: 32))
+                        .font(.largeTitle)
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                     Text("No recent maintenance")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -449,6 +457,7 @@ struct IOSFleetDashboardPage: View {
                 .frame(width: 32, height: 32)
                 .background(Color.orange.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(record.vehicleName)
@@ -503,6 +512,7 @@ struct IOSFleetDashboardPage: View {
                 HStack {
                     Image(systemName: "chart.bar.fill")
                         .foregroundStyle(.blue)
+                        .accessibilityHidden(true)
                     Text("Fleet Reports")
                         .font(.subheadline)
                     Spacer()
@@ -512,6 +522,7 @@ struct IOSFleetDashboardPage: View {
                     Image(systemName: "chevron.right")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 }
                 .padding(12)
                 .background(Color(.secondarySystemGroupedBackground))

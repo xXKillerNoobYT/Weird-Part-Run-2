@@ -121,7 +121,7 @@ struct TypeBrandColorSection: View {
             HStack(spacing: 6) {
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.caption).bold()
                 }
                 Text(name)
                     .font(.subheadline)

@@ -63,11 +63,13 @@ struct IOSWarehouseReturnsPage: View {
                 Button { activeSheet = .createReturn } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Create return")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -241,6 +243,7 @@ struct IOSWarehouseReturnsPage: View {
                 .font(.title3)
                 .foregroundStyle(statusColor(ret.status))
                 .frame(width: 32)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {

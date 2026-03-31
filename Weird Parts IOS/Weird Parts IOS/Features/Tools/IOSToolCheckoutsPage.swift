@@ -41,11 +41,13 @@ struct IOSToolCheckoutsPage: View {
                 Button { activeSheet = .toolScanner } label: {
                     Image(systemName: "qrcode.viewfinder")
                 }
+                .accessibilityLabel("Scan tool QR code")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -172,6 +174,7 @@ struct IOSToolCheckoutsPage: View {
                 .font(.title2)
                 .foregroundStyle(checkout.returnedAt == nil ? .blue : .green)
                 .frame(width: 36)
+                .accessibilityLabel(checkout.returnedAt == nil ? "Status: Checked out" : "Status: Returned")
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(checkout.toolName)

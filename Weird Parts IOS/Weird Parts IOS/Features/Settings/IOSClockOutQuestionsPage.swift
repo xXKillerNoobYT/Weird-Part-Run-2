@@ -56,7 +56,7 @@ struct IOSClockOutQuestionsPage: View {
                             ForEach(questions) { question in
                                 questionRow(question)
                             }
-                            .onDelete(perform: deleteQuestions)
+                            .deleteDisabled(true)
                         }
                     }
 
@@ -80,11 +80,13 @@ struct IOSClockOutQuestionsPage: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Add question")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .task { loadData() }

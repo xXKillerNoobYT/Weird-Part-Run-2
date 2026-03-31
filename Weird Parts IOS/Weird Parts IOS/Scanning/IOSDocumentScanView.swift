@@ -29,7 +29,7 @@ struct IOSDocumentScanView: View {
                 if !showResults {
                     VStack(spacing: 16) {
                         Image(systemName: "doc.text.viewfinder")
-                            .font(.system(size: 56))
+                            .decorativeIconFont(56)
                             .foregroundStyle(.blue.opacity(0.6))
 
                         Text("Scan a document to extract data")
@@ -59,6 +59,7 @@ struct IOSDocumentScanView: View {
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
+                            .accessibilityHidden(true)
                         Text(error)
                             .font(.callout)
                     }
@@ -74,6 +75,7 @@ struct IOSDocumentScanView: View {
                         HStack {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(.red)
+                                .accessibilityHidden(true)
                             Text("Low quality scan")
                                 .font(.headline)
                         }

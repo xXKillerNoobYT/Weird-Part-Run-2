@@ -35,6 +35,7 @@ struct IOSToolAdminPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -79,6 +80,7 @@ struct IOSToolAdminPage: View {
             Image(systemName: "wrench.and.screwdriver.fill")
                 .foregroundStyle(statusColor(tool.status))
                 .frame(width: 24)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(tool.name)
                     .fontWeight(.medium)
@@ -100,6 +102,7 @@ struct IOSToolAdminPage: View {
     private func statRow(_ label: String, _ value: String, _ color: Color) -> some View {
         HStack(spacing: 12) {
             Circle().fill(color).frame(width: 8, height: 8)
+                .accessibilityHidden(true)
             Text(label).foregroundStyle(.secondary)
             Spacer()
             Text(value).fontWeight(.semibold)

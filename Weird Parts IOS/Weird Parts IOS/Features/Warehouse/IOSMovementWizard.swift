@@ -604,7 +604,7 @@ struct IOSMovementWizard: View {
             if executeSuccess {
                 VStack(spacing: 16) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 56))
+                        .decorativeIconFont(56)
                         .foregroundStyle(.green)
                     Text("Movement Complete!")
                         .font(.title2)
@@ -637,7 +637,7 @@ struct IOSMovementWizard: View {
             } else if let error = executeError {
                 VStack(spacing: 16) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 56))
+                        .decorativeIconFont(56)
                         .foregroundStyle(.red)
                     Text("Movement Failed")
                         .font(.title2)

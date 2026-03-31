@@ -64,6 +64,7 @@ struct CategoriesTreeView: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Help")
 
                 Spacer()
                 Menu {
@@ -80,6 +81,7 @@ struct CategoriesTreeView: View {
                         .font(.title3)
                 }
                 .accessibilityIdentifier("categoriesAddMenu")
+                .accessibilityLabel("Add category or color")
             }
             .padding(.horizontal, DS.Space.lg)
             .padding(.vertical, DS.Space.md)
@@ -91,6 +93,7 @@ struct CategoriesTreeView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
                     .font(.subheadline)
+                    .accessibilityHidden(true)
                 TextField("Search hierarchy...", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.subheadline)
@@ -104,6 +107,7 @@ struct CategoriesTreeView: View {
                             .font(.subheadline)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
                 }
             }
             .padding(.horizontal, DS.Space.lg)
@@ -119,7 +123,7 @@ struct CategoriesTreeView: View {
                         Spacer()
 
                         Image(systemName: "folder.badge.questionmark")
-                            .font(.system(size: 48))
+                            .decorativeIconFont(48)
                             .foregroundStyle(.secondary)
 
                         Text("No Categories Yet")
@@ -574,7 +578,7 @@ struct CategoriesTreeView: View {
     @ViewBuilder
     private func countBadge(_ count: Int) -> some View {
         Text("\(count)")
-            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .font(.system(.footnote, design: .rounded, weight: .semibold))
             .foregroundStyle(.white)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
@@ -687,7 +691,7 @@ struct HierarchyHelpView: View {
                     .fill(color.opacity(0.15))
                     .frame(width: 36, height: 36)
                 Text("\(number)")
-                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .font(.system(.body, design: .rounded, weight: .bold))
                     .foregroundStyle(color)
             }
 

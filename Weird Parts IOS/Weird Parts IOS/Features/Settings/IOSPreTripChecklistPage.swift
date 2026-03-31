@@ -57,6 +57,10 @@ struct IOSPreTripChecklistPage: View {
     @State private var showAddSection = false
     @State private var newSectionName = ""
 
+    @State private var showDeleteItemConfirm = false
+    @State private var deleteItemSectionId: String?
+    @State private var deleteItemOffsets: IndexSet?
+
     private enum ActiveSheet: Identifiable {
         case help
         var id: String { "help" }
@@ -89,6 +93,7 @@ struct IOSPreTripChecklistPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -160,6 +165,7 @@ struct IOSPreTripChecklistPage: View {
                                     Image(systemName: "exclamationmark.triangle.fill")
                                         .foregroundStyle(.red)
                                         .font(.caption)
+                                        .accessibilityHidden(true)
                                 }
                                 Text(item.name)
                                 Spacer()
@@ -174,7 +180,11 @@ struct IOSPreTripChecklistPage: View {
                             }
                         }
                         .onDelete { offsets in
-                            if isEditable { deleteItems(in: section.id, at: offsets) }
+                            if isEditable {
+                                deleteItemSectionId = section.id
+                                deleteItemOffsets = offsets
+                                showDeleteItemConfirm = true
+                            }
                         }
 
                         if isEditable {
@@ -234,6 +244,21 @@ struct IOSPreTripChecklistPage: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Enter a name for the new section.")
+        }
+        .alert("Delete Item?", isPresented: $showDeleteItemConfirm) {
+            Button("Cancel", role: .cancel) {
+                deleteItemSectionId = nil
+                deleteItemOffsets = nil
+            }
+            Button("Delete", role: .destructive) {
+                if let sectionId = deleteItemSectionId, let offsets = deleteItemOffsets {
+                    deleteItems(in: sectionId, at: offsets)
+                }
+                deleteItemSectionId = nil
+                deleteItemOffsets = nil
+            }
+        } message: {
+            Text("This checklist item will be removed.")
         }
     }
 

@@ -111,6 +111,7 @@ struct PartsForecastingPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .alert("Dismiss Recommendation", isPresented: $showDismissAlert) {
@@ -290,6 +291,7 @@ struct PartsForecastingPage: View {
                     HStack {
                         Image(systemName: "clock")
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                         Text("Last recalculated: \(formatTimestamp(lastRun))")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -338,9 +340,17 @@ struct PartsForecastingPage: View {
     private func forecastRowView(_ row: PartsService.ForecastDataRow) -> some View {
         HStack(spacing: 12) {
             // Urgency indicator
-            Circle()
-                .fill(urgencyColor(row.part.forecastDaysUntilLow))
-                .frame(width: 12, height: 12)
+            let urgencyText = row.part.forecastDaysUntilLow.map { $0 <= 7 ? "Critical" : ($0 <= 30 ? "Warning" : "Healthy") } ?? "Unknown"
+            VStack(spacing: 2) {
+                Circle()
+                    .fill(urgencyColor(row.part.forecastDaysUntilLow))
+                    .frame(width: 12, height: 12)
+                Text(urgencyText)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(urgencyColor(row.part.forecastDaysUntilLow))
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Status: \(urgencyText)")
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(row.part.name)
@@ -398,6 +408,7 @@ struct PartsForecastingPage: View {
             Image(systemName: "chevron.right")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
         .frame(minHeight: 60)
     }
@@ -440,7 +451,7 @@ struct PartsForecastingPage: View {
     private var emptyState: some View {
         VStack(spacing: 16) {
             Image(systemName: "chart.line.uptrend.xyaxis")
-                .font(.system(size: 48))
+                .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
             Text("No Forecast Data")
                 .font(.title3)

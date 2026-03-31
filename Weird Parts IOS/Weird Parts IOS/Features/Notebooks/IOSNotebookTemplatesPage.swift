@@ -49,11 +49,13 @@ struct IOSNotebookTemplatesPage: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
+                .accessibilityLabel("Refresh default templates")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -122,6 +124,7 @@ struct IOSNotebookTemplatesPage: View {
             HStack {
                 Image(systemName: template.templateType == "job" ? "doc.richtext.fill" : "doc.text.fill")
                     .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
                 Text(template.name).font(.headline)
                 Spacer()
                 HStack(spacing: 4) {

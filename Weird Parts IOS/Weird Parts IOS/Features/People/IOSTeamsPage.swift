@@ -38,11 +38,13 @@ struct IOSTeamsPage: View {
                     Button { activeSheet = .addTeam } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel("Add team")
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button { activeSheet = .help } label: {
                         Image(systemName: "questionmark.circle")
                     }
+                    .accessibilityLabel("Help")
                 }
             }
             .sheet(item: $activeSheet) { sheet in
@@ -183,6 +185,7 @@ struct IOSTeamsPage: View {
                 .font(.title3)
                 .foregroundStyle(Color.blue)
                 .frame(width: 32)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(team.name)

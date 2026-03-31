@@ -49,6 +49,7 @@ struct SecurityAdminPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -132,6 +133,7 @@ struct SecurityAdminPage: View {
                                     .foregroundStyle(.red)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("Force logout")
                         }
                     }
                     .padding(.vertical, 2)

@@ -47,6 +47,7 @@ struct IOSSubSchedulePage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -73,6 +74,7 @@ struct IOSSubSchedulePage: View {
                     .font(.body.weight(.semibold))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Previous day")
 
             Spacer()
 
@@ -90,6 +92,7 @@ struct IOSSubSchedulePage: View {
                     .font(.body.weight(.semibold))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Next day")
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
@@ -126,6 +129,7 @@ struct IOSSubSchedulePage: View {
                 .font(.title2)
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 36)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(row.subName)

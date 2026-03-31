@@ -49,6 +49,7 @@ struct IOSQuestionsPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -131,6 +132,7 @@ struct IOSQuestionsPage: View {
                 HStack(spacing: 4) {
                     Image(systemName: icon)
                         .font(.caption2)
+                        .accessibilityHidden(true)
                     Text("\(count)")
                         .font(.system(.title3, weight: .bold))
                         .monospacedDigit()
@@ -225,6 +227,7 @@ struct IOSQuestionsPage: View {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.caption2)
                             .foregroundStyle(.green)
+                            .accessibilityHidden(true)
                         Text(answer)
                             .font(.caption)
                             .foregroundStyle(.secondary)

@@ -79,11 +79,13 @@ struct IOSNotebookDetailPage: View {
                 } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Add content")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -114,6 +116,7 @@ struct IOSNotebookDetailPage: View {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundStyle(.white)
                                 .font(.title3)
+                                .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("\(blockConflicts.count) Sync Conflict\(blockConflicts.count == 1 ? "" : "s")")
                                     .font(.subheadline)
@@ -127,6 +130,7 @@ struct IOSNotebookDetailPage: View {
                             Image(systemName: "chevron.right")
                                 .font(.caption)
                                 .foregroundStyle(.white.opacity(0.7))
+                                .accessibilityHidden(true)
                         }
                         .padding(12)
                         .background(Color.orange)
@@ -184,6 +188,7 @@ struct IOSNotebookDetailPage: View {
                             HStack {
                                 Image(systemName: "folder.fill")
                                     .foregroundStyle(.orange)
+                                    .accessibilityHidden(true)
                                 Text(groupItem.name).font(.headline)
                                 Spacer()
                                 Text("\(groupItem.sections.count) sections")
@@ -255,6 +260,7 @@ struct IOSNotebookDetailPage: View {
                             Image(systemName: "bolt.fill")
                                 .foregroundStyle(.yellow)
                                 .frame(width: 28)
+                                .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Open Panel Schedule Builder")
                                     .font(.subheadline)
@@ -267,6 +273,7 @@ struct IOSNotebookDetailPage: View {
                             Image(systemName: "chevron.right")
                                 .font(.caption)
                                 .foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
                         }
                     }
                     .buttonStyle(.plain)
@@ -311,6 +318,7 @@ struct IOSNotebookDetailPage: View {
             HStack {
                 Image(systemName: "doc.text")
                     .foregroundStyle(.blue)
+                    .accessibilityHidden(true)
                 Text(sectionItem.name).font(.subheadline)
                 Spacer()
                 Text("\(sectionItem.entries.count)")
@@ -357,6 +365,7 @@ struct IOSNotebookDetailPage: View {
                             HStack(spacing: 8) {
                                 Image(systemName: items[idx].checked ? "checkmark.circle.fill" : "circle")
                                     .foregroundStyle(items[idx].checked ? .green : .secondary)
+                                    .accessibilityLabel(items[idx].checked ? "Completed" : "Not completed")
                                 Text(items[idx].text)
                                     .strikethrough(items[idx].checked)
                                     .font(.subheadline)
@@ -382,14 +391,18 @@ struct IOSNotebookDetailPage: View {
                     }
                 } else {
                     HStack {
-                        Image(systemName: "photo").foregroundStyle(.secondary)
+                        Image(systemName: "photo")
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                         Text(entry.title ?? "Photo").font(.subheadline)
                     }
                 }
 
             case "part_reference":
                 HStack {
-                    Image(systemName: "shippingbox.fill").foregroundStyle(.blue)
+                    Image(systemName: "shippingbox.fill")
+                        .foregroundStyle(.blue)
+                        .accessibilityHidden(true)
                     Text(entry.title ?? "Part Reference")
                         .foregroundStyle(.blue)
                         .font(.subheadline)
@@ -419,7 +432,9 @@ struct IOSNotebookDetailPage: View {
 
             case "table":
                 HStack {
-                    Image(systemName: "tablecells").foregroundStyle(.purple)
+                    Image(systemName: "tablecells")
+                        .foregroundStyle(.purple)
+                        .accessibilityHidden(true)
                     Text(entry.title ?? "Table").font(.subheadline)
                 }
                 .padding(8)
@@ -431,6 +446,7 @@ struct IOSNotebookDetailPage: View {
                     HStack(spacing: 8) {
                         Image(systemName: entry.isCompleted ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(entry.isCompleted ? .green : .secondary)
+                            .accessibilityLabel(entry.isCompleted ? "Status: Completed" : "Status: Pending")
                         Text(entry.title ?? entry.content)
                             .font(.subheadline)
                             .strikethrough(entry.isCompleted)
@@ -457,6 +473,7 @@ struct IOSNotebookDetailPage: View {
                                     Image(systemName: "checkmark.seal.fill")
                                         .foregroundStyle(.green)
                                         .font(.caption)
+                                        .accessibilityLabel("Status: Reviewed")
                                 } else {
                                     Text("Needs Review")
                                         .font(.caption2)
@@ -553,6 +570,7 @@ struct IOSNotebookDetailPage: View {
             HStack(spacing: 4) {
                 Image(systemName: "timer")
                     .font(.caption2)
+                    .accessibilityHidden(true)
                 Text("Warranty: \(daysRemaining) days remaining")
                     .font(.caption2)
                     .foregroundStyle(daysRemaining < 7 ? .red : .secondary)

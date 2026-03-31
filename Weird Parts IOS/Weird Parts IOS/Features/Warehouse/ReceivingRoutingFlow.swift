@@ -802,7 +802,7 @@ struct ReceivingRoutingFlow: View {
     private var routeConfirmedStep: some View {
         VStack(spacing: 16) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 48))
+                .decorativeIconFont(48)
                 .foregroundStyle(.green)
 
             Text("Routing Complete")

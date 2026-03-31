@@ -50,11 +50,13 @@ struct IOSRFIListPage: View {
                 Button { activeSheet = .createRFI } label: {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Create new RFI")
             }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -132,6 +134,7 @@ struct IOSRFIListPage: View {
                 HStack(spacing: 4) {
                     Image(systemName: icon)
                         .font(.caption2)
+                        .accessibilityHidden(true)
                     Text("\(count)")
                         .font(.system(.title3, weight: .bold))
                         .monospacedDigit()
@@ -176,6 +179,7 @@ struct IOSRFIListPage: View {
                                 HStack {
                                     Image(systemName: "building.2")
                                         .foregroundStyle(.orange)
+                                        .accessibilityHidden(true)
                                     Text(question.subject)
                                         .font(.subheadline)
                                         .fontWeight(.medium)
@@ -285,6 +289,7 @@ struct IOSRFIListPage: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                         .font(.caption)
+                        .accessibilityHidden(true)
                     Text(answer)
                         .font(.caption)
                         .foregroundStyle(.secondary)

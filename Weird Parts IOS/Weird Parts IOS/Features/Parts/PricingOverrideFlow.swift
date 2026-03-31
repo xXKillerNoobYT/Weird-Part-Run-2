@@ -456,7 +456,7 @@ struct PricingTierSetSheet: View {
     private var doneView: some View {
         VStack(spacing: 20) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 64))
+                .decorativeIconFont(64)
                 .foregroundStyle(.green)
             Text("Pricing Updated")
                 .font(.title2)

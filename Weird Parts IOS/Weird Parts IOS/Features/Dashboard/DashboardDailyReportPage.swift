@@ -102,6 +102,7 @@ struct DashboardDailyReportPage: View {
                         Circle()
                             .fill(DS.SemanticColor.success)
                             .frame(width: 6, height: 6)
+                            .accessibilityHidden(true)
                         Text("Live — updates every 60 seconds")
                             .dsStyle(.caption)
                             .foregroundStyle(.tertiary)
@@ -120,6 +121,7 @@ struct DashboardDailyReportPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .task {
@@ -276,6 +278,7 @@ struct DashboardDailyReportPage: View {
                 if let clockIn = myClockInTime, let job = myCurrentJob {
                     Image(systemName: "clock.fill")
                         .foregroundStyle(.green)
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Clocked in since \(clockIn)")
                             .dsStyle(.detail)
@@ -286,6 +289,7 @@ struct DashboardDailyReportPage: View {
                 } else {
                     Image(systemName: "clock")
                         .foregroundStyle(.gray)
+                        .accessibilityHidden(true)
                     Text("Not currently clocked in")
                         .dsStyle(.detail)
                         .foregroundStyle(.secondary)
@@ -411,6 +415,7 @@ struct DashboardDailyReportPage: View {
             Image(systemName: icon)
                 .frame(width: 20)
                 .foregroundStyle(urgent && count > 0 ? DS.SemanticColor.error : .secondary)
+                .accessibilityHidden(true)
             Text(label)
                 .dsStyle(.detail)
             Spacer()
@@ -490,6 +495,7 @@ struct DashboardDailyReportPage: View {
                         HStack(spacing: DS.Space.md) {
                             Image(systemName: "truck.box")
                                 .foregroundStyle(delivery.isOverdue ? DS.SemanticColor.error : .secondary)
+                                .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: DS.Space.xxxs) {
                                 Text("\(delivery.poNumber) — \(delivery.supplierName)")
                                     .dsStyle(.detail)
@@ -595,6 +601,7 @@ struct DashboardDailyReportPage: View {
                     HStack(spacing: DS.Space.md) {
                         Image(systemName: "dollarsign.circle")
                             .foregroundStyle(alertColor)
+                            .accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: DS.Space.xxxs) {
                             Text(alert.jobName)
                                 .dsStyle(.detail)
@@ -821,6 +828,7 @@ private struct SubmitDailyReportSheet: View {
                                 HStack {
                                     Image(systemName: "cup.and.saucer")
                                         .foregroundStyle(.orange)
+                                        .accessibilityHidden(true)
                                     Text(brk.type.capitalized)
                                     Spacer()
                                     Text("\(brk.durationMinutes)m")
@@ -834,6 +842,7 @@ private struct SubmitDailyReportSheet: View {
                                 HStack {
                                     Image(systemName: todo.stage == "complete" ? "checkmark.circle.fill" : "circle.dotted")
                                         .foregroundStyle(todo.stage == "complete" ? .green : .blue)
+                                        .accessibilityLabel(todo.stage == "complete" ? "Completed" : "In progress")
                                     Text(todo.name).lineLimit(1)
                                     Spacer()
                                     Text(todo.stage.replacingOccurrences(of: "_", with: " ").capitalized)
@@ -847,6 +856,7 @@ private struct SubmitDailyReportSheet: View {
                                 HStack {
                                     Image(systemName: "doc.plaintext")
                                         .foregroundStyle(.purple)
+                                        .accessibilityHidden(true)
                                     Text(jpo.jpoNumber)
                                     Spacer()
                                     Text("\(jpo.lineCount) items")
@@ -860,6 +870,7 @@ private struct SubmitDailyReportSheet: View {
                                 HStack {
                                     Image(systemName: "questionmark.circle")
                                         .foregroundStyle(.blue)
+                                        .accessibilityHidden(true)
                                     Text(qa.question).lineLimit(1)
                                     Spacer()
                                     Text(qa.status.capitalized)
@@ -872,6 +883,7 @@ private struct SubmitDailyReportSheet: View {
                             HStack {
                                 Image(systemName: "bubble.left")
                                     .foregroundStyle(.indigo)
+                                    .accessibilityHidden(true)
                                 Text("Messages sent")
                                 Spacer()
                                 Text("\(report.messagesCount)")

@@ -35,7 +35,7 @@ struct ModuleTourView: View {
                 ForEach(Array(pages.enumerated()), id: \.offset) { index, page in
                     VStack(spacing: 16) {
                         Image(systemName: page.icon)
-                            .font(.system(size: 48))
+                            .decorativeIconFont(48)
                             .foregroundStyle(.blue)
 
                         Text(page.title)

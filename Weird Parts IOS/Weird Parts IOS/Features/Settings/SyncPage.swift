@@ -92,6 +92,7 @@ struct SyncPage: View {
                             Image(systemName: entry.success ? (entry.conflicts > 0 ? "exclamationmark.triangle.fill" : "checkmark.circle.fill") : "xmark.circle.fill")
                                 .foregroundStyle(entry.success ? (entry.conflicts > 0 ? .orange : .green) : .red)
                                 .font(.caption)
+                                .accessibilityHidden(true)
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(entry.date, format: .dateTime.month(.abbreviated).day().hour().minute())
@@ -141,6 +142,7 @@ struct SyncPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in

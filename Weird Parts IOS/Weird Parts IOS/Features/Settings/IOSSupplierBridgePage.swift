@@ -42,6 +42,7 @@ struct IOSSupplierBridgePage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -89,6 +90,7 @@ struct IOSSupplierBridgePage: View {
             Circle()
                 .fill(status == "connected" ? Color.green : (status == "error" ? Color.red : Color.orange))
                 .frame(width: 8, height: 8)
+                .accessibilityLabel("Status: \(status.capitalized)")
             Text(status.capitalized)
                 .font(.caption)
                 .foregroundStyle(.secondary)

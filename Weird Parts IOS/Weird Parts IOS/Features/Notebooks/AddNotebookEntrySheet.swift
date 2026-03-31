@@ -19,6 +19,8 @@ struct AddNotebookEntrySheet: View {
     @State private var isSaving = false
     @State private var saveError: String?
     @State private var showShortcutHints = false
+    @State private var showDeleteChecklistConfirm = false
+    @State private var deleteChecklistOffsets: IndexSet?
 
     private var isEditing: Bool { editingEntry != nil }
 
@@ -122,6 +124,17 @@ struct AddNotebookEntrySheet: View {
             .onChange(of: content) { _, newValue in
                 processShortcutCommand(newValue)
             }
+            .alert("Remove Item?", isPresented: $showDeleteChecklistConfirm) {
+                Button("Cancel", role: .cancel) { deleteChecklistOffsets = nil }
+                Button("Remove", role: .destructive) {
+                    if let offsets = deleteChecklistOffsets {
+                        checklistItems.remove(atOffsets: offsets)
+                    }
+                    deleteChecklistOffsets = nil
+                }
+            } message: {
+                Text("This checklist item will be removed.")
+            }
         }
     }
 
@@ -167,11 +180,13 @@ struct AddNotebookEntrySheet: View {
                                 .foregroundStyle(item.checked ? .green : .secondary)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(item.checked ? "Mark as unchecked" : "Mark as checked")
                         TextField("Item", text: $item.text)
                     }
                 }
                 .onDelete { indices in
-                    checklistItems.remove(atOffsets: indices)
+                    deleteChecklistOffsets = indices
+                    showDeleteChecklistConfirm = true
                 }
                 Button {
                     checklistItems.append(ChecklistItemInput(text: "", checked: false))

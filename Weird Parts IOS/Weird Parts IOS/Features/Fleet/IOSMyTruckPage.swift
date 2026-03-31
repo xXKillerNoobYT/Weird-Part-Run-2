@@ -71,6 +71,7 @@ struct IOSMyTruckPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -112,6 +113,7 @@ struct IOSMyTruckPage: View {
                     Image(systemName: "car.fill")
                         .font(.largeTitle)
                         .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(v.vehicleName)
                             .font(.title2)
@@ -138,6 +140,7 @@ struct IOSMyTruckPage: View {
                     HStack {
                         Image(systemName: "speedometer")
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                         Text("\(odo.formatted()) miles")
                             .font(.subheadline)
                     }
@@ -147,6 +150,7 @@ struct IOSMyTruckPage: View {
                     HStack {
                         Image(systemName: "car.window.right")
                             .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
                         Text("Plate: \(plate)")
                             .font(.subheadline)
                     }
@@ -298,6 +302,7 @@ struct IOSMyTruckPage: View {
                 HStack {
                     Image(systemName: "truck.box.fill")
                         .foregroundStyle(.blue)
+                        .accessibilityHidden(true)
                     VStack(alignment: .leading) {
                         Text(stats.trailerName ?? "Trailer")
                             .font(.subheadline).fontWeight(.medium)
@@ -309,6 +314,7 @@ struct IOSMyTruckPage: View {
                     Image(systemName: "chevron.right")
                         .foregroundStyle(.secondary)
                         .font(.caption)
+                        .accessibilityHidden(true)
                 }
             } header: {
                 Text("Trailer")
@@ -514,6 +520,8 @@ private struct MyVehicleSmartCard: View {
         .frame(minWidth: 90)
         .background(color.opacity(0.1))
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(value)")
     }
 }
 

@@ -97,6 +97,7 @@ struct IOSShortTermPipelinePage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
@@ -211,6 +212,7 @@ struct IOSShortTermPipelinePage: View {
                             }
                             .buttonStyle(.bordered)
                             .tint(.orange)
+                            .accessibilityLabel("Handle callback")
                         }
                     }
                 } header: {
@@ -233,6 +235,7 @@ struct IOSShortTermPipelinePage: View {
                     Image(systemName: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
                         .font(.caption)
+                        .accessibilityHidden(true)
                     Text("Below target — need more jobs here")
                         .font(.caption)
                         .foregroundStyle(.orange)
@@ -279,6 +282,7 @@ struct IOSShortTermPipelinePage: View {
             }
             .buttonStyle(.bordered)
             .tint(.blue)
+            .accessibilityLabel("Schedule job")
         }
     }
 
@@ -407,6 +411,7 @@ struct IOSShortTermPipelinePage: View {
                     Image(systemName: "sparkles")
                         .font(.largeTitle)
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                     Text("No Suggestions Available")
                         .font(.headline)
                     Text("AI dispatch needs available workers and jobs needing crew to generate suggestions.")
@@ -425,6 +430,7 @@ struct IOSShortTermPipelinePage: View {
                                     Image(systemName: "person.fill")
                                         .foregroundStyle(.blue)
                                         .frame(width: 20)
+                                        .accessibilityHidden(true)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(assignment.employeeName)
                                             .font(.subheadline)
@@ -525,10 +531,12 @@ private struct TargetCard: View {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                     .font(.caption)
+                    .accessibilityLabel("Status: Target met")
             } else {
                 Image(systemName: "exclamationmark.circle.fill")
                     .foregroundStyle(.red)
                     .font(.caption)
+                    .accessibilityLabel("Status: Below target")
             }
         }
         .padding(10)
@@ -556,6 +564,7 @@ private struct SmartCard: View {
             Image(systemName: "wrench.fill")
                 .foregroundStyle(color)
                 .font(.caption)
+                .accessibilityHidden(true)
         }
         .padding(10)
         .frame(minWidth: 100)

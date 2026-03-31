@@ -31,6 +31,7 @@ struct IOSDailyReportsPage: View {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
                 }
+                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { _ in
@@ -60,6 +61,7 @@ struct IOSDailyReportsPage: View {
                     .font(.body.weight(.semibold))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Previous day")
 
             Spacer()
 
@@ -83,6 +85,7 @@ struct IOSDailyReportsPage: View {
                     .font(.body.weight(.semibold))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Next day")
             .disabled(Calendar.current.isDateInToday(selectedDate))
 
             Button {
@@ -164,6 +167,7 @@ struct IOSDailyReportsPage: View {
             Image(systemName: icon)
                 .font(.caption)
                 .foregroundStyle(color)
+                .accessibilityHidden(true)
             Text(value)
                 .font(.system(.title3, design: .monospaced))
                 .fontWeight(.bold)
