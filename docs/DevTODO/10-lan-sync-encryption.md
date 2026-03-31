@@ -13,7 +13,7 @@ Device-to-device sync uses plain HTTP. Data in transit (database contents) is un
 
 ## Options
 
-### Option A: TLS with Self-Signed Certs (recommended)
+### Option A: TLS with Self-Signed Certs (recommended) I pick this one
 - Generate a self-signed TLS cert per device
 - Pin certs during device pairing
 - All sync traffic encrypted automatically

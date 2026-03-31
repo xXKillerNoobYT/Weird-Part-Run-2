@@ -45,3 +45,47 @@ Do NOT change .font(.system(size:).weight(.semibold)) patterns — convert to .f
 3. Set text to maximum size
 4. Navigate through the app — all text should scale up proportionally
 5. No text should be clipped or overlapping
+
+## AI REPORT
+
+Build succeeded. Here's the summary of all changes across 47 files (88 instances → 83 converted, 5 intentionally skipped):
+
+Semantic text style replacements (38 instances across 24 files):
+| Original | Replacement | Count |
+|---|---|---|
+| .font(.system(size: 7, weight: .bold)) | .font(.caption2).bold() | 1 |
+| .font(.system(size: 7)) | .font(.caption2) | 2 |
+| .font(.system(size: 8, weight: .bold)) | .font(.caption2).bold() | 1 |
+| .font(.system(size: 8)) | .font(.caption2) | 6 |
+| .font(.system(size: 9, weight: .bold)) | .font(.caption).bold() | 3 |
+| .font(.system(size: 9)) | .font(.caption) | 11 |
+| .font(.system(size: 9, design: .monospaced)) | .font(.system(.caption, design: .monospaced)) | 1 |
+| .font(.system(size: 9, weight: dynamic)) | .font(.caption).font​Weight(...) | 1 |
+| .font(.system(size: 10, weight: .bold)) | .font(.caption).bold() | 1 |
+| .font(.system(size: 10)) | .font(.caption) | 1 |
+| .font(.system(size: 11, weight: .bold)) | .font(.footnote).bold() | 1 |
+| .font(.system(size: 11, weight: .semibold, design: .rounded)) | .font(.system(.footnote, design: .rounded, weight: .semibold)) | 1 |
+| .font(.system(size: 14)) | .font(.subheadline) | 1 |
+| .font(.system(size: 15, weight: .bold, design: .rounded)) | .font(.system(.body, design: .rounded, weight: .bold)) | 1 |
+| .font(.system(size: 28)) | .font(.title) | 1 |
+| .font(.system(size: 32)) | .font(.large​Title) | 4 |
+| .font(.system(size: 36)) | .font(.large​Title) | 1 |
+| .font(.system(size: 40)) | .font(.large​Title) | 3 |
+| .font(.system(size: 48, weight: .bold, design: .rounded)) | .font(.system(.large​Title, design: .rounded)).bold() | 2 |
+
+Decorative icons → @ScaledMetric via new .decorativeIconFont() modifier (45 instances across 31 files):
+| Size | Count |
+|---|---|
+| 48pt | 28 |
+| 56pt | 6 |
+| 60pt | 1 |
+| 64pt | 5 |
+| 72pt | 4 |
+| 80pt | 1 |
+
+New utility added: Decorative​Icon​Font​Modifier in Typography.swift􀰓 — wraps @​Scaled​Metric(relative​To: .large​Title) internally so every decorative icon scales with Dynamic Type.
+
+Intentionally skipped (5):
+• Typography.swift comment + modifier implementation
+• EmptyStateView/ErrorStateView — already use dynamic icon​Size parameter
+• JobStageProgressBar — dynamic ternary compact ? 6 : 10

@@ -24,3 +24,20 @@ Check NavigationConfig.swift for how other settings pages gate permissions for t
 2. Navigate to Settings → Data Export — should show permission denied
 3. Navigate to Settings → Backups — should show permission denied
 4. Log in as admin — both should work normally
+
+
+## Report
+Both files compile cleanly. Here's what I changed:
+
+IOSDataExportPage.swift:
+• Changed can​Export from checking "export​_reports" to "manage​_settings" (matching the settings module permission)
+• Updated the denied message to "You don't have permission to export data."
+
+IOSBackupsPage.swift:
+• Added can​Manage​Settings computed property checking "manage​_settings"
+• Wrapped the body in a Group with the permission gate — shows the form when permitted, shows Content​Unavailable​View("​Access ​Restricted", ...) with "You don't have permission to manage backups." when denied
+• Extracted the Form into a backups​Form computed property (same pattern as export​Form in the data export page)
+• Guarded the .task { load​Data() } behind the permission check so data isn't loaded unnecessarily
+
+
+NO way to verify 

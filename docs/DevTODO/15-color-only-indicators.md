@@ -50,3 +50,28 @@ The goal: a user who can't see colors should still understand the status.
 1. Build and run
 2. On each page, check that status dots have text nearby or are described by VoiceOver
 3. Turn on color filters (Settings → Accessibility → Display → Color Filters → Grayscale) — all statuses should still be distinguishable
+
+## AI REPORT
+Build succeeded. Here's a summary of what was done for GitHub Issue #15:
+
+Changes Made (5 files edited)
+
+Already had proper accessibility (no changes needed):
+• IOSWarehouseNetworkPage.swift􀰓 — already had Text("​Online") + .accessibility​Label("​Status: ​Online")
+• IOSOfficeDashboardPage.swift􀰓 — blue dots are bullet points with .accessibility​Hidden(true), text right next to them
+• IOSClockPage.swift􀰓 — status​Dot() already had .accessibility​Label()
+
+Files fixed:
+
+1. IOSJPOCreationPage.swift􀰓 — Added .accessibility​Hidden(true) to the stock indicator Circle (the Text(label) next to it already conveys the status)
+
+2. IOSSpendingDashboardPage.swift􀰓 — Added .accessibility​Element(children: .combine) and .accessibility​Label("\(label): \(value)") to Spending​Row so VoiceOver reads the full context as one element
+
+3. IOSPODetailPage.swift􀰓 — Fixed 3 timeline dots:
+   • Line 702: timeline dot in Receiving Timeline → .accessibility​Hidden(true) (decorative)
+   • Line 1561: receipt entry dot → .accessibility​Label() describing discrepancy status (color-meaningful)
+   • Line 1727: legacy batch row dot → .accessibility​Hidden(true) (decorative)
+
+4. IOSAuditPage.swift􀰓 — Added .accessibility​Element(children: .ignore) + .accessibility​Label("​Confidence: ​X%") to the confidence gauge ZStack
+
+5. PartsForecastingPage.swift􀰓 — Added a visible Text(urgency​Text) label (.font(.system(size: 8))) below the urgency dot, plus wrapped both in a VStack with .accessibility​Label(). Now "Critical"/"Warning"/"Healthy" is visible even without color.

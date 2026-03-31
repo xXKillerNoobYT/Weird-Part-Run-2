@@ -32,7 +32,7 @@ Every feature, bug, or improvement follows this cycle:
 | Area | Status | Last Checked |
 |------|--------|-------------|
 | Build | 0 errors, 0 warnings | 2026-03-30 |
-| Tests | 759/759 passing (49 suites) | 2026-03-30 |
+| Tests | 759/759 passing (49 suites) — confirmed after force unwrap fixes | 2026-03-30 |
 | Plan Alignment | ✅ PE-021 closed (Keychain key). PE-013 still needs ios-warehouse-pages.md update | 2026-03-30 |
 | Feature Polish | 20 items tracked (PE-020 ✅, PE-021 ✅ fixed this run) | 2026-03-30 |
 | Xcode Prompts | **Phase 1 COMPLETE** — 279 prompts archived. Phase 2: 3 prompts written (PE-009a/b/c), 4 remain | 2026-03-30 |
@@ -128,6 +128,7 @@ Every feature, bug, or improvement follows this cycle:
 | 2026-03-30 | PE-008b: PIN brute-force lockout exponential backoff (#7 closed) | Step 13 | b3eef3b |
 | 2026-03-30 | PE-020 closed: `counted_qty` + discrepancy calc + 3 audit tests (#4 B1/B2, prompt archived) | Steps 5-13 | 1eb051f + cebf4e4 |
 | 2026-03-30 | PE-021 closed: Keychain-backed token signing key (GitHub #16 closed) | Steps 9-13 | cebf4e4 |
+| 2026-03-30 | dev-improvement-scanner: 4 force unwraps fixed in core (BackgroundTaskService, ToolsService, AITools, BaseRepository) — 759/759 tests passing | Steps 6-8 | — |
 | 2026-03-29 | 68 SQL bugs fixed total, 736 tests, all Phase 1 Xcode prompts done | Steps 5-7, 12-13 | Multiple |
 
 ---

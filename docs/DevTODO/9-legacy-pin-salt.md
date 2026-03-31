@@ -26,3 +26,6 @@ This might already be good enough — the auto-migration re-hashes on successful
 1. Check database: `SELECT id, display_name, pin_salt FROM users WHERE pin_salt IS NULL`
 2. If no results → all users migrated → close issue
 3. If results exist → those users need to log in once to migrate
+
+
+## I Pick forced reset

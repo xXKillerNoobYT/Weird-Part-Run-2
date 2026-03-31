@@ -402,7 +402,7 @@ These bugs were in `generateToolCheckoutsReport` — would crash any time a user
 
 | Metric | Baseline | Current | Delta |
 |--------|----------|---------|-------|
-| Core tests | 545 | **733** | **+188** |
+| Core tests | 545 | **759** | **+214** |
 | Test suites | 40 | **49** | **+9** |
 | Compile errors | 0 | 0 | = |
 | Compile warnings | 0 | 0 | = |
@@ -414,6 +414,7 @@ These bugs were in `generateToolCheckoutsReport` — would crash any time a user
 | TODOs in code | 10 | 1 | -9 (9 dueDate TODOs resolved in prior iterations) |
 | Empty catches | 20+ | 3 truly silent | -17 |
 | Force casts | 0 | 0 | = |
+| Force unwraps in core | 4 | 0 | **-4** (Iter 11) |
 
 ---
 
@@ -574,3 +575,38 @@ These bugs were in `generateToolCheckoutsReport` — would crash any time a user
 
 **No new GitHub issues filed** — all findings were either already fixed or tracked.
 
+
+---
+
+### Iteration 11 — dev-improvement-scanner: Force Unwrap Sweep (2026-03-30, automated)
+
+**Build:** ✅ 0 errors, 0 warnings
+**Tests:** ✅ 759/759 passing — no regressions
+
+**Scanner type:** dev-improvement-scanner (PARTS A–E: runtime safety, security, Apple HIG, UX polish)
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Compile | ✅ PASS | 0 errors, 0 warnings |
+| Tests | ✅ PASS | 759/759 passing after fixes |
+| Runtime Safety | ⚠️→✅ | 4 force unwraps found and fixed in core |
+| Security | ✅ PASS | No SQL injection, no hardcoded secrets, PIN hashing adequate (SHA-256 × 10k). PE-008c (legacy salt) tracked. |
+| Apple HIG | ⚠️ | Hardcoded font sizes (24+ instances → tracked in PE-009a), tap targets (40+ flagged, interactive subset counted in PE-009b). Both already in pipeline. |
+| UX Polish | ✅ PASS | Most pages have loading + empty states. No new gaps found. |
+
+**Force unwrap fixes applied:**
+| File | Line | Fix |
+|------|------|-----|
+| `BackgroundTaskService.swift:117` | `entry.id!` after GRDB insert | `guard let newId = entry.id else { throw DatabaseError(...) }` |
+| `ToolsService.swift:1391` | `earliestDue == nil || due < earliestDue!` | `earliestDue.map({ due < $0 }) ?? true` |
+| `AITools.swift:196,199` | `styleId != nil ? "...\(styleId!)" : ""` | `styleId.map { "...\($0)" } ?? ""` |
+| `BaseRepository.swift:80` | `keys.map { data[$0]! }` | `keys.compactMap { data[$0] }` + invariant comment |
+
+**Findings already tracked (no new issues needed):**
+- Hardcoded `.font(.system(size:))` → PE-009a (88 fonts in 51 files)
+- Tap targets < 44pt → PE-009b (12 interactive elements)
+- Company setup wizard UserDefaults usage → NOT a security issue (temporary onboarding state)
+- Force casts in test files (`as! HTTPURLResponse`) → LOW priority, test-only code
+
+**No new GitHub issues filed** — all remaining findings already tracked in PE-009.

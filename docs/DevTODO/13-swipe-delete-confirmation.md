@@ -60,3 +60,15 @@ Look at `IOSReportTemplatesPage.swift` for the correct pattern:
 3. A confirmation dialog should appear
 4. Press Cancel — item stays
 5. Swipe again, press Delete — item is removed
+
+## AI REPORT
+
+All 5 items done, project builds clean. Here's the summary:
+
+| # | File | Change |
+|---|------|--------|
+| 1 | IOSReportsRouter.swift􀰓 | Already had confirmation dialog — no change needed |
+| 2 | IOSPreTripChecklistPage.swift􀰓 | .on​Delete now sets delete​Item​Section​Id/delete​Item​Offsets and shows a "Delete Item?" alert before calling delete​Items |
+| 3 | AddNotebookEntrySheet.swift􀰓 | .on​Delete now sets delete​Checklist​Offsets and shows a "Remove Item?" alert before calling checklist​Items​.remove(at​Offsets:) |
+| 4 | WarehouseWizardStep2.swift􀰓 | Already had confirmation dialog — no change needed |
+| 5 | IOSClockOutQuestionsPage.swift􀰓 | Replaced .on​Delete(perform: delete​Questions) with .delete​Disabled(true) — the swipe-action Delete button at line 142 already routes through the confirmation alert, so this removes the bypass path |
