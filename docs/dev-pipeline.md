@@ -35,8 +35,8 @@ Every feature, bug, or improvement follows this cycle:
 | Tests | 759/759 passing (49 suites) | 2026-03-30 |
 | Plan Alignment | ✅ PE-021 closed (Keychain key). PE-013 still needs ios-warehouse-pages.md update | 2026-03-30 |
 | Feature Polish | 20 items tracked (PE-020 ✅, PE-021 ✅ fixed this run) | 2026-03-30 |
-| Xcode Prompts | **Phase 1 COMPLETE** — 279 prompts archived. Phase 2 queue: 7 items needing prompt writing | 2026-03-30 |
-| GitHub Issues | 8 open (#4, #5, #9-#15) — #16 ✅ closed this run | 2026-03-30 |
+| Xcode Prompts | **Phase 1 COMPLETE** — 279 prompts archived. Phase 2: 3 prompts written (PE-009a/b/c), 4 remain | 2026-03-30 |
+| GitHub Issues | 7 open (#4, #5, #9-#10, #14-#15) — #16 ✅ closed; #11/#12/#13 prompts written | 2026-03-30 |
 | Q&A Backlog | Empty (no pending questions) | 2026-03-30 |
 | Agent Health | All 8 agents enabled | 2026-03-30 |
 
@@ -218,9 +218,9 @@ Every feature, bug, or improvement follows this cycle:
 | [#8](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/8) | Data export not gated behind admin | Security | Step 13 | FIXED 4b0c71a — export_reports permission check added | 🟢 Closed |
 | [#9](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/9) | Hardcoded legacy salt in PIN hashing | Security | Step 9 | Core fix — force re-hash | 🔴 Open |
 | [#10](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/10) | LAN sync uses plain HTTP | Security | Step 9 | Core fix — add TLS or payload encryption | 🔴 Open |
-| [#11](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/11) | 55 hardcoded font sizes bypass Dynamic Type | Accessibility | Step 9 | Xcode prompt series | 🔴 Open |
-| [#12](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/12) | 12 undersized tap targets (< 44x44pt) | Accessibility | Step 9 | Xcode prompt | 🔴 Open |
-| [#13](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/13) | 5 swipe-to-delete without confirmation | UI | Step 9 | Xcode prompt | 🔴 Open |
+| [#11](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/11) | 55 hardcoded font sizes bypass Dynamic Type | Accessibility | Step 10 | Prompt written: `PE-009a-dynamic-type.md` — user runs in Xcode | 🟡 Prompt ready |
+| [#12](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/12) | 12 undersized tap targets (< 44x44pt) | Accessibility | Step 10 | Prompt written: `PE-009b-tap-targets.md` — user runs in Xcode | 🟡 Prompt ready |
+| [#13](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/13) | 5 swipe-to-delete without confirmation | UI | Step 10 | Prompt written: `PE-009c-swipe-confirmations.md` — user runs in Xcode | 🟡 Prompt ready |
 | [#14](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/14) | Sparse accessibility labels (~8/180+ views) | Accessibility | Step 9 | Xcode prompt series (large) | 🔴 Open |
 | [#15](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/15) | 9+ color-only status indicators | Accessibility | Step 9 | Xcode prompt | 🔴 Open |
 | [#16](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/16) | Session token signing key ephemeral — invalidates on restart | Security | Step 13 | FIXED cebf4e4 — Keychain-backed key, survives restarts | 🟢 Closed |
@@ -238,7 +238,7 @@ Every feature, bug, or improvement follows this cycle:
 | plan-enforcer | 2026-03-30 (run 3) | PE-008a/b now fixed; #6/#7/#8 closed; PE-021 new (signing key); debug DB reset unplanned | Registry + issues table updated | ✅ Healthy — PE-013 still needs ios-warehouse-pages.md update |
 | dev-improvement-scanner | 2026-03-29 (run 3) | PE-011, PE-012 found; PE-008e confirmed | All 3 now fixed in latest commits | ✅ Healthy |
 | dev-pipeline-manager | 2026-03-30 (run 4) | PE-020/021 closed, #16 closed, 759 tests confirmed | Pipeline updated | ✅ Healthy |
-| github-issues-sync | 2026-03-29 | 1 issue (#4, 20 sub-bugs) | 4 fixed directly; 1 prompt created (PE-020); 3 noted as non-issues | ✅ Healthy — first successful run |
+| github-issues-sync | 2026-03-30 | 8 open issues pulled; #16 closed (already fixed cebf4e4); 3 Xcode prompts written (PE-009a/b/c); #9/#10 analyzed | ✅ Healthy |
 | github-sync-and-review | 2026-03-29 22:07 | 2 new commits (740f480, 4b0c71a) | Pushed to origin/main ✅ | ✅ Healthy — branch up to date |
 | weekly-cleanup | 2026-03-29 (Sun) | 4 .DS_Store files | Removed; dead code scan: clean | ✅ Healthy — next run 2026-04-05 |
 
@@ -247,6 +247,34 @@ Every feature, bug, or improvement follows this cycle:
 ## Pipeline Daily Summary Log
 
 _Appended by dev-pipeline-manager each run._
+
+---
+
+### 2026-03-30 — GitHub Issues Sync Run 2 (3 Xcode Prompts Written, #16 Closed)
+
+**Input:** 8 open issues (#4, #5, #9–#15 + #16). 1 closed (#16 already fixed in cebf4e4).
+
+**Actions taken:**
+
+| Issue | Title | Action |
+|-------|-------|--------|
+| #16 | Session token signing key ephemeral | ✅ Closed — fixed in cebf4e4 (Keychain-backed key) |
+| #11 | 55 hardcoded font sizes | 🟡 Xcode prompt created: `PE-009a-dynamic-type.md` |
+| #12 | 12 undersized tap targets | 🟡 Xcode prompt created: `PE-009b-tap-targets.md` |
+| #13 | 5 swipe-to-delete without confirmation | 🟡 Xcode prompt created: `PE-009c-swipe-confirmations.md` |
+| #9 | Hardcoded legacy salt | 📝 Analysis comment posted — PE-008c, needs forced re-auth for unupgraded users |
+| #10 | LAN sync plain HTTP | 📝 Analysis comment posted — PE-008d, ECDH option evaluated |
+| #14 | Sparse accessibility labels | ⬜ Needs prompt series (large effort, tracked as PE-009e) |
+| #15 | Color-only status indicators | ⬜ Needs prompt (tracked as PE-009d) |
+| #4, #5 | Startup bugs / dead JPO button | Unchanged — #4 partial, #5 still needs prompt |
+
+**Status:**
+- **Open issues:** 7 (#4, #5, #9, #10, #14, #15 + #4 partial) — #16 closed
+- **Xcode prompts ready for user:** PE-009a (fonts), PE-009b (tap targets), PE-009c (confirmations)
+- **Security backlog:** PE-008c (legacy salt), PE-008d (LAN HTTP) — both open, core Swift fixes
+- **Working tree:** Uncommitted changes (3 prompt files, pipeline update)
+
+**Next priority:** User runs PE-009a → PE-009b → PE-009c in Xcode. Then write PE-009d (color indicators) and PE-009e (a11y labels). Then fix PE-008c + PE-008d in core.
 
 ---
 

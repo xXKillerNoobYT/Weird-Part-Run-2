@@ -1388,7 +1388,7 @@ public final class ToolsService: Sendable {
                     }
 
                     if let due = dueDate {
-                        if earliestDue == nil || due < earliestDue! {
+                        if earliestDue.map({ due < $0 }) ?? true {
                             earliestDue = due
                         }
                     }

@@ -77,7 +77,8 @@ public class BaseRepository: @unchecked Sendable {
     ) throws -> Int64 {
         let keys = Array(data.keys)
         let placeholders = keys.map { _ in "?" }.joined(separator: ", ")
-        let values = keys.map { data[$0]! }
+        // keys is derived from data.keys, so every subscript is guaranteed present
+        let values = keys.compactMap { data[$0] }
 
         let newId = try db.writer.write { db -> Int64 in
             try db.execute(

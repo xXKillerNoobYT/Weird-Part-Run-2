@@ -193,10 +193,10 @@ public struct ListCompanionRulesTool: FoundationModels.Tool {
         var result = "Active Companion Rules (\(rules.count)):\n\n"
         for rule in rules {
             let srcNames = rule.sources.map { src in
-                "Category \(src.categoryId)" + (src.styleId != nil ? " > Style \(src.styleId!)" : "")
+                "Category \(src.categoryId)" + (src.styleId.map { " > Style \($0)" } ?? "")
             }.joined(separator: ", ")
             let tgtNames = rule.targets.map { tgt in
-                "Category \(tgt.categoryId)" + (tgt.styleId != nil ? " > Style \(tgt.styleId!)" : "")
+                "Category \(tgt.categoryId)" + (tgt.styleId.map { " > Style \($0)" } ?? "")
             }.joined(separator: ", ")
             result += "• \(rule.name) [\(rule.matchLevel)] — \(srcNames) → \(tgtNames)"
             if rule.tryMatchBrand == 1 { result += " [Brand Match]" }

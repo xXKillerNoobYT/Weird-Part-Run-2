@@ -21,11 +21,11 @@
 |---|------|---------------|--------|
 | PE-001 | *(write prompt)* | Tool page rename: "Tool Registry" → "All Tools", "Tool Admin" → "Management" | ⬜ needs prompt |
 | PE-003 | *(write prompt)* | Flex pool self-assign on Scheduling page (plan-enforcer finding) | ⬜ needs prompt |
-| PE-009a | *(write prompt)* | HIG: 88 hardcoded font sizes across 51 files → Dynamic Type | ⬜ needs prompt |
-| PE-009b | *(write prompt)* | HIG: 12 undersized tap targets (< 44×44pt) | ⬜ needs prompt |
-| PE-009c | *(write prompt)* | HIG: 6 remaining swipe-to-delete without confirmation (IOSReportsRouter ✅ fixed in 4b0c71a; remaining: IOSPreTripChecklistPage, IOSClockOutQuestionsPage, IOSReportTemplatesPage ×2, WarehouseWizardStep2, AddNotebookEntrySheet) | ⬜ needs prompt |
-| PE-009d | *(write prompt)* | HIG: 9+ color-only status indicators | ⬜ needs prompt |
-| PE-009e | *(write prompt series)* | Accessibility labels — ~8 set across 180+ views | ⬜ needs prompt |
+| PE-009a | `PE-009a-dynamic-type.md` | HIG: 55 hardcoded font sizes across 24+ files → Dynamic Type (GitHub #11) | 🟡 prompt ready — run next |
+| PE-009b | `PE-009b-tap-targets.md` | HIG: 12 undersized tap targets (< 44×44pt) (GitHub #12) | 🟡 prompt ready |
+| PE-009c | `PE-009c-swipe-confirmations.md` | HIG: 5 remaining swipe-to-delete without confirmation (GitHub #13) | 🟡 prompt ready |
+| PE-009d | *(write prompt)* | HIG: 9+ color-only status indicators (GitHub #15) | ⬜ needs prompt |
+| PE-009e | *(write prompt series)* | Accessibility labels — ~8 set across 180+ views (GitHub #14) | ⬜ needs prompt |
 | PE-011 | *(closed)* | 12 force unwraps in `ReportDateRange.swift` — fixed in commit 4b0c71a | ✅ closed |
 | PE-012 | *(closed)* | `Calendar.current.date(byAdding:)!` in 15 files — fixed in commit 4b0c71a (all 15 files updated) | ✅ closed |
 | PE-013 | *(closed)* | **A1** Stale `init()` migration re-fires on fresh build — `hasSeenWelcome` now consumed (removed) after applying bypass, so a subsequent fresh DB build re-detects empty DB and clears flags | ✅ fixed (github-issues-sync 2026-03-29) |

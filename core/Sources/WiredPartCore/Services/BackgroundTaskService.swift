@@ -114,7 +114,10 @@ public final class BackgroundTaskService: Sendable {
                 deviceId: deviceId
             )
             try entry.insert(dbConn)
-            return entry.id!
+            guard let newId = entry.id else {
+                throw DatabaseError(message: "Background task insert succeeded but returned no ID")
+            }
+            return newId
         }
     }
 
