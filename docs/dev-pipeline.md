@@ -577,3 +577,22 @@ _Appended by dev-pipeline-manager each run._
 
 **Next priority:** PE-009c (swipe-to-delete confirmations), PE-001 (Tool naming), PE-021 (Keychain signing key)
 
+
+---
+
+### End-of-Day Sync — 2026-03-31
+- Files committed: 198 (188 iOS Swift + 10 docs)
+- Commits created: 2 (feat(ios): accessibility + Dynamic Type pass; docs(pipeline): DevTODO AI reports)
+- Push status: success (origin/main updated, 3 commits ahead resolved)
+- Tests: 759/759 passing (49 suites, 0 regressions)
+- Agent runs today: 4/7
+  - ✅ dev-improvement-scanner (iter 11): 4 force unwraps fixed in core
+  - ✅ plan-enforcer (run 3): PE-013 still needs update
+  - ✅ dev-pipeline-manager (run 4): PE-020/021 closed
+  - ✅ github-issues-sync: #16 closed, 3 Xcode prompts written
+  - ⚠️ hunt-fix-verify: last ran 2026-03-29 (no run today)
+  - ⚠️ test-coverage-maintenance: no new run today (tests stable at 759)
+  - ✅ ios-accessibility (ad-hoc): issues #8, #11, #13, #14, #15 completed
+- Issues processed: 5 (#8 permission gate, #11 Dynamic Type, #13 swipe-delete, #14 a11y labels, #15 color indicators)
+- Bugs fixed: 4 force unwraps in core (BackgroundTaskService, ToolsService, AITools, BaseRepository)
+- Pipeline health: OK — hunt-fix-verify due for a run; PE-013 ios-warehouse-pages.md update pending
