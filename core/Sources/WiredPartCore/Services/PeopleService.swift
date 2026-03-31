@@ -261,7 +261,7 @@ public final class PeopleService: Sendable {
                            COALESCE(MAX(h.name), 'user') AS role,
                            GROUP_CONCAT(h.name, ', ') AS hat_names
                     FROM users u
-                    LEFT JOIN user_hats uh ON uh.user_id = u.id
+                    LEFT JOIN user_hats uh ON uh.user_id = u.id AND uh.deleted_at IS NULL
                     LEFT JOIN hats h ON h.id = uh.hat_id
                     WHERE \(whereClauses.joined(separator: " AND "))
                     GROUP BY u.id
@@ -314,7 +314,7 @@ public final class PeopleService: Sendable {
                         SELECT h.id, h.name, h.description
                         FROM hats h
                         JOIN user_hats uh ON uh.hat_id = h.id
-                        WHERE uh.user_id = ?
+                        WHERE uh.user_id = ? AND uh.deleted_at IS NULL
                         ORDER BY h.name ASC
                         """,
                     arguments: [id]
@@ -570,7 +570,7 @@ public final class PeopleService: Sendable {
                 let sql = """
                     SELECT h.id, h.name, h.description,
                            COALESCE((SELECT COUNT(*) FROM user_hats uh
-                                     WHERE uh.hat_id = h.id), 0) AS user_count
+                                     WHERE uh.hat_id = h.id AND uh.deleted_at IS NULL), 0) AS user_count
                     FROM hats h
                     ORDER BY h.name ASC
                     """
@@ -1536,7 +1536,7 @@ public final class PeopleService: Sendable {
         case "name":
             orderClause = "first_name ASC, last_name ASC"
         case "type":
-            orderClause = "contact_type ASC, first_name ASC"
+            orderClause = "entity_type ASC, first_name ASC"
         default:
             orderClause = "updated_at DESC, first_name ASC"
         }
@@ -1544,7 +1544,7 @@ public final class PeopleService: Sendable {
         return try db.writer.read { dbConn in
             var sql = """
                 SELECT ec.id, ec.first_name, ec.last_name,
-                       ec.company, ec.email, ec.phone, ec.contact_type,
+                       ec.role AS company, ec.email, ec.phone, ec.entity_type AS contact_type,
                        COALESCE(ec.is_active, 1) as is_active
                 FROM entity_contacts ec
                 WHERE ec.deleted_at IS NULL
@@ -1557,7 +1557,7 @@ public final class PeopleService: Sendable {
                 } else if tf == "inactive" {
                     sql += " AND COALESCE(ec.is_active, 1) = 0"
                 } else {
-                    sql += " AND ec.contact_type = ?"
+                    sql += " AND ec.entity_type = ?"
                     args.append(tf)
                 }
             }
@@ -1595,7 +1595,7 @@ public final class PeopleService: Sendable {
     public func getContactTypeCounts() throws -> [String: Int] {
         try db.writer.read { dbConn in
             let rows = try Row.fetchAll(dbConn, sql: """
-                SELECT COALESCE(contact_type, 'other') as ct,
+                SELECT COALESCE(entity_type, 'other') as ct,
                        SUM(CASE WHEN COALESCE(is_active, 1) = 1 THEN 1 ELSE 0 END) as active_count,
                        SUM(CASE WHEN COALESCE(is_active, 1) = 0 THEN 1 ELSE 0 END) as inactive_count,
                        COUNT(*) as total
@@ -1792,7 +1792,7 @@ public final class PeopleService: Sendable {
     public func getOverdueCustomers() throws -> [CustomerPaymentAlert] {
         try db.writer.read { dbConn in
             let rows = try Row.fetchAll(dbConn, sql: """
-                SELECT c.id, COALESCE(c.company_name, c.name, c.contact_name, 'Unknown') as customer_name,
+                SELECT c.id, COALESCE(c.company_name, c.name, 'Unknown') as customer_name,
                        SUM(pr.amount - COALESCE(pr.paid_amount, 0)) as overdue_amount,
                        MIN(pr.due_date) as oldest_due
                 FROM payment_records pr

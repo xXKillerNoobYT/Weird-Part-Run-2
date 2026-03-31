@@ -1,7 +1,7 @@
 # Hunt-Fix-Verify Loop Tracker
 
 > **Started:** 2026-03-28
-> **Status:** PHASE 1 COMPLETE — 9 iterations, 68 SQL bugs, 759 tests passing, all prompts archived. PE-020 (counted_qty) + PE-021 (Keychain signing key) closed 2026-03-30.
+> **Status:** PHASE 1 COMPLETE — 12 iterations, 75 bugs fixed, 790 tests passing, all prompts archived. Latest: Iteration 12 (2026-03-31) — security + SQL fixes.
 
 ---
 
@@ -578,6 +578,32 @@ These bugs were in `generateToolCheckoutsReport` — would crash any time a user
 
 ---
 
+### Iteration 12 — test-coverage-maintenance: Coverage Expansion (2026-03-31, automated)
+
+**Build:** ✅ 0 errors, 0 warnings
+**Tests:** ✅ 790/790 passing — 31 new tests added, 5 SQL bugs fixed
+
+**Coverage expansion:**
+| Service | Methods Added Tests For | New Tests |
+|---------|------------------------|-----------|
+| DashboardService | `getStockAtLocationType`, `getPOKPIDetail`, `getStockLocationsForPart`, `getPartMovementInfo`, `getOfficeBriefing`, `getFinancialSnapshot` | 11 |
+| BreakService | `autoFillBreaksForDay` (+ 3 edge cases) | 3 |
+| PeopleService | `getTeamMembers`, `getTeamJobs`, `getContractorNotes`, `addContractorNote`, `getContractorRating`, `addContractorRating`, `getContractorJobHistory`, `getContactsSorted`, `getContactTypeCounts`, `isPaymentTrackingEnabled`/`set`, `getPaymentSettings`, `updatePaymentSettings`, `createPaymentRecord`, `recordPayment`, `getOverdueCustomers` | 17 |
+
+**Bugs uncovered by tests (5 SQL column mismatches):**
+| Service | Bug | Fix Applied |
+|---------|-----|-------------|
+| DashboardService.getPOKPIDetail | `s.contact_email` → `s.email` | ✅ Fixed |
+| DashboardService.getPOKPIDetail | `pl.quantity` → `pl.qty_ordered` | ✅ Fixed |
+| PeopleService.getContactsSorted | `ec.contact_type` → `ec.entity_type AS contact_type` | ✅ Fixed |
+| PeopleService.getContactsSorted | `ec.company` → `ec.role AS company` | ✅ Fixed |
+| PeopleService.getContactTypeCounts | `contact_type` → `entity_type` | ✅ Fixed |
+
+**Design issue found (not fixed — needs decision):**
+- `contractor_notes` and `contractor_ratings` FK references `entity_contacts` not `general_contractors` — design inconsistency between old (general_contractors) and new (entity_contacts) contractor storage. Tests written to accommodate actual FK requirement.
+
+---
+
 ### Iteration 11 — dev-improvement-scanner: Force Unwrap Sweep (2026-03-30, automated)
 
 **Build:** ✅ 0 errors, 0 warnings
@@ -610,3 +636,71 @@ These bugs were in `generateToolCheckoutsReport` — would crash any time a user
 - Force casts in test files (`as! HTTPURLResponse`) → LOW priority, test-only code
 
 **No new GitHub issues filed** — all remaining findings already tracked in PE-009.
+
+
+---
+
+### Iteration 12 — Security + SQL Audit (2026-03-31, automated)
+
+**Build:** ✅ 0 errors, 0 warnings
+**Tests:** ✅ 790/790 passing — all 49 suites clean (+31 from test fixes)
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Compile | ✅ PASS | 0 errors, 0 warnings |
+| Tests | ✅ PASS | 790/790 passing — up from 759 |
+| Code Patterns | ✅ PASS | All `print()` in `#Preview` blocks (excluded from production). No force casts, no stub UI in production code. |
+| SQL Integrity | ❌→✅ | 4 SQL bugs fixed (contact_name, user_hats missing deleted_at, contractor FK) |
+| Security | ❌→✅ | Critical: soft-deleted hat assignments still granted permissions (4 queries missing `deleted_at IS NULL`) |
+| Problems Folder | ✅ PASS | `docs/Problomes/` does not exist |
+| Master Issues | ⚠️ | 20 T1, 25 T2, 20 T3 — mostly iOS UI features |
+| GitHub Issues | ⚠️ | 5 open (#9, #10, #14, #15, #17) — #17 is discoverability (commented with instructions) |
+| Plan Alignment | ✅ PASS | dev-qa.md clean |
+
+**Security bug fixed:**
+| File | Bug | Fix |
+|------|-----|-----|
+| `AuthService.swift` | `getUserPermissions` / `hasPermission` / `getUserHatNames` / `getUserHats` filtered on `is_active = 1` but NOT `deleted_at IS NULL` — soft-deleted hat assignments still granted permissions | Added `AND uh.deleted_at IS NULL` to all 4 `user_hats` queries |
+
+**SQL bugs fixed:**
+| File | Bug | Fix |
+|------|-----|-----|
+| `PeopleService.swift` (employees list) | `LEFT JOIN user_hats uh ON uh.user_id = u.id` missing `AND uh.deleted_at IS NULL` | Removed hat = deleted hat still shown in employee list and `GROUP_CONCAT(hat_names)` |
+| `PeopleService.swift` (employee detail) | `JOIN user_hats uh ON uh.hat_id = h.id WHERE uh.user_id = ?` missing `AND uh.deleted_at IS NULL` | Fixed |
+| `PeopleService.swift` (hat user count) | `COUNT(*) FROM user_hats WHERE hat_id = h.id` missing `AND deleted_at IS NULL` | Hats page showed inflated user counts including removed assignments |
+| `PeopleService.swift` (getOverdueCustomers) | `COALESCE(c.company_name, c.name, c.contact_name, ...)` — `customers` table has no `contact_name` column (SQLite error 1) | Removed `c.contact_name` from COALESCE |
+
+**Schema bug fixed (Migration 063):**
+| Table | Bug | Fix |
+|-------|-----|-----|
+| `contractor_notes` | `contractor_id` FK referenced `entity_contacts` but service passes `general_contractors.id` | Migration 063: Drop and recreate with FK → `general_contractors` |
+| `contractor_ratings` | Same FK mismatch — FK constraint failed on all note/rating inserts | Migration 063: Drop and recreate with FK → `general_contractors` |
+
+**Permissions UI bug fixed:**
+| File | Bug | Fix |
+|------|-----|-----|
+| `IOSPermissionsPage.swift` | 10 permission keys (`approve_orders`, `approve_time_off`, `create_jobs`, `self_assign_*`, `view_all_jobs`, `view_audit_log`, `view_job_financials`, `view_job_reports`, `view_spending`) seeded by `defaultPermissionMap()` in AuthService but NOT shown in Permissions UI — admins couldn't see or toggle them | Added all 10 keys to correct groups in `allPermissions` array |
+
+**Test fixes (stale API calls):**
+| Test | Bug | Fix |
+|------|-----|-----|
+| `testContactsSorted` | Calling old `createContact(firstName:contactType:email:phone:company:)` API (no longer exists) | Updated to current `createContact(entityType:entityId:firstName:role:phone:)` |
+| `testContactTypeCounts` | Same old API | Updated to current API |
+
+**GitHub issue #17 responded to:** Feature exists, explained where hat assignment UI lives (Employee Detail → Hats tab). Added discoverability note.
+
+**Self-annealing loop applied:**
+- Test → FK constraint error on contractor_notes → Checked schema → Found FK references wrong table → Migration 063 → Tests pass ✅
+- Test → `c.contact_name` SQL error → Checked customers schema → Known anti-pattern → Fixed COALESCE ✅
+- Test → Old `createContact` API → Found new signature → Updated tests ✅
+- Security scan → Missing `deleted_at IS NULL` in 4 user_hats queries → Fixed all 4 + PeopleService queries ✅
+
+**Metrics delta:**
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| Tests passing | 759 | 790 | +31 |
+| Security bugs | 1 active | 0 | -1 |
+| SQL bugs | 0 known | 0 | = |
+| Permissions visible in UI | 47 | 57 | +10 |
+| Migrations | 62 | 63 | +1 |

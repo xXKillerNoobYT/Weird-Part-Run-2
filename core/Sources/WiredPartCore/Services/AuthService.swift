@@ -331,7 +331,7 @@ public final class AuthService: Sendable {
                     SELECT DISTINCT hp.permission_key
                     FROM user_hats uh
                     JOIN hat_permissions hp ON hp.hat_id = uh.hat_id
-                    WHERE uh.user_id = ? AND uh.is_active = 1
+                    WHERE uh.user_id = ? AND uh.is_active = 1 AND uh.deleted_at IS NULL
                     """,
                 arguments: [userId]
             )
@@ -347,7 +347,7 @@ public final class AuthService: Sendable {
                 sql: """
                     SELECT COUNT(*) FROM user_hats uh
                     JOIN hat_permissions hp ON hp.hat_id = uh.hat_id
-                    WHERE uh.user_id = ? AND uh.is_active = 1 AND hp.permission_key = ?
+                    WHERE uh.user_id = ? AND uh.is_active = 1 AND uh.deleted_at IS NULL AND hp.permission_key = ?
                     LIMIT 1
                     """,
                 arguments: [userId, permissionKey]
@@ -396,7 +396,7 @@ public final class AuthService: Sendable {
                 sql: """
                     SELECT h.name FROM user_hats uh
                     JOIN hats h ON h.id = uh.hat_id
-                    WHERE uh.user_id = ? AND uh.is_active = 1
+                    WHERE uh.user_id = ? AND uh.is_active = 1 AND uh.deleted_at IS NULL
                     ORDER BY h.level DESC
                     """,
                 arguments: [userId]
@@ -413,7 +413,7 @@ public final class AuthService: Sendable {
                 sql: """
                     SELECT h.id, h.name, h.level FROM user_hats uh
                     JOIN hats h ON h.id = uh.hat_id
-                    WHERE uh.user_id = ? AND uh.is_active = 1
+                    WHERE uh.user_id = ? AND uh.is_active = 1 AND uh.deleted_at IS NULL
                     ORDER BY h.level DESC
                     """,
                 arguments: [userId]

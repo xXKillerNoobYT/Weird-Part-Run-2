@@ -77,6 +77,7 @@ extension AppDatabase {
         registerMigration060PermissionKeysExpansion(&migrator)
         registerMigration061AuditSessionMetadata(&migrator)
         registerMigration062AuditCountedQty(&migrator)
+        registerMigration063FixContractorNotesFKs(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4580,6 +4581,46 @@ extension AppDatabase {
             // can be persisted and compared against the system quantity (qty).
             try db.alter(table: "stock") { t in
                 t.add(column: "counted_qty", .integer)
+            }
+        }
+    }
+}
+
+extension AppDatabase {
+    /// Migration 063: Fix FK references in contractor_notes and contractor_ratings.
+    ///
+    /// The original migration (part of a people-system refactor) created these tables
+    /// with `contractor_id` referencing `entity_contacts`, but all service code
+    /// passes `general_contractors.id` as the contractor identifier. Recreate
+    /// both tables with the correct FK to `general_contractors`.
+    private static func registerMigration063FixContractorNotesFKs(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("063_fix_contractor_notes_fks") { db in
+            // Drop and recreate contractor_notes with correct FK
+            try db.drop(table: "contractor_notes")
+            try db.create(table: "contractor_notes") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("contractor_id", .integer).notNull()
+                    .references("general_contractors", onDelete: .cascade)
+                t.column("content", .text).notNull()
+                t.column("created_by", .integer).references("users")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
+            }
+
+            // Drop and recreate contractor_ratings with correct FK
+            try db.drop(table: "contractor_ratings")
+            try db.create(table: "contractor_ratings") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("contractor_id", .integer).notNull()
+                    .references("general_contractors", onDelete: .cascade)
+                t.column("quality_score", .double).notNull().defaults(to: 0)
+                t.column("on_time_score", .double).notNull().defaults(to: 0)
+                t.column("reliability_score", .double).notNull().defaults(to: 0)
+                t.column("rated_by", .integer).references("users")
+                t.column("job_id", .integer).references("jobs")
+                t.column("notes", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
             }
         }
     }

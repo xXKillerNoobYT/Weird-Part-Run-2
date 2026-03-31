@@ -27,11 +27,14 @@ struct IOSPermissionsPage: View {
             "manage_deprecation", "view_warehouse", "manage_warehouse", "move_stock_warehouse",
         ]),
         PermissionGroup(name: "Jobs & Labor", keys: [
-            "view_jobs", "manage_jobs", "clock_in_out", "consume_parts_any_job",
+            "view_jobs", "view_all_jobs", "create_jobs", "manage_jobs",
+            "clock_in_out", "consume_parts_any_job",
             "view_labor", "manage_labor",
+            "view_job_financials", "view_job_reports",
+            "self_assign_ready_jobs", "self_assign_contact_jobs",
         ]),
         PermissionGroup(name: "Orders", keys: [
-            "view_orders", "manage_orders", "approve_returns",
+            "view_orders", "manage_orders", "approve_orders", "approve_returns",
         ]),
         PermissionGroup(name: "Fleet & Tools", keys: [
             "view_fleet", "manage_fleet", "view_trucks", "manage_trucks", "move_stock_truck",
@@ -43,15 +46,15 @@ struct IOSPermissionsPage: View {
         PermissionGroup(name: "Scheduling", keys: [
             "view_scheduling", "manage_scheduling", "manage_dispatch",
             "view_schedule", "manage_schedule", "dispatch_employees",
-            "manage_time_off", "manage_subcontractors",
+            "manage_time_off", "approve_time_off", "manage_subcontractors",
         ]),
         PermissionGroup(name: "Chat", keys: [
             "view_chat", "manage_chat", "moderate_chat", "use_chat", "ask_qa", "send_rfi",
         ]),
         PermissionGroup(name: "Reports & Admin", keys: [
-            "view_reports", "export_reports", "manage_settings", "manage_devices",
-            "manage_templates", "manage_notebooks", "perform_audit",
-            "manager_override", "view_activity_log", "manage_remote_sync",
+            "view_reports", "view_spending", "view_audit_log", "export_reports",
+            "manage_settings", "manage_devices", "manage_templates", "manage_notebooks",
+            "perform_audit", "manager_override", "view_activity_log", "manage_remote_sync",
         ]),
     ]
 

@@ -242,4 +242,189 @@ struct PeopleServiceTests {
         )
         #expect(entryId > 0)
     }
+
+    // MARK: - Team Members & Jobs
+
+    @Test("getTeamMembers returns members after addTeamMember")
+    func testGetTeamMembers() throws {
+        let env = try E2ETestHelpers.setUp()
+        let teamId = try env.people.createTeam(name: "Crew Alpha")
+        try env.people.addTeamMember(teamId: teamId, userId: env.adminUserId)
+
+        let members = try env.people.getTeamMembers(teamId: teamId)
+        #expect(members.count == 1)
+        #expect(members[0].id == env.adminUserId)
+    }
+
+    @Test("getTeamJobs returns empty when no jobs assigned to team")
+    func testGetTeamJobsEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let teamId = try env.people.createTeam(name: "Crew Beta")
+        let jobs = try env.people.getTeamJobs(teamId: teamId)
+        #expect(jobs.isEmpty)
+    }
+
+    // MARK: - Contractor Notes
+
+    @Test("getContractorNotes returns empty on fresh contractor")
+    func testContractorNotesEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let contractorId = try env.people.createContractor(companyName: "Note Contractor")
+
+        let notes = try env.people.getContractorNotes(contractorId: contractorId)
+        #expect(notes.isEmpty)
+    }
+
+    @Test("addContractorNote creates note and is retrievable")
+    func testAddContractorNote() throws {
+        let env = try E2ETestHelpers.setUp()
+        let contractorId = try env.people.createContractor(companyName: "Note GC")
+
+        let noteId = try env.people.addContractorNote(
+            contractorId: contractorId,
+            content: "Specializes in high-voltage work",
+            createdBy: env.adminUserId
+        )
+        #expect(noteId > 0)
+
+        let notes = try env.people.getContractorNotes(contractorId: contractorId)
+        #expect(notes.count == 1)
+        #expect(notes[0].content == "Specializes in high-voltage work")
+    }
+
+    // MARK: - Contractor Ratings
+
+    @Test("getContractorRating returns nil when no ratings exist")
+    func testContractorRatingNil() throws {
+        let env = try E2ETestHelpers.setUp()
+        let contractorId = try env.people.createContractor(companyName: "Unrated GC")
+
+        let rating = try env.people.getContractorRating(contractorId: contractorId)
+        #expect(rating == nil)
+    }
+
+    @Test("addContractorRating creates rating and getContractorRating returns average")
+    func testContractorRating() throws {
+        let env = try E2ETestHelpers.setUp()
+        let contractorId = try env.people.createContractor(companyName: "Rated GC")
+
+        _ = try env.people.addContractorRating(
+            contractorId: contractorId, quality: 4.0, onTime: 5.0, reliability: 4.5,
+            ratedBy: env.adminUserId, jobId: nil
+        )
+
+        let rating = try env.people.getContractorRating(contractorId: contractorId)
+        #expect(rating != nil)
+        #expect(rating!.qualityScore == 4.0)
+        #expect(rating!.onTimeScore == 5.0)
+        #expect(rating!.reliabilityScore == 4.5)
+    }
+
+    @Test("getContractorJobHistory returns empty on fresh contractor")
+    func testContractorJobHistoryEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let contractorId = try env.people.createContractor(companyName: "History GC")
+
+        let history = try env.people.getContractorJobHistory(contractorId: contractorId)
+        #expect(history.isEmpty)
+    }
+
+    // MARK: - Contact Sorting
+
+    @Test("getContactsSorted returns contacts sorted by name")
+    func testContactsSorted() throws {
+        let env = try E2ETestHelpers.setUp()
+        _ = try env.people.createContact(entityType: "vendor", entityId: 1, firstName: "Zach", lastName: "A", role: "contact", phone: "")
+        _ = try env.people.createContact(entityType: "vendor", entityId: 2, firstName: "Aaron", lastName: "B", role: "contact", phone: "")
+
+        let (active, _) = try env.people.getContactsSorted(sortBy: "name", typeFilter: nil)
+        #expect(active.count >= 2)
+        // Aaron should come before Zach alphabetically
+        let names = active.compactMap { $0.firstName }
+        if let zIdx = names.firstIndex(of: "Zach"), let aIdx = names.firstIndex(of: "Aaron") {
+            #expect(aIdx < zIdx)
+        }
+    }
+
+    @Test("getContactTypeCounts returns counts by type")
+    func testContactTypeCounts() throws {
+        let env = try E2ETestHelpers.setUp()
+        _ = try env.people.createContact(entityType: "vendor", entityId: 1, firstName: "V1", lastName: "", role: "contact", phone: "")
+        _ = try env.people.createContact(entityType: "vendor", entityId: 2, firstName: "V2", lastName: "", role: "contact", phone: "")
+        _ = try env.people.createContact(entityType: "supplier", entityId: 1, firstName: "S1", lastName: "", role: "contact", phone: "")
+
+        let counts = try env.people.getContactTypeCounts()
+        #expect((counts["vendor"] ?? 0) >= 2)
+        #expect((counts["supplier"] ?? 0) >= 1)
+    }
+
+    // MARK: - Payment Tracking
+
+    @Test("isPaymentTrackingEnabled and setPaymentTrackingEnabled round-trip")
+    func testPaymentTrackingToggle() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Default should be some value; toggle it and verify
+        let original = try env.people.isPaymentTrackingEnabled()
+        try env.people.setPaymentTrackingEnabled(!original)
+        let toggled = try env.people.isPaymentTrackingEnabled()
+        #expect(toggled == !original)
+    }
+
+    @Test("getPaymentSettings returns default values")
+    func testPaymentSettingsDefaults() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (terms, warning, _) = try env.people.getPaymentSettings()
+        #expect(terms >= 0)
+        #expect(warning >= 0)
+    }
+
+    @Test("updatePaymentSettings persists changes")
+    func testUpdatePaymentSettings() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.people.updatePaymentSettings(termsDays: 45, warningDays: 10, autoHold: true)
+        let (terms, warning, hold) = try env.people.getPaymentSettings()
+        #expect(terms == 45)
+        #expect(warning == 10)
+        #expect(hold == true)
+    }
+
+    @Test("createPaymentRecord and getPaymentRecords round-trip")
+    func testPaymentRecord() throws {
+        let env = try E2ETestHelpers.setUp()
+        let customerId = try env.people.createCustomer(name: "Invoice Corp", companyName: nil, email: nil, phone: nil)
+
+        let recordId = try env.people.createPaymentRecord(
+            customerId: customerId, jobId: nil, amount: 1500.0,
+            dueDate: "2026-04-30", invoiceNumber: "INV-001", createdBy: env.adminUserId
+        )
+        #expect(recordId > 0)
+
+        let records = try env.people.getPaymentRecords(customerId: customerId)
+        #expect(records.count == 1)
+        #expect(records[0].amount == 1500.0)
+        #expect(records[0].invoiceNumber == "INV-001")
+    }
+
+    @Test("recordPayment updates paid_amount and status to paid")
+    func testRecordPayment() throws {
+        let env = try E2ETestHelpers.setUp()
+        let customerId = try env.people.createCustomer(name: "Payment Corp", companyName: nil, email: nil, phone: nil)
+
+        let recordId = try env.people.createPaymentRecord(
+            customerId: customerId, jobId: nil, amount: 500.0,
+            dueDate: "2026-04-15", invoiceNumber: "INV-002", createdBy: env.adminUserId
+        )
+
+        try env.people.recordPayment(recordId: recordId, amount: 500.0, paidDate: "2026-03-31")
+
+        let records = try env.people.getPaymentRecords(customerId: customerId)
+        #expect(records[0].status == "paid")
+    }
+
+    @Test("getOverdueCustomers returns empty on fresh DB")
+    func testOverdueCustomersEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let overdue = try env.people.getOverdueCustomers()
+        #expect(overdue.isEmpty)
+    }
 }
