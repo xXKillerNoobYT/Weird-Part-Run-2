@@ -346,7 +346,7 @@ struct PartsForecastingPage: View {
                     .fill(urgencyColor(row.part.forecastDaysUntilLow))
                     .frame(width: 12, height: 12)
                 Text(urgencyText)
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(urgencyColor(row.part.forecastDaysUntilLow))
             }
             .accessibilityElement(children: .ignore)

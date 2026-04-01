@@ -202,6 +202,7 @@ struct IOSWarehouseLeaderboardPage: View {
                 .background(
                     Circle().fill(rank <= 3 ? ratingColor(rating.overallRating) : Color(.systemGray5))
                 )
+                .frame(minWidth: 44, minHeight: 44)
 
             // Name
             VStack(alignment: .leading, spacing: 2) {
@@ -521,6 +522,7 @@ private struct ConsensusInfoSheet: View {
                 .foregroundStyle(.white)
                 .frame(width: 24, height: 24)
                 .background(Circle().fill(.blue))
+                .frame(minWidth: 44, minHeight: 44)
             Text(text)
                 .font(.subheadline)
         }

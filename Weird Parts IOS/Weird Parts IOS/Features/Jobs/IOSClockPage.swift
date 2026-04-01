@@ -1577,6 +1577,7 @@ private struct SwitchJobPickerSheet: View {
                             .frame(width: 36, height: 36)
                             .background(Color.blue.opacity(0.1))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .frame(minWidth: 44, minHeight: 44)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Shop / Warehouse").font(.body).fontWeight(.semibold)
                             Text("Office, ordering, design work").font(.caption).foregroundStyle(.secondary)
@@ -1599,6 +1600,7 @@ private struct SwitchJobPickerSheet: View {
                                 .frame(width: 36, height: 36)
                                 .background(Color.orange.opacity(0.1))
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .frame(minWidth: 44, minHeight: 44)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(job.jobName).font(.body).fontWeight(.medium)
                                 if !job.jobNumber.isEmpty {

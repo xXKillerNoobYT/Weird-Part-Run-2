@@ -429,6 +429,7 @@ struct WarehouseQuickCountWizard: View {
                 .frame(width: 28, height: 28)
                 .background(.purple)
                 .clipShape(Circle())
+                .frame(minWidth: 44, minHeight: 44)
 
             VStack(alignment: .leading) {
                 Text(title)

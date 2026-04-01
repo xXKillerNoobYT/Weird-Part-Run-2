@@ -209,6 +209,7 @@ struct IOSOrganizationAuditPage: View {
                     .font(.footnote).bold()
             }
             .frame(width: 36, height: 36)
+            .frame(minWidth: 44, minHeight: 44)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Area #\(rating.areaId)")

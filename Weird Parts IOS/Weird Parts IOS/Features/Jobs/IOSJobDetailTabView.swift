@@ -1156,6 +1156,7 @@ struct IOSJobDetailTabView: View {
                     .frame(width: 36, height: 36)
                     .background(color.opacity(0.12))
                     .clipShape(Circle())
+                    .frame(minWidth: 44, minHeight: 44)
                 Text(title)
                     .font(.caption2)
                     .foregroundStyle(.primary)

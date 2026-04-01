@@ -226,6 +226,7 @@ struct WarehouseMovementsPage: View {
                 .frame(width: 36, height: 36)
                 .background(movementColor(movement.movementType).opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
+                .frame(minWidth: 44, minHeight: 44)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
