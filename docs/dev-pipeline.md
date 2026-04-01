@@ -273,6 +273,38 @@ _Appended by dev-pipeline-manager each run._
 
 ---
 
+### 2026-03-31 — Pipeline Manager Run 6 (PE-022 Prompt Written, PE-023 Closed, PE-001 Applied)
+
+**Input:** 5 pending work items from run 5
+
+**Work completed this run:**
+
+| Item | Action | Result |
+|------|--------|--------|
+| PE-023 | Strengthen DashboardService + BreakService test assertions | ✅ 9 Dashboard + 4 Break assertions now use seeded DB fixtures (exact values). Two timezone bugs fixed: `date('now','localtime')` for Calendar.current, `date('now')||'T...'` for formatDateUTC(). 828/828 passing. |
+| PE-022 Q&A | All 5 owner answers processed | ✅ Design decisions recorded in `ios-hat-assignment-ux.md`. Q&A removed from `dev-qa.md`. |
+| PE-022 core | `PeopleService.getHatMembers(hatId:)` + `HatMember` struct | ✅ Added to PeopleService.swift. SQL: JOIN user_hats ON hat_id, deleted_at IS NULL on both tables. |
+| PE-022 prompt | `PE-022-hat-assignment-ux.md` written | ✅ Covers: HatDetailSheet (members + permission summary + add/remove), AddEmployeeToHatSheet, People Dashboard "Management" section (Hats & Roles + Permissions tiles gated on manage_people), Employee Detail "Permissions Granted" section. |
+| PE-001 | Tool page rename applied directly | ✅ "Tool Registry" → "All Tools" in IOSToolRegistryPage, IOSToolCheckoutsPage, HelpContentRegistry. "Tool Admin" → "Management" in IOSToolAdminPage. Prompt PE-001-tool-naming-rename.md written for reference. |
+| PE-003 | Flex pool Q&A generated | ✅ 5 questions in dev-qa.md (location/tab, who marks flex, skills filter, dispatch_entry, confirmation UX). Xcode prompt blocked until answers. |
+
+**Commit:** 35c1118 — 25 files changed, 1627 insertions, 139 deletions
+
+**Status:**
+- **Tests:** 828/828 passing (PE-023 closed)
+- **Build:** 0 errors, 0 warnings
+- **Q&A backlog:** 5 questions (PE-003 only — PE-022 answered ✅)
+- **Xcode prompts ready:** PE-022, PE-001, PE-009b, PE-009c, PE-008c
+- **Open GitHub issues:** 2 (#9 hardcoded salt, #17 hat UX)
+
+**Self-improvement notes:**
+- Timezone mismatch between SQLite `date('now')` (UTC) and Swift `Calendar.current` (local) caused silent test failures. Two separate patterns needed: (1) seeding for Calendar-based queries → `date('now','localtime')`, (2) seeding for formatDateUTC() queries → `date('now')||'T12:00:00'`. This pattern should be documented.
+- PE-001 was already applied by a prior run before this session — the prompts system correctly prevented duplicate work since the files were already modified.
+
+**Next priority:** User runs PE-022 prompt in Xcode → run PE-001 → run PE-009b → owner answers PE-003 Q&A
+
+---
+
 ### 2026-03-31 — Plan Enforcer Run 5
 
 **Commits audited:** 0fb2dbf, 4e0d5e0, 38ca2bb (3 recent commits + working tree)
