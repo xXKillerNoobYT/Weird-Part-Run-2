@@ -1056,8 +1056,8 @@ public final class OrdersService: Sendable {
                     )
 
                     if partDemand[partId] != nil {
-                        partDemand[partId]!.sources.append(source)
-                        partDemand[partId]!.totalQty += qty
+                        partDemand[partId]?.sources.append(source)
+                        partDemand[partId]?.totalQty += qty
                     } else {
                         partDemand[partId] = (partRow: row, sources: [source], totalQty: qty)
                     }

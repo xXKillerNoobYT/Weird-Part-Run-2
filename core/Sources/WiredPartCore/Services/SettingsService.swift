@@ -181,7 +181,7 @@ public final class SettingsService: Sendable {
                 let key: String = row["key"]
                 let value: String = row["value"]
                 if grouped[cat] == nil { grouped[cat] = [:] }
-                grouped[cat]![key] = value
+                grouped[cat]?[key] = value
             }
             return grouped
         }

@@ -3828,7 +3828,7 @@ public final class PartsService: Sendable {
                 WHERE id = ?
                 """, arguments: [now, now, id])
 
-            let deleteDate = ISO8601DateFormatter().string(from: Calendar.current.date(byAdding: .day, value: 30, to: Date())!)
+            let deleteDate = ISO8601DateFormatter().string(from: Calendar.current.date(byAdding: .day, value: 30, to: Date()) ?? Date().addingTimeInterval(30 * 86400))
             try dbConn.execute(sql: """
                 UPDATE companion_rules SET auto_delete_at = ?, is_active = 0, updated_at = ?
                 WHERE parent_rule_id = ? AND deleted_at IS NULL
@@ -3899,7 +3899,7 @@ public final class PartsService: Sendable {
     public func calculateCoOccurrencePoints(windowMonths: Int = 48) throws {
         try db.writer.write { dbConn in
             let windowMonthsClamped = max(3, min(windowMonths, 48))
-            let cutoffDate = Calendar.current.date(byAdding: .month, value: -windowMonthsClamped, to: Date())!
+            let cutoffDate = Calendar.current.date(byAdding: .month, value: -windowMonthsClamped, to: Date()) ?? Date().addingTimeInterval(-Double(windowMonthsClamped) * 30 * 86400)
             let cutoff = ISO8601DateFormatter().string(from: cutoffDate)
 
             let rows = try Row.fetchAll(dbConn, sql: """
@@ -4057,7 +4057,7 @@ public final class PartsService: Sendable {
     ) throws {
         try db.writer.write { dbConn in
             let windowMonthsClamped = max(3, min(windowMonths, 48))
-            let cutoffDate = Calendar.current.date(byAdding: .month, value: -windowMonthsClamped, to: Date())!
+            let cutoffDate = Calendar.current.date(byAdding: .month, value: -windowMonthsClamped, to: Date()) ?? Date().addingTimeInterval(-Double(windowMonthsClamped) * 30 * 86400)
             let cutoff = ISO8601DateFormatter().string(from: cutoffDate)
 
             let rows = try Row.fetchAll(dbConn, sql: """
@@ -4134,7 +4134,7 @@ public final class PartsService: Sendable {
         windowMonths: Int = 48
     ) throws {
         try db.writer.write { dbConn in
-            let cutoffDate = Calendar.current.date(byAdding: .month, value: -max(3, min(windowMonths, 48)), to: Date())!
+            let cutoffDate = Calendar.current.date(byAdding: .month, value: -max(3, min(windowMonths, 48)), to: Date()) ?? Date().addingTimeInterval(-Double(max(3, min(windowMonths, 48))) * 30 * 86400)
             let cutoff = ISO8601DateFormatter().string(from: cutoffDate)
 
             let rows = try Row.fetchAll(dbConn, sql: """
@@ -4614,7 +4614,7 @@ public final class PartsService: Sendable {
             } else {
                 result = "tied"
                 passed = false
-                let cooldownDate = Calendar.current.date(byAdding: .month, value: 2, to: Date())!
+                let cooldownDate = Calendar.current.date(byAdding: .month, value: 2, to: Date()) ?? Date().addingTimeInterval(60 * 86400)
                 let cooldownStr = ISO8601DateFormatter().string(from: cooldownDate)
                 try dbConn.execute(sql: """
                     UPDATE co_occurrence_pairs SET tied_cooldown_until = ? WHERE id = ?
@@ -5114,7 +5114,7 @@ public final class PartsService: Sendable {
             let now = ISO8601DateFormatter().string(from: Date())
             let stockZeroAt: String? = currentStock == 0 ? now : nil
             let deleteAfter: String? = currentStock == 0
-                ? ISO8601DateFormatter().string(from: Calendar.current.date(byAdding: .day, value: 30, to: Date())!)
+                ? ISO8601DateFormatter().string(from: Calendar.current.date(byAdding: .day, value: 30, to: Date()) ?? Date().addingTimeInterval(30 * 86400))
                 : nil
 
             try db.execute(sql: """

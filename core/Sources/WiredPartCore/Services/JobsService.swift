@@ -686,7 +686,7 @@ public final class JobsService: Sendable {
 
     /// Set warranty period for a job. Calculates end date from start + duration.
     public func setWarranty(jobId: Int64, startDate: Date, durationDays: Int) throws {
-        let endDate = Calendar.current.date(byAdding: .day, value: durationDays, to: startDate)!
+        let endDate = Calendar.current.date(byAdding: .day, value: durationDays, to: startDate) ?? startDate.addingTimeInterval(Double(durationDays) * 86400)
         let fmt = ISO8601DateFormatter()
         fmt.formatOptions = [.withInternetDateTime]
         let startStr = fmt.string(from: startDate)

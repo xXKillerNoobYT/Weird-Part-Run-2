@@ -1147,7 +1147,7 @@ public final class PeopleService: Sendable {
     /// Get certifications expiring within a given number of days.
     public func getExpiringCertifications(withinDays: Int = 30) throws -> [CertificationAlert] {
         let today = Date()
-        let futureDate = Calendar.current.date(byAdding: .day, value: withinDays, to: today)!
+        let futureDate = Calendar.current.date(byAdding: .day, value: withinDays, to: today) ?? today.addingTimeInterval(Double(withinDays) * 86400)
         let todayStr = formatDateYMD(today)
         let futureStr = formatDateYMD(futureDate)
 

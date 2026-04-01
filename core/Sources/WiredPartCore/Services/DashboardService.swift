@@ -1241,7 +1241,7 @@ public final class DashboardService: Sendable {
                 let row = try Row.fetchOne(conn, sql: """
                     SELECT po.po_number, po.status, po.total_cost, po.order_date, po.expected_delivery,
                            COALESCE(s.name, 'Unknown') AS supplier_name,
-                           s.contact_email AS supplier_email, s.phone AS supplier_phone
+                           s.email AS supplier_email, s.phone AS supplier_phone
                     FROM purchase_orders po
                     LEFT JOIN suppliers s ON s.id = po.supplier_id
                     WHERE po.id = ?
@@ -1261,7 +1261,7 @@ public final class DashboardService: Sendable {
                 }
 
                 let lineRows = try Row.fetchAll(conn, sql: """
-                    SELECT pl.quantity, p.name AS part_name, p.code AS part_code
+                    SELECT pl.qty_ordered, p.name AS part_name, p.code AS part_code
                     FROM po_line_items pl
                     LEFT JOIN parts p ON p.id = pl.part_id
                     WHERE pl.po_id = ? AND pl.deleted_at IS NULL
@@ -1272,7 +1272,7 @@ public final class DashboardService: Sendable {
                     POLineItemRow(
                         partName: r["part_name"] ?? "Unknown",
                         partCode: r["part_code"] as String?,
-                        qty: r["quantity"] ?? 0
+                        qty: r["qty_ordered"] ?? 0
                     )
                 }
 
