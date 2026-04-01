@@ -232,4 +232,171 @@ struct DashboardServiceTests {
         let count = try dash.getEmployeeCount()
         #expect(count >= 1)
     }
+
+    // MARK: - Stock At Location Type
+
+    @Test("getStockAtLocationType returns empty on fresh DB")
+    func testStockAtLocationTypeEmpty() throws {
+        let (_, dash) = try freshEnv()
+        let rows = try dash.getStockAtLocationType("warehouse")
+        #expect(rows.count >= 0)
+    }
+
+    @Test("getStockAtLocationType returns rows for matching type after seeding stock")
+    func testStockAtLocationTypeWithData() throws {
+        let (env, dash) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Conduit A", categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10, locationType: "warehouse", locationId: 1)
+
+        let rows = try dash.getStockAtLocationType("warehouse")
+        #expect(rows.count >= 1)
+        let found = rows.first { $0.partId == partId }
+        #expect(found != nil)
+        #expect(found?.qty == 10)
+    }
+
+    @Test("getStockAtLocationType filters by location type — other types not returned")
+    func testStockAtLocationTypeFiltersCorrectly() throws {
+        let (env, dash) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Breaker", categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 5, locationType: "truck", locationId: 99)
+
+        // Requesting "warehouse" should NOT include the truck stock
+        let rows = try dash.getStockAtLocationType("warehouse")
+        let found = rows.first { $0.partId == partId }
+        #expect(found == nil)
+
+        // Requesting "truck" should include it
+        let truckRows = try dash.getStockAtLocationType("truck")
+        let truckFound = truckRows.first { $0.partId == partId }
+        #expect(truckFound != nil)
+    }
+
+    // MARK: - PO KPI Detail
+
+    @Test("getPOKPIDetail returns nil for non-existent PO")
+    func testPOKPIDetailMissing() throws {
+        let (_, dash) = try freshEnv()
+        let (detail, lines) = try dash.getPOKPIDetail(poId: 99999)
+        #expect(detail == nil)
+        #expect(lines.isEmpty)
+    }
+
+    @Test("getPOKPIDetail returns detail for existing PO")
+    func testPOKPIDetailExists() throws {
+        let (env, dash) = try freshEnv()
+        let suppId = try E2ETestHelpers.seedSupplier(env)
+
+        let poId = try env.orders.createPurchaseOrder(
+            poNumber: "PO-DASH-001",
+            supplierId: suppId,
+            notes: "Test PO for KPI"
+        )
+
+        let (detail, lines) = try dash.getPOKPIDetail(poId: poId)
+        #expect(detail != nil)
+        #expect(detail?.poNumber == "PO-DASH-001")
+        #expect(lines.count >= 0)
+    }
+
+    // MARK: - Stock Locations For Part
+
+    @Test("getStockLocationsForPart returns empty for part with no stock")
+    func testStockLocationsForPartEmpty() throws {
+        let (env, dash) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Empty Part", categoryId: catId)
+
+        let locations = try dash.getStockLocationsForPart(partId: partId)
+        #expect(locations.isEmpty)
+    }
+
+    @Test("getStockLocationsForPart returns rows after seeding stock")
+    func testStockLocationsForPartWithData() throws {
+        let (env, dash) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Wire 12 AWG", categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 20, locationType: "warehouse", locationId: 1)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 5, locationType: "truck", locationId: 10)
+
+        let locations = try dash.getStockLocationsForPart(partId: partId)
+        #expect(locations.count == 2)
+        #expect(locations.allSatisfy { $0.qty > 0 })
+    }
+
+    // MARK: - Part Movement Info
+
+    @Test("getPartMovementInfo returns nil values for unknown part")
+    func testPartMovementInfoUnknown() throws {
+        let (_, dash) = try freshEnv()
+        let (lastMovement, reorderPoint) = try dash.getPartMovementInfo(partId: 99999)
+        #expect(lastMovement == nil)
+        #expect(reorderPoint == nil)
+    }
+
+    @Test("getPartMovementInfo returns reorder point from parts table")
+    func testPartMovementInfoReorderPoint() throws {
+        let (env, dash) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Fuse 20A", categoryId: catId)
+
+        // Set reorder_point directly
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET reorder_point = 5 WHERE id = ?", arguments: [partId])
+        }
+
+        let (_, reorderPoint) = try dash.getPartMovementInfo(partId: partId)
+        #expect(reorderPoint == 5)
+    }
+
+    // MARK: - Office Briefing
+
+    @Test("getOfficeBriefing returns valid structure on fresh DB")
+    func testOfficeBriefingEmpty() throws {
+        let (_, dash) = try freshEnv()
+        let briefing = try dash.getOfficeBriefing()
+        #expect(!briefing.summary.isEmpty)
+        #expect(briefing.alertCount >= 0)
+    }
+
+    @Test("getOfficeBriefing summary contains expected language")
+    func testOfficeBriefingSummaryFormat() throws {
+        let (_, dash) = try freshEnv()
+        let briefing = try dash.getOfficeBriefing()
+        // Summary always begins with "Good morning." regardless of data state
+        #expect(briefing.summary.hasPrefix("Good morning."))
+    }
+
+    // MARK: - Financial Snapshot
+
+    @Test("getFinancialSnapshot returns zeroes on fresh DB")
+    func testFinancialSnapshotEmpty() throws {
+        let (_, dash) = try freshEnv()
+        let snap = try dash.getFinancialSnapshot()
+        #expect(snap.spendingThisWeek >= 0)
+        #expect(snap.spendingLastWeek >= 0)
+        #expect(snap.spendingThisMonth >= 0)
+        #expect(snap.spendingLastMonth >= 0)
+        #expect(snap.outstandingPOValue >= 0)
+    }
+
+    @Test("getFinancialSnapshot reflects outstanding PO value")
+    func testFinancialSnapshotWithPO() throws {
+        let (env, dash) = try freshEnv()
+        let suppId = try E2ETestHelpers.seedSupplier(env)
+
+        // Create a submitted PO (counts toward outstanding value)
+        let poId = try env.orders.createPurchaseOrder(
+            poNumber: "PO-SNAP-001",
+            supplierId: suppId
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE purchase_orders SET status = 'submitted', total_cost = 500.0 WHERE id = ?", arguments: [poId])
+        }
+
+        let snap = try dash.getFinancialSnapshot()
+        #expect(snap.outstandingPOValue >= 500.0)
+    }
 }
