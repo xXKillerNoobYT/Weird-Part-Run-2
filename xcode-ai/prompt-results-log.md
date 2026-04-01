@@ -3059,3 +3059,42 @@ All 136 prompts verified and implemented. Program ready for review.
 **Issues Found:**
 - None
 **Build:** PASS (zero diagnostics across all 4 modified files)
+
+## Prompt PE-008c — Legacy PIN Hash Upgrade Banner (2026-03-31)
+
+**Status:** SUCCESS
+**Files Changed:** IOSPermissionsPage.swift
+**What Was Done:**
+- Added `@State private var legacyPinCount: Int = 0` state variable
+- Added `legacyPinBanner` computed property — orange HStack with lock icon, count of users with legacy hashes, explanation text, and full accessibility support
+- Inserted `legacyPinBanner` conditional display (when `legacyPinCount > 0`) before `hatSelector` in `permissionsContent`
+- Added `.task { loadData(); loadLegacyPinCount() }` and `.onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification))` for foreground refresh
+- Added `loadLegacyPinCount()` helper using `appCore.authService?.getLegacyHashedUserCount()`
+**Issues Found:**
+- None
+**Build:** PASS (zero diagnostics)
+
+## Prompt PE-022 — Hat Assignment & Access Control UX (2026-03-31)
+
+**Status:** SUCCESS
+**Files Changed:** IOSHatsPage.swift, IOSPeopleDashboardPage.swift, IOSEmployeeDetailPage.swift
+**What Was Done:**
+- **IOSHatsPage.swift:**
+  - Updated `ActiveSheet` enum from `String, Identifiable` to support `.hatDetail(PeopleService.HatListItem)` case
+  - Made hat rows tappable via Button wrapping, opening HatDetailSheet on tap
+  - Added `.hatDetail` case to sheet switch
+  - Updated help text to mention tap-to-view functionality
+  - Added `HatDetailSheet` private struct — shows members list (NavigationLink to employee detail), permissions summary (up to 5 shown), "Edit Permissions" link, "Add Employee" button (manage_people gated), swipe-to-delete member removal (manage_people gated)
+  - Added `AddEmployeeToHatSheet` private struct — searchable list of available employees (filtered out already-assigned), tap to assign and dismiss
+  - Split detailContent into `membersSection` / `permissionsSection` sub-views to fix Swift type-checker complexity
+- **IOSPeopleDashboardPage.swift:**
+  - Added `canManagePeople` state variable, set via `appCore.hasPermission("manage_people")` in loadData()
+  - Added "Management" section as first section in dashboard List — Hats & Roles tile (→ IOSHatsPage) and Permissions tile (→ IOSPermissionsPage), both with icons and descriptive subtitles, only visible when canManagePeople is true
+- **IOSEmployeeDetailPage.swift:**
+  - Added `combinedPermissions: [String]` state variable
+  - In loadData(), collects permissions from all assigned hats via `auth.getHatPermissions()` and stores unique sorted set
+  - Added "Permissions Granted" section to hatsTab — shows all permissions with `checkmark.shield` labels, placeholder when no hats assigned, footer explaining source
+  - Added `permissionLabel(_:)` helper converting snake_case keys to "Title Case" display labels
+**Issues Found:**
+- Swift type-checker error ("Failed to produce diagnostic for expression") on complex view body in HatDetailSheet — resolved by splitting into sub-views and extracting `memberRow()` helper
+**Build:** PASS (zero diagnostics across all 3 modified files)
