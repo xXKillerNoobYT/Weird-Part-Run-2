@@ -686,3 +686,22 @@ _Appended by dev-pipeline-manager each run._
 - Issues processed: 5 (#8 permission gate, #11 Dynamic Type, #13 swipe-delete, #14 a11y labels, #15 color indicators)
 - Bugs fixed: 4 force unwraps in core (BackgroundTaskService, ToolsService, AITools, BaseRepository)
 - Pipeline health: OK — hunt-fix-verify due for a run; PE-013 ios-warehouse-pages.md update pending
+
+---
+
+### End-of-Day Sync — 2026-03-31 (run 2)
+- Files committed: 20 (7 core Swift + 1 test + 11 iOS Swift + 6 docs/plans/prompts)
+- Commits created: 5 (fix/core, test/core, fix/ios, docs, chore)
+- Push status: success (origin/main updated, 6 commits total including today's prior 2)
+- Tests: 800/800 passing (49 suites, 0 regressions, +10 new DashboardService tests vs last sync)
+- Agent runs today: 5/7
+  - ✅ dev-improvement-scanner (iter 13): 9 force unwraps eliminated across 6 core service files; SQL column mismatches in DashboardService fixed; PE-023 filed (weak assertions)
+  - ✅ xcode-accessibility (PE-009a/b): 1 hardcoded font size fixed (PartsForecastingPage); 13 tap targets expanded to 44×44pt across 10 iOS files
+  - ✅ github-sync-and-review: this run
+  - ✅ plan-enforcer: PE-022 hat assignment plan filed (docs/plans/ios-hat-assignment-ux.md)
+  - ✅ dev-qa: 5 questions filed for PE-022 (awaiting owner answers)
+  - ⚠️ hunt-fix-verify: last ran 2026-03-29 — 2 days overdue
+  - ⚠️ test-coverage-maintenance: PE-023 filed but not yet actioned
+- Issues processed: 1 (#17 — "User Aces controles" → PE-022 plan created, Q&A pending)
+- Bugs fixed: 11 (9 force unwraps + 2 SQL column mismatches in DashboardService)
+- Pipeline health: OK — PE-022 blocked on Q&A answers; PE-023 needs assertion strengthening; hunt-fix-verify overdue
