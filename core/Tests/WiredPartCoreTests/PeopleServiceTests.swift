@@ -427,4 +427,42 @@ struct PeopleServiceTests {
         let overdue = try env.people.getOverdueCustomers()
         #expect(overdue.isEmpty)
     }
+
+    @Test("getCustomerPaymentStatus returns zero totals for new customer")
+    func testCustomerPaymentStatusEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let customerId = try env.people.createCustomer(
+            name: "Status Corp", companyName: nil, email: nil, phone: nil
+        )
+        let status = try env.people.getCustomerPaymentStatus(customerId: customerId)
+        #expect(status.totalInvoiced == 0.0)
+        #expect(status.totalPaid == 0.0)
+        #expect(status.totalOverdue == 0.0)
+        #expect(status.oldestOverdueDays == nil)
+    }
+
+    @Test("getCustomerPaymentStatus aggregates invoiced and paid amounts")
+    func testCustomerPaymentStatusWithRecords() throws {
+        let env = try E2ETestHelpers.setUp()
+        let customerId = try env.people.createCustomer(
+            name: "Agg Corp", companyName: nil, email: nil, phone: nil
+        )
+
+        // Create two invoices
+        let r1 = try env.people.createPaymentRecord(
+            customerId: customerId, jobId: nil, amount: 1000.0,
+            dueDate: "2026-05-01", invoiceNumber: "AGG-001", createdBy: env.adminUserId
+        )
+        _ = try env.people.createPaymentRecord(
+            customerId: customerId, jobId: nil, amount: 500.0,
+            dueDate: "2026-06-01", invoiceNumber: "AGG-002", createdBy: env.adminUserId
+        )
+
+        // Pay the first one in full
+        try env.people.recordPayment(recordId: r1, amount: 1000.0, paidDate: "2026-04-01")
+
+        let status = try env.people.getCustomerPaymentStatus(customerId: customerId)
+        #expect(status.totalInvoiced == 1500.0)
+        #expect(status.totalPaid == 1000.0)
+    }
 }

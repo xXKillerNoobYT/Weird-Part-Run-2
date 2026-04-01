@@ -19,13 +19,13 @@
 
 | # | File | What It Fixes | Status |
 |---|------|---------------|--------|
-| PE-022 | `PE-022-hat-assignment-ux.md` | Hat assignment UX (GitHub #17): tappable hat rows → HatDetailSheet, People Dashboard management tiles, Employee Detail "Permissions Granted" section | 🟡 **prompt ready — run next** |
-| PE-001 | `PE-001-tool-naming-rename.md` | Tool page rename: "Tool Registry" → "All Tools", "Tool Admin" → "Management" | 🟡 prompt ready — run after PE-022 |
+| PE-022 | *(archived)* | Hat assignment UX (GitHub #17): tappable hat rows → HatDetailSheet, People Dashboard management tiles, Employee Detail "Permissions Granted" section | ✅ done (2026-03-31) |
+| PE-001 | *(archived)* | Tool page rename: "Tool Registry" → "All Tools", "Tool Admin" → "Management" | ✅ done (2026-03-31) |
+| PE-008c | *(archived)* | People → Permissions banner: warns admin when users still have legacy PIN hashes (auto-upgrade on login is already in place) | ✅ done (2026-03-31) |
 | PE-003 | *(write prompt)* | Flex pool self-assign on Scheduling page — needs DB migration + backend methods first | ⬜ blocked on Q&A answers (5 questions in dev-qa.md) |
 | PE-009a | *(closed — direct edit)* | HIG: 83 hardcoded font sizes → semantic styles (GitHub #11 closed) | ✅ closed — fixed directly in 38ca2bb; archive prompt to `done/` |
-| PE-009b | `PE-009b-tap-targets.md` | HIG: 12 undersized tap targets (< 44×44pt) (GitHub #12) | 🟡 prompt ready — run after PE-001 |
+| PE-009b | `PE-009b-tap-targets.md` | HIG: 12 undersized tap targets (< 44×44pt) (GitHub #12) | 🟡 **prompt ready — run next** |
 | PE-009c | `PE-009c-swipe-confirmations.md` | HIG: 2 remaining swipe-to-delete (IOSReportTemplatesPage ×2, WarehouseWizardStep2) — 3/5 already fixed in 38ca2bb | 🟡 prompt ready — run after PE-009b |
-| PE-008c | `PE-008c-legacy-pin-upgrade.md` | People → Permissions banner: warns admin when users still have legacy PIN hashes (auto-upgrade on login is already in place) | 🟡 prompt ready — run after PE-009c |
 | PE-009d | *(closed — direct edit)* | HIG: 9+ color-only status indicators (GitHub #15 closed) | ✅ closed — fixed directly in 38ca2bb |
 | PE-009e | *(closed — direct edit)* | Accessibility labels — 347 `.accessibilityLabel()` + 305 `.accessibilityHidden()` (GitHub #14 closed) | ✅ closed — fixed directly in 38ca2bb |
 | PE-011 | *(closed)* | 12 force unwraps in `ReportDateRange.swift` — fixed in commit 4b0c71a | ✅ closed |
@@ -50,7 +50,7 @@ These require changes in `core/Sources/WiredPartCore/` — write and test direct
 |---|------|----------|
 | PE-008a | ~~Unsigned session tokens (forgeable)~~ | ✅ **Fixed** (b3eef3b) — HMAC-SHA256 signing with `SymmetricKey` in `AuthService` |
 | PE-008b | ~~No brute-force protection on PIN login~~ | ✅ **Fixed** (b3eef3b) — Exponential lockout with `lockoutDuration()` in `AuthService` |
-| PE-008c | Hardcoded legacy salt in PIN hashing — `getLegacyHashedUserCount()` added to AuthService; Xcode prompt `PE-008c-legacy-pin-upgrade.md` ready | 🟡 prompt ready — run next after PE-009c |
+| PE-008c | Hardcoded legacy salt in PIN hashing — `getLegacyHashedUserCount()` added to AuthService; banner added to IOSPermissionsPage.swift | ✅ done (2026-03-31) |
 | PE-008d | LAN sync uses plain HTTP — **Fixed** X25519 ECDH + AES-GCM payload encryption in `SyncCrypto`, `LanSyncServer`, `PeerManager`; backward-compatible; 6 new tests | ✅ closed (github-issues-sync 2026-03-31) |
 | PE-008e | ~~Data export not gated behind admin permission~~ | ✅ **Fixed** (4b0c71a) — IOSDataExportPage now checks `export_reports` permission |
 

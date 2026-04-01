@@ -32,7 +32,7 @@ Every feature, bug, or improvement follows this cycle:
 | Area | Status | Last Checked |
 |------|--------|-------------|
 | Build | 0 errors, 0 warnings | 2026-03-31 |
-| Tests | **828/828 passing** — PE-023 ✅ closed (9 Dashboard + 4 Break assertions strengthened with seeded data) | 2026-03-31 |
+| Tests | **842/842 passing** — +14 new (FleetService inspection/reporting, PeopleService payment status) | 2026-04-01 |
 | Plan Alignment | PE-008d ✅ closed (LAN encrypt). PE-009a/d/e ✅ done. PE-022 `getHatMembers()` added to PeopleService | 2026-03-31 |
 | Feature Polish | PE-009b partial, PE-009c partial, PE-022 blocked Q&A, PE-003 moved to Q&A step | 2026-03-31 |
 | Xcode Prompts | **PE-001, PE-022 prompts ready**. PE-009b, PE-009c, PE-008c prompts ready. PE-003 blocked on Q&A | 2026-03-31 |
