@@ -208,15 +208,74 @@ public enum SyncCrypto {
         return formatter.string(from: Date())
     }
 
+    // MARK: - X25519 Key Agreement
+
+    /// Generate a new X25519 key agreement key pair.
+    /// Returns base64-encoded private key (32 bytes) and public key (32 bytes).
+    public static func generateKeyAgreementPair() -> (privateKey: String, publicKey: String) {
+        let privateKey = Curve25519.KeyAgreement.PrivateKey()
+        let privateKeyB64 = privateKey.rawRepresentation.base64EncodedString()
+        let publicKeyB64 = privateKey.publicKey.rawRepresentation.base64EncodedString()
+        return (privateKey: privateKeyB64, publicKey: publicKeyB64)
+    }
+
+    /// Derive a shared 256-bit key from our X25519 private key and a peer's X25519 public key.
+    /// Uses HKDF-SHA256 with the WiredPart sync info string as domain separation.
+    /// Returns raw key bytes (32 bytes).
+    public static func deriveSharedKeyData(
+        ourPrivateKeyB64: String,
+        theirPublicKeyB64: String
+    ) throws -> Data {
+        guard let ourRaw = Data(base64Encoded: ourPrivateKeyB64) else {
+            throw CryptoError.invalidBase64("our private key")
+        }
+        guard let theirRaw = Data(base64Encoded: theirPublicKeyB64) else {
+            throw CryptoError.invalidBase64("their public key")
+        }
+        let ourKey = try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: ourRaw)
+        let theirKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: theirRaw)
+        let sharedSecret = try ourKey.sharedSecretFromKeyAgreement(with: theirKey)
+        let symmetricKey = sharedSecret.hkdfDerivedSymmetricKey(
+            using: SHA256.self,
+            salt: Data(),
+            sharedInfo: Data("wiredpart-sync-v1".utf8),
+            outputByteCount: 32
+        )
+        return symmetricKey.withUnsafeBytes { Data($0) }
+    }
+
+    // MARK: - AES-GCM Payload Encryption
+
+    /// Encrypt data using AES-GCM.
+    /// Returns the sealed box combined bytes: nonce (12) + ciphertext + tag (16).
+    public static func encryptAESGCM(data: Data, keyData: Data) throws -> Data {
+        let key = SymmetricKey(data: keyData)
+        let sealedBox = try AES.GCM.seal(data, using: key)
+        guard let combined = sealedBox.combined else {
+            throw CryptoError.encryptionFailed
+        }
+        return combined
+    }
+
+    /// Decrypt AES-GCM sealed box bytes (nonce + ciphertext + tag).
+    public static func decryptAESGCM(data: Data, keyData: Data) throws -> Data {
+        let key = SymmetricKey(data: keyData)
+        let sealedBox = try AES.GCM.SealedBox(combined: data)
+        return try AES.GCM.open(sealedBox, using: key)
+    }
+
     // MARK: - Errors
 
     public enum CryptoError: Error, LocalizedError {
         case invalidBase64(String)
+        case encryptionFailed
 
         public var errorDescription: String? {
             switch self {
             case .invalidBase64(let field):
                 return "Invalid base64 encoding in \(field)"
+            case .encryptionFailed:
+                return "AES-GCM encryption failed (combined representation unavailable)"
             }
         }
     }

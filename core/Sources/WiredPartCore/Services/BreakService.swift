@@ -280,7 +280,7 @@ public final class BreakService: Sendable {
         guard settings.autoFillBreaks else { return }
 
         let existing = try getBreakRecordsForDay(userId: userId, date: date)
-        let dateStr = Self.formatDate(date)
+        let dateStr = Self.formatDateUTC(date)  // must match the UTC date used in getBreakRecordsForDay
 
         do { try db.writer.write { dbConn in
             // Auto-fill morning break if missing

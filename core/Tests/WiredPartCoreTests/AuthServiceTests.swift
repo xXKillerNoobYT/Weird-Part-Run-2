@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import GRDB
+import CryptoKit
 @testable import WiredPartCore
 
 @Suite("AuthService Tests")
@@ -231,6 +232,75 @@ struct AuthServiceTests {
         #expect(throws: AuthService.AuthError.self) {
             _ = try auth.getLocalUserProfile(token: "garbage-token")
         }
+    }
+
+    // MARK: - Legacy PIN Hash Tracking (PE-008c)
+
+    @Test("getLegacyHashedUserCount returns 0 when all users have pin_salt")
+    func testLegacyCountZeroWhenSalted() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+        #expect(try auth.getLegacyHashedUserCount() == 0)
+    }
+
+    @Test("getLegacyHashedUserCount returns 1 for user with NULL pin_salt")
+    func testLegacyCountOneLegacyUser() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "INSERT INTO users (display_name, pin_hash, pin_salt, is_active) VALUES ('Legacy', 'deadbeef', NULL, 1)"
+            )
+        }
+
+        #expect(try auth.getLegacyHashedUserCount() == 1)
+    }
+
+    @Test("getLegacyHashedUserCount ignores placeholder hashes and inactive users")
+    func testLegacyCountIgnoresPlaceholdersAndInactive() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "INSERT INTO users (display_name, pin_hash, pin_salt, is_active) VALUES ('PH', '__PLACEHOLDER_HASH__', NULL, 1)"
+            )
+            try dbConn.execute(
+                sql: "INSERT INTO users (display_name, pin_hash, pin_salt, is_active) VALUES ('Inactive', 'oldhash', NULL, 0)"
+            )
+        }
+
+        #expect(try auth.getLegacyHashedUserCount() == 0)
+    }
+
+    @Test("getLegacyHashedUserCount drops to 0 after legacy user logs in")
+    func testLegacyCountDecrementOnLogin() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "5555")
+
+        // Build a legacy hash (SHA256("9999:wiredpart") with no iterations, no per-user salt)
+        let legacyHash = SHA256.hash(data: Data("9999:wiredpart".utf8))
+            .map { String(format: "%02x", $0) }.joined()
+
+        var legacyUserId: Int64 = 0
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "INSERT INTO users (display_name, pin_hash, pin_salt, is_active) VALUES ('Worker', ?, NULL, 1)",
+                arguments: [legacyHash]
+            )
+            legacyUserId = dbConn.lastInsertedRowID
+        }
+
+        #expect(try auth.getLegacyHashedUserCount() == 1)
+
+        // Login triggers automatic re-hash with a per-user salt
+        let result = try auth.authenticateByPin(userId: legacyUserId, pin: "9999")
+        #expect(result.success)
+        #expect(try auth.getLegacyHashedUserCount() == 0)
     }
 
     // MARK: - Active Users

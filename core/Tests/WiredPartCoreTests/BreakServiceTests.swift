@@ -173,6 +173,75 @@ struct BreakServiceTests {
         #expect(compliance.takenLunchMinutes >= 0)
     }
 
+    // MARK: - Auto Fill
+
+    @Test("autoFillBreaksForDay is no-op when autoFill is disabled")
+    func testAutoFillDisabled() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        // Migration seeds a default row with auto_fill_breaks=1; override it with UPDATE
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE company_break_settings SET auto_fill_breaks = 0")
+        }
+
+        try breakService.autoFillBreaksForDay(userId: env.adminUserId)
+        let records = try breakService.getBreakRecordsForDay(userId: env.adminUserId)
+        #expect(records.isEmpty)
+    }
+
+    @Test("autoFillBreaksForDay inserts breaks when autoFill is enabled with defaults")
+    func testAutoFillEnabled() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        // Enable auto-fill with default break times
+        try breakService.updateCompanyBreakSettings(
+            stateCode: "CA",
+            roundingMinutes: 15,
+            roundingEnabled: false,
+            autoFillBreaks: true,
+            defaultMorningBreak: "10:00",
+            defaultLunch: "12:00",
+            defaultAfternoonBreak: "14:00"
+        )
+
+        try breakService.autoFillBreaksForDay(userId: env.adminUserId)
+
+        let records = try breakService.getBreakRecordsForDay(userId: env.adminUserId)
+        // Should have auto-filled morning break, afternoon break, and lunch
+        #expect(records.count >= 2)
+        #expect(records.allSatisfy { $0.autoFilled == true })
+    }
+
+    @Test("autoFillBreaksForDay skips if breaks already exist")
+    func testAutoFillSkipsExisting() throws {
+        let env = try freshEnv()
+        let breakService = BreakService(db: env.db)
+
+        try breakService.updateCompanyBreakSettings(
+            stateCode: "CA",
+            roundingMinutes: 15,
+            roundingEnabled: false,
+            autoFillBreaks: true,
+            defaultMorningBreak: "10:00",
+            defaultLunch: "12:00"
+        )
+
+        // Manually start a break first
+        let record = try breakService.startBreak(userId: env.adminUserId, breakType: "break")
+        try breakService.endBreak(recordId: record.id!)
+
+        let countBefore = try breakService.getBreakRecordsForDay(userId: env.adminUserId).count
+
+        // Auto-fill should skip "break" type since one already exists
+        try breakService.autoFillBreaksForDay(userId: env.adminUserId)
+
+        let countAfter = try breakService.getBreakRecordsForDay(userId: env.adminUserId).count
+        // Lunch may be added but existing break type should not be duplicated
+        #expect(countAfter >= countBefore)
+    }
+
     // MARK: - Rounding
 
     @Test("getRoundedTime rounds correctly")

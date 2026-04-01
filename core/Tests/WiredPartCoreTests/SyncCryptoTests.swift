@@ -184,6 +184,93 @@ struct SyncCryptoTests {
         #expect(result == .verified(deviceId: "dev-1", companyId: "co-1"))
     }
 
+    // MARK: - X25519 Key Agreement + AES-GCM
+
+    @Test("generateKeyAgreementPair produces 32-byte base64 keys")
+    func testGenerateKeyAgreementPair() {
+        let (priv, pub) = SyncCrypto.generateKeyAgreementPair()
+        #expect(!priv.isEmpty)
+        #expect(!pub.isEmpty)
+        let privData = Data(base64Encoded: priv)
+        let pubData = Data(base64Encoded: pub)
+        #expect(privData?.count == 32)
+        #expect(pubData?.count == 32)
+    }
+
+    @Test("Two devices derive the same shared key via ECDH")
+    func testECDHSharedKeySymmetry() throws {
+        let (privA, pubA) = SyncCrypto.generateKeyAgreementPair()
+        let (privB, pubB) = SyncCrypto.generateKeyAgreementPair()
+
+        let keyAB = try SyncCrypto.deriveSharedKeyData(ourPrivateKeyB64: privA, theirPublicKeyB64: pubB)
+        let keyBA = try SyncCrypto.deriveSharedKeyData(ourPrivateKeyB64: privB, theirPublicKeyB64: pubA)
+
+        #expect(keyAB == keyBA)
+        #expect(keyAB.count == 32)
+    }
+
+    @Test("Different peer pairs produce different shared keys")
+    func testECDHUniqueness() throws {
+        let (privA, _) = SyncCrypto.generateKeyAgreementPair()
+        let (_, pubB) = SyncCrypto.generateKeyAgreementPair()
+        let (_, pubC) = SyncCrypto.generateKeyAgreementPair()
+
+        let keyAB = try SyncCrypto.deriveSharedKeyData(ourPrivateKeyB64: privA, theirPublicKeyB64: pubB)
+        let keyAC = try SyncCrypto.deriveSharedKeyData(ourPrivateKeyB64: privA, theirPublicKeyB64: pubC)
+
+        #expect(keyAB != keyAC)
+    }
+
+    @Test("AES-GCM encrypt/decrypt round-trip")
+    func testAESGCMRoundTrip() throws {
+        let (privA, pubA) = SyncCrypto.generateKeyAgreementPair()
+        let (privB, pubB) = SyncCrypto.generateKeyAgreementPair()
+        let keyData = try SyncCrypto.deriveSharedKeyData(ourPrivateKeyB64: privA, theirPublicKeyB64: pubB)
+
+        let plaintext = Data("{\"device_id\":\"test\",\"changes\":[]}".utf8)
+        let encrypted = try SyncCrypto.encryptAESGCM(data: plaintext, keyData: keyData)
+
+        // Encrypted output must differ from plaintext
+        #expect(encrypted != plaintext)
+        // Nonce (12) + at least 1 byte ciphertext + tag (16)
+        #expect(encrypted.count >= 29)
+
+        // Decrypt from the other side using the symmetric key
+        let receiverKeyData = try SyncCrypto.deriveSharedKeyData(ourPrivateKeyB64: privB, theirPublicKeyB64: pubA)
+        let decrypted = try SyncCrypto.decryptAESGCM(data: encrypted, keyData: receiverKeyData)
+
+        #expect(decrypted == plaintext)
+    }
+
+    @Test("AES-GCM detects tampered ciphertext")
+    func testAESGCMTamperDetection() throws {
+        let (priv, pub) = SyncCrypto.generateKeyAgreementPair()
+        let keyData = try SyncCrypto.deriveSharedKeyData(ourPrivateKeyB64: priv, theirPublicKeyB64: pub)
+
+        let plaintext = Data("sensitive sync payload".utf8)
+        var encrypted = try SyncCrypto.encryptAESGCM(data: plaintext, keyData: keyData)
+
+        // Flip a byte in the ciphertext (after the 12-byte nonce)
+        encrypted[15] ^= 0xFF
+
+        do {
+            _ = try SyncCrypto.decryptAESGCM(data: encrypted, keyData: keyData)
+            Issue.record("Expected decryption to throw on tampered data")
+        } catch {
+            // Expected: AES-GCM authentication tag mismatch
+        }
+    }
+
+    @Test("deriveSharedKeyData rejects invalid base64")
+    func testDeriveSharedKeyInvalidBase64() {
+        do {
+            _ = try SyncCrypto.deriveSharedKeyData(ourPrivateKeyB64: "!!!bad", theirPublicKeyB64: "also-bad")
+            Issue.record("Expected throw for invalid base64")
+        } catch {
+            // Expected
+        }
+    }
+
     // MARK: - Key Generation + Signing Round-Trip
 
     @Test("generateKeyPair + sign + verify round-trip")

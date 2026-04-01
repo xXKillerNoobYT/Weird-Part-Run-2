@@ -111,6 +111,13 @@ public struct SyncStatusResponse: Codable, Sendable {
     }
 }
 
+// MARK: - Sync Key Response
+
+/// Response body for GET /sync/key.
+public struct SyncKeyResponse: Codable, Sendable {
+    public let key: String  // base64-encoded X25519 KA public key
+}
+
 // MARK: - Server State (Actor)
 
 /// Thread-safe shared state for the sync server.
@@ -127,6 +134,12 @@ public actor SyncServerState {
     public var companyPublicKey: String?     // nil = Phase 4 compat (no cert required)
     public var lastSyncAt: String?
 
+    /// X25519 key agreement public key (base64). Shared with peers via GET /sync/key.
+    /// Peers use this to derive a shared AES-GCM key for payload encryption.
+    /// Marked nonisolated: it's a let set at init and never changes.
+    public nonisolated let kaPublicKeyB64: String
+    nonisolated let kaPrivateKeyB64: String    // only used within server handlers
+
     public init(
         deviceId: String,
         deviceName: String,
@@ -137,6 +150,9 @@ public actor SyncServerState {
         self.deviceName = deviceName
         self.companyId = companyId
         self.companyPublicKey = companyPublicKey
+        let (priv, pub) = SyncCrypto.generateKeyAgreementPair()
+        self.kaPrivateKeyB64 = priv
+        self.kaPublicKeyB64 = pub
     }
 
     public func appendToInbox(_ changes: [IncomingChange]) {
@@ -356,11 +372,14 @@ public final class LanSyncServer: Sendable {
         case ("GET", "/sync/status"):
             return await handleStatus(state: state)
 
+        case ("GET", "/sync/key"):
+            return await handleKeyExchange(state: state)
+
         case ("POST", "/sync/push"):
-            return await handlePush(body: request.body, state: state)
+            return await handlePush(body: request.body, headers: request.headers, state: state)
 
         case ("POST", "/sync/pull"):
-            return await handlePull(body: request.body, state: state)
+            return await handlePull(body: request.body, headers: request.headers, state: state)
 
         default:
             let json = #"{"error":"not_found"}"#
@@ -452,11 +471,33 @@ public final class LanSyncServer: Sendable {
         return (200, data)
     }
 
+    /// Return this server's X25519 key agreement public key.
+    /// Peers call this before their first encrypted sync to set up the shared key.
+    private static func handleKeyExchange(state: SyncServerState) async -> (Int, Data) {
+        let pubKey = state.kaPublicKeyB64
+        let response = SyncKeyResponse(key: pubKey)
+        let encoder = JSONEncoder()
+        let data = (try? encoder.encode(response)) ?? Data()
+        return (200, data)
+    }
+
     private static func handlePush(
         body: Data,
+        headers: [String: String],
         state: SyncServerState
     ) async -> (Int, Data) {
-        guard let request = try? JSONDecoder().decode(SyncPushRequest.self, from: body) else {
+        // Decrypt body if sender used payload encryption
+        let (plainBody, sharedKeyData) = await decryptIfNeeded(
+            body: body,
+            headers: headers,
+            state: state
+        )
+        guard let plainBody else {
+            let json = #"{"error":"decryption_failed"}"#
+            return (400, Data(json.utf8))
+        }
+
+        guard let request = try? JSONDecoder().decode(SyncPushRequest.self, from: plainBody) else {
             let json = #"{"error":"invalid_json"}"#
             return (400, Data(json.utf8))
         }
@@ -479,15 +520,27 @@ public final class LanSyncServer: Sendable {
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let data = (try? encoder.encode(response)) ?? Data()
-        return (200, data)
+        let responseData = (try? encoder.encode(response)) ?? Data()
+        return encryptIfNeeded(responseData, sharedKeyData: sharedKeyData)
     }
 
     private static func handlePull(
         body: Data,
+        headers: [String: String],
         state: SyncServerState
     ) async -> (Int, Data) {
-        guard let request = try? JSONDecoder().decode(SyncPullRequest.self, from: body) else {
+        // Decrypt body if sender used payload encryption
+        let (plainBody, sharedKeyData) = await decryptIfNeeded(
+            body: body,
+            headers: headers,
+            state: state
+        )
+        guard let plainBody else {
+            let json = #"{"error":"decryption_failed"}"#
+            return (400, Data(json.utf8))
+        }
+
+        guard let request = try? JSONDecoder().decode(SyncPullRequest.self, from: plainBody) else {
             let json = #"{"error":"invalid_json"}"#
             return (400, Data(json.utf8))
         }
@@ -514,8 +567,44 @@ public final class LanSyncServer: Sendable {
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let data = (try? encoder.encode(response)) ?? Data()
-        return (200, data)
+        let responseData = (try? encoder.encode(response)) ?? Data()
+        return encryptIfNeeded(responseData, sharedKeyData: sharedKeyData)
+    }
+
+    /// Decrypt the body if the request carries encryption headers.
+    /// Returns the plain body and the shared key data (for response encryption),
+    /// or (nil, nil) if decryption was attempted but failed.
+    /// If the request is not encrypted, returns (body, nil) unchanged.
+    private static func decryptIfNeeded(
+        body: Data,
+        headers: [String: String],
+        state: SyncServerState
+    ) async -> (plainBody: Data?, sharedKeyData: Data?) {
+        guard headers["x-sync-encrypted"] == "1",
+              let senderKAKey = headers["x-sync-sender-key"],
+              !senderKAKey.isEmpty else {
+            return (body, nil)  // Not encrypted — pass through
+        }
+        let ourPrivateKey = state.kaPrivateKeyB64
+        guard let keyData = try? SyncCrypto.deriveSharedKeyData(
+            ourPrivateKeyB64: ourPrivateKey,
+            theirPublicKeyB64: senderKAKey
+        ) else { return (nil, nil) }
+
+        guard let plainBody = try? SyncCrypto.decryptAESGCM(data: body, keyData: keyData) else {
+            return (nil, nil)
+        }
+        return (plainBody, keyData)
+    }
+
+    /// Encrypt response data if a shared key is available (i.e. request was encrypted).
+    /// Falls back to plaintext on failure.
+    private static func encryptIfNeeded(_ data: Data, sharedKeyData: Data?) -> (Int, Data) {
+        guard let keyData = sharedKeyData,
+              let encrypted = try? SyncCrypto.encryptAESGCM(data: data, keyData: keyData) else {
+            return (200, data)
+        }
+        return (200, encrypted)
     }
 
     // MARK: - Auth

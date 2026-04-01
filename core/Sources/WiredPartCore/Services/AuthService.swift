@@ -581,6 +581,28 @@ public final class AuthService: Sendable {
         return false
     }
 
+    // MARK: - PIN Upgrade Tracking
+
+    /// Count of active users still using the legacy fixed-salt PIN hash (pre-migration 023).
+    /// These users will be upgraded automatically on their next successful login.
+    /// Returns 0 once all users have logged in since the migration.
+    ///
+    /// Admins can use this to monitor upgrade progress in the People → Permissions area.
+    public func getLegacyHashedUserCount() throws -> Int {
+        try db.writer.read { dbConn in
+            try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT COUNT(*) FROM users
+                    WHERE is_active = 1
+                      AND pin_salt IS NULL
+                      AND pin_hash NOT LIKE '$2b$%'
+                      AND pin_hash != '__PLACEHOLDER_HASH__'
+                    """
+            ) ?? 0
+        }
+    }
+
     // MARK: - User Management
 
     /// Create a new user (employee). Returns the new user's ID.
