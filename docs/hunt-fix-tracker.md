@@ -1,7 +1,7 @@
 # Hunt-Fix-Verify Loop Tracker
 
 > **Started:** 2026-03-28
-> **Status:** PHASE 1 COMPLETE — 12 iterations, 75 bugs fixed, 790 tests passing, all prompts archived. Latest: Iteration 12 (2026-03-31) — security + SQL fixes.
+> **Status:** PHASE 1 COMPLETE — 13 iterations, 84 bugs fixed, 790 tests passing, all prompts archived. Latest: Iteration 13 (2026-03-31) — dev-improvement-scanner: 9 force unwraps eliminated across 6 core service files.
 
 ---
 
@@ -398,6 +398,38 @@ These bugs were in `generateToolCheckoutsReport` — would crash any time a user
 
 ---
 
+### Iteration 13 — dev-improvement-scanner: Force Unwraps + Full Audit (2026-03-31)
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Compile | ✅ | 0 errors, 0 warnings |
+| Tests | ✅ | 790/790 passing |
+| Code Patterns (Part A) | ⚠️→✅ | 9 force unwraps found in core, all fixed |
+| Code Patterns (Part C — HIG) | ⚠️ | 1 hardcoded font size in PartsForecastingPage.swift:349 (`size: 8`) — PE-009 backlog |
+| Security (Part B) | ⚠️ | Legacy salt `:wiredpart` still present — PE-008c still open |
+| UX Gaps (Part D) | ⚠️ | Pull-to-refresh: 0 views use `.refreshable` — iOS pattern relies on `.task` reload |
+| Data Integrity (Part E) | ⚠️ | DashboardService tests use `>= 0` weak assertions; PE-023 filed |
+
+**Force unwraps fixed (9 total, 6 files):**
+| File | Line | Fix |
+|------|------|-----|
+| `PartsService.swift` | 3831 | `Calendar.current.date(byAdding:)!` → nil-coalescing |
+| `PartsService.swift` | 3902 | `Calendar.current.date(byAdding:)!` → nil-coalescing |
+| `PartsService.swift` | 4060 | `Calendar.current.date(byAdding:)!` → nil-coalescing |
+| `PartsService.swift` | 4137 | `Calendar.current.date(byAdding:)!` → nil-coalescing |
+| `PartsService.swift` | 4617 | `Calendar.current.date(byAdding:)!` → nil-coalescing |
+| `PartsService.swift` | 5117 | `Calendar.current.date(byAdding:)!` → nil-coalescing |
+| `NotebooksService.swift` | 566 | `Calendar.current.date(byAdding:)!` → nil-coalescing |
+| `PeopleService.swift` | 1150 | `Calendar.current.date(byAdding:)!` → nil-coalescing |
+| `JobsService.swift` | 689 | `Calendar.current.date(byAdding:)!` → nil-coalescing |
+| `OrdersService.swift` | 1059-1060 | `partDemand[partId]!.sources` → `partDemand[partId]?.sources` |
+| `SettingsService.swift` | 184 | `grouped[cat]![key]` → `grouped[cat]?[key]` |
+
+**New issues filed:** PE-023 (weak test assertions)
+
+---
+
 ## Cumulative Progress
 
 | Metric | Baseline | Current | Delta |
@@ -415,6 +447,7 @@ These bugs were in `generateToolCheckoutsReport` — would crash any time a user
 | Empty catches | 20+ | 3 truly silent | -17 |
 | Force casts | 0 | 0 | = |
 | Force unwraps in core | 4 | 0 | **-4** (Iter 11) |
+| Force unwraps in core (new scan) | 9 | 0 | **-9** (Iter 13, dev-improvement-scanner) |
 
 ---
 

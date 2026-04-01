@@ -2999,3 +2999,32 @@ All 136 prompts verified and implemented. Program ready for review.
 - Error states: loading spinner, error message, "not found" content unavailable view
 - Done button in toolbar for sheet dismissal
 - Build: PASS (zero errors)
+
+## Prompt PE-009a — Dynamic Type: Replace Hardcoded Font Sizes (2026-03-31)
+
+**Status:** SUCCESS
+**Files Changed:** PartsForecastingPage.swift
+**What Was Done:**
+- Searched entire `Weird Parts IOS/` directory for `.font(.system(size:` instances
+- Found 6 matches total; 5 are non-text (icons, design system internals, comments) — correctly excluded per prompt rules
+- Fixed 1 remaining text instance: `PartsForecastingPage.swift:349` — urgency label ("Critical"/"Warning"/"Healthy") changed from `.font(.system(size: 8, weight: .semibold))` to `.font(.caption2.weight(.semibold))`
+- Prior accessibility pass (commit 38ca2bb) had already fixed the other ~54 instances across 24+ files
+- Post-fix: 0 instances of `.font(.system(size:` remain in Features/ folder
+**Issues Found:**
+- Scope was much smaller than expected — most work was already done in the prior Dynamic Type accessibility pass
+**Build:** PASS (zero diagnostics on changed file)
+
+## Prompt PE-009b — Tap Target Sizes: Minimum 44×44pt (2026-03-31)
+
+**Status:** SUCCESS
+**Files Changed:** ReportBuilderView.swift, IOSWarehouseLeaderboardPage.swift, IOSMovementWizard.swift, CategoriesTreeView.swift, WarehouseMovementsPage.swift, IOSOrganizationAuditPage.swift, IOSAuditPage.swift, IOSJobDetailTabView.swift, IOSClockPage.swift, WarehouseOnboardingWizard.swift
+**What Was Done:**
+- Applied `.frame(minWidth: 44, minHeight: 44)` to all 13 identified undersized elements across 10 files
+- For horizontal steppers (ReportBuilder, MovementWizard): used `.frame(minHeight: 44)` only to preserve horizontal layout
+- For all other elements: used `.frame(minWidth: 44, minHeight: 44)` to ensure full 44×44pt minimum
+- Most critical fix: CategoriesTreeView color swatch expanded from 14×14 → 44×44 layout area while keeping 14×14 visual dot
+- Visual sizes preserved everywhere — only layout/hit areas expanded
+- All 10 files pass Xcode live diagnostics with zero issues
+**Issues Found:**
+- None
+**Build:** PASS (zero diagnostics across all 10 modified files)
