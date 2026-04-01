@@ -39,7 +39,8 @@ struct BreakServiceTests {
         _ = try breakService.savePolicy(stateCode: "TX", policyType: "state")
 
         let policies = try breakService.getAllPolicies()
-        #expect(policies.count >= 2)
+        // Migration seeds 1 default WY policy; CA and TX add 2 more = 3 total
+        #expect(policies.count == 3)
     }
 
     @Test("Get break policy by state code")
@@ -163,14 +164,25 @@ struct BreakServiceTests {
 
     // MARK: - Compliance
 
-    @Test("Calculate break compliance for user")
+    @Test("Break compliance reflects completed lunch break duration")
     func testBreakCompliance() throws {
         let env = try freshEnv()
         let breakService = BreakService(db: env.db)
 
+        // Insert a completed lunch break record with durationMinutes = 30 directly.
+        // (using startBreak/endBreak yields ~0 minutes since tests run instantly)
+        // getBreakRecordsForDay filters by substr(started_at, 1, 10) == formatDateUTC(Date())
+        // which uses UTC. Use date('now') here so both sides produce the same UTC date string.
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO break_records
+                    (user_id, break_type, started_at, ended_at, duration_minutes, is_paid, auto_filled)
+                VALUES (?, 'lunch', date('now') || 'T12:00:00', date('now') || 'T12:30:00', 30, 1, 0)
+                """, arguments: [env.adminUserId])
+        }
+
         let compliance = try breakService.calculateBreakCompliance(userId: env.adminUserId)
-        // With no labor entries, compliance should still compute without error
-        #expect(compliance.takenLunchMinutes >= 0)
+        #expect(compliance.takenLunchMinutes == 30)
     }
 
     // MARK: - Auto Fill
@@ -209,8 +221,8 @@ struct BreakServiceTests {
         try breakService.autoFillBreaksForDay(userId: env.adminUserId)
 
         let records = try breakService.getBreakRecordsForDay(userId: env.adminUserId)
-        // Should have auto-filled morning break, afternoon break, and lunch
-        #expect(records.count >= 2)
+        // morning break + afternoon break + lunch = 3 auto-filled records
+        #expect(records.count == 3)
         #expect(records.allSatisfy { $0.autoFilled == true })
     }
 
@@ -249,8 +261,9 @@ struct BreakServiceTests {
         let env = try freshEnv()
         let breakService = BreakService(db: env.db)
 
+        // Integer floor division: 7 / 15 = 0 → 0 * 15 = 0 → "10:00"
         let rounded = breakService.getRoundedTime(time: "10:07", roundingMinutes: 15)
-        #expect(rounded == "10:00" || rounded == "10:15")
+        #expect(rounded == "10:00")
 
         // 10:16 should round down to 10:15
         let rounded2 = breakService.getRoundedTime(time: "10:16", roundingMinutes: 15)

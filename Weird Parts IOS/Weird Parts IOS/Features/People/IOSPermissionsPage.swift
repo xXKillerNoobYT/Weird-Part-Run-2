@@ -14,6 +14,7 @@ struct IOSPermissionsPage: View {
     @State private var selectedHat: PeopleService.HatListItem?
     @State private var hatPermissions: [String] = []
     @State private var activeSheet: ActiveSheet?
+    @State private var legacyPinCount: Int = 0
 
     private enum ActiveSheet: Identifiable {
         case help
@@ -97,7 +98,10 @@ struct IOSPermissionsPage: View {
             )
         }
         .refreshable { loadData() }
-        .task { loadData() }
+        .task { loadData(); loadLegacyPinCount() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            loadLegacyPinCount()
+        }
     }
 
     // MARK: - Content
@@ -105,9 +109,34 @@ struct IOSPermissionsPage: View {
     @ViewBuilder
     private var permissionsContent: some View {
         VStack(spacing: 0) {
+            if legacyPinCount > 0 {
+                legacyPinBanner
+            }
             hatSelector
             permissionsList
         }
+    }
+
+    private var legacyPinBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "lock.trianglebadge.exclamationmark.fill")
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(legacyPinCount) user\(legacyPinCount == 1 ? "" : "s") need a PIN upgrade")
+                    .font(.subheadline.bold())
+                Text("They will be upgraded automatically on their next login.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal)
+        .padding(.top, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(legacyPinCount) user\(legacyPinCount == 1 ? "" : "s") need a PIN security upgrade. They will be upgraded automatically on their next login.")
     }
 
     private var hatSelector: some View {
@@ -213,6 +242,10 @@ struct IOSPermissionsPage: View {
         } catch {
             loadError = userFriendlyError(error, context: "update permission")
         }
+    }
+
+    private func loadLegacyPinCount() {
+        legacyPinCount = (try? appCore.authService?.getLegacyHashedUserCount()) ?? 0
     }
 
     // MARK: - Data Loading

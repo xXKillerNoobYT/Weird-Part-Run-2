@@ -490,7 +490,7 @@ public enum ConflictResolver {
         // Apply merged fields
         if !mergedData.isEmpty {
             let setClauses = mergedData.keys.sorted().map { "\"\($0)\" = ?" }.joined(separator: ", ")
-            let values = mergedData.keys.sorted().map { mergedData[$0]! }
+            let values = mergedData.keys.sorted().compactMap { mergedData[$0] }
             var args: [any DatabaseValueConvertible] = values
             args.append(recordId)
 

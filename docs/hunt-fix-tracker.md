@@ -1,7 +1,7 @@
 # Hunt-Fix-Verify Loop Tracker
 
 > **Started:** 2026-03-28
-> **Status:** PHASE 1 COMPLETE — 13 iterations, 84 bugs fixed, 790 tests passing, all prompts archived. Latest: Iteration 13 (2026-03-31) — dev-improvement-scanner: 9 force unwraps eliminated across 6 core service files.
+> **Status:** PHASE 1 COMPLETE — 14 iterations, 88 bugs fixed. Latest: Iteration 15 (2026-03-31) — test-coverage-maintenance: 828 tests passing (+28 new). Added 15 JobsService tests (getJobsForCustomer, warrantyDaysRemaining, setClockEntryWorkType, linkClockEntryToTodo, clockOutResponses, oneTimeQuestions, getTotalPartsCost, listActiveJobsForClock, listAllJobStages, getJobTodoSummary) + 13 SettingsService tests (businessProfile CRUD, backupInfo, updateSettings, clockOutQuestions CRUD, listDatabaseTables, exportTable, getActiveDeviceKey, listBootstrapDevices, listIntegrations, upsertSettingsMap). Fixed 3 pre-existing test bugs: BreakService policy count (seeded default WY policy), DashboardService UTC/local timezone mismatch in labor chart test. Identified pre-existing AuthService parallel-run flakiness (shared static rate-limiter state — intermittent under full parallel suite).
 
 ---
 
@@ -430,6 +430,38 @@ These bugs were in `generateToolCheckoutsReport` — would crash any time a user
 
 ---
 
+### Iteration 14 — dev-improvement-scanner: Hardcoded User IDs + Force Unwraps (2026-03-31)
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Compile | ✅ | 0 errors, 0 warnings |
+| Tests | ✅ | 790/790 passing |
+| Code Patterns (Part A) | ⚠️→✅ | 2 force unwraps in core data layer fixed (BaseRepository, ConflictResolver) |
+| Security (Part B) | ⚠️→✅ | 4 hardcoded user IDs fixed (AITools ×2, QRScanner ×2) |
+| HIG / UX | ℹ️ | No new violations found this run |
+
+**Force unwraps fixed (2 total, 2 files):**
+| File | Line | Fix |
+|------|------|-----|
+| `BaseRepository.swift` | 129 | `keys.map { data[$0]! }` → `keys.compactMap { data[$0] }` |
+| `ConflictResolver.swift` | 493 | `mergedData.keys.sorted().map { mergedData[$0]! }` → `compactMap` |
+
+**Hardcoded user IDs fixed (4 occurrences across 4 files):**
+| File | Lines | Fix |
+|------|-------|-----|
+| `AITools.swift` (GetActiveCompanionPollsTool) | 225,235 | Added `userId: Int64` to init; replaced `userId: 0` with real userId |
+| `AITools.swift` (GetVotingSummaryTool) | 329,339 | Added `userId: Int64` to init; replaced `userId: 0` with real userId |
+| `FoundationModelsService.swift` | 327 | Added `userId: Int64 = 0` param to `chatWithTools`; forwarded to both poll tools |
+| `IOSAIAssistantPanel.swift` | 535 | Passed `userId: appCore.currentUser?.id ?? 0` to `chatWithTools` |
+| `IOSDashboardQRScannerPage.swift` | 143,599 | `userId: 1` → guard-let `appCore.currentUser?.id` |
+
+**Impact:** AI companion polls now correctly show per-user voting context. QR scanner warehouse position now attributed to the authenticated user instead of always user 1.
+
+**New issues filed:** None — all found issues auto-fixed.
+
+---
+
 ## Cumulative Progress
 
 | Metric | Baseline | Current | Delta |
@@ -448,6 +480,9 @@ These bugs were in `generateToolCheckoutsReport` — would crash any time a user
 | Force casts | 0 | 0 | = |
 | Force unwraps in core | 4 | 0 | **-4** (Iter 11) |
 | Force unwraps in core (new scan) | 9 | 0 | **-9** (Iter 13, dev-improvement-scanner) |
+| Force unwraps in core (Iter 14) | 2 | 0 | **-2** (BaseRepository, ConflictResolver) |
+| Hardcoded user IDs | 4 | 0 | **-4** (AITools ×2, QRScanner ×2 — Iter 14) |
+| iOS files fixed | 9 | **11** | +2 (IOSAIAssistantPanel, IOSDashboardQRScannerPage) |
 
 ---
 

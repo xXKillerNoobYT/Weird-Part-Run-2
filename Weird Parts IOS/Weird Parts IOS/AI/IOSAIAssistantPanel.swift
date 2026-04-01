@@ -536,6 +536,7 @@ struct IOSAIAssistantPanel: View {
                 query: queryText,
                 db: db,
                 permissions: appCore.permissions,
+                userId: appCore.currentUser?.id ?? 0,
                 navigationContext: navContext,
                 conversationId: conversationId
             )

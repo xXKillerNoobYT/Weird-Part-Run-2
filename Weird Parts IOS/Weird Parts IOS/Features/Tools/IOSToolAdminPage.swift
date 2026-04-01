@@ -28,7 +28,7 @@ struct IOSToolAdminPage: View {
                 toolsContent
             }
         }
-        .navigationTitle("Tool Admin")
+        .navigationTitle("Management")
         .searchable(text: $searchText, prompt: "Search tools...")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -40,9 +40,9 @@ struct IOSToolAdminPage: View {
         }
         .sheet(item: $activeSheet) { _ in
             PageHelpSheet(
-                title: "Tool Admin Help",
+                title: "Management Help",
                 sections: [
-                    ("What This Page Does", "Tool Admin is the management view for supervisors and office staff. It provides an overview of tool counts by status along with a complete searchable list of every tool in the system."),
+                    ("What This Page Does", "Management is the management view for supervisors and office staff. It provides an overview of tool counts by status along with a complete searchable list of every tool in the system."),
                     ("Overview Section", "The top section shows key counts: total tools, how many are checked out, and how many are in maintenance. These numbers update when you pull to refresh."),
                     ("All Tools List", "Below the overview is the full tool list with status badges. Tap any tool to open its detail page where you can edit information, change status, manage checkouts, and view history."),
                     ("Searching", "Use the search bar to find tools by name or serial number. The count next to 'All Tools' updates to reflect your filtered results."),

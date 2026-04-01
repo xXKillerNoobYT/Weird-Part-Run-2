@@ -210,6 +210,23 @@ public final class PeopleService: Sendable {
         }
     }
 
+    /// A user assigned to a hat (for HatDetailSheet member list).
+    public struct HatMember: Sendable, Identifiable {
+        public let id: Int64
+        public let displayName: String
+        public let phone: String?
+        public let email: String?
+        public let assignedAt: String?
+
+        public init(id: Int64, displayName: String, phone: String?, email: String?, assignedAt: String?) {
+            self.id = id
+            self.displayName = displayName
+            self.phone = phone
+            self.email = email
+            self.assignedAt = assignedAt
+        }
+    }
+
     /// Aggregate people statistics.
     public struct PeopleStats: Sendable {
         public let totalEmployees: Int
@@ -582,6 +599,39 @@ public final class PeopleService: Sendable {
                         name: row["name"] ?? "",
                         description: row["description"] as String?,
                         userCount: row["user_count"] ?? 0
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Fetch all active users assigned to a given hat (for the HatDetailSheet member list).
+    ///
+    /// - Parameter hatId: The hat to look up.
+    /// - Returns: Users with an active (non-soft-deleted) assignment for this hat, sorted by name.
+    public func getHatMembers(hatId: Int64) throws -> [HatMember] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT u.id, u.display_name, u.phone, u.email, uh.created_at AS assigned_at
+                    FROM user_hats uh
+                    JOIN users u ON u.id = uh.user_id
+                    WHERE uh.hat_id = ?
+                      AND uh.deleted_at IS NULL
+                      AND u.deleted_at IS NULL
+                      AND u.is_active = 1
+                    ORDER BY u.display_name ASC
+                    """, arguments: [hatId])
+                return rows.map { row in
+                    HatMember(
+                        id: row["id"] ?? 0,
+                        displayName: row["display_name"] ?? "",
+                        phone: row["phone"] as String?,
+                        email: row["email"] as String?,
+                        assignedAt: row["assigned_at"] as String?
                     )
                 }
             }

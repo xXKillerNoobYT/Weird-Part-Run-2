@@ -442,9 +442,9 @@ struct HelpContentRegistry {
 
         HelpEntry(
             pageId: "tools-registry",
-            title: "Tool Registry Help",
+            title: "All Tools Help",
             sections: [
-                ("What This Page Does", "The Tool Registry is the master inventory of every tool the company owns. Each entry shows the tool name, number, category, serial number, who it is assigned to, current status, and value."),
+                ("What This Page Does", "The All Tools is the master inventory of every tool the company owns. Each entry shows the tool name, number, category, serial number, who it is assigned to, current status, and value."),
                 ("Searching & Filtering", "Use the search bar to find tools by name, tool number, serial number, or assignee. Tap the status pills at the top (All, Available, Checked Out, Maintenance, Lost) to filter the list by current status."),
                 ("QR Scanner", "Tap the QR code icon in the toolbar to scan a tool's QR label. The scanned tool will appear in your search results automatically."),
                 ("Printing Labels", "Tap the printer icon to generate QR labels for the currently visible tools. You can print labels for the entire filtered list at once."),

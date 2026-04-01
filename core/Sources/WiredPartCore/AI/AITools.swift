@@ -221,10 +221,12 @@ public struct GetActiveCompanionPollsTool: FoundationModels.Tool {
 
     private let db: AppDatabase
     private let permissions: [String]
+    private let userId: Int64
 
-    public init(db: AppDatabase, permissions: [String]) {
+    public init(db: AppDatabase, permissions: [String], userId: Int64) {
         self.db = db
         self.permissions = permissions
+        self.userId = userId
     }
 
     public func call(arguments: Arguments) async throws -> String {
@@ -232,7 +234,7 @@ public struct GetActiveCompanionPollsTool: FoundationModels.Tool {
             return "You don't have permission to view companion polls."
         }
         let service = PartsService(db: db)
-        let polls = try service.getActivePolls(userId: 0, isAdmin: false)
+        let polls = try service.getActivePolls(userId: userId, isAdmin: false)
         if polls.isEmpty {
             return "No active polls right now. The system needs at least 3 months of ordering data to start suggesting companion rules."
         }
@@ -325,10 +327,12 @@ public struct GetVotingSummaryTool: FoundationModels.Tool {
 
     private let db: AppDatabase
     private let permissions: [String]
+    private let userId: Int64
 
-    public init(db: AppDatabase, permissions: [String]) {
+    public init(db: AppDatabase, permissions: [String], userId: Int64) {
         self.db = db
         self.permissions = permissions
+        self.userId = userId
     }
 
     public func call(arguments: Arguments) async throws -> String {
@@ -336,7 +340,7 @@ public struct GetVotingSummaryTool: FoundationModels.Tool {
             return "You don't have permission to view voting data."
         }
         let service = PartsService(db: db)
-        let results = try service.getLastWeekResults(userId: 0)
+        let results = try service.getLastWeekResults(userId: userId)
         if results.isEmpty { return "No poll results from the past week." }
         var result = "Recent Poll Results:\n\n"
         for r in results {

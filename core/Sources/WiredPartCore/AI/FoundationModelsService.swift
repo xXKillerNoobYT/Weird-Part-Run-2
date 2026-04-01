@@ -328,6 +328,7 @@ public actor FoundationModelsService {
         query: String,
         db: AppDatabase,
         permissions: [String],
+        userId: Int64 = 0,
         navigationContext: String,
         conversationId: String = "default"
     ) async -> AIResult {
@@ -344,9 +345,9 @@ public actor FoundationModelsService {
                     SearchJobsTool(db: db, permissions: permissions),
                     GetSupplierInfoTool(db: db, permissions: permissions),
                     ListCompanionRulesTool(db: db, permissions: permissions),
-                    GetActiveCompanionPollsTool(db: db, permissions: permissions),
+                    GetActiveCompanionPollsTool(db: db, permissions: permissions, userId: userId),
                     ExplainCoOccurrenceTool(db: db, permissions: permissions),
-                    GetVotingSummaryTool(db: db, permissions: permissions),
+                    GetVotingSummaryTool(db: db, permissions: permissions, userId: userId),
                     GetForecastDataTool(db: db, permissions: permissions),
                 ]
 

@@ -19,10 +19,11 @@
 
 | # | File | What It Fixes | Status |
 |---|------|---------------|--------|
-| PE-001 | *(write prompt)* | Tool page rename: "Tool Registry" → "All Tools", "Tool Admin" → "Management" | ⬜ needs prompt |
-| PE-003 | *(write prompt)* | Flex pool self-assign on Scheduling page (plan-enforcer finding) | ⬜ needs prompt |
+| PE-022 | `PE-022-hat-assignment-ux.md` | Hat assignment UX (GitHub #17): tappable hat rows → HatDetailSheet, People Dashboard management tiles, Employee Detail "Permissions Granted" section | 🟡 **prompt ready — run next** |
+| PE-001 | `PE-001-tool-naming-rename.md` | Tool page rename: "Tool Registry" → "All Tools", "Tool Admin" → "Management" | 🟡 prompt ready — run after PE-022 |
+| PE-003 | *(write prompt)* | Flex pool self-assign on Scheduling page — needs DB migration + backend methods first | ⬜ blocked on Q&A answers (5 questions in dev-qa.md) |
 | PE-009a | *(closed — direct edit)* | HIG: 83 hardcoded font sizes → semantic styles (GitHub #11 closed) | ✅ closed — fixed directly in 38ca2bb; archive prompt to `done/` |
-| PE-009b | `PE-009b-tap-targets.md` | HIG: 12 undersized tap targets (< 44×44pt) (GitHub #12) | 🟡 prompt ready — **run next** |
+| PE-009b | `PE-009b-tap-targets.md` | HIG: 12 undersized tap targets (< 44×44pt) (GitHub #12) | 🟡 prompt ready — run after PE-001 |
 | PE-009c | `PE-009c-swipe-confirmations.md` | HIG: 2 remaining swipe-to-delete (IOSReportTemplatesPage ×2, WarehouseWizardStep2) — 3/5 already fixed in 38ca2bb | 🟡 prompt ready — run after PE-009b |
 | PE-008c | `PE-008c-legacy-pin-upgrade.md` | People → Permissions banner: warns admin when users still have legacy PIN hashes (auto-upgrade on login is already in place) | 🟡 prompt ready — run after PE-009c |
 | PE-009d | *(closed — direct edit)* | HIG: 9+ color-only status indicators (GitHub #15 closed) | ✅ closed — fixed directly in 38ca2bb |

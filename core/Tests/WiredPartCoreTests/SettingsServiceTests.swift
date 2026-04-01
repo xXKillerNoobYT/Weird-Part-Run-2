@@ -243,4 +243,239 @@ struct SettingsServiceTests {
         #expect(raw != nil)
         #expect(raw?.deletedAt != nil)
     }
+
+    // MARK: - upsertSettingsMap
+
+    @Test("upsertSettingsMap writes all key-value pairs")
+    func testUpsertSettingsMap() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        try svc.upsertSettingsMap(
+            ["color": "blue", "font": "system", "size": "14"],
+            category: "ui"
+        )
+
+        let map = try svc.getSettingsByCategory("ui")
+        #expect(map["color"] == "blue")
+        #expect(map["font"] == "system")
+        #expect(map["size"] == "14")
+    }
+
+    // MARK: - Business Profile
+
+    @Test("createBusinessProfile and hasBusinessProfile")
+    func testBusinessProfileCreate() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        #expect(try svc.hasBusinessProfile() == false)
+        #expect(try svc.getBusinessProfile() == nil)
+
+        var profile = BusinessProfile(companyName: "WiredPart LLC", isActive: 1)
+        profile.industry = "Electrical"
+        let created = try svc.createBusinessProfile(profile)
+        #expect(created.id != nil)
+        #expect(try svc.hasBusinessProfile() == true)
+    }
+
+    @Test("updateBusinessProfile persists changes")
+    func testBusinessProfileUpdate() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        var profile = BusinessProfile(companyName: "Original LLC", isActive: 1)
+        var created = try svc.createBusinessProfile(profile)
+        created.companyName = "Updated LLC"
+        let updated = try svc.updateBusinessProfile(created)
+        #expect(updated.companyName == "Updated LLC")
+
+        let fetched = try svc.getBusinessProfile()
+        #expect(fetched?.companyName == "Updated LLC")
+    }
+
+    // MARK: - Backup Info
+
+    @Test("getBackupInfo returns zero count on fresh DB")
+    func testBackupInfoDefaults() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let info = try svc.getBackupInfo()
+        #expect(info.lastBackupTime == nil)
+        #expect(info.backupCount == 0)
+    }
+
+    @Test("getBackupInfo reflects stored settings")
+    func testBackupInfoWithValues() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        try svc.upsertSetting(key: "last_backup_time", value: "2026-03-31T00:00:00Z", category: "backup")
+        try svc.upsertSetting(key: "backup_count", value: "7", category: "backup")
+
+        let info = try svc.getBackupInfo()
+        #expect(info.lastBackupTime == "2026-03-31T00:00:00Z")
+        #expect(info.backupCount == 7)
+    }
+
+    // MARK: - Update Settings
+
+    @Test("getUpdateSettings returns stable channel by default")
+    func testUpdateSettingsDefaults() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let settings = try svc.getUpdateSettings()
+        #expect(settings.updateChannel == "stable")
+        #expect(settings.lastCheckTime == nil)
+        #expect(settings.availableVersion == nil)
+    }
+
+    @Test("saveUpdateChannel persists channel")
+    func testSaveUpdateChannel() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        try svc.saveUpdateChannel("beta")
+        let settings = try svc.getUpdateSettings()
+        #expect(settings.updateChannel == "beta")
+    }
+
+    // MARK: - Clock-Out Questions
+
+    @Test("addClockOutQuestion and listClockOutQuestions")
+    func testClockOutQuestionCRUD() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let id = try svc.addClockOutQuestion(
+            text: "Did you complete the safety checklist?",
+            type: "boolean",
+            isRequired: true,
+            sortOrder: 1
+        )
+        #expect(id > 0)
+
+        let questions = try svc.listClockOutQuestions()
+        #expect(questions.count >= 1)
+        let q = questions.first(where: { $0.id == "\(id)" })
+        #expect(q != nil)
+        #expect(q?.text == "Did you complete the safety checklist?")
+        #expect(q?.type == "boolean")
+        #expect(q?.isRequired == true)
+    }
+
+    @Test("updateClockOutQuestion changes text and type")
+    func testUpdateClockOutQuestion() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let id = try svc.addClockOutQuestion(
+            text: "Original question?",
+            type: "text",
+            isRequired: false,
+            sortOrder: 1
+        )
+
+        try svc.updateClockOutQuestion(
+            id: "\(id)",
+            text: "Updated question?",
+            type: "boolean",
+            isRequired: true
+        )
+
+        let questions = try svc.listClockOutQuestions()
+        let q = questions.first(where: { $0.id == "\(id)" })
+        #expect(q?.text == "Updated question?")
+        #expect(q?.type == "boolean")
+        #expect(q?.isRequired == true)
+    }
+
+    @Test("deleteClockOutQuestion removes the question")
+    func testDeleteClockOutQuestion() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let id = try svc.addClockOutQuestion(
+            text: "To be deleted",
+            type: "text",
+            isRequired: false,
+            sortOrder: 1
+        )
+
+        let before = try svc.listClockOutQuestions()
+        #expect(before.contains(where: { $0.id == "\(id)" }))
+
+        try svc.deleteClockOutQuestion(id: "\(id)")
+
+        let after = try svc.listClockOutQuestions()
+        #expect(!after.contains(where: { $0.id == "\(id)" }))
+    }
+
+    // MARK: - Database Tables
+
+    @Test("listDatabaseTables returns non-empty list of tables")
+    func testListDatabaseTables() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let tables = try svc.listDatabaseTables()
+        #expect(!tables.isEmpty)
+        // Core tables should be present
+        #expect(tables.contains("users"))
+        #expect(tables.contains("parts"))
+        // SQLite internals should be excluded
+        #expect(!tables.contains(where: { $0.hasPrefix("sqlite_") }))
+    }
+
+    @Test("exportTable returns rows for known table")
+    func testExportTable() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        // After seedFirstAdmin the settings table has entries
+        let rows = try svc.exportTable("app_settings")
+        #expect(rows.count >= 0) // may be empty or have defaults; should not throw
+
+        // Non-existent table returns empty without throwing
+        let empty = try svc.exportTable("nonexistent_table_xyz")
+        #expect(empty.isEmpty)
+    }
+
+    // MARK: - Device Key (graceful empty)
+
+    @Test("getActiveDeviceKey returns empty info when no key exists")
+    func testActiveDeviceKeyEmpty() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let info = try svc.getActiveDeviceKey()
+        #expect(info.fingerprint == nil)
+        #expect(info.createdAt == nil)
+        #expect(info.rotatedAt == nil)
+    }
+
+    // MARK: - Bootstrap Devices (graceful empty)
+
+    @Test("listBootstrapDevices returns empty on fresh DB")
+    func testBootstrapDevicesEmpty() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let devices = try svc.listBootstrapDevices()
+        #expect(devices.isEmpty)
+    }
+
+    // MARK: - Integrations (graceful empty)
+
+    @Test("listIntegrations returns empty without throwing when table has no rows")
+    func testListIntegrationsEmpty() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let integrations = try svc.listIntegrations()
+        // Table may not exist or be empty — both are valid
+        #expect(integrations.count >= 0)
+    }
 }

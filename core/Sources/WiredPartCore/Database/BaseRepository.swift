@@ -126,7 +126,7 @@ public class BaseRepository: @unchecked Sendable {
         }
 
         let setClauses = keys.map { "\($0) = ?" }.joined(separator: ", ")
-        var values: [DatabaseValue] = keys.map { data[$0]! }
+        var values: [DatabaseValue] = keys.compactMap { data[$0] }
         values.append(id.databaseValue)
 
         let changes = try db.writer.write { db -> Int in

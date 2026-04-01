@@ -139,8 +139,8 @@ struct IOSDashboardQRScannerPage: View {
             }
             #endif
             // Load user's last known warehouse position for direction guidance
-            if let service = appCore.warehouseService {
-                userPositionAreaId = try? service.getUserCurrentPosition(userId: 1)
+            if let service = appCore.warehouseService, let userId = appCore.currentUser?.id {
+                userPositionAreaId = try? service.getUserCurrentPosition(userId: userId)
             }
         }
         .onDisappear {
@@ -595,8 +595,8 @@ struct IOSDashboardQRScannerPage: View {
                 }
 
                 // Update user position to this scanned location
-                if let service = appCore.warehouseService {
-                    try? service.setUserCurrentPosition(userId: 1, areaId: locationInfo.areaId)
+                if let service = appCore.warehouseService, let userId = appCore.currentUser?.id {
+                    try? service.setUserCurrentPosition(userId: userId, areaId: locationInfo.areaId)
                 }
 
                 await MainActor.run {

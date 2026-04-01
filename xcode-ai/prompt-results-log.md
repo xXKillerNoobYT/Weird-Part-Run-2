@@ -3028,3 +3028,34 @@ All 136 prompts verified and implemented. Program ready for review.
 **Issues Found:**
 - None
 **Build:** PASS (zero diagnostics across all 10 modified files)
+
+## Prompt PE-009c — Swipe-to-Delete Confirmation Dialogs (2026-03-31)
+
+**Status:** SUCCESS (no changes needed)
+**Files Changed:** None
+**What Was Done:**
+- Audited all 5 identified files for unguarded swipe-to-delete actions
+- IOSReportsRouter.swift:365 — already uses `deleteOffsets` + `showDeleteConfirmation` pattern
+- IOSPreTripChecklistPage.swift:182 (in Settings/) — already uses `deleteItemSectionId` + `deleteItemOffsets` + `showDeleteItemConfirm` pattern with alert at line 248
+- AddNotebookEntrySheet.swift:187 — already uses `deleteChecklistOffsets` + `showDeleteChecklistConfirm` pattern
+- WarehouseWizardStep2.swift:51 — already uses `deleteOffsets` + `showDeleteConfirmation` pattern
+- IOSClockOutQuestionsPage.swift:144 (in Settings/) — already uses `questionToDelete` + `showDeleteConfirm` pattern with `.deleteDisabled(true)` on ForEach and alert at line 106
+- Full project sweep of all `.onDelete` (6 instances) and `.swipeActions` (24 instances) confirmed ALL use candidate + alert confirmation pattern
+**Issues Found:**
+- All 5 locations were already fixed in prior passes — no unguarded deletions remain
+**Build:** N/A (no changes made)
+
+## Prompt PE-001 — Tool Page Naming: "Tool Registry" → "All Tools", "Tool Admin" → "Management" (2026-03-31)
+
+**Status:** SUCCESS
+**Files Changed:** IOSToolRegistryPage.swift, IOSToolAdminPage.swift, IOSToolCheckoutsPage.swift, HelpContentRegistry.swift
+**What Was Done:**
+- IOSToolRegistryPage.swift: 4 replacements — nav title, help title, help body text, AI context string all changed from "Tool Registry" to "All Tools"
+- IOSToolAdminPage.swift: 3 replacements — nav title, help title, help body text all changed from "Tool Admin" to "Management"
+- IOSToolCheckoutsPage.swift: 1 replacement — help text cross-reference changed from "Tool Registry" to "All Tools"
+- HelpContentRegistry.swift: 2 replacements — registered help entry title and body changed from "Tool Registry" to "All Tools"
+- 3 remaining internal references (code comments in NavigationConfig.swift, AI context label in IOSAIAssistantPanel.swift) left unchanged — not user-visible
+- Struct names, route strings, and file names untouched per prompt rules
+**Issues Found:**
+- None
+**Build:** PASS (zero diagnostics across all 4 modified files)

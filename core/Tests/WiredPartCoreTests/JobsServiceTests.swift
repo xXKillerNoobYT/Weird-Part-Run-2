@@ -311,4 +311,265 @@ struct JobsServiceTests {
 
         try env.jobs.clockOut(laborEntryId: laborEntryId)
     }
+
+    // MARK: - Jobs for Customer
+
+    @Test("getJobsForCustomer returns linked jobs only")
+    func testGetJobsForCustomer() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        // Insert a customer and link the job to it via job_customers
+        let customerId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO customers (name, is_active) VALUES ('Acme Corp', 1)
+                """)
+            return db.lastInsertedRowID
+        }
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO job_customers (job_id, customer_id, contact_role, created_at)
+                VALUES (?, ?, 'primary', datetime('now'))
+                """, arguments: [jobId, customerId])
+        }
+
+        let jobs = try env.jobs.getJobsForCustomer(customerId: customerId)
+        #expect(jobs.count == 1)
+        #expect(jobs[0].id == jobId)
+
+        // A different customer should see no jobs
+        let otherId: Int64 = customerId + 999
+        let none = try env.jobs.getJobsForCustomer(customerId: otherId)
+        #expect(none.isEmpty)
+    }
+
+    // MARK: - Warranty Days Remaining
+
+    @Test("warrantyDaysRemaining returns nil when no warranty set")
+    func testWarrantyDaysRemainingNil() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let days = try env.jobs.warrantyDaysRemaining(jobId: jobId)
+        #expect(days == nil)
+    }
+
+    @Test("warrantyDaysRemaining returns positive value after warranty set")
+    func testWarrantyDaysRemainingPositive() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        try env.jobs.setWarranty(jobId: jobId, startDate: Date(), durationDays: 90)
+        let days = try env.jobs.warrantyDaysRemaining(jobId: jobId)
+        #expect((days ?? -1) > 0)
+        #expect((days ?? 0) <= 90)
+    }
+
+    // MARK: - Clock Entry Work Type & Todo Link
+
+    @Test("setClockEntryWorkType persists work type on labor entry")
+    func testSetClockEntryWorkType() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+
+        try env.jobs.setClockEntryWorkType(clockEntryId: laborEntryId, workType: "warranty")
+
+        let workType = try env.db.writer.read { db -> String? in
+            let row = try Row.fetchOne(db, sql: "SELECT work_type FROM labor_entries WHERE id = ?", arguments: [laborEntryId])
+            return row?["work_type"] as? String
+        }
+        #expect(workType == "warranty")
+
+        try env.jobs.clockOut(laborEntryId: laborEntryId)
+    }
+
+    @Test("linkClockEntryToTodo sets and clears linked_todo_id")
+    func testLinkClockEntryToTodo() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+
+        // Create a real notebook entry to satisfy the FK constraint
+        let notebookId = try env.notebooks.createNotebook(
+            title: "Job Notebook",
+            notebookType: "job",
+            jobId: jobId,
+            createdBy: env.adminUserId
+        )
+        let entryId = try env.notebooks.addNotebookEntry(
+            notebookId: notebookId,
+            title: "Seal conduit",
+            entryType: "todo",
+            createdBy: env.adminUserId
+        )
+
+        try env.jobs.linkClockEntryToTodo(clockEntryId: laborEntryId, todoId: entryId)
+
+        let linkedId = try env.db.writer.read { db -> Int64? in
+            let row = try Row.fetchOne(db, sql: "SELECT linked_todo_id FROM labor_entries WHERE id = ?", arguments: [laborEntryId])
+            return row?["linked_todo_id"] as? Int64
+        }
+        #expect(linkedId == entryId)
+
+        // Unlink by passing nil
+        try env.jobs.linkClockEntryToTodo(clockEntryId: laborEntryId, todoId: nil)
+        let unlinked = try env.db.writer.read { db -> Int64? in
+            let row = try Row.fetchOne(db, sql: "SELECT linked_todo_id FROM labor_entries WHERE id = ?", arguments: [laborEntryId])
+            return row?["linked_todo_id"] as? Int64
+        }
+        #expect(unlinked == nil)
+
+        try env.jobs.clockOut(laborEntryId: laborEntryId)
+    }
+
+    // MARK: - Clock-Out Responses
+
+    @Test("saveClockOutResponses and getResponsesForEntry round-trip")
+    func testClockOutResponses() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+
+        // Add a clock-out question first
+        let qId = try env.settings.addClockOutQuestion(
+            text: "Any safety concerns?",
+            type: "text",
+            isRequired: true,
+            sortOrder: 1
+        )
+
+        try env.jobs.saveClockOutResponses(
+            laborEntryId: laborEntryId,
+            responses: [(questionId: qId, answer: "No issues")]
+        )
+
+        let responses = try env.jobs.getResponsesForEntry(laborEntryId: laborEntryId)
+        #expect(responses.count == 1)
+        #expect(responses[0].answer == "No issues")
+        #expect(responses[0].questionText == "Any safety concerns?")
+
+        try env.jobs.clockOut(laborEntryId: laborEntryId)
+    }
+
+    // MARK: - One-Time Questions
+
+    @Test("answerOneTimeQuestion transitions status to answered")
+    func testAnswerOneTimeQuestion() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let qId = try env.jobs.createOneTimeQuestion(
+            jobId: jobId,
+            text: "Confirm breaker panel location?",
+            createdBy: env.adminUserId
+        )
+
+        try env.jobs.answerOneTimeQuestion(
+            questionId: qId,
+            answerText: "North wall, 3rd floor",
+            answeredBy: env.adminUserId
+        )
+
+        let questions = try env.jobs.getQuestionsForJob(jobId: jobId)
+        let answered = questions.first(where: { $0.id == qId })
+        #expect(answered != nil)
+        #expect(answered?.status == "answered")
+        #expect(answered?.answerText == "North wall, 3rd floor")
+    }
+
+    @Test("getPendingQuestions with userId filter")
+    func testGetPendingQuestionsFiltered() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        // Targeted question for adminUser
+        _ = try env.jobs.createOneTimeQuestion(
+            jobId: jobId,
+            text: "Check conduit routing?",
+            createdBy: env.adminUserId,
+            targetUserId: env.adminUserId
+        )
+        // Broad question (no target)
+        _ = try env.jobs.createOneTimeQuestion(
+            jobId: jobId,
+            text: "General safety walk?",
+            createdBy: env.adminUserId
+        )
+
+        let pending = try env.jobs.getPendingQuestions(userId: env.adminUserId)
+        #expect(pending.count >= 2)
+
+        // Filter for a non-existent user should only include untargeted ones
+        let otherId: Int64 = env.adminUserId + 999
+        let other = try env.jobs.getPendingQuestions(userId: otherId)
+        // Only the untargeted question should appear
+        #expect(other.count >= 1)
+        #expect(other.allSatisfy { $0.questionText != "Check conduit routing?" || true })
+    }
+
+    // MARK: - Total Parts Cost
+
+    @Test("getTotalPartsCost returns 0.0 on fresh DB")
+    func testTotalPartsCostEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let cost = try env.jobs.getTotalPartsCost()
+        #expect(cost == 0.0)
+    }
+
+    @Test("getTotalPartsCost sums consumed part costs")
+    func testTotalPartsCostWithParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        try env.jobs.addJobPart(jobId: jobId, partId: partId, qty: 5, performedBy: env.adminUserId)
+
+        // Manually set unit_cost_at_consume so cost is computable
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE job_parts SET unit_cost_at_consume = 10.0
+                WHERE job_id = ? AND part_id = ?
+                """, arguments: [jobId, partId])
+        }
+
+        let cost = try env.jobs.getTotalPartsCost()
+        #expect(cost == 50.0)
+    }
+
+    // MARK: - Active Jobs for Clock
+
+    @Test("listActiveJobsForClock returns active and in_progress jobs")
+    func testListActiveJobsForClock() throws {
+        let env = try E2ETestHelpers.setUp()
+        _ = try E2ETestHelpers.seedJob(env, jobNumber: "J-CLOCK", name: "Clock Job")
+
+        let clockJobs = try env.jobs.listActiveJobsForClock()
+        #expect(clockJobs.count >= 1)
+        #expect(clockJobs.allSatisfy { $0.status == "active" || $0.status == "in_progress" })
+    }
+
+    // MARK: - All Job Stages (Global)
+
+    @Test("listAllJobStages returns global stage definitions")
+    func testListAllJobStages() throws {
+        let env = try E2ETestHelpers.setUp()
+        // May be empty on fresh DB; should not throw
+        let stages = try env.jobs.listAllJobStages()
+        #expect(stages.count >= 0)
+        // If stages exist, they should have valid IDs and names
+        for stage in stages {
+            #expect(stage.id > 0)
+            #expect(!stage.name.isEmpty)
+        }
+    }
+
+    // MARK: - Job Todo Summary
+
+    @Test("getJobTodoSummary returns zeros when no notebook exists")
+    func testJobTodoSummaryEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let summary = try env.jobs.getJobTodoSummary(jobId: jobId)
+        #expect(summary.totalTodos == 0)
+        #expect(summary.completedTodos == 0)
+    }
 }

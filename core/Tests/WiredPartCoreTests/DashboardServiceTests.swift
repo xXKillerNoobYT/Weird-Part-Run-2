@@ -36,27 +36,56 @@ struct DashboardServiceTests {
 
     // MARK: - Alerts
 
-    @Test("Certification expiry alerts")
+    @Test("Certification expiry alerts detect expiring cert")
     func testCertAlerts() throws {
-        let (_, dash) = try freshEnv()
+        let (env, dash) = try freshEnv()
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let expiryStr = fmt.string(from: Calendar.current.date(byAdding: .day, value: 7, to: Date())!)
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO certifications (user_id, cert_type, cert_name, expiry_date, is_active)
+                VALUES (?, 'OSHA30', 'OSHA 30-Hour', ?, 1)
+                """, arguments: [env.adminUserId, expiryStr])
+        }
         let alerts = try dash.getCertificationExpiryAlerts(withinDays: 30)
-        #expect(alerts.count >= 0)
+        #expect(alerts.count == 1)
+        #expect(alerts[0].daysRemaining >= 0 && alerts[0].daysRemaining <= 30)
     }
 
-    @Test("Vehicle expiry alerts")
+    @Test("Vehicle expiry alerts detect expiring insurance")
     func testVehicleAlerts() throws {
-        let (_, dash) = try freshEnv()
+        let (env, dash) = try freshEnv()
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let expiryStr = fmt.string(from: Calendar.current.date(byAdding: .day, value: 7, to: Date())!)
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO vehicles (vehicle_number, vehicle_name, insurance_expiry, is_active)
+                VALUES ('T-01', 'Test Truck', ?, 1)
+                """, arguments: [expiryStr])
+        }
         let alerts = try dash.getVehicleExpiryAlerts(withinDays: 30)
-        #expect(alerts.count >= 0)
+        #expect(alerts.count >= 1)
+        let found = alerts.first { $0.vehicleNumber == "T-01" }
+        #expect(found != nil)
+        #expect(found?.expiryType == "insurance")
     }
 
     // MARK: - Daily Report
 
-    @Test("Daily report returns valid structure")
+    @Test("Daily report pendingJPOs reflects submitted JPO")
     func testDailyReport() throws {
-        let (_, dash) = try freshEnv()
+        let (env, dash) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DR-01", name: "Report Job")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO job_parts_orders (job_id, order_number, status, order_type, requested_by)
+                VALUES (?, 'JPO-TEST-001', 'submitted', 'job', ?)
+                """, arguments: [jobId, env.adminUserId])
+        }
         let report = try dash.getDailyReport()
-        #expect(report.pendingJPOs >= 0)
+        #expect(report.pendingJPOs == 1)
     }
 
     // MARK: - Dashboard Data (Aggregated)
@@ -70,18 +99,43 @@ struct DashboardServiceTests {
 
     // MARK: - Delivery & Budget
 
-    @Test("Expected deliveries query")
+    @Test("Expected deliveries includes PO with delivery date within window")
     func testExpectedDeliveries() throws {
-        let (_, dash) = try freshEnv()
+        let (env, dash) = try freshEnv()
+        let suppId = try E2ETestHelpers.seedSupplier(env)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-EXP-001", supplierId: suppId)
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let tomorrowStr = fmt.string(from: Calendar.current.date(byAdding: .day, value: 1, to: Date())!)
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE purchase_orders SET status = 'submitted', expected_delivery = ? WHERE id = ?
+                """, arguments: [tomorrowStr, poId])
+        }
         let deliveries = try dash.getExpectedDeliveries()
-        #expect(deliveries.count >= 0)
+        #expect(deliveries.count >= 1)
+        let found = deliveries.first { $0.poNumber == "PO-EXP-001" }
+        #expect(found != nil)
     }
 
-    @Test("Budget alerts query")
+    @Test("Budget alerts fire when job spend exceeds 80% of limit")
     func testBudgetAlerts() throws {
-        let (_, dash) = try freshEnv()
+        let (env, dash) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-BUDGET-01", name: "Budget Job")
+        // Set budget_limit=100, pay_rate=100, seed 1 labor hour (100% spent > 80% threshold)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET budget_limit = 100 WHERE id = ?", arguments: [jobId])
+            try db.execute(sql: "UPDATE users SET pay_rate = 100 WHERE id = ?", arguments: [env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO labor_entries (user_id, job_id, clock_in, clock_out, regular_hours, status)
+                VALUES (?, ?, datetime('now','-1 hour'), datetime('now'), 1.0, 'completed')
+                """, arguments: [env.adminUserId, jobId])
+        }
         let alerts = try dash.getBudgetAlerts()
-        #expect(alerts.count >= 0)
+        #expect(alerts.count >= 1)
+        let found = alerts.first { $0.id == jobId }
+        #expect(found != nil)
+        #expect((found?.pctUsed ?? 0) >= 80.0)
     }
 
     // MARK: - Labor & Clock
@@ -93,11 +147,14 @@ struct DashboardServiceTests {
         #expect(hours.totalHours >= 0)
     }
 
-    @Test("Team clocked in status")
+    @Test("Team clocked in status reflects active clock entry")
     func testTeamClockedIn() throws {
-        let (_, dash) = try freshEnv()
+        let (env, dash) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-TEAM-01", name: "Team Job")
+        _ = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
         let team = try dash.getTeamClockedIn()
-        #expect(team.count >= 0)
+        #expect(team.count == 1)
+        #expect(team[0].displayName == "TestAdmin")
     }
 
     @Test("Clock status for user")
@@ -107,11 +164,26 @@ struct DashboardServiceTests {
         #expect(!status.isClockedIn)
     }
 
-    @Test("Labor chart data")
+    @Test("Labor chart data always returns 7 days; today's hours reflect completed entry")
     func testLaborChartData() throws {
-        let (_, dash) = try freshEnv()
+        let (env, dash) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-LABOR-01", name: "Labor Job")
+        // Seed a completed labor entry today with 3.0 regular hours
+        try env.db.writer.write { db in
+            // Use 'localtime' modifier so SQLite's date matches Swift's local DateFormatter
+            try db.execute(sql: """
+                INSERT INTO labor_entries (user_id, job_id, clock_in, clock_out, regular_hours, status)
+                VALUES (?, ?, date('now','localtime'), datetime('now','localtime'), 3.0, 'completed')
+                """, arguments: [env.adminUserId, jobId])
+        }
         let data = try dash.getLaborChartData()
-        #expect(data.count >= 0)
+        #expect(data.count == 7)
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let todayStr = fmt.string(from: Date())
+        let todayRow = data.first { $0.dateString == todayStr }
+        #expect(todayRow != nil)
+        #expect((todayRow?.regularHours ?? 0) == 3.0)
     }
 
     // MARK: - Inventory Charts
@@ -160,18 +232,35 @@ struct DashboardServiceTests {
 
     // MARK: - Stock Queries
 
-    @Test("Stock by location type")
+    @Test("Stock by location type groups seeded warehouse stock correctly")
     func testStockByLocationType() throws {
-        let (_, dash) = try freshEnv()
+        let (env, dash) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Stock Wire", categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 15, locationType: "warehouse", locationId: 1)
         let groups = try dash.getStockByLocationType()
-        #expect(groups.count >= 0)
+        #expect(groups.count >= 1)
+        let warehouse = groups.first { $0.locationType == "warehouse" }
+        #expect(warehouse != nil)
+        #expect((warehouse?.totalQty ?? 0) >= 15)
     }
 
-    @Test("Low stock parts query")
+    @Test("Low stock parts returns part below min level")
     func testLowStockParts() throws {
-        let (_, dash) = try freshEnv()
+        let (env, dash) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Low Fuse", categoryId: catId)
+        // Set min_stock_level = 10, seed qty = 2 (below threshold)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET min_stock_level = 10 WHERE id = ?", arguments: [partId])
+        }
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 2, locationType: "warehouse", locationId: 1)
         let low = try dash.getLowStockParts()
-        #expect(low.count >= 0)
+        #expect(low.count >= 1)
+        let found = low.first { $0.id == partId }
+        #expect(found != nil)
+        #expect(found?.currentQty == 2)
+        #expect(found?.minLevel == 10)
     }
 
     // MARK: - Detail Queries

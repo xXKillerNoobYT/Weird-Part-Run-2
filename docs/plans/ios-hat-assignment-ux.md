@@ -1,6 +1,6 @@
 # iOS Hat Assignment & Access Control UX
 
-> **Status:** Plan created 2026-03-31 — awaiting Q&A answers before Xcode prompt is written
+> **Status:** Q&A answered 2026-03-31 — ready to code. `getHatMembers()` added to PeopleService ✅. Xcode prompt PE-022 written ✅.
 > **GitHub Issue:** [#17](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/17) — "User Aces controles"
 > **Related PE:** PE-022
 > **Priority:** High — owner cannot manage user access without this working intuitively
@@ -83,12 +83,13 @@ Add a `HatDetailSheet` that opens when a hat row is tapped. The sheet shows:
 ```
 
 **New component:** `HatDetailSheet(hat:onDismiss:)` with:
-- `@State var members: [PeopleService.EmployeeListItem]` — loaded on appear
+- `@State var members: [PeopleService.HatMember]` — loaded via `getHatMembers(hatId:)` on appear
 - `@State var canManageHats: Bool` — from `hasPermission("manage_hats")`
 - `@State var showAddEmployeePicker: Bool` — sheet to pick from non-assigned employees
-- Remove button per member: calls `removeHatFromEmployee(userId:hatId:)` or equivalent
-- Add employee picker: calls `assignHatToEmployee(userId:hatId:)` or equivalent
-- Permission summary: shows first N permission keys, "Edit Permissions →" button navigates to IOSPermissionsPage
+- **Member rows are tappable → navigate to employee full profile** (Q&A Q2 decision)
+- Remove button per member: calls `toggleHatAssignment(employeeId:hatId:assign:false)` (gated on `manage_hats`)
+- Add employee picker: calls `toggleHatAssignment(employeeId:hatId:assign:true)` (gated on `manage_hats`)
+- **Permission summary section:** shows first 5 permission keys for this hat + "Edit Permissions →" button (Q&A Q5 decision — owner wants to see what a hat grants)
 
 **Methods to verify before implementation:**
 - Check `PeopleService` for `assignHat`/`removeHat` methods (or equivalent) — if they don't exist, they need to be added to the core
@@ -98,14 +99,14 @@ Add a `HatDetailSheet` that opens when a hat row is tapped. The sheet shows:
 
 **File:** `Weird Parts IOS/Weird Parts IOS/Features/People/IOSPeopleDashboardPage.swift`
 
-Add two navigation tiles (alongside Employees, Customers, Contractors):
+Add two navigation tiles in a "Management" section (separate from Employees/Customers/Contractors):
 
-| Tile | Icon | Route | Hat Required |
-|------|------|-------|-------------|
-| Hats & Roles | `graduationcap.fill` | `people-hats` | `view_people` |
+| Tile | Icon | Route | Permission Required |
+|------|------|-------|---------------------|
+| Hats & Roles | `graduationcap.fill` | `people-hats` | `manage_people` |
 | Permissions | `lock.shield.fill` | `people-permissions` | `manage_people` |
 
-These tiles should appear in the "Admin" or "Management" section of the dashboard, not mixed with the employee/customer/contractor tiles.
+**Q&A Decision (Q1):** Both tiles are visible ONLY to users with `manage_people` permission. Regular employees do not see them on the dashboard.
 
 ### C. IOSEmployeeDetailPage — Label the Hats tab more clearly
 
@@ -181,10 +182,10 @@ Add a callout banner in the Hats tab when `allHats.isEmpty || !canManageHats`:
 ---
 
 ## User Roles Affected
-- **Owner/Admin:** Can now easily find and use hat assignment + permission configuration
-- **Manager (manage_hats):** Can assign/remove hats from employees via hat detail sheet
-- **Employee:** Read-only — can see their hats in their own profile, no change
-- **Developer:** No new services needed if core assignment methods exist; may need 2 new service methods
+- **Owner/Admin:** Can now easily find and use hat assignment + permission configuration via People Dashboard
+- **Manager (manage_hats):** Can assign/remove hats from employees via hat detail sheet; can navigate to employee profile from hat detail
+- **Employee (Q&A Q3 decision):** Employees CAN see all hats + which permissions each hat grants — useful to know who to contact for specific tasks. This is read-only from their perspective.
+- **Developer:** `getHatMembers()` added to PeopleService ✅; `toggleHatAssignment()` exists ✅
 
 ---
 

@@ -1,6 +1,6 @@
 # WiredPart Development Pipeline
 
-> **Last updated:** 2026-03-31 (dev-pipeline-manager run 5 — #17 triaged as PE-022, plan + Q&A created, hat security fixes logged)
+> **Last updated:** 2026-03-31 (dev-pipeline-manager run 6 — PE-023 closed (tests strengthened 828→828), PE-022 getHatMembers added, PE-001 prompt written, PE-003 moved to Q&A, PE-008d confirmed closed)
 > **Auto-maintained by:** dev-pipeline-manager (orchestrator)
 
 ---
@@ -32,12 +32,13 @@ Every feature, bug, or improvement follows this cycle:
 | Area | Status | Last Checked |
 |------|--------|-------------|
 | Build | 0 errors, 0 warnings | 2026-03-31 |
-| Tests | 800/800 passing (49 suites) — +6 crypto tests + 4 PIN upgrade tests + BreakService timezone fix | 2026-03-31 |
-| Plan Alignment | PE-009a/d/e ✅ closed (38ca2bb). PE-013 needs ios-warehouse-pages.md update | 2026-03-31 |
-| Feature Polish | 22 items tracked — PE-009a/d/e done, PE-009c partial, PE-022 new | 2026-03-31 |
-| Xcode Prompts | Phase 2: PE-009b (tap targets), PE-009c (swipe), PE-008c (legacy PIN banner) prompt ready | 2026-03-31 |
-| GitHub Issues | 2 open (#9 partial, #17) — #10 CLOSED (LAN encryption fixed) | 2026-03-31 |
-| Q&A Backlog | **5 questions for PE-022** (hat assignment UX — #17) — awaiting owner answers | 2026-03-31 |
+| Tests | **828/828 passing** — PE-023 ✅ closed (9 Dashboard + 4 Break assertions strengthened with seeded data) | 2026-03-31 |
+| Plan Alignment | PE-008d ✅ closed (LAN encrypt). PE-009a/d/e ✅ done. PE-022 `getHatMembers()` added to PeopleService | 2026-03-31 |
+| Feature Polish | PE-009b partial, PE-009c partial, PE-022 blocked Q&A, PE-003 moved to Q&A step | 2026-03-31 |
+| Xcode Prompts | **PE-001, PE-022 prompts ready**. PE-009b, PE-009c, PE-008c prompts ready. PE-003 blocked on Q&A | 2026-03-31 |
+| GitHub Issues | 2 open (#9 hardcoded salt, #17 hat UX) | 2026-03-31 |
+| Q&A Backlog | **5 questions** — PE-003 (flex pool) — awaiting owner answers. PE-022 Q&A answered + processed ✅ | 2026-03-31 |
+| Working Tree | ⚠️ Changes pending commit (see run 6 log below) | 2026-03-31 |
 | Agent Health | All 8 agents enabled | 2026-03-31 |
 
 ---
@@ -48,26 +49,26 @@ Every feature, bug, or improvement follows this cycle:
 
 | ID | Item | Step | Status | Owner |
 |----|------|------|--------|-------|
-| PE-001 | Tool naming drift: "Tool Registry"→"All Tools", "Tool Admin"→"Management" | 10 — Phase 2 prompt needed | Open | Write new prompt |
+| PE-001 | Tool naming drift: "Tool Registry"→"All Tools", "Tool Admin"→"Management" | 10 — prompt ready | 🟡 Prompt ready: `PE-001-tool-naming-rename.md` — user runs in Xcode |
 | PE-002 | ~~Verify 35C-35I still needed~~ **RESOLVED** | 13 — complete | ✅ Closed | All prompts run or skipped |
-| PE-003 | Flex pool UI missing from Scheduling — plan describes self-assign section | 10 — Phase 2 prompt needed | Open | Write new prompt |
+| PE-003 | Flex pool self-assign — needs DB migration + SchedulingService methods before Xcode UI prompt | 3 — Q&A generated | 🟡 5 Q&A questions in `dev-qa.md` — awaiting owner answers (location, skills filter, dispatch_entry, confirmation UX) |
 | PE-004 | ~~Wire 2 TODO submit buttons in Daily Report (35A)~~ | 13 — complete | ✅ Closed — 35A archived 2026-03-29 | — |
 | PE-005 | ~~Fix 6 dead navigation buttons on Office Dashboard (66A)~~ | 13 — complete | ✅ Closed — 66A already complete; archived 2026-03-29 | — |
 | PE-006 | 67A: Pass real userId to createAuditSession + autoSaveToJobNotebook | 13 — complete | ✅ Fixed directly (2026-03-29) | IOSAuditSetupView + IOSMessageThreadView |
 | PE-007 | Test coverage gaps: PeopleService 38%, ChatService 42%, SettingsService 43% | 7 — fine-tune | Open | test-coverage-maintenance agent |
-| PE-008 | Security core fixes: ~~unsigned tokens~~, ~~brute-force~~, hardcoded salt, LAN HTTP (PE-008e export guard ✅ fixed) | 9 — needs core fixes | Open (c-d) — a/b fixed | AuthService b3eef3b |
+| PE-008 | Security core fixes: ~~unsigned tokens~~, ~~brute-force~~, hardcoded salt ~~LAN HTTP~~ (PE-008e export guard ✅ fixed) | 9 — c remains | Open (c only) — a/b/d fixed | PE-008d: 0fb2dbf (X25519+AES-GCM) |
 | PE-021 | ~~Session token signing key is ephemeral~~ **FIXED** — Keychain-backed 256-bit key, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` | 13 — complete | ✅ Fixed cebf4e4 — #16 closed | AuthService.swift:659 |
 | PE-009a | ~~Dynamic Type: 83 hardcoded fonts~~ **FIXED** — semantic text styles across all feature views (GitHub #11 closed) | 13 — complete | ✅ Fixed directly 38ca2bb | 160+ view files |
-| PE-009b | 12 undersized tap targets (< 44×44pt) — prompt ready | 10 — prompt ready | 🟡 Prompt ready: `PE-009b-tap-targets.md` | User runs in Xcode |
+| PE-009b | ~~12 undersized tap targets~~ **PARTIALLY FIXED** — 13+ fixed via direct edits (38ca2bb + working tree). Remaining: verify all 12 original locations are covered | 11 — audit | 🟡 Direct edits approach; prompt `PE-009b-tap-targets.md` may be archivable | Verify complete coverage |
 | PE-009c | Swipe-to-delete confirmations — 3/5 done (PreTrip, AddNotebook, ClockOut); 2 remain (ReportTemplates ×2, WarehouseWizardStep2) | 10 — partial | 🟡 Prompt ready: `PE-009c-swipe-confirmations.md` — user runs remaining | — |
 | PE-009d | ~~Color-only status indicators~~ **FIXED** — text labels added on Audit, PODetail, Forecasting, Spending (GitHub #15 closed) | 13 — complete | ✅ Fixed directly 38ca2bb | — |
 | PE-009e | ~~Accessibility labels~~ **FIXED** — 347 `.accessibilityLabel()` + 305 `.accessibilityHidden()` across 160+ views (GitHub #14 closed) | 13 — complete | ✅ Fixed directly 38ca2bb | — |
-| PE-022 | GitHub #17: Hat assignment discoverability — hat assignment IS in EmployeeDetail/Hats tab; Permissions page has full toggle matrix. Problem is **discoverability**: no dashboard tiles for Hats/Permissions, hats not tappable for member view | 3 — Q&A generated | 🟡 Plan created (`ios-hat-assignment-ux.md`), 5 Q&A questions in `dev-qa.md` — blocked on owner answers | Owner answers Q&A first |
+| PE-022 | GitHub #17: Hat assignment discoverability — hat rows tappable (HatDetailSheet), People Dashboard Management tiles, EmployeeDetail Permissions Granted section | 10 — prompt ready | 🟡 Prompt ready: `PE-022-hat-assignment-ux.md` — user runs in Xcode | Q&A answered 2026-03-31; `getHatMembers()` added to PeopleService |
 | PE-010 | `createAuditSession()` silently dropped zone/sampleSize/notes | 13 — complete | ✅ Migration 061 adds columns; SQL insert updated | Option A chosen |
 | PE-011 | 12 force unwraps in `ReportDateRange.swift` | 13 — complete | ✅ Fixed in commit 4b0c71a — guard/let + addingTimeInterval fallbacks | Closed |
 | PE-012 | `Calendar.current.date(byAdding:)!` in 15 files | 13 — complete | ✅ Fixed in commit 4b0c71a — all 15 files updated to addingTimeInterval | Closed |
 | PE-013 | ~~Unplanned: `WarehouseLocationsPage` drag-and-drop floor plan + `StorageUnitDetailSheet` nav path~~ **DOCUMENTED** in ios-warehouse-pages.md lines 309-325 | 13 — complete | ✅ Documented (plan-enforcer 2026-03-29); confirmed this run | — |
-| PE-023 | DashboardService + BreakService tests use weak assertions (`>= 0` instead of `== exactValue`) — see scanner run 2026-03-31 | 7 — fine-tune | Open | test-coverage-maintenance |
+| PE-023 | ~~DashboardService + BreakService weak test assertions~~ — **FIXED** | 13 — complete | ✅ Fixed 2026-03-31 — 9 Dashboard + 4 Break assertions now seeded with real data |
 
 ---
 
@@ -81,14 +82,13 @@ Every feature, bug, or improvement follows this cycle:
 
 > **Phase 1 COMPLETE.** All 279 Xcode AI prompts archived in `done/`. Working tree is clean, pushed to origin/main. Phase 2 begins — writing Xcode prompts for HIG polish + security.
 
-1. **Run PE-009b prompt** (12 undersized tap targets — prompt `PE-009b-tap-targets.md` is ready, user runs in Xcode)
-2. **Run PE-009c remaining** (IOSReportTemplatesPage ×2, WarehouseWizardStep2 — prompt ready, user runs in Xcode)
-3. **Fix PE-008c** (hardcoded legacy salt `:wiredpart` — auto-migrates on login but no forced reset — direct Swift edit)
-4. **Write + run PE-001 prompt** (Tool page rename: "Tool Registry"→"All Tools", "Tool Admin"→"Management")
-5. **Answer PE-022 Q&A** in `docs/dev-qa.md` (5 questions about hat assignment UX — needed before Xcode prompt can be written for #17)
-6. **Write PE-003 prompt** (flex pool self-assign section on Scheduling page)
-7. **Document PE-013** in ios-warehouse-pages.md (drag-drop floor plan + StorageUnitDetailSheet)
-8. **Commit uncommitted tests** in BreakServiceTests.swift + DashboardServiceTests.swift
+1. **Commit working tree** — 30+ uncommitted files (see run 6 log)
+2. **Run PE-022 prompt** (Hat assignment UX — prompt `PE-022-hat-assignment-ux.md` ready, user runs in Xcode)
+3. **Run PE-001 prompt** (Tool page rename — prompt `PE-001-tool-naming-rename.md` ready, user runs in Xcode)
+4. **Run PE-009b prompt** (12 tap targets — prompt ready, user runs in Xcode)
+5. **Run PE-009c remaining** (IOSReportTemplatesPage ×2, WarehouseWizardStep2 — prompt ready, user runs in Xcode)
+6. **Fix PE-008c** (hardcoded legacy salt — auto-migrates on login; UI banner prompt `PE-008c-legacy-pin-upgrade.md` ready)
+7. **Answer PE-003 Q&A** in `docs/dev-qa.md` (5 questions for flex pool — needed before backend + Xcode prompt)
 
 ---
 
@@ -98,24 +98,24 @@ Every feature, bug, or improvement follows this cycle:
 
 | Priority | Item | Source | Step | Blocked By |
 |----------|------|--------|------|------------|
-| 1 | Run PE-009b prompt — tap targets (12 undersized) — prompt ready | Accessibility | 10 | Run in Xcode |
-| 2 | Run PE-009c prompt — 2 remaining swipe-to-delete (ReportTemplates ×2, WarehouseWizardStep2) | Data safety | 10 | Run in Xcode |
-| 3 | Fix PE-008c — hardcoded legacy salt `:wiredpart` | Security (medium) | 9 | Core Swift edit |
-| 4 | Write PE-001 prompt — Tool naming rename | Plan alignment | 10 | Write prompt first |
-| 5 | **Answer PE-022 Q&A** — `docs/dev-qa.md` has 5 questions for issue #17 hat UX | UX bug | 3→4 | Owner fills in answers |
-| 6 | Write PE-003 prompt — flex pool self-assign on Scheduling | Plan alignment | 10 | Write prompt first |
-| 7 | Document PE-013 warehouse drag-drop in ios-warehouse-pages.md | Plan alignment | 11 | Low priority |
-| 8 | Commit uncommitted tests (BreakService +3, DashboardService +8 tests) | Quality | 7 | Simple commit |
+| 1 | **Commit working tree** | Various | 13 | Simple commit |
+| 2 | Run PE-001 prompt — Tool naming rename (prompt ready) | Plan alignment | 10 | Run in Xcode |
+| 3 | Run PE-009b prompt — tap targets (12 undersized) | Accessibility | 10 | Run in Xcode |
+| 4 | Run PE-009c prompt — 2 remaining swipe-to-delete | Data safety | 10 | Run in Xcode |
+| 5 | Fix PE-008c — legacy PIN banner (prompt ready) | Security (medium) | 10 | Run in Xcode |
+| 2 | **Run PE-022 prompt** — hat rows tappable, People Dashboard tiles, Employee Permissions Granted | UX bug | 10 | Run `PE-022-hat-assignment-ux.md` in Xcode |
+| 7 | **Answer PE-003 Q&A** — 5 questions for flex pool | Plan alignment | 3→4 | Owner fills in answers |
+| 8 | ~~Strengthen PE-023 test assertions~~ **DONE** | Quality | 13 | ✅ Closed 2026-03-31 |
 | — | ~~PE-009a — Dynamic Type~~ **DONE** 38ca2bb | Accessibility | 13 | ✅ Closed |
 | — | ~~PE-009d — color-only indicators~~ **DONE** 38ca2bb | Accessibility | 13 | ✅ Closed |
 | — | ~~PE-009e — accessibility labels~~ **DONE** 38ca2bb | VoiceOver | 13 | ✅ Closed |
 | — | ~~Fix PE-008a — unsigned session tokens~~ **DONE** b3eef3b | Security (high) | 13 | ✅ Closed |
 | — | ~~Fix PE-008b — no brute-force protection on PIN~~ **DONE** b3eef3b | Security (high) | 13 | ✅ Closed |
 | — | ~~Fix PE-021 — ephemeral token signing key~~ **DONE** cebf4e4 | Security (medium) | 13 | ✅ Closed |
-| 9 | Fix PE-008d — LAN sync plain HTTP | Security (medium) | 9 | Larger change (TLS) |
-| 10 | Write test coverage for PeopleService (47 methods, ~18 tested) | Quality | 7 | test-coverage-maintenance |
-| 11 | Write test coverage for ChatService (33 methods, ~14 tested) | Quality | 7 | test-coverage-maintenance |
-| 12 | Write test coverage for SettingsService (40 methods, ~17 tested) | Quality | 7 | test-coverage-maintenance |
+| — | ~~Fix PE-008d — LAN sync plain HTTP~~ **DONE** 0fb2dbf (X25519+AES-GCM) | Security (medium) | 13 | ✅ Closed |
+| 9 | Write test coverage for PeopleService (47 methods, ~18 tested) | Quality | 7 | test-coverage-maintenance |
+| 10 | Write test coverage for ChatService (33 methods, ~14 tested) | Quality | 7 | test-coverage-maintenance |
+| 11 | Write test coverage for SettingsService (40 methods, ~17 tested) | Quality | 7 | test-coverage-maintenance |
 
 ---
 
@@ -145,6 +145,11 @@ Every feature, bug, or improvement follows this cycle:
 | 2026-03-31 | GitHub #14 and #15 closed by plan-enforcer | Step 13 | — |
 | 2026-03-31 | dev-improvement-scanner run 2: 9 force unwraps fixed across PartsService (5), NotebooksService (1), PeopleService (1), JobsService (1), OrdersService (1), SettingsService (1). Build clean. PE-023 filed. | Steps 6-8 | — |
 | 2026-03-31 | PE-022 (GitHub #17): hat discoverability triaged, `ios-hat-assignment-ux.md` plan written, 5 Q&A questions generated in `dev-qa.md`. Commit 4e0d5e0 security fix (user_hats deleted_at filter, 10 invisible permission keys fixed, 790/790 tests) logged. | Steps 1-3 | — |
+| 2026-03-31 | PE-008d CLOSED: X25519 ECDH + AES-GCM payload encryption on all LAN sync HTTP (0fb2dbf). Backward-compatible. 6 new crypto tests. | Steps 9-13 | 0fb2dbf |
+| 2026-03-31 | PE-009b partial direct fix: 13 tap targets expanded to ≥44×44pt across 10 iOS files (38ca2bb + working tree uncommitted). Prompt `PE-009b-tap-targets.md` may be archivable if coverage verified complete. | Steps 11 | 38ca2bb + wt |
+| 2026-03-31 | DashboardService: 2 SQL column bugs found in working tree — `suppliers.contact_email` (actual: `email`) and `po_line_items.quantity` (actual: `qty_ordered`). Unstaged — needs commit. | Step 6 | WIP |
+| 2026-03-31 | dev-improvement-scanner run 3: 2 force unwraps (BaseRepository:129, ConflictResolver:493 → compactMap). 4 hardcoded userId bugs fixed: AITools (userId:0→real, threaded through chatWithTools+IOSAIAssistantPanel), QRScanner (userId:1×2 → appCore.currentUser?.id). 5 files changed. 790 tests passing. | Steps 6-8 | — |
+| 2026-03-31 | **PE-022 Q&A processed**: all 5 owner answers integrated into `ios-hat-assignment-ux.md` plan. Q&A removed from `dev-qa.md`. `getHatMembers(hatId:)` + `HatMember` struct added to PeopleService. Xcode prompt `PE-022-hat-assignment-ux.md` written — covers HatDetailSheet, AddEmployeeToHatSheet, People Dashboard Management tiles, EmployeeDetail Permissions Granted section. | Steps 3-10 | — |
 
 ---
 
@@ -158,7 +163,7 @@ Every feature, bug, or improvement follows this cycle:
 | `ios-scheduling-pages.md` | Scheduling | Step 10 (prompts queued) | **Partial** — 14/14 files exist; flex pool UI + AI dispatch surface pending (46C, 46E, 64F) | Service uses different method names than spec but equivalent functionality |
 | `ios-jobs-pages.md` | Jobs | Step 10 (prompts queued) | **Partial** — all files exist; 45A+ prompts pending (smart cards, AI summary, stage bar) | |
 | `ios-people-pages.md` | People | Step 10 (prompts queued) | **Partial** — all files exist; 44A-F pending (dashboard, employee detail rebuild, contacts) | GRDB removed ✅ |
-| `ios-hat-assignment-ux.md` | People/Auth | Step 3 — Q&A | **New plan** — hat assignment discoverability + HatDetailSheet + dashboard tiles. Blocked on Q&A answers | PE-022, GitHub #17 |
+| `ios-hat-assignment-ux.md` | People/Auth | Step 10 — prompt ready | **Q&A answered 2026-03-31** — HatDetailSheet, dashboard tiles, EmployeeDetail permissions. Prompt: `PE-022-hat-assignment-ux.md` | PE-022, GitHub #17 |
 | `ios-fleet-pages.md` | Fleet | Step 10 (prompts queued) | **Partial** — all 17 files exist; 48A-E pending (vehicle detail tabs, pre-trip, trailer mini-warehouse) | Cleanest section — zero GRDB, all service-based |
 | `ios-warehouse-pages.md` | Warehouse | Step 10 (prompts queued) | **Partial** — all files exist; 36A-C (floor plan), 37A-D (audit confidence) pending | Onboarding wizard exists (not in plan — added by 65C) |
 | `ios-chat-pages.md` | Chat | Step 10 (prompts queued) | **Partial** — all 9 files exist; 42A-D pending (unified inbox, thread info, attachments, escalation) | |
@@ -207,7 +212,7 @@ Every feature, bug, or improvement follows this cycle:
 | Data Integrity | autoSaveToJobNotebook hardcodes created_by=1 — wrong note authorship | Medium — bad change tracking | Quick | 7 | ✅ Core fixed; Xcode 67A |
 | Runtime Safety | Dead button in IOSJPOCreationPage.swift:209 | Medium — user confusion | Quick | 8 | 🔲 Xcode prompt needed |
 | Apple HIG | ~~83 hardcoded font sizes bypass Dynamic Type~~ **DONE** 38ca2bb | High — accessibility | — | 13 | ✅ Fixed — semantic text styles (.caption/.body/.title etc.) across all feature views |
-| Apple HIG | 12 undersized tap targets (< 44x44pt) | High — touch usability | Quick | 10 | 🟡 Prompt ready: PE-009b-tap-targets.md |
+| Apple HIG | ~~12 undersized tap targets~~ **PARTIALLY FIXED** — 13+ targets fixed via direct edits | High — touch usability | — | 11 | 🟡 Verify remaining targets; archive PE-009b prompt once confirmed complete |
 | Apple HIG | 2 remaining swipe-to-delete without confirmation (ReportTemplates ×2, WarehouseWizardStep2) | Medium — data safety | Quick | 10 | 🟡 Prompt ready: PE-009c-swipe-confirmations.md |
 | Apple HIG | ~~Sparse accessibility labels~~ **DONE** 38ca2bb | High — VoiceOver | — | 13 | ✅ Fixed — 347 labels + 305 hidden across 160+ views |
 | Apple HIG | ~~9+ color-only status indicators~~ **DONE** 38ca2bb | Medium — accessibility | — | 13 | ✅ Fixed — text labels on Audit/PO/Forecasting/Spending |
@@ -215,7 +220,7 @@ Every feature, bug, or improvement follows this cycle:
 | Security | ~~No brute-force protection on PIN login~~ **DONE** | High — account security | Quick | 13 | ✅ Fixed b3eef3b |
 | Security | ~~Data export not gated behind admin permission~~ **DONE** | Medium — data exfiltration | Quick | 13 | ✅ Fixed 4b0c71a |
 | Security | Hardcoded legacy salt in PIN hashing | Medium — rainbow tables | Quick | 9 | 🔲 Core fix needed |
-| Security | LAN sync uses plain HTTP | Medium — eavesdropping | Medium | 9 | 🔲 Core fix needed |
+| Security | ~~LAN sync uses plain HTTP~~ **DONE** 0fb2dbf | Medium — eavesdropping | — | 13 | ✅ Fixed — X25519 ECDH + AES-GCM, backward-compatible |
 | Runtime Safety | 12 force unwraps in ReportDateRange.swift | Medium — crash all date-filtered pages | Quick | 13 | ✅ Fixed (4b0c71a) — guard/let + addingTimeInterval fallbacks |
 | Runtime Safety | `Calendar.current.date(byAdding:)!` in 15 files | Low — practically safe | Quick | 13 | ✅ Fixed (4b0c71a) — all 15 files updated |
 | IOSClockPage | Flex pool dispatch failure now shows errorMessage instead of silent print() | Low | — | 13 | ✅ Fixed (740f480) |
@@ -234,13 +239,13 @@ Every feature, bug, or improvement follows this cycle:
 | [#7](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/7) | No brute-force protection on PIN | Security | Step 13 | FIXED b3eef3b — exponential backoff (5s→30s→2min→5min) | 🟢 Closed |
 | [#8](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/8) | Data export not gated behind admin | Security | Step 13 | FIXED 4b0c71a — export_reports permission check added | 🟢 Closed |
 | [#9](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/9) | Hardcoded legacy salt in PIN hashing | Security | Step 9 | Core fix — force re-hash | 🔴 Open |
-| [#10](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/10) | LAN sync uses plain HTTP | Security | Step 9 | Core fix — add TLS or payload encryption | 🔴 Open |
+| [#10](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/10) | LAN sync uses plain HTTP | Security | Step 13 | FIXED 0fb2dbf — X25519 ECDH key agreement + AES-GCM payload encryption; backward-compatible; 6 crypto tests | 🟢 Closed |
 | [#11](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/11) | 55 hardcoded font sizes bypass Dynamic Type | Accessibility | Step 13 | FIXED 38ca2bb — 83 hardcoded fonts → semantic text styles; PE-009a archived to done/ | 🟢 Closed |
 | [#12](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/12) | 12 undersized tap targets (< 44x44pt) | Accessibility | Step 10 | Closed — verify in Xcode if tap targets are resolved by 38ca2bb; prompt PE-009b still available if needed | 🟢 Closed |
 | [#13](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/13) | 5 swipe-to-delete without confirmation | UI | Step 10 | Closed — 3/5 done in 38ca2bb (PreTrip, AddNotebook, ClockOut); 2 remain (ReportTemplates ×2, WarehouseWizardStep2); prompt PE-009c ready | 🟢 Closed (partial — 2 files remain) |
 | [#14](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/14) | Sparse accessibility labels (~8/180+ views) | Accessibility | Step 13 | FIXED 38ca2bb — 347 labels + 305 hidden across 160+ views | 🟢 Closed |
 | [#15](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/15) | 9+ color-only status indicators | Accessibility | Step 13 | FIXED 38ca2bb — text labels added on Audit/PODetail/Forecasting/Spending | 🟢 Closed |
-| [#17](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/17) | No way to add hats to users or change hat permissions | UX Bug | Step 3 | Triaged: features exist but aren't discoverable (no dashboard tiles, hat rows not tappable). Related security fix: 4e0d5e0 fixed `deleted_at` filter on user_hats (soft-deleted hats still granting permissions). Plan: `ios-hat-assignment-ux.md`. Q&A: 5 questions in `dev-qa.md` | 🟡 Plan + Q&A ready — blocked on owner |
+| [#17](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/17) | No way to add hats to users or change hat permissions | UX Bug | Step 10 | Q&A answered 2026-03-31. `getHatMembers()` added to PeopleService. Xcode prompt `PE-022-hat-assignment-ux.md` ready: hat rows tappable (HatDetailSheet + AddEmployeeToHatSheet), People Dashboard Management tiles, EmployeeDetail Permissions Granted section | 🟡 Prompt ready — user runs in Xcode |
 | [#16](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/16) | Session token signing key ephemeral — invalidates on restart | Security | Step 13 | FIXED cebf4e4 — Keychain-backed key, survives restarts | 🟢 Closed |
 
 ---
@@ -253,7 +258,7 @@ Every feature, bug, or improvement follows this cycle:
 |-------|----------|-------------|-------------|--------|
 | hunt-fix-verify | 2026-03-29 | 68 SQL bugs total, 188 tests added over 9 iterations | All found items fixed | ✅ Healthy — no new items since last run |
 | test-coverage-maintenance | 2026-03-29 | Coverage gaps in PeopleService (38%), ChatService (42%), SettingsService (43%) | +185 tests total (733 passing) | ✅ Healthy — gaps remain, needs more runs |
-| plan-enforcer | 2026-03-31 (run 4) | PE-009a/d/e closed (38ca2bb); #14/#15 closed; PE-013 confirmed documented; PE-022 new (#17 hat discoverability); issues #4/#5/#11-#13 confirmed closed | Registry + issues + backlog fully updated | ✅ Healthy |
+| plan-enforcer | 2026-03-31 (run 5) | PE-008d closed (0fb2dbf LAN encrypt); 13+ tap targets fixed (direct edits); 2 DashboardService SQL bugs in working tree; hat security (4e0d5e0) aligned to plan; working tree has 23 uncommitted changes | Registry + backlog + issues updated; next: commit working tree | ✅ Healthy |
 | dev-improvement-scanner | 2026-03-29 (run 3) | PE-011, PE-012 found; PE-008e confirmed | All 3 now fixed in latest commits | ✅ Healthy |
 | dev-pipeline-manager | 2026-03-31 (run 5) | #17 triaged as PE-022 (hat discoverability), plan + Q&A created, 4e0d5e0 security fix logged, 790 tests confirmed | Pipeline + Q&A + plan updated | ✅ Healthy |
 | github-issues-sync | 2026-03-30 | 8 open issues pulled; #16 closed (already fixed cebf4e4); 3 Xcode prompts written (PE-009a/b/c); #9/#10 analyzed | ✅ Healthy |
@@ -265,6 +270,53 @@ Every feature, bug, or improvement follows this cycle:
 ## Pipeline Daily Summary Log
 
 _Appended by dev-pipeline-manager each run._
+
+---
+
+### 2026-03-31 — Plan Enforcer Run 5
+
+**Commits audited:** 0fb2dbf, 4e0d5e0, 38ca2bb (3 recent commits + working tree)
+
+**Plan vs code findings:**
+
+| Finding | Type | Plan | Verdict |
+|---------|------|------|---------|
+| X25519 ECDH + AES-GCM LAN encryption (0fb2dbf) | Security | PE-008d / phase-13-sync-bluetooth.md | ✅ ALIGNED — closes PE-008d |
+| Hat permissions not revoked on soft-delete (4e0d5e0) | SQL bug | ios-hat-assignment-ux.md "Recent security fix" section | ✅ ALIGNED — documented in plan |
+| 3 PeopleService SQL bugs (user_hats deleted_at) | SQL bug | feedback_sql_patterns.md pattern | ✅ ALIGNED — hunt-fix pattern |
+| 10 invisible permission keys in IOSPermissionsPage | UI bug | PE-022 / ios-hat-assignment-ux.md | ✅ ALIGNED — documented in plan |
+| Dynamic Type pass across all feature views (38ca2bb) | HIG | PE-009a / ios-foundation-fixes.md | ✅ ALIGNED — closes PE-009a |
+| 13+ tap targets expanded ≥44×44pt (38ca2bb + WD) | HIG | PE-009b / ios-foundation-fixes.md | ✅ PARTIAL — direct edits vs Xcode prompt; verify coverage |
+| DashboardService `s.contact_email` → `s.email` (WD) | SQL bug | hunt-fix-verify-loop.md pattern | 🟡 Correct fix, NEEDS COMMIT |
+| DashboardService `pl.quantity` → `pl.qty_ordered` (WD) | SQL bug | hunt-fix-verify-loop.md pattern | 🟡 Correct fix, NEEDS COMMIT |
+| JobsService `Calendar.date(byAdding:)!` → fallback (WD) | Safety | PE-012 pattern | 🟡 Correct fix, NEEDS COMMIT |
+| PartsForecastingPage font size 8 → `.caption2` (WD) | HIG | PE-009a pattern | 🟡 Correct fix, NEEDS COMMIT |
+
+**Unplanned code scan:**
+- All working tree changes are aligned with existing plans or hunt-fix patterns
+- `ios-hat-assignment-ux.md` (untracked) is a new plan file — needs commit
+- `docs/DevTODO/PE-023-strengthen-dashboard-break-tests.md` (untracked) is a valid DevTODO — needs commit
+- No unplanned features found requiring design approval
+
+**Q&A pipeline:**
+- PE-022 has 5 unanswered questions in `dev-qa.md` — BLOCKED on owner. No code can be written for hat assignment UX until answered.
+- `getHatMembers(hatId:)` is still missing from PeopleService — prerequisite for PE-022 Xcode prompt, correctly deferred until Q&A answers received.
+
+**GitHub issues:**
+- #10 (LAN plain HTTP) → CLOSED by 0fb2dbf. Updated in registry. ✅
+- #17 (hat UX) → still open, correctly blocked on Q&A
+- No new issues needed — all gaps tracked in DevTODO or backlog
+
+**Actions taken:**
+- Updated Master Status table (working tree count, PE-008d, PE-009b)
+- Updated Active Work Items (PE-008 only c remains; PE-009b partial)
+- Rebuilt Next Up and Backlog priority order
+- Updated Feature Polish Tracker (LAN encryption fixed; tap targets partial)
+- Updated GitHub Issues table (#10 closed)
+- Updated Agent Health Dashboard
+- Added Recently Completed entries (PE-008d, PE-009b partial, DashboardService SQL)
+
+**Next priority:** Commit working tree (23 files) → verify PE-009b coverage → PE-009c → PE-008c
 
 ---
 

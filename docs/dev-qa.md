@@ -22,49 +22,47 @@
 
 ---
 
-### PE-022 — Hat Assignment & Access Control UX (GitHub #17)
+### PE-003 — Flex Pool Self-Assign on Scheduling Page
 
-**Plan:** `docs/plans/ios-hat-assignment-ux.md`
-**GitHub Issue:** [#17](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/17) — "User Aces controles" (filed 2026-03-31)
-
+**Plan:** `docs/plans/ios-scheduling-pages.md` — Section 6: Flex Pool
 **Current State:**
-- `IOSHatsPage` — lists all hats with member count badge, supports create/delete. Rows are NOT tappable. No way to see which employees have a hat from this page.
-- `IOSPermissionsPage` — hat × permission matrix, fully functional. Accessible via route `people-permissions` but NOT linked from the People Dashboard.
-- `IOSEmployeeDetailPage` — has a "Hats" tab where you can toggle hat assignments ON/OFF per employee (requires `manage_hats` permission). Functional but buried 2 taps deep inside employee detail.
-- `IOSPeopleDashboardPage` — has tiles for Employees, Customers, Contractors, Contacts, Teams. No tiles for Hats or Permissions.
-- Recent fix (4e0d5e0): 10 permission keys were invisible in the Permissions UI — now fixed.
+- `jobs` table has no `is_flex_pool` column — flex pool concept exists only in the plan spec
+- `SchedulingService` has no `fetchFlexPool()` or `claimFlexJob()` methods
+- `IOSSchedulingPage.swift` shows Dispatch and Calendar tabs — no flex pool section
+- `self_assign_flex` permission key exists in `AuthService.defaultPermissionMap()` and in the Permissions UI (added 4e0d5e0)
 
-**Proposed Change:**
-1. Make hat rows tappable in `IOSHatsPage` → open `HatDetailSheet` showing member list + add/remove employees
-2. Add "Hats & Roles" and "Permissions" navigation tiles to the People Dashboard
-3. Add `getHatMembers(hatId:)` to `PeopleService` (core Swift edit — not Xcode prompt)
-4. Improve the Hats tab label in EmployeeDetailPage to show count badge
+**What's needed before Xcode prompt:**
+1. DB migration: add `is_flex_pool BOOLEAN DEFAULT 0` to `jobs` table
+2. `SchedulingService.fetchFlexPool()` — returns active jobs where `is_flex_pool = 1` and `assigned_user_id IS NULL`
+3. `SchedulingService.claimFlexJob(jobId:userId:)` — sets `assigned_user_id = userId`, `is_flex_pool = 0`
+4. UI section in Scheduling or Dashboard showing available flex jobs (gated on `self_assign_flex` permission)
 
-**Affected Modules:** People, Auth/Permissions
-**Dependencies:** `PeopleService.toggleHatAssignment()` exists ✅; `getHatMembers()` needs to be added
+**Affected Modules:** Scheduling, Jobs
+**Dependencies:** `self_assign_flex` permission key (exists ✅); `jobs` table (needs migration)
 
 #### Questions:
 
-1. **As the Owner:** The Hats & Permissions pages exist but aren't linked from the dashboard — users can't find them easily. Should Hats and Permissions appear as top-level tiles on the People Dashboard visible to everyone with `view_people`, or only to users with `manage_people`? (Showing read-only to non-admins could help employees understand their own access level.)
+1. **As the Owner:** Should flex pool jobs be a separate tab on the Scheduling page, or a section on the employee's Dashboard? The plan says "workers see available flex pool jobs on their Dashboard" — but the Scheduling page is the natural home for dispatch/assignment UX. Where should it live?
    > Answer: _pending_
 
-2. **As a Manager:** When you open a hat's detail sheet and see the member list, should there be a quick way to navigate directly to an employee's full profile from there? Or is the member list just for viewing/adding/removing hat membership?
+2. **As a Manager:** Who can mark a job as "flex pool"? Only the manager/dispatcher via the Job Detail page? Or is there a batch action on the Scheduling page to push jobs into the pool? And can a manager pull a flex job back out of the pool after it's been claimed?
    > Answer: _pending_
 
-3. **As an Employee (field):** Can a regular employee see which hats they have assigned, and can they see what permissions those hats give them? Right now they can see their hats in their own Employee Detail page but can't see what permissions each hat grants. Should they be able to?
+3. **As an Employee (field):** Should a worker see ALL flex pool jobs or only jobs that match their skills/location? The plan says flex jobs show "Skills needed: Journeyman" — does the app need to filter by the worker's current certifications/hats, or just show all available?
    > Answer: _pending_
 
-4. **As a Developer:** The plan proposes adding `getHatMembers(hatId:)` to `PeopleService` as a direct Swift edit (not an Xcode prompt). It's a simple query (~5 lines). Should I do this now as part of PE-022 core prep, or wait until the Xcode prompt is written and bundle it with that?
+4. **As a Developer:** The claim action changes `assigned_user_id` on the job. Does claiming also automatically create a `dispatch_entries` row (so it shows up on the job's dispatch history), or is it a direct job update only? Dispatch entries exist in the schema — should `claimFlexJob` write one?
    > Answer: _pending_
 
-5. **As a User (UX):** The hat detail sheet proposes showing a "Permission Summary" (first few permission keys with "and N more" and an "Edit Permissions →" button). Is that the right cross-link, or would you prefer the hat detail sheet to be purely about member management, with permissions staying on the separate Permissions page?
+5. **As a User (UX):** The plan shows a "Claim" button on each flex job card. Should claiming require a confirmation ("Are you sure you want to claim this job?") or is one-tap fine since the manager can override? Also: after claiming, does the app navigate to the job detail, or stay on the flex pool list?
    > Answer: _pending_
 
 **Slots to fill:**
-- [ ] Who sees Hats/Permissions tiles on dashboard? (everyone with view_people, or only manage_people?)
-- [ ] Can employees see their own permissions list, or just their hat names?
-- [ ] Should hat detail show a navigate-to-employee shortcut?
-- [ ] Permission summary in hat detail: yes or no?
+- [ ] Location: Scheduling page tab OR Dashboard section?
+- [ ] Who can mark a job as flex pool?
+- [ ] Filter by worker skills/certs, or show all?
+- [ ] Does claim write a dispatch_entry row?
+- [ ] Confirmation on claim: yes or no?
 
 ---
 
