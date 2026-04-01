@@ -12,6 +12,7 @@ struct IOSPeopleDashboardPage: View {
     @State private var teamAssignments: [PeopleService.TeamAssignment] = []
     @State private var overdueCustomers: [PeopleService.CustomerPaymentAlert] = []
     @State private var paymentTrackingEnabled = false
+    @State private var canManagePeople = false
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
@@ -67,6 +68,44 @@ struct IOSPeopleDashboardPage: View {
 
     private var dashboardContent: some View {
         List {
+            // Management section (visible to manage_people users)
+            if canManagePeople {
+                Section {
+                    NavigationLink(destination: IOSHatsPage().environmentObject(appCore)) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Hats & Roles")
+                                    .fontWeight(.medium)
+                                Text("Manage employee roles and assignments")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "graduationcap.fill")
+                                .foregroundStyle(.purple)
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    NavigationLink(destination: IOSPermissionsPage().environmentObject(appCore)) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Permissions")
+                                    .fontWeight(.medium)
+                                Text("Configure hat permissions and access control")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "lock.shield.fill")
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                    .frame(minHeight: 44)
+                } header: {
+                    Text("Management")
+                }
+            }
+
             // Smart cards row
             Section {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -267,6 +306,7 @@ struct IOSPeopleDashboardPage: View {
                 overdueCustomers = (try? service.getOverdueCustomers()) ?? []
             }
 
+            canManagePeople = appCore.hasPermission("manage_people")
             loadError = nil
         } catch {
             loadError = userFriendlyError(error, context: "load people dashboard")

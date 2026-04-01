@@ -14,6 +14,7 @@ struct IOSEmployeeDetailPage: View {
     // Hat management
     @State private var allHats: [(hat: PeopleService.HatInfo, isAssigned: Bool)] = []
     @State private var canManageHats = false
+    @State private var combinedPermissions: [String] = []
 
     private enum ActiveSheet: String, Identifiable {
         case editContact
@@ -207,6 +208,33 @@ struct IOSEmployeeDetailPage: View {
                     }
                 }
             }
+
+            // Permissions Granted section
+            Section {
+                if combinedPermissions.isEmpty {
+                    if allHats.filter(\.isAssigned).isEmpty && !allHats.isEmpty {
+                        Text("Assign hats above to grant permissions")
+                            .foregroundStyle(.secondary)
+                            .font(.subheadline)
+                    } else {
+                        Text("No permissions granted")
+                            .foregroundStyle(.secondary)
+                            .font(.subheadline)
+                    }
+                } else {
+                    ForEach(combinedPermissions, id: \.self) { perm in
+                        Label(permissionLabel(perm), systemImage: "checkmark.shield")
+                            .font(.subheadline)
+                            .accessibilityLabel(permissionLabel(perm))
+                    }
+                }
+            } header: {
+                Text("Permissions Granted (\(combinedPermissions.count))")
+            } footer: {
+                if !combinedPermissions.isEmpty {
+                    Text("These permissions come from all assigned hats.")
+                }
+            }
         }
         .listStyle(.insetGrouped)
     }
@@ -260,6 +288,10 @@ struct IOSEmployeeDetailPage: View {
         }
     }
 
+    private func permissionLabel(_ key: String) -> String {
+        key.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
     private func toggleHat(hatId: Int64, assign: Bool) {
         guard let service = appCore.peopleService else {
             loadError = "Service not available"
@@ -286,6 +318,16 @@ struct IOSEmployeeDetailPage: View {
             employee = try service.getEmployeeDetail(id: employeeId)
             allHats = try service.getAllHatsWithAssignment(employeeId: employeeId)
             canManageHats = appCore.hasPermission("manage_people")
+
+            // Collect combined permissions from all assigned hats
+            var allPerms = Set<String>()
+            if let auth = appCore.authService {
+                for item in allHats where item.isAssigned {
+                    let hatPerms = (try? auth.getHatPermissions(item.hat.id)) ?? []
+                    allPerms.formUnion(hatPerms)
+                }
+            }
+            combinedPermissions = allPerms.sorted()
         } catch {
             loadError = userFriendlyError(error, context: "load employee details")
         }
