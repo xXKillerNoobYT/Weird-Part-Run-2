@@ -108,6 +108,7 @@ struct IOSMovementWizard: View {
                             .fill(step < currentStep ? Color.green : step == currentStep ? Color.accentColor : Color(.systemGray4))
                             .frame(width: 28, height: 28)
                             .frame(minHeight: 44)
+                            .contentShape(Rectangle())
 
                         if step < currentStep {
                             Image(systemName: "checkmark")

@@ -633,6 +633,7 @@ struct IOSAuditPage: View {
             }
             .frame(width: 36, height: 36)
             .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Confidence: \(Int(item.confidence))%")
 

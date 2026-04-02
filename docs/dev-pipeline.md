@@ -1,6 +1,6 @@
 # WiredPart Development Pipeline
 
-> **Last updated:** 2026-04-01 (dev-pipeline-manager run 7 — PE-022/001/008c all confirmed done & archived, GitHub issues #17 and #9 closed, 842 tests, 0 open issues)
+> **Last updated:** 2026-04-01 (github-issues-sync run 2 — 0 open issues confirmed, 842/842 tests, all closed issues verified accurate; noted PE-009b/009c prompts ready for user to run; "dead button" JPO:209 confirmed intentional; prior: plan-enforcer PE-022 done)
 > **Auto-maintained by:** dev-pipeline-manager (orchestrator)
 
 ---
@@ -36,7 +36,7 @@ Every feature, bug, or improvement follows this cycle:
 | Plan Alignment | PE-022 ✅ iOS implemented (3db6dd1). PE-001 ✅ archived. PE-008c ✅ archived. PE-009b/c prompts queued. | 2026-04-01 |
 | Feature Polish | PE-009b prompt ready (next), PE-009c prompt ready, PE-003 blocked on Q&A | 2026-04-01 |
 | Xcode Prompts | **PE-009b next** (tap targets). PE-009c ready. PE-003 blocked on Q&A. | 2026-04-01 |
-| GitHub Issues | **0 open** — #17 closed (PE-022 iOS done), #9 closed (PE-008c done) | 2026-04-01 |
+| GitHub Issues | **0 open** — all 17 issues closed and verified. PE-009b/009c remaining work tracked via active Xcode prompts (not new issues). | 2026-04-01 |
 | Q&A Backlog | **5 questions** — PE-003 (flex pool) — awaiting owner answers | 2026-04-01 |
 | Working Tree | ✅ Clean — all changes committed and pushed | 2026-04-01 |
 | Agent Health | All 8 agents enabled | 2026-04-01 |
@@ -156,18 +156,18 @@ Every feature, bug, or improvement follows this cycle:
 ## Plan Registry
 
 > Every plan in `docs/plans/` tracked with implementation status.
-> Last populated by plan-enforcer: 2026-03-31
+> Last populated by plan-enforcer: 2026-04-01
 
 | Plan File | Area | Lifecycle Step | Coverage | Notes |
 |-----------|------|---------------|----------|-------|
 | `ios-scheduling-pages.md` | Scheduling | Step 10 (prompts queued) | **Partial** — 14/14 files exist; flex pool UI + AI dispatch surface pending (46C, 46E, 64F) | Service uses different method names than spec but equivalent functionality |
 | `ios-jobs-pages.md` | Jobs | Step 10 (prompts queued) | **Partial** — all files exist; 45A+ prompts pending (smart cards, AI summary, stage bar) | |
 | `ios-people-pages.md` | People | Step 10 (prompts queued) | **Partial** — all files exist; 44A-F pending (dashboard, employee detail rebuild, contacts) | GRDB removed ✅ |
-| `ios-hat-assignment-ux.md` | People/Auth | Step 10 — prompt ready | **Q&A answered 2026-03-31** — HatDetailSheet, dashboard tiles, EmployeeDetail permissions. Prompt: `PE-022-hat-assignment-ux.md` | PE-022, GitHub #17 |
+| `ios-hat-assignment-ux.md` | People/Auth | Step 13 — complete ✅ | **Full** — iOS implemented 3db6dd1 (HatDetailSheet, AddEmployeeToHatSheet, Dashboard Management tiles, Permissions Granted section). GitHub #17 closed. | PE-022 done |
 | `ios-fleet-pages.md` | Fleet | Step 10 (prompts queued) | **Partial** — all 17 files exist; 48A-E pending (vehicle detail tabs, pre-trip, trailer mini-warehouse) | Cleanest section — zero GRDB, all service-based |
 | `ios-warehouse-pages.md` | Warehouse | Step 10 (prompts queued) | **Partial** — all files exist; 36A-C (floor plan), 37A-D (audit confidence) pending | Onboarding wizard exists (not in plan — added by 65C) |
 | `ios-chat-pages.md` | Chat | Step 10 (prompts queued) | **Partial** — all 9 files exist; 42A-D pending (unified inbox, thread info, attachments, escalation) | |
-| `ios-tools-pages.md` | Tools | Step 10 (prompts queued) | **Partial** — all 8 files exist; 47A-F pending; **⚠️ naming drift** — "Tool Registry" / "Tool Admin" should be "All Tools" / "Management" | Prompts 47F targets rename |
+| `ios-tools-pages.md` | Tools | Step 10 (prompts queued) | **Partial** — all 8 files exist; 47A-F pending; naming drift ✅ fixed by PE-001 | Prompt 47F rename already applied |
 | `ios-notebooks-pages.md` | Notebooks | Step 10 (prompts queued) | **Partial** — all files exist; 43A-E pending (block-based entries, panel schedule, daily reports) | |
 | `ios-office-pages.md` | Office | Step 10 (prompts queued) | **Partial** — all files exist; 50A-D pending (dashboard AI briefing, approvals queue, office chat) | 66A pending: 6 dead buttons on office dashboard |
 | `ios-reports-pages.md` | Reports | Step 10 (prompts queued) | **Partial** — all files exist; 49A-D pending (categories, export, fleet/warehouse reports, builder) | Architecturally clean — no GRDB |
@@ -184,7 +184,7 @@ Every feature, bug, or improvement follows this cycle:
 | `ios-people-pages.md` | People | Step 10 | **Partial** | (see above) |
 | `ios-clock-page-redesign.md` | Jobs | Step 10 | **Partial** — 40A-B pending (to-do picker, live timer) | |
 | `inventory-intelligence-system.md` | Parts | Step 11 (audited) | **Partial** — Part A (forecasting) done; Parts B-D (wishlist, procurement, movements) are in Orders/Warehouse pages | |
-| `testing-strategy.md` | Quality | Step 7 (fine-tuned) | **Full** — 759/759 tests passing, 49 suites (+31 uncommitted in BreakService/DashboardService) | Coverage gaps in PeopleService (47 methods, 18 tested), ChatService, SettingsService |
+| `testing-strategy.md` | Quality | Step 7 (fine-tuned) | **Full** — 842/842 tests passing, 49 suites | Coverage gaps: PeopleService (47 methods, ~20 tested after +2), ChatService, SettingsService |
 | `hunt-fix-verify-loop.md` | Quality | Step 7 | **Full** — 6 iterations complete, 51 SQL bugs fixed | Plan Alignment scanner not yet run in an iteration |
 | `ios-foundation-fixes.md` | Cross-cutting | Step 7 | **Partial** — GRDB fully removed ✅; 35A-I still pending in prompt queue | 35C-35I may now be moot — no GRDB found anywhere in iOS app |
 | `companion-rules-system.md` | Parts | Step 11 | **Full** | |
@@ -868,3 +868,29 @@ _Appended by dev-pipeline-manager each run._
 - Issues processed: 0
 - Bugs fixed: 0 (this run was iOS feature delivery, not bug fixing)
 - Pipeline health: OK — build green, 828 tests green; PE-022 iOS implementation complete (HatDetailSheet, AddEmployeeToHatSheet, Management section in PeopleDashboard, Permissions Granted in EmployeeDetail); hunt-fix-verify overdue
+
+---
+
+### Plan Enforcer — 2026-04-01 (run 1)
+- **Audit scope:** Recent commits c06622c, 3db6dd1, 0b17c10 + full plan registry
+- **Plan alignment:** All verified ✅
+  - PE-022 (ios-hat-assignment-ux.md) iOS implementation confirmed matches plan + prompt spec; EmployeeDetail adds Permissions Granted section (intentional prompt extension, not drift)
+  - PE-001 (Tool naming rename) confirmed done — naming drift ✅ cleared from plan registry
+  - PE-008c (legacy PIN banner) confirmed done — GitHub #9 confirmed CLOSED on GitHub
+  - 14 new tests (c06622c) match test plan coverage targets for Fleet + People
+- **Documentation lag fixed:**
+  - Plan Registry: `ios-hat-assignment-ux.md` → Step 13 complete ✅
+  - Plan Registry: `ios-tools-pages.md` → naming drift note removed ✅
+  - Plan Registry: `testing-strategy.md` → updated 759 → 842 tests ✅
+  - GitHub Issues table #17 → confirmed 🟢 Closed ✅ (was already updated by pipeline-manager run 7)
+  - GitHub Issues table #9 → confirmed 🟢 Closed ✅ (was already updated by pipeline-manager run 7)
+  - `ios-hat-assignment-ux.md` plan status → updated to COMPLETE ✅
+- **Unplanned code found:** None — all recent changes trace to plans or approved PE items
+- **Q&A blocked:** PE-003 flex pool — 5 questions still unanswered (correct state, no action)
+- **Next enforcement priorities:**
+  1. PE-009b (tap targets) — prompt `PE-009b-tap-targets.md` ready, user runs in Xcode
+  2. PE-009c (swipe confirmations) — prompt `PE-009c-swipe-confirmations.md` ready
+  3. PE-007 (test coverage) — PeopleService ~20/47 methods, ChatService, SettingsService still under-tested
+- **Tests:** 842/842 passing (confirmed via commit message; hunt-fix-verify overdue for build verification)
+- **Open GitHub issues:** 0 ✅
+- **Agent health:** All 8 agents enabled; hunt-fix-verify last ran 2026-03-29 (3+ days overdue)

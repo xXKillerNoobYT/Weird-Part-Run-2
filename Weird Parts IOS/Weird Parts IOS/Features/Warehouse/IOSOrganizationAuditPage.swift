@@ -210,6 +210,7 @@ struct IOSOrganizationAuditPage: View {
             }
             .frame(width: 36, height: 36)
             .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Area #\(rating.areaId)")

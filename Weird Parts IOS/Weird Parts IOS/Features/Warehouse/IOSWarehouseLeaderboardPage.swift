@@ -203,6 +203,7 @@ struct IOSWarehouseLeaderboardPage: View {
                     Circle().fill(rank <= 3 ? ratingColor(rating.overallRating) : Color(.systemGray5))
                 )
                 .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
 
             // Name
             VStack(alignment: .leading, spacing: 2) {
@@ -523,6 +524,7 @@ private struct ConsensusInfoSheet: View {
                 .frame(width: 24, height: 24)
                 .background(Circle().fill(.blue))
                 .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
             Text(text)
                 .font(.subheadline)
         }

@@ -183,6 +183,7 @@ struct ReportBuilderView: View {
                         .fill(s.rawValue <= step.rawValue ? Color.indigo : Color.gray.opacity(0.3))
                         .frame(width: 28, height: 28)
                         .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                         .accessibilityHidden(true)
                         .overlay(
                             Text("\(s.rawValue + 1)")

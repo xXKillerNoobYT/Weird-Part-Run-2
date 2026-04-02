@@ -1,6 +1,6 @@
 # iOS Hat Assignment & Access Control UX
 
-> **Status:** Q&A answered 2026-03-31 — ready to code. `getHatMembers()` added to PeopleService ✅. Xcode prompt PE-022 written ✅.
+> **Status:** ✅ COMPLETE — iOS implemented 2026-04-01 (commit 3db6dd1). GitHub #17 closed. PE-022 prompt archived to `done/`.
 > **GitHub Issue:** [#17](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/17) — "User Aces controles"
 > **Related PE:** PE-022
 > **Priority:** High — owner cannot manage user access without this working intuitively
@@ -108,23 +108,17 @@ Add two navigation tiles in a "Management" section (separate from Employees/Cust
 
 **Q&A Decision (Q1):** Both tiles are visible ONLY to users with `manage_people` permission. Regular employees do not see them on the dashboard.
 
-### C. IOSEmployeeDetailPage — Label the Hats tab more clearly
+### C. IOSEmployeeDetailPage — Label the Hats tab + show Permissions Granted
 
 **File:** `Weird Parts IOS/Weird Parts IOS/Features/People/IOSEmployeeDetailPage.swift`
 
-Current tab label: `"hats"` (raw string). Update to show count badge:
-```swift
-// Before
-"hats"
+**As-built (2026-04-01, commit 3db6dd1):** Implementation extended the plan spec. The Xcode prompt incorporated a "Permissions Granted" section (not in original spec C). As-built:
+- Tab label updated: `"hats"` → `"Hats & Roles (N assigned)"` — includes badge count
+- Callout banner when `!canManageHats`: "Contact a manager to change hat assignments"
+- **New: Permissions Granted section** — aggregates all permissions from assigned hats via `getHatPermissions()`. Shows count `Permissions Granted (N)`, each permission on a row with system icon. Added during prompt design (dev-pipeline-manager run 6), not in original plan spec.
+- "Assign hats above to grant permissions" hint when employee has no hats assigned
 
-// After
-"Hats (\(assignedHatCount))"
-```
-
-Add a callout banner in the Hats tab when `allHats.isEmpty || !canManageHats`:
-```
-"You need the 'manage_people' permission to assign hats."
-```
+This addition is intentional and beneficial — owner can now see what access an employee has at a glance.
 
 ---
 
