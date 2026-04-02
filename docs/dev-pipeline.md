@@ -275,6 +275,43 @@ _Appended by dev-pipeline-manager each run._
 
 ---
 
+### 2026-04-02 — Pipeline Manager Run 8 (PE-009b/c Closed, DevTODO Cleanup)
+
+**Input:** Prompt results log (PE-009b contentShape pass SUCCESS, PE-009c audit SUCCESS); stale DevTODO files review; working tree with 12 uncommitted changes
+
+**Findings this run:**
+
+| Finding | Detail |
+|---------|--------|
+| PE-009b | ✅ CLOSED — prompt-results-log confirms all 13 tap targets are now ≥44×44pt with `.contentShape(Rectangle())`. Direct edits (38ca2bb) expanded frames; 2026-04-01 contentShape pass ensured hit-testing works. Prompt archived to `done/`. |
+| PE-009c | ✅ CLOSED — prompt-results-log audit confirms all 5 target files already use `showDeleteConfirmation` + `confirmationDialog`/`.alert` pattern. No changes needed. Prompt archived to `done/`. |
+| Stale DevTODO files | Removed 3 files with resolved backing issues: `9-legacy-pin-salt.md` (#9 closed), `10-lan-sync-encryption.md` (#10 closed), `PE-023-strengthen-dashboard-break-tests.md` (PE-023 closed 2026-03-31). Also removed earlier: 11, 13, 14, 15, 16, 8 — all closed. |
+| Working tree | 12 files modified/deleted from prior runs — committing all. |
+
+**Self-improvement notes:**
+- With PE-009b and PE-009c now done, ALL Phase 2 HIG/security work is complete. The backlog has shrunk to: (1) PE-003 Q&A (owner-blocked), (2) test coverage gaps (agent work). No active Xcode prompts for the first time in the project's history.
+- The contentShape pattern is critical for SwiftUI — `.frame(minWidth:minHeight:)` alone expands the *layout* but SwiftUI clips hit-testing to the child's bounds unless `.contentShape(Rectangle())` is added. Future accessibility work should apply both modifiers together.
+- DevTODO cleanup: 7 of 10 original DevTODO files have been removed. Remaining: `9-legacy-pin-salt.md` (closed), `10-lan-sync-encryption.md` (closed), `12-fix-tap-targets.md` (updated with results). All remaining reference closed issues — consider clearing folder entirely on next weekly cleanup.
+
+**Actions taken:**
+- Closed PE-009b and PE-009c in Active Work Items, Backlog, Feature Polish Tracker, Master Status
+- Updated "Next Up" — removed completed prompt items, promoted PE-003 Q&A to priority 1
+- Archived PE-009b and PE-009c prompts to `done/`
+- Removed 3 stale DevTODO files
+- Updated Agent Health Dashboard
+
+**Status:**
+- **Tests:** 842/842 passing (54 suites) — no change
+- **Build:** 0 errors, 0 warnings
+- **Open GitHub issues:** 0
+- **Active Xcode prompts:** 0 ← no active prompts for first time
+- **Q&A backlog:** 5 questions (PE-003 flex pool only)
+- **Backlog size:** 3 items (1 Q&A-blocked + 2 test coverage gaps)
+
+**Next priority:** Owner answers PE-003 Q&A → enables flex pool feature → Xcode prompt written
+
+---
+
 ### 2026-04-01 — Dev Improvement Scanner Run 4 (Production Logging Fix)
 
 **Input:** Full codebase scan — 311 iOS Swift files + 65 core Swift files
@@ -920,3 +957,15 @@ _Appended by dev-pipeline-manager each run._
 - **Tests:** 842/842 passing (confirmed via commit message; hunt-fix-verify overdue for build verification)
 - **Open GitHub issues:** 0 ✅
 - **Agent health:** All 8 agents enabled; hunt-fix-verify last ran 2026-03-29 (3+ days overdue)
+
+---
+
+### End-of-Day Sync — 2026-04-02
+- Files committed: 5 (FleetService.swift, PeerDiscovery.swift, 3 DevTODO/docs files)
+- Commits created: 3
+- Push status: success (32305ee pushed to origin/main)
+- Tests: 842/842 passing
+- Agent runs today: 4/7 (improvement-scanner run 4, pipeline-manager run 7, github-issues-sync run 2, github-sync-and-review run)
+- Issues processed: 0 (0 open GitHub issues)
+- Bugs fixed: 1 (FleetService UTC timezone mismatch causing test failure)
+- Pipeline health: OK — build clean, all tests green, no open GitHub issues, no active Xcode prompts
