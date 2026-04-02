@@ -134,6 +134,7 @@ Every feature, bug, or improvement follows this cycle:
 | 2026-03-30 | PE-021 closed: Keychain-backed token signing key (GitHub #16 closed) | Steps 9-13 | cebf4e4 |
 | 2026-03-30 | dev-improvement-scanner: 4 force unwraps fixed in core (BackgroundTaskService, ToolsService, AITools, BaseRepository) — 759/759 tests passing | Steps 6-8 | — |
 | 2026-03-29 | 68 SQL bugs fixed total, 736 tests, all Phase 1 Xcode prompts done | Steps 5-7, 12-13 | Multiple |
+| 2026-04-01 | **github-issues-sync run 2**: 0 open issues, 17/17 closed verified. PE-009b/009c remaining work tracked via Xcode prompts (no new issues needed). IOSJPOCreationPage:209 "dead button" confirmed intentional (alert dismiss is sufficient). No new issues filed. | Step 13 | — |
 | 2026-04-01 | PE-022 CLOSED: HatDetailSheet + AddEmployeeToHatSheet + People Dashboard Management + EmployeeDetail Permissions Granted. GitHub #17 closed. | Steps 10-13 | 3db6dd1 |
 | 2026-04-01 | PE-001 CLOSED: Tool Registry → "All Tools", Tool Admin → "Management" in 4 files. Prompt archived. | Steps 10-13 | Prompt archived |
 | 2026-04-01 | PE-008 ALL CLOSED: Legacy PIN banner in IOSPermissionsPage (PE-008c). Auto-migrate on login already in place. GitHub #9 closed. | Steps 9-13 | 0b17c10 |
