@@ -3111,3 +3111,19 @@ All 136 prompts verified and implemented. Program ready for review.
 **Issues Found:**
 - None
 **Build:** PASS (zero diagnostics across all 10 modified files)
+
+## Prompt PE-009c (Revised) — Swipe-to-Delete Confirmation Dialogs (2026-04-01)
+
+**Status:** SUCCESS (no changes needed)
+**Files Changed:** None
+**What Was Done:**
+- Audited all 5 target files for swipe-to-delete confirmation patterns
+- **IOSReportsRouter.swift:** Already uses `deleteOffsets` + `showDeleteConfirmation` → `confirmationDialog` pattern
+- **IOSPreTripChecklistPage.swift:** Already uses `deleteItemSectionId` + `deleteItemOffsets` + `showDeleteItemConfirm` → `.alert` pattern
+- **AddNotebookEntrySheet.swift:** Already uses `deleteChecklistOffsets` + `showDeleteChecklistConfirm` → `.alert` pattern
+- **WarehouseWizardStep2.swift:** Already uses `deleteOffsets` + `showDeleteConfirmation` → `confirmationDialog` pattern
+- **IOSClockOutQuestionsPage.swift:** Already uses `questionToDelete` + `showDeleteConfirm` → `.alert` pattern, plus `.deleteDisabled(true)` on the ForEach
+- All 5 files were fixed in prior passes and match the required candidate + confirmation pattern
+**Issues Found:**
+- None — all locations already properly guarded
+**Build:** N/A (no changes made)

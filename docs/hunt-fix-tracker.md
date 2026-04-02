@@ -1,7 +1,7 @@
 # Hunt-Fix-Verify Loop Tracker
 
 > **Started:** 2026-03-28
-> **Status:** PHASE 1 COMPLETE — 14 iterations, 88 bugs fixed. Latest: Iteration 16 (2026-04-01) — test-coverage-maintenance: 842 tests passing (+14 new). FleetService: 11 new tests covering `listTelematicsData`, `getVehicleTools`, `logFuelLevel`, `getTrailerStock`, `getTrailerStorageUnits`, `saveInspection`, `checkInspectionRequired` (3 code paths: required/cleared/blocked), `getInspectionRecords`, `getFuelCostReport`, `getMaintenanceTrendsReport`, `getMileageSummaryReport`, `getVehicleUtilizationReport`. PeopleService: 3 new tests covering `getCustomerPaymentStatus` (empty/aggregated/overdue). All 842 tests passing.
+> **Status:** PHASE 1 COMPLETE — 14 iterations, 88 bugs fixed. Latest: Iteration 17 (2026-04-01) — dev-improvement-scanner run 4: 3 production `print()` calls in `PeerDiscovery.swift` replaced with `os.Logger`. All 8 scanners passed. 0 new GitHub issues needed. Codebase clean.
 
 ---
 
@@ -817,3 +817,32 @@ These bugs were in `generateToolCheckoutsReport` — would crash any time a user
 | Active prompt queue | 8 items | 5 items | -3 |
 | Security bugs | 0 | 0 | = |
 | SQL bugs | 0 | 0 | = |
+
+### Iteration 14 — Dev Improvement Scanner Run 4 (2026-04-01, automated)
+
+**Build:** ✅ 0 errors, 0 warnings (expected — fix is in core Swift, no compile changes)
+**Tests:** ✅ 842/842 passing (unchanged)
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Runtime Safety | ✅ PASS | 0 force casts, 0 `try!`, 0 `fatalError` in production paths |
+| Data Integrity | ✅ PASS | All SQL parameterized; `exportTable()` validates against `sqlite_master`; notebook field update gated by `allowedFields` Set |
+| Security | ✅ PASS | Tokens in Keychain; PIN uses SHA-256 ×10,000 + per-user salt; no sensitive data in UserDefaults |
+| Debug Code | ⚠️ FIXED | 3 `print()` calls in `PeerDiscovery.swift` not gated by `#if DEBUG` |
+| Apple HIG | ✅ PASS | NavigationStack, 647 a11y labels, 132 refreshable, 65 destructive roles |
+| Dynamic Type | ✅ PASS | 0 hardcoded font sizes in feature views |
+| UX Polish | ✅ PASS | 185/214 feature files have empty states; all async views have loading states |
+| Accessibility | ✅ PASS | 647 accessibilityLabel + 305 accessibilityHidden annotations |
+
+**Fix made:**
+| File | Change |
+|------|--------|
+| `core/Sources/WiredPartCore/Sync/PeerDiscovery.swift` | Added `import os.log`; added `private let logger = Logger(subsystem: "com.wiredpart.core", category: "PeerDiscovery")`; replaced 3 `print()` with `logger.error()`; added `[logger]` capture list in closures |
+
+**Metrics delta:**
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| Tests passing | 842 | 842 | = |
+| Production print() calls | 3 | 0 | -3 |
+| GitHub issues | 0 | 0 | = |

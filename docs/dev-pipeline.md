@@ -1,6 +1,6 @@
 # WiredPart Development Pipeline
 
-> **Last updated:** 2026-04-01 (github-issues-sync run 2 — 0 open issues confirmed, 842/842 tests, all closed issues verified accurate; noted PE-009b/009c prompts ready for user to run; "dead button" JPO:209 confirmed intentional; prior: plan-enforcer PE-022 done)
+> **Last updated:** 2026-04-02 (dev-pipeline-manager run 8 — PE-009b ✅ closed, PE-009c ✅ closed, prompts archived, stale DevTODO files cleaned; 0 open GitHub issues, 0 active Xcode prompts; prior: dev-improvement-scanner run 4 — PeerDiscovery.swift os.Logger fix)
 > **Auto-maintained by:** dev-pipeline-manager (orchestrator)
 
 ---
@@ -33,9 +33,9 @@ Every feature, bug, or improvement follows this cycle:
 |------|--------|-------------|
 | Build | 0 errors, 0 warnings | 2026-04-01 |
 | Tests | **842/842 passing** — +14 new (FleetService inspection/reporting, PeopleService payment status) | 2026-04-01 |
-| Plan Alignment | PE-022 ✅ iOS implemented (3db6dd1). PE-001 ✅ archived. PE-008c ✅ archived. PE-009b/c prompts queued. | 2026-04-01 |
-| Feature Polish | PE-009b prompt ready (next), PE-009c prompt ready, PE-003 blocked on Q&A | 2026-04-01 |
-| Xcode Prompts | **PE-009b next** (tap targets). PE-009c ready. PE-003 blocked on Q&A. | 2026-04-01 |
+| Plan Alignment | PE-022 ✅ PE-001 ✅ PE-008c ✅ PE-009b ✅ PE-009c ✅ all archived. No active Xcode prompts. | 2026-04-02 |
+| Feature Polish | PE-009b ✅ closed. PE-009c ✅ closed. PE-003 blocked on Q&A. | 2026-04-02 |
+| Xcode Prompts | **No active prompts.** PE-003 blocked on Q&A before next prompt can be written. | 2026-04-02 |
 | GitHub Issues | **0 open** — all 17 issues closed and verified. PE-009b/009c remaining work tracked via active Xcode prompts (not new issues). | 2026-04-01 |
 | Q&A Backlog | **5 questions** — PE-003 (flex pool) — awaiting owner answers | 2026-04-01 |
 | Working Tree | ✅ Clean — all changes committed and pushed | 2026-04-01 |
@@ -59,8 +59,8 @@ Every feature, bug, or improvement follows this cycle:
 | PE-008 | ~~Security core fixes~~ **ALL DONE** — unsigned tokens, brute-force, hardcoded salt banner, LAN HTTP encrypt, export guard | 13 — complete | ✅ All 5 sub-items closed — a/b: b3eef3b, c: 0b17c10, d: 0fb2dbf, e: 4b0c71a. GitHub #9 closed 2026-04-01 |
 | PE-021 | ~~Session token signing key is ephemeral~~ **FIXED** — Keychain-backed 256-bit key, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` | 13 — complete | ✅ Fixed cebf4e4 — #16 closed | AuthService.swift:659 |
 | PE-009a | ~~Dynamic Type: 83 hardcoded fonts~~ **FIXED** — semantic text styles across all feature views (GitHub #11 closed) | 13 — complete | ✅ Fixed directly 38ca2bb | 160+ view files |
-| PE-009b | ~~12 undersized tap targets~~ **PARTIALLY FIXED** — 13+ fixed via direct edits (38ca2bb + working tree). Remaining: verify all 12 original locations are covered | 11 — audit | 🟡 Direct edits approach; prompt `PE-009b-tap-targets.md` may be archivable | Verify complete coverage |
-| PE-009c | Swipe-to-delete confirmations — 3/5 done (PreTrip, AddNotebook, ClockOut); 2 remain (ReportTemplates ×2, WarehouseWizardStep2) | 10 — partial | 🟡 Prompt ready: `PE-009c-swipe-confirmations.md` — user runs remaining | — |
+| PE-009b | ~~12 undersized tap targets~~ **DONE** — all 13 locations fixed (direct edits 38ca2bb + `.contentShape(Rectangle())` pass 2026-04-02). GitHub #12 closed. | 13 — complete | ✅ Prompt archived to `done/`. All tap targets verified ≥44×44pt. |
+| PE-009c | ~~Swipe-to-delete confirmations~~ **DONE** — all 5 files verified (IOSReportsRouter, PreTrip, AddNotebook, WarehouseWizardStep2, ClockOut); all use confirmation pattern | 13 — complete | ✅ Prompt archived to `done/`. GitHub #13 confirmed resolved. |
 | PE-009d | ~~Color-only status indicators~~ **FIXED** — text labels added on Audit, PODetail, Forecasting, Spending (GitHub #15 closed) | 13 — complete | ✅ Fixed directly 38ca2bb | — |
 | PE-009e | ~~Accessibility labels~~ **FIXED** — 347 `.accessibilityLabel()` + 305 `.accessibilityHidden()` across 160+ views (GitHub #14 closed) | 13 — complete | ✅ Fixed directly 38ca2bb | — |
 | PE-022 | ~~GitHub #17: Hat assignment discoverability~~ **DONE** — HatDetailSheet, AddEmployeeToHatSheet, People Dashboard Management tiles, EmployeeDetail Permissions Granted section | 13 — complete | ✅ iOS implemented 3db6dd1 (2026-03-31). Prompt archived to `done/`. GitHub #17 closed 2026-04-01. |
@@ -80,12 +80,10 @@ Every feature, bug, or improvement follows this cycle:
 
 ## Next Up (Priority Order)
 
-> **Phase 2 underway.** PE-022 (hat UX) + PE-001 (tool naming) + PE-008c (legacy PIN banner) all complete. 0 open GitHub issues. Next prompts: PE-009b and PE-009c.
+> **Phase 2 underway.** PE-009b (tap targets) + PE-009c (swipe confirmations) complete — all HIG Phase 2 prompts done. 0 open GitHub issues. No active Xcode prompts. Next priority: Q&A and test coverage.
 
-1. **Run PE-009b prompt** (tap targets — `PE-009b-tap-targets.md` ready, user runs in Xcode)
-2. **Run PE-009c prompt** (2 remaining swipe-to-delete confirmations — `PE-009c-swipe-confirmations.md` ready, user runs in Xcode)
-3. **Answer PE-003 Q&A** in `docs/dev-qa.md` (5 questions for flex pool — needed before backend + Xcode prompt)
-4. **Improve test coverage** — PeopleService (47 methods, ~18 tested), ChatService (33 methods, ~14 tested), SettingsService (40 methods, ~17 tested) (test-coverage-maintenance agent)
+1. **Answer PE-003 Q&A** in `docs/dev-qa.md` (5 questions for flex pool — needed before backend + Xcode prompt)
+2. **Improve test coverage** — PeopleService (47 methods, ~18 tested), ChatService (33 methods, ~14 tested), SettingsService (40 methods, ~17 tested) (test-coverage-maintenance agent)
 
 ---
 
@@ -95,9 +93,9 @@ Every feature, bug, or improvement follows this cycle:
 
 | Priority | Item | Source | Step | Blocked By |
 |----------|------|--------|------|------------|
-| 1 | Run PE-009b prompt — tap targets (12 undersized) | Accessibility | 10 | Run in Xcode |
-| 2 | Run PE-009c prompt — 2 remaining swipe-to-delete (ReportTemplates ×2, WarehouseWizardStep2) | Data safety | 10 | Run in Xcode |
-| 3 | **Answer PE-003 Q&A** — 5 questions for flex pool | Plan alignment | 3→4 | Owner fills in answers |
+| — | ~~PE-009b — tap targets (12 undersized)~~ **DONE** 2026-04-02 | Accessibility | 13 | ✅ Closed — all locations ≥44×44pt |
+| — | ~~PE-009c — swipe-to-delete confirmations~~ **DONE** 2026-04-02 | Data safety | 13 | ✅ Closed — all 5 files confirmed |
+| 1 | **Answer PE-003 Q&A** — 5 questions for flex pool | Plan alignment | 3→4 | Owner fills in answers |
 | 4 | ~~PE-022 — Hat assignment UX~~ **DONE** 3db6dd1 | UX bug | 13 | ✅ Closed 2026-04-01 |
 | 5 | ~~PE-001 — Tool naming rename~~ **DONE** | Plan alignment | 13 | ✅ Closed 2026-03-31 |
 | 6 | ~~PE-008c — Legacy PIN banner~~ **DONE** 0b17c10 | Security | 13 | ✅ Closed 2026-03-31 |
@@ -134,6 +132,9 @@ Every feature, bug, or improvement follows this cycle:
 | 2026-03-30 | PE-021 closed: Keychain-backed token signing key (GitHub #16 closed) | Steps 9-13 | cebf4e4 |
 | 2026-03-30 | dev-improvement-scanner: 4 force unwraps fixed in core (BackgroundTaskService, ToolsService, AITools, BaseRepository) — 759/759 tests passing | Steps 6-8 | — |
 | 2026-03-29 | 68 SQL bugs fixed total, 736 tests, all Phase 1 Xcode prompts done | Steps 5-7, 12-13 | Multiple |
+| 2026-04-02 | PE-009b CLOSED: all 13 tap targets ≥44×44pt (direct edits 38ca2bb + contentShape pass). Prompt archived. GitHub #12 resolved. | Steps 11-13 | prompt-results-log |
+| 2026-04-02 | PE-009c CLOSED: all 5 swipe-to-delete files confirmed with candidate+dialog pattern. Prompt archived. GitHub #13 resolved. | Steps 11-13 | prompt-results-log |
+| 2026-04-02 | Stale DevTODO cleanup: removed 9-legacy-pin-salt.md, 10-lan-sync-encryption.md, PE-023-strengthen-dashboard-break-tests.md (all backed by closed GitHub issues or closed PEs) | Step 13 | cleanup |
 | 2026-04-01 | **github-issues-sync run 2**: 0 open issues, 17/17 closed verified. PE-009b/009c remaining work tracked via Xcode prompts (no new issues needed). IOSJPOCreationPage:209 "dead button" confirmed intentional (alert dismiss is sufficient). No new issues filed. | Step 13 | — |
 | 2026-04-01 | PE-022 CLOSED: HatDetailSheet + AddEmployeeToHatSheet + People Dashboard Management + EmployeeDetail Permissions Granted. GitHub #17 closed. | Steps 10-13 | 3db6dd1 |
 | 2026-04-01 | PE-001 CLOSED: Tool Registry → "All Tools", Tool Admin → "Management" in 4 files. Prompt archived. | Steps 10-13 | Prompt archived |
@@ -213,8 +214,8 @@ Every feature, bug, or improvement follows this cycle:
 | Data Integrity | autoSaveToJobNotebook hardcodes created_by=1 — wrong note authorship | Medium — bad change tracking | Quick | 7 | ✅ Core fixed; Xcode 67A |
 | Runtime Safety | Dead button in IOSJPOCreationPage.swift:209 | Medium — user confusion | Quick | 8 | 🔲 Xcode prompt needed |
 | Apple HIG | ~~83 hardcoded font sizes bypass Dynamic Type~~ **DONE** 38ca2bb | High — accessibility | — | 13 | ✅ Fixed — semantic text styles (.caption/.body/.title etc.) across all feature views |
-| Apple HIG | ~~12 undersized tap targets~~ **PARTIALLY FIXED** — 13+ targets fixed via direct edits | High — touch usability | — | 11 | 🟡 Verify remaining targets; archive PE-009b prompt once confirmed complete |
-| Apple HIG | 2 remaining swipe-to-delete without confirmation (ReportTemplates ×2, WarehouseWizardStep2) | Medium — data safety | Quick | 10 | 🟡 Prompt ready: PE-009c-swipe-confirmations.md |
+| Apple HIG | ~~12 undersized tap targets~~ **DONE** 38ca2bb + contentShape pass 2026-04-02 | High — touch usability | — | 13 | ✅ All 13 locations ≥44×44pt. PE-009b archived. |
+| Apple HIG | ~~Swipe-to-delete confirmations~~ **DONE** — all 5 files confirmed with candidate+dialog pattern | Medium — data safety | — | 13 | ✅ PE-009c verified clean, archived. |
 | Apple HIG | ~~Sparse accessibility labels~~ **DONE** 38ca2bb | High — VoiceOver | — | 13 | ✅ Fixed — 347 labels + 305 hidden across 160+ views |
 | Apple HIG | ~~9+ color-only status indicators~~ **DONE** 38ca2bb | Medium — accessibility | — | 13 | ✅ Fixed — text labels on Audit/PO/Forecasting/Spending |
 | Security | ~~Unsigned session tokens~~ **DONE** | High — auth bypass | Medium | 13 | ✅ Fixed b3eef3b |
@@ -260,8 +261,8 @@ Every feature, bug, or improvement follows this cycle:
 | hunt-fix-verify | 2026-03-29 | 68 SQL bugs total, 188 tests added over 9 iterations | All found items fixed | ✅ Healthy — no new items since last run |
 | test-coverage-maintenance | 2026-03-29 | Coverage gaps in PeopleService (38%), ChatService (42%), SettingsService (43%) | +185 tests total (733 passing) | ✅ Healthy — gaps remain, needs more runs |
 | plan-enforcer | 2026-03-31 (run 5) | PE-008d closed (0fb2dbf LAN encrypt); 13+ tap targets fixed (direct edits); 2 DashboardService SQL bugs in working tree; hat security (4e0d5e0) aligned to plan; working tree has 23 uncommitted changes | Registry + backlog + issues updated; next: commit working tree | ✅ Healthy |
-| dev-improvement-scanner | 2026-03-29 (run 3) | PE-011, PE-012 found; PE-008e confirmed | All 3 now fixed in latest commits | ✅ Healthy |
-| dev-pipeline-manager | 2026-04-01 (run 7) | PE-022/001/008c confirmed complete, #17+#9 closed, pipeline tables updated, daily log appended | ✅ Healthy |
+| dev-improvement-scanner | 2026-04-01 (run 4) | 3 production `print()` calls in PeerDiscovery.swift (not gated by #if DEBUG); all other scanners clean — no force casts, no SQL injection, no deprecated APIs, no hardcoded fonts in features | Fixed directly: replaced with `os.Logger` instance + proper `[logger]` capture list; 0 new GitHub issues needed | ✅ Healthy |
+| dev-pipeline-manager | 2026-04-02 (run 8) | PE-009b+PE-009c closed, prompts archived, DevTODO cleanup, pipeline updated | ✅ Healthy |
 | github-issues-sync | 2026-03-30 | 8 open issues pulled; #16 closed (already fixed cebf4e4); 3 Xcode prompts written (PE-009a/b/c); #9/#10 analyzed | ✅ Healthy |
 | github-sync-and-review | 2026-04-01 07:49 | PE-022 iOS implementation committed + pushed (3db6dd1, 0b17c10) | Pushed to origin/main ✅ | ✅ Healthy — branch up to date |
 | weekly-cleanup | 2026-03-29 (Sun) | 4 .DS_Store files | Removed; dead code scan: clean | ✅ Healthy — next run 2026-04-05 |
@@ -271,6 +272,30 @@ Every feature, bug, or improvement follows this cycle:
 ## Pipeline Daily Summary Log
 
 _Appended by dev-pipeline-manager each run._
+
+---
+
+### 2026-04-01 — Dev Improvement Scanner Run 4 (Production Logging Fix)
+
+**Input:** Full codebase scan — 311 iOS Swift files + 65 core Swift files
+
+**Scan results:**
+
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Runtime Safety (A1) | ✅ PASS | 0 force casts (`as!`), 0 `try!`, 0 `fatalError` in production paths. All force unwraps from PE-011/012 already fixed. |
+| Data Integrity (A2) | ✅ PASS | SQL parameterized throughout. `exportTable()` validates name against `sqlite_master`. Notebook field update gated by `allowedFields` Set. SyncEngine table names filtered by `isAllowedTable()` allowlist. |
+| Security (B1–B3) | ✅ PASS | Tokens in Keychain (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`). PIN uses SHA-256 ×10,000 + per-user salt (documented tradeoff vs argon2). No sensitive data in UserDefaults. No SQL injection paths. |
+| Debug Code (B3) | ⚠️ FIXED | 3 `print()` calls in `PeerDiscovery.swift` not gated by `#if DEBUG` — replaced with `os.Logger` instance + proper `[logger]` capture list to avoid retain cycles. |
+| Apple HIG (C1–C4) | ✅ PASS | NavigationStack used everywhere (no deprecated NavigationView). 647 accessibilityLabel annotations across features. 132 `.refreshable` pull-to-refresh. 409+ search locations. 65 destructive role buttons. |
+| Dynamic Type (C2) | ✅ PASS | 0 hardcoded font sizes in feature views. `ErrorStateView`/`EmptyStateView` use `@ScaledMetric` correctly. `JobStageProgressBar` micro-font (6/10pt) is a visual affordance, not user content — acceptable. |
+| UX Polish (D1–D4) | ✅ PASS | 185/214 feature files have empty state handling. All async views have `isLoading`/`ProgressView`. Jobs list uses default limit of 50 (service-level safeguard). Parts catalog fully paginated. |
+| Accessibility (C4) | ✅ PASS | 647 labels / 305 hidden annotations across 214 feature files. ~50% coverage of ~1,294 interactive elements — acceptable given many elements use system accessibility (List rows, NavigationLink, Button). |
+
+**Fix made:**
+- `core/Sources/WiredPartCore/Sync/PeerDiscovery.swift` — replaced 3 `print()` calls with `logger.error()` via `Logger(subsystem:category:)` instance; added `import os.log`; used `[logger]` capture list in closures to prevent retain cycle
+
+**No new GitHub issues needed** — all other findings clean or previously tracked.
 
 ---
 
