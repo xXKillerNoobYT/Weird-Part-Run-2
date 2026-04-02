@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import os.log
 
 // MARK: - DiscoveredPeer
 
@@ -72,6 +73,7 @@ public final class PeerDiscovery: @unchecked Sendable {
     private let port: UInt16
 
     private let queue = DispatchQueue(label: "com.wiredpart.peer-discovery", qos: .utility)
+    private let logger = Logger(subsystem: "com.wiredpart.core", category: "PeerDiscovery")
     private var browser: NWBrowser?
     private var listener: NWListener?
     private var peers: [String: DiscoveredPeer] = [:]  // keyed by device_id
@@ -143,12 +145,12 @@ public final class PeerDiscovery: @unchecked Sendable {
                 type: "_wiredpart._tcp",
                 txtRecord: txtRecord
             )
-            listener.stateUpdateHandler = { state in
+            listener.stateUpdateHandler = { [logger] state in
                 switch state {
                 case .ready:
                     break // Advertising active
                 case .failed(let error):
-                    print("[PeerDiscovery] Listener failed: \(error)")
+                    logger.error("[PeerDiscovery] Listener failed: \(error)")
                 default:
                     break
                 }
@@ -162,7 +164,7 @@ public final class PeerDiscovery: @unchecked Sendable {
             listener.start(queue: queue)
             self.listener = listener
         } catch {
-            print("[PeerDiscovery] Failed to create listener: \(error)")
+            logger.error("[PeerDiscovery] Failed to create listener: \(error)")
         }
     }
 
@@ -174,12 +176,12 @@ public final class PeerDiscovery: @unchecked Sendable {
         parameters.includePeerToPeer = true
 
         let browser = NWBrowser(for: descriptor, using: parameters)
-        browser.stateUpdateHandler = { state in
+        browser.stateUpdateHandler = { [logger] state in
             switch state {
             case .ready:
                 break // Browsing active
             case .failed(let error):
-                print("[PeerDiscovery] Browser failed: \(error)")
+                logger.error("[PeerDiscovery] Browser failed: \(error)")
             default:
                 break
             }

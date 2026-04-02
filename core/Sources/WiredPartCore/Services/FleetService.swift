@@ -1764,8 +1764,10 @@ public final class FleetService: Sendable {
                 }
 
                 // Check if inspection was performed today
+                // SQLite datetime('now') stores UTC, so compare against UTC date
                 let fmt = DateFormatter()
                 fmt.dateFormat = "yyyy-MM-dd"
+                fmt.timeZone = TimeZone(identifier: "UTC")
                 let todayStr = fmt.string(from: Date())
                 let isToday = performedAtStr.hasPrefix(todayStr)
 
