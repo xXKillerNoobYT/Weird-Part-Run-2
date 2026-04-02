@@ -37,7 +37,57 @@ For very small elements (under 20pt), keep the visual size but add .contentShape
 
 
 
-## AI RESOLTS 
-There's no file currently open in Xcode, and there are 240+ .frame() matches across the entire project. Most are on Spacers, Rectangles, Circles, and Text elements that shouldn't be changed.
+## AI RESOLTS
+Xcode AI couldn't handle the broad search — too many .frame() matches. Use per-file prompts below.
 
-Which file did you want me to apply the tap target fixes to? Or would you like me to scan all project files for undersized Button/Image tap targets?
+## Per-File AI Prompts (open each file in Xcode, then use this prompt)
+
+### File 1: ReportBuilderView.swift
+```
+At line ~183, there's a 28x28 button. Add .contentShape(Rectangle()).frame(minWidth: 44, minHeight: 44) to make the tap target 44x44 while keeping the icon at 28pt.
+```
+
+### File 2: IOSWarehouseLeaderboardPage.swift
+```
+At line ~198 there's a 28x28 button, and at line ~514 there's a 24x24 button. For both: add .contentShape(Rectangle()).frame(minWidth: 44, minHeight: 44) to expand tap targets.
+```
+
+### File 3: IOSMovementWizard.swift
+```
+At line ~109 there's a 28x28 button. Add .contentShape(Rectangle()).frame(minWidth: 44, minHeight: 44).
+```
+
+### File 4: CategoriesTreeView.swift
+```
+At line ~688 there's a 36x36 button — change to 44x44. At line ~522 there's a 14x14 element — add .contentShape(Rectangle()).frame(minWidth: 44, minHeight: 44).
+```
+
+### File 5: WarehouseMovementsPage.swift
+```
+At line ~223 there's a 36x36 button — change frame to 44x44.
+```
+
+### File 6: IOSOrganizationAuditPage.swift
+```
+At line ~209 there's a 36x36 button — change frame to 44x44.
+```
+
+### File 7: IOSAuditPage.swift
+```
+At line ~628 there's a 36x36 button — change frame to 44x44.
+```
+
+### File 8: IOSJobDetailTabView.swift
+```
+At line ~1142 there's a 36x36 button — change frame to 44x44.
+```
+
+### File 9: IOSClockPage.swift
+```
+At lines ~1563 and ~1585 there are 36x36 buttons — change both frames to 44x44.
+```
+
+### File 10: WarehouseOnboardingWizard.swift
+```
+At line ~429 there's a 28x28 button. Add .contentShape(Rectangle()).frame(minWidth: 44, minHeight: 44).
+```
