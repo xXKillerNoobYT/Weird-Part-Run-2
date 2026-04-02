@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import WiredPartCore
+import os.log
 
 /// Shared application state that owns the database and all services.
 ///
@@ -53,6 +54,8 @@ final class AppCore: ObservableObject {
     /// Guided onboarding progress tracker (per-user).
     @Published public var onboardingManager: OnboardingProgressManager?
 
+    nonisolated let logger = Logger(subsystem: "com.wiredpart.ios", category: "AppCore")
+
     // MARK: - Lifecycle
 
     init() {
@@ -91,7 +94,7 @@ final class AppCore: ObservableObject {
                     if let backup = backupPath {
                         try? AppDatabase.restoreDatabase(from: backup, to: path)
                         // Retry with restored DB (old schema, but data preserved)
-                        print("[AppCore] Migration failed, restored from backup. Error: \(error)")
+                        logger.error("[AppCore] Migration failed, restored from backup. Error: \(error.localizedDescription)")
                     }
                     #endif
                     throw error

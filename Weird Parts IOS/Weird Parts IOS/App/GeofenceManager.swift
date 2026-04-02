@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import CoreLocation
+import os.log
 
 @MainActor
 final class GeofenceManager: NSObject, ObservableObject, CLLocationManagerDelegate {
@@ -12,6 +13,7 @@ final class GeofenceManager: NSObject, ObservableObject, CLLocationManagerDelega
 
     private let locationManager = CLLocationManager()
     private var monitoredRegion: CLCircularRegion?
+    nonisolated let logger = Logger(subsystem: "com.wiredpart.ios", category: "GeofenceManager")
 
     static let jobRadiusMeters: Double = 1609.34 // 1 mile
 
@@ -81,6 +83,6 @@ final class GeofenceManager: NSObject, ObservableObject, CLLocationManagerDelega
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, monitoringDidFailFor region: CLRegion?, withError error: Error) {
-        print("[GeofenceManager] Monitoring failed: \(error.localizedDescription)")
+        logger.error("[GeofenceManager] Monitoring failed: \(error.localizedDescription)")
     }
 }

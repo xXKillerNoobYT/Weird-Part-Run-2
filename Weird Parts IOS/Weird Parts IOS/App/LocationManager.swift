@@ -1,6 +1,7 @@
 import CoreLocation
 import Combine
 import SwiftUI
+import os.log
 
 /// Lightweight wrapper around CLLocationManager for single location fixes.
 ///
@@ -10,6 +11,7 @@ import SwiftUI
 final class LocationManager: NSObject, ObservableObject {
     private let manager = CLLocationManager()
     private var continuation: CheckedContinuation<CLLocation?, Never>?
+    nonisolated let logger = Logger(subsystem: "com.wiredpart.ios", category: "LocationManager")
 
     @Published var authorizationStatus: CLAuthorizationStatus = .notDetermined
     @Published var permissionDenied = false
@@ -68,8 +70,8 @@ extension LocationManager: CLLocationManagerDelegate {
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        logger.error("[LocationManager] Error: \(error.localizedDescription)")
         Task { @MainActor in
-            print("[LocationManager] Error: \(error.localizedDescription)")
             continuation?.resume(returning: nil)
             continuation = nil
         }
