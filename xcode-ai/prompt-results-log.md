@@ -3098,3 +3098,16 @@ All 136 prompts verified and implemented. Program ready for review.
 **Issues Found:**
 - Swift type-checker error ("Failed to produce diagnostic for expression") on complex view body in HatDetailSheet — resolved by splitting into sub-views and extracting `memberRow()` helper
 **Build:** PASS (zero diagnostics across all 3 modified files)
+
+## Prompt PE-009b (Revised) — Tap Target `.contentShape(Rectangle())` Pass (2026-04-01)
+
+**Status:** SUCCESS
+**Files Changed:** ReportBuilderView.swift, IOSWarehouseLeaderboardPage.swift (×2), IOSMovementWizard.swift, CategoriesTreeView.swift (×2), WarehouseMovementsPage.swift, IOSOrganizationAuditPage.swift, IOSAuditPage.swift, IOSJobDetailTabView.swift, WarehouseOnboardingWizard.swift
+**What Was Done:**
+- Added `.contentShape(Rectangle())` to 11 of 13 tap target locations that were missing it from the original PE-009b pass
+- The original pass applied `.frame(minWidth: 44, minHeight: 44)` to expand tap areas but omitted `.contentShape(Rectangle())` — without this modifier, SwiftUI clips hit testing to the visual bounds of the element, not the expanded frame
+- 2 locations (IOSClockPage.swift shop icon and job icon) already had `.contentShape(Rectangle())` on their parent HStack and were skipped
+- No visual changes — only hit-testing behavior improved
+**Issues Found:**
+- None
+**Build:** PASS (zero diagnostics across all 10 modified files)
