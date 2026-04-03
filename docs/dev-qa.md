@@ -66,6 +66,91 @@
 
 ---
 
+### GitHub #46 — Part Number Location + Hierarchy Persistence
+
+**Current State:** Part hierarchy tree collapses/resets on every data change. Part numbers are shown at the brand level but user wants them at the color level (each color variant has its own part number).
+
+**Issues raised:**
+1. Hierarchy tree state resets when any change is made (expansion state lost)
+2. Part numbers should be at the color level, not the brand level
+3. Each color should show its own full part number (not a constructed prefix/suffix)
+
+#### Questions:
+
+1. **As an Owner:** Do you want part numbers unique per color variant, OR per type within a brand? E.g., is "Romex 12/2 White" a different part number from "Romex 12/2 Gray"?
+   > Answer: _pending_
+
+2. **As a Manager:** When viewing the hierarchy tree, what level should show the part number field — Brand, Type, or Color?
+   > Answer: _pending_
+
+3. **As an Employee:** When looking up a part to order, do you search by color + part number, or by category then drill down?
+   > Answer: _pending_
+
+4. **As a Developer:** Should hierarchy tree expansion state be persisted in UserDefaults (per session) or in the database (per user)? UserDefaults is simpler but resets on app restart. DB is more work but truly persistent.
+   > Answer: _pending_
+
+---
+
+### GitHub #47 — Brands & Suppliers Editing + Brand-Supplier Linking
+
+**Current State:** `PartsBrandsPage.swift` and `PartsSuppliersPage.swift` exist with `BrandSupplierPickerSheet` already written. The sheet may not be triggered from the correct locations, and the full edit flow may be broken.
+
+**Issues raised:**
+1. No visible way to edit a Brand or Supplier from their respective pages
+2. Need to link which brands a supplier carries (on the Supplier side)
+3. Need to link which suppliers carry a brand (on the Brand side)
+
+#### Questions:
+
+1. **As an Owner:** On the Brands page, should you see a list of suppliers who carry that brand, OR should brand-supplier linking only be done from the Supplier side?
+   > Answer: _pending_
+
+2. **As a Manager:** When adding a new brand, should the system prompt "which suppliers carry this brand?" or leave it for later?
+   > Answer: _pending_
+
+3. **As a Developer:** `BrandSupplierPickerSheet` exists — is the intent for this to appear when tapping a Brand row (to select which suppliers carry it), or only from the Supplier detail page?
+   > Answer: _pending_
+
+---
+
+### GitHub #48 — Parts → Pricing UI Mostly Unbuilt
+
+**Current State:** Migration 025 added the pricing system schema. `PricingService` exists in core. The iOS Parts → Pricing page has little to no UI for editing price tiers, viewing price history, or managing margins.
+
+**Issues raised:**
+1. Can't edit prices from the UI
+2. No price history view
+3. No margin editor
+
+#### Questions:
+
+1. **As an Owner:** What's the most critical pricing function to build first: viewing current prices, editing price tiers, or seeing price history?
+   > Answer: _pending_
+
+2. **As a Manager:** Should pricing be editable from the Parts Catalog page (inline per part), OR only from the Parts → Pricing dedicated page?
+   > Answer: _pending_
+
+---
+
+### GitHub #49 — Warehouse Setup — Optional + Incomplete
+
+**Current State:** Warehouse Setup Wizard exists but has UX issues (assigns everything to Row 1, optional setup not truly optional).
+
+**Issues raised:**
+1. Setup should be optional — users should be able to skip it
+2. Many parts of the wizard aren't finished
+3. The onboarding flow forces warehouse setup when user may not need it
+
+#### Questions:
+
+1. **As an Owner:** Can a worker use the app (clock in, view parts, process orders) without completing warehouse setup? Or is warehouse setup a prerequisite?
+   > Answer: _pending_
+
+2. **As a Manager:** In the warehouse wizard, should the app ask users to define their row/shelf layout before placing items, or is visual drag-and-drop placement enough?
+   > Answer: _pending_
+
+---
+
 ## Question Template
 
 When generating questions, use this format:

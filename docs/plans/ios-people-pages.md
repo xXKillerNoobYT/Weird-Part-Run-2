@@ -4,7 +4,9 @@
 >
 > **Source:** Design conversation 2026-03-23. Implements pages in `Weird Parts IOS/Features/People/`.
 >
-> **Files:** `IOSEmployeesPage`, `IOSEmployeeDetailPage`, `IOSCustomersPage`, `IOSCustomerDetailPage`, `IOSContractorsPage`, `IOSContractorDetailPage`, `IOSContactsPage`, `IOSHatsPage`, `IOSPermissionsPage`, `IOSTeamsPage`, `PeopleRouter`
+> **Files:** `IOSEmployeesPage`, `IOSEmployeeDetailPage`, `IOSCustomersPage`, `IOSCustomerDetailPage`, `IOSContractorsPage`, `IOSContractorDetailPage`, `IOSContactsPage`, `IOSContactDetailPage`, `IOSHatsPage`, `IOSPermissionsPage`, `IOSTeamsPage`, `PeopleRouter`
+>
+> **Note (2026-04-02):** `IOSContactDetailPage` was added as an unplanned improvement (plan-enforcer run 2) — it follows the same pattern as `IOSCustomerDetailPage` / `IOSContractorDetailPage` and is the natural completion of the Contacts page. `PeopleService.updateContact()` was added to support inline editing from this page. Both additions are consistent with the plan's intent and have been retroactively documented here.
 
 ---
 
@@ -239,6 +241,39 @@ Each card shows count. Tap to filter.
 - Inactive section collapsed by default
 - Inactive contacts shown with reduced opacity
 - Toggle active/inactive via contact edit
+
+---
+
+## 5b. Contact Detail Page (`IOSContactDetailPage`) — Added 2026-04-02
+
+Follows the same pattern as `IOSCustomerDetailPage` and `IOSContractorDetailPage`.
+
+### Layout
+
+```
++--------------------------------------------------+
+| [Back] Contact Name                    [Edit]     |
++--------------------------------------------------+
+| CONTACT INFORMATION                               |
+| Name: First Last                                 |
+| Type: [badge]                                    |
+| Role / Company: Acme Corp                        |
+| Phone: (555) 123-4567    [call]                  |
+| Email: jane@acme.com     [mail]                  |
+|                                                   |
+| NOTES                                             |
+| [notes text if any]                              |
++--------------------------------------------------+
+```
+
+### Edit Sheet (`EditContactSheet`)
+- Inline edit: first name, last name, phone, email, role/company
+- Calls `PeopleService.updateContact(id:firstName:lastName:phone:email:role:)` (added 2026-04-02)
+- On save, parent page reloads via `onSave` callback
+
+### Navigation Wiring
+- `IOSContactsPage` uses `.navigationDestination(for: Int64.self)` → `IOSContactDetailPage(contactId:)`
+- Contacts list passes the contact's `id` (Int64) into the navigation path
 
 ---
 
