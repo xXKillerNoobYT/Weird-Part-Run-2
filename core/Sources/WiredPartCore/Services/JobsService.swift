@@ -478,8 +478,8 @@ public final class JobsService: Sendable {
                 leadUserId: row["lead_user_id"] as Int64?,
                 leadUserName: row["lead_user_name"] as String?,
                 onCallType: row["on_call_type"] as String?,
-                warrantyStartDate: row["warranty_start_date"] as String?,
-                warrantyEndDate: row["warranty_end_date"] as String?,
+                warrantyStartDate: row["warranty_start"] as String?,
+                warrantyEndDate: row["warranty_end"] as String?,
                 startDate: row["start_date"] as String?,
                 dueDate: row["due_date"] as String?,
                 completedDate: row["completed_date"] as String?,
@@ -538,7 +538,7 @@ public final class JobsService: Sendable {
                      gps_lat, gps_lng, status, priority, job_type,
                      bill_rate_type_id, billing_rate, estimated_hours,
                      lead_user_id, on_call_type,
-                     warranty_start_date, warranty_end_date,
+                     warranty_start, warranty_end,
                      start_date, due_date, notes,
                      budget_limit, budget_alert_percent, created_by,
                      created_at, updated_at)
@@ -609,8 +609,8 @@ public final class JobsService: Sendable {
             if let estimatedHours { setClauses.append("estimated_hours = ?"); args.append(estimatedHours) }
             if let leadUserId { setClauses.append("lead_user_id = ?"); args.append(leadUserId) }
             if let onCallType { setClauses.append("on_call_type = ?"); args.append(onCallType) }
-            if let warrantyStartDate { setClauses.append("warranty_start_date = ?"); args.append(warrantyStartDate) }
-            if let warrantyEndDate { setClauses.append("warranty_end_date = ?"); args.append(warrantyEndDate) }
+            if let warrantyStartDate { setClauses.append("warranty_start = ?"); args.append(warrantyStartDate) }
+            if let warrantyEndDate { setClauses.append("warranty_end = ?"); args.append(warrantyEndDate) }
             if let startDate { setClauses.append("start_date = ?"); args.append(startDate) }
             if let dueDate { setClauses.append("due_date = ?"); args.append(dueDate) }
             if let completedDate { setClauses.append("completed_date = ?"); args.append(completedDate) }
@@ -1975,7 +1975,7 @@ public final class JobsService: Sendable {
     /// Detect whether a GRDB/SQLite error indicates a missing table.
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
-        return message.contains("no such table")
+        return message.contains("no such table") || message.contains("no such column")
     }
 
     /// Detect whether a GRDB/SQLite error indicates a missing column.

@@ -78,6 +78,7 @@ extension AppDatabase {
         registerMigration061AuditSessionMetadata(&migrator)
         registerMigration062AuditCountedQty(&migrator)
         registerMigration063FixContractorNotesFKs(&migrator)
+        registerMigration064TimeOffRequestGroups(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4621,6 +4622,26 @@ extension AppDatabase {
                 t.column("notes", .text)
                 t.column("created_at", .text).defaults(sql: "(datetime('now'))")
                 t.column("deleted_at", .text)
+            }
+        }
+    }
+}
+
+extension AppDatabase {
+    /// Migration 064: Add `request_group` to `schedule_exceptions`.
+    ///
+    /// Multi-day time-off requests are stored as one row per day (due to the
+    /// `UNIQUE(user_id, exception_date)` constraint). Without a shared key,
+    /// `listTimeOffRequests` returns one row per day, making a 3-day request
+    /// appear as 3 separate requests in the UI.
+    ///
+    /// This migration adds a `request_group TEXT` column. `createTimeOffRequest`
+    /// now assigns the same UUID to every day it inserts for a single request,
+    /// and `listTimeOffRequests` groups by that UUID to surface one row per request.
+    private static func registerMigration064TimeOffRequestGroups(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("064_time_off_request_groups") { db in
+            try db.alter(table: "schedule_exceptions") { t in
+                t.add(column: "request_group", .text)
             }
         }
     }

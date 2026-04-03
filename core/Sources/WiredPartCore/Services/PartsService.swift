@@ -1802,7 +1802,8 @@ public final class PartsService: Sendable {
                     unitCostAtSale: layer.unitCost,
                     sellPriceCharged: sellPrice,
                     supplierId: supplierId,
-                    isReturned: 0
+                    isReturned: 0,
+                    createdAt: ISO8601DateFormatter().string(from: Date())
                 )
                 try consumption.insert(dbConn)
                 records.append(consumption)
@@ -2504,11 +2505,12 @@ public final class PartsService: Sendable {
 
     /// Mark a part's cost as verified (update the timestamp without changing the price).
     public func markPriceVerified(partId: Int64) throws {
+        let now = ISO8601DateFormatter().string(from: Date())
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
-                UPDATE parts SET cost_last_updated = datetime('now'), updated_at = datetime('now')
+                UPDATE parts SET cost_last_updated = ?, updated_at = ?
                 WHERE id = ?
-                """, arguments: [partId])
+                """, arguments: [now, now, partId])
         }
     }
 
@@ -6060,7 +6062,7 @@ public final class PartsService: Sendable {
     /// service can still return partial data on freshly created databases.
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
-        return message.contains("no such table")
+        return message.contains("no such table") || message.contains("no such column")
     }
 
     /// Escape a string for CSV output. Wraps in quotes if it contains commas,
@@ -6104,7 +6106,7 @@ public final class PartsService: Sendable {
         limit: Int = 25,
         offset: Int = 0
     ) throws -> CatalogSearchResult {
-        try db.writer.read { dbConn in
+        do { return try db.writer.read { dbConn in
             var whereClauses = ["p.deleted_at IS NULL"]
             var args: [DatabaseValueConvertible?] = []
 
@@ -6204,6 +6206,10 @@ public final class PartsService: Sendable {
                 )
             }
             return CatalogSearchResult(parts: parts, totalCount: count)
+        }
+        } catch {
+            if isTableNotFoundError(error) { return CatalogSearchResult(parts: [], totalCount: 0) }
+            throw error
         }
     }
 

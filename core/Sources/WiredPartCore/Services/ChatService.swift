@@ -506,6 +506,12 @@ public final class ChatService: Sendable {
     public func ensureOfficeChannel() throws {
         do {
             try db.writer.write { dbConn in
+                // Skip on empty databases — `created_by` is NOT NULL with a FK to users,
+                // so inserting before any users exist causes a FK violation that logs
+                // as a red error on the Dashboard on first launch.
+                let userCount = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM users") ?? 0
+                guard userCount > 0 else { return }
+
                 // Check if Office channel already exists
                 let existingId = try Int64.fetchOne(dbConn, sql: """
                     SELECT id FROM chat_channels
@@ -515,12 +521,20 @@ public final class ChatService: Sendable {
 
                 if existingId != nil { return }
 
+                // Use the first admin user as the system channel creator
+                let adminUserId = try Int64.fetchOne(dbConn, sql: """
+                    SELECT uh.user_id FROM user_hats uh
+                    JOIN hats h ON h.id = uh.hat_id
+                    WHERE h.name = 'Admin' AND uh.deleted_at IS NULL
+                    LIMIT 1
+                    """) ?? 1
+
                 // Create the Office channel
                 try dbConn.execute(sql: """
                     INSERT INTO chat_channels
                     (name, channel_type, created_by, is_system, is_active, created_at, updated_at)
-                    VALUES ('Office', 'office', 1, 1, 1, datetime('now'), datetime('now'))
-                    """)
+                    VALUES ('Office', 'office', ?, 1, 1, datetime('now'), datetime('now'))
+                    """, arguments: [adminUserId])
 
                 let channelId = dbConn.lastInsertedRowID
 

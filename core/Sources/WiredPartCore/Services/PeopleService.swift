@@ -616,7 +616,7 @@ public final class PeopleService: Sendable {
         do {
             return try db.writer.read { dbConn in
                 let rows = try Row.fetchAll(dbConn, sql: """
-                    SELECT u.id, u.display_name, u.phone, u.email, uh.created_at AS assigned_at
+                    SELECT u.id, u.display_name, u.phone, u.email, NULL AS assigned_at
                     FROM user_hats uh
                     JOIN users u ON u.id = uh.user_id
                     WHERE uh.hat_id = ?
@@ -719,6 +719,28 @@ public final class PeopleService: Sendable {
                 arguments: [entityType, entityId, firstName, lastName, role, phone, email, isPrimary ? 1 : 0, notes]
             )
             return dbConn.lastInsertedRowID
+        }
+    }
+
+    /// Update an existing entity contact's basic info.
+    public func updateContact(
+        id: Int64,
+        firstName: String,
+        lastName: String,
+        phone: String,
+        email: String? = nil,
+        role: String? = nil
+    ) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE entity_contacts
+                    SET first_name = ?, last_name = ?, phone = ?, email = ?, role = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [firstName, lastName, phone, email, role, id]
+            )
         }
     }
 
@@ -939,7 +961,8 @@ public final class PeopleService: Sendable {
             return try db.writer.read { dbConn in
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT u.id, COALESCE(u.display_name, u.email) AS display_name,
-                           u.email, u.phone, u.is_active
+                           u.email, u.phone, u.is_active,
+                           CASE WHEN u.is_active = 1 THEN 'active' ELSE 'inactive' END AS status
                     FROM users u
                     WHERE u.is_active = 1 AND u.deleted_at IS NULL
                       AND u.id NOT IN (
@@ -1591,7 +1614,7 @@ public final class PeopleService: Sendable {
             orderClause = "updated_at DESC, first_name ASC"
         }
 
-        return try db.writer.read { dbConn in
+        do { return try db.writer.read { dbConn in
             var sql = """
                 SELECT ec.id, ec.first_name, ec.last_name,
                        ec.role AS company, ec.email, ec.phone, ec.entity_type AS contact_type,
@@ -1639,11 +1662,42 @@ public final class PeopleService: Sendable {
 
             return (active: active, inactive: inactive)
         }
+        } catch {
+            if isTableNotFoundError(error) { return (active: [], inactive: []) }
+            throw error
+        }
+    }
+
+    /// Fetch a single contact by ID. Returns nil if not found or deleted.
+    public func getContact(id: Int64) throws -> ContactListItem? {
+        do { return try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT ec.id, ec.first_name, ec.last_name,
+                       ec.role AS company, ec.email, ec.phone, ec.entity_type AS contact_type
+                FROM entity_contacts ec
+                WHERE ec.deleted_at IS NULL AND ec.id = ?
+                LIMIT 1
+                """, arguments: [id])
+            guard let r = rows.first else { return nil }
+            return ContactListItem(
+                id: r["id"] as Int64? ?? 0,
+                firstName: r["first_name"] as String? ?? "",
+                lastName: r["last_name"] as String? ?? "",
+                company: r["company"] as String?,
+                email: r["email"] as String?,
+                phone: r["phone"] as String?,
+                contactType: r["contact_type"] as String?
+            )
+        }
+        } catch {
+            if isTableNotFoundError(error) { return nil }
+            throw error
+        }
     }
 
     /// Count contacts by type for smart cards.
     public func getContactTypeCounts() throws -> [String: Int] {
-        try db.writer.read { dbConn in
+        do { return try db.writer.read { dbConn in
             let rows = try Row.fetchAll(dbConn, sql: """
                 SELECT COALESCE(entity_type, 'other') as ct,
                        SUM(CASE WHEN COALESCE(is_active, 1) = 1 THEN 1 ELSE 0 END) as active_count,
@@ -1666,6 +1720,10 @@ public final class PeopleService: Sendable {
                 counts["inactive"] = (counts["inactive"] ?? 0) + inactiveCount
             }
             return counts
+        }
+        } catch {
+            if isTableNotFoundError(error) { return ["all": 0, "active": 0, "inactive": 0] }
+            throw error
         }
     }
 
@@ -1893,7 +1951,7 @@ public final class PeopleService: Sendable {
     /// Detect whether a GRDB/SQLite error indicates a missing table.
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
-        return message.contains("no such table")
+        return message.contains("no such table") || message.contains("no such column")
     }
 
     /// Format a date as yyyy-MM-dd.

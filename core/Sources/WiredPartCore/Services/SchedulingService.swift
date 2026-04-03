@@ -317,10 +317,17 @@ public final class SchedulingService: Sendable {
                     whereClauses.append(statusCondition)
                 }
 
+                // Group consecutive days belonging to the same multi-day request.
+                // Rows with a shared `request_group` UUID (set at insert time) are
+                // collapsed into a single TimeOffRow spanning [MIN date, MAX date].
+                // Legacy rows (request_group IS NULL) each map to a single-day request
+                // via COALESCE(request_group, CAST(id AS TEXT)) as the grouping key.
                 let sql = """
-                    SELECT se.id, se.exception_date AS start_date,
-                           se.exception_date AS end_date, se.reason,
-                           CASE WHEN se.is_approved = 1 THEN 'approved' ELSE 'pending' END AS status,
+                    SELECT MIN(se.id) AS id,
+                           MIN(se.exception_date) AS start_date,
+                           MAX(se.exception_date) AS end_date,
+                           se.reason,
+                           CASE WHEN MAX(se.is_approved) = 1 THEN 'approved' ELSE 'pending' END AS status,
                            COALESCE(u.display_name, u.email, 'Unknown') AS user_name,
                            COALESCE(ua.display_name, ua.email) AS approved_by_name
                     FROM schedule_exceptions se
@@ -328,7 +335,8 @@ public final class SchedulingService: Sendable {
                     LEFT JOIN users ua ON ua.id = se.approved_by
                     WHERE se.exception_type = 'time_off'
                       AND \(whereClauses.joined(separator: " AND "))
-                    ORDER BY se.exception_date DESC
+                    GROUP BY COALESCE(se.request_group, CAST(se.id AS TEXT)), se.user_id
+                    ORDER BY start_date DESC
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
@@ -360,16 +368,19 @@ public final class SchedulingService: Sendable {
     ) throws -> Int64 {
         // Generate all dates in the range [startDate, endDate]
         let dates = Self.datesInRange(from: startDate, to: endDate)
+        // A shared UUID links all per-day rows back to one logical request so
+        // listTimeOffRequests() can group them into a single TimeOffRow.
+        let requestGroup = UUID().uuidString
         guard !dates.isEmpty else {
-            // Fallback: at least insert the start date
+            // Fallback: insert just the start date with the group key.
             return try db.writer.write { dbConn in
                 try dbConn.execute(
                     sql: """
                         INSERT INTO schedule_exceptions
-                        (user_id, exception_date, exception_type, reason, is_approved, created_at)
-                        VALUES (?, ?, 'time_off', ?, 0, datetime('now'))
+                        (user_id, exception_date, exception_type, reason, is_approved, request_group, created_at)
+                        VALUES (?, ?, 'time_off', ?, 0, ?, datetime('now'))
                         """,
-                    arguments: [userId, startDate, reason]
+                    arguments: [userId, startDate, reason, requestGroup]
                 )
                 return dbConn.lastInsertedRowID
             }
@@ -381,10 +392,10 @@ public final class SchedulingService: Sendable {
                 try dbConn.execute(
                     sql: """
                         INSERT OR IGNORE INTO schedule_exceptions
-                        (user_id, exception_date, exception_type, reason, is_approved, created_at)
-                        VALUES (?, ?, 'time_off', ?, 0, datetime('now'))
+                        (user_id, exception_date, exception_type, reason, is_approved, request_group, created_at)
+                        VALUES (?, ?, 'time_off', ?, 0, ?, datetime('now'))
                         """,
-                    arguments: [userId, date, reason]
+                    arguments: [userId, date, reason, requestGroup]
                 )
                 if i == 0 { firstId = dbConn.lastInsertedRowID }
             }
@@ -425,36 +436,64 @@ public final class SchedulingService: Sendable {
         }
 
         try db.writer.write { dbConn in
-            // Verify the request exists
-            let count = try Int.fetchOne(
+            // Verify the row exists and retrieve its request_group so we can
+            // update every day in the same multi-day request atomically.
+            guard let row = try Row.fetchOne(
                 dbConn,
-                sql: "SELECT COUNT(*) FROM schedule_exceptions WHERE id = ? AND exception_type = 'time_off' AND deleted_at IS NULL",
+                sql: """
+                    SELECT id, request_group FROM schedule_exceptions
+                    WHERE id = ? AND exception_type = 'time_off' AND deleted_at IS NULL
+                    """,
                 arguments: [id]
-            ) ?? 0
-
-            guard count > 0 else {
+            ) else {
                 throw SchedulingError.timeOffRequestNotFound(id)
             }
 
+            let requestGroup: String? = row["request_group"]
             let isApproved = status == "approved" ? 1 : 0
+
+            // Build a WHERE clause that matches all days of the same request:
+            // if request_group is set, target the whole group; otherwise just this row.
             if status == "approved", let approvedBy {
-                try dbConn.execute(
-                    sql: """
-                        UPDATE schedule_exceptions
-                        SET is_approved = ?, approved_by = ?, approved_at = datetime('now')
-                        WHERE id = ?
-                        """,
-                    arguments: [isApproved, approvedBy, id]
-                )
+                if let group = requestGroup {
+                    try dbConn.execute(
+                        sql: """
+                            UPDATE schedule_exceptions
+                            SET is_approved = ?, approved_by = ?, approved_at = datetime('now')
+                            WHERE request_group = ? AND exception_type = 'time_off' AND deleted_at IS NULL
+                            """,
+                        arguments: [isApproved, approvedBy, group]
+                    )
+                } else {
+                    try dbConn.execute(
+                        sql: """
+                            UPDATE schedule_exceptions
+                            SET is_approved = ?, approved_by = ?, approved_at = datetime('now')
+                            WHERE id = ?
+                            """,
+                        arguments: [isApproved, approvedBy, id]
+                    )
+                }
             } else {
-                try dbConn.execute(
-                    sql: """
-                        UPDATE schedule_exceptions
-                        SET is_approved = ?
-                        WHERE id = ?
-                        """,
-                    arguments: [isApproved, id]
-                )
+                if let group = requestGroup {
+                    try dbConn.execute(
+                        sql: """
+                            UPDATE schedule_exceptions
+                            SET is_approved = ?
+                            WHERE request_group = ? AND exception_type = 'time_off' AND deleted_at IS NULL
+                            """,
+                        arguments: [isApproved, group]
+                    )
+                } else {
+                    try dbConn.execute(
+                        sql: """
+                            UPDATE schedule_exceptions
+                            SET is_approved = ?
+                            WHERE id = ?
+                            """,
+                        arguments: [isApproved, id]
+                    )
+                }
             }
         }
     }
