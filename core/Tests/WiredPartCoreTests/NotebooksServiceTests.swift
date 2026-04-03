@@ -900,4 +900,401 @@ struct NotebooksServiceTests {
         #expect(templates.contains { $0.title == "Template NB" })
         #expect(!templates.contains { $0.title == "Regular NB" })
     }
+
+    // MARK: - 30. startWarrantyTimer
+
+    @Test("startWarrantyTimer sets warranty_timer_start and warranty_timer_end on an entry")
+    func testStartWarrantyTimer() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Warranty Test NB",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let groupId = try env.notebooks.createSectionGroup(notebookId: nbId, name: "Group A")
+        let sectionId = try env.notebooks.createSection(notebookId: nbId, groupId: groupId, name: "Sec A")
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            content: "Warranty item",
+            createdBy: env.adminUserId
+        )
+
+        // startWarrantyTimer should not throw
+        try env.notebooks.startWarrantyTimer(entryId: entryId, warrantyDurationDays: 365)
+
+        // Verify via hierarchy — warranty_timer_end should be non-nil
+        let hierarchy = try env.notebooks.getNotebookHierarchy(notebookId: nbId)
+        let allEntries = hierarchy.groups.flatMap { $0.sections }.flatMap { $0.entries }
+        let entry = try #require(allEntries.first { $0.id == entryId })
+        #expect(entry.warrantyTimerEnd != nil)
+    }
+
+    // MARK: - 31. getTodosNeedingReview
+
+    @Test("getTodosNeedingReview returns classified-but-unreviewed entries for a job")
+    func testGetTodosNeedingReview() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let nbId = try env.notebooks.createNotebook(
+            title: "Job NB",
+            notebookType: "job",
+            jobId: jobId,
+            createdBy: env.adminUserId
+        )
+        let groupId = try env.notebooks.createSectionGroup(notebookId: nbId, name: "Work")
+        let sectionId = try env.notebooks.createSection(notebookId: nbId, groupId: groupId, name: "Tasks")
+
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "todo",
+            content: "Fix breaker",
+            createdBy: env.adminUserId
+        )
+
+        // notebook_id is a denormalized column — set it so getTodosNeedingReview can JOIN
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE notebook_entries SET notebook_id = ? WHERE id = ?",
+                arguments: [nbId, entryId]
+            )
+        }
+
+        // Before classification, nothing needs review
+        let beforeClassify = try env.notebooks.getTodosNeedingReview(jobId: jobId)
+        #expect(beforeClassify.isEmpty)
+
+        // Classify the entry — now it needs review
+        try env.notebooks.classifyTodoWork(
+            entryId: entryId,
+            classification: "warranty",
+            classifiedBy: env.adminUserId
+        )
+
+        let needsReview = try env.notebooks.getTodosNeedingReview(jobId: jobId)
+        #expect(needsReview.contains { $0.id == entryId })
+
+        // After review, it should drop out
+        try env.notebooks.reviewClassification(
+            entryId: entryId,
+            reviewedBy: env.adminUserId,
+            approved: true,
+            newClassification: nil
+        )
+        let afterReview = try env.notebooks.getTodosNeedingReview(jobId: jobId)
+        #expect(!afterReview.contains { $0.id == entryId })
+    }
+
+    // MARK: - 24. Reorder Sections
+
+    @Test("reorderSections updates sort_order within a group")
+    func testReorderSections() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Sort Test NB",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+
+        // Create 3 sections in default order (s1=0, s2=1, s3=2)
+        let s1 = try env.notebooks.createSection(notebookId: nbId, groupId: nil, name: "Alpha")
+        let s2 = try env.notebooks.createSection(notebookId: nbId, groupId: nil, name: "Beta")
+        let s3 = try env.notebooks.createSection(notebookId: nbId, groupId: nil, name: "Gamma")
+
+        // Reverse the order: Gamma, Beta, Alpha
+        try env.notebooks.reorderSections(groupId: nil, orderedIds: [s3, s2, s1])
+
+        // Hierarchy returns sections ordered by sort_order ASC
+        let hierarchy = try env.notebooks.getNotebookHierarchy(notebookId: nbId)
+        let names = hierarchy.ungroupedSections.map { $0.name }
+        #expect(names == ["Gamma", "Beta", "Alpha"])
+
+        // Verify sort_order values are contiguous indices (0, 1, 2)
+        let sortOrders = hierarchy.ungroupedSections.map { $0.sortOrder }
+        #expect(sortOrders == [0, 1, 2])
+    }
+
+    // MARK: - 25. Apply Page Template
+
+    @Test("applyPageTemplate creates block entries in target section")
+    func testApplyPageTemplate() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Build a minimal page template with 2 entries
+        let templateData = NotebooksService.NotebookTemplateData(groups: [
+            .init(name: "Page Group", sections: [
+                .init(name: "Checklist", entries: [
+                    .init(blockType: "text", title: "Step 1", content: "Do the first thing", headingLevel: nil, checklistItems: nil),
+                    .init(blockType: "text", title: "Step 2", content: "Do the second thing", headingLevel: nil, checklistItems: nil)
+                ])
+            ])
+        ])
+
+        let templateId = try env.notebooks.createTemplate(
+            name: "Test Page Template",
+            description: nil,
+            templateType: "page",
+            category: nil,
+            templateData: templateData,
+            createdBy: env.adminUserId
+        )
+        #expect(templateId > 0)
+
+        // Create a notebook and section to apply the template into
+        let nbId = try env.notebooks.createNotebook(
+            title: "Page Template NB",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId,
+            groupId: nil,
+            name: "Target Section"
+        )
+
+        // Apply the page template
+        try env.notebooks.applyPageTemplate(
+            templateId: templateId,
+            sectionId: sectionId,
+            createdBy: env.adminUserId
+        )
+
+        // Verify 2 block entries were created in the section
+        let hierarchy = try env.notebooks.getNotebookHierarchy(notebookId: nbId)
+        let section = try #require(hierarchy.ungroupedSections.first { $0.id == sectionId })
+        #expect(section.entries.count == 2)
+        #expect(section.entries.contains { $0.title == "Step 1" })
+        #expect(section.entries.contains { $0.title == "Step 2" })
+    }
+
+    @Test("applyPageTemplate is no-op for non-existent template")
+    func testApplyPageTemplateNotFound() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "NB",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId,
+            groupId: nil,
+            name: "Empty Section"
+        )
+
+        // Applying a non-existent template should be a no-op (not throw)
+        try env.notebooks.applyPageTemplate(
+            templateId: 99999,
+            sectionId: sectionId,
+            createdBy: env.adminUserId
+        )
+
+        let hierarchy = try env.notebooks.getNotebookHierarchy(notebookId: nbId)
+        let section = try #require(hierarchy.ungroupedSections.first { $0.id == sectionId })
+        #expect(section.entries.isEmpty)
+    }
+
+    // MARK: - 26. Block Conflict Detection & Resolution
+
+    @Test("detectBlockConflicts returns empty on fresh database")
+    func testDetectBlockConflictsEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Conflict NB",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+
+        let conflicts = try env.notebooks.detectBlockConflicts(notebookId: nbId)
+        #expect(conflicts.isEmpty)
+    }
+
+    @Test("detectBlockConflicts returns unreviewed conflicts for notebook entries")
+    func testDetectBlockConflictsWithData() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Create a notebook entry to conflict on
+        let nbId = try env.notebooks.createNotebook(
+            title: "Conflicted NB",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Sec"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            title: "Contested Entry",
+            content: "local content",
+            createdBy: env.adminUserId
+        )
+
+        // Insert a fake conflict into _conflict_log directly
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO _conflict_log
+                    (table_name, record_id, field_name, local_value, remote_value,
+                     winner, local_device, remote_device, local_ts, remote_ts,
+                     resolved_at, reviewed)
+                VALUES ('notebook_entries', ?, 'content',
+                        'local content', 'remote content',
+                        'local', 'dev-A', 'dev-B',
+                        '2026-04-01T10:00:00Z', '2026-04-01T11:00:00Z',
+                        datetime('now'), 0)
+                """, arguments: [String(entryId)])
+        }
+
+        let conflicts = try env.notebooks.detectBlockConflicts(notebookId: nbId)
+        #expect(conflicts.count == 1)
+        #expect(conflicts[0].entryId == entryId)
+        #expect(conflicts[0].fieldName == "content")
+        #expect(conflicts[0].localValue == "local content")
+        #expect(conflicts[0].remoteValue == "remote content")
+        #expect(conflicts[0].winner == "local")
+    }
+
+    @Test("resolveBlockConflict marks conflict reviewed when keeping winner")
+    func testResolveBlockConflictKeepWinner() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Resolve NB",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Sec"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            content: "local content",
+            createdBy: env.adminUserId
+        )
+
+        // Insert conflict where "local" already won
+        var conflictLogId: Int64 = 0
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO _conflict_log
+                    (table_name, record_id, field_name, local_value, remote_value,
+                     winner, local_device, remote_device, local_ts, remote_ts,
+                     resolved_at, reviewed)
+                VALUES ('notebook_entries', ?, 'content',
+                        'local content', 'remote content',
+                        'local', 'dev-A', 'dev-B',
+                        '2026-04-01T10:00:00Z', '2026-04-01T11:00:00Z',
+                        datetime('now'), 0)
+                """, arguments: [String(entryId)])
+            conflictLogId = dbConn.lastInsertedRowID
+        }
+
+        // Resolve keeping "local" (same as winner → just marks reviewed)
+        try env.notebooks.resolveBlockConflict(conflictLogId: conflictLogId, keepVersion: "local")
+
+        // Conflict should no longer appear in detectBlockConflicts (reviewed=1)
+        let remaining = try env.notebooks.detectBlockConflicts(notebookId: nbId)
+        #expect(remaining.isEmpty)
+    }
+
+    @Test("resolveBlockConflict overrides LWW winner and applies remote value")
+    func testResolveBlockConflictOverrideWinner() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Override NB",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Sec"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            content: "local content",
+            createdBy: env.adminUserId
+        )
+
+        // LWW chose "local" — user wants to keep "remote" instead
+        var conflictLogId: Int64 = 0
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO _conflict_log
+                    (table_name, record_id, field_name, local_value, remote_value,
+                     winner, local_device, remote_device, local_ts, remote_ts,
+                     resolved_at, reviewed)
+                VALUES ('notebook_entries', ?, 'content',
+                        'local content', 'remote preferred content',
+                        'local', 'dev-A', 'dev-B',
+                        '2026-04-01T10:00:00Z', '2026-04-01T11:00:00Z',
+                        datetime('now'), 0)
+                """, arguments: [String(entryId)])
+            conflictLogId = dbConn.lastInsertedRowID
+        }
+
+        try env.notebooks.resolveBlockConflict(conflictLogId: conflictLogId, keepVersion: "remote")
+
+        // Conflict marked reviewed
+        let remaining = try env.notebooks.detectBlockConflicts(notebookId: nbId)
+        #expect(remaining.isEmpty)
+
+        // Entry content should now reflect the remote value
+        let hierarchy = try env.notebooks.getNotebookHierarchy(notebookId: nbId)
+        let entry = hierarchy.ungroupedSections.first?.entries.first
+        #expect(entry?.content == "remote preferred content")
+    }
+
+    @Test("resolveAllBlockConflicts resolves all unreviewed conflicts in bulk")
+    func testResolveAllBlockConflicts() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Bulk Resolve NB",
+            notebookType: "general",
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Sec"
+        )
+
+        // Create 3 entries each with an unreviewed conflict
+        for i in 1...3 {
+            let entryId = try env.notebooks.createBlockEntry(
+                sectionId: sectionId,
+                blockType: "text",
+                content: "entry \(i)",
+                createdBy: env.adminUserId
+            )
+            try env.db.writer.write { dbConn in
+                try dbConn.execute(sql: """
+                    INSERT INTO _conflict_log
+                        (table_name, record_id, field_name, local_value, remote_value,
+                         winner, local_device, remote_device, local_ts, remote_ts,
+                         resolved_at, reviewed)
+                    VALUES ('notebook_entries', ?, 'content',
+                            'entry \(i)', 'remote \(i)',
+                            'local', 'dev-A', 'dev-B',
+                            '2026-04-01T10:00:00Z', '2026-04-01T11:00:00Z',
+                            datetime('now'), 0)
+                    """, arguments: [String(entryId)])
+            }
+        }
+
+        // Verify 3 conflicts detected before resolution
+        let before = try env.notebooks.detectBlockConflicts(notebookId: nbId)
+        #expect(before.count == 3)
+
+        // Bulk resolve, keeping local versions
+        try env.notebooks.resolveAllBlockConflicts(notebookId: nbId, keepVersion: "local")
+
+        // All should be marked reviewed
+        let after = try env.notebooks.detectBlockConflicts(notebookId: nbId)
+        #expect(after.isEmpty)
+    }
 }

@@ -639,4 +639,22 @@ struct ChatServiceTests {
         // We verify no error is thrown and channels list is accessible
         #expect(channels.count >= 0)
     }
+
+    // Regression test for GitHub #19: ensureOfficeChannel() previously hardcoded
+    // `created_by = 1` which throws a FK violation on an empty database (no users).
+    // It should silently skip creation when no users exist yet.
+    @Test("ensureOfficeChannel is no-op on empty database (no users)")
+    func testEnsureOfficeChannelEmptyDatabase() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let chat = ChatService(db: db)
+        // Must not throw even though there are zero users
+        #expect(throws: Never.self) {
+            try chat.ensureOfficeChannel()
+        }
+        // No channel should have been created
+        let channels = try db.writer.read { dbConn in
+            try Row.fetchAll(dbConn, sql: "SELECT id FROM chat_channels WHERE channel_type = 'office'")
+        }
+        #expect(channels.isEmpty)
+    }
 }

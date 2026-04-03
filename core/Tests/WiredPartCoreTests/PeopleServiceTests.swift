@@ -358,6 +358,21 @@ struct PeopleServiceTests {
         #expect((counts["supplier"] ?? 0) >= 1)
     }
 
+    @Test("getContact returns single contact by ID")
+    func testGetContactById() throws {
+        let env = try E2ETestHelpers.setUp()
+        let id = try env.people.createContact(entityType: "gc", entityId: 1, firstName: "Dana", lastName: "Lee", role: "Project Manager", phone: "555-0100")
+
+        let found = try env.people.getContact(id: id)
+        #expect(found != nil)
+        #expect(found?.firstName == "Dana")
+        #expect(found?.lastName == "Lee")
+        #expect(found?.contactType == "gc")
+
+        let missing = try env.people.getContact(id: 99999)
+        #expect(missing == nil)
+    }
+
     // MARK: - Payment Tracking
 
     @Test("isPaymentTrackingEnabled and setPaymentTrackingEnabled round-trip")
@@ -464,5 +479,56 @@ struct PeopleServiceTests {
         let status = try env.people.getCustomerPaymentStatus(customerId: customerId)
         #expect(status.totalInvoiced == 1500.0)
         #expect(status.totalPaid == 1000.0)
+    }
+
+    // MARK: - Hat Members
+
+    @Test("getHatMembers returns empty for a hat with no assignments")
+    func testGetHatMembersEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let hatId = try env.people.createHat(name: "Foreman", description: nil, level: 1)
+        let members = try env.people.getHatMembers(hatId: hatId)
+        #expect(members.isEmpty)
+    }
+
+    @Test("getHatMembers returns assigned user after toggleHatAssignment")
+    func testGetHatMembersAfterAssign() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let hatId = try env.people.createHat(name: "Electrician", description: nil, level: 0)
+
+        // Admin user is active — assign the hat
+        try env.people.toggleHatAssignment(
+            employeeId: env.adminUserId,
+            hatId: hatId,
+            assign: true
+        )
+
+        let members = try env.people.getHatMembers(hatId: hatId)
+        #expect(members.count == 1)
+        #expect(members[0].id == env.adminUserId)
+    }
+
+    @Test("getHatMembers excludes user after hat is unassigned")
+    func testGetHatMembersAfterUnassign() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let hatId = try env.people.createHat(name: "Inspector", description: nil, level: 2)
+
+        // Assign then immediately unassign
+        try env.people.toggleHatAssignment(
+            employeeId: env.adminUserId,
+            hatId: hatId,
+            assign: true
+        )
+        try env.people.toggleHatAssignment(
+            employeeId: env.adminUserId,
+            hatId: hatId,
+            assign: false
+        )
+
+        let members = try env.people.getHatMembers(hatId: hatId)
+        #expect(members.isEmpty)
     }
 }
