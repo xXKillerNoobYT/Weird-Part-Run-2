@@ -1104,3 +1104,13 @@ _Appended by dev-pipeline-manager each run._
 - Issues processed: 0 (0 open GitHub issues)
 - Bugs fixed: 1 (FleetService UTC timezone mismatch causing test failure)
 - Pipeline health: OK — build clean, all tests green, no open GitHub issues, no active Xcode prompts
+
+### End-of-Day Sync — 2026-04-02
+- Files committed: 17 (6 core services, 4 test files, 3 iOS files, 1 migration, 9 docs/xcode-ai)
+- Commits created: 4 (bug fixes, new tests, iOS UI, pipeline docs)
+- Push status: success (96620d4..812ab0e → origin/main)
+- Tests: 862/862 passing (+20 new tests vs previous 842)
+- Agent runs today: 7/7 (hunt-fix iter 19, test-coverage +18 tests, plan-enforcer run 2, improvement-scanner run 5, pipeline-manager run 9, github-issues-sync run 3, usability-enforcer scheduled)
+- Issues processed: 32 open GitHub issues (28 from user testing session + 4 new); 2 core bugs fixed (#28 time-off count, #19 dashboard FK error)
+- Bugs fixed: 3 (warranty SQL column mismatch, ChatService empty-DB FK violation, markPriceVerified argument order)
+- Pipeline health: OK — build clean, all 862 tests green, 4 commits pushed, PE-024 active (modal dismiss audit), PE-025 queued
