@@ -1005,10 +1005,9 @@ struct PartsCatalogPage: View {
 
     @Sendable
     private func loadData() async {
-        isLoading = parts.isEmpty
+        await MainActor.run { isLoading = parts.isEmpty }
         guard let service = appCore.partsService else {
-            loadError = "Service not available"
-            isLoading = false
+            await MainActor.run { loadError = "Service not available"; isLoading = false }
             return
         }
 
@@ -1087,8 +1086,7 @@ struct PartsCatalogPage: View {
             return
         }
         guard let service = appCore.partsService else {
-            loadError = "Parts service not available"
-            isLoading = false
+            await MainActor.run { loadError = "Parts service not available"; isLoading = false }
             return
         }
         var cache: [Int64: PartsService.ResolvedPricing] = [:]

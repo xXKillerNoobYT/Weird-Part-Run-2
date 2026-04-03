@@ -70,6 +70,10 @@ struct IOSContactsPage: View {
                 .accessibilityLabel("Help")
             }
         }
+        .navigationDestination(for: Int64.self) { contactId in
+            IOSContactDetailPage(contactId: contactId)
+                .environmentObject(appCore)
+        }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .addContact:
