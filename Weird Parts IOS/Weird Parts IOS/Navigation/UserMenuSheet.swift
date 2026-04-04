@@ -217,18 +217,35 @@ struct UserMenuSheet: View {
                 userProfileSection
 
                 // Navigation style picker
-                Section("Navigation") {
-                    Picker(selection: $tabPrefs.navigationStyle) {
-                        ForEach(NavigationStyle.allCases, id: \.self) { style in
-                            Label(style.label, systemImage: style.icon)
-                                .tag(style)
+                Section {
+                    ForEach(NavigationStyle.allCases, id: \.self) { style in
+                        Button {
+                            tabPrefs.navigationStyle = style
+                            tabPrefs.saveNavigationStyle()
+                        } label: {
+                            HStack {
+                                Label {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(style.label)
+                                        Text(style.description)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                } icon: {
+                                    Image(systemName: style.icon)
+                                }
+                                Spacer()
+                                if tabPrefs.navigationStyle == style {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(.tint)
+                                        .fontWeight(.semibold)
+                                }
+                            }
                         }
-                    } label: {
-                        Label("Page Layout", systemImage: "rectangle.3.group")
+                        .buttonStyle(.plain)
                     }
-                    .onChange(of: tabPrefs.navigationStyle) { _, _ in
-                        tabPrefs.saveNavigationStyle()
-                    }
+                } header: {
+                    Label("Page Layout", systemImage: "rectangle.3.group")
                 }
 
                 // Settings sections — grouped or flat-filtered

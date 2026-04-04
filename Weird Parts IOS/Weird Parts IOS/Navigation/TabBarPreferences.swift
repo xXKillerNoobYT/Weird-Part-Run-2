@@ -31,6 +31,14 @@ enum NavigationStyle: String, CaseIterable, Sendable {
         case .fullSidebar: return "sidebar.squares.leading"
         }
     }
+
+    var description: String {
+        switch self {
+        case .topTabs: return "Scrollable tab bar above content. Best for phones."
+        case .sidebar: return "Left sidebar for sub-tabs within each module. Great for iPad."
+        case .fullSidebar: return "All modules in a persistent left sidebar. Desktop-style navigation."
+        }
+    }
 }
 
 @MainActor

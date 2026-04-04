@@ -152,12 +152,19 @@ struct IOSTeamsPage: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
             ErrorStateView(message: error) { loadData() }
-        } else if filteredTeams.isEmpty {
+        } else if teams.isEmpty {
             ContentUnavailableView {
-                Label("No Teams", systemImage: "person.3")
+                Label("No Teams Yet", systemImage: "person.3.fill")
             } description: {
-                Text("No teams have been created yet.")
+                Text("Teams are built from employees. Create your employees first, then organize them into teams here.")
+            } actions: {
+                NavigationLink(destination: IOSEmployeesPage().environmentObject(appCore)) {
+                    Label("Go to Employees", systemImage: "person.badge.plus")
+                }
+                .buttonStyle(.borderedProminent)
             }
+        } else if filteredTeams.isEmpty {
+            ContentUnavailableView.search(text: searchText)
         } else {
             List {
                 Section {

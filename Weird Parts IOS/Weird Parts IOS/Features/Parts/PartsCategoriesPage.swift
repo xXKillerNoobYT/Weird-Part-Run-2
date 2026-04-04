@@ -16,6 +16,11 @@ struct PartsCategoriesPage: View {
     @State private var activeSheet: ActiveSheet?
     /// Incremented after each successful data load to force view identity refresh.
     @State private var dataVersion = 0
+    // Expansion state lives in the page so .id(dataVersion) refreshes don't reset the tree.
+    @State private var expandedCategories: Set<Int64> = []
+    @State private var expandedStyles: Set<Int64> = []
+    @State private var expandedTypes: Set<Int64> = []
+    @State private var expandedBrands: Set<Int64> = []
 
     private enum ActiveSheet: Identifiable { case help; var id: String { "help" } }
 
@@ -84,6 +89,10 @@ struct PartsCategoriesPage: View {
             CategoriesTreeView(
                 hierarchy: hierarchy,
                 selection: $selection,
+                expandedCategories: $expandedCategories,
+                expandedStyles: $expandedStyles,
+                expandedTypes: $expandedTypes,
+                expandedBrands: $expandedBrands,
                 onRefresh: { await loadHierarchy() }
             )
             .frame(minWidth: 280, idealWidth: 320)
@@ -108,6 +117,10 @@ struct PartsCategoriesPage: View {
             CategoriesTreeView(
                 hierarchy: hierarchy,
                 selection: $selection,
+                expandedCategories: $expandedCategories,
+                expandedStyles: $expandedStyles,
+                expandedTypes: $expandedTypes,
+                expandedBrands: $expandedBrands,
                 onRefresh: { await loadHierarchy() }
             )
             .navigationDestination(item: $selection) { sel in

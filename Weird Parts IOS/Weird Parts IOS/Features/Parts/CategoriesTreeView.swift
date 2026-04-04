@@ -19,11 +19,11 @@ struct CategoriesTreeView: View {
     let hierarchy: PartsService.HierarchyTree
     @Binding var selection: TreeSelection?
 
-    // Manual expand/collapse state per level
-    @State private var expandedCategories: Set<Int64> = []
-    @State private var expandedStyles: Set<Int64> = []
-    @State private var expandedTypes: Set<Int64> = []
-    @State private var expandedBrands: Set<Int64> = [] // brand.id, -1 = General
+    // Expand/collapse state lifted to parent so data refreshes don't reset the tree.
+    @Binding var expandedCategories: Set<Int64>
+    @Binding var expandedStyles: Set<Int64>
+    @Binding var expandedTypes: Set<Int64>
+    @Binding var expandedBrands: Set<Int64>
     @State private var searchText = ""
 
     // Single active-sheet enum to avoid multiple .sheet conflicts

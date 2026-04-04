@@ -9,6 +9,7 @@ import SwiftUI
 struct TabBarEditorView: View {
     @EnvironmentObject private var tabPrefs: TabBarPreferences
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     /// All permission-visible modules in the user's current order.
     let allVisibleModules: [AppModule]
@@ -103,22 +104,45 @@ struct TabBarEditorView: View {
     // MARK: - Info Banner
 
     private var infoBanner: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "hand.draw")
-                .font(.title3)
-                .foregroundStyle(.tint)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Customize Your Tab Bar")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                Text("Drag to reorder. Use arrows to move modules between sections. Up to 4 modules can sit in the fast access bar.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "hand.draw")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Customize Your Tab Bar")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    Text("Drag to reorder. Use arrows to move modules between sections. Up to 4 modules can sit in the fast access bar.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if horizontalSizeClass == .regular {
+                Divider()
+                HStack(spacing: 10) {
+                    Image(systemName: "sidebar.squares.leading")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Sidebar Mode")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.secondary)
+                        Text("These tabs appear in the bottom tab bar on compact layouts. In sidebar mode, they also determine which sections appear in the sidebar and their order.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground))
     }
 
