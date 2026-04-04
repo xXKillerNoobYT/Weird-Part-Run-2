@@ -198,6 +198,124 @@ struct ReportsServiceTests {
 
     // MARK: - Job Costs Report (budget_limit fix)
 
+    // MARK: - generateCustomReport: Remaining Types
+
+    @Test("generateCustomReport labor_hours returns empty on fresh DB")
+    func testCustomReportLaborHoursEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let rows = try env.reports.generateCustomReport(
+            type: "labor_hours",
+            columns: ["employee_name", "date", "hours", "job_name", "activity_type", "clock_in", "clock_out", "notes"],
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date.distantFuture,
+            filters: [:]
+        )
+        #expect(rows.isEmpty)
+    }
+
+    @Test("generateCustomReport labor_hours returns row after clock in/out")
+    func testCustomReportLaborHoursWithData() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let laborId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.jobs.clockOut(laborEntryId: laborId)
+
+        let columns = ["employee_name", "date", "hours", "job_name"]
+        let rows = try env.reports.generateCustomReport(
+            type: "labor_hours",
+            columns: columns,
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date.distantFuture,
+            filters: [:]
+        )
+        #expect(rows.count >= 1)
+        if let first = rows.first {
+            #expect(first.count == columns.count)
+            #expect(first[0] == "TestAdmin")   // employee_name
+            #expect(first[3] == "Test Job")    // job_name
+        }
+    }
+
+    @Test("generateCustomReport parts_usage returns empty on fresh DB")
+    func testCustomReportPartsUsageEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let rows = try env.reports.generateCustomReport(
+            type: "parts_usage",
+            columns: ["part_name", "category", "quantity_used", "job_name", "date", "cost", "total_cost"],
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date.distantFuture,
+            filters: [:]
+        )
+        #expect(rows.isEmpty)
+    }
+
+    @Test("generateCustomReport vehicle_fuel returns empty on fresh DB")
+    func testCustomReportVehicleFuelEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let rows = try env.reports.generateCustomReport(
+            type: "vehicle_fuel",
+            columns: ["vehicle_name", "date", "gallons", "cost", "odometer"],
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date.distantFuture,
+            filters: [:]
+        )
+        #expect(rows.isEmpty)
+    }
+
+    @Test("generateCustomReport order_history returns empty on fresh DB")
+    func testCustomReportOrderHistoryEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let rows = try env.reports.generateCustomReport(
+            type: "order_history",
+            columns: ["po_number", "supplier_name", "order_date", "total", "status", "items_count"],
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date.distantFuture,
+            filters: [:]
+        )
+        #expect(rows.isEmpty)
+    }
+
+    @Test("generateCustomReport order_history returns row after creating PO")
+    func testCustomReportOrderHistoryWithData() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        _ = try env.orders.createPurchaseOrder(
+            poNumber: "PO-HIST-001",
+            supplierId: supplierId,
+            notes: nil
+        )
+
+        let columns = ["po_number", "supplier_name", "order_date", "total", "status", "items_count"]
+        let rows = try env.reports.generateCustomReport(
+            type: "order_history",
+            columns: columns,
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date.distantFuture,
+            filters: [:]
+        )
+        #expect(rows.count >= 1)
+        if let first = rows.first {
+            #expect(first.count == columns.count)
+            #expect(first[0] == "PO-HIST-001")   // po_number
+            #expect(first[1] == "TestSupplier")  // supplier_name
+        }
+    }
+
+    @Test("generateCustomReport unknown type returns empty")
+    func testCustomReportUnknownType() throws {
+        let env = try E2ETestHelpers.setUp()
+        let rows = try env.reports.generateCustomReport(
+            type: "nonexistent_type",
+            columns: ["col1"],
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date.distantFuture,
+            filters: [:]
+        )
+        #expect(rows.isEmpty)
+    }
+
+    // MARK: - Job Costs Report (budget_limit fix)
+
     @Test("Job costs report uses budget_limit column correctly")
     func testJobCostsReport() throws {
         let env = try E2ETestHelpers.setUp()

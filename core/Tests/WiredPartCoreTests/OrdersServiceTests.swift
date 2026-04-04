@@ -522,4 +522,141 @@ struct OrdersServiceTests {
         #expect(job1JPOs[0].id == jpo1Id)
         #expect(job1JPOs[0].jobId == job1Id)
     }
+
+    // MARK: - smartRouteJPOLine
+
+    @Test("smartRouteJPOLine returns pending when no stock exists")
+    func testSmartRouteNoStock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SR-01", name: "Smart Route Job 1")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "RouteTestCat1")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Route Part 1", categoryId: catId)
+
+        // Insert JPO line directly so we can call smartRouteJPOLine independently
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO jpo_line_items (jpo_id, part_id, qty_requested, created_at)
+                VALUES (?, ?, 5, datetime('now'))
+                """, arguments: [jpoId, partId])
+            return db.lastInsertedRowID
+        }
+
+        // No stock seeded — should route to pending
+        let route = try env.orders.smartRouteJPOLine(lineId: lineId, partId: partId, userId: env.adminUserId)
+        #expect(route == "pending")
+    }
+
+    @Test("smartRouteJPOLine returns transfer when shop has sufficient stock")
+    func testSmartRouteWithStock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SR-02", name: "Smart Route Job 2")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "RouteTestCat2")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Route Part 2", categoryId: catId)
+
+        // Seed 10 units of stock
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO jpo_line_items (jpo_id, part_id, qty_requested, created_at)
+                VALUES (?, ?, 5, datetime('now'))
+                """, arguments: [jpoId, partId])
+            return db.lastInsertedRowID
+        }
+
+        // 10 available, need 5 — should auto-route to transfer
+        let route = try env.orders.smartRouteJPOLine(lineId: lineId, partId: partId, userId: env.adminUserId)
+        #expect(route == "transfer")
+    }
+
+    // MARK: - setJPOLineTransferId
+
+    @Test("setJPOLineTransferId links a transfer movement to a JPO line")
+    func testSetJPOLineTransferId() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-TID-01", name: "Transfer ID Job")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "TransferIdCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Transfer ID Part", categoryId: catId)
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 2, notes: nil)
+
+        // Link a fake transfer movement ID
+        let fakeTransferId: Int64 = 999
+        try env.orders.setJPOLineTransferId(lineId: lineId, transferId: fakeTransferId)
+
+        // Verify the transfer_id was persisted
+        let storedTransferId = try env.db.writer.read { db -> Int64? in
+            try Int64.fetchOne(db, sql: "SELECT transfer_id FROM jpo_line_items WHERE id = ?", arguments: [lineId])
+        }
+        #expect(storedTransferId == fakeTransferId)
+    }
+
+    // MARK: - markStageComplete
+
+    @Test("markStageComplete advances job to the next stage")
+    func testMarkStageComplete() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Seed two consecutive stages
+        let stage1Id = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO job_stages (name, sort_order, created_at)
+                VALUES ('Stage One', 10, datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+        let stage2Id = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO job_stages (name, sort_order, created_at)
+                VALUES ('Stage Two', 20, datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+
+        // Create a job at stage 1
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MS-01", name: "Stage Complete Job")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET current_stage_id = ? WHERE id = ?",
+                           arguments: [stage1Id, jobId])
+        }
+
+        try env.orders.markStageComplete(jobId: jobId, stageId: stage1Id)
+
+        // Job should now be at stage 2
+        let currentStageId = try env.db.writer.read { db -> Int64? in
+            try Int64.fetchOne(db, sql: "SELECT current_stage_id FROM jobs WHERE id = ?", arguments: [jobId])
+        }
+        #expect(currentStageId == stage2Id)
+    }
+
+    @Test("markStageComplete stays on current stage when it is the last stage")
+    func testMarkStageCompleteLastStage() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Single final stage (highest sort_order)
+        let finalStageId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO job_stages (name, sort_order, created_at)
+                VALUES ('Final Stage', 999, datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MS-02", name: "Final Stage Job")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET current_stage_id = ? WHERE id = ?",
+                           arguments: [finalStageId, jobId])
+        }
+
+        // Completing the last stage should keep job at the same stage
+        try env.orders.markStageComplete(jobId: jobId, stageId: finalStageId)
+
+        let currentStageId = try env.db.writer.read { db -> Int64? in
+            try Int64.fetchOne(db, sql: "SELECT current_stage_id FROM jobs WHERE id = ?", arguments: [jobId])
+        }
+        #expect(currentStageId == finalStageId)
+    }
 }

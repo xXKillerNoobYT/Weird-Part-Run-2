@@ -911,4 +911,262 @@ struct ToolsServiceTests {
         let detail = try env.tools.getToolDetail(toolId: toolId)
         #expect(detail?.status == "lost")
     }
+
+    // =========================================================================
+    // MARK: - Basic Checkout / Return (Legacy API)
+    // =========================================================================
+
+    @Test("checkoutTool sets status to checked_out and creates checkout record")
+    func testCheckoutToolLegacy() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-CO-L", name: "Legacy Checkout Tool", status: "available")
+
+        try env.tools.checkoutTool(toolId: toolId, userId: env.adminUserId, notes: "Needed on site")
+
+        let detail = try env.tools.getToolDetail(toolId: toolId)
+        #expect(detail?.status == "checked_out")
+    }
+
+    @Test("returnTool resets status to available and closes checkout record")
+    func testReturnToolLegacy() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-RT-L", name: "Legacy Return Tool", status: "available")
+
+        try env.tools.checkoutTool(toolId: toolId, userId: env.adminUserId, notes: nil)
+        try env.tools.returnTool(toolId: toolId, userId: env.adminUserId, notes: "Returned clean")
+
+        let detail = try env.tools.getToolDetail(toolId: toolId)
+        #expect(detail?.status == "available")
+    }
+
+    // =========================================================================
+    // MARK: - Mark Maintenance
+    // =========================================================================
+
+    @Test("markToolMaintenance sets tool status to maintenance")
+    func testMarkToolMaintenance() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-MTM", name: "Maintenance Tool", status: "available")
+
+        try env.tools.markToolMaintenance(toolId: toolId)
+
+        let detail = try env.tools.getToolDetail(toolId: toolId)
+        #expect(detail?.status == "maintenance")
+    }
+
+    // =========================================================================
+    // MARK: - Pending Edits Workflow
+    // =========================================================================
+
+    @Test("getPendingEdits returns edits only for the specified tool")
+    func testGetPendingEditsIsolation() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolA = try insertTool(env, toolNumber: "T-PE-A", name: "Edit Tool A")
+        let toolB = try insertTool(env, toolNumber: "T-PE-B", name: "Edit Tool B")
+
+        // Create pending edit for A (no permission → creates pending record)
+        try env.tools.editToolWithVerification(
+            toolId: toolA, userId: env.adminUserId,
+            changes: ["notes": "Updated A"], hasPermission: false
+        )
+
+        let editsForA = try env.tools.getPendingEdits(toolId: toolA)
+        let editsForB = try env.tools.getPendingEdits(toolId: toolB)
+
+        #expect(editsForA.count == 1)
+        #expect(editsForA[0].fieldName == "notes")
+        #expect(editsForB.isEmpty)
+    }
+
+    @Test("approveToolEdit applies the field change to the tool")
+    func testApproveToolEdit() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-APR", name: "Approvable Tool")
+
+        // Create a pending edit (without permission)
+        try env.tools.editToolWithVerification(
+            toolId: toolId, userId: env.adminUserId,
+            changes: ["notes": "Approved note"], hasPermission: false
+        )
+
+        let pending = try env.tools.listPendingToolEdits()
+        let editId = pending.first(where: { $0.toolId == toolId })!.id
+
+        // Approve it
+        try env.tools.approveToolEdit(editId: editId, approverId: env.adminUserId)
+
+        // The field should now be applied
+        let detail = try env.tools.getToolDetail(toolId: toolId)
+        #expect(detail?.notes == "Approved note")
+
+        // Should no longer appear in pending list
+        let remaining = try env.tools.listPendingToolEdits()
+        #expect(!remaining.contains(where: { $0.id == editId }))
+    }
+
+    @Test("rejectToolEdit marks the edit as rejected without applying changes")
+    func testRejectToolEdit() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-REJ", name: "Reject Tool")
+
+        try env.tools.editToolWithVerification(
+            toolId: toolId, userId: env.adminUserId,
+            changes: ["notes": "Should not apply"], hasPermission: false
+        )
+
+        let pending = try env.tools.listPendingToolEdits()
+        let editId = pending.first(where: { $0.toolId == toolId })!.id
+
+        try env.tools.rejectToolEdit(editId: editId, rejectedBy: env.adminUserId)
+
+        // Change should NOT have been applied
+        let detail = try env.tools.getToolDetail(toolId: toolId)
+        #expect(detail?.notes == nil || detail?.notes != "Should not apply")
+
+        // Edit no longer pending
+        let remaining = try env.tools.listPendingToolEdits()
+        #expect(!remaining.contains(where: { $0.id == editId }))
+    }
+
+    // =========================================================================
+    // MARK: - Tool Trades: respond / expire / list
+    // =========================================================================
+
+    /// Helper to create a second user and a pending trade.
+    private func setupPendingTrade(_ env: E2ETestHelpers.TestEnvironment) throws -> (toolId: Int64, tradeId: Int64, recipientId: Int64) {
+        let toolId = try insertTool(
+            env, toolNumber: "T-TRD2", name: "Trade Tool 2",
+            status: "checked_out", assignedTo: env.adminUserId
+        )
+
+        // Open a checkout record so returnTool/respondToTrade can close it
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO tool_checkouts
+                (tool_id, checked_out_by, checked_out_at, checkout_condition, created_at)
+                VALUES (?, ?, datetime('now'), 'Good', datetime('now'))
+                """, arguments: [toolId, env.adminUserId])
+        }
+
+        let recipientId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, is_active, created_at, updated_at)
+                VALUES ('Recipient2', 'hash2', 1, datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+
+        let tradeId = try env.tools.initiateTrade(
+            toolId: toolId, fromUserId: env.adminUserId,
+            toUserId: recipientId, condition: "Good"
+        )
+        return (toolId, tradeId, recipientId)
+    }
+
+    @Test("respondToTrade accept transfers tool assignment to recipient")
+    func testRespondToTradeAccepted() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (toolId, tradeId, recipientId) = try setupPendingTrade(env)
+
+        try env.tools.respondToTrade(tradeId: tradeId, accepted: true, condition: "Good", notes: nil)
+
+        let detail = try env.tools.getToolDetail(toolId: toolId)
+        #expect(detail?.assignedTo == recipientId)
+    }
+
+    @Test("respondToTrade decline leaves tool unchanged and closes trade")
+    func testRespondToTradeDeclined() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (toolId, tradeId, _) = try setupPendingTrade(env)
+
+        try env.tools.respondToTrade(tradeId: tradeId, accepted: false, condition: nil, notes: "Not needed")
+
+        // Tool stays assigned to sender
+        let detail = try env.tools.getToolDetail(toolId: toolId)
+        #expect(detail?.assignedTo == env.adminUserId)
+    }
+
+    @Test("expireOldTrades returns 0 when no trades exist")
+    func testExpireOldTradesEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let expired = try env.tools.expireOldTrades()
+        #expect(expired == 0)
+    }
+
+    @Test("getPendingTradesForUser returns trades where user is sender or recipient")
+    func testGetPendingTradesForUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, recipientId) = try setupPendingTrade(env)
+
+        // Both sender and recipient see the trade
+        let senderTrades = try env.tools.getPendingTradesForUser(userId: env.adminUserId)
+        let recipientTrades = try env.tools.getPendingTradesForUser(userId: recipientId)
+
+        #expect(senderTrades.count >= 1)
+        #expect(recipientTrades.count >= 1)
+    }
+
+    // =========================================================================
+    // MARK: - Maintenance Config: toggle + calculateNextDate
+    // =========================================================================
+
+    @Test("toggleMaintenanceConfig deactivates an active config")
+    func testToggleMaintenanceConfigOff() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-TOG", name: "Toggle Config Tool")
+
+        let configId = try env.tools.createMaintenanceConfig(
+            toolId: toolId, type: "time_based",
+            intervalDays: 30, description: "Monthly"
+        )
+
+        // Config is active by default
+        var configs = try env.tools.getMaintenanceConfigs(toolId: toolId)
+        #expect(configs.first?.isActive == true)
+
+        // Deactivate
+        try env.tools.toggleMaintenanceConfig(configId: configId, isActive: false)
+
+        configs = try env.tools.getMaintenanceConfigs(toolId: toolId)
+        #expect(configs.first?.isActive == false)
+
+        // Re-activate
+        try env.tools.toggleMaintenanceConfig(configId: configId, isActive: true)
+        configs = try env.tools.getMaintenanceConfigs(toolId: toolId)
+        #expect(configs.first?.isActive == true)
+    }
+
+    @Test("calculateNextMaintenanceDate returns nil when tool has no active configs")
+    func testCalculateNextMaintenanceDateNoConfigs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-NMD", name: "No Config Tool")
+
+        let result = try env.tools.calculateNextMaintenanceDate(toolId: toolId)
+        #expect(result == nil)
+    }
+
+    @Test("calculateNextMaintenanceDate returns a date string after prior maintenance was recorded")
+    func testCalculateNextMaintenanceDateWithConfig() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-NMD2", name: "Config Tool 2")
+
+        let configId = try env.tools.createMaintenanceConfig(
+            toolId: toolId, type: "time_based",
+            intervalDays: 90, description: "Quarterly"
+        )
+
+        // Record maintenance — this sets last_maintenance_date on the tool,
+        // which is required for time_based calculation to produce a due date.
+        _ = try env.tools.recordMaintenance(
+            toolId: toolId, configId: configId,
+            maintenanceType: "time_based", performedBy: env.adminUserId,
+            conditionBefore: nil, conditionAfter: nil,
+            notes: nil, cost: nil
+        )
+
+        let result = try env.tools.calculateNextMaintenanceDate(toolId: toolId)
+        // Should return a non-nil date string in yyyy-MM-dd format (90 days from today)
+        #expect(result != nil)
+        #expect(result!.count == 10) // yyyy-MM-dd
+    }
 }

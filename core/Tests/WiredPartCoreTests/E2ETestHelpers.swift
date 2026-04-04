@@ -34,6 +34,9 @@ struct E2ETestHelpers {
     /// Create a fresh in-memory database, bootstrap it with an admin user,
     /// and return all services ready for use.
     static func setUp(adminName: String = "TestAdmin", adminPin: String = "1234") throws -> TestEnvironment {
+        // Clear static lockout state so wrong-PIN tests from one test case
+        // don't bleed into login tests in another (all test DBs share user ID 1).
+        AuthService.resetAllLoginAttempts()
         let db = try AppDatabase.openInMemoryDatabase()
 
         let auth = AuthService(db: db)

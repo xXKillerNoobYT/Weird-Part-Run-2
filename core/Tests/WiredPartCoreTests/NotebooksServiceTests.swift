@@ -1117,7 +1117,6 @@ struct NotebooksServiceTests {
     func testDetectBlockConflictsWithData() throws {
         let env = try E2ETestHelpers.setUp()
 
-        // Create a notebook entry to conflict on
         let nbId = try env.notebooks.createNotebook(
             title: "Conflicted NB",
             notebookType: "general",
@@ -1133,6 +1132,14 @@ struct NotebooksServiceTests {
             content: "local content",
             createdBy: env.adminUserId
         )
+
+        // detectBlockConflicts filters by ne.notebook_id — set it since createBlockEntry leaves it NULL
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE notebook_entries SET notebook_id = ? WHERE id = ?",
+                arguments: [nbId, entryId]
+            )
+        }
 
         // Insert a fake conflict into _conflict_log directly
         try env.db.writer.write { dbConn in
@@ -1176,6 +1183,13 @@ struct NotebooksServiceTests {
             content: "local content",
             createdBy: env.adminUserId
         )
+        // detectBlockConflicts filters by ne.notebook_id — set it since createBlockEntry leaves it NULL
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE notebook_entries SET notebook_id = ? WHERE id = ?",
+                arguments: [nbId, entryId]
+            )
+        }
 
         // Insert conflict where "local" already won
         var conflictLogId: Int64 = 0
@@ -1220,6 +1234,13 @@ struct NotebooksServiceTests {
             content: "local content",
             createdBy: env.adminUserId
         )
+        // detectBlockConflicts filters by ne.notebook_id — set it since createBlockEntry leaves it NULL
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE notebook_entries SET notebook_id = ? WHERE id = ?",
+                arguments: [nbId, entryId]
+            )
+        }
 
         // LWW chose "local" — user wants to keep "remote" instead
         var conflictLogId: Int64 = 0
@@ -1271,7 +1292,12 @@ struct NotebooksServiceTests {
                 content: "entry \(i)",
                 createdBy: env.adminUserId
             )
+            // detectBlockConflicts filters by ne.notebook_id — set it since createBlockEntry leaves it NULL
             try env.db.writer.write { dbConn in
+                try dbConn.execute(
+                    sql: "UPDATE notebook_entries SET notebook_id = ? WHERE id = ?",
+                    arguments: [nbId, entryId]
+                )
                 try dbConn.execute(sql: """
                     INSERT INTO _conflict_log
                         (table_name, record_id, field_name, local_value, remote_value,
@@ -1296,5 +1322,34 @@ struct NotebooksServiceTests {
         // All should be marked reviewed
         let after = try env.notebooks.detectBlockConflicts(notebookId: nbId)
         #expect(after.isEmpty)
+    }
+
+    // MARK: - createBlockEntry notebook_id regression
+
+    @Test("createBlockEntry populates notebook_id so detectBlockConflicts can find the entry")
+    func testCreateBlockEntryPopulatesNotebookId() throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(
+            title: "Block Notebook",
+            notebookType: "general",
+            jobId: nil,
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Section A"
+        )
+        let entryId = try env.notebooks.createBlockEntry(
+            sectionId: sectionId,
+            blockType: "text",
+            title: "Block title",
+            createdBy: env.adminUserId
+        )
+
+        // notebook_id must be populated on the inserted row
+        let notebookId = try env.db.writer.read { dbConn in
+            try Int64.fetchOne(dbConn, sql: "SELECT notebook_id FROM notebook_entries WHERE id = ?",
+                               arguments: [entryId])
+        }
+        #expect(notebookId == nbId)
     }
 }

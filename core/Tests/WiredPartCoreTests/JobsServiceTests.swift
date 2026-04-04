@@ -572,4 +572,152 @@ struct JobsServiceTests {
         #expect(summary.totalTodos == 0)
         #expect(summary.completedTodos == 0)
     }
+
+    // MARK: - Active Job Todos
+
+    @Test("getActiveJobTodos returns empty when job has no notebook")
+    func testGetActiveJobTodosEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        let todos = try env.jobs.getActiveJobTodos(jobId: jobId)
+        #expect(todos.isEmpty)
+    }
+
+    @Test("getActiveJobTodos returns pending todos from job notebook")
+    func testGetActiveJobTodosWithData() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        // Create a job-linked notebook with a section and two todo entries
+        let nbId = try env.notebooks.createNotebook(
+            title: "Job Todos",
+            notebookType: "job",
+            jobId: jobId,
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Tasks"
+        )
+        // Entry type must be "todo" to show up in getActiveJobTodos
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_entries
+                    (section_id, notebook_id, entry_type, block_type, title, content, sort_order,
+                     created_by, created_at, updated_at, is_deleted)
+                VALUES (?, ?, 'todo', 'text', 'Fix the panel', NULL, 0, ?, datetime('now'), datetime('now'), 0)
+                """, arguments: [sectionId, nbId, env.adminUserId])
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_entries
+                    (section_id, notebook_id, entry_type, block_type, title, content, sort_order,
+                     created_by, created_at, updated_at, is_deleted)
+                VALUES (?, ?, 'todo', 'text', 'Label wires', NULL, 1, ?, datetime('now'), datetime('now'), 0)
+                """, arguments: [sectionId, nbId, env.adminUserId])
+        }
+
+        let todos = try env.jobs.getActiveJobTodos(jobId: jobId)
+        #expect(todos.count == 2)
+        #expect(todos.contains { $0.title == "Fix the panel" })
+        #expect(todos.contains { $0.title == "Label wires" })
+    }
+
+    @Test("getActiveJobTodos excludes completed todos")
+    func testGetActiveJobTodosExcludesCompleted() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Mixed Todos",
+            notebookType: "job",
+            jobId: jobId,
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(
+            notebookId: nbId, groupId: nil, name: "Tasks"
+        )
+        // One pending, one complete
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_entries
+                    (section_id, notebook_id, entry_type, block_type, title, task_status, sort_order,
+                     created_by, created_at, updated_at, is_deleted)
+                VALUES (?, ?, 'todo', 'text', 'Active Task', 'pending', 0, ?, datetime('now'), datetime('now'), 0)
+                """, arguments: [sectionId, nbId, env.adminUserId])
+            try dbConn.execute(sql: """
+                INSERT INTO notebook_entries
+                    (section_id, notebook_id, entry_type, block_type, title, task_status, sort_order,
+                     created_by, created_at, updated_at, is_deleted)
+                VALUES (?, ?, 'todo', 'text', 'Done Task', 'complete', 1, ?, datetime('now'), datetime('now'), 0)
+                """, arguments: [sectionId, nbId, env.adminUserId])
+        }
+
+        let todos = try env.jobs.getActiveJobTodos(jobId: jobId)
+        #expect(todos.count == 1)
+        #expect(todos[0].title == "Active Task")
+    }
+
+    // MARK: - listLaborEntries filter variations
+
+    @Test("listLaborEntries with userId filter returns only that user's entries")
+    func testListLaborEntriesUserIdFilter() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Create a second user and clock both users into the same job
+        let secondUserId = try env.auth.createUser(displayName: "Second Worker", pin: "9999")
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        let entryA = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.jobs.clockOut(laborEntryId: entryA)
+        let entryB = try env.jobs.clockIn(userId: secondUserId, jobId: jobId)
+        try env.jobs.clockOut(laborEntryId: entryB)
+
+        let adminEntries = try env.jobs.listLaborEntries(userId: env.adminUserId)
+        let secondEntries = try env.jobs.listLaborEntries(userId: secondUserId)
+
+        #expect(adminEntries.allSatisfy { $0.userId == env.adminUserId })
+        #expect(secondEntries.allSatisfy { $0.userId == secondUserId })
+        // Cross-check: admin entries should not contain the second user's entry
+        #expect(!adminEntries.contains(where: { $0.userId == secondUserId }))
+    }
+
+    @Test("listLaborEntries with no filters returns all entries")
+    func testListLaborEntriesNoFilter() throws {
+        let env = try E2ETestHelpers.setUp()
+        let secondUserId = try env.auth.createUser(displayName: "All Filter Worker", pin: "8888")
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-ALL-01")
+
+        let e1 = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.jobs.clockOut(laborEntryId: e1)
+        let e2 = try env.jobs.clockIn(userId: secondUserId, jobId: jobId)
+        try env.jobs.clockOut(laborEntryId: e2)
+
+        let all = try env.jobs.listLaborEntries()
+        // Both entries should be present when no filter is applied
+        #expect(all.count >= 2)
+        #expect(all.contains(where: { $0.userId == env.adminUserId }))
+        #expect(all.contains(where: { $0.userId == secondUserId }))
+    }
+
+    // MARK: - listActiveJobs with exclusion
+
+    @Test("listActiveJobs excludingJobId omits the specified job")
+    func testListActiveJobsExcluding() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobA = try E2ETestHelpers.seedJob(env, jobNumber: "J-EXA-01", name: "Exclude Job A")
+        let jobB = try E2ETestHelpers.seedJob(env, jobNumber: "J-EXA-02", name: "Keep Job B")
+
+        let allJobs = try env.jobs.listActiveJobs()
+        let withoutA = try env.jobs.listActiveJobs(excludingJobId: jobA)
+
+        #expect(allJobs.contains(where: { $0.id == jobA }))
+        #expect(!withoutA.contains(where: { $0.id == jobA }))
+        #expect(withoutA.contains(where: { $0.id == jobB }))
+    }
+
+    @Test("listActiveJobs excludingJobId nil behaves like no exclusion")
+    func testListActiveJobsExcludingNil() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-NIL-01")
+        let jobs = try env.jobs.listActiveJobs(excludingJobId: nil)
+        #expect(jobs.contains(where: { $0.id == jobId }))
+    }
 }
