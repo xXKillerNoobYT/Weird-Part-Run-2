@@ -1,9 +1,9 @@
 # Fix Prompt Order — WiredPart iOS Phase 2
 
 > **Phase 1 complete.** All 279 prompts (01–67A) are archived in `done/`.
-> **Phase 2 HIG/Security work complete.** PE-009a/b/c/d/e, PE-008a/b/c/d/e, PE-022, PE-001 all done.
-> Build: 0 errors, 0 warnings. Tests: 861/861 passing (after github-issues-sync 2026-04-02).
-> **Active prompts:** PE-024 (modal dismiss) + PE-025 (empty states/settings). PE-003 blocked on Q&A.
+> **Phase 2 HIG/Security work complete.** PE-009a/b/c/d/e, PE-008a/b/c/d/e, PE-022, PE-001, PE-024, PE-025 all done.
+> Build: 0 errors, 0 warnings. Tests: 877/877 passing (github-issues-sync run 4, 2026-04-03).
+> **Active prompts:** None. PE-003 blocked on Q&A. Next: write PE-026 for badge count visibility (#50/#51).
 
 ---
 
@@ -23,8 +23,8 @@
 | PE-022 | *(archived)* | Hat assignment UX (GitHub #17): tappable hat rows → HatDetailSheet, People Dashboard management tiles, Employee Detail "Permissions Granted" section | ✅ done (2026-03-31) |
 | PE-001 | *(archived)* | Tool page rename: "Tool Registry" → "All Tools", "Tool Admin" → "Management" | ✅ done (2026-03-31) |
 | PE-008c | *(archived)* | People → Permissions banner: warns admin when users still have legacy PIN hashes (auto-upgrade on login is already in place) | ✅ done (2026-03-31) |
-| PE-024 | `PE-024-modal-dismiss-audit.md` | All modal/sheet popups don't close — audit every sheet, fix dismiss bindings, consolidate multiple .sheet() (GitHub #21) | 🔴 **ACTIVE — trigger next** |
-| PE-025 | `PE-025-empty-state-and-settings-ui.md` | Teams empty state, Edit Tabs layout, Settings Page Layout descriptions (GitHub #30, #31, #32) | ⬜ queue |
+| PE-024 | *(archived)* | All modal/sheet popups don't close — audited 2026-04-03, all patterns already correct, no changes needed (GitHub #21 code-verified) | ✅ done (2026-04-03) — no changes needed |
+| PE-025 | *(archived)* | Teams empty state, Edit Tabs layout, Settings Page Layout descriptions (GitHub #30, #31, #32) | ✅ done (2026-04-03) — IOSTeamsPage, TabBarEditorView, TabBarPreferences, UserMenuSheet updated; changes in working tree, pending commit |
 | PE-003 | *(write prompt)* | Flex pool self-assign on Scheduling page — needs DB migration + backend methods first | ⬜ blocked on Q&A answers (5 questions in dev-qa.md) |
 | PE-009a | *(closed — direct edit)* | HIG: 83 hardcoded font sizes → semantic styles (GitHub #11 closed) | ✅ closed — fixed directly in 38ca2bb; archive prompt to `done/` |
 | PE-009b | *(archived)* | HIG: 12 undersized tap targets (< 44×44pt) (GitHub #12) | ✅ done (2026-04-02) — direct edits 38ca2bb + contentShape pass; all 13 locations ≥44×44pt |

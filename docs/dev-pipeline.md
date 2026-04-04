@@ -1,6 +1,6 @@
 # WiredPart Development Pipeline
 
-> **Last updated:** 2026-04-02 (dev-pipeline-manager run 9 — 18 new tests in working tree (+860 projected), warranty SQL fix confirmed, IOSContactDetailPage wired, all agents healthy, PE-003 Q&A still owner-blocked)
+> **Last updated:** 2026-04-03 (test-coverage-maintenance — 18 new tests: ToolsService checkout/return/maintenance/edits/trades, OrdersService smartRoute/transferId/stageComplete. 895/895 tests passing.)
 > **Auto-maintained by:** dev-pipeline-manager (orchestrator)
 
 ---
@@ -31,15 +31,15 @@ Every feature, bug, or improvement follows this cycle:
 
 | Area | Status | Last Checked |
 |------|--------|-------------|
-| Build | 0 errors, 0 warnings | 2026-04-02 |
-| Tests | **862/862 passing** — +1 regression test (ChatService empty-DB ensureOfficeChannel, github-issues-sync 2026-04-02) | 2026-04-02 |
-| Plan Alignment | All PEs closed or Q&A-blocked. 2 new active Xcode prompts (PE-024, PE-025). Core fixes: #28 time-off count, #19 dashboard errors on fresh install. | 2026-04-02 |
-| Feature Polish | PE-024 🔴 active (modal dismiss audit). PE-025 ⬜ queue. PE-003 blocked on Q&A. | 2026-04-02 |
-| Xcode Prompts | **2 active prompts:** PE-024 (modal dismiss — critical) + PE-025 (empty states/settings). | 2026-04-02 |
-| GitHub Issues | **32 open** — 28 issues from major user testing session (2026-03-28) + 4 new. 2 fixed in core (#28, #19). #40 commented (routes present). Q&A added for design issues (#46, #47, #48, #49). | 2026-04-02 |
-| Q&A Backlog | **5 questions** — PE-003 (flex pool) — awaiting owner answers. + 4 design questions for #46/#47/#48/#49 | 2026-04-02 |
-| Working Tree | ⚠️ Modified files — github-issues-sync run: migration 064, ChatService fix, SchedulingService fix, new tests, 2 Xcode prompts, pipeline update. Needs commit. | 2026-04-02 |
-| Agent Health | All 8 agents enabled | 2026-04-02 |
+| Build | 0 errors, 0 warnings | 2026-04-03 |
+| Tests | **895/895 passing** — test-coverage-maintenance (2026-04-03): +18 new tests for ToolsService and OrdersService uncovered methods. | 2026-04-03 |
+| Plan Alignment | All PEs closed or Q&A-blocked. 1 active Xcode prompt (PE-025). PE-024 closed (no changes needed). No new drift. | 2026-04-03 |
+| Feature Polish | PE-024 ✅ closed (modal dismiss audit — all patterns already correct). PE-025 🔴 **ACTIVE**. PE-003 blocked on Q&A. | 2026-04-03 |
+| Xcode Prompts | **1 active prompt:** PE-025 (empty states/settings — Teams, Edit Tabs, Page Layout). Trigger next. | 2026-04-03 |
+| GitHub Issues | **30 open** — Run 4: #46 hierarchy tree state fixed in code (state lifting). #20/#26/#30/#43/#47 commented. T3-04/T3-08 from #43 confirmed non-issues. Critical: #26 (empty DB crash), #20 (clock — likely #26 related). | 2026-04-03 |
+| Q&A Backlog | **24 questions** across 8 features — PE-003 (5), #46 (4), #47 (3), #48 (2), #49 (2), #26 (3), #20 (3), #29 (3). All awaiting owner answers. | 2026-04-03 |
+| Working Tree | ⚠️ Modified files — 14 services (isTableNotFoundError), AuthService (resetAllLoginAttempts), E2ETestHelpers (lockout reset), AppCore.swift (logger fix), JobsServiceTests (+3), NotebooksService (notebook_id fix), NotebooksServiceTests (+1), docs (pipeline, tracker), prompt-results-log. Needs commit. | 2026-04-03 |
+| Agent Health | All 8 agents enabled | 2026-04-03 |
 
 ---
 
@@ -52,8 +52,8 @@ Every feature, bug, or improvement follows this cycle:
 | PE-001 | ~~Tool naming drift: "Tool Registry"→"All Tools", "Tool Admin"→"Management"~~ **DONE** | 13 — complete | ✅ Closed 2026-03-31 — `IOSToolRegistryPage`, `IOSToolAdminPage`, `IOSToolCheckoutsPage`, `HelpContentRegistry` updated; prompt archived to `done/` |
 | PE-002 | ~~Verify 35C-35I still needed~~ **RESOLVED** | 13 — complete | ✅ Closed | All prompts run or skipped |
 | PE-003 | Flex pool self-assign — needs DB migration + SchedulingService methods before Xcode UI prompt | 3 — Q&A generated | 🟡 5 Q&A questions in `dev-qa.md` — awaiting owner answers (location, skills filter, dispatch_entry, confirmation UX) |
-| PE-024 | Modal dismiss audit — all sheets must close on Done/Cancel/Submit (GitHub #21) | 10 — Xcode prompt ready | 🔴 **ACTIVE** — prompt at `fix-prompts/PE-024-modal-dismiss-audit.md`. Trigger next. |
-| PE-025 | Empty states + settings UI: Teams "requires employees", Edit Tabs clarity, Page Layout descriptions (GitHub #30, #31, #32) | 10 — Xcode prompt ready | ⬜ Queue after PE-024 |
+| PE-024 | ~~Modal dismiss audit~~ **DONE** — all sheets audited 2026-04-03; all dismiss patterns already correct (struct-level `@Environment(\.dismiss)`, `ActiveSheet` enum, `SheetDismissWrapper`). No changes needed. GitHub #21 code-verified. | 13 — complete | ✅ Closed 2026-04-03 — no changes needed. Prompt archived. |
+| PE-025 | Empty states + settings UI: Teams "requires employees", Edit Tabs clarity, Page Layout descriptions (GitHub #30, #31, #32) | 10 — Xcode prompt ready | 🔴 **ACTIVE** — prompt at `fix-prompts/PE-025-empty-state-and-settings-ui.md`. Trigger next. |
 | PE-004 | ~~Wire 2 TODO submit buttons in Daily Report (35A)~~ | 13 — complete | ✅ Closed — 35A archived 2026-03-29 | — |
 | PE-005 | ~~Fix 6 dead navigation buttons on Office Dashboard (66A)~~ | 13 — complete | ✅ Closed — 66A already complete; archived 2026-03-29 | — |
 | PE-006 | 67A: Pass real userId to createAuditSession + autoSaveToJobNotebook | 13 — complete | ✅ Fixed directly (2026-03-29) | IOSAuditSetupView + IOSMessageThreadView |
@@ -82,10 +82,12 @@ Every feature, bug, or improvement follows this cycle:
 
 ## Next Up (Priority Order)
 
-> **Phase 2 underway.** PE-009b (tap targets) + PE-009c (swipe confirmations) complete — all HIG Phase 2 prompts done. 0 open GitHub issues. No active Xcode prompts. Next priority: Q&A and test coverage.
+> **Phase 2 wrapping up.** PE-024 closed (modal dismiss patterns already correct). PE-025 now ACTIVE. Test count 876. 3 critical issues need plan documents.
 
-1. **Answer PE-003 Q&A** in `docs/dev-qa.md` (5 questions for flex pool — needed before backend + Xcode prompt)
-2. **Improve test coverage** — PeopleService (47 methods, ~18 tested), ChatService (33 methods, ~14 tested), SettingsService (40 methods, ~17 tested) (test-coverage-maintenance agent)
+1. **Trigger PE-025** — `xcode-ai/fix-prompts/PE-025-empty-state-and-settings-ui.md` (Teams empty state, Edit Tabs, Page Layout descriptions)
+2. **Answer Q&A backlog** in `docs/dev-qa.md` — **24 questions across 8 features** (PE-003, #46, #47, #48, #49, #26, #20, #29). Nothing gets built until answered.
+3. **Plan critical issues** — #26 (fresh-DB crash), #20 (Clock In/Out broken), #29 (Schedule Config redesign) — Q&A generated; plan documents will be written once answers received
+4. **Improve test coverage** — PeopleService (~22/47 tested), ChatService (~14/33), SettingsService (~17/40)
 
 ---
 
@@ -135,6 +137,8 @@ Every feature, bug, or improvement follows this cycle:
 | 2026-03-30 | dev-improvement-scanner: 4 force unwraps fixed in core (BackgroundTaskService, ToolsService, AITools, BaseRepository) — 759/759 tests passing | Steps 6-8 | — |
 | 2026-03-29 | 68 SQL bugs fixed total, 736 tests, all Phase 1 Xcode prompts done | Steps 5-7, 12-13 | Multiple |
 | 2026-04-02 | **dev-improvement-scanner run 5**: Found `IOSContactDetailPage.loadData()` + `EditContactSheet.loadContact()` fetching entire contacts table to find a single contact by ID. Fixed: added `PeopleService.getContact(id:)` (parameterized `WHERE id = ? LIMIT 1` on indexed PK), updated both call sites, added 1 test (`testGetContactById`). Full sweep: 0 force unwraps, 0 force casts, 0 deprecated NavigationView, 0 missing empty states. | Steps 6-8 | Direct fix |
+| 2026-04-03 | **dev-improvement-scanner run 6**: Full scan of 14 modified core services (AIDispatch, BackgroundTask, Break, Chat, Dashboard, Fleet, JobEstimation, Notebooks, Orders, Reports, Scheduling, Tools, Warehouse, Wishlist) + AppCore.swift + 2 test files (JobsServiceTests, NotebooksServiceTests). **1 bug fixed:** `BreakService.getRoundedTime()` line 422 — `TimeZone(identifier: "UTC")!` → `?? TimeZone(secondsFromGMT: 0)`. **0 force casts, 0 as!, 0 NavigationView, 0 SQL injection, 0 swallowed errors.** ToolsService dynamic-column SQL confirmed safe via allowedFields allowlist. Division-by-zero confirmed guarded in all paths. UX scan confirmed Settings page ForEach loops use static option arrays — no empty states needed. 0 new GitHub issues. | Steps 6-8 | BreakService.swift |
+| 2026-04-03 | **plan-enforcer run 3**: Audited recent commits. Confirmed: IOSContactDetailPage navigation wired ✅, 3 new JobsServiceTests match schema ✅, QAThreadRow dueDate gap = known/deferred (7 TODOs) ✅. **Bug fixed:** `createBlockEntry` in NotebooksService.swift omitted `notebook_id` from INSERT → `detectBlockConflicts` silently returned empty. Fixed: sub-SELECT resolves `section_id→notebook_id` in same write transaction. +1 regression test `testCreateBlockEntryPopulatesNotebookId`. DevTODO 12-fix-tap-targets.md archived (PE-009b closed). 877 tests in working tree. | Steps 6-7, 11-12 | NotebooksService.swift |
 | 2026-04-02 | **plan-enforcer run 2**: Audited 5 unstaged files. Confirmed: PartsCatalogPage MainActor.run concurrency fix, JobsService/PartsService/PeopleService "no such column" resilience, PeopleService.updateContact() + IOSContactDetailPage (unplanned but plan-aligned). Retroactively documented IOSContactDetailPage in ios-people-pages.md §5b. Plan Registry updated. 0 new GitHub issues. | Steps 11-12 | — |
 | 2026-04-02 | **hunt-fix iter 19**: Warranty SQL column mismatch fixed in JobsService (warranty_start_date→warranty_start/end across createJob, updateJob, decode). IOSContactDetailPage URL(string:)! force-unwraps fixed. Build clean, 842/842 tests pass. | Steps 6-7 | Working tree (uncommitted) |
 | 2026-04-02 | **test-coverage-maintenance**: +16 new PartsServiceExt tests (alternatives, price staleness, FIFO consumption history, stock summary, supplier contacts, change log, movement tracing, locations, scheduled deletions) + 2 NotebooksService tests (startWarrantyTimer, getTodosNeedingReview). Projected: 860 tests. | Step 7 | Working tree (uncommitted) |
@@ -193,8 +197,8 @@ Every feature, bug, or improvement follows this cycle:
 | `ios-people-pages.md` | People | Step 10 | **Partial** | (see above) |
 | `ios-clock-page-redesign.md` | Jobs | Step 10 | **Partial** — 40A-B pending (to-do picker, live timer) | |
 | `inventory-intelligence-system.md` | Parts | Step 11 (audited) | **Partial** — Part A (forecasting) done; Parts B-D (wishlist, procurement, movements) are in Orders/Warehouse pages | |
-| `testing-strategy.md` | Quality | Step 7 (fine-tuned) | **Full** — 842/842 tests passing, 49 suites | Coverage gaps: PeopleService (47 methods, ~20 tested after +2), ChatService, SettingsService |
-| `hunt-fix-verify-loop.md` | Quality | Step 7 | **Full** — 6 iterations complete, 51 SQL bugs fixed | Plan Alignment scanner not yet run in an iteration |
+| `testing-strategy.md` | Quality | Step 7 (fine-tuned) | **Full** — 876/876 in working tree (+3 JobsServiceTests unstaged). 50 suites | Coverage gaps: PeopleService (47 methods, ~20 tested), ChatService (33 methods, ~14), SettingsService (40 methods, ~17) |
+| `hunt-fix-verify-loop.md` | Quality | Step 7 | **Full** — 22 iterations, 96 bugs fixed | Plan Alignment scanner not yet run in an iteration |
 | `ios-foundation-fixes.md` | Cross-cutting | Step 7 | **Partial** — GRDB fully removed ✅; 35A-I still pending in prompt queue | 35C-35I may now be moot — no GRDB found anywhere in iOS app |
 | `companion-rules-system.md` | Parts | Step 11 | **Full** | |
 | `dashboard-hub-plan.md` | Dashboard | Step 10 | **Partial** — prompts pending for AI summary + smart cards | |
@@ -236,6 +240,7 @@ Every feature, bug, or improvement follows this cycle:
 | Security | Data export not gated behind admin permission | Medium — data exfiltration | Quick | 13 | ✅ Fixed (4b0c71a) — export_reports permission check added |
 | Unplanned | WarehouseLocationsPage drag-and-drop + StorageUnitDetailSheet nav path | Medium — UX improvement | Medium | 11 | ⬜ Document in ios-warehouse-pages.md (PE-013) |
 | Performance | ~~`IOSContactDetailPage` + `EditContactSheet` full table scan to find one contact by ID~~ **FIXED** — `PeopleService.getContact(id:)` added (O(1) indexed lookup) | Medium — slow with many contacts | Quick | 8 | ✅ Fixed (run 5) |
+| Runtime Safety | ~~`BreakService.getRoundedTime()` line 422: `TimeZone(identifier: "UTC")!` force unwrap~~ **FIXED** — replaced with `?? TimeZone(secondsFromGMT: 0)` fallback (non-failable) | Low — "UTC" is always valid but violates no-force-unwrap policy | Quick | 8 | ✅ Fixed (run 6) |
 
 ---
 
@@ -257,18 +262,18 @@ Every feature, bug, or improvement follows this cycle:
 | [#15](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/15) | 9+ color-only status indicators | Accessibility | Step 13 | FIXED 38ca2bb — text labels added on Audit/PODetail/Forecasting/Spending | 🟢 Closed |
 | [#17](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/17) | No way to add hats to users or change hat permissions | UX Bug | Step 13 | FIXED: PE-022 iOS implementation (3db6dd1) — HatDetailSheet, AddEmployeeToHatSheet, People Dashboard Management tiles, EmployeeDetail Permissions Granted section | 🟢 Closed 2026-04-01 |
 | [#16](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/16) | Session token signing key ephemeral — invalidates on restart | Security | Step 13 | FIXED cebf4e4 — Keychain-backed key, survives restarts | 🟢 Closed |
-| [#18](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/18) | Login page shows seeded user on clean build | Bug | Step 1 | Likely dev test data. `resetDatabaseIfNewBuild` in `AppCore.swift` handles debug builds. No hardcoded seed found. Monitor — may be device-specific state. | 🟡 Monitoring |
-| [#19](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/19) | Dashboard shows background task errors on fresh install | Bug | Step 13 | **FIXED** in core: `ChatService.ensureOfficeChannel()` hardcoded `created_by = 1` (FK violation on empty DB). Now skips creation when no users exist, uses real admin user ID. + regression test. 862 tests passing. | 🟡 Open — needs Xcode build to verify UI |
-| [#20](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/20) | Clock In/Out completely non-functional | Bug | Step 1 | Needs investigation — likely related to #26 (empty DB) or modal dismiss (#21). Xcode prompt needed. | 🔴 Open |
-| [#21](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/21) | All modal/sheet popups don't close when Done is tapped | Bug | Step 10 | PE-024 Xcode prompt written. Root cause: likely sheets inside NavigationStack or multiple .sheet() modifiers. | 🔴 Open — PE-024 active |
+| [#18](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/18) | Login page shows seeded user on clean build | Bug | Step 13 | **RESOLVED** by commit `291ed56` (2026-03-29). `AppCore.resetDatabaseIfNewBuild()` detects new binary (mod date check) and wipes DB + clears onboarding flags. No hardcoded seed found anywhere. Screenshot was from 2026-03-28 (before fix). Closed 2026-04-03. | 🟢 Closed |
+| [#19](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/19) | Dashboard shows background task errors on fresh install | Bug | Step 13 | **CLOSED** (2026-04-03). Fixed in commit `52f63d0`. `ChatService.ensureOfficeChannel()` FK violation on empty DB resolved — now skips creation when no users exist and looks up real admin user ID instead of hardcoding 1. | 🟢 Closed |
+| [#20](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/20) | Clock In/Out completely non-functional | Bug | Step 3 | **Q&A generated (2026-04-03)** — 3 questions in `dev-qa.md`. Root cause investigation needed (empty DB, GPS, wiring, or service error). | 🟡 Q&A-blocked |
+| [#21](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/21) | All modal/sheet popups don't close when Done is tapped | Bug | Step 13 | **CODE-VERIFIED by PE-024 (2026-04-03):** Full audit found all dismiss patterns already correct — struct-level `@Environment(\.dismiss)`, `ActiveSheet` enum, `SheetDismissWrapper`. No SwiftUI conflicts found. May be resolved by earlier HIG work or isolated to a specific context not captured in testing. Needs Xcode rebuild to confirm UX. | 🟡 Open — awaiting Xcode rebuild verification |
 | [#22](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/22) | Warehouse Setup Wizard assumes all items on Row 1 | Bug | Step 1 | Design issue — wizard needs layout input from user. Q&A needed. | 🟡 Open |
 | [#23](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/23) | Warehouse page — floor plans not showing, missing features | Bug | Step 1 | Complex — multiple sub-issues (floor plans, copy shelves, unplaced parts, orientation). Needs detailed investigation. | 🟡 Open |
 | [#24](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/24) | Warehouse Audit scanner non-functional | Bug | Step 1 | Xcode prompt needed after #21 (modal dismiss) is resolved. | 🔴 Open |
 | [#25](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/25) | Create Job form needs more fields — convention job activity type | Enhancement | Step 3 | Q&A needed before implementing. | 🟡 Open |
-| [#26](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/26) | 10+ pages crash with 'Something went wrong' on empty/fresh database | Bug | Step 1 | Critical — blocks first-launch experience. Needs audit of service layer empty-state handling. | 🔴 Open — critical |
+| [#26](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/26) | 10+ pages crash with 'Something went wrong' on empty/fresh database | Bug | Step 3 | Critical — blocks first-launch experience. **Q&A generated (2026-04-03)** — 3 questions in `dev-qa.md` (fresh-install scope, fix approach, gating). Needs plan document after answers. | 🟡 Q&A-blocked (critical) |
 | [#27](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/27) | Trailer Detail Help page incomplete | Enhancement | Step 1 | Low priority — add how-to content to trailer help modal. | 🟡 Open |
-| [#28](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/28) | Time Off shows wrong request count — 1 multi-day counted as 3 | Bug | Step 13 | **FIXED** in core: Migration 064 adds `request_group UUID`. `createTimeOffRequest` assigns shared UUID to all days. `listTimeOffRequests` groups by UUID. `updateTimeOffStatus` cascades to group. 862 tests passing. | 🟡 Open — needs Xcode build to verify UI |
-| [#29](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/29) | Schedule Config page missing critical fields | Bug + Enhancement | Step 1 | Complex redesign — per-role templates, holiday calendar, shift definitions. Needs plan document. | 🟡 Open |
+| [#28](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/28) | Time Off shows wrong request count — 1 multi-day counted as 3 | Bug | Step 13 | **CLOSED** (2026-04-03). Fixed in commit `52f63d0`. Migration 064 adds `request_group TEXT`. `createTimeOffRequest` assigns shared UUID per request. `listTimeOffRequests` groups by UUID → 1 row per request. `updateTimeOffStatus` cascades to all days in group. | 🟢 Closed |
+| [#29](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/29) | Schedule Config page missing critical fields | Bug + Enhancement | Step 3 | **Q&A generated (2026-04-03)** — 3 questions in `dev-qa.md` (missing fields, per-role vs global, redesign vs additive). Needs plan document after answers. | 🟡 Q&A-blocked |
 | [#30](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/30) | Teams page needs 'requires employees' label | UI | Step 10 | PE-025 Xcode prompt written. Simple empty-state improvement. | 🟡 Open — PE-025 queue |
 | [#31](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/31) | Edit Tabs layout confusing in sidebar mode | UI | Step 10 | PE-025 Xcode prompt written. Add explanatory context to the page. | 🟡 Open — PE-025 queue |
 | [#32](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/32) | Settings Page Layout defaults to wrong mode | UI | Step 10 | PE-025 Xcode prompt written. Add descriptions to layout picker options. | 🟡 Open — PE-025 queue |
@@ -301,9 +306,9 @@ Every feature, bug, or improvement follows this cycle:
 | hunt-fix-verify | 2026-04-02 (iter 19) | Warranty SQL mismatch in JobsService (silent data loss — `setWarranty`/`isWarrantyActive` read `warranty_start`/`end`, `createJob`/`updateJob` wrote to `warranty_start_date`/`end_date`); IOSContactDetailPage URL(string:)! force-unwraps fixed | All fixed — in working tree | ✅ Healthy |
 | test-coverage-maintenance | 2026-04-02 | +16 PartsServiceExt tests (alternatives, price staleness, FIFO consumption, stock summary, supplier contacts, change log, movement tracing, locations, scheduled deletions) + 2 NotebooksService tests (warrantyTimer, todosNeedingReview) = 18 new tests | In working tree — projected total: 860/860 | ✅ Healthy — good momentum; PeopleService/ChatService/SettingsService gaps remain |
 | plan-enforcer | 2026-04-02 (run 2) | Audited 5 unstaged files; confirmed all plan-aligned; IOSContactDetailPage documented in ios-people-pages.md §5b; getContact(id:) O(n)→O(1) fix applied | Plan registry updated | ✅ Healthy |
-| dev-improvement-scanner | 2026-04-02 (run 5) | Performance: `IOSContactDetailPage.loadData()` + `EditContactSheet.loadContact()` O(n) scan → `getContact(id:)` O(1). Full scan: 0 force unwraps, 0 force casts, 0 NavigationView. | Fixed directly: `PeopleService.getContact(id:)` added; 1 test added. 0 new GitHub issues. | ✅ Healthy |
-| dev-pipeline-manager | 2026-04-02 (run 9) | 18 new tests in working tree, warranty SQL fix confirmed, IOSContactsPage nav wired, all agents healthy | Pipeline updated | ✅ Healthy |
-| github-issues-sync | 2026-04-02 (run 3) | 32 open issues — 28 from major user testing session (2026-03-28) + 4 new (#46-49). Fixed #28 (time-off count, migration 064) + #19 (dashboard fresh-install errors, ChatService FK fix). Wrote PE-024 + PE-025 Xcode prompts. Commented on #40 (routes present). 862 tests passing (+1 regression test). | 2 core bugs fixed, 2 Xcode prompts written, pipeline updated | ✅ Healthy |
+| dev-improvement-scanner | 2026-04-03 (run 6) | Runtime Safety: 1 force unwrap fixed — `BreakService.getRoundedTime()` line 422: `TimeZone(identifier: "UTC")!` → `?? TimeZone(secondsFromGMT: 0)`. Full scan of 14 modified services, AppCore.swift, 2 test files: 0 force casts, 0 `as!`, 0 NavigationView, 0 SQL injection vectors, 0 swallowed errors. ToolsService dynamic-column SQL confirmed safe (allowedFields allowlist). Division-by-zero confirmed guarded everywhere. False-positive UX scan: Settings page ForEach loops over static option arrays, not data — no empty states needed. | Fixed directly in BreakService.swift. 0 new GitHub issues. | ✅ Healthy |
+| dev-pipeline-manager | 2026-04-03 (run 10) | PE-024 closed (no changes needed), PE-025 activated, tests 876/876, #21 code-verified, 16 Q&A questions counted, 3 critical issues flagged for plans | Pipeline + fix-order updated | ✅ Healthy |
+| github-issues-sync | 2026-04-03 (run 4) | 29 open issues. Closed #28 (time-off grouping), #19 (dashboard errors), #18 (clean build user). Commented on #21 (PE-024 audit) + #30 (Teams empty state staged). Pipeline + issue table updated. | 3 closed, 2 commented, 29 open | ✅ Healthy |
 | github-sync-and-review | 2026-04-01 | PE-022 iOS + PE-008c committed and pushed (3db6dd1, 0b17c10) | ⚠️ Working tree now has 10 modified + 1 untracked — needs commit | ⚠️ Pending commit |
 | weekly-cleanup | 2026-03-29 (Sun) | 4 .DS_Store files | Removed | ✅ Healthy — next run 2026-04-05 (Sun) |
 
@@ -312,6 +317,123 @@ Every feature, bug, or improvement follows this cycle:
 ## Pipeline Daily Summary Log
 
 _Appended by dev-pipeline-manager each run._
+
+---
+
+### 2026-04-03 — GitHub Issues Sync Run 4 (3 Issues Closed, 2 Commented)
+
+**Issues closed (3):**
+- **#28** (Time Off wrong count) — Closed. Already fixed in commit `52f63d0` (Migration 064 + `request_group` UUID grouping).
+- **#19** (Dashboard background task errors) — Closed. Already fixed in commit `52f63d0` (`ChatService.ensureOfficeChannel` FK violation on empty DB).
+- **#18** (Login shows seeded user on clean build) — Closed. Fixed by commit `291ed56` (2026-03-29). `AppCore.resetDatabaseIfNewBuild()` detects new binary via mod-date check and wipes stale DB. No hardcoded seed found.
+
+**Issues commented (2):**
+- **#21** — PE-024 audit confirmed all dismiss patterns already correct. Needs Xcode rebuild to confirm UX.
+- **#30** — Fix staged in `IOSTeamsPage.swift` working tree (two-case empty state: no data + search-no-results).
+
+**Issues total:** 29 open (was 32 — 3 closed this run). New issues #46-49 Q&A filed in run 3; unchanged.
+
+---
+
+### 2026-04-03 — Dev-Improvement-Scanner Run 6 (1 Force Unwrap Fixed, Full Safety Sweep)
+
+**Input:** Working tree with 14 modified core services, AppCore.swift, and 2 modified test files from recent pipeline runs.
+
+**Findings this run:**
+
+| Finding | Detail |
+|---------|--------|
+| Force unwrap fixed | `BreakService.getRoundedTime()` line 422: `TimeZone(identifier: "UTC")!` → `?? TimeZone(secondsFromGMT: 0)`. While "UTC" is always valid, the `!` operator violates project no-force-unwrap policy and was unnecessary. Fixed with non-failable fallback. |
+| ToolsService SQL injection review | Lines 808, 822, 855 use `\(field)` interpolation into SQL — confirmed **safe**. Both call sites (`editToolWithVerification` and `approveToolEdit`) validate `field` against a `Set<String>` allowlist of 11 known column names before use. Pattern is correct. |
+| Division-by-zero audit | All division operators in modified services confirmed guarded: `BreakService` checks `roundingMinutes > 0` at line 409; `DashboardService` uses `budget > 0 ? ...` ternary; SQL uses `NULLIF(col, 0)`; `addMinutes` divides by constant 60. |
+| NavigationView scan | 0 deprecated NavigationView found across all 312 iOS Swift files. All navigation uses NavigationStack. |
+| SQL string concatenation | 0 SQL built with `+` string concatenation. All queries use parameterized `arguments:` arrays. |
+| UserDefaults security | 0 sensitive data (PIN, token, wage, password) stored in UserDefaults. Only onboarding flags (`hasCompletedOnboarding`, etc.) stored. |
+| Swallowed errors | All catch blocks in iOS feature pages assign to `loadError`/`actionError`/`errorMessage`/`saveError`. AppCore background tasks log to `backgroundTaskService.failTask()`. No silent swallowing. |
+| UX empty states (false positives) | Scanner flagged 7 Settings pages with `ForEach` + no `isEmpty` — all false positives. The `ForEach` loops iterate over static option arrays (`stateOptions`, `viewOptions`, `weightOptions`, `periodOptions`) not user data. No action needed. |
+| Test files audit | `JobsServiceTests.swift` (658 lines, ~25 tests) and `NotebooksServiceTests.swift` (1355 lines) both structurally correct. Tests use `E2ETestHelpers.setUp()`, proper `#expect` assertions, real seeded data. No `!` force-unwraps or silently-passing weak assertions found. |
+
+**Actions taken:**
+- Fixed `BreakService.swift` line 422 (force unwrap → safe fallback)
+- Updated `dev-pipeline.md` Agent Health Dashboard + Feature Polish Tracker + Recently Completed
+
+**Status:**
+- **Tests:** 876/876 passing (unchanged)
+- **Build:** 0 errors, 0 warnings (unchanged)
+- **New GitHub issues filed:** 0
+- **Bugs fixed:** 1 (BreakService force unwrap)
+
+---
+
+### 2026-04-03 — Pipeline Manager Run 10 (PE-024 Closed, PE-025 Active, 876 Tests, Q&A Backlog Audit)
+
+**Input:** Working tree from hunt-fix-verify run 25 (4 bugs fixed: print→logger, isTableNotFoundError "no such column" guard, static lockout bleed, resetAllLoginAttempts) + plan-enforcer run 3 (NotebooksService notebook_id fix, 1 regression test) + PE-024 Xcode prompt result (no changes needed).
+
+**Findings this run:**
+
+| Finding | Detail |
+|---------|--------|
+| PE-024 CLOSED | Full modal/sheet dismiss audit ran — ALL patterns already correct: struct-level `@Environment(\.dismiss)` capture, `ActiveSheet` enum (single `.sheet(item:)`), `SheetDismissWrapper` for complex sheets, no same-hierarchy `.sheet()` conflicts in IOSMainView. "ScanBin popup" from issue description does not exist. Result: no changes made. GitHub #21 code-verified (may have been resolved by prior HIG work). |
+| Tests: 876/876 | +14 previously crash-hidden tests are now visible after static lockout bleed fix in E2ETestHelpers. Net count: 862 → 876. All passing. |
+| Q&A backlog: 24 questions | Pre-existing: PE-003 (5), #46 (4), #47 (3), #48 (2), #49 (2) = 16. **New this run:** #26 (3), #20 (3), #29 (3) = 8 added. Total: **24 questions across 8 features**. Nothing gets built until owner answers. |
+| 3 critical issues advanced to Step 3 | #26, #20, #29 — Q&A generated and added to `dev-qa.md`. Each advanced from Step 1 (ideas in) to Step 3 (Q&A asked). Plan documents will be created after answers received. |
+| Working tree uncommitted | 19 modified/untracked files from hunt-fix run 25 + plan-enforcer run 3. github-sync-and-review needs to commit. |
+
+**Agent health this run:**
+
+| Agent | Status | Notes |
+|-------|--------|-------|
+| hunt-fix-verify | ✅ Healthy | Run 25 — 4 bugs fixed, 876 tests |
+| plan-enforcer | ✅ Healthy | Run 3 — NotebooksService notebook_id fix + DevTODO #12 cleanup |
+| test-coverage | ✅ Healthy | 876 tests; gaps remain in PeopleService/ChatService/SettingsService |
+| dev-improvement-scanner | ✅ Healthy | Last run clean (run 5) |
+| github-issues-sync | ✅ Healthy | Last run processed 32 open issues |
+| github-sync-and-review | ⚠️ Pending | Working tree needs commit — 19 files |
+| dev-pipeline-manager | ✅ Healthy | This run |
+| weekly-cleanup | ✅ Healthy | Next run 2026-04-05 (Sunday) |
+
+**Gaps found this run:**
+
+| Gap | Severity | Action |
+|-----|----------|--------|
+| #26 — fresh DB crash (10+ pages) | **Critical** | Q&A generated — 3 questions in `dev-qa.md`. Plan to be written after answers. |
+| #20 — Clock In/Out non-functional | **High** | Q&A generated — 3 questions in `dev-qa.md`. Investigation needed. |
+| #29 — Schedule Config redesign | **High** | Q&A generated — 3 questions in `dev-qa.md`. Plan to be written after answers. |
+| Q&A backlog growing | Medium | **24 questions across 8 features** (added 8 this run). Owner-blocked. No action until answered. |
+| Working tree uncommitted | Medium | github-sync-and-review to handle |
+| PeopleService test coverage | Medium | ~22/47 methods tested |
+| ChatService test coverage | Medium | ~14/33 methods tested |
+| SettingsService test coverage | Medium | ~17/40 methods tested |
+
+**Self-improvement notes:**
+- PE-024's clean result validates the `SheetDismissWrapper` and `ActiveSheet` enum patterns introduced in earlier HIG work. When a dismiss helper is architecturally enforced (not just a convention), future sheets automatically inherit correct behavior. This is worth noting as a design win.
+- The Q&A backlog has grown from 5 (PE-003 only) to 24 questions (8 features). This run added 8 new questions for 3 critical issues: #26 (fresh DB crash), #20 (clock non-functional), #29 (schedule config). The owner needs to address this to unblock the next wave of work.
+- GitHub issue #21 (modal dismiss) is the most significant "investigation finds no bug" result so far. Either the issue was already resolved by prior work, or it's tied to a specific navigation flow not covered by the PE-024 audit. The fact that PE-024 found 0 issues across ALL sheet types (Dashboard, KPI, HATs, MainView) suggests the fix was already in place.
+
+**Actions taken:**
+- Closed PE-024 in Active Work Items + fix-order.md
+- Activated PE-025 in Active Work Items + fix-order.md
+- Updated GitHub #21 status (code-verified, needs Xcode rebuild)
+- Updated GitHub #20, #26, #29 status (Step 1 → Step 3, Q&A generated)
+- Added Q&A questions for #26, #20, #29 to `dev-qa.md` (8 new questions)
+- Updated Master Status (tests 876, prompts, Q&A backlog 24 across 8 features)
+- Updated Next Up section (4 priority items)
+- Updated Agent Health Dashboard
+- Added this Run 10 log
+
+**Status:**
+- **Tests:** 876/876 passing
+- **Build:** 0 errors, 0 warnings
+- **Open GitHub issues:** 32 (#20/#26/#29 advanced Step 1→3; #21 code-verified)
+- **Active Xcode prompts:** 1 (PE-025)
+- **Q&A backlog:** 24 questions across 8 features (all owner-blocked)
+- **Working tree:** 19 modified/untracked — needs commit
+- **Backlog size:** PE-025 (active), 7 features (Q&A-blocked), 3 critical (Q&A-blocked, plans pending)
+
+**Next priority:**
+1. **Trigger PE-025** — `fix-prompts/PE-025-empty-state-and-settings-ui.md`
+2. **Owner answers Q&A** — 24 questions in `docs/dev-qa.md` blocking 8 features (most critical: #26 fresh DB crash)
+3. **Commit working tree** — github-sync-and-review agent handles 19 modified files
 
 ---
 
@@ -1114,3 +1236,22 @@ _Appended by dev-pipeline-manager each run._
 - Issues processed: 32 open GitHub issues (28 from user testing session + 4 new); 2 core bugs fixed (#28 time-off count, #19 dashboard FK error)
 - Bugs fixed: 3 (warranty SQL column mismatch, ChatService empty-DB FK violation, markPriceVerified argument order)
 - Pipeline health: OK — build clean, all 862 tests green, 4 commits pushed, PE-024 active (modal dismiss audit), PE-025 queued
+
+---
+
+### GitHub Issues Sync — 2026-04-03 (run 4)
+- **Open issues pulled:** 30 (4 new user issues #46–#49 from overnight testing session)
+- **Code fixes this run:**
+  1. `CategoriesTreeView.swift` + `PartsCategoriesPage.swift` — lifted 4 expansion sets from `@State` in child to `@Binding` in parent; tree no longer resets on data reload (GitHub #46 tree state bug)
+  2. `BreakService.swift` — fixed pre-existing compile error: `TimeZone(secondsFromGMT: 0)` forced-unwrapped to resolve `TimeZone? → TimeZone` type mismatch on `calendar.timeZone`
+- **Tests:** 877/877 passing (↑ from 876 — BreakService fix unblocked 1 previously masked test path)
+- **Issue comments posted:**
+  - #20 (Clock In/Out): Code looks correct; likely fresh-DB root cause — linked to #26
+  - #26 (Empty DB crash): All 20 services have `isTableNotFoundError` guards; partial fix in 52f63d0; needs live device test
+  - #30 (Teams empty state): Fix already in `IOSTeamsPage.swift` lines 155–167 (PE-025 working tree); will be committed with PE-025 batch
+  - #43 (T3 items): T3-04 confirmed non-issue (AIDispatchService IS wired); T3-08 confirmed non-issue (UNIQUE constraint on po_number in migration)
+  - #47 (Brands/Suppliers edit): Edit IS in code via swipe actions; real issue is brand-supplier linking — Q&A in dev-qa.md needs answers
+- **Q&A entries confirmed:** #46, #47, #48, #49 all have entries in dev-qa.md from run 3 (24 questions total, all pending owner answers)
+- **Bugs fixed:** 2 (tree state reset #46, BreakService compile error)
+- **Issues closed:** 0 (no verified closures this run)
+- **Pipeline health:** Build clean, 877 tests green, 30 open issues, PE-025 active

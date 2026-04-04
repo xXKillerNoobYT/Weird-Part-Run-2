@@ -13,7 +13,7 @@
 | # | Issue | Impact |
 |---|-------|--------|
 | T1-01 | Job Detail page is a skeleton — plan calls for full dashboard with smart cards, AI summary, today's activity, warranty info, financials. Code is a flat list of fields. | Users can't see job status at a glance |
-| T1-02 | Wishlist table missing — `wishlist_items` migration never created. Wishlist page is a placeholder. | Entire procurement pipeline broken |
+| T1-02 | ~~Wishlist table missing~~ — ✅ **CLOSED** — `wishlist_items` table created in migration 057. WishlistService implemented. | Fixed |
 | T1-03 | Procurement Planner not redesigned — still old JPO inbox, not the 4-source demand aggregator | No demand consolidation |
 | T1-04 | Office Dashboard missing — no IOSOfficeDashboardPage with AI briefing, attention items, schedule | Managers have no daily overview |
 | T1-05 | Unified Approvals missing — approvals split across separate pages | Approvals fall through cracks |
@@ -21,7 +21,7 @@
 | T1-07 | Flex Pool missing — no self-assign jobs feature | Workers can't pick up unassigned work |
 | T1-08 | AI summary on job cards not implemented | Job list is data-heavy, not scannable |
 | T1-09 | Stage progression bars not implemented | Can't see job stage at a glance |
-| T1-10 | Background task log table missing — `background_task_log` migration never created | Dashboard can't show task status |
+| T1-10 | ~~Background task log table missing~~ — ✅ **CLOSED** — `background_task_log` table created in migration 058. BackgroundTaskService implemented. | Fixed |
 
 ### Critical UX Breaks
 

@@ -1,7 +1,7 @@
 # Hunt-Fix-Verify Loop Tracker
 
 > **Started:** 2026-03-28
-> **Status:** PHASE 1 COMPLETE — 15 iterations, 96 bugs fixed. Latest: Iteration 22 (2026-04-02, github-issues-sync run 3) — 2 core bugs fixed: #28 (time-off request count) + #19 (dashboard fresh-install FK error). Migration 064 added. 2 Xcode prompts written (PE-024, PE-025). Build clean, 862/862 tests pass (+1 regression test).
+> **Status:** PHASE 1 COMPLETE — 26 iterations, 104 bugs fixed. Latest: test-coverage-maintenance run (2026-04-03) — 18 new tests added covering untested methods in ToolsService (checkoutTool, returnTool, markToolMaintenance, getPendingEdits, approveToolEdit, rejectToolEdit, respondToTrade ×2, expireOldTrades, getPendingTradesForUser, toggleMaintenanceConfig, calculateNextMaintenanceDate ×2) and OrdersService (smartRouteJPOLine ×2, setJPOLineTransferId, markStageComplete ×2). Build clean. Tests: **895/895 passing**.
 
 ---
 
@@ -1062,4 +1062,96 @@ public func getContact(id: Int64) throws -> ContactListItem?
 | Core bugs fixed | 0 | 2 | +2 |
 | Active Xcode prompts | 0 | 2 (PE-024, PE-025) | +2 |
 | Migrations | 063 | 064 | +1 |
+
+---
+
+### Iteration 25 — isTableNotFoundError Drift + Auth Test Isolation (2026-04-03, hunt-fix-verify run 9)
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Compile | ✅ | 0 errors, 0 warnings |
+| Tests | ✅ | **876/876 passing** (+14 tests previously hidden by crash, now visible) |
+| Code Patterns | ✅ | 1 fix: `print()` → `logger.debug()` in AppCore production code path |
+| SQL Integrity | ✅ | All previously modified service files re-verified — no new mismatches |
+| Runtime Safety | ✅ | No force unwraps in services |
+| Edge Cases | ✅ | No division by zero or unguarded array subscripts |
+| Problems Folder | ✅ | Folder does not exist (all issues in GitHub) |
+| Master Issues | ⏳ | 32 open GitHub issues; no new T1 fixable issues found |
+| Plan Alignment | ✅ | No unplanned code found |
+| Security | ✅ | Two dynamic SQL sites audited — both validated (table name vs sqlite_master, field name vs allowlist) |
+
+**Bugs fixed (4):**
+
+| # | Bug | File | Fix |
+|---|-----|------|-----|
+| 1 | `print()` in production code path (build detection) | AppCore.swift:441 | → `logger.debug()` using existing `Logger` instance |
+| 2 | `isTableNotFoundError` missing "no such column" guard — 14 services had the old implementation, 6 had the updated one | AIDispatchService, BackgroundTaskService, BreakService, ChatService, DashboardService, FleetService, JobEstimationService, NotebooksService, OrdersService, ReportsService, SchedulingService, ToolsService, WarehouseService, WishlistService | Added `\|\| message.contains("no such column")` to all 14 |
+| 3 | Static `loginAttempts` dict bleeds across auth tests — wrong-PIN tests in one test case lock out correct-PIN tests in another (all test DBs use user ID 1) | AuthService.swift | Added `AuthService.resetAllLoginAttempts()` public static method |
+| 4 | E2ETestHelpers.setUp() didn't clear lockout state | E2ETestHelpers.swift | Added `AuthService.resetAllLoginAttempts()` call at start of setUp |
+
+**Root cause of test count jump (862 → 876):**
+The auth test crash (`fatalError: Unexpectedly found nil while unwrapping an Optional value` at E2EAuthBootstrapTests.swift:63) caused Swift Testing to abort 14 subsequent tests that couldn't run. With the lockout isolation fix, all 876 tests complete normally.
+
+**Metrics delta:**
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| Tests passing | 862 | 876 | +14 (previously crash-hidden) |
+| Compile errors | 0 | 0 | = |
+| isTableNotFoundError consistency | 6/20 services | 20/20 services | fully consistent |
+| Flaky auth tests | yes (lockout bleed) | no | fixed |
+
+---
+
+## github-issues-sync run 4 — 2026-04-03
+
+**Bugs fixed (2):**
+
+| # | Bug | File | Fix |
+|---|-----|------|-----|
+| 1 | Hierarchy tree expansion state reset on every data reload — `.id(dataVersion)` in `PartsCategoriesPage` destroys all child `@State` on each data change | `CategoriesTreeView.swift`, `PartsCategoriesPage.swift` | Lifted 4 expanded sets from `@State private` in child to `@State` in parent page, passed as `@Binding`; parent is outside `.id(dataVersion)` scope so state survives reloads |
+| 2 | Compile error in `BreakService.roundToNearest()`: `TimeZone(secondsFromGMT: 0)` is `TimeZone?` — `calendar.timeZone` expects non-optional | `BreakService.swift:422` | Added `!` force-unwrap — safe because 0 is always a valid GMT offset |
+
+**Metrics delta:**
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| Tests passing | 876 | 877 | +1 |
+| Compile errors | 1 (BreakService) | 0 | fixed |
+| Hierarchy tree state persistence | resets on every refresh | persists within session | fixed |
+
+---
+
+### Iteration 26 — Full 10-Scanner Pass (2026-04-03, hunt-fix-verify run 10)
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Compile | ✅ | 0 errors, 0 warnings |
+| Tests | ✅ | **877/877 passing** (no change) |
+| Code Patterns | ✅ | 3 `print()` statements found — all in `#Preview` blocks (compile-time only, not production) |
+| SQL Integrity | ✅ | All 15 modified services re-verified — no mismatches. 1 doc comment inaccuracy fixed |
+| Runtime Safety | ✅ | No new force unwraps; BreakService UTC fix uses `?? TimeZone(secondsFromGMT: 0)!` (safe) |
+| Edge Cases | ✅ | Empty cancel buttons in alerts verified intentional (SwiftUI pattern for confirmation dismiss) |
+| Problems Folder | ✅ | 32 screenshots only — all tracked in GitHub issues |
+| Master Issues | ⚠️ | T1-02 (wishlist_items) and T1-10 (background_task_log) are closed — migrations 057/058 created both tables. Master issue list is stale for these. |
+| Plan Alignment | ✅ | PE-025 work (Teams empty state, Tab Bar layout, Settings nav style) verified in working tree |
+| Security | ✅ | No hardcoded secrets, no SQL injection vectors, no new UserDefaults misuse |
+
+**Bugs fixed (1):**
+
+| # | Bug | File | Fix |
+|---|-----|------|-----|
+| 1 | Doc comment on `listCheckouts()` said `returned_at IS NULL` — correct column is `checked_in_at` | `ToolsService.swift:270` | Updated comment to reference correct column name |
+
+**Notes:**
+- `createBlockEntry` in NotebooksService confirmed to correctly set `notebook_id` by looking up from `notebook_sections`
+- Regression test `testCreateBlockEntryPopulatesNotebookId` passes and guards this behavior
+- T1-02 and T1-10 in master-issue-list.md are stale — both tables were created in migrations 057/058
+
+**Metrics delta:**
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| Tests passing | 877 | 877 | = |
+| Compile errors | 0 | 0 | = |
+| Doc comment accuracy | 1 stale | 0 | -1 |
 

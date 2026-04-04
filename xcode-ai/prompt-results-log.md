@@ -3127,3 +3127,60 @@ All 136 prompts verified and implemented. Program ready for review.
 **Issues Found:**
 - None — all locations already properly guarded
 **Build:** N/A (no changes made)
+
+## Prompt PE-024 — Modal/Sheet Dismiss Audit (2026-04-03)
+
+**Status:** SUCCESS (no changes needed)
+**Files Changed:** None
+**What Was Done:**
+- Full audit of all sheet dismiss patterns across Dashboard, KPI detail, and navigation files
+- **DashboardDailyReportPage.swift:** Uses proper `ActiveSheet` enum with single `.sheet(item:)`. `ReportProblemSheet` captures `@Environment(\.dismiss)` at struct level before NavigationStack, uses `let dismissSheet = { dismiss() }` closure pattern for Cancel, and calls `dismiss()` directly after successful save in `submitProblem()`. `SubmitDailyReportSheet` uses same correct struct-level `@Environment(\.dismiss)` pattern with dismiss on Cancel and after Submit.
+- **DashboardView.swift:** Uses proper `ActiveSheet` enum with single `.sheet(item:)` placed OUTSIDE NavigationStack (with explicit comment explaining why). All KPI detail cases route through this.
+- **DashboardKPIDetailSheets.swift:** `KPIDetailSheet` and all sub-views (PartTypesDetailView, TotalStockDetailView, ActiveJobsDetailView, PendingOrdersDetailView) use `SheetDismissWrapper(title:)` which correctly handles dismiss outside NavigationStack.
+- **"ScanBin" popup:** Searched entire codebase — does NOT exist. No file, no struct, no reference found.
+- **IOSHatsPage.swift:** Parent has single `.sheet(item: $activeSheet)`. Nested `HatDetailSheet` has its own single `.sheet(isPresented: $showAddEmployee)` at a different view hierarchy level — no conflict.
+- **IOSMainView.swift:** Thorough audit of all 5 `.sheet()` calls — each exists at a unique view hierarchy level (root VStack, fullSidebarLayout NavigationStack, tabViewLayout TabView, moreTab List, ModuleHostView Group). Sidebar layout uses enum-based `SidebarSheet` pattern. No same-level conflicts.
+- Searched all project files for multiple `.sheet()` modifiers — found 9 files with 2+, all verified to have sheets at different hierarchy levels (nested views, not same-node conflicts)
+**Issues Found:**
+- ScanBin popup referenced in prompt does not exist in the codebase
+- All other sheets already use correct patterns (struct-level dismiss capture, single .sheet per view level, SheetDismissWrapper for complex sheets)
+**Build:** N/A (no changes made)
+
+## Prompt PE-025 — Empty State UX: Teams, Settings Layout, Edit Tabs (2026-04-03)
+
+**Status:** SUCCESS
+**Files Changed:** IOSTeamsPage.swift, TabBarEditorView.swift, TabBarPreferences.swift, UserMenuSheet.swift
+**What Was Done:**
+- **Fix 1 — IOSTeamsPage.swift:** Replaced generic "No Teams" empty state with helpful "No Teams Yet" message explaining that teams are built from employees, plus a NavigationLink to IOSEmployeesPage. Also added a separate `ContentUnavailableView.search` state for when search/filter returns no results (previously both cases showed the same generic message).
+- **Fix 2 — TabBarEditorView.swift:** Added `@Environment(\.horizontalSizeClass)` and a contextual sidebar-mode note below the existing info banner. On iPad/larger screens, shows additional text explaining that these tabs also determine sidebar sections and their order.
+- **Fix 3 — TabBarPreferences.swift:** Added `description` computed property to `NavigationStyle` enum with human-friendly explanations: "Scrollable tab bar above content. Best for phones." / "Left sidebar for sub-tabs within each module. Great for iPad." / "All modules in a persistent left sidebar. Desktop-style navigation."
+- **Fix 3 — UserMenuSheet.swift:** Replaced the standard `Picker` in the Navigation section with manual `Button` rows showing each layout option with its name, description, icon, and a checkmark for the active selection. Users can now see what each layout mode does before picking it.
+**Issues Found:**
+- Pre-existing build error in `BreakService.swift:422` (TimeZone? → TimeZone assignment) — not related to this prompt
+**Build:** PASS for all 4 changed files (0 diagnostics). Full project build has pre-existing error in unrelated file.
+
+---
+
+## github-issues-sync run 4 — 2026-04-03
+
+**Status:** COMPLETE
+**Type:** Automated sync agent (not Xcode AI prompt)
+**Scope:** 30 open GitHub issues, code fixes, issue comments, Q&A additions
+
+**Code Changes:**
+- **`BreakService.swift:422`** — Fixed pre-existing compile error: `TimeZone(secondsFromGMT: 0)` → `TimeZone(secondsFromGMT: 0)!` (non-optional required for `calendar.timeZone`)
+- **`CategoriesTreeView.swift`** — Changed 4 expansion sets from `@State private` to `@Binding` (lifted to parent)
+- **`PartsCategoriesPage.swift`** — Added 4 `@State` expansion sets; updated both `CategoriesTreeView` call sites to pass bindings
+
+**Issue Comments Posted:**
+- #20 (Clock In/Out): linked to #26 root cause; code looks correct
+- #26 (Empty DB crash): all 20 services have guards; partial fix in 52f63d0
+- #30 (Teams page): PE-025 fix confirmed in code
+- #31 (Edit Tabs): PE-025 fix confirmed in code
+- #32 (Settings Layout): PE-025 fix confirmed in code
+- #43 (T3 items): T3-04 and T3-08 confirmed non-issues
+- #47 (Brands/Suppliers): edit IS in code via swipe; real issue is brand-supplier linking
+- #50 (Badge notifications): Q&A generated, #51 created
+
+**New Issues Created:** #51 (visibility standards)
+**Build:** 0 errors, 0 warnings. Tests: **877/877 passing**.

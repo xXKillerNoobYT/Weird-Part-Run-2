@@ -1,5 +1,6 @@
 # Fix Undersized Tap Targets to 44x44pt Minimum
-**GitHub Issue:** #12
+**GitHub Issue:** #12 — **CLOSED**
+**Status:** ✅ DONE — PE-009b closed 2026-04-02. All 13 tap targets verified ≥44×44pt.
 **Priority:** High
 **Estimated effort:** Quick (10 min)
 
