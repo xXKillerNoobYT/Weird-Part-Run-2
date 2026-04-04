@@ -1927,6 +1927,6 @@ public final class DashboardService: Sendable {
     /// dashboard can still render partial data on freshly created databases.
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
-        return message.contains("no such table")
+        return message.contains("no such table") || message.contains("no such column")
     }
 }

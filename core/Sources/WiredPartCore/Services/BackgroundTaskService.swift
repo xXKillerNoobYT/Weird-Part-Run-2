@@ -288,6 +288,6 @@ public final class BackgroundTaskService: Sendable {
 
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
-        return message.contains("no such table")
+        return message.contains("no such table") || message.contains("no such column")
     }
 }

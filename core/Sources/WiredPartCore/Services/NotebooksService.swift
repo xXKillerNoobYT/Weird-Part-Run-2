@@ -802,12 +802,16 @@ public final class NotebooksService: Sendable {
                     """, arguments: [sectionId]) ?? -1) + 1
             }
 
+            let notebookId = try Int64.fetchOne(dbConn, sql: """
+                SELECT notebook_id FROM notebook_sections WHERE id = ?
+                """, arguments: [sectionId])
+
             try dbConn.execute(sql: """
                 INSERT INTO notebook_entries
-                (section_id, title, content, entry_type, block_type, block_data,
+                (section_id, notebook_id, title, content, entry_type, block_type, block_data,
                  field_required, is_deleted, is_completed, sort_order, created_by, created_at, updated_at)
-                VALUES (?, ?, ?, 'note', ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
-                """, arguments: [sectionId, title ?? "", content, blockType, blockData, order, createdBy])
+                VALUES (?, ?, ?, ?, 'note', ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
+                """, arguments: [sectionId, notebookId, title ?? "", content, blockType, blockData, order, createdBy])
             return dbConn.lastInsertedRowID
         }
     }
@@ -1420,6 +1424,6 @@ public final class NotebooksService: Sendable {
     /// Detect whether a GRDB/SQLite error indicates a missing table.
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
-        return message.contains("no such table")
+        return message.contains("no such table") || message.contains("no such column")
     }
 }

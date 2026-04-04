@@ -438,7 +438,7 @@ final class AppCore: ObservableObject {
         let storedDate = UserDefaults.standard.object(forKey: buildDateKey) as? Date
 
         if let storedDate, storedDate != modDate {
-            print("[AppCore] New build detected — wiping database for fresh start")
+            logger.debug("[AppCore] New build detected — wiping database for fresh start")
             let fm = FileManager.default
             try? fm.removeItem(atPath: dbPath)
             try? fm.removeItem(atPath: dbPath + "-wal")

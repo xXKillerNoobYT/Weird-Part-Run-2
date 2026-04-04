@@ -419,7 +419,7 @@ public final class BreakService: Sendable {
         // Handle full datetime formats
         guard let date = Self.parseDateTime(time) else { return time }
         var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? TimeZone(secondsFromGMT: 0)!
         let minute = calendar.component(.minute, from: date)
         let roundedMinute = (minute / roundingMinutes) * roundingMinutes
         let diff = roundedMinute - minute
@@ -484,6 +484,6 @@ public final class BreakService: Sendable {
 
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
-        return message.contains("no such table")
+        return message.contains("no such table") || message.contains("no such column")
     }
 }

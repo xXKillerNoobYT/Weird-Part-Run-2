@@ -118,6 +118,14 @@ public final class AuthService: Sendable {
         loginAttempts.removeValue(forKey: userId)
     }
 
+    /// Reset all lockout state. Used by tests that create fresh databases to prevent
+    /// inter-test lockout bleed via the static `loginAttempts` dictionary.
+    public static func resetAllLoginAttempts() {
+        attemptLock.lock()
+        defer { attemptLock.unlock() }
+        loginAttempts.removeAll()
+    }
+
     // MARK: - Authentication
 
     /// Authenticate a user by PIN against the local database.

@@ -267,7 +267,7 @@ public final class ToolsService: Sendable {
     /// List tool checkouts, optionally filtered by tool and/or active status.
     ///
     /// Joins to `tools` and `users` to resolve tool name and user name.
-    /// When `active` is true, only returns checkouts where `returned_at IS NULL`.
+    /// When `active` is true, only returns checkouts where `checked_in_at IS NULL`.
     ///
     /// - Parameters:
     ///   - toolId: Optional tool ID to filter by.
@@ -1549,6 +1549,6 @@ public final class ToolsService: Sendable {
     /// Detect whether a GRDB/SQLite error indicates a missing table.
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)
-        return message.contains("no such table")
+        return message.contains("no such table") || message.contains("no such column")
     }
 }
