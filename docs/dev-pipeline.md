@@ -1255,3 +1255,13 @@ _Appended by dev-pipeline-manager each run._
 - **Bugs fixed:** 2 (tree state reset #46, BreakService compile error)
 - **Issues closed:** 0 (no verified closures this run)
 - **Pipeline health:** Build clean, 877 tests green, 30 open issues, PE-025 active
+
+### End-of-Day Sync — 2026-04-03
+- Files committed: 35 (16 core services, 6 test files, 6 iOS UI files, 7 docs/xcode-ai files)
+- Commits created: 4 (core fixes, new tests, iOS UI/PE-025, pipeline docs)
+- Push status: success (a485243..37c8367 → origin/main)
+- Tests: 895/895 passing (+18 tests vs 877 from github-issues-sync run 4, +33 vs start of day)
+- Agent runs today: 5/7 (hunt-fix-verify runs 9+10, test-coverage-maintenance, github-issues-sync run 4, end-of-day-sync)
+- Issues processed: 30 open GitHub issues; 4 bugs fixed across 2 hunt-fix-verify passes
+- Bugs fixed: 4 (isTableNotFoundError drift in 14 services, auth test lockout bleed, print()→logger.debug(), ToolsService doc comment)
+- Pipeline health: OK — build clean, 895/895 tests green, 4 commits pushed, PE-025 complete, PE-026 (badge counts) queued, T1-02 and T1-10 closed in master-issue-list
