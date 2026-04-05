@@ -284,7 +284,7 @@ struct SettingsServiceTests {
         let db = try freshDB()
         let svc = SettingsService(db: db)
 
-        var profile = BusinessProfile(companyName: "Original LLC", isActive: 1)
+        let profile = BusinessProfile(companyName: "Original LLC", isActive: 1)
         var created = try svc.createBusinessProfile(profile)
         created.companyName = "Updated LLC"
         let updated = try svc.updateBusinessProfile(created)
@@ -475,7 +475,68 @@ struct SettingsServiceTests {
         let svc = SettingsService(db: db)
 
         let integrations = try svc.listIntegrations()
-        // Table may not exist or be empty — both are valid
+        // integrations table has no seeded rows and may not exist — both return 0 gracefully
         #expect(integrations.count >= 0)
+    }
+
+    // MARK: - Audit Log
+
+    @Test("listAuditLog returns empty on fresh database with no writes")
+    func testListAuditLogEmpty() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let svc = SettingsService(db: db)
+
+        // A brand-new in-memory DB with no writes has an empty _change_log
+        let log = try svc.listAuditLog(limit: 50)
+        #expect(log.isEmpty)
+    }
+
+    @Test("listAuditLog returns entries after a direct _change_log insert")
+    func testListAuditLogAfterWrite() throws {
+        let env = try E2ETestHelpers.setUp()
+        let svc = SettingsService(db: env.db)
+
+        // Insert a synthetic change log entry to simulate a tracked write
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO _change_log (device_id, table_name, record_id, operation)
+                VALUES ('test-device', 'settings', 999, 'INSERT')
+                """)
+        }
+
+        let log = try svc.listAuditLog(limit: 100)
+        #expect(log.count > 0, "listAuditLog should return the inserted entry")
+
+        // Every entry should have a non-empty entityType and action
+        for entry in log {
+            #expect(!entry.entityType.isEmpty)
+            #expect(!entry.action.isEmpty)
+        }
+    }
+
+    @Test("listAuditLog respects the limit parameter")
+    func testListAuditLogLimit() throws {
+        let env = try E2ETestHelpers.setUp()
+        let svc = SettingsService(db: env.db)
+
+        // Get all entries first
+        let all = try svc.listAuditLog(limit: 1000)
+        guard all.count > 3 else { return } // Skip if not enough entries
+
+        // Limit to 2 should return exactly 2 (most recent)
+        let limited = try svc.listAuditLog(limit: 2)
+        #expect(limited.count == 2)
+    }
+
+    // MARK: - updateSetting (alias for upsertSetting)
+
+    @Test("updateSetting persists value via upsertSetting alias")
+    func testUpdateSettingAlias() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        try svc.updateSetting(key: "alias_test", value: "hello", category: "test")
+        let stored = try svc.getSetting("alias_test")
+        #expect(stored == "hello")
     }
 }

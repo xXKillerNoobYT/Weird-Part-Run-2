@@ -32,7 +32,7 @@ struct SyncIntegrationTests {
     @Test("Loopback: push changes to server, pull them back")
     func testLoopbackPushPull() async throws {
         let (server, state, port) = try await startServer()
-        defer { Task { try? await server.stop() } }
+        defer { Task { await server.stop() } }
 
         let baseURL = "http://127.0.0.1:\(port)"
 
@@ -76,7 +76,7 @@ struct SyncIntegrationTests {
     @Test("Pull with vector clock filters to only new changes")
     func testPullVectorClockFiltering() async throws {
         let (server, state, port) = try await startServer()
-        defer { Task { try? await server.stop() } }
+        defer { Task { await server.stop() } }
 
         // Set outbox with 5 changes (sequences 1-5)
         let outbox = (1...5).map { i in
@@ -304,7 +304,7 @@ struct SyncIntegrationTests {
         )
         let server = LanSyncServer(state: state)
         let port = try await server.start()
-        defer { Task { try? await server.stop() } }
+        defer { Task { await server.stop() } }
 
         let baseURL = "http://127.0.0.1:\(port)"
 
@@ -368,7 +368,7 @@ struct SyncIntegrationTests {
         )
         let server = LanSyncServer(state: state)
         let port = try await server.start()
-        defer { Task { try? await server.stop() } }
+        defer { Task { await server.stop() } }
 
         // Build an expired cert
         let certPayload: [String: Any] = [
@@ -406,7 +406,7 @@ struct SyncIntegrationTests {
     @Test("Vector clock delta: push, update clock, push more, pull only new")
     func testVectorClockDelta() async throws {
         let (server, state, port) = try await startServer()
-        defer { Task { try? await server.stop() } }
+        defer { Task { await server.stop() } }
 
         // Phase 1: outbox has items 1-3
         let batch1 = (1...3).map { i in
@@ -508,7 +508,7 @@ struct SyncIntegrationTests {
     @Test("Wrong company_id on push/pull → 403")
     func testWrongCompanyIntegration() async throws {
         let (server, _, port) = try await startServer(companyId: "company-A")
-        defer { Task { try? await server.stop() } }
+        defer { Task { await server.stop() } }
 
         let baseURL = "http://127.0.0.1:\(port)"
 

@@ -13,7 +13,7 @@ struct OrdersServiceTests {
         let env = try E2ETestHelpers.setUp()
         let jobId = try E2ETestHelpers.seedJob(env)
         let catId = try E2ETestHelpers.seedCategory(env)
-        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedPart(env, categoryId: catId)
 
         let jpoId = try env.orders.createJPO(
             jobId: jobId,

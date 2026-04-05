@@ -911,4 +911,193 @@ struct SchedulingServiceTests {
         let activeRow = rows.first(where: { $0.id == jobId })
         #expect(activeRow?.jobName == "Active Dispatch Job")
     }
+
+    // MARK: - Shift Templates
+
+    @Test("Shift template CRUD lifecycle: create, list, update, delete")
+    func testShiftTemplateCRUD() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Create a shift template
+        let id = try env.scheduling.saveShiftTemplate(
+            name: "Journeyman Field",
+            hatId: nil,
+            workDays: "[\"mon\",\"tue\",\"wed\",\"thu\",\"fri\"]",
+            startTime: "07:00",
+            endTime: "15:30",
+            breakMinutes: 30,
+            breakPaid: false,
+            overtimeRule: "company_default"
+        )
+        #expect(id > 0)
+
+        // List templates
+        let templates = try env.scheduling.getShiftTemplates()
+        #expect(templates.count == 1)
+        #expect(templates[0].name == "Journeyman Field")
+        #expect(templates[0].startTime == "07:00")
+        #expect(templates[0].endTime == "15:30")
+        #expect(templates[0].breakMinutes == 30)
+        #expect(templates[0].breakPaid == false)
+
+        // Update the template
+        try env.scheduling.saveShiftTemplate(
+            id: id,
+            name: "Senior Journeyman",
+            hatId: nil,
+            workDays: "[\"mon\",\"tue\",\"wed\",\"thu\"]",
+            startTime: "06:00",
+            endTime: "16:00",
+            breakMinutes: 45,
+            breakPaid: true,
+            overtimeRule: "daily_8"
+        )
+        let updated = try env.scheduling.getShiftTemplates()
+        #expect(updated[0].name == "Senior Journeyman")
+        #expect(updated[0].startTime == "06:00")
+        #expect(updated[0].breakPaid == true)
+        #expect(updated[0].overtimeRule == "daily_8")
+
+        // Delete the template
+        try env.scheduling.deleteShiftTemplate(id: id)
+        let afterDelete = try env.scheduling.getShiftTemplates()
+        #expect(afterDelete.isEmpty)
+    }
+
+    // MARK: - Holidays
+
+    @Test("Holiday CRUD lifecycle: create, list, update, delete")
+    func testHolidayCRUD() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Create a holiday
+        let id = try env.scheduling.saveHoliday(
+            name: "Independence Day",
+            date: "2026-07-04",
+            isPaid: true,
+            isRecurring: true
+        )
+        #expect(id > 0)
+
+        // List holidays
+        let holidays = try env.scheduling.getHolidays()
+        #expect(holidays.count == 1)
+        #expect(holidays[0].name == "Independence Day")
+        #expect(holidays[0].date == "2026-07-04")
+        #expect(holidays[0].isPaid == true)
+        #expect(holidays[0].isRecurring == true)
+
+        // Update the holiday
+        try env.scheduling.saveHoliday(
+            id: id,
+            name: "Fourth of July",
+            date: "2026-07-04",
+            isPaid: false,
+            isRecurring: false
+        )
+        let updated = try env.scheduling.getHolidays()
+        #expect(updated[0].name == "Fourth of July")
+        #expect(updated[0].isPaid == false)
+        #expect(updated[0].isRecurring == false)
+
+        // Delete the holiday
+        try env.scheduling.deleteHoliday(id: id)
+        let afterDelete = try env.scheduling.getHolidays()
+        #expect(afterDelete.isEmpty)
+    }
+
+    @Test("Multiple holidays sort by date")
+    func testHolidaysSortByDate() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        try env.scheduling.saveHoliday(name: "Christmas", date: "2026-12-25", isPaid: true)
+        try env.scheduling.saveHoliday(name: "New Year", date: "2026-01-01", isPaid: true)
+        try env.scheduling.saveHoliday(name: "July 4th", date: "2026-07-04", isPaid: true)
+
+        let holidays = try env.scheduling.getHolidays()
+        #expect(holidays.count == 3)
+        #expect(holidays[0].name == "New Year")
+        #expect(holidays[1].name == "July 4th")
+        #expect(holidays[2].name == "Christmas")
+    }
+
+    // MARK: - Flex Pool
+
+    @Test("fetchFlexPool returns empty when no flex-pool jobs exist")
+    func testFetchFlexPoolEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobs = try env.scheduling.fetchFlexPool(userId: env.adminUserId)
+        #expect(jobs.isEmpty)
+    }
+
+    @Test("markJobFlexPool adds job to pool; fetchFlexPool returns it")
+    func testMarkAndFetchFlexPool() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        try env.scheduling.markJobFlexPool(jobId: jobId, isFlexPool: true)
+        let jobs = try env.scheduling.fetchFlexPool(userId: env.adminUserId)
+        #expect(jobs.count == 1)
+        #expect(jobs[0].id == jobId)
+        #expect(jobs[0].jobName == "Test Job")
+    }
+
+    @Test("markJobFlexPool with false removes job from pool")
+    func testMarkJobFlexPoolRemove() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        try env.scheduling.markJobFlexPool(jobId: jobId, isFlexPool: true)
+        #expect(try env.scheduling.fetchFlexPool(userId: env.adminUserId).count == 1)
+
+        try env.scheduling.markJobFlexPool(jobId: jobId, isFlexPool: false)
+        #expect(try env.scheduling.fetchFlexPool(userId: env.adminUserId).isEmpty)
+    }
+
+    @Test("fetchFlexPool excludes jobs with user filter that doesn't include requesting user")
+    func testFlexPoolUserFilter() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let otherUserId: Int64 = 999
+
+        // Mark with user filter that excludes adminUserId
+        try env.scheduling.markJobFlexPool(
+            jobId: jobId,
+            isFlexPool: true,
+            userFilter: [otherUserId]
+        )
+
+        let jobs = try env.scheduling.fetchFlexPool(userId: env.adminUserId)
+        #expect(jobs.isEmpty, "Job should be filtered out for users not in the user filter list")
+    }
+
+    @Test("fetchFlexPool includes job when user is in user filter list")
+    func testFlexPoolUserFilterIncludes() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        try env.scheduling.markJobFlexPool(
+            jobId: jobId,
+            isFlexPool: true,
+            userFilter: [env.adminUserId]
+        )
+
+        let jobs = try env.scheduling.fetchFlexPool(userId: env.adminUserId)
+        #expect(jobs.count == 1)
+    }
+
+    @Test("claimFlexJob sets worker as lead and removes job from flex pool")
+    func testClaimFlexJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        try env.scheduling.markJobFlexPool(jobId: jobId, isFlexPool: true)
+        #expect(try env.scheduling.fetchFlexPool(userId: env.adminUserId).count == 1)
+
+        try env.scheduling.claimFlexJob(jobId: jobId, userId: env.adminUserId)
+
+        // Job should no longer appear in flex pool
+        let remaining = try env.scheduling.fetchFlexPool(userId: env.adminUserId)
+        #expect(remaining.isEmpty, "Claimed job should no longer appear in flex pool")
+    }
 }

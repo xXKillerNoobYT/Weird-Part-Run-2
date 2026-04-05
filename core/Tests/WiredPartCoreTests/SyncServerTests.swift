@@ -29,7 +29,7 @@ struct SyncServerTests {
         let statePort = await state.port
         #expect(statePort == port)
 
-        try await server.stop()
+        await server.stop()
     }
 
     @Test("Server stop shuts down cleanly")
@@ -37,7 +37,7 @@ struct SyncServerTests {
         let state = makeState()
         let server = LanSyncServer(state: state)
         _ = try await server.start()
-        try await server.stop()
+        await server.stop()
         // No crash = success
     }
 
@@ -61,7 +61,7 @@ struct SyncServerTests {
         #expect(status.companyId == "co-1")
         #expect(status.port == port)
 
-        try await server.stop()
+        await server.stop()
     }
 
     // MARK: - POST /sync/push
@@ -104,7 +104,7 @@ struct SyncServerTests {
         #expect(pushResponse.accepted == 1)
         #expect(!pushResponse.syncBatchId.isEmpty)
 
-        try await server.stop()
+        await server.stop()
     }
 
     @Test("POST /sync/push adds to inbox")
@@ -149,7 +149,7 @@ struct SyncServerTests {
         #expect(inbox[0].recordId == "1")
         #expect(inbox[1].recordId == "2")
 
-        try await server.stop()
+        await server.stop()
     }
 
     // MARK: - POST /sync/pull
@@ -200,7 +200,7 @@ struct SyncServerTests {
         #expect(pullResponse.changes.count == 2)
         #expect(pullResponse.serverDeviceId == "server-dev")
 
-        try await server.stop()
+        await server.stop()
     }
 
     @Test("POST /sync/pull with vector clock filters changes")
@@ -236,7 +236,7 @@ struct SyncServerTests {
         // Should only get IDs 2 and 3 (not 1)
         #expect(pullResponse.changes.count == 2)
 
-        try await server.stop()
+        await server.stop()
     }
 
     // MARK: - Auth
@@ -264,6 +264,6 @@ struct SyncServerTests {
         let httpResponse = response as! HTTPURLResponse
         #expect(httpResponse.statusCode == 403)
 
-        try await server.stop()
+        await server.stop()
     }
 }

@@ -315,4 +315,299 @@ struct E2EPartsCatalogTests {
         #expect(csv.contains("CSV Part 2"))
         #expect(csv.contains("CSV-001"))
     }
+
+    // MARK: - Color Part Numbers (#46)
+
+    @Test("Create color with part number and fetch it back")
+    func testColorPartNumber() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let colorId = try env.parts.createColor(name: "White", hexCode: "#FFFFFF", partNumber: "28031450")
+        #expect(colorId > 0)
+
+        let colors = try env.parts.listColors()
+        let white = colors.first(where: { $0.id == colorId })
+        #expect(white != nil)
+        #expect(white?.partNumber == "28031450")
+    }
+
+    @Test("Update color part number")
+    func testUpdateColorPartNumber() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let colorId = try env.parts.createColor(name: "Gray", hexCode: "#808080")
+        // Initially no part number
+        var colors = try env.parts.listColors()
+        #expect(colors.first(where: { $0.id == colorId })?.partNumber == nil)
+
+        // Set part number
+        try env.parts.updateColor(id: colorId, partNumber: "GR-9999")
+        colors = try env.parts.listColors()
+        #expect(colors.first(where: { $0.id == colorId })?.partNumber == "GR-9999")
+
+        // Clear part number (empty string = clear to NULL)
+        try env.parts.updateColor(id: colorId, partNumber: "")
+        colors = try env.parts.listColors()
+        #expect(colors.first(where: { $0.id == colorId })?.partNumber == nil)
+    }
+
+    @Test("Supplier part number on part-supplier link")
+    func testSupplierPartNumber() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let suppId = try E2ETestHelpers.seedSupplier(env)
+
+        let linkId = try env.parts.addPartSupplierLink(
+            partId: partId,
+            supplierId: suppId,
+            supplierPartNumber: "SUP-ABC-123",
+            costPrice: 10.0
+        )
+        #expect(linkId > 0)
+
+        let links = try env.parts.getPartSuppliers(partId: partId)
+        #expect(links.count == 1)
+        #expect(links[0].supplierPartNumber == "SUP-ABC-123")
+
+        // Update supplier part number
+        try env.parts.updateSupplierPartNumber(linkId: linkId, supplierPartNumber: "SUP-XYZ-789")
+        let updated = try env.parts.getPartSuppliers(partId: partId)
+        #expect(updated[0].supplierPartNumber == "SUP-XYZ-789")
+    }
+
+    @Test("Search parts by color part number")
+    func testSearchByPartNumber() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+
+        let colorId = try env.parts.createColor(name: "Red", hexCode: "#FF0000", partNumber: "28031450")
+        _ = try env.parts.createPart(categoryId: catId, name: "12/2 Wire Red", colorId: colorId, code: "W-RED")
+
+        // Search by part number
+        let results = try env.parts.searchParts(query: "28031450")
+        #expect(results.count >= 1)
+        #expect(results.contains(where: { $0.name == "12/2 Wire Red" }))
+    }
+
+    @Test("Search parts by color abbreviation")
+    func testSearchByAbbreviation() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+
+        let colorId = try env.parts.createColor(name: "Red", hexCode: "#FF0000")
+        _ = try env.parts.createPart(categoryId: catId, name: "THHN 12 AWG Red", colorId: colorId, code: "TH-RD")
+
+        // Search by abbreviation "RD" should match color name "Red"
+        let results = try env.parts.searchParts(query: "RD")
+        #expect(results.count >= 1)
+        #expect(results.contains(where: { $0.name == "THHN 12 AWG Red" }))
+    }
+
+    // MARK: - Brand-Supplier Relationship Tests (PE-028)
+
+    @Test("Link brand to supplier and verify carry status defaults")
+    func testBrandSupplierLinkWithCarryStatus() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let brandId = try env.parts.createBrand(name: "Romex")
+        let suppId = try env.parts.createSupplier(name: "Graybar")
+
+        // Link brand to supplier
+        let linkId = try env.parts.linkBrandToSupplier(brandId: brandId, supplierId: suppId)
+        #expect(linkId > 0)
+
+        // Verify carry status defaults to "carry_on_shelf"
+        let suppliers = try env.parts.getBrandSuppliersWithStatus(brandId: brandId)
+        #expect(suppliers.count == 1)
+        #expect(suppliers[0].supplierName == "Graybar")
+        #expect(suppliers[0].carryStatus == "carry_on_shelf")
+    }
+
+    @Test("Update brand-supplier carry status")
+    func testUpdateBrandSupplierCarryStatus() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let brandId = try env.parts.createBrand(name: "Southwire")
+        let suppId = try env.parts.createSupplier(name: "Home Depot")
+        _ = try env.parts.linkBrandToSupplier(brandId: brandId, supplierId: suppId)
+
+        // Update to need_to_order
+        try env.parts.updateBrandSupplierCarryStatus(
+            brandId: brandId,
+            supplierId: suppId,
+            carryStatus: "need_to_order"
+        )
+
+        let suppliers = try env.parts.getBrandSuppliersWithStatus(brandId: brandId)
+        #expect(suppliers.count == 1)
+        #expect(suppliers[0].carryStatus == "need_to_order")
+
+        // Toggle back to carry_on_shelf
+        try env.parts.updateBrandSupplierCarryStatus(
+            brandId: brandId,
+            supplierId: suppId,
+            carryStatus: "carry_on_shelf"
+        )
+
+        let updated = try env.parts.getBrandSuppliersWithStatus(brandId: brandId)
+        #expect(updated[0].carryStatus == "carry_on_shelf")
+    }
+
+    @Test("Remove brand-supplier link via soft delete")
+    func testRemoveBrandSupplierLink() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let brandId = try env.parts.createBrand(name: "Leviton")
+        let supp1 = try env.parts.createSupplier(name: "Graybar")
+        let supp2 = try env.parts.createSupplier(name: "CED")
+
+        _ = try env.parts.linkBrandToSupplier(brandId: brandId, supplierId: supp1)
+        _ = try env.parts.linkBrandToSupplier(brandId: brandId, supplierId: supp2)
+
+        // Should have 2 suppliers
+        let before = try env.parts.getBrandSuppliersWithStatus(brandId: brandId)
+        #expect(before.count == 2)
+
+        // Unlink one
+        try env.parts.unlinkBrandFromSupplier(brandId: brandId, supplierId: supp1)
+
+        let after = try env.parts.getBrandSuppliersWithStatus(brandId: brandId)
+        #expect(after.count == 1)
+        #expect(after[0].supplierName == "CED")
+    }
+
+    @Test("Get supplier brands includes carry status")
+    func testGetSupplierBrandsWithCarryStatus() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let brand1 = try env.parts.createBrand(name: "Romex")
+        let brand2 = try env.parts.createBrand(name: "Ideal")
+        let suppId = try env.parts.createSupplier(name: "Graybar")
+
+        _ = try env.parts.linkBrandToSupplier(brandId: brand1, supplierId: suppId)
+        _ = try env.parts.linkBrandToSupplier(brandId: brand2, supplierId: suppId)
+
+        // Set one brand to need_to_order
+        try env.parts.updateBrandSupplierCarryStatus(
+            brandId: brand2,
+            supplierId: suppId,
+            carryStatus: "need_to_order"
+        )
+
+        // Verify via getSupplierBrands (tuple version used by SupplierDetailSheet)
+        let brands: [(brandId: Int64, brandName: String, partCount: Int, carryStatus: String)] = try env.parts.getSupplierBrands(supplierId: suppId)
+        #expect(brands.count == 2)
+
+        let ideal = brands.first(where: { $0.brandName == "Ideal" })
+        #expect(ideal?.carryStatus == "need_to_order")
+
+        let romex = brands.first(where: { $0.brandName == "Romex" })
+        #expect(romex?.carryStatus == "carry_on_shelf")
+    }
+
+    // MARK: - Cascade Pricing
+
+    @Test("Set type default cost — colors inherit")
+    func testSetTypePrice() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+
+        // Create colors and link to type
+        let color1 = try env.parts.createColor(name: "Red")
+        let color2 = try env.parts.createColor(name: "Blue")
+        _ = try env.parts.linkTypeToColor(typeId: typeId, colorId: color1)
+        _ = try env.parts.linkTypeToColor(typeId: typeId, colorId: color2)
+
+        // Set type default cost
+        try env.parts.setPriceForType(typeId: typeId, unitCost: 5.00)
+
+        // Both colors should inherit the type default
+        let resolved1 = try env.parts.getEffectivePrice(colorId: color1, typeId: typeId)
+        #expect(resolved1.effectiveCost == 5.00)
+        #expect(resolved1.source == "type")
+
+        let resolved2 = try env.parts.getEffectivePrice(colorId: color2, typeId: typeId)
+        #expect(resolved2.effectiveCost == 5.00)
+        #expect(resolved2.source == "type")
+    }
+
+    @Test("Color override takes precedence over type default")
+    func testColorOverride() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+
+        let color1 = try env.parts.createColor(name: "Red")
+        let color2 = try env.parts.createColor(name: "Blue")
+        _ = try env.parts.linkTypeToColor(typeId: typeId, colorId: color1)
+        _ = try env.parts.linkTypeToColor(typeId: typeId, colorId: color2)
+
+        // Set type default
+        try env.parts.setPriceForType(typeId: typeId, unitCost: 5.00)
+
+        // Override color 1
+        try env.parts.setPriceForColor(colorId: color1, unitCost: 4.50)
+
+        // Color 1 should use its override
+        let resolved1 = try env.parts.getEffectivePrice(colorId: color1, typeId: typeId)
+        #expect(resolved1.effectiveCost == 4.50)
+        #expect(resolved1.source == "color")
+
+        // Color 2 should still inherit type default
+        let resolved2 = try env.parts.getEffectivePrice(colorId: color2, typeId: typeId)
+        #expect(resolved2.effectiveCost == 5.00)
+        #expect(resolved2.source == "type")
+    }
+
+    @Test("Supplier cost overrides color and type costs")
+    func testSupplierCostOverride() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+
+        let colorId = try env.parts.createColor(name: "Green")
+        _ = try env.parts.linkTypeToColor(typeId: typeId, colorId: colorId)
+
+        let suppId = try env.parts.createSupplier(name: "Graybar")
+
+        // Set all three levels
+        try env.parts.setPriceForType(typeId: typeId, unitCost: 5.00)
+        try env.parts.setPriceForColor(colorId: colorId, unitCost: 4.50)
+        try env.parts.setSupplierCostForColor(colorId: colorId, supplierId: suppId, cost: 4.25)
+
+        // With supplier → should use supplier cost
+        let withSupplier = try env.parts.getEffectivePrice(colorId: colorId, typeId: typeId, supplierId: suppId)
+        #expect(withSupplier.effectiveCost == 4.25)
+        #expect(withSupplier.source == "supplier")
+
+        // Without supplier → should use color override
+        let withoutSupplier = try env.parts.getEffectivePrice(colorId: colorId, typeId: typeId)
+        #expect(withoutSupplier.effectiveCost == 4.50)
+        #expect(withoutSupplier.source == "color")
+    }
+
+    @Test("Cascade falls back correctly when levels are empty")
+    func testCascadeFallback() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+
+        let colorId = try env.parts.createColor(name: "White")
+        _ = try env.parts.linkTypeToColor(typeId: typeId, colorId: colorId)
+
+        // No prices set anywhere → should be nil
+        let noPrice = try env.parts.getEffectivePrice(colorId: colorId, typeId: typeId)
+        #expect(noPrice.effectiveCost == nil)
+        #expect(noPrice.source == "none")
+
+        // Set type default → should cascade
+        try env.parts.setPriceForType(typeId: typeId, unitCost: 3.00)
+        let fromType = try env.parts.getEffectivePrice(colorId: colorId, typeId: typeId)
+        #expect(fromType.effectiveCost == 3.00)
+        #expect(fromType.source == "type")
+
+        // Clear type default → back to nil
+        try env.parts.setPriceForType(typeId: typeId, unitCost: nil)
+        let cleared = try env.parts.getEffectivePrice(colorId: colorId, typeId: typeId)
+        #expect(cleared.effectiveCost == nil)
+        #expect(cleared.source == "none")
+    }
 }

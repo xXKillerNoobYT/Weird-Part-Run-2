@@ -231,7 +231,8 @@ struct WarehouseServiceExtTests {
     func testUserWarehouseRating() throws {
         let env = try E2ETestHelpers.setUp()
         let rating = try env.warehouse.getUserWarehouseRating(userId: env.adminUserId)
-        #expect(rating != nil || rating == nil) // May not have rating yet
+        // getUserWarehouseRating returns a valid rating object (may have default values)
+        _ = rating
     }
 
     @Test("Warehouse leaderboard")

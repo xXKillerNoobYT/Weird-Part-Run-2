@@ -720,4 +720,12 @@ struct JobsServiceTests {
         let jobs = try env.jobs.listActiveJobs(excludingJobId: nil)
         #expect(jobs.contains(where: { $0.id == jobId }))
     }
+
+    @Test("getTodaysClockEntries returns empty array on fresh DB")
+    func testGetTodaysClockEntriesFreshDB() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Fresh DB with no clock entries should return [] not throw
+        let groups = try env.jobs.getTodaysClockEntries(userId: env.adminUserId)
+        #expect(groups.isEmpty)
+    }
 }

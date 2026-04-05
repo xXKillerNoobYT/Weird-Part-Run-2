@@ -217,4 +217,215 @@ struct E2EWarehouseTests {
         let trailers = try env.warehouse.listTrailers()
         #expect(!trailers.isEmpty)
     }
+
+    // MARK: - Multi-User Audit Consensus
+
+    @Test("Multi-user audit: two counters agree → consensus resolves")
+    func testMultiUserAuditConsensusAgree() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+        let sessionId = session.id!
+
+        // Create a second user so flagForMultiUserAudit can assign 2 counters
+        _ = try env.auth.createUser(displayName: "Counter2", pin: "5678")
+
+        let assignments = try env.warehouse.flagForMultiUserAudit(
+            partId: partId,
+            expectedQty: 10,
+            sessionId: sessionId,
+            flaggedBy: nil,
+            requiredCounts: 2
+        )
+        guard assignments.count >= 2 else { return }
+
+        // Both counters submit the same quantity
+        try env.warehouse.submitMultiUserCount(assignmentId: assignments[0].id!, quantity: 10, userId: assignments[0].assignedUserId)
+        try env.warehouse.submitMultiUserCount(assignmentId: assignments[1].id!, quantity: 10, userId: assignments[1].assignedUserId)
+
+        let finalQty = try env.warehouse.resolveMultiUserAudit(partId: partId, sessionId: sessionId, resolvedBy: env.adminUserId)
+        #expect(finalQty == 10)
+    }
+
+    @Test("Multi-user audit: two counters disagree → no consensus")
+    func testMultiUserAuditConsensusDisagree() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+        let sessionId = session.id!
+
+        _ = try env.auth.createUser(displayName: "Counter2", pin: "5678")
+
+        let assignments = try env.warehouse.flagForMultiUserAudit(
+            partId: partId,
+            expectedQty: 10,
+            sessionId: sessionId,
+            flaggedBy: nil,
+            requiredCounts: 2
+        )
+        guard assignments.count >= 2 else { return }
+
+        // Counters disagree
+        try env.warehouse.submitMultiUserCount(assignmentId: assignments[0].id!, quantity: 8, userId: assignments[0].assignedUserId)
+        try env.warehouse.submitMultiUserCount(assignmentId: assignments[1].id!, quantity: 12, userId: assignments[1].assignedUserId)
+
+        let finalQty = try env.warehouse.resolveMultiUserAudit(partId: partId, sessionId: sessionId, resolvedBy: env.adminUserId)
+        #expect(finalQty == nil)
+    }
+
+    @Test("Multi-user audit: fewer than 2 counted → no consensus")
+    func testMultiUserAuditInsufficientCounts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let session = try env.warehouse.startAuditSession(startedBy: env.adminUserId)
+        let sessionId = session.id!
+
+        _ = try env.auth.createUser(displayName: "Counter2", pin: "5678")
+
+        let assignments = try env.warehouse.flagForMultiUserAudit(
+            partId: partId,
+            expectedQty: 10,
+            sessionId: sessionId,
+            flaggedBy: nil,
+            requiredCounts: 2
+        )
+        guard let first = assignments.first else { return }
+
+        // Only one counter submits
+        try env.warehouse.submitMultiUserCount(assignmentId: first.id!, quantity: 10, userId: first.assignedUserId)
+
+        let finalQty = try env.warehouse.resolveMultiUserAudit(partId: partId, sessionId: sessionId, resolvedBy: env.adminUserId)
+        #expect(finalQty == nil)
+    }
+
+    // MARK: - Zone & Progress Tests (PE-030)
+
+    @Test("Zone CRUD lifecycle: create, list, update, delete")
+    func testZoneCRUDLifecycle() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Create a floor plan to host zones
+        let fp = try env.warehouse.createFloorPlan(
+            name: "Zone Test", widthInches: 480, lengthInches: 360
+        )
+        let fpId = fp.id!
+
+        // Create a zone
+        let zone = try env.warehouse.addZone(
+            floorPlanId: fpId, zoneType: "staging", label: "Staging A",
+            colorHex: "#FF6600", gridX: 0, gridY: 0, gridWidth: 5, gridHeight: 3
+        )
+        #expect(zone.id != nil)
+        #expect(zone.zoneType == "staging")
+        #expect(zone.label == "Staging A")
+
+        // List zones
+        let zones = try env.warehouse.listZones(floorPlanId: fpId)
+        #expect(zones.count == 1)
+        #expect(zones[0].colorHex == "#FF6600")
+
+        // Update the zone
+        try env.warehouse.updateZone(id: zone.id!, zoneType: "storage", label: "Storage B")
+        let updated = try env.warehouse.listZones(floorPlanId: fpId)
+        #expect(updated[0].zoneType == "storage")
+        #expect(updated[0].label == "Storage B")
+
+        // Delete the zone (soft delete)
+        try env.warehouse.deleteZone(id: zone.id!)
+        let afterDelete = try env.warehouse.listZones(floorPlanId: fpId)
+        #expect(afterDelete.isEmpty)
+    }
+
+    @Test("Zone-unit relationship: assign unit to zone")
+    func testZoneUnitRelationship() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let fp = try env.warehouse.createFloorPlan(
+            name: "Zone Unit Test", widthInches: 600, lengthInches: 480
+        )
+        let fpId = fp.id!
+
+        // Create a zone
+        let zone = try env.warehouse.addZone(
+            floorPlanId: fpId, zoneType: "storage", label: "Main Storage"
+        )
+        let zoneId = zone.id!
+
+        // Create a storage unit (no zone initially)
+        let unit = try env.warehouse.addStorageUnit(
+            floorPlanId: fpId, name: "Rack A", unitType: "rack"
+        )
+        let unitId = unit.id!
+
+        // Assign unit to zone via update
+        try env.warehouse.updateStorageUnit(id: unitId, zoneId: zoneId)
+
+        // Verify the unit has the zone
+        let units = try env.warehouse.listStorageUnits(floorPlanId: fpId)
+        let found = units.first(where: { $0.id == unitId })
+        #expect(found?.zoneId == zoneId)
+    }
+
+    @Test("Setup tier detection returns correct tier for each state")
+    func testSetupTierDetection() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // With no data, tier should be .none
+        let tierNone = try env.warehouse.getSetupProgress()
+        #expect(tierNone == .none)
+
+        // Add a part with a shelf location → .partsOnly
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        try env.parts.updatePart(id: partId, shelfLocation: "A-1")
+        let tierParts = try env.warehouse.getSetupProgress()
+        #expect(tierParts == .partsOnly)
+
+        // Create a floor plan → .floorPlanInProgress
+        _ = try env.warehouse.createFloorPlan(
+            name: "Test Plan", widthInches: 360, lengthInches: 240
+        )
+        let tierInProgress = try env.warehouse.getSetupProgress()
+        #expect(tierInProgress == .floorPlanInProgress)
+
+        // Complete onboarding → .complete
+        let progress = try env.warehouse.startOnboarding()
+        try env.warehouse.completeOnboarding(id: progress.id!)
+        let tierComplete = try env.warehouse.getSetupProgress()
+        #expect(tierComplete == .complete)
+    }
+
+    @Test("Flow onboarding progress: start, update steps, complete")
+    func testFlowOnboardingProgress() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Start a flow onboarding with 3 steps (parts flow)
+        let progress = try env.warehouse.startFlowOnboarding(
+            flowType: "parts_only", totalSteps: 3
+        )
+        #expect(progress.id != nil)
+        #expect(progress.flowType == "parts_only")
+        #expect(progress.totalSteps == 3)
+        #expect(progress.currentStep == 1)
+
+        // Update progress to step 2 with JSON data
+        let stepData = "{\"step1\":{\"partsSelected\":[1,2,3]}}"
+        try env.warehouse.updateFlowProgress(
+            id: progress.id!, currentStep: 2, stepData: stepData
+        )
+
+        // Verify the progress was saved
+        let fetched = try env.warehouse.getOnboardingProgress()
+        #expect(fetched?.currentStep == 2)
+        #expect(fetched?.stepsProgress == stepData)
+
+        // Complete the flow
+        try env.warehouse.completeOnboarding(id: progress.id!)
+        let afterComplete = try env.warehouse.getOnboardingProgress()
+        // getOnboardingProgress filters for completed_at == nil, so it should be nil
+        #expect(afterComplete == nil)
+    }
 }

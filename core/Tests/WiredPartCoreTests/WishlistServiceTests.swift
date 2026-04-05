@@ -80,7 +80,7 @@ struct WishlistServiceTests {
         let (_, wishlist) = try freshEnv()
 
         let item = try wishlist.addItem(partName: "Not Needed")
-        let dismissed = try wishlist.dismissItem(id: item.id!, by: "Manager")
+        let dismissed = try wishlist.dismissItem(id: item.id!, by: "Manager", reason: "No longer needed for this project")
         #expect(dismissed.status == "dismissed")
     }
 
@@ -99,7 +99,7 @@ struct WishlistServiceTests {
         let (_, wishlist) = try freshEnv()
 
         let item = try wishlist.addItem(partName: "Reopen Me")
-        _ = try wishlist.dismissItem(id: item.id!, by: "Manager")
+        _ = try wishlist.dismissItem(id: item.id!, by: "Manager", reason: "Duplicate item in inventory")
         let reopened = try wishlist.reopenItem(id: item.id!)
         #expect(reopened.status == "pending")
     }
@@ -136,5 +136,112 @@ struct WishlistServiceTests {
 
         let approvedOnly = try wishlist.listItems(status: "approved")
         #expect(approvedOnly.count == 1)
+    }
+
+    // MARK: - Auto-Approve & Sections (PE-033)
+
+    @Test("Manual item gets autoApproveAt set to ~14 days from now")
+    func testAutoApproveAtSetOnManualCreate() throws {
+        let (_, wishlist) = try freshEnv()
+
+        let item = try wishlist.addItem(partName: "Manual Wire", sourceType: "manual")
+        #expect(item.autoApproveAt != nil)
+
+        // Parse and verify it's approximately 14 days in the future (±30 seconds tolerance)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let autoDate = formatter.date(from: item.autoApproveAt!)!
+        let expected = Date().addingTimeInterval(14 * 24 * 3600)
+        let diff = abs(autoDate.timeIntervalSince(expected))
+        #expect(diff < 30, "autoApproveAt should be ~14 days from now, diff was \(diff)s")
+    }
+
+    @Test("Forecast item does not get autoApproveAt")
+    func testForecastItemNoAutoApproveAt() throws {
+        let (_, wishlist) = try freshEnv()
+
+        let item = try wishlist.addItem(partName: "Forecast Wire", sourceType: "forecast", certaintyScore: 0.85)
+        #expect(item.autoApproveAt == nil)
+        #expect(item.certaintyScore == 0.85)
+    }
+
+    @Test("Dismiss requires a reason — empty throws error")
+    func testDismissRequiresReason() throws {
+        let (_, wishlist) = try freshEnv()
+        let item = try wishlist.addItem(partName: "Test Item")
+
+        #expect(throws: WishlistService.WishlistError.self) {
+            try wishlist.dismissItem(id: item.id!, by: "Manager", reason: "")
+        }
+
+        #expect(throws: WishlistService.WishlistError.self) {
+            try wishlist.dismissItem(id: item.id!, by: "Manager", reason: "   ")
+        }
+    }
+
+    @Test("Dismiss with valid reason saves dismiss_reason")
+    func testDismissWithReason() throws {
+        let (_, wishlist) = try freshEnv()
+        let item = try wishlist.addItem(partName: "Dismiss Me")
+        let reason = "Already have plenty in stock at the main warehouse"
+
+        let dismissed = try wishlist.dismissItem(id: item.id!, by: "Boss", reason: reason)
+        #expect(dismissed.status == "dismissed")
+        #expect(dismissed.dismissReason == reason)
+
+        // Verify persisted
+        let fetched = try wishlist.getItem(id: item.id!)
+        #expect(fetched?.dismissReason == reason)
+    }
+
+    @Test("processAutoApprovals approves expired items, leaves unexpired")
+    func testProcessAutoApprovals() throws {
+        let (env, wishlist) = try freshEnv()
+
+        // Create a manual item then manually backdate its auto_approve_at to the past
+        let item = try wishlist.addItem(partName: "Should Auto-Approve", sourceType: "manual")
+        let pastDate = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600)) // 1 hour ago
+        try env.db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE wishlist_items SET auto_approve_at = ? WHERE id = ?",
+                arguments: [pastDate, item.id!]
+            )
+        }
+
+        // Create another that's not yet expired
+        _ = try wishlist.addItem(partName: "Not Yet Due", sourceType: "manual")
+
+        let count = try wishlist.processAutoApprovals(by: "System")
+        #expect(count == 1)
+
+        // Verify the backdated one is now approved
+        let approved = try wishlist.getItem(id: item.id!)
+        #expect(approved?.status == "approved")
+        #expect(approved?.approvedBy == "System")
+
+        // The other should still be pending
+        let allPending = try wishlist.listItems(status: "pending")
+        #expect(allPending.count == 1)
+        #expect(allPending[0].partName == "Not Yet Due")
+    }
+
+    @Test("getSectionedItems returns items in correct sections")
+    func testGetSectionedItems() throws {
+        let (_, wishlist) = try freshEnv()
+
+        _ = try wishlist.addItem(partName: "Manual Part", sourceType: "manual")
+        _ = try wishlist.addItem(partName: "Forecast Part", sourceType: "forecast", certaintyScore: 0.72)
+        _ = try wishlist.addItem(partName: "System Part", sourceType: "system")
+
+        let sections = try wishlist.getSectionedItems()
+        #expect(sections.userAdded.count == 1)
+        #expect(sections.userAdded[0].partName == "Manual Part")
+
+        #expect(sections.forecastDemand.count == 1)
+        #expect(sections.forecastDemand[0].partName == "Forecast Part")
+        #expect(sections.forecastDemand[0].certaintyScore == 0.72)
+
+        #expect(sections.autoAdded.count == 1)
+        #expect(sections.autoAdded[0].partName == "System Part")
     }
 }
