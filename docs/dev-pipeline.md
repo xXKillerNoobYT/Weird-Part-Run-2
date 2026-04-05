@@ -1,6 +1,6 @@
 # WiredPart Development Pipeline
 
-> **Last updated:** 2026-04-04 (dev-pipeline-manager run 11 — PE-003 core done: migration 071 + SchedulingService flex pool methods + 6 tests. DIS-006 fixed: WishlistService.getSectionedItems no longer calls processAutoApprovals inline. PE-034 Xcode prompt written for DIS-001/002/003/004. Q&A added for DIS-005/007. 970/970 tests passing.)
+> **Last updated:** 2026-04-05 (github-issues-sync run 6 — #40 verified resolved (iOS routes correct), #44 core done comment added, #87/#90/#93 status comments added. DeviceResetService: isTableNotFoundError guards on 3 methods. 970/970 tests. 44 open issues: 5 enhancement/bug + 39 program-review specs.)
 > **Auto-maintained by:** dev-pipeline-manager (orchestrator)
 
 ---
@@ -36,7 +36,7 @@ Every feature, bug, or improvement follows this cycle:
 | Plan Alignment | PE-026 ✅ DONE. PE-033 ✅ DONE. PE-032 ✅ DONE. PE-028 ✅ DONE. **PE-003 CORE DONE** — migration 071 + SchedulingService flex pool methods; UI Xcode prompt still needed. **PE-027/PE-029/PE-030/PE-031** prompts still needed (UI work pending). | 2026-04-04 |
 | Feature Polish | **5 Xcode prompts:** PE-031 (🚨 clock GPS banner), PE-027 (part number UI), PE-029 (price chips), PE-030 (warehouse setup redesign), PE-034 (DIS-001/002/003/004 quick UI fixes — NEW). | 2026-04-04 |
 | Xcode Prompts | **5 active prompts:** PE-031 (🚨 EMERGENCY), PE-027, PE-029, PE-030, PE-034 (new — DIS-001 loading indicators, DIS-002 pull-to-refresh, DIS-003 sheet detents, DIS-004 timer lifecycle). | 2026-04-04 |
-| GitHub Issues | **~50 open** — #20 → PE-031 written, #29 → PE-032 DONE, #46 → PE-027 migration done (UI pending), #47 → PE-028 DONE, #48 → PE-029 partial, #49 → PE-030 written, #50/#51 → PE-026 DONE. New #67–#95 (program-review): all 29 acknowledged, tracked in page-rebuild-tracker.md. DIS-001 through DIS-007: filed as DevTODOs — need GitHub issues. | 2026-04-04 |
+| GitHub Issues | **44 open** — #40 ✅ verified resolved (iOS routes correct, already closed). #44 PE-003 core done comment added. #87/#90/#93 status comments added (PE-028/032/033 done). #41 (AI memory), #45 (job card AI+stage bars): tracked, not yet implemented. #42/#43 (T2/T3 gaps): backlog. #52–#95 program-review: 39 open specs, tracked in page-rebuild-tracker.md. | 2026-04-05 |
 | Q&A Backlog | **4 pending questions** — DIS-005 (2 questions: UserDefaults PII cleanup), DIS-007 (2 questions: IOSMainView logout lifecycle). | 2026-04-04 |
 | Working Tree | ⚠️ Many modified files — see git status. Key changes this run: WishlistService.swift (DIS-006 fix), AppDatabase+Migrations.swift (migration 071), SchedulingModels.swift (FlexPoolJob struct), SchedulingService.swift (flex pool methods), SchedulingServiceTests.swift (6 new tests). | 2026-04-04 |
 | Agent Health | All 8 agents enabled | 2026-04-04 |

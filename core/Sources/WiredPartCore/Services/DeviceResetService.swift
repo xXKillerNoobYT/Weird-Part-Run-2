@@ -24,50 +24,65 @@ public final class DeviceResetService: Sendable {
     /// Get the current device's ID from the settings table.
     /// The device ID is stored as a setting with key "device_id" during sync setup.
     public func getCurrentDeviceId() throws -> String? {
-        try db.writer.read { dbConnection in
-            try String.fetchOne(
-                dbConnection,
-                sql: "SELECT value FROM settings WHERE key = 'device_id'"
-            )
+        do {
+            return try db.writer.read { dbConnection in
+                try String.fetchOne(
+                    dbConnection,
+                    sql: "SELECT value FROM settings WHERE key = 'device_id'"
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) { return nil }
+            throw error
         }
     }
 
     /// Get all devices registered in the local device registry.
     public func getRegisteredDevices() throws -> [RegisteredDevice] {
-        try db.writer.read { dbConnection in
-            try RegisteredDevice.fetchAll(
-                dbConnection,
-                sql: """
-                    SELECT device_id, device_name, platform, role,
-                           last_seen_at, last_sync_at, is_trusted, is_deactivated
-                    FROM _device_registry
-                    ORDER BY last_seen_at DESC
-                    """
-            )
+        do {
+            return try db.writer.read { dbConnection in
+                try RegisteredDevice.fetchAll(
+                    dbConnection,
+                    sql: """
+                        SELECT device_id, device_name, platform, role,
+                               last_seen_at, last_sync_at, is_trusted, is_deactivated
+                        FROM _device_registry
+                        ORDER BY last_seen_at DESC
+                        """
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 
     /// Check whether there are other active (non-deactivated) devices in the registry.
     public func hasOtherActiveDevices() throws -> Bool {
         let currentId = try getCurrentDeviceId()
-        let count: Int = try db.writer.read { dbConnection in
-            if let currentId {
-                return try Int.fetchOne(
-                    dbConnection,
-                    sql: """
-                        SELECT COUNT(*) FROM _device_registry
-                        WHERE is_deactivated = 0 AND device_id != ?
-                        """,
-                    arguments: [currentId]
-                ) ?? 0
-            } else {
-                return try Int.fetchOne(
-                    dbConnection,
-                    sql: "SELECT COUNT(*) FROM _device_registry WHERE is_deactivated = 0"
-                ) ?? 0
+        do {
+            let count: Int = try db.writer.read { dbConnection in
+                if let currentId {
+                    return try Int.fetchOne(
+                        dbConnection,
+                        sql: """
+                            SELECT COUNT(*) FROM _device_registry
+                            WHERE is_deactivated = 0 AND device_id != ?
+                            """,
+                        arguments: [currentId]
+                    ) ?? 0
+                } else {
+                    return try Int.fetchOne(
+                        dbConnection,
+                        sql: "SELECT COUNT(*) FROM _device_registry WHERE is_deactivated = 0"
+                    ) ?? 0
+                }
             }
+            return count > 0
+        } catch {
+            if isTableNotFoundError(error) { return false }
+            throw error
         }
-        return count > 0
     }
 
     // MARK: - Deactivation
@@ -136,20 +151,32 @@ public final class DeviceResetService: Sendable {
 
     /// Get list of users who have admin permissions (for the approval picker).
     public func getAdminUsers() throws -> [User] {
-        try db.writer.read { dbConnection in
-            try User.fetchAll(
-                dbConnection,
-                sql: """
-                    SELECT DISTINCT u.* FROM users u
-                    JOIN user_hats uh ON uh.user_id = u.id
-                    JOIN hat_permissions hp ON hp.hat_id = uh.hat_id
-                    WHERE u.is_active = 1
-                      AND uh.is_active = 1
-                      AND hp.permission_key = 'manage_devices'
-                    ORDER BY u.display_name ASC
-                    """
-            )
+        do {
+            return try db.writer.read { dbConnection in
+                try User.fetchAll(
+                    dbConnection,
+                    sql: """
+                        SELECT DISTINCT u.* FROM users u
+                        JOIN user_hats uh ON uh.user_id = u.id
+                        JOIN hat_permissions hp ON hp.hat_id = uh.hat_id
+                        WHERE u.is_active = 1
+                          AND uh.is_active = 1
+                          AND hp.permission_key = 'manage_devices'
+                        ORDER BY u.display_name ASC
+                        """
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
+    }
+
+    // MARK: - Helpers
+
+    private func isTableNotFoundError(_ error: Error) -> Bool {
+        let message = String(describing: error)
+        return message.contains("no such table") || message.contains("no such column")
     }
 }
 
