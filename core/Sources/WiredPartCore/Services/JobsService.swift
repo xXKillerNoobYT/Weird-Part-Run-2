@@ -527,7 +527,8 @@ public final class JobsService: Sendable {
         notes: String? = nil,
         budgetLimit: Double? = nil,
         budgetAlertPercent: Double? = nil,
-        createdBy: Int64? = nil
+        createdBy: Int64? = nil,
+        jobClassification: String = "standard"
     ) throws -> Int64 {
         try db.writer.write { dbConn in
             try dbConn.execute(
@@ -541,8 +542,9 @@ public final class JobsService: Sendable {
                      warranty_start, warranty_end,
                      start_date, due_date, notes,
                      budget_limit, budget_alert_percent, created_by,
+                     job_classification,
                      created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
                     """,
                 arguments: [
                     jobNumber, jobName, customerName,
@@ -552,7 +554,8 @@ public final class JobsService: Sendable {
                     leadUserId, onCallType,
                     warrantyStartDate, warrantyEndDate,
                     startDate, dueDate, notes,
-                    budgetLimit, budgetAlertPercent, createdBy
+                    budgetLimit, budgetAlertPercent, createdBy,
+                    jobClassification
                 ]
             )
             return dbConn.lastInsertedRowID

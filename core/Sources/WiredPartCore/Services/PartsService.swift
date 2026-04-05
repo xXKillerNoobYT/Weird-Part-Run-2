@@ -2639,24 +2639,34 @@ public final class PartsService: Sendable {
 
     /// Set a supplier-specific cost for a color (upsert).
     public func setSupplierCostForColor(colorId: Int64, supplierId: Int64, cost: Double, notes: String? = nil) throws {
-        try db.writer.write { dbConn in
-            try dbConn.execute(sql: """
-                INSERT INTO color_supplier_costs (color_id, supplier_id, cost, notes, created_at, updated_at)
-                VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
-                ON CONFLICT(color_id, supplier_id) DO UPDATE SET
-                    cost = excluded.cost,
-                    notes = excluded.notes,
-                    updated_at = datetime('now')
-                """, arguments: [colorId, supplierId, cost, notes])
+        do {
+            try db.writer.write { dbConn in
+                try dbConn.execute(sql: """
+                    INSERT INTO color_supplier_costs (color_id, supplier_id, cost, notes, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+                    ON CONFLICT(color_id, supplier_id) DO UPDATE SET
+                        cost = excluded.cost,
+                        notes = excluded.notes,
+                        updated_at = datetime('now')
+                    """, arguments: [colorId, supplierId, cost, notes])
+            }
+        } catch {
+            if isTableNotFoundError(error) { return }
+            throw error
         }
     }
 
     /// Remove a supplier-specific cost for a color.
     public func removeSupplierCostForColor(colorId: Int64, supplierId: Int64) throws {
-        try db.writer.write { dbConn in
-            try dbConn.execute(sql: """
-                DELETE FROM color_supplier_costs WHERE color_id = ? AND supplier_id = ?
-                """, arguments: [colorId, supplierId])
+        do {
+            try db.writer.write { dbConn in
+                try dbConn.execute(sql: """
+                    DELETE FROM color_supplier_costs WHERE color_id = ? AND supplier_id = ?
+                    """, arguments: [colorId, supplierId])
+            }
+        } catch {
+            if isTableNotFoundError(error) { return }
+            throw error
         }
     }
 
@@ -2666,91 +2676,103 @@ public final class PartsService: Sendable {
     /// 3. Type default cost (looks up via type_color_links)
     /// 4. nil (no price set)
     public func getEffectivePrice(colorId: Int64, typeId: Int64? = nil, supplierId: Int64? = nil) throws -> ResolvedCascadeCost {
-        try db.writer.read { dbConn in
-            // Fetch the color's own unit cost
-            let colorRow = try Row.fetchOne(dbConn, sql: """
-                SELECT unit_cost FROM part_colors WHERE id = ? AND deleted_at IS NULL
-                """, arguments: [colorId])
-            let colorCost: Double? = colorRow?["unit_cost"]
-
-            // Fetch the type's default cost (use provided typeId or look up from type_color_links)
-            var typeDefaultCost: Double? = nil
-            if let tId = typeId {
-                let typeRow = try Row.fetchOne(dbConn, sql: """
-                    SELECT default_unit_cost FROM part_types WHERE id = ? AND deleted_at IS NULL
-                    """, arguments: [tId])
-                typeDefaultCost = typeRow?["default_unit_cost"]
-            } else {
-                // Find first linked type that has a default cost
-                let typeRow = try Row.fetchOne(dbConn, sql: """
-                    SELECT pt.default_unit_cost
-                    FROM type_color_links tcl
-                    JOIN part_types pt ON pt.id = tcl.type_id AND pt.deleted_at IS NULL
-                    WHERE tcl.color_id = ? AND pt.default_unit_cost IS NOT NULL
-                    LIMIT 1
+        do {
+            return try db.writer.read { dbConn in
+                // Fetch the color's own unit cost
+                let colorRow = try Row.fetchOne(dbConn, sql: """
+                    SELECT unit_cost FROM part_colors WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [colorId])
-                typeDefaultCost = typeRow?["default_unit_cost"]
-            }
+                let colorCost: Double? = colorRow?["unit_cost"]
 
-            // Fetch supplier cost if requested
-            var supplierCost: Double? = nil
-            if let sId = supplierId {
-                let supplierRow = try Row.fetchOne(dbConn, sql: """
-                    SELECT cost FROM color_supplier_costs
-                    WHERE color_id = ? AND supplier_id = ?
-                    """, arguments: [colorId, sId])
-                supplierCost = supplierRow?["cost"]
-            }
+                // Fetch the type's default cost (use provided typeId or look up from type_color_links)
+                var typeDefaultCost: Double? = nil
+                if let tId = typeId {
+                    let typeRow = try Row.fetchOne(dbConn, sql: """
+                        SELECT default_unit_cost FROM part_types WHERE id = ? AND deleted_at IS NULL
+                        """, arguments: [tId])
+                    typeDefaultCost = typeRow?["default_unit_cost"]
+                } else {
+                    // Find first linked type that has a default cost
+                    let typeRow = try Row.fetchOne(dbConn, sql: """
+                        SELECT pt.default_unit_cost
+                        FROM type_color_links tcl
+                        JOIN part_types pt ON pt.id = tcl.type_id AND pt.deleted_at IS NULL
+                        WHERE tcl.color_id = ? AND pt.default_unit_cost IS NOT NULL
+                        LIMIT 1
+                        """, arguments: [colorId])
+                    typeDefaultCost = typeRow?["default_unit_cost"]
+                }
 
-            // Resolve cascade: supplier → color → type → none
-            let effectiveCost: Double?
-            let source: String
-            if let sc = supplierCost {
-                effectiveCost = sc
-                source = "supplier"
-            } else if let cc = colorCost {
-                effectiveCost = cc
-                source = "color"
-            } else if let tc = typeDefaultCost {
-                effectiveCost = tc
-                source = "type"
-            } else {
-                effectiveCost = nil
-                source = "none"
-            }
+                // Fetch supplier cost if requested
+                var supplierCost: Double? = nil
+                if let sId = supplierId {
+                    let supplierRow = try Row.fetchOne(dbConn, sql: """
+                        SELECT cost FROM color_supplier_costs
+                        WHERE color_id = ? AND supplier_id = ?
+                        """, arguments: [colorId, sId])
+                    supplierCost = supplierRow?["cost"]
+                }
 
-            return ResolvedCascadeCost(
-                effectiveCost: effectiveCost,
-                source: source,
-                typeDefaultCost: typeDefaultCost,
-                colorOverrideCost: colorCost,
-                supplierCost: supplierCost
-            )
+                // Resolve cascade: supplier → color → type → none
+                let effectiveCost: Double?
+                let source: String
+                if let sc = supplierCost {
+                    effectiveCost = sc
+                    source = "supplier"
+                } else if let cc = colorCost {
+                    effectiveCost = cc
+                    source = "color"
+                } else if let tc = typeDefaultCost {
+                    effectiveCost = tc
+                    source = "type"
+                } else {
+                    effectiveCost = nil
+                    source = "none"
+                }
+
+                return ResolvedCascadeCost(
+                    effectiveCost: effectiveCost,
+                    source: source,
+                    typeDefaultCost: typeDefaultCost,
+                    colorOverrideCost: colorCost,
+                    supplierCost: supplierCost
+                )
+            }
+        } catch {
+            if isTableNotFoundError(error) {
+                return ResolvedCascadeCost(effectiveCost: nil, source: "none", typeDefaultCost: nil, colorOverrideCost: nil, supplierCost: nil)
+            }
+            throw error
         }
     }
 
     /// Get all supplier costs for a specific color.
     public func getColorSupplierCosts(colorId: Int64) throws -> [ColorSupplierCostRow] {
-        try db.writer.read { dbConn in
-            let rows = try Row.fetchAll(dbConn, sql: """
-                SELECT csc.id, csc.color_id, csc.supplier_id, s.name AS supplier_name,
-                       csc.cost, csc.notes
-                FROM color_supplier_costs csc
-                JOIN suppliers s ON s.id = csc.supplier_id AND s.deleted_at IS NULL
-                WHERE csc.color_id = ?
-                ORDER BY s.name ASC
-                """, arguments: [colorId])
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT csc.id, csc.color_id, csc.supplier_id, s.name AS supplier_name,
+                           csc.cost, csc.notes
+                    FROM color_supplier_costs csc
+                    JOIN suppliers s ON s.id = csc.supplier_id AND s.deleted_at IS NULL
+                    WHERE csc.color_id = ?
+                    ORDER BY s.name ASC
+                    """, arguments: [colorId])
 
-            return rows.map { row in
-                ColorSupplierCostRow(
-                    id: row["id"],
-                    colorId: row["color_id"],
-                    supplierId: row["supplier_id"],
-                    supplierName: row["supplier_name"] ?? "",
-                    cost: row["cost"],
-                    notes: row["notes"]
-                )
+                return rows.map { row in
+                    ColorSupplierCostRow(
+                        id: row["id"],
+                        colorId: row["color_id"],
+                        supplierId: row["supplier_id"],
+                        supplierName: row["supplier_name"] ?? "",
+                        cost: row["cost"],
+                        notes: row["notes"]
+                    )
+                }
             }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 

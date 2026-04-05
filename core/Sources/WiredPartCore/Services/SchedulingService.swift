@@ -1842,6 +1842,21 @@ public final class SchedulingService: Sendable {
         }
     }
 
+    /// Returns whether a job is currently in the flex pool.
+    public func isJobInFlexPool(jobId: Int64) throws -> Bool {
+        do {
+            return try db.writer.read { dbConn in
+                let val = try Int.fetchOne(dbConn,
+                    sql: "SELECT is_flex_pool FROM jobs WHERE id = ? AND deleted_at IS NULL",
+                    arguments: [jobId])
+                return val == 1
+            }
+        } catch {
+            if isTableNotFoundError(error) { return false }
+            throw error
+        }
+    }
+
     // =========================================================================
     // MARK: - Internal Helpers
     // =========================================================================

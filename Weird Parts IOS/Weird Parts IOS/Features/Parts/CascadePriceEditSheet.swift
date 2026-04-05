@@ -1,359 +1,357 @@
 import SwiftUI
 import WiredPartCore
 
-/// Cascade price editor for a specific color within a type.
+/// Cascade pricing editor for a specific color within a type.
 ///
-/// Shows the three-level cost cascade:
-/// 1. **Type Default** — base cost inherited by all colors of this type
-/// 2. **Color Override** — specific cost for this color (overrides type default)
-/// 3. **Supplier Costs** — per-supplier cost for this color (overrides color cost)
+/// Shows the 3-level pricing cascade:
+///   1. Type Default — applies to all colors of this type unless overridden
+///   2. Color Override — overrides the type default for this specific color
+///   3. Supplier Costs — per-supplier cost for this color (used on POs)
 ///
-/// The effective price resolves: Supplier → Color → Type → none.
+/// Also shows price history if data exists.
 struct CascadePriceEditSheet: View {
+    let colorId: Int64
+    let colorName: String
+    let typeId: Int64?
+    let typeName: String?
+    let onSave: () async -> Void
+
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
 
-    let colorId: Int64
-    let typeId: Int64
-    var onSave: (() -> Void)?
+    // MARK: - State
 
-    // State
-    @State private var typeName = ""
-    @State private var colorName = ""
-    @State private var typeDefaultCostText = ""
-    @State private var colorOverrideCostText = ""
-    @State private var supplierCosts: [PartsService.ColorSupplierCostRow] = []
+    @State private var typeDefaultText = ""
+    @State private var colorOverrideText = ""
+    @State private var supplierCosts: [SupplierCostEntry] = []
     @State private var resolvedCost: PartsService.ResolvedCascadeCost?
     @State private var isLoading = true
+    @State private var isSaving = false
+    @State private var saveError: String?
+    @State private var loadError: String?
 
-    // Add supplier cost
-    @State private var showAddSupplier = false
-    @State private var allSuppliers: [PartsService.SupplierWithCount] = []
-    @State private var selectedSupplierId: Int64?
-    @State private var newSupplierCostText = ""
+    /// Local model for editing supplier costs inline.
+    struct SupplierCostEntry: Identifiable {
+        let id: Int64
+        let supplierId: Int64
+        let supplierName: String
+        var costText: String
+        var notes: String?
+    }
 
     var body: some View {
         NavigationStack {
-            Form {
+            Group {
                 if isLoading {
-                    Section {
-                        ProgressView("Loading pricing...")
-                    }
+                    ProgressView("Loading pricing...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = loadError {
+                    ErrorStateView(message: error) { Task { await loadData() } }
                 } else {
-                    effectivePriceSection
-                    typeDefaultSection
-                    colorOverrideSection
-                    supplierCostsSection
+                    formContent
                 }
             }
-            .navigationTitle("Edit Cost — \(colorName)")
+            .navigationTitle("Pricing")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { saveAll() }
-                        .fontWeight(.semibold)
+                    Button("Done") { dismiss() }
                 }
             }
+            .task { await loadData() }
         }
-        .task { await loadData() }
     }
 
-    // MARK: - Effective Price Summary
+    // MARK: - Form Content
 
-    private var effectivePriceSection: some View {
-        Section {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Effective Cost")
-                        .font(.headline)
-                    if let resolved = resolvedCost {
-                        Text("Source: \(resolved.source)")
+    @ViewBuilder
+    private var formContent: some View {
+        Form {
+            // Header
+            Section {
+                LabeledContent("Color", value: colorName)
+                if let typeName {
+                    LabeledContent("Type", value: typeName)
+                }
+                if let resolved = resolvedCost {
+                    HStack {
+                        Text("Effective Cost")
+                        Spacer()
+                        if let cost = resolved.effectiveCost {
+                            Text(String(format: "$%.2f", cost))
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.green)
+                            sourceBadge(resolved.source)
+                        } else {
+                            Text("No price")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            // Type Default
+            Section {
+                HStack {
+                    Text("Default Cost")
+                    Spacer()
+                    Text("$")
+                        .foregroundStyle(.secondary)
+                    TextField("0.00", text: $typeDefaultText)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 120)
+                        .keyboardType(.decimalPad)
+                }
+                .frame(minHeight: 44)
+
+                Button("Save Type Default") {
+                    Task { await saveTypeDefault() }
+                }
+                .disabled(isSaving)
+            } header: {
+                Text("Type Default")
+            } footer: {
+                Text("Applies to all colors of this type unless overridden.")
+            }
+
+            // Color Override
+            Section {
+                HStack {
+                    Text("Override Cost")
+                    Spacer()
+                    Text("$")
+                        .foregroundStyle(.secondary)
+                    TextField("0.00", text: $colorOverrideText)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 120)
+                        .keyboardType(.decimalPad)
+                }
+                .frame(minHeight: 44)
+
+                if colorOverrideText.isEmpty, let typeCost = resolvedCost?.typeDefaultCost {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.down.circle")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                        Text(String(format: "Inheriting $%.2f from type", typeCost))
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .italic()
                     }
                 }
-                Spacer()
-                if let cost = resolvedCost?.effectiveCost {
-                    Text(cost, format: .currency(code: "USD"))
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundStyle(.green)
-                } else {
-                    Text("No price set")
-                        .font(.title3)
-                        .foregroundStyle(.orange)
-                }
-            }
-        } header: {
-            Text("Summary")
-        } footer: {
-            Text("Cascade: Supplier Cost → Color Override → Type Default")
-        }
-    }
 
-    // MARK: - Type Default
-
-    private var typeDefaultSection: some View {
-        Section {
-            HStack {
-                Text("Default cost for all colors of")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Text(typeName)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-            }
-            HStack {
-                Text("$")
-                    .foregroundStyle(.secondary)
-                TextField("0.00", text: $typeDefaultCostText)
-                    .keyboardType(.decimalPad)
-                    .accessibilityIdentifier("typeDefaultCostField")
-                if !typeDefaultCostText.isEmpty {
-                    Button {
-                        typeDefaultCostText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
+                HStack {
+                    Button("Save Color Override") {
+                        Task { await saveColorOverride() }
                     }
-                    .buttonStyle(.plain)
-                }
-            }
-        } header: {
-            Label("Type Default", systemImage: "square.stack.3d.up")
-        } footer: {
-            Text("All colors of this type inherit this cost unless overridden.")
-        }
-    }
+                    .disabled(isSaving)
 
-    // MARK: - Color Override
+                    Spacer()
 
-    private var colorOverrideSection: some View {
-        Section {
-            HStack {
-                Text("$")
-                    .foregroundStyle(.secondary)
-                TextField("Inherits from type", text: $colorOverrideCostText)
-                    .keyboardType(.decimalPad)
-                    .accessibilityIdentifier("colorOverrideCostField")
-                if !colorOverrideCostText.isEmpty {
-                    Button {
-                        colorOverrideCostText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        } header: {
-            Label("Color Override", systemImage: "paintpalette")
-        } footer: {
-            Text("Set a specific cost for this color. Leave empty to inherit the type default.")
-        }
-    }
-
-    // MARK: - Supplier Costs
-
-    private var supplierCostsSection: some View {
-        Section {
-            if supplierCosts.isEmpty {
-                Text("No supplier-specific costs set")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .italic()
-            } else {
-                ForEach(supplierCosts, id: \.id) { row in
-                    HStack {
-                        Text(row.supplierName)
-                            .font(.subheadline)
-                        Spacer()
-                        Text(row.cost, format: .currency(code: "USD"))
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.blue)
-                    }
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            removeSupplierCost(row)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                    if resolvedCost?.colorOverrideCost != nil {
+                        Button("Clear Override", role: .destructive) {
+                            Task { await clearColorOverride() }
                         }
+                        .disabled(isSaving)
                     }
                 }
+            } header: {
+                Text("This Color Override")
+            } footer: {
+                Text("Overrides the type default for this specific color only.")
             }
 
-            Button {
-                showAddSupplier = true
-                loadSuppliers()
-            } label: {
-                Label("Add Supplier Cost", systemImage: "plus.circle")
-                    .font(.subheadline)
-            }
-        } header: {
-            Label("Supplier Costs", systemImage: "building.2")
-        } footer: {
-            Text("When ordering from a specific supplier, their cost takes priority over the color and type costs.")
-        }
-        .sheet(isPresented: $showAddSupplier) {
-            addSupplierCostSheet
-        }
-    }
-
-    // MARK: - Add Supplier Cost Sheet
-
-    private var addSupplierCostSheet: some View {
-        NavigationStack {
-            Form {
-                Section("Select Supplier") {
-                    // Filter out suppliers that already have a cost set
-                    let existingIds = Set(supplierCosts.map(\.supplierId))
-                    let available = allSuppliers.filter { !existingIds.contains($0.supplier.id ?? 0) }
-
-                    if available.isEmpty {
-                        Text("All suppliers already have costs assigned")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(available, id: \.supplier.id) { swc in
-                            Button {
-                                selectedSupplierId = swc.supplier.id
-                            } label: {
-                                HStack {
-                                    Text(swc.supplier.name)
-                                        .foregroundStyle(.primary)
-                                    Spacer()
-                                    if selectedSupplierId == swc.supplier.id {
-                                        Image(systemName: "checkmark")
-                                            .foregroundStyle(.blue)
-                                    }
+            // Supplier Costs
+            if !supplierCosts.isEmpty {
+                Section {
+                    DisclosureGroup("Supplier Costs (\(supplierCosts.count))") {
+                        ForEach($supplierCosts) { $entry in
+                            HStack {
+                                Text(entry.supplierName)
+                                    .font(.subheadline)
+                                    .lineLimit(1)
+                                Spacer()
+                                Text("$")
+                                    .foregroundStyle(.secondary)
+                                TextField("0.00", text: $entry.costText)
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(maxWidth: 100)
+                                    .keyboardType(.decimalPad)
+                                Button {
+                                    Task { await saveSupplierCost(entry) }
+                                } label: {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.green)
                                 }
+                                .buttonStyle(.plain)
+                                .disabled(isSaving)
                             }
+                            .frame(minHeight: 44)
                         }
                     }
-                }
-
-                if selectedSupplierId != nil {
-                    Section("Cost") {
-                        HStack {
-                            Text("$")
-                                .foregroundStyle(.secondary)
-                            TextField("0.00", text: $newSupplierCostText)
-                                .keyboardType(.decimalPad)
-                        }
-                    }
+                } header: {
+                    Text("Cost Per Supplier")
+                } footer: {
+                    Text("Supplier-specific costs used when generating purchase orders.")
                 }
             }
-            .navigationTitle("Add Supplier Cost")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showAddSupplier = false }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
-                        addSupplierCost()
-                        showAddSupplier = false
-                    }
-                    .disabled(selectedSupplierId == nil || newSupplierCostText.isEmpty)
+
+            // Error display
+            if let error = saveError {
+                Section {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.red)
+                        .font(.subheadline)
                 }
             }
         }
-        .presentationDetents([.medium])
+    }
+
+    // MARK: - Source Badge
+
+    @ViewBuilder
+    private func sourceBadge(_ source: String) -> some View {
+        Text(source)
+            .font(.caption2)
+            .fontWeight(.medium)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(sourceColor(source).opacity(0.15))
+            .foregroundStyle(sourceColor(source))
+            .clipShape(Capsule())
+    }
+
+    private func sourceColor(_ source: String) -> Color {
+        switch source {
+        case "supplier": return .purple
+        case "color": return .blue
+        case "type": return .orange
+        default: return .secondary
+        }
     }
 
     // MARK: - Data Loading
 
+    @Sendable
     private func loadData() async {
-        guard let parts = appCore.partsService else { return }
+        guard let service = appCore.partsService else {
+            await MainActor.run { loadError = "Service not available"; isLoading = false }
+            return
+        }
 
         do {
-            // Load type and color names
-            let partType = try parts.getType(id: typeId)
-            typeName = partType.name
+            let resolved = try service.getEffectivePrice(colorId: colorId, typeId: typeId)
+            let costs = try service.getColorSupplierCosts(colorId: colorId)
 
-            let colors = try parts.listColors()
-            let color = colors.first(where: { $0.id == colorId })
-            colorName = color?.name ?? "Color"
-
-            // Load resolved pricing
-            resolvedCost = try parts.getEffectivePrice(colorId: colorId, typeId: typeId)
-
-            // Populate fields from resolved data
-            if let typeCost = resolvedCost?.typeDefaultCost {
-                typeDefaultCostText = String(format: "%.2f", typeCost)
-            }
-            if let colorCost = resolvedCost?.colorOverrideCost {
-                colorOverrideCostText = String(format: "%.2f", colorCost)
+            let entries = costs.map { row in
+                SupplierCostEntry(
+                    id: row.id,
+                    supplierId: row.supplierId,
+                    supplierName: row.supplierName,
+                    costText: String(format: "%.2f", row.cost),
+                    notes: row.notes
+                )
             }
 
-            // Load supplier-specific costs
-            supplierCosts = try parts.getColorSupplierCosts(colorId: colorId)
+            await MainActor.run {
+                resolvedCost = resolved
+                typeDefaultText = resolved.typeDefaultCost.map { String(format: "%.2f", $0) } ?? ""
+                colorOverrideText = resolved.colorOverrideCost.map { String(format: "%.2f", $0) } ?? ""
+                supplierCosts = entries
+                isLoading = false
+            }
         } catch {
-            // Non-fatal — show what we can
+            await MainActor.run {
+                loadError = userFriendlyError(error, context: "load pricing data")
+                isLoading = false
+            }
+        }
+    }
+
+    // MARK: - Save Actions
+
+    private func saveTypeDefault() async {
+        guard let service = appCore.partsService, let tId = typeId else {
+            saveError = "Type not available"
+            return
         }
 
-        isLoading = false
-    }
-
-    private func loadSuppliers() {
-        guard let parts = appCore.partsService else { return }
-        allSuppliers = (try? parts.listSuppliers()) ?? []
-    }
-
-    // MARK: - Save
-
-    private func saveAll() {
-        guard let parts = appCore.partsService else { return }
-
+        isSaving = true
+        saveError = nil
         do {
-            // Save type default cost
-            let typeCost = Double(typeDefaultCostText)
-            try parts.setPriceForType(typeId: typeId, unitCost: typeCost)
-
-            // Save color override cost
-            let colorCost = Double(colorOverrideCostText)
-            try parts.setPriceForColor(colorId: colorId, unitCost: colorCost)
-
-            onSave?()
-            dismiss()
+            let cost = Double(typeDefaultText)
+            try service.setPriceForType(typeId: tId, unitCost: cost)
+            await onSave()
+            await loadData()
         } catch {
-            // Error handling — sheet stays open
+            saveError = userFriendlyError(error, context: "save type default")
         }
+        isSaving = false
     }
 
-    // MARK: - Supplier Cost Actions
-
-    private func addSupplierCost() {
-        guard let parts = appCore.partsService,
-              let suppId = selectedSupplierId,
-              let cost = Double(newSupplierCostText) else { return }
-
-        do {
-            try parts.setSupplierCostForColor(colorId: colorId, supplierId: suppId, cost: cost)
-            supplierCosts = (try? parts.getColorSupplierCosts(colorId: colorId)) ?? supplierCosts
-            resolvedCost = try? parts.getEffectivePrice(colorId: colorId, typeId: typeId)
-
-            // Reset add form
-            selectedSupplierId = nil
-            newSupplierCostText = ""
-        } catch {
-            // Non-fatal
+    private func saveColorOverride() async {
+        guard let service = appCore.partsService else {
+            saveError = "Service not available"
+            return
         }
+
+        isSaving = true
+        saveError = nil
+        do {
+            let cost = Double(colorOverrideText)
+            try service.setPriceForColor(colorId: colorId, unitCost: cost)
+            await onSave()
+            await loadData()
+        } catch {
+            saveError = userFriendlyError(error, context: "save color override")
+        }
+        isSaving = false
     }
 
-    private func removeSupplierCost(_ row: PartsService.ColorSupplierCostRow) {
-        guard let parts = appCore.partsService else { return }
-
-        do {
-            try parts.removeSupplierCostForColor(colorId: colorId, supplierId: row.supplierId)
-            supplierCosts = (try? parts.getColorSupplierCosts(colorId: colorId)) ?? supplierCosts
-            resolvedCost = try? parts.getEffectivePrice(colorId: colorId, typeId: typeId)
-        } catch {
-            // Non-fatal
+    private func clearColorOverride() async {
+        guard let service = appCore.partsService else {
+            saveError = "Service not available"
+            return
         }
+
+        isSaving = true
+        saveError = nil
+        do {
+            try service.setPriceForColor(colorId: colorId, unitCost: nil)
+            colorOverrideText = ""
+            await onSave()
+            await loadData()
+        } catch {
+            saveError = userFriendlyError(error, context: "clear color override")
+        }
+        isSaving = false
+    }
+
+    private func saveSupplierCost(_ entry: SupplierCostEntry) async {
+        guard let service = appCore.partsService else {
+            saveError = "Service not available"
+            return
+        }
+
+        isSaving = true
+        saveError = nil
+        do {
+            guard let cost = Double(entry.costText), cost > 0 else {
+                saveError = "Invalid cost value"
+                isSaving = false
+                return
+            }
+            try service.setSupplierCostForColor(
+                colorId: colorId,
+                supplierId: entry.supplierId,
+                cost: cost,
+                notes: entry.notes
+            )
+            await onSave()
+            await loadData()
+        } catch {
+            saveError = userFriendlyError(error, context: "save supplier cost")
+        }
+        isSaving = false
     }
 }
