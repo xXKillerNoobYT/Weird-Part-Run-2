@@ -1529,3 +1529,15 @@ _Appended by dev-pipeline-manager each run._
 - Issues processed: PE-028 ✅ DONE (brands/suppliers editing), PE-032 ✅ DONE (schedule config), PE-033 ✅ DONE (wishlist sections), PE-034 NEW (DIS-001–004 quick UX), PE-003 core DONE (flex pool Swift + 6 tests)
 - Bugs fixed: 114 total lifetime (iterations 27–29 today: multi-user audit OOB crash, SchedulingService force unwraps, BadgeCountManager debounce)
 - Pipeline health: OK — 970/970 green, build clean, 5 active prompts (PE-031 EMERGENCY → PE-034 → PE-027 → PE-029 → PE-030), 7 DevTODOs tracked
+
+---
+
+### End-of-Day Sync — 2026-04-05
+- Files committed: 64 (2 commits: core services + iOS UI/docs)
+- Commits created: 2 (469f35a core services/tests, f72f5a3 iOS cascade pricing + usability audit + docs)
+- Push status: success — branch up to date with origin/main
+- Tests: 978/978 passing (52 suites)
+- Agent runs today: 6/7 — weekly-cleanup ✅ (run 2), dev-pipeline-manager ✅ (run 11), dev-improvement-scanner ✅ (run 8), github-issues-sync ✅ (run 7), hunt-fix-verify ✅ (iter 19), test-coverage ✅ (2026-04-02); plan-enforcer last run 2026-04-02 (run 2) — not run today
+- Issues processed: usability audit 44 issues found + 44 fixed (all iOS modules), DIS-005 Q&A answered (UserDefaults PII confirmed, Option B selected), DIS-007 resolved and closed
+- Bugs fixed: 44 usability issues fixed (alert binding, sheet(item:) pattern, ErrorStateView adoption across Reports + Office + Warehouse + Orders modules)
+- Pipeline health: OK — 978/978 green, build clean, cascade pricing UI live (catalog chip + pricing cascade view), flex pool UI live in job detail, job classification field added
