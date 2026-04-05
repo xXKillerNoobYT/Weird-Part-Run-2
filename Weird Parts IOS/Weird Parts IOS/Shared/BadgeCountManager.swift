@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import WiredPartCore
 import os.log
 
@@ -20,6 +21,8 @@ final class BadgeCountManager: ObservableObject {
     private var service: BadgeCountService?
     private var userId: Int64?
     private let logger = Logger(subsystem: "com.wiredpart.ios", category: "BadgeCountManager")
+    private var lastRefreshDate: Date?
+    private let minimumRefreshInterval: TimeInterval = 3.0
 
     // MARK: - Configuration
 
@@ -39,8 +42,12 @@ final class BadgeCountManager: ObservableObject {
     // MARK: - Refresh
 
     /// Refresh all badge counts from the database. Safe to call frequently.
+    /// Debounced: skips if a refresh completed within the last 3 seconds.
     func refresh() {
         guard let service else { return }
+        let now = Date()
+        if let last = lastRefreshDate, now.timeIntervalSince(last) < minimumRefreshInterval { return }
+        lastRefreshDate = now
         Task.detached(priority: .utility) { [userId] in
             do {
                 let newCounts = try service.getAllBadgeCounts(userId: userId)

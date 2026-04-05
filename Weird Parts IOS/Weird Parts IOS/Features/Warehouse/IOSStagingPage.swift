@@ -186,7 +186,7 @@ struct IOSStagingPage: View {
     @ViewBuilder
     private var itemsToolbar: some View {
         if isSelecting {
-            Button("Clear \(selectedItems.count)") {
+            Button("Clear \(selectedItems.count)", role: .destructive) {
                 showBatchConfirm = true
             }
             .disabled(selectedItems.isEmpty)

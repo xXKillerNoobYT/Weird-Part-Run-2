@@ -652,7 +652,7 @@ private struct SupplierDetailSheet: View {
         }
     }
 
-    @State private var linkedBrands: [(brandId: Int64, brandName: String, partCount: Int)] = []
+    @State private var linkedBrands: [(brandId: Int64, brandName: String, partCount: Int, carryStatus: String)] = []
     @State private var recentPOs: [(poId: Int64, poNumber: String, status: String, total: Double, date: String)] = []
     @State private var supplierScores: PartsService.SupplierScores?
     @State private var contacts: [PartsService.SupplierContact] = []
@@ -1030,21 +1030,57 @@ private struct SupplierDetailSheet: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(linkedBrands, id: \.brandId) { item in
-                    HStack {
+                    HStack(spacing: 12) {
                         Image(systemName: "tag.fill")
                             .foregroundStyle(Color.accentColor)
-                        Text(item.brandName)
-                            .font(.subheadline)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.brandName)
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text("\(item.partCount) parts")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
                         Spacer()
-                        Text("\(item.partCount) parts")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+
+                        // Carry status toggle
+                        Button {
+                            toggleBrandCarryStatus(item)
+                        } label: {
+                            Text(item.carryStatus == "need_to_order" ? "Need to Order" : "On Shelf")
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(item.carryStatus == "need_to_order" ? Color.orange.opacity(0.15) : Color.green.opacity(0.15))
+                                .foregroundStyle(item.carryStatus == "need_to_order" ? .orange : .green)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .frame(minHeight: 40)
+                    .frame(minHeight: 44)
                 }
             }
         } header: {
             Text("Brands Carried (\(linkedBrands.count))")
+        }
+    }
+
+    private func toggleBrandCarryStatus(_ item: (brandId: Int64, brandName: String, partCount: Int, carryStatus: String)) {
+        guard let service = appCore.partsService else { return }
+        let newStatus = item.carryStatus == "carry_on_shelf" ? "need_to_order" : "carry_on_shelf"
+        do {
+            try service.updateBrandSupplierCarryStatus(
+                brandId: item.brandId,
+                supplierId: supplier.id,
+                carryStatus: newStatus
+            )
+            // Reload brands to reflect the change
+            linkedBrands = (try? service.getSupplierBrands(supplierId: supplier.id)) ?? []
+        } catch {
+            loadError = userFriendlyError(error, context: "update carry status")
         }
     }
 

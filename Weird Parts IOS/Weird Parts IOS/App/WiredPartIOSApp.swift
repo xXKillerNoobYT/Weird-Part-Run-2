@@ -73,6 +73,7 @@ struct WiredPartIOSApp: App {
                         IOSMainView()
                             .environmentObject(appCore)
                             .environmentObject(tabPrefs)
+                            .environmentObject(appCore.badgeCountManager)
                     }
                 } else if let error = appCore.loadError {
                     VStack(spacing: 16) {

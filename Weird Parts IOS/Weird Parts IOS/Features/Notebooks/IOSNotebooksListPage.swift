@@ -202,8 +202,24 @@ struct IOSNotebooksListPage: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            // Show green dot for recently updated notebooks
+            if isRecentlyUpdated(notebook.updatedAt) {
+                ActionDot(isOverdue: false)
+            }
         }
         .padding(.vertical, 4)
+    }
+
+    /// Check if a date string represents a recent update (within 7 days).
+    private func isRecentlyUpdated(_ dateStr: String?) -> Bool {
+        guard let dateStr else { return false }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let basic = ISO8601DateFormatter()
+        basic.formatOptions = [.withInternetDateTime]
+        guard let date = formatter.date(from: dateStr) ?? basic.date(from: dateStr) else { return false }
+        return Date().timeIntervalSince(date) < 7 * 86400
     }
 
     // MARK: - Helpers

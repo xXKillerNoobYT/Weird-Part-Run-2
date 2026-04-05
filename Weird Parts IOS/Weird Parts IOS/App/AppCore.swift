@@ -44,9 +44,13 @@ final class AppCore: ObservableObject {
     public private(set) var wishlistService: WishlistService?
     public private(set) var backgroundTaskService: BackgroundTaskService?
     public private(set) var aiDispatchService: AIDispatchService?
+    public private(set) var badgeCountService: BadgeCountService?
 
     /// Shared sync manager — all views observe this single instance.
     let syncManager = IOSSyncManager()
+
+    /// Shared badge count manager — provides live pending-item counts for tab badges.
+    let badgeCountManager = BadgeCountManager()
 
     /// Central registry for AI-activated page filters (prompt 62S).
     public let aiFilterRegistry = AIFilterRegistry()
@@ -129,6 +133,7 @@ final class AppCore: ObservableObject {
                     wishlist: WishlistService(db: database),
                     backgroundTask: BackgroundTaskService(db: database),
                     aiDispatch: AIDispatchService(db: database),
+                    badgeCount: BadgeCountService(db: database),
                     theme: theme,
                     users: users,
                     hasProfile: hasProfile
@@ -157,6 +162,7 @@ final class AppCore: ObservableObject {
             wishlistService = result.wishlist
             backgroundTaskService = result.backgroundTask
             aiDispatchService = result.aiDispatch
+            badgeCountService = result.badgeCount
 
             if let theme = result.theme {
                 self.theme = theme
@@ -180,6 +186,11 @@ final class AppCore: ObservableObject {
                 needsOnboarding = false
             }
             isReady = true
+
+            // Configure badge count manager
+            if let badgeService = badgeCountService {
+                badgeCountManager.configure(service: badgeService, userId: currentUser?.id)
+            }
 
             // Configure sync manager now that DB + settings are ready
             if let database = db, let settings = settingsService {
@@ -289,6 +300,7 @@ final class AppCore: ObservableObject {
                 permissions = result.permissions
                 if let userId = result.auth.user?.id {
                     onboardingManager = OnboardingProgressManager(userId: userId)
+                    badgeCountManager.setUserId(userId)
                 }
                 return nil // no error
             } else {
@@ -305,6 +317,7 @@ final class AppCore: ObservableObject {
         currentToken = nil
         permissions = []
         onboardingManager = nil
+        badgeCountManager.setUserId(nil)
     }
 
     /// Run the first-device bootstrap, creating the admin user and default data.
@@ -327,6 +340,7 @@ final class AppCore: ObservableObject {
                 permissions = result.permissions
                 if let userId = result.seed.user?.id {
                     onboardingManager = OnboardingProgressManager(userId: userId)
+                    badgeCountManager.setUserId(userId)
                 }
                 return nil
             } else {
@@ -398,6 +412,7 @@ final class AppCore: ObservableObject {
         wishlistService = nil
         backgroundTaskService = nil
         aiDispatchService = nil
+        badgeCountService = nil
         db = nil
 
         // 3. Delete the database file
@@ -438,7 +453,7 @@ final class AppCore: ObservableObject {
         let storedDate = UserDefaults.standard.object(forKey: buildDateKey) as? Date
 
         if let storedDate, storedDate != modDate {
-            logger.debug("[AppCore] New build detected — wiping database for fresh start")
+            Logger(subsystem: "com.wiredpart.ios", category: "AppCore").debug("[AppCore] New build detected — wiping database for fresh start")
             let fm = FileManager.default
             try? fm.removeItem(atPath: dbPath)
             try? fm.removeItem(atPath: dbPath + "-wal")

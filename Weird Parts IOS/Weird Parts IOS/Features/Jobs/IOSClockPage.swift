@@ -1,6 +1,7 @@
 import SwiftUI
 import CoreLocation
 import WiredPartCore
+import os.log
 
 /// Clock in/out page for iOS.
 ///
@@ -12,6 +13,8 @@ struct IOSClockPage: View {
     @EnvironmentObject private var appCore: AppCore
     @StateObject private var locationManager = LocationManager()
     @StateObject private var geofenceManager = GeofenceManager()
+
+    private let logger = Logger(subsystem: "com.wiredpart", category: "ClockPage")
 
     // MARK: - State
 
@@ -61,8 +64,23 @@ struct IOSClockPage: View {
     @State private var showSelfAssignConfirmation = false
     @State private var selectedFlexJob: (id: Int64, name: String)?
 
+    // Confirmation dialogs
+    @State private var showClockOutConfirmation = false
+    @State private var pendingClockOutEntryId: Int64?
+
     // Location permission
     @State private var showLocationDeniedAlert = false
+
+    // alreadyClockedIn recovery
+    @State private var showAlreadyClockedInAlert = false
+    @State private var pendingClockInJobId: Int64?
+    @State private var pendingClockInIsShop = false
+    @State private var danglingEntryJobName: String?
+
+    /// True when location permission has not been decided yet (first launch).
+    private var needsLocationPermission: Bool {
+        locationManager.authorizationStatus == .notDetermined
+    }
 
     // Date filter
     @State private var dateRange: ReportDateRange = .thisWeek
@@ -130,7 +148,8 @@ struct IOSClockPage: View {
             .refreshable { loadData() }
             .task { appCore.onboardingManager?.markCompleted("clock-in") }
             .task {
-                locationManager.requestPermission()
+                // Don't auto-request permission — let the banner explain first.
+                // Only reload denied state in case user returned from Settings.
                 if locationManager.permissionDenied {
                     showLocationDeniedAlert = true
                 }
@@ -230,6 +249,17 @@ struct IOSClockPage: View {
             } message: {
                 Text("Location is required for clock in/out. Please enable it in Settings \u{2192} Privacy & Security \u{2192} Location Services.")
             }
+            .alert("You Are Already Clocked In", isPresented: $showAlreadyClockedInAlert) {
+                Button("Clock Out Previous Entry", role: .destructive) {
+                    clockOutDanglingAndRetry()
+                }
+                Button("Cancel", role: .cancel) {
+                    pendingClockInJobId = nil
+                    pendingClockInIsShop = false
+                }
+            } message: {
+                Text("You have an active clock entry for \(danglingEntryJobName ?? "a previous job"). Would you like to clock out of it first?")
+            }
     }
 
     // MARK: - Content
@@ -247,12 +277,94 @@ struct IOSClockPage: View {
 
                 SkippedModuleHint(moduleId: "clock")
 
-                // Error banner
+                // Error banner — prominent, top-of-view, dismissable
                 if let errorMessage {
                     Section {
-                        Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.red)
-                            .font(.caption)
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.white)
+                                .accessibilityHidden(true)
+                            Text(errorMessage)
+                                .font(.subheadline)
+                                .foregroundStyle(.white)
+                            Spacer()
+                            Button {
+                                self.errorMessage = nil
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.caption)
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(.white.opacity(0.8))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Dismiss error")
+                        }
+                        .padding(10)
+                        .background(Color.red, in: RoundedRectangle(cornerRadius: 8))
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    }
+                }
+
+                // Location permission banners
+                if needsLocationPermission && activeEntry == nil {
+                    Section {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Location Required")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                    Text("This company requires GPS check-in for clock entries.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: "location.fill")
+                                    .foregroundStyle(.orange)
+                            }
+
+                            Button {
+                                locationManager.requestPermission()
+                            } label: {
+                                Label("Allow Location Access", systemImage: "location.circle.fill")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.orange)
+                            .controlSize(.regular)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                } else if locationManager.permissionDenied && activeEntry == nil {
+                    Section {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Location Access Denied")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                    Text("Go to Settings to allow location access for clock-in.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: "location.slash.fill")
+                                    .foregroundStyle(.red)
+                            }
+
+                            Button {
+                                if let url = URL(string: UIApplication.openSettingsURLString) {
+                                    UIApplication.shared.open(url)
+                                }
+                            } label: {
+                                Label("Open Settings", systemImage: "gear")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+                            .controlSize(.regular)
+                        }
+                        .padding(.vertical, 4)
                     }
                 }
 
@@ -312,15 +424,28 @@ struct IOSClockPage: View {
                 // Clock Out + Switch Job (disabled during active break)
                 HStack(spacing: 12) {
                     Button(role: .destructive) {
-                        clockOut(entryId: entry.id)
+                        pendingClockOutEntryId = entry.id
+                        showClockOutConfirmation = true
                     } label: {
                         Label("Clock Out", systemImage: "stop.circle.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
+                    .actionRing(.red)
                     .disabled(activeBreakRecord != nil)
                     .opacity(activeBreakRecord != nil ? 0.4 : 1.0)
+                    .accessibilityLabel("Clock Out — action required")
+                    .confirmationDialog("Clock Out?", isPresented: $showClockOutConfirmation, titleVisibility: .visible) {
+                        Button("Clock Out", role: .destructive) {
+                            if let entryId = pendingClockOutEntryId {
+                                clockOut(entryId: entryId)
+                            }
+                        }
+                        Button("Cancel", role: .cancel) { }
+                    } message: {
+                        Text("You'll be prompted to answer clock-out questions.")
+                    }
 
                     Button {
                         Task { await switchJob(entryId: entry.id) }
@@ -493,41 +618,13 @@ struct IOSClockPage: View {
 
     // MARK: - Job Picker (inline, no sheet)
 
+    /// Whether clock-in buttons should be disabled (no location permission).
+    private var clockInDisabled: Bool {
+        needsLocationPermission || locationManager.permissionDenied
+    }
+
     @ViewBuilder
     private var jobPickerSection: some View {
-        // Location permission warning banner
-        if locationManager.permissionDenied {
-            Section {
-                HStack(spacing: 12) {
-                    Image(systemName: "location.slash.fill")
-                        .font(.title3)
-                        .foregroundStyle(.orange)
-                        .accessibilityHidden(true)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Location Access Denied")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("Location is required to clock in. Tap to open Settings.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    Button("Settings") {
-                        if let url = URL(string: UIApplication.openSettingsURLString) {
-                            UIApplication.shared.open(url)
-                        }
-                    }
-                    .font(.caption)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.orange)
-                }
-                .padding(.vertical, 4)
-            }
-        }
-
         Section {
             // Shop / Warehouse — always first, pinned
             Button {
@@ -536,9 +633,9 @@ struct IOSClockPage: View {
                 HStack(spacing: DS.Space.md) {
                     Image(systemName: "building.fill")
                         .font(.title3)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(clockInDisabled ? .gray : .blue)
                         .frame(width: 40, height: 40)
-                        .background(Color.blue.opacity(0.1))
+                        .background((clockInDisabled ? Color.gray : Color.blue).opacity(0.1))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .accessibilityHidden(true)
 
@@ -554,13 +651,15 @@ struct IOSClockPage: View {
                     Spacer()
 
                     Image(systemName: "clock.badge.checkmark.fill")
-                        .foregroundStyle(.green)
+                        .foregroundStyle(clockInDisabled ? .gray : .green)
                         .accessibilityHidden(true)
                 }
                 .frame(minHeight: 56)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(clockInDisabled)
+            .opacity(clockInDisabled ? 0.5 : 1.0)
         } header: {
             Text("Clock In To")
         }
@@ -619,6 +718,8 @@ struct IOSClockPage: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .disabled(clockInDisabled)
+                    .opacity(clockInDisabled ? 0.5 : 1.0)
                 }
             } header: {
                 HStack {
@@ -677,6 +778,8 @@ struct IOSClockPage: View {
                                 }
 
                                 Spacer()
+
+                                ActionDot(isOverdue: false)
 
                                 Text("Join")
                                     .font(.caption)
@@ -1002,7 +1105,13 @@ struct IOSClockPage: View {
 
     private func clockIn(jobId: Int64?, isShop: Bool) {
         // Check location permission before attempting clock-in
+        if needsLocationPermission {
+            logger.warning("ClockIn blocked — location permission not determined yet")
+            locationManager.requestPermission()
+            return
+        }
         if locationManager.permissionDenied {
+            logger.warning("ClockIn blocked — location permission denied")
             showLocationDeniedAlert = true
             return
         }
@@ -1013,10 +1122,13 @@ struct IOSClockPage: View {
             return
         }
 
+        logger.info("ClockIn tapped — permissionStatus=\(self.locationManager.authorizationStatus.rawValue) userId=\(userId) jobId=\(jobId ?? -1) isShop=\(isShop)")
+
         Task {
             let location = await locationManager.getCurrentLocation()
             let lat = location?.coordinate.latitude
             let lng = location?.coordinate.longitude
+            logger.info("GPS result: lat=\(lat ?? 0) lng=\(lng ?? 0)")
 
             do {
                 // Check payment hold before allowing clock-in
@@ -1027,6 +1139,8 @@ struct IOSClockPage: View {
                         return
                     }
                 }
+
+                logger.info("Calling service.clockIn(userId: \(userId), jobId: \(jobId ?? 0))")
 
                 if isShop {
                     // Clock in to Shop/Warehouse (jobId = 0 or a special "shop" job)
@@ -1043,11 +1157,69 @@ struct IOSClockPage: View {
                         geofenceManager.startMonitoring(jobId: jid, jobName: job.jobName, latitude: jobLat, longitude: jobLng)
                     }
                 }
+                logger.info("ClockIn success")
                 errorMessage = nil
                 appCore.onboardingManager?.markCompleted("clock-in")
                 loadData()
+            } catch let error as JobsService.JobsError {
+                switch error {
+                case .alreadyClockedIn(_, _):
+                    logger.warning("ClockIn error: alreadyClockedIn — showing recovery alert")
+                    // Find the active entry to show the job name
+                    let activeJobName = try? service.getActiveClockEntry(userId: userId)?.jobName
+                    danglingEntryJobName = activeJobName
+                    pendingClockInJobId = jobId
+                    pendingClockInIsShop = isShop
+                    showAlreadyClockedInAlert = true
+                default:
+                    logger.error("ClockIn JobsError: \(error)")
+                    errorMessage = userFriendlyError(error, context: "clock in")
+                }
             } catch {
+                logger.error("ClockIn error: \(error.localizedDescription)")
                 errorMessage = userFriendlyError(error, context: "clock in")
+            }
+        }
+    }
+
+    /// Clock out the dangling entry and retry the pending clock-in.
+    private func clockOutDanglingAndRetry() {
+        guard let service = appCore.jobsService,
+              let userId = appCore.currentUser?.id else {
+            errorMessage = "Not logged in"
+            return
+        }
+
+        logger.info("Clocking out dangling entry for userId=\(userId)")
+
+        Task {
+            let location = await locationManager.getCurrentLocation()
+
+            do {
+                // Find and clock out the active entry
+                guard let active = try service.getActiveClockEntry(userId: userId) else {
+                    logger.warning("No active entry found — refreshing")
+                    loadData()
+                    return
+                }
+                _ = try service.clockOut(
+                    laborEntryId: active.id,
+                    gpsLat: location?.coordinate.latitude,
+                    gpsLng: location?.coordinate.longitude
+                )
+                geofenceManager.stopMonitoring()
+                logger.info("Dangling entry clocked out — retrying clock-in")
+
+                // Brief pause then retry the original clock-in
+                try? await Task.sleep(for: .milliseconds(300))
+                await MainActor.run {
+                    clockIn(jobId: pendingClockInJobId, isShop: pendingClockInIsShop)
+                    pendingClockInJobId = nil
+                    pendingClockInIsShop = false
+                }
+            } catch {
+                logger.error("ClockOut dangling error: \(error.localizedDescription)")
+                errorMessage = userFriendlyError(error, context: "clock out previous entry")
             }
         }
     }

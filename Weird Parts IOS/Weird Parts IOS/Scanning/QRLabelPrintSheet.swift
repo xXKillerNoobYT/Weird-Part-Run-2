@@ -54,7 +54,7 @@ struct UsedStickerPicker: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Clear All") { usedPositions.removeAll() }
+                Button("Clear All", role: .destructive) { usedPositions.removeAll() }
                     .font(.caption)
                 Button("Use All") { usedPositions = Set(0..<grid.totalPositions) }
                     .font(.caption)

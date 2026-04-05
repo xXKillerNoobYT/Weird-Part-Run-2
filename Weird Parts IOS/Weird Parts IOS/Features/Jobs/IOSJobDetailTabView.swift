@@ -19,6 +19,7 @@ struct IOSJobDetailTabView: View {
     private enum ActiveSheet: Identifiable {
         case editJob
         case help
+        case createSupplierChannel
         var id: String { String(describing: self) }
     }
     @State private var jobJPOs: [OrdersService.JPOListItem] = []
@@ -26,7 +27,6 @@ struct IOSJobDetailTabView: View {
     @State private var teamMembers: [JobsService.TeamMemberRow] = []
     @State private var jobParts: [JobsService.JobPartRow] = []
     @State private var jobSupplierChannels: [ChatService.SupplierChannelRow] = []
-    @State private var showCreateSupplierChannel = false
     @State private var tabError: String?
     /// Job stages with computed statuses (Rough-in, Prep/Makeup, Trim-out).
     @State private var jobStages: [JobsService.JobStageStatus] = []
@@ -124,6 +124,9 @@ struct IOSJobDetailTabView: View {
                     IOSEditJobSheet(job: job) { loadData() }
                         .environmentObject(appCore)
                 }
+            case .createSupplierChannel:
+                CreateJobSupplierChannelSheet(jobId: jobId, onCreated: { loadJobSupplierChannels() })
+                    .environmentObject(appCore)
             }
         }
         .refreshable { loadData() }
@@ -860,7 +863,7 @@ struct IOSJobDetailTabView: View {
 
             if jobSupplierChannels.isEmpty {
                 Button {
-                    showCreateSupplierChannel = true
+                    activeSheet = .createSupplierChannel
                 } label: {
                     Label("Add Supplier Channel", systemImage: "plus.bubble")
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -906,16 +909,12 @@ struct IOSJobDetailTabView: View {
                 }
 
                 Button {
-                    showCreateSupplierChannel = true
+                    activeSheet = .createSupplierChannel
                 } label: {
                     Label("Add Another", systemImage: "plus.circle")
                         .font(.subheadline)
                 }
             }
-        }
-        .sheet(isPresented: $showCreateSupplierChannel) {
-            CreateJobSupplierChannelSheet(jobId: jobId, onCreated: { loadJobSupplierChannels() })
-                .environmentObject(appCore)
         }
     }
 

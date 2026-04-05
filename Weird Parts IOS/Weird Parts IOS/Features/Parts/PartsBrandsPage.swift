@@ -171,6 +171,11 @@ struct PartsBrandsPage: View {
                                 Text("\(brand.supplierCount) supplier\(brand.supplierCount == 1 ? "" : "s")")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
+                            } else {
+                                // Orange warning — no suppliers linked
+                                Label("No suppliers", systemImage: "exclamationmark.triangle.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
                             }
                         }
 
@@ -298,6 +303,9 @@ private struct BrandFormSheet: View {
     @State private var notes = ""
     @State private var saveError: String?
     @State private var isSaving = false
+    // Post-create supplier prompt
+    @State private var showAddSuppliersPrompt = false
+    @State private var newBrandId: Int64?
 
     var body: some View {
         NavigationStack {
@@ -351,6 +359,23 @@ private struct BrandFormSheet: View {
                     notes = b.notes ?? ""
                 }
             }
+            .alert("Add Suppliers?", isPresented: $showAddSuppliersPrompt) {
+                Button("Add Suppliers") {
+                    // Dismiss form, then parent will show detail sheet where they can manage suppliers
+                    Task {
+                        await onSave()
+                        dismiss()
+                    }
+                }
+                Button("Skip", role: .cancel) {
+                    Task {
+                        await onSave()
+                        dismiss()
+                    }
+                }
+            } message: {
+                Text("Link suppliers that carry this brand. You can always add them later, but brands without suppliers show an orange warning.")
+            }
         }
     }
 
@@ -359,6 +384,12 @@ private struct BrandFormSheet: View {
         saveError = nil
         do {
             try await save()
+            // For new brands, prompt to add suppliers
+            if brand == nil, newBrandId != nil {
+                isSaving = false
+                showAddSuppliersPrompt = true
+                return
+            }
             await onSave()
             dismiss()
         } catch {
@@ -382,7 +413,7 @@ private struct BrandFormSheet: View {
                 notes: notes.isEmpty ? nil : notes
             )
         } else {
-            _ = try service.createBrand(
+            newBrandId = try service.createBrand(
                 name: trimmedName,
                 website: website.isEmpty ? nil : website,
                 notes: notes.isEmpty ? nil : notes
@@ -399,7 +430,7 @@ private struct BrandDetailSheet: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
 
-    @State private var linkedSuppliers: [Supplier] = []
+    @State private var linkedSuppliers: [PartsService.BrandSupplierRow] = []
     @State private var isLoading = true
     @State private var loadError: String?
 
@@ -443,12 +474,12 @@ private struct BrandDetailSheet: View {
                             .font(.caption)
                             .foregroundStyle(.red)
                     } else if linkedSuppliers.isEmpty {
-                        Text("No suppliers linked to this brand yet.")
+                        Label("No suppliers linked — add at least one supplier.", systemImage: "exclamationmark.triangle.fill")
                             .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.orange)
                             .padding(.vertical, 8)
                     } else {
-                        ForEach(linkedSuppliers, id: \.id) { supplier in
+                        ForEach(linkedSuppliers, id: \.linkId) { link in
                             HStack(spacing: 12) {
                                 Image(systemName: "building.2.fill")
                                     .foregroundStyle(.blue)
@@ -456,21 +487,30 @@ private struct BrandDetailSheet: View {
                                     .accessibilityHidden(true)
 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(supplier.name)
+                                    Text(link.supplierName)
                                         .font(.body)
                                         .fontWeight(.medium)
-                                    if let phone = supplier.phone, !phone.isEmpty {
-                                        Text(phone)
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
+                                    Text(link.carryStatus == "need_to_order" ? "Need to Order" : "Carry on Shelf")
+                                        .font(.caption)
+                                        .foregroundStyle(link.carryStatus == "need_to_order" ? .orange : .green)
                                 }
 
                                 Spacer()
 
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
-                                    .accessibilityLabel("Status: Linked")
+                                // Carry status toggle button
+                                Button {
+                                    toggleCarryStatus(link)
+                                } label: {
+                                    Text(link.carryStatus == "need_to_order" ? "Need to Order" : "On Shelf")
+                                        .font(.caption2)
+                                        .fontWeight(.medium)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(link.carryStatus == "need_to_order" ? Color.orange.opacity(0.15) : Color.green.opacity(0.15))
+                                        .foregroundStyle(link.carryStatus == "need_to_order" ? .orange : .green)
+                                        .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
                             }
                             .frame(minHeight: 44)
                         }
@@ -530,11 +570,26 @@ private struct BrandDetailSheet: View {
                 loadError = "Parts service unavailable"
                 return
             }
-            linkedSuppliers = try service.getBrandSuppliers(brandId: brand.id)
+            linkedSuppliers = try service.getBrandSuppliersWithStatus(brandId: brand.id)
             isLoading = false
         } catch {
-            loadError = userFriendlyError(error, context: "load brands")
+            loadError = userFriendlyError(error, context: "load suppliers")
             isLoading = false
+        }
+    }
+
+    private func toggleCarryStatus(_ link: PartsService.BrandSupplierRow) {
+        guard let service = appCore.partsService else { return }
+        let newStatus = link.carryStatus == "carry_on_shelf" ? "need_to_order" : "carry_on_shelf"
+        do {
+            try service.updateBrandSupplierCarryStatus(
+                brandId: link.brandId,
+                supplierId: link.supplierId,
+                carryStatus: newStatus
+            )
+            loadSuppliers()
+        } catch {
+            loadError = userFriendlyError(error, context: "update carry status")
         }
     }
 }

@@ -26,8 +26,8 @@ struct WarehouseDashboardPage: View {
         case staging = "Staging Ready"
     }
 
-    @State private var showOnboardingWizard = false
-    @State private var hasLocations = true
+    @State private var setupTier: WarehouseService.WarehouseSetupTier = .complete
+    @AppStorage("warehouseSetupBannerDismissed") private var bannerDismissed = false
 
     private enum ActiveSheet: Identifiable {
         case newMovement
@@ -68,13 +68,9 @@ struct WarehouseDashboardPage: View {
         .task {
             loadData()
             appCore.onboardingManager?.markCompleted("wh-dashboard-view")
-            // Auto-show onboarding wizard if warehouse has no floor plans
+            // Detect warehouse setup tier for dismissable banner
             if let service = appCore.warehouseService {
-                let plans = (try? service.listFloorPlans()) ?? []
-                hasLocations = !plans.isEmpty
-                if !hasLocations {
-                    activeSheet = .onboardingWizard
-                }
+                setupTier = (try? service.getSetupProgress()) ?? .none
             }
         }
     }
@@ -111,10 +107,122 @@ struct WarehouseDashboardPage: View {
 
     // MARK: - Dashboard Content
 
+    // MARK: - Setup Banner
+
+    @ViewBuilder
+    private var setupBanner: some View {
+        if !bannerDismissed && setupTier != .complete {
+            VStack(spacing: 10) {
+                HStack(alignment: .top) {
+                    Image(systemName: setupTier == .floorPlanInProgress ? "arrow.triangle.2.circlepath" : "building.2")
+                        .font(.title3)
+                        .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(setupBannerTitle)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Text(setupBannerSubtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        withAnimation { bannerDismissed = true }
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss")
+                }
+
+                HStack(spacing: 10) {
+                    if setupTier == .none {
+                        Button { activeSheet = .onboardingWizard } label: {
+                            Text("Start Setup")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(Color.orange)
+                                .foregroundStyle(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+
+                        // "Just Count Parts" will link to PartsFlowWizard in Session 2
+                        // For now, show a disabled placeholder
+                    } else if setupTier == .partsOnly {
+                        Button { activeSheet = .onboardingWizard } label: {
+                            Text("Set Up Floor Plan")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(Color.blue)
+                                .foregroundStyle(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                    } else if setupTier == .floorPlanInProgress {
+                        Button { activeSheet = .onboardingWizard } label: {
+                            Text("Resume Setup")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(Color.green)
+                                .foregroundStyle(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    Spacer()
+                }
+            }
+            .padding(12)
+            .background(Color.orange.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+            )
+        }
+    }
+
+    private var setupBannerTitle: String {
+        switch setupTier {
+        case .none: "Set up your warehouse"
+        case .partsOnly: "Floor plan not configured"
+        case .floorPlanInProgress: "Warehouse setup in progress"
+        case .complete: ""
+        }
+    }
+
+    private var setupBannerSubtitle: String {
+        switch setupTier {
+        case .none: "Unlock movements, staging, and audit tracking by setting up your warehouse."
+        case .partsOnly: "You have parts with locations. Add a floor plan to unlock full warehouse features."
+        case .floorPlanInProgress: "Pick up where you left off to complete your warehouse configuration."
+        case .complete: ""
+        }
+    }
+
+    // MARK: - Dashboard Content
+
     @ViewBuilder
     private var dashboardContent: some View {
         ScrollView {
             VStack(spacing: 20) {
+                // Setup banner (dismissable)
+                setupBanner
+
                 // Smart Card Filters
                 smartCardFilters
 

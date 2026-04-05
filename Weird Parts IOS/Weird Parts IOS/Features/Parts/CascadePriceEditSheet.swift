@@ -272,8 +272,8 @@ struct CascadePriceEditSheet: View {
 
         do {
             // Load type and color names
-            let types = try parts.listTypes(styleId: nil)
-            typeName = types.first(where: { $0.id == typeId })?.name ?? "Type"
+            let partType = try parts.getType(id: typeId)
+            typeName = partType.name
 
             let colors = try parts.listColors()
             let color = colors.first(where: { $0.id == colorId })

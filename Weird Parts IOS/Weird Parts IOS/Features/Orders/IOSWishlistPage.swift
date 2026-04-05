@@ -552,7 +552,7 @@ private struct DismissWishlistItemSheet: View {
                         Spacer()
                         Text("\(trimmedReason.count) characters")
                             .font(.caption)
-                            .foregroundStyle(trimmedReason.count >= 10 ? .secondary : .orange)
+                            .foregroundStyle(trimmedReason.count >= 10 ? Color.secondary : Color.orange)
                     }
                 }
             }

@@ -20,6 +20,39 @@ struct IOSNotebookDetailPage: View {
     @State private var todosNeedingReview: [NotebooksService.NotebookEntryRow] = []
     @State private var panelSchedule = PanelSchedule()
     @State private var blockConflicts: [NotebookBlockConflict] = []
+    @State private var pendingDelete: PendingDelete?
+
+    // MARK: - PendingDelete
+
+    private enum PendingDelete: Identifiable {
+        case group(Int64)
+        case section(Int64)
+        case entry(Int64)
+
+        var id: String {
+            switch self {
+            case .group(let id): return "group-\(id)"
+            case .section(let id): return "section-\(id)"
+            case .entry(let id): return "entry-\(id)"
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .group: return "Delete Group"
+            case .section: return "Delete Section"
+            case .entry: return "Delete Block"
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .group: return "This will delete the group and all its sections and entries."
+            case .section: return "This will delete the section and all its entries."
+            case .entry: return "This block entry will be permanently deleted."
+            }
+        }
+    }
 
     // MARK: - ActiveSheet
 
@@ -91,6 +124,23 @@ struct IOSNotebookDetailPage: View {
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
                 .environmentObject(appCore)
+        }
+        .confirmationDialog(
+            pendingDelete?.label ?? "",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingDelete
+        ) { item in
+            Button(item.label, role: .destructive) {
+                switch item {
+                case .group(let id): deleteSectionGroup(id)
+                case .section(let id): deleteSection(id)
+                case .entry(let id): deleteEntry(id)
+                }
+            }
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } message: { item in
+            Text(item.message)
         }
         .refreshable { loadData() }
         .task { loadData() }
@@ -206,7 +256,7 @@ struct IOSNotebookDetailPage: View {
                                     Label("Add Section", systemImage: "plus")
                                 }
                                 Button(role: .destructive) {
-                                    deleteSectionGroup(groupItem.id)
+                                    pendingDelete = .group(groupItem.id)
                                 } label: {
                                     Label("Delete Group", systemImage: "trash")
                                 }
@@ -336,7 +386,7 @@ struct IOSNotebookDetailPage: View {
                     Label("Add Block", systemImage: "plus.circle")
                 }
                 Button(role: .destructive) {
-                    deleteSection(sectionItem.id)
+                    pendingDelete = .section(sectionItem.id)
                 } label: {
                     Label("Delete Section", systemImage: "trash")
                 }
@@ -518,7 +568,7 @@ struct IOSNotebookDetailPage: View {
                 Label("Edit", systemImage: "pencil")
             }
             Button(role: .destructive) {
-                deleteEntry(entry.id)
+                pendingDelete = .entry(entry.id)
             } label: {
                 Label("Delete", systemImage: "trash")
             }

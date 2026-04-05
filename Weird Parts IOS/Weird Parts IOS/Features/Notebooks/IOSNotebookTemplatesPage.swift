@@ -22,6 +22,7 @@ struct IOSNotebookTemplatesPage: View {
         }
     }
     @State private var activeSheet: ActiveSheet?
+    @State private var pendingDeleteTemplateId: Int64?
 
     var body: some View {
         Group {
@@ -57,6 +58,18 @@ struct IOSNotebookTemplatesPage: View {
                 }
                 .accessibilityLabel("Help")
             }
+        }
+        .confirmationDialog(
+            "Delete Template",
+            isPresented: Binding(get: { pendingDeleteTemplateId != nil }, set: { if !$0 { pendingDeleteTemplateId = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete Template", role: .destructive) {
+                if let id = pendingDeleteTemplateId { deleteTemplate(id) }
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteTemplateId = nil }
+        } message: {
+            Text("This template will be permanently deleted.")
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
@@ -162,7 +175,7 @@ struct IOSNotebookTemplatesPage: View {
             .tint(.blue)
             if !template.isDefault {
                 Button(role: .destructive) {
-                    deleteTemplate(template.id)
+                    pendingDeleteTemplateId = template.id
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }

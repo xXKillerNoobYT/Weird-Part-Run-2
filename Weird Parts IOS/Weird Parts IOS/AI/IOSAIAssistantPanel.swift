@@ -97,6 +97,7 @@ struct IOSAIAssistantPanel: View {
                             Image(systemName: "pip")
                         }
                         .help("Switch to floating overlay")
+                        .accessibilityLabel("Switch to floating overlay")
 
                         Button {
                             startNewConversation()
@@ -104,6 +105,7 @@ struct IOSAIAssistantPanel: View {
                             Image(systemName: "plus.bubble")
                         }
                         .help("New conversation")
+                        .accessibilityLabel("New conversation")
 
                         Button {
                             clearCurrentConversation()
@@ -111,6 +113,7 @@ struct IOSAIAssistantPanel: View {
                             Image(systemName: "trash")
                         }
                         .disabled(messages.isEmpty)
+                        .accessibilityLabel("Clear conversation")
                     }
                 }
         }
@@ -167,6 +170,7 @@ struct IOSAIAssistantPanel: View {
             }
             .buttonStyle(.plain)
             .help("Switch to full sheet")
+            .accessibilityLabel("Switch to full sheet")
 
             Button {
                 startNewConversation()
@@ -176,6 +180,7 @@ struct IOSAIAssistantPanel: View {
             }
             .buttonStyle(.plain)
             .help("New conversation")
+            .accessibilityLabel("New conversation")
 
             Button {
                 clearCurrentConversation()
@@ -185,6 +190,7 @@ struct IOSAIAssistantPanel: View {
             }
             .buttonStyle(.plain)
             .disabled(messages.isEmpty)
+            .accessibilityLabel("Clear conversation")
 
             Button {
                 isVisible = false
@@ -194,6 +200,7 @@ struct IOSAIAssistantPanel: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Close AI Assistant")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

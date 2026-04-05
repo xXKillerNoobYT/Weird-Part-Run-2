@@ -1095,7 +1095,8 @@ struct PartsCatalogPage: View {
                 let resolved = try service.resolvePartPricing(partId: part.id)
                 cache[part.id] = resolved
             } catch {
-                // skip parts that fail to resolve
+                // Non-critical: part still displays, just without pricing overlay.
+                // Pricing resolution can fail for parts without configured tiers.
             }
         }
         // Also load pricing mode

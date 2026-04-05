@@ -46,12 +46,7 @@ struct IOSOfficeDashboardPage: View {
                 }
             } else if let error = loadError {
                 Section {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.red)
-                }
-                Section {
-                    Button("Retry") { loadData() }
-                        .buttonStyle(.bordered)
+                    ErrorStateView(message: error) { loadData() }
                 }
             } else {
                 aiSummarySection

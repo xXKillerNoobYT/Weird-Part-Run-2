@@ -16,6 +16,7 @@ enum TreeSelection: Equatable {
 /// Uses manual expand/collapse state so that tapping a row
 /// both **selects** it AND **expands/collapses** its children.
 struct CategoriesTreeView: View {
+    @EnvironmentObject private var appCore: AppCore
     let hierarchy: PartsService.HierarchyTree
     @Binding var selection: TreeSelection?
 
@@ -26,6 +27,9 @@ struct CategoriesTreeView: View {
     @Binding var expandedBrands: Set<Int64>
     @State private var searchText = ""
 
+    /// Cache of effective cost per colorId, loaded alongside hierarchy.
+    @State private var colorPriceCache: [Int64: Double?] = [:]
+
     // Single active-sheet enum to avoid multiple .sheet conflicts
     enum ActiveSheet: Identifiable {
         case addCategory
@@ -33,6 +37,7 @@ struct CategoriesTreeView: View {
         case addType(Int64)
         case addColor
         case help
+        case editColorPrice(colorId: Int64, typeId: Int64)
 
         var id: String {
             switch self {
@@ -41,6 +46,7 @@ struct CategoriesTreeView: View {
             case .addType(let id): return "addType-\(id)"
             case .addColor: return "addColor"
             case .help: return "help"
+            case .editColorPrice(let cId, let tId): return "editColorPrice-\(cId)-\(tId)"
             }
         }
     }
@@ -212,8 +218,37 @@ struct CategoriesTreeView: View {
                 ColorFormSheet(color: nil) { await onRefresh() }
             case .help:
                 HierarchyHelpView()
+            case .editColorPrice(let colorId, let typeId):
+                CascadePriceEditSheet(colorId: colorId, typeId: typeId) {
+                    loadColorPrices()
+                }
             }
         }
+        .task { loadColorPrices() }
+    }
+
+    // MARK: - Price Loading
+
+    /// Load effective cost for every color in the hierarchy into the cache.
+    private func loadColorPrices() {
+        guard let parts = appCore.partsService else { return }
+        var cache: [Int64: Double?] = [:]
+        for catNode in hierarchy.categories {
+            for styleNode in catNode.styles {
+                for typeNode in styleNode.types {
+                    let typeId = typeNode.type.id ?? 0
+                    for brandNode in typeNode.brandNodes {
+                        for color in brandNode.colors {
+                            let colorId = color.id ?? 0
+                            if let resolved = try? parts.getEffectivePrice(colorId: colorId, typeId: typeId) {
+                                cache[colorId] = resolved.effectiveCost
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        colorPriceCache = cache
     }
 
     // MARK: - Filtered Hierarchy
@@ -526,15 +561,47 @@ struct CategoriesTreeView: View {
                 .frame(width: 14, height: 14)
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
-            Text(color.name)
-                .font(.subheadline)
-            Spacer()
-            if let hex = color.hexCode {
-                Text(hex)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .monospaced()
+            VStack(alignment: .leading, spacing: 2) {
+                Text(color.name)
+                    .font(.subheadline)
+                if let pn = color.partNumber, !pn.isEmpty {
+                    Text("PN: \(pn)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("No part number")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .italic()
+                }
             }
+            Spacer()
+
+            // Pricing chip — tap to edit
+            Button {
+                activeSheet = .editColorPrice(colorId: colorId, typeId: typeId)
+            } label: {
+                if let cached = colorPriceCache[colorId], let cost = cached {
+                    Text(cost, format: .currency(code: "USD"))
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.green.opacity(0.15))
+                        .foregroundStyle(.green)
+                        .clipShape(Capsule())
+                } else {
+                    Text("No price")
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.orange.opacity(0.12))
+                        .foregroundStyle(.orange)
+                        .clipShape(Capsule())
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Edit price")
         }
         .padding(.vertical, DS.Space.xs)
         .padding(.horizontal, DS.Space.lg)

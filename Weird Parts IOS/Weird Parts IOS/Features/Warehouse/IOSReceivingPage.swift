@@ -278,6 +278,10 @@ struct IOSReceivingPage: View {
                         .foregroundStyle(.blue)
                 }
             }
+
+            if session.status == "in_progress" || session.status == "active" {
+                ActionDot(isOverdue: false)
+            }
         }
         .padding(.vertical, 4)
     }

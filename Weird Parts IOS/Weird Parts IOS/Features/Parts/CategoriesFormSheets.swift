@@ -312,6 +312,7 @@ struct ColorFormSheet: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
+    @State private var partNumber = ""
     @State private var hasColor = false
     @State private var selectedColor: Color = .gray
     @State private var sortOrder = 0
@@ -341,6 +342,16 @@ struct ColorFormSheet: View {
                     TextField("e.g. Matte Black, Brushed Silver", text: $name)
                         .frame(minHeight: 44)
                         .accessibilityIdentifier("colorNameField")
+                }
+
+                Section {
+                    TextField("e.g. 28031450", text: $partNumber)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("colorPartNumberField")
+                } header: {
+                    Text("Internal Part Number")
+                } footer: {
+                    Text("The manufacturer's part number for this specific color variant.")
                 }
 
                 Section {
@@ -456,6 +467,7 @@ struct ColorFormSheet: View {
             .onAppear {
                 if let c = color {
                     name = c.name
+                    partNumber = c.partNumber ?? ""
                     sortOrder = c.sortOrder
                     if let hex = c.hexCode {
                         hasColor = true
@@ -541,10 +553,13 @@ struct ColorFormSheet: View {
             throw NSError(domain: "WiredPart", code: 0, userInfo: [NSLocalizedDescriptionKey: "Parts service not available"])
         }
         let hex: String? = hasColor ? hexStringFromColor(selectedColor) : nil
+        let trimmedPN = partNumber.trimmingCharacters(in: .whitespaces)
         if let existing = color, let id = existing.id {
-            try service.updateColor(id: id, name: trimmedName, hexCode: hex ?? "", sortOrder: sortOrder)
+            // Always pass partNumber: empty string clears to NULL, non-empty sets it
+            try service.updateColor(id: id, name: trimmedName, hexCode: hex ?? "", partNumber: trimmedPN.isEmpty ? "" : trimmedPN, sortOrder: sortOrder)
         } else {
-            try service.createColor(name: trimmedName, hexCode: hex ?? "", sortOrder: sortOrder)
+            let pn: String? = trimmedPN.isEmpty ? nil : trimmedPN
+            try service.createColor(name: trimmedName, hexCode: hex ?? "", partNumber: pn, sortOrder: sortOrder)
         }
     }
 }

@@ -432,6 +432,23 @@ struct CategoriesEditorPanel: View {
                     }
                 }
 
+                // Internal Part Number
+                if let pn = color.partNumber, !pn.isEmpty {
+                    HStack(spacing: DS.Space.xs) {
+                        Image(systemName: "number")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("PN: \(pn)")
+                            .font(.subheadline)
+                            .monospaced()
+                    }
+                } else {
+                    Text("No part number assigned")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .italic()
+                }
+
                 // Show parent context
                 if let (_, _, typeNode) = findType(typeId) {
                     HStack(spacing: DS.Space.xs) {
@@ -462,6 +479,11 @@ struct CategoriesEditorPanel: View {
                     editColorButton(color)
                     deleteColorButton(colorId, name: color.name)
                 }
+
+                Divider()
+
+                // Supplier Part Numbers section
+                ColorSupplierPartNumbersSection(colorId: colorId)
 
                 Divider()
 
@@ -654,5 +676,75 @@ struct CategoriesEditorPanel: View {
         .padding(.horizontal, DS.Space.md)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+// MARK: - Color Supplier Part Numbers Section
+
+/// Shows supplier-specific part numbers for a color, collapsed by default.
+struct ColorSupplierPartNumbersSection: View {
+    let colorId: Int64
+    @EnvironmentObject private var appCore: AppCore
+    @State private var supplierParts: [(supplierId: Int64, supplierName: String, supplierPartNumber: String?)] = []
+    @State private var isExpanded = false
+    @State private var isLoading = false
+
+    var body: some View {
+        DisclosureGroup("Supplier Part Numbers", isExpanded: $isExpanded) {
+            if isLoading {
+                ProgressView()
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, DS.Space.sm)
+            } else if supplierParts.isEmpty {
+                Text("No suppliers linked to parts with this color.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, DS.Space.sm)
+            } else {
+                VStack(alignment: .leading, spacing: DS.Space.sm) {
+                    ForEach(supplierParts, id: \.supplierId) { entry in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.supplierName)
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                if let spn = entry.supplierPartNumber, !spn.isEmpty {
+                                    Text(spn)
+                                        .font(.caption)
+                                        .monospaced()
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Text("No supplier PN")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .italic()
+                                }
+                            }
+                            Spacer()
+                        }
+                        .padding(.vertical, DS.Space.xxs)
+                    }
+                }
+            }
+        }
+        .font(.subheadline)
+        .fontWeight(.semibold)
+        .onChange(of: isExpanded) {
+            if isExpanded && supplierParts.isEmpty {
+                loadSupplierParts()
+            }
+        }
+    }
+
+    private func loadSupplierParts() {
+        guard let service = appCore.partsService else { return }
+        isLoading = true
+        Task.detached {
+            let results = (try? service.getColorSupplierPartNumbers(colorId: colorId)) ?? []
+            await MainActor.run {
+                supplierParts = results
+                isLoading = false
+            }
+        }
     }
 }

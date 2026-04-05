@@ -305,6 +305,8 @@ struct IOSUnifiedApprovalsPage: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                ActionDot(isOverdue: jpo.priority == "urgent")
             }
 
             // Action buttons
@@ -320,12 +322,14 @@ struct IOSUnifiedApprovalsPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.green)
+                .actionRing(.green)
                 .disabled(processingId != nil)
                 .overlay {
                     if processingId == "jpo-\(jpo.id)" {
                         ProgressView()
                     }
                 }
+                .accessibilityLabel("Approve — action required")
 
                 Button {
                     rejectingJPOId = jpo.id
@@ -339,6 +343,7 @@ struct IOSUnifiedApprovalsPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.red)
+                .actionRing(.red)
                 .disabled(processingId != nil)
             }
         }
@@ -373,6 +378,8 @@ struct IOSUnifiedApprovalsPage: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                ActionDot(isOverdue: false)
             }
 
             HStack(spacing: 12) {
@@ -387,6 +394,7 @@ struct IOSUnifiedApprovalsPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.green)
+                .actionRing(.green)
                 .disabled(processingId != nil)
                 .overlay {
                     if processingId == "del-\(deletion.id)" {
@@ -405,6 +413,7 @@ struct IOSUnifiedApprovalsPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.red)
+                .actionRing(.red)
                 .disabled(processingId != nil)
             }
         }
@@ -435,6 +444,8 @@ struct IOSUnifiedApprovalsPage: View {
                 Spacer()
 
                 statusBadge("pending", color: .purple)
+
+                ActionDot(isOverdue: false)
             }
 
             HStack(spacing: 12) {
@@ -449,6 +460,7 @@ struct IOSUnifiedApprovalsPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.green)
+                .actionRing(.green)
                 .disabled(processingId != nil)
                 .overlay {
                     if processingId == "pto-\(request.id)" {
@@ -467,6 +479,7 @@ struct IOSUnifiedApprovalsPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.red)
+                .actionRing(.red)
                 .disabled(processingId != nil)
             }
         }
@@ -502,6 +515,8 @@ struct IOSUnifiedApprovalsPage: View {
                 Spacer()
 
                 statusBadge("pending", color: .teal)
+
+                ActionDot(isOverdue: false)
             }
 
             HStack(spacing: 12) {
@@ -516,6 +531,7 @@ struct IOSUnifiedApprovalsPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.green)
+                .actionRing(.green)
                 .disabled(processingId != nil)
                 .overlay {
                     if processingId == "tool-\(edit.id)" {
@@ -534,6 +550,7 @@ struct IOSUnifiedApprovalsPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.red)
+                .actionRing(.red)
                 .disabled(processingId != nil)
             }
         }

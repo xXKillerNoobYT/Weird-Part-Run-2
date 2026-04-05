@@ -11,6 +11,8 @@ import WiredPartCore
 struct IOSMainView: View {
     @EnvironmentObject private var appCore: AppCore
     @EnvironmentObject private var tabPrefs: TabBarPreferences
+    @EnvironmentObject private var badgeManager: BadgeCountManager
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selectedModuleId: String = "dashboard"
     @State private var showLogoutConfirm = false
     @State private var showAIAssistant = false
@@ -96,6 +98,12 @@ struct IOSMainView: View {
         }
         .onAppear {
             tabPrefs.load(userId: appCore.currentUser?.id)
+            badgeManager.refresh()
+        }
+        .onChange(of: scenePhase) {
+            if scenePhase == .active {
+                badgeManager.refresh()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToModule)) { notification in
             if let moduleId = notification.userInfo?["moduleId"] as? String {
@@ -128,6 +136,7 @@ struct IOSMainView: View {
                     Label(module.label, systemImage: module.icon)
                 }
                 .tag(module.id)
+                .badge(badgeManager.badge(for: module.id))
                 .accessibilityIdentifier("tab_\(module.id)")
             }
 
@@ -298,6 +307,20 @@ struct IOSMainView: View {
 
                 Spacer()
 
+                // Badge count indicator for sidebar
+                let moduleBadge = badgeManager.badge(for: module.id)
+                if moduleBadge > 0 {
+                    Text("\(moduleBadge)")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule().fill(badgeManager.shouldUseRedTint ? Color.red : Color.green)
+                        )
+                }
+
                 if tabCount > 1 {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.caption2)
@@ -440,6 +463,7 @@ struct IOSMainView: View {
                             NavigationLink(value: module.id) {
                                 Label(module.label, systemImage: module.icon)
                             }
+                            .badge(badgeManager.badge(for: module.id))
                         }
                     }
                 }

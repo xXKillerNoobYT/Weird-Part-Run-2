@@ -18,6 +18,7 @@ struct PartsPricingPage: View {
     @State private var pricingMode: String = "markup" // "markup" or "margin"
     @State private var activeSheet: PricingActiveSheet?
     @State private var viewMode: PricingViewMode = .list
+    @State private var showMissingPriceOnly = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -130,6 +131,25 @@ struct PartsPricingPage: View {
                     .clipShape(Capsule())
                 }
 
+                // Missing Price filter chip
+                Button {
+                    withAnimation { showMissingPriceOnly.toggle() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle")
+                        Text("Missing Price")
+                            .lineLimit(1)
+                    }
+                    .font(.subheadline)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(showMissingPriceOnly ? Color.orange : Color(.tertiarySystemGroupedBackground))
+                    .foregroundStyle(showMissingPriceOnly ? .white : .primary)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Filter missing prices")
+
                 Spacer()
 
                 // Pricing mode badge
@@ -182,6 +202,11 @@ struct PartsPricingPage: View {
 
     private var sortedParts: [PricingDisplayRow] {
         var result = pricingRows
+
+        // Missing price filter: show only parts with zero cost
+        if showMissingPriceOnly {
+            result = result.filter { $0.weightedAvgCost <= 0 }
+        }
 
         if !searchText.isEmpty {
             let query = searchText.lowercased()

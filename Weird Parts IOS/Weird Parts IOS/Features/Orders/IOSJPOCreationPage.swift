@@ -70,6 +70,7 @@ struct IOSJPOCreationPage: View {
     @State private var showJobVerification = false
     @State private var showSuccessToast = false
     @State private var successMessage = ""
+    @State private var pendingRemoveIndex: Int?
 
     private let aiService = FoundationModelsService()
 
@@ -586,8 +587,8 @@ struct IOSJPOCreationPage: View {
             }
 
             // Remove button
-            Button {
-                cartItems.remove(at: index)
+            Button(role: .destructive) {
+                pendingRemoveIndex = index
             } label: {
                 Image(systemName: "trash")
                     .font(.caption)
@@ -595,6 +596,18 @@ struct IOSJPOCreationPage: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Remove from cart")
+            .confirmationDialog("Remove from cart?", isPresented: Binding(
+                get: { pendingRemoveIndex == index },
+                set: { if !$0 { pendingRemoveIndex = nil } }
+            ), titleVisibility: .visible) {
+                Button("Remove", role: .destructive) {
+                    if let idx = pendingRemoveIndex, idx < cartItems.count {
+                        cartItems.remove(at: idx)
+                    }
+                    pendingRemoveIndex = nil
+                }
+                Button("Cancel", role: .cancel) { pendingRemoveIndex = nil }
+            }
         }
         .padding(.vertical, 4)
     }

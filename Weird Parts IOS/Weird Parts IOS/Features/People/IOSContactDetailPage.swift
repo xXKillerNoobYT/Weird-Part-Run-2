@@ -11,7 +11,13 @@ struct IOSContactDetailPage: View {
     @State private var contact: PeopleService.ContactListItem?
     @State private var isLoading = true
     @State private var loadError: String?
-    @State private var showEditSheet = false
+
+    private enum ActiveSheet: Identifiable {
+        case editContact
+        case help
+        var id: String { String(describing: self) }
+    }
+    @State private var activeSheet: ActiveSheet?
 
     var body: some View {
         Group {
@@ -31,17 +37,35 @@ struct IOSContactDetailPage: View {
         }
         .navigationTitle(contact.map { "\($0.firstName) \($0.lastName)" } ?? "Contact")
         .navigationBarTitleDisplayMode(.inline)
+        .refreshable { loadData() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 if contact != nil {
-                    Button("Edit") { showEditSheet = true }
+                    Button("Edit") { activeSheet = .editContact }
                 }
+            }
+            ToolbarItem(placement: .secondaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .accessibilityLabel("Help")
             }
         }
         .task { loadData() }
-        .sheet(isPresented: $showEditSheet) {
-            EditContactSheet(contactId: contactId) { loadData() }
-                .environmentObject(appCore)
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .editContact:
+                EditContactSheet(contactId: contactId) { loadData() }
+                    .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(
+                    title: "Contact Detail Help",
+                    sections: [
+                        ("Overview", "View and manage contact details including name, type, company, phone, email, and notes."),
+                        ("Editing", "Tap Edit to update contact information. Changes are saved immediately.")
+                    ]
+                )
+            }
         }
     }
 

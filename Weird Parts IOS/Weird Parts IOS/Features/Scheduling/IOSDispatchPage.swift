@@ -207,9 +207,12 @@ struct IOSDispatchPage: View {
                     dayHeaderRow
 
                     if jobRows.isEmpty {
-                        Text("No active jobs")
-                            .foregroundStyle(.secondary)
-                            .padding()
+                        EmptyStateView(
+                            icon: "wrench.and.screwdriver",
+                            title: "No Active Jobs",
+                            message: "No jobs available for dispatch this week."
+                        )
+                        .padding()
                     } else {
                         // Job rows
                         ForEach(jobRows, id: \.id) { row in
@@ -374,11 +377,14 @@ struct IOSDispatchPage: View {
         VStack(alignment: .leading, spacing: 6) {
             Divider().padding(.vertical, 4)
 
-            Text("Unassigned Workers (\(unassignedWorkers.count))")
-                .font(.caption)
-                .fontWeight(.bold)
-                .foregroundStyle(.red)
-                .padding(.horizontal, 8)
+            HStack(spacing: 6) {
+                ActionDot(isOverdue: true)
+                Text("Unassigned Workers (\(unassignedWorkers.count))")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.red)
+            }
+            .padding(.horizontal, 8)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
