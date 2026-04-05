@@ -3184,3 +3184,72 @@ All 136 prompts verified and implemented. Program ready for review.
 
 **New Issues Created:** #51 (visibility standards)
 **Build:** 0 errors, 0 warnings. Tests: **877/877 passing**.
+
+## Prompt PE-026 — Badge Counts + Action-Required Visual Language (2026-04-04)
+
+**Status:** SUCCESS
+**Files Changed:**
+- core/Sources/WiredPartCore/Services/BadgeCountService.swift (NEW)
+- Weird Parts IOS/Shared/BadgeCountManager.swift (NEW)
+- Weird Parts IOS/DesignSystem/Components/ActionIndicator.swift (NEW)
+- Weird Parts IOS/App/AppCore.swift (modified)
+- Weird Parts IOS/App/WiredPartIOSApp.swift (modified)
+- Weird Parts IOS/Navigation/IOSMainView.swift (modified)
+- Weird Parts IOS/Features/Office/IOSUnifiedApprovalsPage.swift (modified)
+- Weird Parts IOS/Features/Jobs/IOSClockPage.swift (modified)
+- Weird Parts IOS/Features/Scheduling/IOSDispatchPage.swift (modified)
+- Weird Parts IOS/Features/Warehouse/IOSReceivingPage.swift (modified)
+- Weird Parts IOS/Features/Notebooks/IOSNotebooksListPage.swift (modified)
+**What Was Done:**
+- Created BadgeCountService in core package with 11 live count queries (pending approvals, active clocked-in, unread messages, open dispatches, pending receipts, overdue orders, expiring certs, pending time-off, pending tool edits, pending deletions, unread notebook entries)
+- All queries handle missing tables gracefully (return 0, never crash)
+- Created BadgeCountManager as @EnvironmentObject — refreshes on tab appear, scene foreground, and login
+- Wired .badge() to all TabView tabs (primary + overflow "More" modules)
+- Added badge count capsules to full sidebar module headers with green/red tint
+- Created ActionDot component (green=recent, red=overdue) and actionRing() modifier for buttons
+- Added ActionDot to all approval rows (JPO, deletion, time-off, tool edit)
+- Added .actionRing() to all approve/reject buttons on IOSUnifiedApprovalsPage
+- Added .actionRing(.red) to Clock Out button on IOSClockPage
+- Added ActionDot to flex pool "Join" rows on IOSClockPage
+- Added ActionDot to unassigned workers section header on IOSDispatchPage
+- Added ActionDot to active receiving session rows on IOSReceivingPage
+- Added green dot indicator for recently updated notebooks on IOSNotebooksListPage
+- Fixed pre-existing bug: static method using instance logger in AppCore debug build detection
+**Issues Found:**
+- Pre-existing: `resetDatabaseIfNewBuild()` static method used instance `logger` property — fixed with local Logger instance
+**Build:** PASS (0 errors)
+
+---
+
+## github-issues-sync run 5 — 2026-04-04
+
+**Status:** COMPLETE
+**Type:** Automated sync agent (not Xcode AI prompt)
+**Scope:** 46 open GitHub issues reviewed and actioned
+
+**New Xcode Prompt Written:**
+- **PE-033** (`xcode-ai/fix-prompts/PE-033-wishlist-section-layout.md`) — Wishlist 3-section layout + approval flows (GitHub #93)
+
+**New Plan Created:**
+- `docs/plans/ios-wishlist-enhancements.md`
+
+**Issue Comments Posted (7):**
+- #20: PE-031 EMERGENCY READY — clock-in GPS race + orphan recovery
+- #46: PE-027 READY — part numbers at color level
+- #47: PE-028 READY — bidirectional brand-supplier linking
+- #48: PE-029 READY — pricing UI + cascade edit sheet
+- #49: PE-030 READY — optional warehouse setup + drag-drop
+- #50: PE-026 DONE confirmed — BadgeCountService + ActionDot/actionRing live
+- #51: PE-026 DONE confirmed — full visibility language baseline in place
+
+**Program-Review Audits:**
+- #92 (Companion Rules): Fully implemented Phase 1, confirmed in code
+- #93 (Wishlist): Baseline exists → PE-033 written
+- #94 (Categories smart delete): 10/11 done; missing = auto-cancel on stock rise (WarehouseService gap)
+- #95 (Job Estimation): Not built; needs design session
+
+**Bugs Found (1 — not fixed this run):**
+- `scheduled_deletions` draining items not cancelled when stock rises — no hook in `WarehouseService.createMovement()`/`completeSession()`. Low severity, manual workaround exists.
+
+**Build:** N/A (no Swift changes this run)
+**Tests:** 909/909 (no changes)

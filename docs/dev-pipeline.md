@@ -1,6 +1,6 @@
 # WiredPart Development Pipeline
 
-> **Last updated:** 2026-04-04 (github-issues-sync run 3 — 6 Xcode prompts written: PE-027 part-number hierarchy, PE-028 brands/suppliers editing, PE-029 pricing UI, PE-030 warehouse setup redesign, PE-031 clock fix EMERGENCY, PE-032 schedule config additive. 29 new program-review issues #67–#95 acknowledged. All commented on GitHub.)
+> **Last updated:** 2026-04-04 (github-issues-sync run 5 — PE-033 written (wishlist 3-section layout #93), PE-026 badge counts confirmed done, 7 issue comments posted (#20/#46/#47/#48/#49/#50/#51), 4 new program-review issues #92–#95 audited/commented, auto-cancel gap found in #94 (draining deletions don't cancel on stock rise).)
 > **Auto-maintained by:** dev-pipeline-manager (orchestrator)
 
 ---
@@ -1358,3 +1358,28 @@ _Appended by dev-pipeline-manager each run._
 **Backlog size:** 9 items (0 blocked on Q&A — all unblocked)
 **Next priority:** PE-033 (Clock In/Out emergency) → PE-032 (fresh install audit) → PE-003 core → PE-027 BadgeService
 **Tests:** 910/910 ✅
+
+### GitHub Issues Sync — 2026-04-04 (run 5)
+- **Open issues pulled:** 46 (50 total: 44 program-review specs #52–#95, 6 actionable bugs/enhancements #46–#51)
+- **Code fixes this run:** 0 (all recent bugs already have written prompts; no new core-only fixes found)
+- **New Xcode prompts written:**
+  - **PE-033** (`PE-033-wishlist-section-layout.md`) — Wishlist 3-section layout + 14-day auto-approve + dismiss reason (GitHub #93)
+- **New plans created:**
+  - `docs/plans/ios-wishlist-enhancements.md` — Wishlist design decisions for #93
+- **Issue comments posted (7):**
+  - #20 (Clock In/Out EMERGENCY): PE-031 READY, trigger second after PE-026
+  - #46 (Part numbers): PE-027 READY, trigger after PE-031
+  - #47 (Brands/Suppliers): PE-028 READY, trigger after PE-027
+  - #48 (Pricing UI): PE-029 READY, trigger after PE-028
+  - #49 (Warehouse setup): PE-030 READY, trigger after PE-029
+  - #50 (Badge notifications): PE-026 DONE — BadgeCountService + BadgeCountManager + ActionDot/actionRing implemented
+  - #51 (Visibility standards): PE-026 DONE — full visual language baseline in place
+- **Program-review issue audits (4):**
+  - #92 (Companion Rules): Already fully implemented in Phase 1 (19A-19K) — commented confirming status
+  - #93 (Wishlist): Baseline exists, 3-section redesign → PE-033 READY
+  - #94 (Categories smart delete): 10/11 checklist items done; gap = auto-cancel on inventory rise (no `checkDrainingDeletions()` hook in WarehouseService stock-add path)
+  - #95 (Job Estimation): Not yet built, needs design session for questionnaire schema + plans before prompt
+- **Bugs found (1):**
+  - `scheduled_deletions` auto-cancel on stock rise not implemented — `WarehouseService.createMovement()` + `completeSession()` don't call any draining-deletion cleanup after stock increases. Low severity (user can manually cancel). Flag for next hunt-fix run.
+- **Issues closed:** 0
+- **Pipeline health:** Build clean, 909/909 tests green, 46 open issues (44 are long-lived program-review specs), prompt queue PE-031→PE-027→PE-028→PE-029→PE-030→PE-032→PE-033
