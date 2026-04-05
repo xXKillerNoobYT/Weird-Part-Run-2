@@ -58,7 +58,6 @@ struct IOSOrderStagingPage: View {
                 .accessibilityLabel("Help")
             }
         }
-        .searchable(text: $searchText, prompt: "Search parts...")
         .refreshable { loadData() }
         .task { await loadInitialData() }
         .sheet(item: $activeSheet) { sheet in
@@ -79,7 +78,10 @@ struct IOSOrderStagingPage: View {
                     .environmentObject(appCore)
             }
         }
-        .alert("Error", isPresented: .constant(actionError != nil)) {
+        .alert("Error", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
             Button("OK") { actionError = nil }
         } message: {
             Text(actionError ?? "")

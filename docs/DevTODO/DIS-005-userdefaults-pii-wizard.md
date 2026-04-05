@@ -2,7 +2,7 @@
 source: dev-improvement-scanner (2026-04-04)
 severity: Medium
 category: Security — PII Storage
-status: open
+status: ANSWERED — ready for Xcode prompt (pending dev-pipeline-manager)
 github_issue: PENDING (gh not available, file manually)
 ---
 
@@ -14,14 +14,24 @@ github_issue: PENDING (gh not available, file manually)
 ## File
 `Auth/CompanySetupWizard.swift:715-720`
 
-## Two Questions for Owner
-1. Are the UserDefaults keys (`companySetup_name`, etc.) deleted after the wizard completes successfully?
-2. Should we migrate this wizard state to the SQLite DB (which benefits from iOS Data Protection)?
+## Owner Answers (2026-04-04)
 
-## Suggested Fix
-Verify that `UserDefaults.standard.removeObject(forKey:)` is called for all 4 keys when the wizard completes. If wizard state needs to persist across app restarts, store it in a `company_setup_draft` table in SQLite instead.
+**Q1: Are the UserDefaults keys (`companySetup_name`, etc.) deleted after the wizard completes?**
+> No — they are NOT deleted. Confirmed by code audit: no `removeObject` calls exist for any `companySetup_` keys. All 8 keys (including 4 PII keys) persist in the unencrypted plist indefinitely after wizard completion. This IS a security issue.
+
+**Q2: Option A (removeObject on completion) or Option B (migrate to SQLite draft table)?**
+> **Option B** — migrate wizard draft state to a `company_setup_draft` SQLite table. SQLite benefits from iOS Data Protection (encryption at rest). Delete the draft row after wizard completion. This eliminates PII from the unencrypted UserDefaults plist entirely.
+
+## Implementation Plan
+
+1. Add `company_setup_draft` table to AppDatabase+Migrations.swift (new migration)
+2. Replace all `UserDefaults.standard.set(_, forKey: "companySetup_*")` writes in `CompanySetupWizard.swift` with SQLite inserts/updates to `company_setup_draft`
+3. Replace all `UserDefaults.standard.string(forKey: "companySetup_*")` reads with SQLite reads
+4. On wizard completion (when data is saved to `company_profile`), delete the `company_setup_draft` row
+5. On wizard cancel/dismiss (if user starts but doesn't finish), leave draft row (allows resuming later)
 
 ## Verification
 1. Run the setup wizard
-2. Complete it successfully
-3. Check `UserDefaults` — confirm `companySetup_name` etc. are no longer present
+2. Confirm no `companySetup_*` keys appear in UserDefaults during or after wizard
+3. Confirm wizard state persists to SQLite correctly across app restarts mid-wizard
+4. Confirm draft row is deleted after wizard completes

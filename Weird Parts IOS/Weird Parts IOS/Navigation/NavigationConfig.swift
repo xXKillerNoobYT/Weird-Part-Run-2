@@ -82,6 +82,7 @@ let appModules: [AppModule] = [
     AppModule(id: "scheduling", label: "Scheduling", icon: "calendar", tabs: [
         AppTab(id: "scheduling-calendar", label: "Calendar", icon: "calendar", path: "/scheduling/calendar"),
         AppTab(id: "scheduling-dispatch", label: "Dispatch", icon: "paperplane.fill", path: "/scheduling/dispatch", permission: "manage_dispatch"),
+        AppTab(id: "scheduling-flex-pool", label: "Flex Pool", icon: "person.badge.clock", path: "/scheduling/flex-pool", permission: "self_assign_flex"),
         AppTab(id: "scheduling-time-off", label: "Time Off", icon: "airplane.departure", path: "/scheduling/time-off"),
         AppTab(id: "scheduling-templates", label: "Templates", icon: "doc.on.doc.fill", path: "/scheduling/templates", permission: "manage_scheduling"),
         AppTab(id: "scheduling-availability", label: "Availability", icon: "clock.fill", path: "/scheduling/availability"),

@@ -180,7 +180,10 @@ struct IOSJPOCreationPage: View {
                 )
             }
         }
-        .alert("Error", isPresented: .constant(submitError != nil)) {
+        .alert("Error", isPresented: Binding(
+            get: { submitError != nil },
+            set: { if !$0 { submitError = nil } }
+        )) {
             Button("OK") { submitError = nil }
         } message: {
             Text(submitError ?? "")

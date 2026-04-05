@@ -82,7 +82,7 @@ struct IOSJobDetailPage: View {
             ProgressView("Loading job...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
-            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+            ErrorStateView(message: error) { loadData() }
         } else if let job {
             List {
                 // Header section

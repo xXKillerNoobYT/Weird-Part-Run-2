@@ -9,6 +9,7 @@ struct SchedulingRouter: View {
         switch tabId {
         case "scheduling-calendar": IOSScheduleCalendarPage()
         case "scheduling-dispatch": IOSDispatchPage()
+        case "scheduling-flex-pool": IOSFlexPoolPage()
         case "scheduling-time-off": IOSTimeOffPage()
         case "scheduling-templates": IOSDispatchTemplatesPage()
         case "scheduling-availability": IOSWeeklyAvailabilityPage()

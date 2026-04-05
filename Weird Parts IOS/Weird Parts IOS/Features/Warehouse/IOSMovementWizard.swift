@@ -41,8 +41,12 @@ struct IOSMovementWizard: View {
     @State private var executeError: String?
     @State private var executeSuccess = false
 
-    // QR scanning
-    @State private var showPartScanner = false
+    // Sheets
+    private enum WizardSheet: Identifiable {
+        case partScanner
+        var id: String { "partScanner" }
+    }
+    @State private var activeSheet: WizardSheet?
 
     // Derived
     private var movementType: String {
@@ -86,13 +90,16 @@ struct IOSMovementWizard: View {
                         .disabled(isExecuting)
                 }
             }
-            .sheet(isPresented: $showPartScanner) {
-                QRScanSheet(expectedType: .part) { result in
-                    if let partId = result.entityId, result.isFound {
-                        addScannedPart(partId: partId, name: result.fields["name"] ?? result.code, code: result.fields["code"])
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .partScanner:
+                    QRScanSheet(expectedType: .part) { result in
+                        if let partId = result.entityId, result.isFound {
+                            addScannedPart(partId: partId, name: result.fields["name"] ?? result.code, code: result.fields["code"])
+                        }
                     }
+                    .environmentObject(appCore)
                 }
-                .environmentObject(appCore)
             }
         }
     }
@@ -317,7 +324,7 @@ struct IOSMovementWizard: View {
                     .fontWeight(.semibold)
                 Spacer()
                 Button {
-                    showPartScanner = true
+                    activeSheet = .partScanner
                 } label: {
                     Label("Scan", systemImage: "qrcode.viewfinder")
                         .font(.subheadline)

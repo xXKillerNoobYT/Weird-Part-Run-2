@@ -7,8 +7,13 @@ struct WarehouseWizardStep2: View {
     let floorPlanId: Int64
     @Binding var stepError: String?
 
+    private enum StepSheet: Identifiable {
+        case addUnit
+        var id: String { "addUnit" }
+    }
+
     @State private var addedUnits: [WarehouseStorageUnit] = []
-    @State private var showAddUnitSheet = false
+    @State private var activeSheet: StepSheet?
     @State private var deleteOffsets: IndexSet?
     @State private var showDeleteConfirmation = false
 
@@ -20,7 +25,7 @@ struct WarehouseWizardStep2: View {
                 .padding()
 
             Button {
-                showAddUnitSheet = true
+                activeSheet = .addUnit
             } label: {
                 Label("Add Storage Unit", systemImage: "plus.circle.fill")
                     .frame(maxWidth: .infinity)
@@ -75,9 +80,12 @@ struct WarehouseWizardStep2: View {
             }
         }
         .task { loadUnits() }
-        .sheet(isPresented: $showAddUnitSheet) {
-            WizardAddStorageUnitSheet(floorPlanId: floorPlanId) {
-                loadUnits()
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .addUnit:
+                WizardAddStorageUnitSheet(floorPlanId: floorPlanId) {
+                    loadUnits()
+                }
             }
         }
     }

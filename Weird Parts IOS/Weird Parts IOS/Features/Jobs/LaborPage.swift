@@ -55,6 +55,7 @@ struct LaborPage: View {
     @State private var selectedUserId: Int64?
     @State private var selectedJobId: Int64?
     @State private var clockInNote = ""
+    @State private var isClockingIn = false
     @State private var users: [(id: Int64, name: String)] = []
     @State private var jobOptions: [JobsService.JobListItem] = []
 
@@ -237,13 +238,15 @@ struct LaborPage: View {
             }
             .navigationTitle("Clock In")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isClockingIn)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { activeSheet = nil }
+                        .disabled(isClockingIn)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Clock In") { performClockIn() }
-                        .disabled(selectedUserId == nil || selectedJobId == nil)
+                        .disabled(selectedUserId == nil || selectedJobId == nil || isClockingIn)
                 }
             }
         }

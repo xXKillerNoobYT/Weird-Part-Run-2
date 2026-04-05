@@ -143,7 +143,10 @@ struct IOSJPODetailPage: View {
             Text("Pulling this quantity will bring shop stock below minimum level. Transfer anyway or send to procurement for ordering?")
         }
         // Error alert
-        .alert("Error", isPresented: .constant(actionError != nil)) {
+        .alert("Error", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
             Button("OK") { actionError = nil }
         } message: {
             Text(actionError ?? "")

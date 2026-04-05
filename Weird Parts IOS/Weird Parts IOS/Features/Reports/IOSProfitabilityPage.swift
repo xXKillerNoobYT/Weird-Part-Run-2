@@ -71,7 +71,7 @@ struct IOSProfitabilityPage: View {
             ProgressView("Loading profitability...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
-            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+            ErrorStateView(message: error) { loadData() }
         } else if filteredRows.isEmpty {
             ContentUnavailableView {
                 Label("No Data", systemImage: "chart.line.uptrend.xyaxis")

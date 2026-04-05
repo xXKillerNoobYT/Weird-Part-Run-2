@@ -45,6 +45,7 @@ struct IOSContractorsPage: View {
                 contractorList
             }
         }
+        .navigationTitle("Contractors")
         .searchable(text: $searchText, prompt: "Search contractors…")
         .onChange(of: searchText) { _, _ in loadData() }
         .task { loadData() }

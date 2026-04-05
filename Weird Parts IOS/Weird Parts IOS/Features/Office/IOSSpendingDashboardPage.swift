@@ -60,13 +60,15 @@ struct IOSSpendingDashboardPage: View {
                 }
                 .padding(.top, 8)
 
-                // Charts placeholder
-                EmptyStateView(
-                    icon: "chart.bar",
-                    title: "No Spending Data",
-                    message: "Spending charts will appear once orders have cost data."
-                )
-                .padding(.vertical, 16)
+                // Charts placeholder — only show when data has loaded with no cost data
+                if !isLoading && loadError == nil && totalPartsCost == 0 && totalLaborHours == 0 {
+                    EmptyStateView(
+                        icon: "chart.bar",
+                        title: "No Spending Data",
+                        message: "Spending charts will appear once orders have cost data."
+                    )
+                    .padding(.vertical, 16)
+                }
             }
             .padding(.vertical)
         }

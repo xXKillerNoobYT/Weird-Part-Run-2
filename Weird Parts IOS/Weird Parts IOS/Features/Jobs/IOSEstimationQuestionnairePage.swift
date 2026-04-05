@@ -14,6 +14,7 @@ struct IOSEstimationQuestionnairePage: View {
     @State private var estimateResult: EstimationResult?
     @State private var historicalAvg: HistoricalAverage?
     @State private var suggestions: [String] = []
+    @State private var isLoading = true
     @State private var loadError: String?
     @State private var actionError: String?
     @State private var isSaving = false
@@ -26,12 +27,25 @@ struct IOSEstimationQuestionnairePage: View {
 
     var body: some View {
         List {
+            if isLoading {
+                Section { ProgressView("Loading questions...") }
+            }
             if let loadError {
-                Section { Text(loadError).foregroundStyle(.red) }
+                Section { ErrorStateView(message: loadError) { Task { await loadData() } } }
             }
 
             if let actionError {
                 Section { Text(actionError).foregroundStyle(.red) }
+            }
+
+            if !isLoading && loadError == nil && questions.isEmpty {
+                Section {
+                    EmptyStateView(
+                        icon: "list.bullet.clipboard",
+                        title: "No Questions",
+                        message: "No estimation questions are configured for this stage."
+                    )
+                }
             }
 
             // Questions grouped by category
@@ -203,7 +217,10 @@ struct IOSEstimationQuestionnairePage: View {
     // MARK: - Data Loading
 
     private func loadData() async {
+        isLoading = questions.isEmpty
+        loadError = nil
         guard let svc = appCore.jobEstimationService else {
+            isLoading = false
             loadError = "Estimation service not available"
             return
         }
@@ -232,6 +249,7 @@ struct IOSEstimationQuestionnairePage: View {
         } catch {
             loadError = userFriendlyError(error, context: "load questionnaire")
         }
+        isLoading = false
     }
 
     // MARK: - Calculate Estimate

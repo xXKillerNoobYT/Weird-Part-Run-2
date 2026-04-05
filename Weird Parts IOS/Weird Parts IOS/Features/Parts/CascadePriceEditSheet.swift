@@ -11,9 +11,9 @@ import WiredPartCore
 /// Also shows price history if data exists.
 struct CascadePriceEditSheet: View {
     let colorId: Int64
-    let colorName: String
+    var colorName: String = ""
     let typeId: Int64?
-    let typeName: String?
+    var typeName: String? = nil
     let onSave: () async -> Void
 
     @EnvironmentObject private var appCore: AppCore
@@ -29,6 +29,8 @@ struct CascadePriceEditSheet: View {
     @State private var isSaving = false
     @State private var saveError: String?
     @State private var loadError: String?
+    @State private var displayColorName = ""
+    @State private var displayTypeName: String?
 
     /// Local model for editing supplier costs inline.
     struct SupplierCostEntry: Identifiable {
@@ -69,9 +71,9 @@ struct CascadePriceEditSheet: View {
         Form {
             // Header
             Section {
-                LabeledContent("Color", value: colorName)
-                if let typeName {
-                    LabeledContent("Type", value: typeName)
+                LabeledContent("Color", value: displayColorName.isEmpty ? "Color #\(colorId)" : displayColorName)
+                if let tName = displayTypeName {
+                    LabeledContent("Type", value: tName)
                 }
                 if let resolved = resolvedCost {
                     HStack {
@@ -240,6 +242,18 @@ struct CascadePriceEditSheet: View {
         }
 
         do {
+            // Resolve names if not provided
+            var cName = colorName
+            var tName = typeName
+            if cName.isEmpty {
+                let colors = try service.listColors()
+                cName = colors.first(where: { $0.id == colorId })?.name ?? "Color #\(colorId)"
+            }
+            if tName == nil, let tId = typeId {
+                let types = try service.listTypes()
+                tName = types.first(where: { $0.id == tId })?.name
+            }
+
             let resolved = try service.getEffectivePrice(colorId: colorId, typeId: typeId)
             let costs = try service.getColorSupplierCosts(colorId: colorId)
 
@@ -254,6 +268,8 @@ struct CascadePriceEditSheet: View {
             }
 
             await MainActor.run {
+                displayColorName = cName
+                displayTypeName = tName
                 resolvedCost = resolved
                 typeDefaultText = resolved.typeDefaultCost.map { String(format: "%.2f", $0) } ?? ""
                 colorOverrideText = resolved.colorOverrideCost.map { String(format: "%.2f", $0) } ?? ""

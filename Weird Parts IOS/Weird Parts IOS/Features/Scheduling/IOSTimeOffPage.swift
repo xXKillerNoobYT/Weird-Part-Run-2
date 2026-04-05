@@ -135,7 +135,7 @@ struct IOSTimeOffPage: View {
             ProgressView("Loading time-off requests...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
-            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+            ErrorStateView(message: error) { loadData() }
         } else if filteredRequests.isEmpty {
             ContentUnavailableView {
                 Label("No Requests", systemImage: "calendar.badge.clock")

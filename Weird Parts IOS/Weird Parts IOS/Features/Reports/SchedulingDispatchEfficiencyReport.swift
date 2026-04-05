@@ -22,8 +22,7 @@ struct SchedulingDispatchEfficiencyReport: View {
 
             if let error = loadError {
                 Section {
-                    Label(error, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.red)
+                    ErrorStateView(message: error) { loadData() }
                 }
             }
 

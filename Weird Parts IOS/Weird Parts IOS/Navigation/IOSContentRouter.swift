@@ -216,6 +216,8 @@ struct IOSContentRouter: View {
             SchedulingRouter(tabId: "scheduling-calendar")
         case "/scheduling/dispatch":
             SchedulingRouter(tabId: "scheduling-dispatch")
+        case "/scheduling/flex-pool":
+            SchedulingRouter(tabId: "scheduling-flex-pool")
         case "/scheduling/time-off":
             SchedulingRouter(tabId: "scheduling-time-off")
         case "/scheduling/templates":

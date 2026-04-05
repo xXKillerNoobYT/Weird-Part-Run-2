@@ -20,6 +20,10 @@ struct PartsPricingPage: View {
     @State private var viewMode: PricingViewMode = .list
     @State private var showMissingPriceOnly = false
 
+    // Cascade view data
+    @State private var cascadeTypes: [CascadeTypeRow] = []
+    @State private var cascadeActiveSheet: CascadeActiveSheet?
+
     var body: some View {
         VStack(spacing: 0) {
             OnboardingBanner(pageId: "parts-pricing")
@@ -43,6 +47,7 @@ struct PartsPricingPage: View {
                 case .list: pricingList
                 case .cards: pricingCardsView
                 case .table: pricingTableView
+                case .cascade: cascadePricingView
                 }
             }
         }
@@ -601,6 +606,205 @@ struct PartsPricingPage: View {
         }
     }
 
+    // MARK: - Cascade View
+
+    @ViewBuilder
+    private var cascadePricingView: some View {
+        List {
+            if cascadeTypes.isEmpty {
+                Section {
+                    Text("No types found. Add types via the Parts Catalog hierarchy.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                let filtered = cascadeSearchFiltered
+                Text("\(filtered.count) type\(filtered.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                ForEach(filtered) { typeRow in
+                    Section {
+                        // Type header with default cost
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(typeRow.name)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                if let style = typeRow.styleName {
+                                    Text(style)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            if let cost = typeRow.defaultCost {
+                                VStack(alignment: .trailing, spacing: 1) {
+                                    Text(String(format: "$%.2f", cost))
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                    Text("type default")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } else {
+                                Text("No default")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .padding(.vertical, 2)
+
+                        // Color rows
+                        ForEach(typeRow.colors) { color in
+                            Button {
+                                cascadeActiveSheet = .editColor(
+                                    colorId: color.id,
+                                    colorName: color.name,
+                                    typeId: typeRow.id,
+                                    typeName: typeRow.name
+                                )
+                            } label: {
+                                HStack(spacing: 10) {
+                                    // Color swatch
+                                    if let hex = color.hexCode, let swatchColor = Color(hex: hex) {
+                                        Circle()
+                                            .fill(swatchColor)
+                                            .frame(width: 16, height: 16)
+                                            .overlay(Circle().stroke(.quaternary, lineWidth: 0.5))
+                                    }
+
+                                    Text(color.name)
+                                        .font(.subheadline)
+                                        .lineLimit(1)
+
+                                    Spacer()
+
+                                    // Price chip
+                                    if let cost = color.effectiveCost {
+                                        HStack(spacing: 4) {
+                                            Text(String(format: "$%.2f", cost))
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                            if color.source == "type" {
+                                                Text("(default)")
+                                                    .font(.caption2)
+                                                    .italic()
+                                                    .foregroundStyle(.secondary)
+                                            } else if color.hasOverride {
+                                                Image(systemName: "pencil.circle.fill")
+                                                    .font(.caption2)
+                                                    .foregroundStyle(.blue)
+                                            }
+                                        }
+                                    } else {
+                                        Text("No price")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .frame(minHeight: 36)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .sheet(item: $cascadeActiveSheet) { sheet in
+            switch sheet {
+            case .editColor(let colorId, let colorName, let typeId, let typeName):
+                CascadePriceEditSheet(
+                    colorId: colorId,
+                    colorName: colorName,
+                    typeId: typeId,
+                    typeName: typeName
+                ) {
+                    await loadData()
+                    await loadCascadeData()
+                }
+                .environmentObject(appCore)
+            }
+        }
+        .task { await loadCascadeData() }
+    }
+
+    private var cascadeSearchFiltered: [CascadeTypeRow] {
+        guard !searchText.isEmpty else { return cascadeTypes }
+        let query = searchText.lowercased()
+        return cascadeTypes.filter { typeRow in
+            typeRow.name.lowercased().contains(query) ||
+            (typeRow.styleName?.lowercased().contains(query) ?? false) ||
+            typeRow.colors.contains(where: { $0.name.lowercased().contains(query) })
+        }
+    }
+
+    private func loadCascadeData() async {
+        guard let service = appCore.partsService else { return }
+        do {
+            let allTypes = try service.listTypes()
+            let allStyles = try service.listStyles()
+            let styleMap = Dictionary(uniqueKeysWithValues: allStyles.compactMap { s in s.id.map { ($0, s.name) } })
+
+            var rows: [CascadeTypeRow] = []
+            for type in allTypes {
+                guard let typeId = type.id else { continue }
+
+                // Get colors linked to this type
+                let hierarchy = try service.getHierarchy()
+                var linkedColors: [(Int64, String, String?)] = []
+                for cat in hierarchy.categories {
+                    for style in cat.styles {
+                        for tNode in style.types where tNode.type.id == typeId {
+                            for brandNode in tNode.brandNodes {
+                                for color in brandNode.colors {
+                                    if let cId = color.id {
+                                        linkedColors.append((cId, color.name, color.hexCode))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Deduplicate colors
+                var seen = Set<Int64>()
+                linkedColors = linkedColors.filter { seen.insert($0.0).inserted }
+
+                let colorRows = linkedColors.map { (colorId, colorName, hexCode) -> CascadeColorRow in
+                    let resolved = try? service.getEffectivePrice(colorId: colorId, typeId: typeId)
+                    return CascadeColorRow(
+                        id: colorId,
+                        name: colorName,
+                        hexCode: hexCode,
+                        effectiveCost: resolved?.effectiveCost,
+                        source: resolved?.source ?? "none",
+                        hasOverride: resolved?.colorOverrideCost != nil
+                    )
+                }
+
+                guard !colorRows.isEmpty else { continue }
+
+                rows.append(CascadeTypeRow(
+                    id: typeId,
+                    name: type.name,
+                    styleName: styleMap[type.styleId],
+                    defaultCost: type.defaultUnitCost,
+                    colors: colorRows
+                ))
+            }
+
+            await MainActor.run { cascadeTypes = rows }
+        } catch {
+            // Non-critical: cascade view shows empty
+        }
+    }
+
     // MARK: - Data Loading
 
     @Sendable
@@ -744,6 +948,35 @@ struct PartsPricingPage: View {
     }
 }
 
+// MARK: - Cascade Type Row
+
+private struct CascadeTypeRow: Identifiable {
+    let id: Int64
+    let name: String
+    let styleName: String?
+    let defaultCost: Double?
+    var colors: [CascadeColorRow]
+}
+
+private struct CascadeColorRow: Identifiable {
+    let id: Int64
+    let name: String
+    let hexCode: String?
+    let effectiveCost: Double?
+    let source: String  // "supplier", "color", "type", "none"
+    let hasOverride: Bool
+}
+
+private enum CascadeActiveSheet: Identifiable {
+    case editColor(colorId: Int64, colorName: String, typeId: Int64, typeName: String)
+
+    var id: String {
+        switch self {
+        case .editColor(let cId, _, let tId, _): return "cascade-\(cId)-\(tId)"
+        }
+    }
+}
+
 // MARK: - Sort Options
 
 private enum PricingSortOption: CaseIterable {
@@ -804,12 +1037,14 @@ private enum PricingViewMode: String, CaseIterable {
     case list = "List"
     case cards = "Cards"
     case table = "Table"
+    case cascade = "Cascade"
 
     var icon: String {
         switch self {
         case .list: return "list.bullet"
         case .cards: return "square.grid.2x2"
         case .table: return "tablecells"
+        case .cascade: return "arrow.down.forward.square"
         }
     }
 }

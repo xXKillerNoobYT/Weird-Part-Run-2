@@ -137,7 +137,10 @@ struct IOSAuditPage: View {
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
         }
-        .alert("Error", isPresented: .constant(actionError != nil)) {
+        .alert("Error", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
             Button("OK") { actionError = nil }
         } message: {
             Text(actionError ?? "")

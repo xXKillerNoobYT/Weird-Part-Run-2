@@ -19,7 +19,11 @@ struct CreatePOSheet: View {
     @State private var isSaving = false
     @State private var saveError: String?
     @State private var loadError: String?
-    @State private var showSupplierScanner = false
+    private enum POSheet: Identifiable {
+        case supplierScanner
+        var id: String { "supplierScanner" }
+    }
+    @State private var activePOSheet: POSheet?
 
     var body: some View {
         NavigationStack {
@@ -34,7 +38,7 @@ struct CreatePOSheet: View {
                         TextField("Search suppliers...", text: $supplierSearch)
                             .onChange(of: supplierSearch) { loadSuppliers() }
                         Button {
-                            showSupplierScanner = true
+                            activePOSheet = .supplierScanner
                         } label: {
                             Image(systemName: "qrcode.viewfinder")
                                 .frame(width: 44, height: 44)
@@ -93,14 +97,17 @@ struct CreatePOSheet: View {
                 generatePONumber()
                 loadSuppliers()
             }
-            .sheet(isPresented: $showSupplierScanner) {
-                QRScanSheet(expectedType: .supplier) { result in
-                    if let supplierId = result.entityId, result.isFound {
-                        selectedSupplierId = supplierId
-                        supplierSearch = result.fields["name"] ?? ""
+            .sheet(item: $activePOSheet) { sheet in
+                switch sheet {
+                case .supplierScanner:
+                    QRScanSheet(expectedType: .supplier) { result in
+                        if let supplierId = result.entityId, result.isFound {
+                            selectedSupplierId = supplierId
+                            supplierSearch = result.fields["name"] ?? ""
+                        }
                     }
+                    .environmentObject(appCore)
                 }
-                .environmentObject(appCore)
             }
             .alert("Error", isPresented: Binding<Bool>(
                 get: { loadError != nil },

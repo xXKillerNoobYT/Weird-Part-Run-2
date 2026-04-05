@@ -170,7 +170,11 @@ struct ReportExportToolbar: ViewModifier {
     let title: String
     let columns: [String]
     let rows: [[String]]
-    @State private var showShareSheet = false
+    private enum ExportSheet: Identifiable {
+        case share(URL)
+        var id: String { "share" }
+    }
+    @State private var activeExportSheet: ExportSheet?
     @State private var exportURL: URL?
     @State private var exportError: String?
 
@@ -195,12 +199,16 @@ struct ReportExportToolbar: ViewModifier {
                     }
                 }
             }
-            .sheet(isPresented: $showShareSheet) {
-                if let url = exportURL {
+            .sheet(item: $activeExportSheet) { sheet in
+                switch sheet {
+                case .share(let url):
                     ReportShareSheet(items: [url])
                 }
             }
-            .alert("Export Error", isPresented: .constant(exportError != nil)) {
+            .alert("Export Error", isPresented: Binding(
+                get: { exportError != nil },
+                set: { if !$0 { exportError = nil } }
+            )) {
                 Button("OK") { exportError = nil }
             } message: {
                 Text(exportError ?? "")
@@ -219,7 +227,7 @@ struct ReportExportToolbar: ViewModifier {
         do {
             try data.write(to: url)
             exportURL = url
-            showShareSheet = true
+            activeExportSheet = .share(url)
         } catch {
             exportError = userFriendlyError(error, context: "create pdf")
         }
@@ -233,7 +241,7 @@ struct ReportExportToolbar: ViewModifier {
         do {
             try data.write(to: url)
             exportURL = url
-            showShareSheet = true
+            activeExportSheet = .share(url)
         } catch {
             exportError = userFriendlyError(error, context: "create csv")
         }

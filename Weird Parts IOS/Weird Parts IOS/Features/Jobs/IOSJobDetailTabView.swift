@@ -31,6 +31,11 @@ struct IOSJobDetailTabView: View {
     /// Job stages with computed statuses (Rough-in, Prep/Makeup, Trim-out).
     @State private var jobStages: [JobsService.JobStageStatus] = []
 
+    // Flex Pool
+    @State private var isInFlexPool = false
+    @State private var showFlexPoolConfirm = false
+    @State private var flexPoolError: String?
+
     // AI Summary
     @State private var aiSummary: String?
     @State private var aiSummaryLoadedAt: Date?
@@ -485,6 +490,66 @@ struct IOSJobDetailTabView: View {
                     }
                 } header: {
                     Text("Financial Summary")
+                }
+            }
+
+            // Flex Pool (manager-only)
+            if appCore.hasPermission("manage_flex_pool") {
+                Section {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Status")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            HStack(spacing: 6) {
+                                Image(systemName: isInFlexPool ? "checkmark.circle.fill" : "minus.circle")
+                                    .foregroundStyle(isInFlexPool ? .green : .secondary)
+                                    .accessibilityHidden(true)
+                                Text(isInFlexPool ? "In Pool" : "Not in Pool")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                                    .foregroundStyle(isInFlexPool ? .green : .secondary)
+                            }
+                        }
+                        Spacer()
+                        Button {
+                            showFlexPoolConfirm = true
+                        } label: {
+                            Text(isInFlexPool ? "Remove from Pool" : "Add to Flex Pool")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(isInFlexPool ? .red : .accentColor)
+                    }
+
+                    if let error = flexPoolError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                } header: {
+                    Label("Flex Pool", systemImage: "person.badge.clock")
+                }
+                .confirmationDialog(
+                    isInFlexPool ? "Remove from Flex Pool?" : "Add to Flex Pool?",
+                    isPresented: $showFlexPoolConfirm,
+                    titleVisibility: .visible
+                ) {
+                    if isInFlexPool {
+                        Button("Remove from Pool", role: .destructive) {
+                            toggleFlexPool(job: job)
+                        }
+                    } else {
+                        Button("Add to Pool") {
+                            toggleFlexPool(job: job)
+                        }
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text(isInFlexPool
+                         ? "Workers will no longer be able to self-claim this job."
+                         : "All qualified workers will be able to see and claim this job.")
                 }
             }
 
@@ -987,10 +1052,29 @@ struct IOSJobDetailTabView: View {
             job = try service.getJob(id: jobId)
             // Load job stages with computed statuses
             jobStages = try service.listJobStages(forJobId: jobId)
+            // Load flex pool status for managers
+            if appCore.hasPermission("manage_flex_pool"),
+               let svc = appCore.schedulingService {
+                isInFlexPool = (try? svc.isJobInFlexPool(jobId: jobId)) ?? false
+            }
         } catch {
             loadError = userFriendlyError(error, context: "load job data")
         }
         isLoading = false
+    }
+
+    private func toggleFlexPool(job: JobsService.JobDetail) {
+        guard let service = appCore.schedulingService else {
+            flexPoolError = "Scheduling service not available"
+            return
+        }
+        flexPoolError = nil
+        do {
+            try service.markJobFlexPool(jobId: job.id, isFlexPool: !isInFlexPool)
+            isInFlexPool.toggle()
+        } catch {
+            flexPoolError = userFriendlyError(error, context: "update flex pool status")
+        }
     }
 
     private func loadTeamMembers() {

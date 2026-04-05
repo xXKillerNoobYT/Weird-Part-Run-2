@@ -353,15 +353,37 @@ Every feature, bug, or improvement follows this cycle:
 | plan-enforcer | 2026-04-02 (run 2) | Audited 5 unstaged files; confirmed all plan-aligned; IOSContactDetailPage documented in ios-people-pages.md §5b; getContact(id:) O(n)→O(1) fix applied | Plan registry updated | ✅ Healthy |
 | dev-improvement-scanner | 2026-04-04 (run 8) | Full scan of recently-modified files (WishlistPage, BadgeCountManager, DispatchPage, NotebooksPages, WarehouseDashboard, MainView, WishlistService, SchedulingService). **3 direct fixes:** 2 force unwraps in SchedulingService (`template.id!`→guard, `holiday.id!`→guard), BadgeCountManager debounce (3s min interval). **2 new DevTODOs:** DIS-006 (WishlistService sync main-thread DB writes), DIS-007 (IOSMainView NotificationCenter closure lifetime). Confirmed clean: 0 force casts, 0 deprecated NavigationView, all timers properly invalidated, all lists have `.refreshable`. | 3 direct fixes, 2 DevTODOs | ✅ Healthy |
 | dev-pipeline-manager | 2026-04-04 (run 11) | PE-003 core done (migration 071 + flex pool service + 6 tests). DIS-006 direct fix (WishlistService main-thread write removed). PE-034 Xcode prompt written for DIS-001/002/003/004. Q&A added for DIS-005/007. 970/970 tests. | 3 items coded, 1 prompt written, 2 Q&A added | ✅ Healthy |
-| github-issues-sync | 2026-04-03 (run 4) | 29 open issues. Closed #28 (time-off grouping), #19 (dashboard errors), #18 (clean build user). Commented on #21 (PE-024 audit) + #30 (Teams empty state staged). Pipeline + issue table updated. | 3 closed, 2 commented, 29 open | ✅ Healthy |
-| github-sync-and-review | 2026-04-01 | PE-022 iOS + PE-008c committed and pushed (3db6dd1, 0b17c10) | ⚠️ Working tree now has 10 modified + 1 untracked — needs commit | ⚠️ Pending commit |
-| weekly-cleanup | 2026-03-29 (Sun) | 4 .DS_Store files | Removed | ✅ Healthy — next run 2026-04-05 (Sun) |
+| github-issues-sync | 2026-04-04 (run 7) | 25+ GitHub issues closed (verified against codebase). 48 open issues (44 program-review trackers + 4 enhancements). | 25+ closed, 48 open | ✅ Healthy |
+| github-sync-and-review | 2026-04-04 | Full review: 63 files, 1659 insertions, 557 deletions. 978/978 tests (52 suites). 12-iteration pipeline all green. Committed and pushed. | 63 files committed | ✅ Healthy |
+| weekly-cleanup | 2026-04-05 (Sun, Run 2) | DIS-007 removed from dev-qa (non-issue confirmed), DIS-005 DevTODO updated with owner answers + impl plan, stale "Answers integrated" block removed from dev-qa, DIS-007 DevTODO closed. No dead code found. No stale docs. | 2 DevTODOs updated, 1 Q&A section removed | ✅ Healthy — next run 2026-04-12 (Sun) |
 
 ---
 
 ## Pipeline Daily Summary Log
 
 _Appended by dev-pipeline-manager each run._
+
+---
+
+### 2026-04-04 — GitHub Sync & Review (Full Pipeline x12, Usability Audit, 25+ Issues Closed)
+
+**Build:** ✅ 0 errors, 0 warnings
+**Tests:** ✅ 978/978 passing in 52 suites (up from 970/51)
+**Pipeline:** 12/12 iterations all green (iterations 4-12 found zero new issues)
+
+**Changes committed (63 files, +1659/-557):**
+
+| Category | Files | Key Changes |
+|----------|-------|-------------|
+| Core services | 3 | JobsService: `jobClassification` param. PartsService: isTableNotFoundError on 4 pricing methods. SchedulingService: `isJobInFlexPool()`. |
+| New files | 2 | IOSFlexPoolPage.swift (full flex pool UI with claim flow). PricingCascadeTests.swift (8 tests). |
+| Usability fixes | 48 | 22 `.constant()` alert bindings → proper `Binding(get:set:)`. 14 error states → ErrorStateView with retry. 4 `.sheet(isPresented:)` → `.sheet(item:)` enum. 4 duplicate modifiers removed. 3 P1 fixes (JPO alert, team delete dismiss, spending empty state). |
+| Reports | 12 | All fleet/scheduling/warehouse reports: ErrorStateView with retry buttons. |
+| Navigation | 2 | Flex pool route + tab added. |
+| Jobs | 6 | Create Job: classification picker. EstimationReview/Questionnaire: loading states. JobDetail: ErrorStateView. Labor: interactiveDismissDisabled. |
+| Docs | 5 | dev-pipeline, dev-qa, hunt-fix-tracker, usability-tracker, 2 DevTODOs updated. |
+
+**GitHub issues:** 25+ closed (verified against codebase). 48 remain open (44 program-review living trackers + 4 enhancement requests).
 
 ---
 

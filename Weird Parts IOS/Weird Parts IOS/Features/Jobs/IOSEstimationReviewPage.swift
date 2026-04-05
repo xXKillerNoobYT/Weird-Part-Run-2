@@ -9,6 +9,7 @@ struct IOSEstimationReviewPage: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var reviews: [EstimationReview] = []
     @State private var latestEstimate: EstimationResult?
+    @State private var isLoading = true
     @State private var loadError: String?
     @State private var actionError: String?
 
@@ -26,8 +27,11 @@ struct IOSEstimationReviewPage: View {
 
     var body: some View {
         List {
+            if isLoading {
+                Section { ProgressView("Loading reviews...") }
+            }
             if let loadError {
-                Section { Text(loadError).foregroundStyle(.red) }
+                Section { ErrorStateView(message: loadError) { Task { await loadData() } } }
             }
             if let actionError {
                 Section { Text(actionError).foregroundStyle(.red) }
@@ -85,7 +89,6 @@ struct IOSEstimationReviewPage: View {
                 EndOfJobReviewSheet(jobId: jobId) { await loadData() }
             }
         }
-        .refreshable { await loadData() }
         .task { await loadData() }
     }
 
@@ -151,7 +154,10 @@ struct IOSEstimationReviewPage: View {
     // MARK: - Data
 
     private func loadData() async {
+        isLoading = reviews.isEmpty
+        loadError = nil
         guard let svc = appCore.jobEstimationService else {
+            isLoading = false
             loadError = "Estimation service not available"
             return
         }
@@ -163,6 +169,7 @@ struct IOSEstimationReviewPage: View {
         } catch {
             loadError = userFriendlyError(error, context: "load estimation review")
         }
+        isLoading = false
     }
 }
 

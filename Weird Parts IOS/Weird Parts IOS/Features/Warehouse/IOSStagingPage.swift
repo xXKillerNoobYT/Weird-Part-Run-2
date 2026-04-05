@@ -144,7 +144,10 @@ struct IOSStagingPage: View {
         } message: {
             Text("This will mark \(selectedItems.count) item\(selectedItems.count == 1 ? "" : "s") as loaded and remove them from staging.")
         }
-        .alert("Error", isPresented: .constant(actionError != nil)) {
+        .alert("Error", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
             Button("OK") { actionError = nil }
         } message: {
             Text(actionError ?? "")

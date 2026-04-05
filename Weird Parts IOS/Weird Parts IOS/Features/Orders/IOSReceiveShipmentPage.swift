@@ -140,12 +140,18 @@ struct IOSReceiveShipmentPage: View {
                 loadData()
             }
         }
-        .alert("Error", isPresented: .constant(actionError != nil)) {
+        .alert("Error", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
             Button("OK") { actionError = nil }
         } message: {
             Text(actionError ?? "")
         }
-        .alert("Receiving Complete", isPresented: .constant(completionMessage != nil)) {
+        .alert("Receiving Complete", isPresented: Binding(
+            get: { completionMessage != nil },
+            set: { if !$0 { completionMessage = nil } }
+        )) {
             Button("OK") {
                 completionMessage = nil
                 activeSessionId = nil
@@ -500,7 +506,10 @@ struct IOSReceiveShipmentPage: View {
                 .accessibilityLabel("Scan barcode")
             }
         }
-        .alert("Barcode Not Found", isPresented: .constant(scanError != nil)) {
+        .alert("Barcode Not Found", isPresented: Binding(
+            get: { scanError != nil },
+            set: { if !$0 { scanError = nil } }
+        )) {
             Button("OK") { scanError = nil }
         } message: {
             Text(scanError ?? "")

@@ -164,7 +164,10 @@ struct IOSPODetailPage: View {
         }
         // Line item editing now uses POLineEditSheet via .sheet(item: $activeSheet)
         // Action message
-        .alert("Notice", isPresented: .constant(actionMessage != nil)) {
+        .alert("Notice", isPresented: Binding(
+            get: { actionMessage != nil },
+            set: { if !$0 { actionMessage = nil } }
+        )) {
             Button("OK") { actionMessage = nil }
         } message: {
             Text(actionMessage ?? "")

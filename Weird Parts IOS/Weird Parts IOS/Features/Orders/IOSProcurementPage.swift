@@ -83,18 +83,23 @@ struct IOSProcurementPage: View {
                 ]
             )
         }
-        .searchable(text: $searchText, prompt: "Search parts...")
         .refreshable { loadData() }
         .task {
             loadData()
             appCore.onboardingManager?.markCompleted("procurement-view")
         }
-        .alert("Error", isPresented: .constant(generateError != nil)) {
+        .alert("Error", isPresented: Binding(
+            get: { generateError != nil },
+            set: { if !$0 { generateError = nil } }
+        )) {
             Button("OK") { generateError = nil }
         } message: {
             Text(generateError ?? "")
         }
-        .alert("POs Generated", isPresented: .constant(generateSuccess != nil)) {
+        .alert("POs Generated", isPresented: Binding(
+            get: { generateSuccess != nil },
+            set: { if !$0 { generateSuccess = nil } }
+        )) {
             Button("OK") {
                 generateSuccess = nil
                 loadData() // Refresh to remove generated items
@@ -102,12 +107,18 @@ struct IOSProcurementPage: View {
         } message: {
             Text(generateSuccess ?? "")
         }
-        .alert("Pull Error", isPresented: .constant(pullActionError != nil)) {
+        .alert("Pull Error", isPresented: Binding(
+            get: { pullActionError != nil },
+            set: { if !$0 { pullActionError = nil } }
+        )) {
             Button("OK") { pullActionError = nil }
         } message: {
             Text(pullActionError ?? "")
         }
-        .alert("Pull Complete", isPresented: .constant(pullActionSuccess != nil)) {
+        .alert("Pull Complete", isPresented: Binding(
+            get: { pullActionSuccess != nil },
+            set: { if !$0 { pullActionSuccess = nil } }
+        )) {
             Button("OK") {
                 pullActionSuccess = nil
                 loadData() // Refresh stock levels

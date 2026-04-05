@@ -2,8 +2,8 @@
 source: dev-improvement-scanner (2026-04-04)
 severity: Medium
 category: Performance — Closure Reference Cycles
-status: open
-github_issue: PENDING (gh not available, file manually)
+status: closed — non-issue (owner confirmed 2026-04-04)
+github_issue: N/A — resolved, no fix needed
 ---
 
 # DIS-007: IOSMainView NotificationCenter Closure Captures Strong References
@@ -16,19 +16,10 @@ While this is unlikely to cause an actual retain cycle in practice (since `IOSMa
 ## File
 `Weird Parts IOS/Weird Parts IOS/Navigation/IOSMainView.swift` — lines ~108-121
 
-## Suggested Fix
+## Resolution (2026-04-04)
 
-Add `[weak tabPrefs, weak appCore]` capture list to the `.onReceive` closure if the compiler allows it (struct-based environment objects cannot be weakly captured). If not:
+**Owner confirmed:** `IOSMainView` IS destroyed on logout. `WiredPartIOSApp.swift` uses a conditional `if/else` on `appCore.currentUser` — when `logout()` sets `currentUser = nil`, SwiftUI removes `IOSMainView` entirely and shows `LoginView`. On next login, a fresh `IOSMainView` is created.
 
-1. Convert to an explicit `AnyCancellable` stored as `@State` and cancel it in `.onDisappear`
-2. Or confirm the root view is never recreated after logout (if so, the strong reference is benign)
+**Result:** The `.onReceive` subscription is automatically cancelled when the view is deallocated. No code change required.
 
-## Questions for Owner
-1. Is `IOSMainView` recreated after logout, or does it persist for the full app lifetime?
-2. If it persists, the strong capture is fine — no fix needed.
-3. If it is recreated, the subscription should be explicitly cancelled on disappear.
-
-## Verification
-1. Log in, navigate around
-2. Log out
-3. Confirm `navigateToModule` notifications no longer trigger handler from previous session
+**Remaining action:** Add a code comment in `IOSMainView.swift` near the `.onReceive` block explaining this is safe because the view is torn down on logout via the conditional rebuild in `WiredPartIOSApp.swift`. This prevents future developers from re-flagging it.

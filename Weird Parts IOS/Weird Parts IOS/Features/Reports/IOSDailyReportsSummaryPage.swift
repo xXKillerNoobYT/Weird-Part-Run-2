@@ -67,7 +67,6 @@ struct IOSDailyReportsSummaryPage: View {
                 ("Tips", "Check this page at the end of each workday to make sure all jobs have reports filed. If a job shows zero workers, the foreman may not have submitted the daily report yet.")
             ])
         }
-        .searchable(text: $searchText, prompt: "Search jobs...")
         .refreshable { loadData() }
         .task { loadData() }
         .onChange(of: dateRange) { loadData() }
@@ -121,7 +120,7 @@ struct IOSDailyReportsSummaryPage: View {
             ProgressView("Loading summary...")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = loadError {
-            ContentUnavailableView("Error", systemImage: "exclamationmark.triangle", description: Text(error))
+            ErrorStateView(message: error) { loadData() }
         } else if rows.isEmpty {
             ContentUnavailableView {
                 Label("No Reports", systemImage: "doc.plaintext")

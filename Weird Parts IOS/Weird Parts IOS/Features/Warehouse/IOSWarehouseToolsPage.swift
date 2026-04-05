@@ -65,7 +65,10 @@ struct IOSWarehouseToolsPage: View {
             )
         }
         .refreshable { loadData() }
-        .alert("Error", isPresented: .constant(actionError != nil)) {
+        .alert("Error", isPresented: Binding(
+            get: { actionError != nil },
+            set: { if !$0 { actionError = nil } }
+        )) {
             Button("OK") { actionError = nil }
         } message: {
             Text(actionError ?? "")

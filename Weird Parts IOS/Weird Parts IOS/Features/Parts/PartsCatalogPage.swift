@@ -49,6 +49,7 @@ struct PartsCatalogPage: View {
         case partDetail(CatalogPartRow)
         case quickEdit(CatalogPartRow)
         case editPricing(PricingDisplayRow)
+        case cascadePriceEdit(colorId: Int64, colorName: String, typeId: Int64?, typeName: String?)
         case qrScanner
         case printLabels
         case help
@@ -59,6 +60,7 @@ struct PartsCatalogPage: View {
             case .partDetail(let p): return "detail-\(p.id)"
             case .quickEdit(let p): return "quickEdit-\(p.id)"
             case .editPricing(let r): return "pricing-\(r.id)"
+            case .cascadePriceEdit(let cId, _, _, _): return "cascade-\(cId)"
             case .qrScanner: return "qrScanner"
             case .printLabels: return "printLabels"
             case .help: return "help"
@@ -74,6 +76,7 @@ struct PartsCatalogPage: View {
     // Pricing overlay
     @State private var showPricing = false
     @State private var partPricingCache: [Int64: PartsService.ResolvedPricing] = [:]
+    @State private var cascadePriceCache: [Int64: PartsService.ResolvedCascadeCost] = [:]
     @State private var pricingMode: String = "markup"
 
     // MARK: - Cascading filter options
@@ -187,6 +190,17 @@ struct PartsCatalogPage: View {
                     await loadData()
                     await loadPricingCache()
                 }
+            case .cascadePriceEdit(let colorId, let colorName, let typeId, let typeName):
+                CascadePriceEditSheet(
+                    colorId: colorId,
+                    colorName: colorName,
+                    typeId: typeId,
+                    typeName: typeName
+                ) {
+                    await loadData()
+                    await loadCascadePriceCache()
+                }
+                .environmentObject(appCore)
             case .qrScanner:
                 QRScanSheet(expectedType: nil) { result in
                     if result.isFound, result.entityType == .part {
@@ -276,7 +290,7 @@ struct PartsCatalogPage: View {
                 resetAndLoad()
             }
         }
-        .task { await loadLookups(); await loadData() }
+        .task { await loadLookups(); await loadData(); await loadCascadePriceCache() }
         .alert("Error", isPresented: Binding<Bool>(
             get: { actionError != nil },
             set: { if !$0 { actionError = nil } }
@@ -661,7 +675,7 @@ struct PartsCatalogPage: View {
                     .font(.caption)
                     .foregroundStyle(part.totalStock > 0 ? .green : .red)
 
-                // Pricing overlay
+                // Pricing overlay (tier-based sell price)
                 if showPricing, let pricing = partPricingCache[part.id] {
                     Button {
                         let displayRow = PricingDisplayRow(
@@ -695,6 +709,11 @@ struct PartsCatalogPage: View {
                     }
                     .buttonStyle(.plain)
                 }
+
+                // Cascade price chip (color-level cost)
+                if let colorId = part.colorId {
+                    cascadePriceChip(part: part, colorId: colorId)
+                }
             }
 
             Image(systemName: "chevron.right")
@@ -703,6 +722,42 @@ struct PartsCatalogPage: View {
                 .accessibilityHidden(true)
         }
         .frame(minHeight: 56)
+    }
+
+    // MARK: - Cascade Price Chip
+
+    @ViewBuilder
+    private func cascadePriceChip(part: CatalogPartRow, colorId: Int64) -> some View {
+        if let cascade = cascadePriceCache[colorId] {
+            Button {
+                activeSheet = .cascadePriceEdit(
+                    colorId: colorId,
+                    colorName: part.colorName ?? "Color #\(colorId)",
+                    typeId: part.typeId,
+                    typeName: part.typeName
+                )
+            } label: {
+                if let cost = cascade.effectiveCost {
+                    HStack(spacing: 3) {
+                        Text(String(format: "$%.2f", cost))
+                            .font(.caption2)
+                            .fontWeight(.medium)
+                        if cascade.source == "type" {
+                            Text("(default)")
+                                .font(.caption2)
+                                .italic()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .foregroundStyle(cascade.source == "type" ? .orange : .blue)
+                } else {
+                    Text("No price")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     // MARK: - Pagination Bar
@@ -1052,6 +1107,8 @@ struct PartsCatalogPage: View {
                     categoryName: pwd.categoryName,
                     styleId: pwd.part.styleId,
                     styleName: pwd.styleName,
+                    typeId: pwd.part.typeId,
+                    typeName: pwd.typeName,
                     colorId: pwd.part.colorId,
                     colorName: pwd.colorName,
                     brandId: pwd.part.brandId,
@@ -1107,6 +1164,25 @@ struct PartsCatalogPage: View {
         }
     }
 
+    // MARK: - Cascade Price Cache
+
+    private func loadCascadePriceCache() async {
+        guard let service = appCore.partsService else { return }
+        var cache: [Int64: PartsService.ResolvedCascadeCost] = [:]
+        for part in parts {
+            guard let colorId = part.colorId else { continue }
+            // Skip if already cached
+            if cascadePriceCache[colorId] != nil && cache[colorId] != nil { continue }
+            do {
+                let resolved = try service.getEffectivePrice(colorId: colorId, typeId: part.typeId)
+                cache[colorId] = resolved
+            } catch {
+                // Non-critical: chip won't show for this color
+            }
+        }
+        await MainActor.run { cascadePriceCache = cache }
+    }
+
     // MARK: - Delete
 
     private func deletePart(_ part: CatalogPartRow) async {
@@ -1139,6 +1215,8 @@ struct CatalogPartRow: Identifiable, Sendable {
     let categoryName: String?
     let styleId: Int64?
     let styleName: String?
+    let typeId: Int64?
+    let typeName: String?
     let colorId: Int64?
     let colorName: String?
     let brandId: Int64?
@@ -1238,7 +1316,10 @@ private struct QuickEditSheet: View {
                 costPrice = String(format: "%.2f", part.companyCostPrice)
                 markupPercent = String(format: "%.1f", part.companyMarkupPercent)
             }
-            .alert("Error", isPresented: .constant(saveError != nil)) {
+            .alert("Error", isPresented: Binding(
+                get: { saveError != nil },
+                set: { if !$0 { saveError = nil } }
+            )) {
                 Button("OK") { saveError = nil }
             } message: {
                 Text(saveError ?? "")

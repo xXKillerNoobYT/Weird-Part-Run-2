@@ -24,6 +24,7 @@ struct IOSCreateJobSheet: View {
 
     // Classification
     @State private var jobType = "service"
+    @State private var jobClassification = "standard"
     @State private var priority = "normal"
     @State private var status = "active"
 
@@ -45,6 +46,7 @@ struct IOSCreateJobSheet: View {
     @State private var errorMessage: String?
 
     private let jobTypes = ["service", "installation", "maintenance", "inspection", "emergency", "warranty"]
+    private let jobClassifications = ["standard", "continuous", "convention"]
     private let priorities = ["low", "normal", "high", "urgent"]
 
     private var isValid: Bool {
@@ -63,6 +65,11 @@ struct IOSCreateJobSheet: View {
                     Picker("Type", selection: $jobType) {
                         ForEach(jobTypes, id: \.self) { type in
                             Text(type.capitalized).tag(type)
+                        }
+                    }
+                    Picker("Classification", selection: $jobClassification) {
+                        ForEach(jobClassifications, id: \.self) { c in
+                            Text(c.capitalized).tag(c)
                         }
                     }
                     Picker("Priority", selection: $priority) {
@@ -173,7 +180,8 @@ struct IOSCreateJobSheet: View {
                 dueDate: hasDueDate ? dateFormatter.string(from: dueDate) : nil,
                 notes: notes.isEmpty ? nil : notes,
                 budgetLimit: Double(budgetLimit),
-                createdBy: appCore.currentUser?.id
+                createdBy: appCore.currentUser?.id,
+                jobClassification: jobClassification
             )
             appCore.onboardingManager?.markCompleted("jobs-create")
             onCreated?()

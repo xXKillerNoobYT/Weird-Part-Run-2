@@ -507,6 +507,29 @@ These bugs were in `generateToolCheckoutsReport` — would crash any time a user
 
 ## Weekly Cleanup Log
 
+### Weekly Cleanup — 2026-04-05 (Run 2)
+
+**Build:** ✅ 0 errors, 0 warnings
+**Tests:** ✅ 970/970 passing
+
+| Part | Action | Result |
+|------|--------|--------|
+| A — Xcode Prompt Archival | Checked 00-fix-order.md vs fix-prompts/ for prompts > 3 months old | None eligible — PE-027/029/030/031/034 all done/skipped but created 2026-04-04 (< 3 months). `done/` has 290+ archived. |
+| B — Dead Code Scan | Scanned all Swift files in core/Sources/WiredPartCore/ for commented-out code, empty extensions, unused private functions | **Clean** — all comment blocks are `///` doc comments or explanatory inline comments, not dead code |
+| C — Temp Files | Checked for .tmp/, .DS_Store, .bak, .orig, .swp | No .tmp dir. .DS_Store only in .git/ internals (untouched). No .bak/.orig/.swp found. `docs/Problomes /` has 32 screenshots from 2026-03-28 — within 3 months, retained. |
+| D — Q&A | Reviewed docs/dev-qa.md | **DIS-007 removed** (resolved: non-issue, view destroyed on logout). DIS-005 remains (answered, needs Xcode prompt — pending dev-pipeline-manager). Stale "Answers integrated" block cleaned up. |
+| E — Doc Freshness | Checked docs/ for files > 3 months old | **None** — oldest file is Mar 8, 2026 (28 days ago). All within threshold. |
+| F — Tracker Compression | Checked hunt-fix-tracker.md (1251 lines) and dev-pipeline.md for entries > 3 months | None — all iterations/entries from 2026-03-28 onward. No compression needed. |
+
+**Flagged for review:**
+- `DIS-005` (docs/DevTODO/DIS-005-userdefaults-pii-wizard.md): Owner confirmed UserDefaults PII keys NOT deleted after wizard. Option B (SQLite draft table) selected. Needs Xcode prompt from dev-pipeline-manager.
+- `DIS-007` resolved: IOSMainView `.onReceive` is safe — view is destroyed on logout. DevTODO closed. Remaining action: add code comment in IOSMainView.swift for future devs.
+- PE-027/029/030/031 in fix-prompts/: all marked done (direct edits). Will be eligible for archival to done/ in ~3 months (approx July 2026).
+
+**Next cleanup:** 2026-04-12 (Sunday 6 AM)
+
+---
+
 ### Weekly Cleanup — 2026-03-29 (Run 1)
 
 **Build:** ✅ 0 errors, 0 warnings

@@ -5,6 +5,7 @@ import WiredPartCore
 struct IOSTeamDetailPage: View {
     let teamId: Int64
     @EnvironmentObject var appCore: AppCore
+    @Environment(\.dismiss) private var dismiss
 
     @State private var team: PeopleService.TeamDetail?
     @State private var members: [PeopleService.TeamMemberDetail] = []
@@ -284,6 +285,7 @@ struct IOSTeamDetailPage: View {
         }
         do {
             try service.deleteTeam(teamId: teamId)
+            await MainActor.run { dismiss() }
         } catch {
             actionError = userFriendlyError(error, context: "delete team")
         }

@@ -825,7 +825,10 @@ private struct ForecastDetailSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .alert("Error", isPresented: .constant(editError != nil)) {
+            .alert("Error", isPresented: Binding(
+                get: { editError != nil },
+                set: { if !$0 { editError = nil } }
+            )) {
                 Button("OK") { editError = nil }
             } message: {
                 Text(editError ?? "")

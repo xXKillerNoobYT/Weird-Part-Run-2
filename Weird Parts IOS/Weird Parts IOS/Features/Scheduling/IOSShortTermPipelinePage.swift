@@ -138,7 +138,6 @@ struct IOSShortTermPipelinePage: View {
                 }
             }
         }
-        .searchable(text: $searchText, prompt: "Search jobs...")
         .refreshable { loadData() }
         .task { loadData() }
     }

@@ -25,6 +25,45 @@ struct IOSWarehouseExecPage: View {
     @State private var loadError: String?
 
     var body: some View {
+        Group {
+            if isLoading {
+                ProgressView("Loading warehouse data...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
+                ErrorStateView(message: error) { loadData() }
+            } else {
+                warehouseContent
+            }
+        }
+        .navigationTitle("Warehouse Exec")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .accessibilityLabel("Help")
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                PageHelpSheet(
+                    title: "Warehouse Executive Help",
+                    sections: [
+                        ("Overview", "High-level warehouse operations dashboard for managers. See pending movements, low stock alerts, receiving sessions, and audit schedules."),
+                        ("KPIs", "Cards show total stock units, shortfalls, today's movements, and pending approvals. Tap for details."),
+                        ("Quick Actions", "Use the action buttons to navigate directly to movements, receiving, audits, or settings.")
+                    ]
+                )
+            }
+        }
+        .refreshable { loadData() }
+        .task { loadData() }
+    }
+
+    // MARK: - Content
+
+    private var warehouseContent: some View {
         ScrollView {
             VStack(spacing: 16) {
                 // KPI Cards
@@ -87,37 +126,6 @@ struct IOSWarehouseExecPage: View {
                 .padding(.top, 8)
             }
             .padding(.vertical)
-        }
-        .navigationTitle("Warehouse Exec")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { activeSheet = .help } label: {
-                    Image(systemName: "questionmark.circle")
-                }
-                .accessibilityLabel("Help")
-            }
-        }
-        .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .help:
-                PageHelpSheet(
-                    title: "Warehouse Executive Help",
-                    sections: [
-                        ("Overview", "High-level warehouse operations dashboard for managers. See pending movements, low stock alerts, receiving sessions, and audit schedules."),
-                        ("KPIs", "Cards show total stock units, shortfalls, today's movements, and pending approvals. Tap for details."),
-                        ("Quick Actions", "Use the action buttons to navigate directly to movements, receiving, audits, or settings.")
-                    ]
-                )
-            }
-        }
-        .refreshable { loadData() }
-        .task { loadData() }
-        .overlay {
-            if isLoading {
-                ProgressView()
-            } else if let error = loadError {
-                ErrorStateView(message: error) { loadData() }
-            }
         }
     }
 
