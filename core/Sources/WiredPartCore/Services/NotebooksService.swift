@@ -1385,15 +1385,22 @@ public final class NotebooksService: Sendable {
             if keepVersion != currentWinner {
                 let valueToApply = (keepVersion == "local") ? localValue : remoteValue
 
-                // Only update content-related fields to prevent schema issues
-                let allowedFields: Set<String> = [
-                    "content", "block_data", "title", "checklist_items",
-                    "heading_level", "photo_path", "task_status", "sort_order"
+                // Only update content-related fields to prevent schema issues.
+                // Use a literal-backed map so the SQL column name is never a runtime variable.
+                let allowedFields: [String: String] = [
+                    "content": "content",
+                    "block_data": "block_data",
+                    "title": "title",
+                    "checklist_items": "checklist_items",
+                    "heading_level": "heading_level",
+                    "photo_path": "photo_path",
+                    "task_status": "task_status",
+                    "sort_order": "sort_order"
                 ]
 
-                if allowedFields.contains(fieldName) {
+                if let safeColumn = allowedFields[fieldName] {
                     try dbConn.execute(
-                        sql: "UPDATE notebook_entries SET \"\(fieldName)\" = ?, updated_at = datetime('now') WHERE id = ?",
+                        sql: "UPDATE notebook_entries SET \"\(safeColumn)\" = ?, updated_at = datetime('now') WHERE id = ?",
                         arguments: [valueToApply, recordId]
                     )
                 }

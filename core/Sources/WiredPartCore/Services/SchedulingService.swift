@@ -23,6 +23,7 @@ public final class SchedulingService: Sendable {
     public enum SchedulingError: Error, Sendable {
         case timeOffRequestNotFound(Int64)
         case invalidStatus(String)
+        case insertFailed(String)
     }
 
     // =========================================================================
@@ -1509,6 +1510,335 @@ public final class SchedulingService: Sendable {
         } catch {
             if isTableNotFoundError(error) { return [] }
             throw error
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 13. Shift Templates
+    // =========================================================================
+
+    /// A shift template row with hat name for display.
+    public struct ShiftTemplateRow: Sendable, Identifiable {
+        public let id: Int64
+        public var name: String
+        public var hatId: Int64?
+        public var hatName: String?
+        public var workDays: String
+        public var startTime: String
+        public var endTime: String
+        public var breakMinutes: Int
+        public var breakPaid: Bool
+        public var overtimeRule: String
+
+        public init(
+            id: Int64, name: String, hatId: Int64?, hatName: String?,
+            workDays: String, startTime: String, endTime: String,
+            breakMinutes: Int, breakPaid: Bool, overtimeRule: String
+        ) {
+            self.id = id; self.name = name; self.hatId = hatId; self.hatName = hatName
+            self.workDays = workDays; self.startTime = startTime; self.endTime = endTime
+            self.breakMinutes = breakMinutes; self.breakPaid = breakPaid; self.overtimeRule = overtimeRule
+        }
+    }
+
+    /// List all active shift templates.
+    public func getShiftTemplates() throws -> [ShiftTemplateRow] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT st.*, h.name AS hat_name
+                    FROM shift_templates st
+                    LEFT JOIN hats h ON h.id = st.hat_id
+                    WHERE st.deleted_at IS NULL
+                    ORDER BY st.name
+                    """)
+                return rows.map { row in
+                    ShiftTemplateRow(
+                        id: row["id"],
+                        name: row["name"],
+                        hatId: row["hat_id"],
+                        hatName: row["hat_name"],
+                        workDays: row["work_days"],
+                        startTime: row["start_time"],
+                        endTime: row["end_time"],
+                        breakMinutes: row["break_minutes"] ?? 30,
+                        breakPaid: (row["break_paid"] as Int?) == 1,
+                        overtimeRule: row["overtime_rule"] ?? "company_default"
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Save (insert or update) a shift template.
+    @discardableResult
+    public func saveShiftTemplate(
+        id: Int64? = nil, name: String, hatId: Int64?,
+        workDays: String, startTime: String, endTime: String,
+        breakMinutes: Int = 30, breakPaid: Bool = false,
+        overtimeRule: String = "company_default"
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            if let existingId = id {
+                try dbConn.execute(sql: """
+                    UPDATE shift_templates
+                    SET name = ?, hat_id = ?, work_days = ?, start_time = ?, end_time = ?,
+                        break_minutes = ?, break_paid = ?, overtime_rule = ?
+                    WHERE id = ?
+                    """, arguments: [name, hatId, workDays, startTime, endTime,
+                                     breakMinutes, breakPaid ? 1 : 0, overtimeRule, existingId])
+                return existingId
+            } else {
+                var template = ShiftTemplate(
+                    name: name, hatId: hatId, workDays: workDays,
+                    startTime: startTime, endTime: endTime,
+                    breakMinutes: breakMinutes, breakPaid: breakPaid ? 1 : 0,
+                    overtimeRule: overtimeRule
+                )
+                try template.insert(dbConn)
+                guard let newId = template.id else {
+                    throw SchedulingError.insertFailed("Failed to retrieve ID after shift template insert")
+                }
+                return newId
+            }
+        }
+    }
+
+    /// Soft-delete a shift template.
+    public func deleteShiftTemplate(id: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE shift_templates SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [id]
+            )
+        }
+    }
+
+    // =========================================================================
+    // MARK: - 14. Company Holidays
+    // =========================================================================
+
+    /// A holiday row for list views.
+    public struct HolidayRow: Sendable, Identifiable {
+        public let id: Int64
+        public var name: String
+        public var date: String
+        public var isPaid: Bool
+        public var isRecurring: Bool
+
+        public init(id: Int64, name: String, date: String, isPaid: Bool, isRecurring: Bool) {
+            self.id = id; self.name = name; self.date = date
+            self.isPaid = isPaid; self.isRecurring = isRecurring
+        }
+    }
+
+    /// List all active holidays.
+    public func getHolidays() throws -> [HolidayRow] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT * FROM company_holidays WHERE deleted_at IS NULL ORDER BY date
+                    """)
+                return rows.map { row in
+                    HolidayRow(
+                        id: row["id"],
+                        name: row["name"],
+                        date: row["date"],
+                        isPaid: (row["is_paid"] as Int?) == 1,
+                        isRecurring: (row["is_recurring"] as Int?) == 1
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Save (insert or update) a holiday.
+    @discardableResult
+    public func saveHoliday(
+        id: Int64? = nil, name: String, date: String,
+        isPaid: Bool = true, isRecurring: Bool = false
+    ) throws -> Int64 {
+        try db.writer.write { dbConn in
+            if let existingId = id {
+                try dbConn.execute(sql: """
+                    UPDATE company_holidays
+                    SET name = ?, date = ?, is_paid = ?, is_recurring = ?
+                    WHERE id = ?
+                    """, arguments: [name, date, isPaid ? 1 : 0, isRecurring ? 1 : 0, existingId])
+                return existingId
+            } else {
+                var holiday = CompanyHoliday(
+                    name: name, date: date,
+                    isPaid: isPaid ? 1 : 0,
+                    isRecurring: isRecurring ? 1 : 0
+                )
+                try holiday.insert(dbConn)
+                guard let newId = holiday.id else {
+                    throw SchedulingError.insertFailed("Failed to retrieve ID after holiday insert")
+                }
+                return newId
+            }
+        }
+    }
+
+    /// Soft-delete a holiday.
+    public func deleteHoliday(id: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE company_holidays SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [id]
+            )
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Flex Pool
+    // =========================================================================
+
+    /// Returns all flex-pool jobs visible to the given user.
+    ///
+    /// A job is visible to a user if:
+    /// - `is_flex_pool = 1` and status is not completed/cancelled/on_hold
+    /// - `flex_pool_user_filter` is NULL **or** contains `userId`
+    /// - `flex_pool_team_filter` is NULL **or** the user belongs to one of the listed teams
+    ///
+    /// Returns an empty array if the `jobs` table is missing (fresh install).
+    public func fetchFlexPool(userId: Int64) throws -> [FlexPoolJob] {
+        // Read approval setting first (separate from the jobs query to avoid fragile JOINs).
+        let isApprovalRequired: Bool
+        do {
+            let val = try db.writer.read { dbConn in
+                try String.fetchOne(dbConn,
+                    sql: "SELECT value FROM settings WHERE key = 'flex_pool_requires_approval' LIMIT 1")
+            }
+            isApprovalRequired = (val == "1")
+        } catch {
+            isApprovalRequired = false
+        }
+
+        // Fetch flex-pool jobs visible to this user.
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT id, job_name, job_number, address_line1,
+                           notes, estimated_hours, flex_pool_user_filter
+                    FROM jobs
+                    WHERE is_flex_pool = 1
+                      AND deleted_at IS NULL
+                      AND status NOT IN ('completed', 'cancelled', 'on_hold')
+                    ORDER BY created_at DESC
+                    """)
+
+                return rows.compactMap { row -> FlexPoolJob? in
+                    let id: Int64 = row["id"]
+                    let userFilter: String? = row["flex_pool_user_filter"]
+
+                    // User-level filter: if set, userId must appear in the JSON array.
+                    if let uf = userFilter,
+                       let data = uf.data(using: .utf8),
+                       let ids = try? JSONDecoder().decode([Int64].self, from: data),
+                       !ids.contains(userId) {
+                        return nil
+                    }
+
+                    return FlexPoolJob(
+                        id: id,
+                        jobName: row["job_name"] ?? "",
+                        jobNumber: row["job_number"] ?? "",
+                        address: row["address_line1"],
+                        description: row["notes"],
+                        estimatedHours: row["estimated_hours"],
+                        isApprovalRequired: isApprovalRequired
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Claims a flex-pool job for a user.
+    ///
+    /// If `flex_pool_requires_approval` is enabled in settings, creates a
+    /// `dispatch_entries` row with status `pending_approval`. Otherwise,
+    /// sets the user as lead and creates an `active` dispatch entry in a
+    /// single transaction.
+    public func claimFlexJob(jobId: Int64, userId: Int64) throws {
+        let requiresApproval: Bool
+        do {
+            let val = try db.writer.read { dbConn in
+                try String.fetchOne(dbConn,
+                    sql: "SELECT value FROM settings WHERE key = 'flex_pool_requires_approval' LIMIT 1")
+            }
+            requiresApproval = (val == "1")
+        } catch {
+            requiresApproval = false
+        }
+
+        try db.writer.write { dbConn in
+            let dispatchStatus = requiresApproval ? "pending_approval" : "scheduled"
+
+            if !requiresApproval {
+                // Set worker as lead and remove from pool immediately.
+                try dbConn.execute(
+                    sql: "UPDATE jobs SET is_flex_pool = 0, lead_user_id = ? WHERE id = ?",
+                    arguments: [userId, jobId]
+                )
+            }
+
+            // Create a dispatch entry in job_dispatch so the assignment shows on the dispatch board.
+            try dbConn.execute(
+                sql: """
+                    INSERT INTO job_dispatch
+                    (job_id, user_id, dispatch_date, status, created_at, updated_at)
+                    VALUES (?, ?, date('now'), ?, datetime('now'), datetime('now'))
+                    """,
+                arguments: [jobId, userId, dispatchStatus]
+            )
+        }
+    }
+
+    /// Marks a job as flex-pool available (or removes it from the pool).
+    ///
+    /// - Parameters:
+    ///   - jobId: The job to update.
+    ///   - isFlexPool: True to add to pool, false to remove.
+    ///   - teamFilter: Optional JSON-encoded array of team IDs. NULL = all teams.
+    ///   - userFilter: Optional JSON-encoded array of user IDs. NULL = all users.
+    public func markJobFlexPool(
+        jobId: Int64,
+        isFlexPool: Bool,
+        teamFilter: [Int64]? = nil,
+        userFilter: [Int64]? = nil
+    ) throws {
+        let teamJSON: String? = teamFilter.flatMap {
+            guard let data = try? JSONEncoder().encode($0) else { return nil }
+            return String(data: data, encoding: .utf8)
+        }
+        let userJSON: String? = userFilter.flatMap {
+            guard let data = try? JSONEncoder().encode($0) else { return nil }
+            return String(data: data, encoding: .utf8)
+        }
+
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE jobs
+                    SET is_flex_pool = ?,
+                        flex_pool_team_filter = ?,
+                        flex_pool_user_filter = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                arguments: [isFlexPool ? 1 : 0, teamJSON, userJSON, jobId]
+            )
         }
     }
 

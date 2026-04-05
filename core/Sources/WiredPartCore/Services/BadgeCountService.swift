@@ -155,9 +155,9 @@ public final class BadgeCountService: Sendable {
         )
 
         counts.openDispatches = try safeCount(sql: """
-            SELECT COUNT(*) FROM job_dispatch
+            SELECT COUNT(DISTINCT job_id) FROM job_dispatch
             WHERE date(dispatch_date) = date('now')
-              AND (worker_id IS NULL OR worker_id = 0)
+              AND status = 'scheduled'
               AND deleted_at IS NULL
         """)
 
@@ -182,16 +182,21 @@ public final class BadgeCountService: Sendable {
               AND date(expiry_date) <= date('now', '+7 days')
         """)
 
-        counts.pendingTimeOff = try safeCount(sql:
-            "SELECT COUNT(*) FROM pto_transactions WHERE status = 'pending' AND deleted_at IS NULL"
-        )
+        counts.pendingTimeOff = try safeCount(sql: """
+            SELECT COUNT(DISTINCT COALESCE(request_group, CAST(id AS TEXT)))
+            FROM schedule_exceptions
+            WHERE exception_type = 'time_off'
+              AND is_approved = 0
+              AND deleted_at IS NULL
+        """)
 
+        // tool_edit_log is a planned future table (not yet in schema) — returns 0 gracefully
         counts.pendingToolEdits = try safeCount(sql:
             "SELECT COUNT(*) FROM tool_edit_log WHERE status = 'pending' AND deleted_at IS NULL"
         )
 
         counts.pendingDeletions = try safeCount(sql:
-            "SELECT COUNT(*) FROM scheduled_deletions WHERE status = 'pending' AND deleted_at IS NULL"
+            "SELECT COUNT(*) FROM scheduled_deletions WHERE status = 'pending_approval' AND deleted_at IS NULL"
         )
 
         // Notebook unread entries (per-user, using UserDefaults-based tracking on the iOS side)

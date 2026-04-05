@@ -31,6 +31,61 @@ public struct DefaultSchedule: Codable, FetchableRecord, MutablePersistableRecor
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }
 
+// MARK: - ShiftTemplate
+
+public struct ShiftTemplate: Codable, FetchableRecord, MutablePersistableRecord, Sendable, Identifiable {
+    public static let databaseTableName = "shift_templates"
+    public var id: Int64?
+    public var name: String
+    public var hatId: Int64?
+    public var workDays: String       // JSON: ["mon","tue","wed","thu","fri"]
+    public var startTime: String      // "HH:MM"
+    public var endTime: String        // "HH:MM"
+    public var breakMinutes: Int
+    public var breakPaid: Int         // 0=unpaid, 1=paid
+    public var overtimeRule: String   // "company_default" or custom
+    public var createdAt: String?
+    public var deletedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case hatId = "hat_id"
+        case workDays = "work_days"
+        case startTime = "start_time"
+        case endTime = "end_time"
+        case breakMinutes = "break_minutes"
+        case breakPaid = "break_paid"
+        case overtimeRule = "overtime_rule"
+        case createdAt = "created_at"
+        case deletedAt = "deleted_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+// MARK: - CompanyHoliday
+
+public struct CompanyHoliday: Codable, FetchableRecord, MutablePersistableRecord, Sendable, Identifiable {
+    public static let databaseTableName = "company_holidays"
+    public var id: Int64?
+    public var name: String
+    public var date: String           // "YYYY-MM-DD"
+    public var isPaid: Int            // 1=paid, 0=unpaid
+    public var isRecurring: Int       // 1=recurring annually, 0=one-time
+    public var createdAt: String?
+    public var deletedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, date
+        case isPaid = "is_paid"
+        case isRecurring = "is_recurring"
+        case createdAt = "created_at"
+        case deletedAt = "deleted_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
 // MARK: - ScheduleException
 
 public struct ScheduleException: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
@@ -237,4 +292,38 @@ public struct ShiftPatternDay: Codable, FetchableRecord, MutablePersistableRecor
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+// MARK: - FlexPoolJob
+
+/// A job available for workers to self-assign from the flex pool.
+/// Returned by `SchedulingService.fetchFlexPool(userId:)`.
+public struct FlexPoolJob: Identifiable, Sendable {
+    public let id: Int64
+    public let jobName: String
+    public let jobNumber: String
+    public let address: String?
+    public let description: String?
+    public let estimatedHours: Double?
+    /// True when the company setting `flex_pool_requires_approval` is enabled.
+    /// Claiming shows "Pending Approval" instead of immediately assigning.
+    public let isApprovalRequired: Bool
+
+    public init(
+        id: Int64,
+        jobName: String,
+        jobNumber: String,
+        address: String?,
+        description: String?,
+        estimatedHours: Double?,
+        isApprovalRequired: Bool
+    ) {
+        self.id = id
+        self.jobName = jobName
+        self.jobNumber = jobNumber
+        self.address = address
+        self.description = description
+        self.estimatedHours = estimatedHours
+        self.isApprovalRequired = isApprovalRequired
+    }
 }

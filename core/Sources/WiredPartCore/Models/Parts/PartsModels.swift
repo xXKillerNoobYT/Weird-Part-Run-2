@@ -102,6 +102,7 @@ public struct PartType: Codable, FetchableRecord, MutablePersistableRecord, Send
     public var name: String
     public var description: String?
     public var sortOrder: Int
+    public var defaultUnitCost: Double?
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
@@ -110,6 +111,7 @@ public struct PartType: Codable, FetchableRecord, MutablePersistableRecord, Send
         case id, name, description
         case styleId = "style_id"
         case sortOrder = "sort_order"
+        case defaultUnitCost = "default_unit_cost"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -125,15 +127,19 @@ public struct PartColor: Codable, FetchableRecord, MutablePersistableRecord, Sen
     public var id: Int64?
     public var name: String
     public var hexCode: String?
+    public var partNumber: String?
+    public var unitCost: Double?
     public var sortOrder: Int
     public var isActive: Int
     public var deletedAt: String?
     public var createdAt: String?
 
-    public init(id: Int64? = nil, name: String = "", hexCode: String? = nil, sortOrder: Int = 0, isActive: Int = 1, deletedAt: String? = nil, createdAt: String? = nil) {
+    public init(id: Int64? = nil, name: String = "", hexCode: String? = nil, partNumber: String? = nil, unitCost: Double? = nil, sortOrder: Int = 0, isActive: Int = 1, deletedAt: String? = nil, createdAt: String? = nil) {
         self.id = id
         self.name = name
         self.hexCode = hexCode
+        self.partNumber = partNumber
+        self.unitCost = unitCost
         self.sortOrder = sortOrder
         self.isActive = isActive
         self.deletedAt = deletedAt
@@ -143,10 +149,35 @@ public struct PartColor: Codable, FetchableRecord, MutablePersistableRecord, Sen
     enum CodingKeys: String, CodingKey {
         case id, name
         case hexCode = "hex_code"
+        case partNumber = "part_number"
+        case unitCost = "unit_cost"
         case sortOrder = "sort_order"
         case isActive = "is_active"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+// MARK: - ColorSupplierCost
+
+public struct ColorSupplierCost: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+    public static let databaseTableName = "color_supplier_costs"
+    public var id: Int64?
+    public var colorId: Int64
+    public var supplierId: Int64
+    public var cost: Double
+    public var notes: String?
+    public var createdAt: String?
+    public var updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, cost, notes
+        case colorId = "color_id"
+        case supplierId = "supplier_id"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }

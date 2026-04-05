@@ -23,6 +23,7 @@ public final class WishlistService: Sendable {
         case itemNotFound(Int64)
         case invalidStatus(String)
         case alreadyProcessed(Int64, String)
+        case dismissReasonRequired
 
         public var errorDescription: String? {
             switch self {
@@ -30,6 +31,8 @@ public final class WishlistService: Sendable {
             case .invalidStatus(let msg): msg
             case .alreadyProcessed(let id, let status):
                 "Wishlist item #\(id) is already \(status)"
+            case .dismissReasonRequired:
+                "A dismiss reason is required"
             }
         }
     }
@@ -134,9 +137,16 @@ public final class WishlistService: Sendable {
         priority: String = "normal",
         sourceType: String = "manual",
         requestedBy: String? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        certaintyScore: Double? = nil
     ) throws -> WishlistItem {
         try db.writer.write { dbConn in
+            let now = Date()
+            let nowString = ISO8601DateFormatter().string(from: now)
+            // Manual items auto-approve after 14 days if no action taken
+            let autoApprove: String? = sourceType == "manual"
+                ? ISO8601DateFormatter().string(from: now.addingTimeInterval(14 * 24 * 3600))
+                : nil
             var item = WishlistItem(
                 id: nil,
                 partId: partId,
@@ -151,9 +161,12 @@ public final class WishlistService: Sendable {
                 approvedAt: nil,
                 dismissedBy: nil,
                 dismissedAt: nil,
+                dismissReason: nil,
                 notes: notes,
-                createdAt: ISO8601DateFormatter().string(from: Date()),
-                updatedAt: ISO8601DateFormatter().string(from: Date())
+                createdAt: nowString,
+                updatedAt: nowString,
+                autoApproveAt: autoApprove,
+                certaintyScore: certaintyScore
             )
             try item.insert(dbConn)
             return item
@@ -210,10 +223,13 @@ public final class WishlistService: Sendable {
         }
     }
 
-    /// Dismiss a pending wishlist item.
+    /// Dismiss a pending wishlist item. A reason is required.
     @discardableResult
-    public func dismissItem(id: Int64, by dismisser: String) throws -> WishlistItem {
-        try db.writer.write { dbConn in
+    public func dismissItem(id: Int64, by dismisser: String, reason: String) throws -> WishlistItem {
+        guard !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw WishlistError.dismissReasonRequired
+        }
+        return try db.writer.write { dbConn in
             guard var item = try WishlistItem.fetchOne(dbConn, key: id) else {
                 throw WishlistError.itemNotFound(id)
             }
@@ -223,6 +239,7 @@ public final class WishlistService: Sendable {
             item.status = "dismissed"
             item.dismissedBy = dismisser
             item.dismissedAt = Self.nowString()
+            item.dismissReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
             try item.update(dbConn)
             return item
         }
@@ -277,6 +294,72 @@ public final class WishlistService: Sendable {
                 throw WishlistError.itemNotFound(id)
             }
             try item.delete(dbConn)
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Sectioned Items & Auto-Approvals
+    // =========================================================================
+
+    /// Items grouped by source type for the 3-section UI layout.
+    public struct WishlistSections: Sendable {
+        public let userAdded: [WishlistItem]       // source_type = "manual"
+        public let forecastDemand: [WishlistItem]  // source_type = "forecast"
+        public let autoAdded: [WishlistItem]       // source_type = "system"
+
+        public init(userAdded: [WishlistItem] = [], forecastDemand: [WishlistItem] = [], autoAdded: [WishlistItem] = []) {
+            self.userAdded = userAdded
+            self.forecastDemand = forecastDemand
+            self.autoAdded = autoAdded
+        }
+    }
+
+    /// Returns wishlist items split into 3 sections by source_type.
+    /// Fetches wishlist items grouped into three sections: User Added, Forecast Demand, System Auto-Added.
+    /// Call `processAutoApprovals(by:)` before this method (in a background task) to keep auto-approval state current.
+    public func getSectionedItems(statusFilter: String? = nil) throws -> WishlistSections {
+        return try db.writer.read { dbConn in
+            var base = WishlistItem
+                .order(Column("created_at").desc)
+
+            if let statusFilter = statusFilter {
+                base = base.filter(Column("status") == statusFilter)
+            }
+
+            let all = try base.fetchAll(dbConn)
+
+            let userAdded = all.filter { $0.sourceType == "manual" }
+            let forecastDemand = all.filter { $0.sourceType == "forecast" }
+            let autoAdded = all.filter { $0.sourceType != "manual" && $0.sourceType != "forecast" }
+
+            return WishlistSections(userAdded: userAdded, forecastDemand: forecastDemand, autoAdded: autoAdded)
+        }
+    }
+
+    /// Auto-approve any pending manual items whose auto_approve_at has passed.
+    /// Returns the count of items that were auto-approved.
+    @discardableResult
+    public func processAutoApprovals(by approver: String) throws -> Int {
+        do {
+            let now = Self.nowString()
+            let expiredItems = try db.writer.read { dbConn in
+                try WishlistItem
+                    .filter(Column("status") == "pending")
+                    .filter(Column("auto_approve_at") != nil)
+                    .filter(Column("auto_approve_at") <= now)
+                    .fetchAll(dbConn)
+            }
+
+            var count = 0
+            for item in expiredItems {
+                guard let id = item.id else { continue }
+                _ = try approveItem(id: id, by: approver)
+                count += 1
+            }
+            return count
+        } catch {
+            if isTableNotFoundError(error) { return 0 }
+            throw error
         }
     }
 

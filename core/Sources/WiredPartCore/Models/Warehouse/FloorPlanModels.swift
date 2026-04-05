@@ -60,6 +60,42 @@ public struct WarehouseFloorFeature: Codable, FetchableRecord, MutablePersistabl
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }
 
+// MARK: - Warehouse Zone
+
+/// A logical zone on the floor plan (staging, storage, receiving, etc.)
+public struct WarehouseZone: Codable, FetchableRecord, MutablePersistableRecord, Sendable, Identifiable {
+    public static let databaseTableName = "warehouse_zones"
+    public var id: Int64?
+    public var floorPlanId: Int64
+    public var zoneType: String
+    public var label: String?
+    public var colorHex: String?
+    public var gridX: Int
+    public var gridY: Int
+    public var gridWidth: Int
+    public var gridHeight: Int
+    public var rotation: Int
+    public var zoneOrder: Int
+    public var createdAt: String?
+    public var deletedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, label, rotation
+        case floorPlanId = "floor_plan_id"
+        case zoneType = "zone_type"
+        case colorHex = "color_hex"
+        case gridX = "grid_x"
+        case gridY = "grid_y"
+        case gridWidth = "grid_width"
+        case gridHeight = "grid_height"
+        case zoneOrder = "zone_order"
+        case createdAt = "created_at"
+        case deletedAt = "deleted_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
 // MARK: - Storage Unit
 
 /// A physical storage device placed on the floor plan (shelving, rack, gang box, etc.)
@@ -86,6 +122,7 @@ public struct WarehouseStorageUnit: Codable, FetchableRecord, MutablePersistable
     public var currentLocationType: String?
     public var currentLocationId: Int64?
     public var assignedTo: Int64?
+    public var zoneId: Int64?
     public var isConfigured: Bool
     public var createdAt: String?
     public var updatedAt: String?
@@ -111,6 +148,7 @@ public struct WarehouseStorageUnit: Codable, FetchableRecord, MutablePersistable
         case currentLocationType = "current_location_type"
         case currentLocationId = "current_location_id"
         case assignedTo = "assigned_to"
+        case zoneId = "zone_id"
         case isConfigured = "is_configured"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -248,6 +286,9 @@ public struct WarehouseOnboardingProgress: Codable, FetchableRecord, MutablePers
     public var step4Progress: String?
     public var step5Progress: String?
     public var step6Progress: String?
+    public var flowType: String
+    public var totalSteps: Int
+    public var stepsProgress: String?
     public var startedAt: String?
     public var completedAt: String?
     public var updatedAt: String?
@@ -262,6 +303,9 @@ public struct WarehouseOnboardingProgress: Codable, FetchableRecord, MutablePers
         case step4Progress = "step4_progress"
         case step5Progress = "step5_progress"
         case step6Progress = "step6_progress"
+        case flowType = "flow_type"
+        case totalSteps = "total_steps"
+        case stepsProgress = "steps_progress"
         case startedAt = "started_at"
         case completedAt = "completed_at"
         case updatedAt = "updated_at"

@@ -2255,6 +2255,152 @@ public final class WarehouseService: Sendable {
     }
 
     // =========================================================================
+    // MARK: - Warehouse Zones
+    // =========================================================================
+
+    /// Add a zone to a floor plan.
+    public func addZone(
+        floorPlanId: Int64, zoneType: String, label: String? = nil, colorHex: String? = nil,
+        gridX: Int = 0, gridY: Int = 0, gridWidth: Int = 4, gridHeight: Int = 4,
+        rotation: Int = 0, zoneOrder: Int = 0
+    ) throws -> WarehouseZone {
+        try db.writer.write { dbConn in
+            var zone = WarehouseZone(
+                floorPlanId: floorPlanId,
+                zoneType: zoneType,
+                label: label,
+                colorHex: colorHex,
+                gridX: gridX,
+                gridY: gridY,
+                gridWidth: gridWidth,
+                gridHeight: gridHeight,
+                rotation: rotation,
+                zoneOrder: zoneOrder
+            )
+            try zone.insert(dbConn)
+            return zone
+        }
+    }
+
+    /// List all active zones for a floor plan.
+    public func listZones(floorPlanId: Int64) throws -> [WarehouseZone] {
+        try db.writer.read { dbConn in
+            try WarehouseZone
+                .filter(Column("floor_plan_id") == floorPlanId && Column("deleted_at") == nil)
+                .order(Column("zone_order").asc, Column("id").asc)
+                .fetchAll(dbConn)
+        }
+    }
+
+    /// Update a zone's properties.
+    public func updateZone(
+        id: Int64, zoneType: String? = nil, label: String? = nil, colorHex: String? = nil,
+        gridX: Int? = nil, gridY: Int? = nil, gridWidth: Int? = nil, gridHeight: Int? = nil,
+        rotation: Int? = nil, zoneOrder: Int? = nil
+    ) throws {
+        try db.writer.write { dbConn in
+            guard var zone = try WarehouseZone.fetchOne(dbConn, key: id) else { return }
+            if let v = zoneType { zone.zoneType = v }
+            if let v = label { zone.label = v }
+            if let v = colorHex { zone.colorHex = v }
+            if let v = gridX { zone.gridX = v }
+            if let v = gridY { zone.gridY = v }
+            if let v = gridWidth { zone.gridWidth = v }
+            if let v = gridHeight { zone.gridHeight = v }
+            if let v = rotation { zone.rotation = v }
+            if let v = zoneOrder { zone.zoneOrder = v }
+            try zone.update(dbConn)
+        }
+    }
+
+    /// Soft delete a zone.
+    public func deleteZone(id: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE warehouse_zones SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [id]
+            )
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Setup Tier Detection
+    // =========================================================================
+
+    /// The warehouse setup tier, from none to complete.
+    public enum WarehouseSetupTier: String, Sendable {
+        case none               // No warehouse data at all
+        case partsOnly          // Parts have locations/stock but no floor plan
+        case floorPlanInProgress // Floor plan exists but onboarding not complete
+        case complete           // Full warehouse setup done
+    }
+
+    /// Detect current warehouse setup tier based on existing data.
+    public func getSetupProgress() throws -> WarehouseSetupTier {
+        try db.writer.read { dbConn in
+            // Check if any completed onboarding exists
+            let completedCount = try WarehouseOnboardingProgress
+                .filter(Column("completed_at") != nil)
+                .fetchCount(dbConn)
+            if completedCount > 0 { return .complete }
+
+            // Check if floor plans exist
+            let floorPlanCount = try WarehouseFloorPlan
+                .filter(Column("deleted_at") == nil)
+                .fetchCount(dbConn)
+            if floorPlanCount > 0 { return .floorPlanInProgress }
+
+            // Check if any parts have shelf/bin locations or stock entries
+            let partsWithLocations = try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM parts
+                WHERE deleted_at IS NULL
+                  AND (shelf_location IS NOT NULL OR bin_location IS NOT NULL)
+                """) ?? 0
+            let stockCount = try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM stock WHERE deleted_at IS NULL
+                """) ?? 0
+            if partsWithLocations > 0 || stockCount > 0 { return .partsOnly }
+
+            return .none
+        }
+    }
+
+    // =========================================================================
+    // MARK: - Flow Onboarding Progress
+    // =========================================================================
+
+    /// Start a new flow-based onboarding session.
+    public func startFlowOnboarding(
+        flowType: String, totalSteps: Int, floorPlanId: Int64? = nil
+    ) throws -> WarehouseOnboardingProgress {
+        try db.writer.write { dbConn in
+            var progress = WarehouseOnboardingProgress(
+                floorPlanId: floorPlanId,
+                currentStep: 1,
+                step1Complete: false,
+                step2Complete: false,
+                step3Complete: false,
+                flowType: flowType,
+                totalSteps: totalSteps
+            )
+            try progress.insert(dbConn)
+            return progress
+        }
+    }
+
+    /// Update flow onboarding progress with JSON step data.
+    public func updateFlowProgress(
+        id: Int64, currentStep: Int, stepData: String? = nil
+    ) throws {
+        try db.writer.write { dbConn in
+            guard var progress = try WarehouseOnboardingProgress.fetchOne(dbConn, key: id) else { return }
+            progress.currentStep = currentStep
+            if let data = stepData { progress.stepsProgress = data }
+            try progress.update(dbConn)
+        }
+    }
+
+    // =========================================================================
     // MARK: - Storage Units
     // =========================================================================
 
@@ -2310,7 +2456,7 @@ public final class WarehouseService: Sendable {
         gridX: Int? = nil, gridY: Int? = nil,
         gridWidth: Int? = nil, gridHeight: Int? = nil,
         rotation: Int? = nil, frontFace: String? = nil,
-        isConfigured: Bool? = nil
+        isConfigured: Bool? = nil, zoneId: Int64? = nil
     ) throws {
         try db.writer.write { dbConn in
             guard var unit = try WarehouseStorageUnit.fetchOne(dbConn, key: id) else { return }
@@ -2325,6 +2471,7 @@ public final class WarehouseService: Sendable {
             if let rotation = rotation { unit.rotation = rotation }
             if let frontFace = frontFace { unit.frontFace = frontFace }
             if let isConfigured = isConfigured { unit.isConfigured = isConfigured }
+            if let zoneId = zoneId { unit.zoneId = zoneId }
             try unit.update(dbConn)
         }
     }
@@ -2844,7 +2991,9 @@ public final class WarehouseService: Sendable {
                 currentStep: 1,
                 step1Complete: false,
                 step2Complete: false,
-                step3Complete: false
+                step3Complete: false,
+                flowType: "floor_plan",
+                totalSteps: 6
             )
             try progress.insert(dbConn)
             return progress
@@ -3994,22 +4143,24 @@ public final class WarehouseService: Sendable {
             guard countedAssignments.count >= 2 else { return nil }
 
             let counts = countedAssignments.compactMap { $0.countedQuantity }
+            // If any counted assignment is missing a quantity, consensus is impossible
+            guard counts.count == countedAssignments.count else { return nil }
             let countFreq = counts.reduce(into: [Int: Int]()) { $0[$1, default: 0] += 1 }
 
             // Find consensus: the count with the most votes
             guard let (consensusQty, maxVotes) = countFreq.max(by: { $0.value < $1.value }),
-                  maxVotes >= 2 || countedAssignments.count == 2 else {
+                  maxVotes >= 2 || counts.count == 2 else {
                 return nil // No consensus possible
             }
 
             // For 2 counters, they must agree
-            if countedAssignments.count == 2 && counts[0] != counts[1] {
+            if counts.count == 2 && counts[0] != counts[1] {
                 return nil
             }
 
             // Use the consensus quantity (or if 2 counters agree, use their count)
             let finalQty: Int
-            if countedAssignments.count == 2 {
+            if counts.count == 2 {
                 finalQty = counts[0]
             } else {
                 finalQty = consensusQty

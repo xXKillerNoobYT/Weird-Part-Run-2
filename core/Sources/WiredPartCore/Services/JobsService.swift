@@ -1187,7 +1187,7 @@ public final class JobsService: Sendable {
         let isoBasic = ISO8601DateFormatter()
         isoBasic.formatOptions = [.withInternetDateTime]
 
-        return try db.writer.read { dbConn -> [JobClockGroup] in
+        do { return try db.writer.read { dbConn -> [JobClockGroup] in
             let todayPrefix = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
 
             let rows = try Row.fetchAll(dbConn, sql: """
@@ -1252,6 +1252,9 @@ public final class JobsService: Sendable {
                     entries: entries
                 )
             }
+        } } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
         }
     }
 

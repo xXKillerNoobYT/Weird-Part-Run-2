@@ -79,6 +79,13 @@ extension AppDatabase {
         registerMigration062AuditCountedQty(&migrator)
         registerMigration063FixContractorNotesFKs(&migrator)
         registerMigration064TimeOffRequestGroups(&migrator)
+        registerMigration065ColorPartNumbers(&migrator)
+        registerMigration066BrandSupplierCarryStatus(&migrator)
+        registerMigration067CascadePricingCosts(&migrator)
+        registerMigration068WarehouseZonesProgressV2(&migrator)
+        registerMigration069ScheduleConfigTables(&migrator)
+        registerMigration070WishlistItemsV2(&migrator)
+        registerMigration071FlexPool(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -471,6 +478,27 @@ extension AppDatabase {
                 INSERT INTO company_break_settings (state_code, rounding_minutes, rounding_enabled, auto_fill_breaks)
                 VALUES ('WY', 15, 0, 1)
                 """)
+        }
+    }
+
+    private static func registerMigration070WishlistItemsV2(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("070_wishlist_items_v2") { db in
+            // Approval flow fields: dismiss reason, auto-approve timestamp, certainty score
+            try db.execute(sql: "ALTER TABLE wishlist_items ADD COLUMN dismiss_reason TEXT")
+            try db.execute(sql: "ALTER TABLE wishlist_items ADD COLUMN auto_approve_at TEXT")
+            try db.execute(sql: "ALTER TABLE wishlist_items ADD COLUMN certainty_score REAL")
+        }
+    }
+
+    private static func registerMigration071FlexPool(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("071_flex_pool") { db in
+            // Flex pool: jobs managers mark as claimable by qualified workers
+            // is_flex_pool: 1 = job is in the flex pool and available to claim
+            // flex_pool_team_filter: JSON array of team IDs allowed to claim, NULL = all teams
+            // flex_pool_user_filter: JSON array of user IDs allowed to claim, NULL = all users
+            try db.execute(sql: "ALTER TABLE jobs ADD COLUMN is_flex_pool INTEGER NOT NULL DEFAULT 0")
+            try db.execute(sql: "ALTER TABLE jobs ADD COLUMN flex_pool_team_filter TEXT")
+            try db.execute(sql: "ALTER TABLE jobs ADD COLUMN flex_pool_user_filter TEXT")
         }
     }
 }
@@ -4642,6 +4670,129 @@ extension AppDatabase {
         migrator.registerMigration("064_time_off_request_groups") { db in
             try db.alter(table: "schedule_exceptions") { t in
                 t.add(column: "request_group", .text)
+            }
+        }
+    }
+
+    // MARK: - Migration 065: Color-Level Part Numbers
+
+    private static func registerMigration065ColorPartNumbers(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("065_color_part_numbers") { db in
+            // Part numbers belong at the color level — each color variant has its own
+            // manufacturer/internal part number (e.g., "Romex 12/2 White" ≠ "Romex 12/2 Gray")
+            try db.alter(table: "part_colors") { t in
+                t.add(column: "part_number", .text)
+            }
+            // part_supplier_links.supplier_part_number already exists from migration 002
+        }
+    }
+
+    // MARK: - Migration 066: Brand-Supplier Carry Status
+
+    private static func registerMigration066BrandSupplierCarryStatus(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("066_brand_supplier_carry_status") { db in
+            // Each brand-supplier link tracks whether the supplier carries this brand
+            // on the shelf or whether it needs to be ordered.
+            try db.alter(table: "brand_supplier_links") { t in
+                t.add(column: "carry_status", .text).defaults(to: "carry_on_shelf")
+            }
+        }
+    }
+
+    // MARK: - Migration 067: Cascade Pricing Costs
+
+    private static func registerMigration067CascadePricingCosts(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("067_cascade_pricing_costs") { db in
+            // Type-level default cost: all colors of this type inherit unless overridden.
+            try db.alter(table: "part_types") { t in
+                t.add(column: "default_unit_cost", .double)
+            }
+
+            // Color-level cost override: takes precedence over the type default.
+            try db.alter(table: "part_colors") { t in
+                t.add(column: "unit_cost", .double)
+            }
+
+            // Color × Supplier costs: per-supplier cost for a specific color.
+            // Cascade: Supplier cost → Color cost → Type default cost.
+            try db.create(table: "color_supplier_costs") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("color_id", .integer).notNull()
+                    .references("part_colors", onDelete: .cascade)
+                t.column("supplier_id", .integer).notNull()
+                    .references("suppliers", onDelete: .cascade)
+                t.column("cost", .double).notNull()
+                t.column("notes", .text)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).defaults(sql: "(datetime('now'))")
+                t.uniqueKey(["color_id", "supplier_id"])
+            }
+        }
+    }
+
+    // MARK: - Migration 068: Warehouse Zones + Progress V2
+
+    private static func registerMigration068WarehouseZonesProgressV2(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("068_warehouse_zones_progress_v2") { db in
+            // Warehouse zones: logical areas on the floor plan (staging, storage, receiving, etc.)
+            try db.create(table: "warehouse_zones") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("floor_plan_id", .integer).notNull()
+                    .references("warehouse_floor_plans", onDelete: .cascade)
+                t.column("zone_type", .text).notNull()
+                t.column("label", .text)
+                t.column("color_hex", .text)
+                t.column("grid_x", .integer).notNull().defaults(to: 0)
+                t.column("grid_y", .integer).notNull().defaults(to: 0)
+                t.column("grid_width", .integer).notNull().defaults(to: 4)
+                t.column("grid_height", .integer).notNull().defaults(to: 4)
+                t.column("rotation", .integer).notNull().defaults(to: 0)
+                t.column("zone_order", .integer).notNull().defaults(to: 0)
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
+            }
+
+            // Expand onboarding progress with flexible JSON-based step tracking.
+            // flow_type: "floor_plan" (9-step) or "parts" (3-step)
+            try db.alter(table: "warehouse_onboarding_progress") { t in
+                t.add(column: "flow_type", .text).notNull().defaults(to: "floor_plan")
+                t.add(column: "total_steps", .integer).notNull().defaults(to: 6)
+                t.add(column: "steps_progress", .text)
+            }
+
+            // Link storage units to zones (optional — unzoned units are fine)
+            try db.alter(table: "warehouse_storage_units") { t in
+                t.add(column: "zone_id", .integer).references("warehouse_zones")
+            }
+        }
+    }
+
+    private static func registerMigration069ScheduleConfigTables(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("069_schedule_config_tables") { db in
+            // Shift templates: role-aware shift definitions
+            try db.create(table: "shift_templates") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("hat_id", .integer).references("hats", onDelete: .setNull)
+                t.column("work_days", .text).notNull()   // JSON array: ["mon","tue",...]
+                t.column("start_time", .text).notNull()   // "HH:MM"
+                t.column("end_time", .text).notNull()     // "HH:MM"
+                t.column("break_minutes", .integer).defaults(to: 30)
+                t.column("break_paid", .integer).defaults(to: 0) // 0=unpaid, 1=paid
+                t.column("overtime_rule", .text).defaults(to: "company_default")
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
+            }
+
+            // Company holidays
+            try db.create(table: "company_holidays") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("name", .text).notNull()
+                t.column("date", .text).notNull()          // "YYYY-MM-DD"
+                t.column("is_paid", .integer).defaults(to: 1) // 1=paid, 0=unpaid
+                t.column("is_recurring", .integer).defaults(to: 0) // 1=annually
+                t.column("created_at", .text).defaults(sql: "(datetime('now'))")
+                t.column("deleted_at", .text)
             }
         }
     }

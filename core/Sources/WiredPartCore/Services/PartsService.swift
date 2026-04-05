@@ -775,10 +775,11 @@ public final class PartsService: Sendable {
 
     /// Create a new color. Returns the inserted row ID.
     @discardableResult
-    public func createColor(name: String, hexCode: String? = nil, sortOrder: Int = 0) throws -> Int64 {
+    public func createColor(name: String, hexCode: String? = nil, partNumber: String? = nil, sortOrder: Int = 0) throws -> Int64 {
         var record = PartColor(
             name: name,
             hexCode: hexCode,
+            partNumber: partNumber,
             sortOrder: sortOrder,
             isActive: 1
         )
@@ -790,7 +791,8 @@ public final class PartsService: Sendable {
     }
 
     /// Update an existing color.
-    public func updateColor(id: Int64, name: String? = nil, hexCode: String? = nil, sortOrder: Int? = nil) throws {
+    /// For `partNumber`, pass a value to set, pass `""` to clear, or omit to leave unchanged.
+    public func updateColor(id: Int64, name: String? = nil, hexCode: String? = nil, partNumber: String? = nil, sortOrder: Int? = nil) throws {
         try db.writer.write { dbConn in
             var setClauses: [String] = []
             var args: [DatabaseValueConvertible?] = []
@@ -802,6 +804,11 @@ public final class PartsService: Sendable {
             if let hexCode {
                 setClauses.append("hex_code = ?")
                 args.append(hexCode)
+            }
+            if let partNumber {
+                // Non-empty string = set the value; empty string = clear to NULL
+                setClauses.append("part_number = ?")
+                args.append(partNumber.isEmpty ? nil : partNumber)
             }
             if let sortOrder {
                 setClauses.append("sort_order = ?")
@@ -999,26 +1006,113 @@ public final class PartsService: Sendable {
         return result
     }
 
-    /// Quick search parts by name or code. Lightweight (no joins).
+    /// Common color abbreviations used in the trade (e.g., "RD" → "red")
+    private static let colorAbbreviations: [String: [String]] = [
+        "rd": ["red"],
+        "wh": ["white"],
+        "gr": ["gray", "grey"],
+        "bk": ["black"],
+        "bl": ["blue"],
+        "gn": ["green"],
+        "yl": ["yellow"],
+        "or": ["orange"],
+        "pk": ["pink"],
+        "br": ["brown"],
+    ]
+
+    /// Quick search parts by name, code, or color part number. Includes color abbreviation expansion.
     public func searchParts(query: String, limit: Int = 20) throws -> [Part] {
         do {
             return try db.writer.read { dbConn in
                 let pattern = "%\(query)%"
-                return try Part.fetchAll(
-                    dbConn,
-                    sql: """
-                        SELECT * FROM parts
-                        WHERE deleted_at IS NULL
-                          AND (name LIKE ? OR code LIKE ?)
-                        ORDER BY name ASC
-                        LIMIT ?
-                        """,
-                    arguments: [pattern, pattern, limit]
-                )
+
+                // Expand color abbreviations for the query
+                let lowerQuery = query.lowercased().trimmingCharacters(in: .whitespaces)
+                var colorPatterns: [String] = []
+                if let expanded = Self.colorAbbreviations[lowerQuery] {
+                    colorPatterns = expanded.map { "%\($0)%" }
+                }
+
+                if colorPatterns.isEmpty {
+                    // Standard search: name, code, plus join on color part_number
+                    return try Part.fetchAll(
+                        dbConn,
+                        sql: """
+                            SELECT DISTINCT p.* FROM parts p
+                            LEFT JOIN part_colors pc ON pc.id = p.color_id
+                            LEFT JOIN part_supplier_links psl ON psl.part_id = p.id AND psl.deleted_at IS NULL
+                            WHERE p.deleted_at IS NULL
+                              AND (p.name LIKE ? OR p.code LIKE ?
+                                   OR pc.part_number LIKE ?
+                                   OR pc.name LIKE ?
+                                   OR psl.supplier_part_number LIKE ?)
+                            ORDER BY p.name ASC
+                            LIMIT ?
+                            """,
+                        arguments: [pattern, pattern, pattern, pattern, pattern, limit]
+                    )
+                } else {
+                    // Abbreviation match: search color names by expanded abbreviation
+                    let colorPattern = colorPatterns[0]  // Primary expansion
+                    return try Part.fetchAll(
+                        dbConn,
+                        sql: """
+                            SELECT DISTINCT p.* FROM parts p
+                            LEFT JOIN part_colors pc ON pc.id = p.color_id
+                            WHERE p.deleted_at IS NULL
+                              AND (p.name LIKE ? OR p.code LIKE ? OR pc.name LIKE ?)
+                            ORDER BY p.name ASC
+                            LIMIT ?
+                            """,
+                        arguments: [pattern, pattern, colorPattern, limit]
+                    )
+                }
             }
         } catch {
             if isTableNotFoundError(error) { return [] }
             throw error
+        }
+    }
+
+    /// Get all supplier part numbers for a given color.
+    /// Returns an array of (supplierId, supplierName, supplierPartNumber) tuples.
+    public func getColorSupplierPartNumbers(colorId: Int64) throws -> [(supplierId: Int64, supplierName: String, supplierPartNumber: String?)] {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(
+                    dbConn,
+                    sql: """
+                        SELECT psl.supplier_id, s.name AS supplier_name, psl.supplier_part_number
+                        FROM part_supplier_links psl
+                        JOIN suppliers s ON s.id = psl.supplier_id
+                        JOIN parts p ON p.id = psl.part_id
+                        WHERE p.color_id = ? AND psl.deleted_at IS NULL AND p.deleted_at IS NULL
+                        GROUP BY psl.supplier_id
+                        ORDER BY s.name ASC
+                        """,
+                    arguments: [colorId]
+                )
+                return rows.map { row in
+                    (
+                        supplierId: row["supplier_id"] as Int64,
+                        supplierName: row["supplier_name"] as String,
+                        supplierPartNumber: row["supplier_part_number"] as String?
+                    )
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Update the supplier part number on a part-supplier link.
+    public func updateSupplierPartNumber(linkId: Int64, supplierPartNumber: String?) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE part_supplier_links SET supplier_part_number = ? WHERE id = ?",
+                arguments: [supplierPartNumber, linkId]
+            )
         }
     }
 
@@ -1536,6 +1630,16 @@ public final class PartsService: Sendable {
         }
     }
 
+    /// A brand-supplier link with carry status info.
+    public struct BrandSupplierRow: Sendable {
+        public let linkId: Int64
+        public let brandId: Int64
+        public let brandName: String
+        public let supplierId: Int64
+        public let supplierName: String
+        public let carryStatus: String  // "carry_on_shelf" | "need_to_order"
+    }
+
     /// Get all suppliers for a brand (via brand_supplier_links).
     public func getBrandSuppliers(brandId: Int64) throws -> [Supplier] {
         do {
@@ -1554,6 +1658,47 @@ public final class PartsService: Sendable {
         } catch {
             if isTableNotFoundError(error) { return [] }
             throw error
+        }
+    }
+
+    /// Get suppliers for a brand with carry status information.
+    public func getBrandSuppliersWithStatus(brandId: Int64) throws -> [BrandSupplierRow] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT bsl.id AS link_id, bsl.brand_id, b.name AS brand_name,
+                       bsl.supplier_id, s.name AS supplier_name,
+                       COALESCE(bsl.carry_status, 'carry_on_shelf') AS carry_status
+                FROM brand_supplier_links bsl
+                JOIN suppliers s ON s.id = bsl.supplier_id AND s.deleted_at IS NULL
+                JOIN brands b ON b.id = bsl.brand_id AND b.deleted_at IS NULL
+                WHERE bsl.brand_id = ? AND bsl.deleted_at IS NULL
+                ORDER BY s.name ASC
+                """, arguments: [brandId])
+
+            return rows.map { row in
+                BrandSupplierRow(
+                    linkId: row["link_id"] as Int64? ?? 0,
+                    brandId: row["brand_id"] as Int64? ?? 0,
+                    brandName: row["brand_name"] as String? ?? "",
+                    supplierId: row["supplier_id"] as Int64? ?? 0,
+                    supplierName: row["supplier_name"] as String? ?? "",
+                    carryStatus: row["carry_status"] as String? ?? "carry_on_shelf"
+                )
+            }
+        }
+    }
+
+    /// Update the carry status of a brand-supplier link.
+    public func updateBrandSupplierCarryStatus(brandId: Int64, supplierId: Int64, carryStatus: String) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: """
+                    UPDATE brand_supplier_links
+                    SET carry_status = ?
+                    WHERE brand_id = ? AND supplier_id = ? AND deleted_at IS NULL
+                    """,
+                arguments: [carryStatus, brandId, supplierId]
+            )
         }
     }
 
@@ -2450,6 +2595,166 @@ public final class PartsService: Sendable {
     }
 
     // =========================================================================
+    // MARK: - 5c½. Cascade Cost Pricing (Type → Color → Color×Supplier)
+    // =========================================================================
+
+    /// Result of resolving the cascade cost for a color.
+    public struct ResolvedCascadeCost: Sendable {
+        public let effectiveCost: Double?
+        public let source: String  // "supplier", "color", "type", or "none"
+        public let typeDefaultCost: Double?
+        public let colorOverrideCost: Double?
+        public let supplierCost: Double?
+    }
+
+    /// Supplier-specific cost row for a color (used by PriceEditSheet).
+    public struct ColorSupplierCostRow: Sendable {
+        public let id: Int64
+        public let colorId: Int64
+        public let supplierId: Int64
+        public let supplierName: String
+        public let cost: Double
+        public let notes: String?
+    }
+
+    /// Set the default unit cost for all colors of a type.
+    public func setPriceForType(typeId: Int64, unitCost: Double?) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE part_types SET default_unit_cost = ?, updated_at = datetime('now')
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [unitCost, typeId])
+        }
+    }
+
+    /// Set or clear a cost override for a specific color.
+    public func setPriceForColor(colorId: Int64, unitCost: Double?) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE part_colors SET unit_cost = ?
+                WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [unitCost, colorId])
+        }
+    }
+
+    /// Set a supplier-specific cost for a color (upsert).
+    public func setSupplierCostForColor(colorId: Int64, supplierId: Int64, cost: Double, notes: String? = nil) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO color_supplier_costs (color_id, supplier_id, cost, notes, created_at, updated_at)
+                VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+                ON CONFLICT(color_id, supplier_id) DO UPDATE SET
+                    cost = excluded.cost,
+                    notes = excluded.notes,
+                    updated_at = datetime('now')
+                """, arguments: [colorId, supplierId, cost, notes])
+        }
+    }
+
+    /// Remove a supplier-specific cost for a color.
+    public func removeSupplierCostForColor(colorId: Int64, supplierId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                DELETE FROM color_supplier_costs WHERE color_id = ? AND supplier_id = ?
+                """, arguments: [colorId, supplierId])
+        }
+    }
+
+    /// Resolve the effective cost for a color using the cascade:
+    /// 1. Color × Supplier cost (if supplierId given)
+    /// 2. Color override cost
+    /// 3. Type default cost (looks up via type_color_links)
+    /// 4. nil (no price set)
+    public func getEffectivePrice(colorId: Int64, typeId: Int64? = nil, supplierId: Int64? = nil) throws -> ResolvedCascadeCost {
+        try db.writer.read { dbConn in
+            // Fetch the color's own unit cost
+            let colorRow = try Row.fetchOne(dbConn, sql: """
+                SELECT unit_cost FROM part_colors WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [colorId])
+            let colorCost: Double? = colorRow?["unit_cost"]
+
+            // Fetch the type's default cost (use provided typeId or look up from type_color_links)
+            var typeDefaultCost: Double? = nil
+            if let tId = typeId {
+                let typeRow = try Row.fetchOne(dbConn, sql: """
+                    SELECT default_unit_cost FROM part_types WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [tId])
+                typeDefaultCost = typeRow?["default_unit_cost"]
+            } else {
+                // Find first linked type that has a default cost
+                let typeRow = try Row.fetchOne(dbConn, sql: """
+                    SELECT pt.default_unit_cost
+                    FROM type_color_links tcl
+                    JOIN part_types pt ON pt.id = tcl.type_id AND pt.deleted_at IS NULL
+                    WHERE tcl.color_id = ? AND pt.default_unit_cost IS NOT NULL
+                    LIMIT 1
+                    """, arguments: [colorId])
+                typeDefaultCost = typeRow?["default_unit_cost"]
+            }
+
+            // Fetch supplier cost if requested
+            var supplierCost: Double? = nil
+            if let sId = supplierId {
+                let supplierRow = try Row.fetchOne(dbConn, sql: """
+                    SELECT cost FROM color_supplier_costs
+                    WHERE color_id = ? AND supplier_id = ?
+                    """, arguments: [colorId, sId])
+                supplierCost = supplierRow?["cost"]
+            }
+
+            // Resolve cascade: supplier → color → type → none
+            let effectiveCost: Double?
+            let source: String
+            if let sc = supplierCost {
+                effectiveCost = sc
+                source = "supplier"
+            } else if let cc = colorCost {
+                effectiveCost = cc
+                source = "color"
+            } else if let tc = typeDefaultCost {
+                effectiveCost = tc
+                source = "type"
+            } else {
+                effectiveCost = nil
+                source = "none"
+            }
+
+            return ResolvedCascadeCost(
+                effectiveCost: effectiveCost,
+                source: source,
+                typeDefaultCost: typeDefaultCost,
+                colorOverrideCost: colorCost,
+                supplierCost: supplierCost
+            )
+        }
+    }
+
+    /// Get all supplier costs for a specific color.
+    public func getColorSupplierCosts(colorId: Int64) throws -> [ColorSupplierCostRow] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(dbConn, sql: """
+                SELECT csc.id, csc.color_id, csc.supplier_id, s.name AS supplier_name,
+                       csc.cost, csc.notes
+                FROM color_supplier_costs csc
+                JOIN suppliers s ON s.id = csc.supplier_id AND s.deleted_at IS NULL
+                WHERE csc.color_id = ?
+                ORDER BY s.name ASC
+                """, arguments: [colorId])
+
+            return rows.map { row in
+                ColorSupplierCostRow(
+                    id: row["id"],
+                    colorId: row["color_id"],
+                    supplierId: row["supplier_id"],
+                    supplierName: row["supplier_name"] ?? "",
+                    cost: row["cost"],
+                    notes: row["notes"]
+                )
+            }
+        }
+    }
+
+    // =========================================================================
     // MARK: - 5d. Stale Price Detection
     // =========================================================================
 
@@ -2870,6 +3175,7 @@ public final class PartsService: Sendable {
             guard targetStock > 0 else { return 0 }
             if currentStock <= minStock { return -1.0 }
             if currentStock < targetStock {
+                guard targetStock != minStock else { return -1.0 }
                 return -Double(targetStock - currentStock) / Double(targetStock - minStock)
             }
             if currentStock > maxStock && maxStock > targetStock {
@@ -5362,11 +5668,12 @@ public final class PartsService: Sendable {
     // MARK: - 12b. Supplier Detail Data
     // =========================================================================
 
-    /// Get brands linked to a supplier.
-    public func getSupplierBrands(supplierId: Int64) throws -> [(brandId: Int64, brandName: String, partCount: Int)] {
+    /// Get brands linked to a supplier with carry status.
+    public func getSupplierBrands(supplierId: Int64) throws -> [(brandId: Int64, brandName: String, partCount: Int, carryStatus: String)] {
         try db.writer.read { dbConn in
             let rows = try Row.fetchAll(dbConn, sql: """
-                SELECT b.id, b.name, COUNT(DISTINCT ps.part_id) AS part_count
+                SELECT b.id, b.name, COUNT(DISTINCT ps.part_id) AS part_count,
+                       COALESCE(bs.carry_status, 'carry_on_shelf') AS carry_status
                 FROM brand_supplier_links bs
                 JOIN brands b ON b.id = bs.brand_id AND b.deleted_at IS NULL
                 LEFT JOIN part_supplier_links ps ON ps.supplier_id = bs.supplier_id AND ps.deleted_at IS NULL
@@ -5378,7 +5685,8 @@ public final class PartsService: Sendable {
             return rows.map { row in
                 (brandId: row["id"] as Int64? ?? 0,
                  brandName: row["name"] as String? ?? "",
-                 partCount: row["part_count"] as Int? ?? 0)
+                 partCount: row["part_count"] as Int? ?? 0,
+                 carryStatus: row["carry_status"] as String? ?? "carry_on_shelf")
             }
         }
     }

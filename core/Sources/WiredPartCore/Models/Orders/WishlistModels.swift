@@ -19,9 +19,12 @@ public struct WishlistItem: Codable, FetchableRecord, MutablePersistableRecord, 
     public var approvedAt: String?
     public var dismissedBy: String?
     public var dismissedAt: String?
+    public var dismissReason: String?
     public var notes: String?
     public var createdAt: String?
     public var updatedAt: String?
+    public var autoApproveAt: String?
+    public var certaintyScore: Double?
 
     public static let databaseTableName = "wishlist_items"
 
@@ -36,8 +39,11 @@ public struct WishlistItem: Codable, FetchableRecord, MutablePersistableRecord, 
         case approvedAt = "approved_at"
         case dismissedBy = "dismissed_by"
         case dismissedAt = "dismissed_at"
+        case dismissReason = "dismiss_reason"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case autoApproveAt = "auto_approve_at"
+        case certaintyScore = "certainty_score"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) {

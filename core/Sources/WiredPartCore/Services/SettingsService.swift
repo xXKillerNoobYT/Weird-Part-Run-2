@@ -404,13 +404,13 @@ public final class SettingsService: Sendable {
     /// Export all rows from a table as an array of dictionaries.
     public func exportTable(_ tableName: String) throws -> [Any] {
         try db.writer.read { dbConnection in
-            // Validate table name to prevent injection
+            // Validate table name and use the DB-returned name (not caller-supplied) to prevent injection
             let tables = try Row.fetchAll(dbConnection, sql: """
                 SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?
             """, arguments: [tableName])
-            guard !tables.isEmpty else { return [] }
+            guard let validatedName = tables.first.flatMap({ String.fromDatabaseValue($0["name"]) }) else { return [] }
 
-            let rows = try Row.fetchAll(dbConnection, sql: "SELECT * FROM \"\(tableName)\" LIMIT 10000")
+            let rows = try Row.fetchAll(dbConnection, sql: "SELECT * FROM \"\(validatedName)\" LIMIT 10000")
             return rows.map { row in
                 var dict: [String: Any] = [:]
                 for (column, value) in row {
