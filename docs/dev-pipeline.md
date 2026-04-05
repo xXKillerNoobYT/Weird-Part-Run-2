@@ -1495,3 +1495,15 @@ _Appended by dev-pipeline-manager each run._
   - `scheduled_deletions` auto-cancel on stock rise not implemented — `WarehouseService.createMovement()` + `completeSession()` don't call any draining-deletion cleanup after stock increases. Low severity (user can manually cancel). Flag for next hunt-fix run.
 - **Issues closed:** 0
 - **Pipeline health:** Build clean, 909/909 tests green, 46 open issues (44 are long-lived program-review specs), prompt queue PE-031→PE-027→PE-028→PE-029→PE-030→PE-032→PE-033
+
+---
+
+### End-of-Day Sync — 2026-04-04
+- Files committed: 88 (4 new commits: core services/models, tests, iOS UI, docs+pipeline)
+- Commits created: 4 (6 total ahead of previous origin, 2 were pre-existing docs-only)
+- Push status: success (de403fe → 1a571be)
+- Tests: 970/970 passing (51 suites — up from 909 earlier in the day)
+- Agent runs today: 7/7 active agents ran — hunt-fix-verify (×2, runs 11–12), plan-enforcer (run 5), dev-improvement-scanner (×2, runs 7–8), github-issues-sync (run 5), dev-pipeline-manager (×2, runs 10–11)
+- Issues processed: PE-028 ✅ DONE (brands/suppliers editing), PE-032 ✅ DONE (schedule config), PE-033 ✅ DONE (wishlist sections), PE-034 NEW (DIS-001–004 quick UX), PE-003 core DONE (flex pool Swift + 6 tests)
+- Bugs fixed: 114 total lifetime (iterations 27–29 today: multi-user audit OOB crash, SchedulingService force unwraps, BadgeCountManager debounce)
+- Pipeline health: OK — 970/970 green, build clean, 5 active prompts (PE-031 EMERGENCY → PE-034 → PE-027 → PE-029 → PE-030), 7 DevTODOs tracked
