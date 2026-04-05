@@ -166,8 +166,8 @@ struct CreateNotebookSheet: View {
             }
 
             appCore.onboardingManager?.markCompleted("notebooks-create")
-            onSave()
             dismiss()
+            onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save notebook")
         }

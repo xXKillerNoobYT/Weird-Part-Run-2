@@ -1119,8 +1119,8 @@ private struct AddJPOLineItemSheet: View {
                 notes: notes.isEmpty ? nil : notes,
                 userId: userId
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "process order")
         }

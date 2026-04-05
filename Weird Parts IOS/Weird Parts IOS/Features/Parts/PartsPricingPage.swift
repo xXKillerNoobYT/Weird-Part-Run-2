@@ -1354,8 +1354,8 @@ struct PricingEditSheet: View {
                 source: "manual"
             )
 
-            await onSave()
             dismiss()
+            await onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }

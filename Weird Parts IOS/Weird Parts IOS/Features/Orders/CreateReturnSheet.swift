@@ -103,8 +103,8 @@ struct CreateReturnSheet: View {
                 reason: reason,
                 supplierId: selectedSupplierId
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             saveError = userFriendlyError(error, context: "create return")
         }

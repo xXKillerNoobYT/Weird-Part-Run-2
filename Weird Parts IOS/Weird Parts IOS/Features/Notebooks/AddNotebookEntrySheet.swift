@@ -316,8 +316,8 @@ struct AddNotebookEntrySheet: View {
                     createdBy: userId
                 )
             }
-            onSave()
             dismiss()
+            onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save notebook")
         }

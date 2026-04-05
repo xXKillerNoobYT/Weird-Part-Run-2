@@ -85,12 +85,22 @@ struct IOSReceivingPage: View {
             NavigationStack {
                 IOSReceiveShipmentPage()
                     .environmentObject(appCore)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { activeSheet = nil }
+                        }
+                    }
             }
         case .continueSession:
             // IOSReceiveShipmentPage shows PO list; user picks the PO to continue
             NavigationStack {
                 IOSReceiveShipmentPage()
                     .environmentObject(appCore)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { activeSheet = nil }
+                        }
+                    }
             }
         case .help:
             PageHelpSheet(

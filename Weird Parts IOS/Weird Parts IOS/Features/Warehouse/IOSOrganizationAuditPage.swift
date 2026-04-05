@@ -535,8 +535,8 @@ private struct OrgChecklistSheet: View {
                 binsAssigned: binsAssigned,
                 similarPartsNearby: similarPartsNearby
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load audit")
         }
@@ -649,8 +649,8 @@ private struct ConsolidationDetailSheet: View {
         errorMessage = nil
         do {
             try service.castConsolidationVote(voteId: voteId, userId: userId, chosenAreaId: chosenArea)
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load audit")
         }
@@ -744,8 +744,8 @@ private struct ManagerOverrideSheet: View {
         errorMessage = nil
         do {
             try service.managerOverrideConsolidation(voteId: voteId, chosenAreaId: chosenArea)
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load audit")
         }

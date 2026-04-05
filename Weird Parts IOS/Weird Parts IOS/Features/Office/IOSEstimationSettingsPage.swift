@@ -402,8 +402,8 @@ private struct AddEstimationQuestionSheet: View {
                 group: group, stage: stage, answerType: answerType,
                 choices: choices, weight: weight
             )
-            await onSave()
             dismiss()
+            await onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save settings")
         }
@@ -484,8 +484,8 @@ private struct EditEstimationQuestionSheet: View {
                 text: questionText.trimmingCharacters(in: .whitespaces),
                 weight: weight
             )
-            await onSave()
             dismiss()
+            await onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save settings")
         }

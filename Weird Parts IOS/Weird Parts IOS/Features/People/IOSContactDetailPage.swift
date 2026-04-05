@@ -242,8 +242,8 @@ private struct EditContactSheet: View {
                 email: email.trimmingCharacters(in: .whitespaces).isEmpty ? nil : email.trimmingCharacters(in: .whitespaces),
                 role: role.trimmingCharacters(in: .whitespaces).isEmpty ? nil : role.trimmingCharacters(in: .whitespaces)
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "save contact")
         }

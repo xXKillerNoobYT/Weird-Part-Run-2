@@ -107,8 +107,8 @@ struct CreateDispatchSheet: View {
                 date: date,
                 notes: notes.isEmpty ? nil : notes
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }

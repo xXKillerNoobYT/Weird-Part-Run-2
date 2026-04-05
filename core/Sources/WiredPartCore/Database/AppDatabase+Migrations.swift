@@ -9,10 +9,10 @@ import GRDB
 
 extension AppDatabase {
     static func registerMigrations(_ migrator: inout DatabaseMigrator) {
-        // In development, allow schema alterations for ease of iteration.
-        #if DEBUG
-        migrator.eraseDatabaseOnSchemaChange = true
-        #endif
+        // NOTE: eraseDatabaseOnSchemaChange was removed (GitHub #101).
+        // The app has 71+ proper incremental migrations — that flag wiped
+        // the entire database whenever the schema fingerprint changed,
+        // destroying all user data on every rebuild.
 
         registerMigration000ChangeLog(&migrator)
         registerMigration001Foundation(&migrator)

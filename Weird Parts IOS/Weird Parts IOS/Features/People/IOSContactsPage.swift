@@ -355,8 +355,8 @@ private struct AddContactSheet: View {
                 phone: phone,
                 email: email.isEmpty ? nil : email
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load contacts")
         }

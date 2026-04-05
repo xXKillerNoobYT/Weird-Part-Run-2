@@ -468,8 +468,8 @@ private struct AddCustomerContactSheet: View {
                 phone: phone,
                 email: email.isEmpty ? nil : email
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load customer")
         }
@@ -539,8 +539,8 @@ private struct AddCommunicationSheet: View {
                 content: content.trimmingCharacters(in: .whitespaces),
                 createdBy: userId
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load customer")
         }
@@ -613,8 +613,8 @@ private struct AddPaymentSheet: View {
                 invoiceNumber: invoiceNumber.isEmpty ? nil : invoiceNumber,
                 createdBy: userId
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load customer")
         }

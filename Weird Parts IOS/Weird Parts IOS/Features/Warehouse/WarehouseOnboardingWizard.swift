@@ -1,7 +1,7 @@
 import SwiftUI
 import WiredPartCore
 
-/// Data about a single area, used across wizard steps 3-6.
+/// Data about a single area, used across wizard steps 3-9.
 struct WizardAreaInfo: Identifiable {
     let id: Int64
     let areaCode: String
@@ -38,14 +38,17 @@ func loadAllWizardAreas(floorPlanId: Int64, service: WarehouseService) throws ->
 
 // MARK: - Main Wizard
 
-/// 6-step guided warehouse setup wizard.
+/// 9-step guided warehouse setup wizard (progressive, resumable).
 ///
-/// Step 1: Define Space — name + measurements
-/// Step 2: Place Units — add storage units inline
-/// Step 3: Number Everything — interactive sticker checklist
-/// Step 4: Walk the Floor — per-area part assignment
-/// Step 5: Count Everything — per-area counting (hidden system counts)
-/// Step 6: Set Targets — MIN/TARGET/MAX per part
+/// Step 1: Define Warehouse Size — name + width × length
+/// Step 2: Define Zones — zone types for functional areas
+/// Step 3: Define Storage Units — shelves, racks, cabinets
+/// Step 4: Place Units — visual drag-and-drop on grid
+/// Step 5: Define Shelves — levels within each unit
+/// Step 6: Define Areas — sections within each shelf
+/// Step 7: Bin Numbers — numbered bins for bin-type areas
+/// Step 8: Part Assignment — assign catalog parts to bins/areas
+/// Step 9: Count Verification — confirm physical counts
 struct WarehouseOnboardingWizard: View {
     @EnvironmentObject private var appCore: AppCore
     @Environment(\.dismiss) private var dismiss
@@ -61,10 +64,11 @@ struct WarehouseOnboardingWizard: View {
     @State private var widthFeet = 40
     @State private var lengthFeet = 60
 
-    private let totalSteps = 6
+    private let totalSteps = 9
     private let stepLabels = [
-        "Define Space", "Place Units", "Number Everything",
-        "Walk the Floor", "Count Everything", "Set Targets"
+        "Define Size", "Define Zones", "Storage Units",
+        "Place Units", "Shelves", "Areas",
+        "Bin Numbers", "Assign Parts", "Verify Counts"
     ]
 
     var body: some View {
@@ -77,36 +81,49 @@ struct WarehouseOnboardingWizard: View {
                     step1DefineSpace.tag(1)
 
                     if let fpId = floorPlanId {
-                        WarehouseWizardStep2(
+                        WizardStepZones(
                             floorPlanId: fpId,
                             stepError: $loadError
                         ).tag(2)
 
-                        WarehouseWizardStep3(
+                        WarehouseWizardStep2(
                             floorPlanId: fpId,
                             stepError: $loadError
                         ).tag(3)
 
-                        WarehouseWizardStep4(
+                        WizardStepPlacement(
                             floorPlanId: fpId,
                             stepError: $loadError
                         ).tag(4)
 
-                        WarehouseWizardStep5(
+                        WizardStepShelves(
                             floorPlanId: fpId,
                             stepError: $loadError
                         ).tag(5)
 
-                        WarehouseWizardStep6(
+                        WizardStepAreas(
                             floorPlanId: fpId,
                             stepError: $loadError
                         ).tag(6)
+
+                        WizardStepBins(
+                            floorPlanId: fpId,
+                            stepError: $loadError
+                        ).tag(7)
+
+                        WarehouseWizardStep4(
+                            floorPlanId: fpId,
+                            stepError: $loadError
+                        ).tag(8)
+
+                        WarehouseWizardStep5(
+                            floorPlanId: fpId,
+                            stepError: $loadError
+                        ).tag(9)
                     } else {
-                        incompleteStepView.tag(2)
-                        incompleteStepView.tag(3)
-                        incompleteStepView.tag(4)
-                        incompleteStepView.tag(5)
-                        incompleteStepView.tag(6)
+                        ForEach(2...totalSteps, id: \.self) { step in
+                            incompleteStepView.tag(step)
+                        }
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
@@ -166,18 +183,20 @@ struct WarehouseOnboardingWizard: View {
     private var progressBar: some View {
         VStack(spacing: 4) {
             // Clickable step dots
-            HStack(spacing: 8) {
-                ForEach(0..<totalSteps, id: \.self) { step in
-                    Circle()
-                        .fill(step + 1 == currentStep ? .blue :
-                              completedWizardSteps.contains(step + 1) ? .green :
-                              .gray.opacity(0.3))
-                        .frame(width: 10, height: 10)
-                        .onTapGesture {
-                            if step + 1 <= currentStep || completedWizardSteps.contains(step + 1) {
-                                withAnimation { currentStep = step + 1 }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(1...totalSteps, id: \.self) { step in
+                        Circle()
+                            .fill(step == currentStep ? .blue :
+                                  completedWizardSteps.contains(step) ? .green :
+                                  .gray.opacity(0.3))
+                            .frame(width: 10, height: 10)
+                            .onTapGesture {
+                                if step <= currentStep || completedWizardSteps.contains(step) {
+                                    withAnimation { currentStep = step }
+                                }
                             }
-                        }
+                    }
                 }
             }
 
@@ -254,7 +273,7 @@ struct WarehouseOnboardingWizard: View {
                 .tint(.green)
             }
 
-            // Skip for Now (steps 2-5 only)
+            // Skip for Now (steps 2-8 only)
             if currentStep > 1 && currentStep < totalSteps {
                 Button {
                     completedWizardSteps.insert(currentStep)
@@ -281,13 +300,20 @@ struct WarehouseOnboardingWizard: View {
         do {
             if let existing = try service.getOnboardingProgress() {
                 progress = existing
-                currentStep = existing.currentStep
+                currentStep = min(existing.currentStep, totalSteps)
                 floorPlanId = existing.floorPlanId
 
                 // Restore completed steps
                 if existing.step1Complete { completedWizardSteps.insert(1) }
                 if existing.step2Complete { completedWizardSteps.insert(2) }
                 if existing.step3Complete { completedWizardSteps.insert(3) }
+
+                // Restore extended step data from JSON
+                if let stepData = existing.step4Progress,
+                   let data = stepData.data(using: .utf8),
+                   let steps = try? JSONDecoder().decode(Set<Int>.self, from: data) {
+                    completedWizardSteps.formUnion(steps)
+                }
             }
         } catch {
             loadError = userFriendlyError(error, context: "load warehouse setup")
@@ -327,31 +353,34 @@ struct WarehouseOnboardingWizard: View {
         }
 
         completedWizardSteps.insert(currentStep)
-
-        // Save progress to the database
-        guard let id = progress?.id else {
-            withAnimation { currentStep = min(currentStep + 1, totalSteps) }
-            return
-        }
-        do {
-            let nextStep = min(currentStep + 1, totalSteps)
-            switch currentStep {
-            case 1:
-                try service.updateOnboardingStep(id: id, currentStep: nextStep, step1Complete: true)
-            case 2:
-                try service.updateOnboardingStep(id: id, currentStep: nextStep, step2Complete: true)
-            case 3:
-                try service.updateOnboardingStep(id: id, currentStep: nextStep, step3Complete: true)
-            default:
-                try service.updateOnboardingStep(id: id, currentStep: nextStep)
-            }
-        } catch {
-            loadError = userFriendlyError(error, context: "save progress")
-        }
+        saveProgressToDb()
         withAnimation { currentStep = min(currentStep + 1, totalSteps) }
     }
 
+    private func saveProgressToDb() {
+        guard let service = appCore.warehouseService, let id = progress?.id else { return }
+        do {
+            // Encode extended completed steps as JSON for steps 4+
+            let extendedSteps = completedWizardSteps.filter { $0 >= 4 }
+            let stepDataJson = try? String(data: JSONEncoder().encode(extendedSteps), encoding: .utf8)
+
+            let nextStep = min(currentStep + 1, totalSteps)
+            try service.updateOnboardingStep(
+                id: id,
+                currentStep: nextStep,
+                step1Complete: completedWizardSteps.contains(1),
+                step2Complete: completedWizardSteps.contains(2),
+                step3Complete: completedWizardSteps.contains(3),
+                step4Progress: stepDataJson
+            )
+        } catch {
+            loadError = userFriendlyError(error, context: "save progress")
+        }
+    }
+
     private func saveAndExit() {
+        saveProgressToDb()
+        // Also persist current step for resume
         if let service = appCore.warehouseService, let id = progress?.id {
             try? service.updateOnboardingStep(id: id, currentStep: currentStep)
         }

@@ -110,8 +110,8 @@ struct CreateChannelSheet: View {
                     createdBy: userId
                 )
             }
-            onSave()
             dismiss()
+            onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }

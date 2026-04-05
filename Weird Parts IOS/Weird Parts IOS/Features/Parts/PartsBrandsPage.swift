@@ -361,16 +361,15 @@ private struct BrandFormSheet: View {
             }
             .alert("Add Suppliers?", isPresented: $showAddSuppliersPrompt) {
                 Button("Add Suppliers") {
-                    // Dismiss form, then parent will show detail sheet where they can manage suppliers
                     Task {
-                        await onSave()
                         dismiss()
+                        await onSave()
                     }
                 }
                 Button("Skip", role: .cancel) {
                     Task {
-                        await onSave()
                         dismiss()
+                        await onSave()
                     }
                 }
             } message: {
@@ -390,8 +389,8 @@ private struct BrandFormSheet: View {
                 showAddSuppliersPrompt = true
                 return
             }
-            await onSave()
             dismiss()
+            await onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }
@@ -800,8 +799,8 @@ struct BrandSupplierPickerSheet: View {
             try service.setBrandSuppliers(brandId: brandId, supplierIds: selectedIds)
             await MainActor.run {
                 isSaving = false
-                onSave()
                 dismiss()
+                onSave()
             }
         } catch {
             await MainActor.run {

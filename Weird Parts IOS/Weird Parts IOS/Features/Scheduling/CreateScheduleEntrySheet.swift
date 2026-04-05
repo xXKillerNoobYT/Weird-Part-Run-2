@@ -112,8 +112,8 @@ struct CreateScheduleEntrySheet: View {
                 notes: notes.isEmpty ? nil : notes,
                 timeSlot: timeSlot
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }

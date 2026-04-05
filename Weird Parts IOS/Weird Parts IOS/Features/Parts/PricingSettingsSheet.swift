@@ -115,8 +115,8 @@ struct PricingSettingsSheet: View {
             try service.updateCompanyCostSetting(key: "pricing_mode", value: pricingMode)
             try service.updateCompanyCostSetting(key: "default_markup_percent", value: defaultMarkup)
             try service.updateCompanyCostSetting(key: "stale_price_threshold_days", value: staleThresholdDays)
-            await onSave()
             dismiss()
+            await onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }

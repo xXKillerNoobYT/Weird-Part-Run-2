@@ -224,8 +224,8 @@ private struct AddCustomerSheet: View {
                 phone: phone.isEmpty ? nil : phone,
                 address: address.isEmpty ? nil : address
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load customers")
         }

@@ -162,8 +162,8 @@ struct CreatePOSheet: View {
                 notes: notes.isEmpty ? nil : notes
             )
             appCore.onboardingManager?.markCompleted("po-create")
-            onSave()
             dismiss()
+            onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save order")
         }

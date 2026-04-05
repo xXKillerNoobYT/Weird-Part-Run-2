@@ -340,8 +340,8 @@ private struct AddContractorNoteSheet: View {
                 content: content.trimmingCharacters(in: .whitespaces),
                 createdBy: userId
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load contractor")
         }

@@ -302,14 +302,14 @@ struct QRScanSheet: View {
             if result.isFound {
                 if let expected = expectedType {
                     if result.entityType == expected {
-                        onResult(result)
                         await MainActor.run { dismiss() }
+                        onResult(result)
                     }
                     // Type mismatch → don't dismiss, show warning
                 } else {
                     // Accept any type
-                    onResult(result)
                     await MainActor.run { dismiss() }
+                    onResult(result)
                 }
             }
         } catch {

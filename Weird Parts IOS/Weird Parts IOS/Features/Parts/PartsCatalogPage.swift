@@ -1437,8 +1437,8 @@ private struct PartFormSheet: View {
                     Button("Save") {
                         Task {
                             await save()
-                            await onSave()
                             dismiss()
+                            await onSave()
                         }
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || selectedCategoryId == 0)

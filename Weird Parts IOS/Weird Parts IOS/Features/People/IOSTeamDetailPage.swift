@@ -352,8 +352,8 @@ private struct EditTeamSheet: View {
                 name: name.trimmingCharacters(in: .whitespaces),
                 description: description.isEmpty ? nil : description
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load team")
         }

@@ -1064,8 +1064,8 @@ private struct MisplacedPartSheet: View {
                 foundBy: userId
             )
             try service.updateUserRating(userId: userId, action: "misplacement_find")
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load audit")
         }

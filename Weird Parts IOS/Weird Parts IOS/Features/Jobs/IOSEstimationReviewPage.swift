@@ -235,8 +235,8 @@ private struct WeeklyReviewSheet: View {
                 reviewedBy: userId,
                 notes: notes.isEmpty ? nil : notes
             )
-            await onSave()
             dismiss()
+            await onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save settings")
         }
@@ -334,8 +334,8 @@ private struct EndOfJobReviewSheet: View {
                 lessonsLearned: lessonsLearned.isEmpty ? nil : lessonsLearned,
                 reviewedBy: userId
             )
-            await onSave()
             dismiss()
+            await onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save settings")
         }

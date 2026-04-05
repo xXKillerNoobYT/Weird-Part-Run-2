@@ -1299,8 +1299,8 @@ private struct CompanionRuleFormSheet: View {
                 )
             }
 
-            await onSave()
             dismiss()
+            await onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }
@@ -1374,8 +1374,8 @@ private struct AlternativeFormSheet: View {
                             isSaving = true
                             await save()
                             if saveError == nil {
-                                await onSave()
                                 dismiss()
+                                await onSave()
                             }
                             isSaving = false
                         }

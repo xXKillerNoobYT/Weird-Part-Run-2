@@ -203,8 +203,8 @@ struct WizardAddStorageUnitSheet: View {
                 levels: levelCount,
                 areasPerLevel: areasPerLevel
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save storage unit")
             isSaving = false

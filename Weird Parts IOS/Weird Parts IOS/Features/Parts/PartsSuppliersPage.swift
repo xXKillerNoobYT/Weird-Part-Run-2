@@ -577,8 +577,8 @@ private struct SupplierFormSheet: View {
         saveError = nil
         do {
             try await save()
-            await onSave()
             dismiss()
+            await onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }
@@ -1283,8 +1283,8 @@ private struct AddSupplierContactSheet: View {
                 email: email.isEmpty ? nil : email,
                 isPrimary: isPrimary
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }

@@ -684,8 +684,8 @@ private struct AddWishlistItemSheet: View {
                 requestedBy: appCore.currentUser?.displayName,
                 notes: notes.isEmpty ? nil : notes
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save wishlist")
             isSaving = false

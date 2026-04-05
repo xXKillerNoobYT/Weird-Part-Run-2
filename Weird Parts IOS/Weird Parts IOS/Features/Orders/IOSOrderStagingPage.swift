@@ -500,8 +500,8 @@ private struct StageSettingsSheet: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
-                        onSave()
                         dismiss()
+                        onSave()
                     }
                 }
             }

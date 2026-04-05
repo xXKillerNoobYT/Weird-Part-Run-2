@@ -334,8 +334,8 @@ private struct AddEmployeeSheet: View {
                 email: email.isEmpty ? nil : email,
                 phone: phone.isEmpty ? nil : phone
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load employees")
         }

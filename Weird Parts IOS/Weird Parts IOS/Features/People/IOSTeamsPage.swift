@@ -304,8 +304,8 @@ private struct AddTeamSheet: View {
                 name: teamName.trimmingCharacters(in: .whitespaces),
                 description: teamDescription.isEmpty ? nil : teamDescription
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load teams")
         }

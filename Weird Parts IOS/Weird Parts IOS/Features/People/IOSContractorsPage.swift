@@ -206,8 +206,8 @@ private struct AddContractorSheet: View {
                 phone: phone.isEmpty ? nil : phone,
                 notes: trade.isEmpty ? nil : "Trade: \(trade)"
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load contractors")
         }

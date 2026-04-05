@@ -67,8 +67,8 @@ struct RequestTimeOffSheet: View {
                 endDate: fmt.string(from: endDate),
                 reason: reason.isEmpty ? nil : reason
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }

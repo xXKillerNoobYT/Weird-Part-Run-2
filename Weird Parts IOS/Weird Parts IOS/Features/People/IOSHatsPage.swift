@@ -267,8 +267,8 @@ private struct AddHatSheet: View {
                 name: hatName.trimmingCharacters(in: .whitespaces),
                 description: hatDescription.isEmpty ? nil : hatDescription
             )
-            onSave()
             dismiss()
+            onSave()
         } catch {
             errorMessage = userFriendlyError(error, context: "load hats")
         }
@@ -529,8 +529,8 @@ private struct AddEmployeeToHatSheet: View {
         guard let service = appCore.peopleService else { return }
         do {
             try service.toggleHatAssignment(employeeId: employeeId, hatId: hatId, assign: true)
-            onSave()
             dismiss()
+            onSave()
         } catch {
             loadError = userFriendlyError(error, context: "assign hat")
         }

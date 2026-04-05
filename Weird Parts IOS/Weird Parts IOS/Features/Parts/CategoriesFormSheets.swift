@@ -81,10 +81,9 @@ struct CategoryFormSheet: View {
         saveError = nil
         do {
             try await save()
-            // Notify all observers that hierarchy data changed
+            dismiss()
             notifyDataChanged(.partsHierarchy)
             await onSave()
-            dismiss()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }
@@ -180,9 +179,9 @@ struct StyleFormSheet: View {
         saveError = nil
         do {
             try await save()
+            dismiss()
             notifyDataChanged(.partsHierarchy)
             await onSave()
-            dismiss()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }
@@ -278,9 +277,9 @@ struct TypeFormSheet: View {
         saveError = nil
         do {
             try await save()
+            dismiss()
             notifyDataChanged(.partsHierarchy)
             await onSave()
-            dismiss()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }
@@ -534,9 +533,9 @@ struct ColorFormSheet: View {
         saveError = nil
         do {
             try await save()
+            dismiss()
             notifyDataChanged(.partsHierarchy)
             await onSave()
-            dismiss()
         } catch {
             saveError = userFriendlyError(error, context: "save data")
         }
