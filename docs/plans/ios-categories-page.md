@@ -56,4 +56,28 @@
 
 ---
 
-*Design confirmed from prompts 14A-14G · All DONE*
+## GitHub #46 Decisions (2026-04-04)
+
+> Q&A answered. Partial implementation in commit 826dd18. Remaining items are future prompts.
+
+### Part Numbers at Color Level
+- Part numbers belong at the **Color** level — each color variant has its own unique part number from the manufacturer/supplier
+- This is NOT a constructed prefix+suffix; it is a direct, opaque part number entered by the user
+- **Optional Supplier Part Number** also at Color level, per supplier — makes ordering easier (the supplier may use a different code than the manufacturer)
+- Implementation status: **not yet built** — needs DB schema change + UI prompt
+
+### Tree Expansion State — Session Persistence
+- Tree expansion state should be **per-session** (not persisted to DB or UserDefaults across restarts)
+- **✅ Implemented in commit 826dd18** — `CategoriesTreeView` expanded sets lifted from `@State` to `@Binding`, owned by `PartsCategoriesPage`. Survives `.id(dataVersion)` refreshes within a session.
+
+### Search Behavior
+- Users should be able to search by any combination: `[color + part number]`, `[category drill-down]`, trade names, abbreviations (e.g., "RD" for red, "GFCI red outlet")
+- Implementation status: **not yet built** — needs enhanced search logic at Color level
+
+### Pending Prompt Work
+- `PE-046a` (planned): Add `part_number` + `supplier_part_numbers` fields to Color level in schema, migration, and UI editor
+- `PE-046b` (planned): Wire part-number-aware search to Color level in CatalogSearch
+
+---
+
+*Design confirmed from prompts 14A-14G · All DONE · #46 Q&A decisions added 2026-04-04*

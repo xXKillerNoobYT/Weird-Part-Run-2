@@ -123,18 +123,37 @@ For EACH page, verify ALL of the following:
 - [ ] Audit trail for data changes
 - [ ] Proper first-time/empty state guidance
 
-## Process Per Run
+## Process Per Run (ENHANCED — Actually Fix, Don't Just Log)
 
 1. **Read tracker** (`docs/page-rebuild-tracker.md`) to find current page
-2. **Read the plan** for that page from `docs/plans/`
-3. **Read the actual code** for the page
-4. **Run verification checklist** (A through F)
-5. **Fix issues** found (code changes)
-6. **Run build** (`cd core && swift build`)
-7. **Run tests** (`cd core && swift test`)
-8. **Update tracker** with results
-9. **If page passes:** Mark complete, move to next page
-10. **If page fails:** Log remaining issues, continue next run
+2. **Read the plan** for that page from `docs/plans/` — understand WHAT and WHY
+3. **Read the schema** — `AppDatabase+Migrations.swift` for SQL context
+4. **Read the actual code** for the page + related service files
+5. **Run verification checklist** (A through F) — mark each ✅ or ❌
+6. **FIX every ❌ failure directly:**
+   - Data integrity fixes (D) first — these cause crashes
+   - Code quality fixes (A) next — these cause bugs
+   - Feature completeness (E) — missing functionality
+   - Forms & actions (C) — usability
+   - UI standards (B) — polish
+   - Cross-cutting (F) — nice-to-haves
+7. **Test after EACH fix:** `cd /Users/IA/GitHub/Weird-Part-Run-2/core && swift build && swift test`
+8. **Add/update tests** — every fix gets a test or updates an existing one
+9. **Update tracker** with results (issues found, fixed, remaining)
+10. **Comment on GitHub issue** (#52-#66) with page status
+11. **If page passes:** Mark ✅, move to next page, close related sub-issues
+12. **If page blocked:** Mark ❌ with reason, write Xcode prompt if XCODE_ONLY, skip to next
+
+### Fix Rules
+- **Read plan before EVERY fix** — no coding without context
+- **Verify SQL against migrations** — EVERY TIME, no exceptions
+- **Never hardcode user ID `1`** — always flow from session
+- **No `import GRDB` in UI files** — service layer only
+- **Every fix gets a test** — test count must be monotonically increasing
+- **If fix breaks tests** → revert, try different approach
+- **3 consecutive failures on same check** → skip it, comment on GitHub issue
+- **Max 3 pages per run** — prevent runaway
+- **XCODE_ONLY fixes** → write prompt to `xcode-ai/fix-prompts/`, don't attempt directly
 
 ## Tracker Format
 

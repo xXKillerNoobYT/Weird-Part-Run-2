@@ -248,13 +248,26 @@ Jobs that workers can self-assign to, without waiting for dispatch.
 | **Ready to Start** | All prerequisites met, can begin work immediately |
 | **Needs Contact** | Customer contact needed before work can begin |
 
-### Rules
+### Rules — Updated by PE-003 Q&A (2026-04-04)
 
 - Flex pool is hat-gated: `self_assign_flex` hat required
-- Workers see available flex pool jobs on their Dashboard
-- Tapping "Claim" assigns the job to that worker
-- Once claimed, job moves out of flex pool
-- Manager can override and reassign (hat: `manage_dispatch`)
+- **Location: dedicated tab on the Scheduling page** (NOT Dashboard — keeps everything in one place)
+- Workers see ALL flex pool jobs available to them (manager pre-filters by team/person when adding to pool — app doesn't re-filter by worker skills)
+- **Who can add to flex pool:** Managers only. They filter by team or person when publishing a job to the pool.
+- Tapping "Claim" → confirmation dialog ("Are you sure?") → sets worker as job lead → navigates to Job Detail page
+- Once claimed, job becomes active; `assigned_user_id` is set to the claiming worker; `is_flex_pool` cleared
+- **Optional: company setting `require_manager_approval_for_flex_claim`** — if enabled, claim shows "Pending Approval" state until manager confirms
+- After a claim, manager can reassign, put on hold, or cancel (with proper `manage_dispatch` hat)
+- Manager can pull flex job back out of pool before claiming (resets `is_flex_pool = 0`)
+- **Dispatch entry:** Claiming writes the worker as job lead; a `dispatch_entries` row is created linking worker to job
+
+### DB Changes Required (before Xcode prompt)
+
+1. Migration: `ALTER TABLE jobs ADD COLUMN is_flex_pool INTEGER NOT NULL DEFAULT 0`
+2. `SchedulingService.fetchFlexPool()` — `SELECT * FROM jobs WHERE is_flex_pool = 1 AND status = 'open'` filtered to the pools the user's team is in
+3. `SchedulingService.markJobAsFlexPool(jobId:teams:[])` — sets `is_flex_pool = 1`, optionally filters visible teams
+4. `SchedulingService.claimFlexJob(jobId:userId:)` — sets lead worker, clears `is_flex_pool`, writes dispatch_entries row
+5. Company setting: `flex_claim_requires_approval` boolean in settings
 
 ### Flex Pool Card
 

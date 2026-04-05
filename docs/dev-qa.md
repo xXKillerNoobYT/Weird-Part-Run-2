@@ -20,7 +20,39 @@
 
 ## Pending Questions
 
-> *(None — all questions answered as of 2026-04-04)*
+---
+
+### DIS-005 — Company PII in UserDefaults During Setup Wizard
+
+**Source:** `docs/DevTODO/DIS-005-userdefaults-pii-wizard.md`
+**Current State:** `CompanySetupWizard.swift` (lines 715-720) stores company name, address, phone, email in `UserDefaults` as wizard draft state. `UserDefaults` is unencrypted and readable on unencrypted device backups.
+**Proposed Change:** Verify cleanup happens on wizard completion, or migrate wizard state to SQLite (which benefits from iOS Data Protection).
+**Affected Modules:** Auth / Settings
+
+#### Questions:
+
+1. **As the Owner:** Are the `UserDefaults` keys (`companySetup_name`, `companySetup_address`, etc.) deleted after the wizard completes successfully? If yes, this is acceptable (temporary storage only). If not, this is a security issue that should be fixed.
+   > Answer: _pending_
+
+2. **As a Developer:** If wizard state does persist after completion, should we: (A) call `UserDefaults.standard.removeObject(forKey:)` for all 4 keys when wizard saves to DB, or (B) rewrite to store draft state in a `company_setup_draft` SQLite table that gets deleted after completion?
+   > Answer: _pending_
+
+---
+
+### DIS-007 — IOSMainView NotificationCenter Closure Lifetime
+
+**Source:** `docs/DevTODO/DIS-007-mainview-notificationcenter-closure.md`
+**Current State:** `IOSMainView.swift` (lines ~108-121) subscribes to `NotificationCenter.default.publisher(for: .navigateToModule)` via `.onReceive`. The closure captures `tabPrefs` and `appCore` strongly. For a root view this is typically fine, but the subscription should be confirmed benign after logout.
+**Proposed Change:** Confirm whether `IOSMainView` is recreated after logout. If it is recreated, add explicit subscription cancellation on disappear.
+**Affected Modules:** Navigation / Auth
+
+#### Questions:
+
+1. **As the Owner:** When a user logs out, does the app return to a login screen and rebuild `IOSMainView` from scratch? Or does the same `IOSMainView` instance persist across login sessions?
+   > Answer: _pending_
+
+2. **As a Developer:** If `IOSMainView` persists across logout, is it acceptable that `navigateToModule` notifications from a previous session could still trigger the handler? Or should we add explicit deregistration on logout?
+   > Answer: _pending_
 >
 > Answers integrated into plan docs:
 > - **#26 (Fresh DB crash)** → `docs/plans/ios-fresh-install-resilience.md`

@@ -2,8 +2,9 @@
 
 > **Phase 1 complete.** All 279 prompts (01–67A) are archived in `done/`.
 > **Phase 2 HIG/Security work complete.** PE-009a/b/c/d/e, PE-008a/b/c/d/e, PE-022, PE-001, PE-024, PE-025, PE-026 all done. All archived to `done/`.
-> Build: 0 errors, 0 warnings. Tests: 909/909 passing (hunt-fix-verify 2026-04-04).
-> **Active prompts:** PE-031 EMERGENCY first (workers can't clock in). Then PE-027→028→029→030→032→033. PE-033 written this run (github-issues-sync 2026-04-04 run 5).
+> **Phase 3 status (dev-pipeline-manager run 11, 2026-04-04):** PE-028 ✅ DONE, PE-032 ✅ DONE, PE-033 ✅ DONE. PE-003 core DONE (migration 071 + flex pool service + 6 tests) — UI prompt still needed.
+> Build: 0 errors, 0 warnings. Tests: 970/970 passing.
+> **5 active prompts remaining:** PE-031 EMERGENCY first. Then PE-034 (quick UX fixes — NEW). Then PE-027→029→030.
 
 ---
 
@@ -26,14 +27,15 @@
 | PE-024 | *(archived)* | All modal/sheet popups don't close — audited 2026-04-03, all patterns already correct, no changes needed (GitHub #21 code-verified) | ✅ done (2026-04-03) — no changes needed |
 | PE-025 | *(archived)* | Teams empty state, Edit Tabs layout, Settings Page Layout descriptions (GitHub #30, #31, #32) | ✅ done (2026-04-04) — IOSTeamsPage, TabBarEditorView, TabBarPreferences, UserMenuSheet updated; committed 826dd18. Also includes CategoriesTreeView @State→@Binding fix (partial #46 impl). |
 | PE-026 | *(archived)* | Badge counts on all tabs (real-time, green/red tint), action button border rings, notebook update badges (GitHub #50, #51) | ✅ done (2026-04-04) — BadgeCountService + BadgeCountManager + ActionDot/actionRing on all approval/action pages |
-| PE-031 | `PE-031-clock-fix-ios.md` | Clock In/Out bug fix — GPS permission race + alreadyClockedIn recovery (GitHub #20) 🚨 EMERGENCY | ⬜ **READY — trigger second (workers blocked)** |
+| PE-031 | `PE-031-clock-fix-ios.md` | Clock In/Out bug fix — GPS permission race + alreadyClockedIn recovery (GitHub #20) 🚨 EMERGENCY | ⬜ **READY — trigger first (workers blocked)** |
+| PE-034 | `PE-034-dis-quick-ui-fixes.md` | Quick UX fixes: loading indicators (DIS-001), pull-to-refresh templates (DIS-002), sheet detents (DIS-003), timer lifecycle (DIS-004) | ⬜ **READY — new 2026-04-04** |
 | PE-027 | `PE-027-part-number-hierarchy.md` | Part numbers at color level, supplier part numbers per color × supplier, search by PN + abbrev (GitHub #46) | ⬜ **READY** |
-| PE-028 | `PE-028-brands-suppliers-editing.md` | Brands page shows editable supplier list, Suppliers page shows editable brand list with carry status, brand_supplier_relationships table (GitHub #47) | ⬜ **READY** |
+| PE-028 | *(archive — work done)* | Brands & Suppliers editing — Migration 066 + carry_status + bidirectional UI in PartsBrandsPage/PartsSuppliersPage (GitHub #47) | ✅ DONE 2026-04-04 — move `PE-028-brands-suppliers-editing.md` to `done/` |
 | PE-029 | `PE-029-pricing-ui.md` | Price chips on catalog color rows, PriceEditSheet with cascade (type→color→supplier), IOSPricingPage overview (GitHub #48) | ⬜ **READY** |
 | PE-030 | `PE-030-warehouse-setup-redesign.md` | Remove forced setup gate, two independent flows (Parts + Floor Plan), drag-and-drop placement, cart mode, resumable (GitHub #49) | ⬜ **READY** |
-| PE-032 | `PE-032-schedule-config-additive.md` | Add missing fields to Schedule Config: company hours, shift templates per hat, holiday calendar, dispatch rules, supervisor role (GitHub #29) | ⬜ **READY** |
-| PE-033 | `PE-033-wishlist-section-layout.md` | Wishlist 3-section layout (User Added / Forecast / System), 14-day auto-approve, certainty badge, dismiss requires reason (GitHub #93) | ⬜ **READY** |
-| PE-003 | *(write prompt)* | Flex pool self-assign — Q&A fully answered. Needs DB migration (is_flex_pool column) + SchedulingService methods before Xcode prompt | ⬜ Q&A done; awaiting DB migration before prompt |
+| PE-032 | *(archive — work done)* | Schedule Config additive — Migration 069 `shift_templates`+`company_holidays`, IOSScheduleConfigPage 823 lines with all sections (GitHub #29) | ✅ DONE 2026-04-04 — move `PE-032-schedule-config-additive.md` to `done/` |
+| PE-033 | *(archive — work done)* | Wishlist 3-section layout — Migration 070, WishlistService methods, IOSWishlistPage 3-section layout (GitHub #93) | ✅ DONE 2026-04-04 — move `PE-033-wishlist-section-layout.md` to `done/` |
+| PE-003 | `PE-003-flex-pool-scheduling-ui.md` | Flex pool Scheduling tab UI — third tab with worker claim flow + manager job-detail action. Core Swift done. | ⬜ **READY — after PE-027/029/030** |
 | PE-009a | *(closed — direct edit)* | HIG: 83 hardcoded font sizes → semantic styles (GitHub #11 closed) | ✅ closed — fixed directly in 38ca2bb; archive prompt to `done/` |
 | PE-009b | *(archived)* | HIG: 12 undersized tap targets (< 44×44pt) (GitHub #12) | ✅ done (2026-04-02) — direct edits 38ca2bb + contentShape pass; all 13 locations ≥44×44pt |
 | PE-009c | *(archived)* | HIG: 2 remaining swipe-to-delete (all 5 files confirmed) | ✅ done (2026-04-02) — all 5 files verified with candidate+dialog pattern |

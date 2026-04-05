@@ -142,24 +142,53 @@ For each feature area (Parts, Jobs, People, Warehouse, Orders, Fleet, Tools, Sch
 
 ---
 
-## Fix Protocol
+## Fix Protocol (ENHANCED — Actually Fix, Don't Just Log)
 
-1. **Severity 1 (Page crashes, data loss, trapped in modal):** Fix immediately in the core Swift package. Run `swift test --package-path core` after.
-2. **Severity 2 (Dead buttons, broken navigation, missing empty states):** Fix directly in Swift files if possible. Create DevTODO if it needs Xcode AI (visual work).
-3. **Severity 3 (SQL mismatches, plan drift, minor UX):** Fix SQL in service files. File GitHub issue for plan drift.
+### Severity 1 (Page crashes, data loss, trapped in modal)
+**Action: FIX IMMEDIATELY.**
+1. Read the plan for the relevant feature
+2. Read `AppDatabase+Migrations.swift` for SQL context
+3. Fix the root cause in the service/model/UI file
+4. Add or update tests to cover the fix
+5. Run `cd core && swift build && swift test` — must pass
+6. Comment on the GitHub issue with fix details
+7. Close the GitHub issue if fully resolved
+
+### Severity 2 (Dead buttons, broken navigation, missing empty states)
+**Action: FIX DIRECTLY if service-layer or simple UI. Write Xcode prompt if complex visual.**
+1. If it's a service bug, SQL issue, or missing method → fix directly in Swift
+2. If it's complex visual UI work → write prompt to `xcode-ai/fix-prompts/`
+3. Update `xcode-ai/fix-prompts/00-fix-order.md` if prompt was written
+4. Test after each fix: `cd core && swift build && swift test`
+5. Comment on GitHub issue with results
+
+### Severity 3 (SQL mismatches, plan drift, minor UX)
+**Action: FIX SQL directly. File GitHub issue for plan drift.**
+1. Fix SQL column/table mismatches by reading migrations first
+2. Add `isTableNotFoundError` wrappers where missing
+3. File GitHub issue for anything requiring design decisions
+4. Test: `cd core && swift build && swift test`
 
 ## After Each Run
 
-1. Update `docs/usability-tracker.md` with findings and fixes
-2. File new GitHub issues for anything that can't be fixed immediately
-3. Create DevTODO files for UI work that needs Xcode AI
-4. Update `docs/plans/master-issue-list.md` if items status changed
-5. Run `swift build --package-path core && swift test --package-path core` to verify fixes
+1. Update `docs/usability-tracker.md` with findings AND fixes applied
+2. **Comment on GitHub issues** for every fix — include files changed, test results
+3. **Close GitHub issues** that are fully resolved
+4. File new GitHub issues for anything that can't be fixed immediately
+5. Create DevTODO files only for complex UI work that needs Xcode AI
+6. Update `docs/plans/master-issue-list.md` if items status changed
+7. Run `cd /Users/IA/GitHub/Weird-Part-Run-2/core && swift build && swift test` to verify ALL fixes
+8. Verify test count ≥ previous (never lose tests)
 
 ## Policies
 
+- **FIX first, file second** — always attempt the fix before creating an issue
 - **Never break working pages** — if a fix is risky, create a DevTODO instead
 - **Always verify SQL against migrations** — never assume column names
 - **File GitHub issues for unfixable problems** — single source of truth
 - **Check user decisions on DevTODO files** — look for `done` and `Q` tags
 - **Unplanned improvements need approval** — ask user with 3 options (keep, remove, plan for later)
+- **Read plan before every fix** — `docs/plans/` defines WHAT and WHY
+- **Never hardcode user ID `1`** — always flow from session
+- **Max 10 fixes per run** — prevent runaway
+- **3 consecutive failures on same issue** → skip, comment "Needs manual review"

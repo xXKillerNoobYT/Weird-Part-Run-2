@@ -31,6 +31,12 @@ Thumbs.db
 # Claude
 .claude/
 
+# Secrets — never commit these
+.env
+.env.*
+credentials.json
+token.json
+
 # Temporary files
 .tmp/
 
