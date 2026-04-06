@@ -119,14 +119,14 @@ struct IOSScheduleConfigPage: View {
                 existing: existing,
                 hats: allHats,
                 onSave: { saveShiftTemplate($0) },
-                onDelete: existing != nil ? { deleteShiftTemplate(existing!.id) } : nil
+                onDelete: existing.map { tpl in { deleteShiftTemplate(tpl.id) } }
             )
             .environmentObject(appCore)
         case .editHoliday(let existing):
             HolidayEditSheet(
                 existing: existing,
                 onSave: { saveHoliday($0) },
-                onDelete: existing != nil ? { deleteHoliday(existing!.id) } : nil
+                onDelete: existing.map { hol in { deleteHoliday(hol.id) } }
             )
         }
     }
@@ -493,8 +493,12 @@ struct IOSScheduleConfigPage: View {
 
     private func deleteShiftTemplate(_ id: Int64) {
         guard let svc = appCore.schedulingService else { return }
-        try? svc.deleteShiftTemplate(id: id)
-        shiftTemplates = (try? svc.getShiftTemplates()) ?? []
+        do {
+            try svc.deleteShiftTemplate(id: id)
+            shiftTemplates = (try? svc.getShiftTemplates()) ?? []
+        } catch {
+            saveError = userFriendlyError(error, context: "delete shift template")
+        }
         activeSheet = nil
     }
 
@@ -514,8 +518,12 @@ struct IOSScheduleConfigPage: View {
 
     private func deleteHoliday(_ id: Int64) {
         guard let svc = appCore.schedulingService else { return }
-        try? svc.deleteHoliday(id: id)
-        holidays = (try? svc.getHolidays()) ?? []
+        do {
+            try svc.deleteHoliday(id: id)
+            holidays = (try? svc.getHolidays()) ?? []
+        } catch {
+            saveError = userFriendlyError(error, context: "delete holiday")
+        }
         activeSheet = nil
     }
 }

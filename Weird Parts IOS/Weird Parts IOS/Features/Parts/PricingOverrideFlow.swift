@@ -479,10 +479,8 @@ struct PricingTierSetSheet: View {
             }
 
             Button("Done") {
-                Task {
-                    await onComplete()
-                    dismiss()
-                }
+                dismiss()
+                Task { await onComplete() }
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)

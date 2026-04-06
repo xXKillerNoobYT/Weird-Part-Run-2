@@ -7,6 +7,7 @@ struct IOSEstimationSettingsPage: View {
     @State private var questions: [EstimationQuestion] = []
     @State private var effectiveness: [QuestionEffectiveness] = []
     @State private var rejections: [Int64: [EstimationQuestionRejection]] = [:]
+    @State private var isLoading = true
     @State private var loadError: String?
     @State private var actionError: String?
     @State private var showEffectiveness = false
@@ -32,6 +33,56 @@ struct IOSEstimationSettingsPage: View {
     }
 
     var body: some View {
+        Group {
+            if isLoading {
+                ProgressView("Loading...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                estimationSettingsList
+            }
+        }
+        .navigationTitle("Estimation Questions")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    activeSheet = .add
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel("Add question")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .accessibilityLabel("Help")
+            }
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .add:
+                AddEstimationQuestionSheet { await loadData() }
+            case .edit(let question):
+                EditEstimationQuestionSheet(question: question) { await loadData() }
+            case .help:
+                PageHelpSheet(
+                    title: "Estimation Questions Help",
+                    sections: [
+                        ("What This Page Does", "Manage the questions asked during job estimation. Questions are grouped by stage (Bid, Pre-Start, During, Before Trim, Punch List) and used to build accurate job estimates based on real project data."),
+                        ("How to Use It", "Tap + to add a new question. Swipe left on any question to edit or deactivate it. Swipe right on an inactive question to reactivate it. Each question has a group, stage, answer type, and weight that affects how much it influences the estimate."),
+                        ("AI Analysis", "Tap 'Analyze Question Effectiveness' to see which questions actually correlate with accurate estimates. Questions are rated Keep, Modify, or Remove based on historical data. Requires at least 15 completed jobs with end-of-job reviews."),
+                        ("Question Weight", "Weight controls how much a question's answer impacts the final estimate. Higher weight (up to 5.0) means the answer has more influence. Default is 1.0.")
+                    ]
+                )
+            }
+        }
+        .refreshable { await loadData() }
+        .task { await loadData() }
+    }
+
+    // MARK: - Settings List
+
+    private var estimationSettingsList: some View {
         List {
             if let loadError {
                 Section { Text(loadError).foregroundStyle(.red) }
@@ -79,43 +130,6 @@ struct IOSEstimationSettingsPage: View {
                     .font(.caption2)
             }
         }
-        .navigationTitle("Estimation Questions")
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    activeSheet = .add
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .accessibilityLabel("Add question")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button { activeSheet = .help } label: {
-                    Image(systemName: "questionmark.circle")
-                }
-                .accessibilityLabel("Help")
-            }
-        }
-        .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .add:
-                AddEstimationQuestionSheet { await loadData() }
-            case .edit(let question):
-                EditEstimationQuestionSheet(question: question) { await loadData() }
-            case .help:
-                PageHelpSheet(
-                    title: "Estimation Questions Help",
-                    sections: [
-                        ("What This Page Does", "Manage the questions asked during job estimation. Questions are grouped by stage (Bid, Pre-Start, During, Before Trim, Punch List) and used to build accurate job estimates based on real project data."),
-                        ("How to Use It", "Tap + to add a new question. Swipe left on any question to edit or deactivate it. Swipe right on an inactive question to reactivate it. Each question has a group, stage, answer type, and weight that affects how much it influences the estimate."),
-                        ("AI Analysis", "Tap 'Analyze Question Effectiveness' to see which questions actually correlate with accurate estimates. Questions are rated Keep, Modify, or Remove based on historical data. Requires at least 15 completed jobs with end-of-job reviews."),
-                        ("Question Weight", "Weight controls how much a question's answer impacts the final estimate. Higher weight (up to 5.0) means the answer has more influence. Default is 1.0.")
-                    ]
-                )
-            }
-        }
-        .refreshable { await loadData() }
-        .task { await loadData() }
     }
 
     // MARK: - Question Row
@@ -235,6 +249,7 @@ struct IOSEstimationSettingsPage: View {
     private func loadData() async {
         guard let svc = appCore.jobEstimationService else {
             loadError = "Estimation service not available"
+            isLoading = false
             return
         }
         do {
@@ -242,6 +257,7 @@ struct IOSEstimationSettingsPage: View {
         } catch {
             loadError = userFriendlyError(error, context: "load estimation settings")
         }
+        isLoading = false
     }
 
     private func loadEffectiveness() async {
@@ -467,6 +483,7 @@ private struct EditEstimationQuestionSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { Task { await save() } }
+                        .disabled(questionText.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
         }

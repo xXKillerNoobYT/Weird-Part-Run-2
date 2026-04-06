@@ -77,6 +77,9 @@ struct IOSClockPage: View {
     @State private var pendingClockInIsShop = false
     @State private var danglingEntryJobName: String?
 
+    // notClockedIn recovery
+    @State private var showNotClockedInAlert = false
+
     /// True when location permission has not been decided yet (first launch).
     private var needsLocationPermission: Bool {
         locationManager.authorizationStatus == .notDetermined
@@ -259,6 +262,12 @@ struct IOSClockPage: View {
                 }
             } message: {
                 Text("You have an active clock entry for \(danglingEntryJobName ?? "a previous job"). Would you like to clock out of it first?")
+            }
+            .alert("Unexpected Clock State", isPresented: $showNotClockedInAlert) {
+                Button("Refresh") { loadData() }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("The clock state is out of sync. Tap Refresh to reload.")
             }
     }
 
@@ -961,7 +970,11 @@ struct IOSClockPage: View {
                         errorMessage = "Service not available"
                         return
                     }
-                    try? service.setClockEntryWorkType(clockEntryId: entry.id, workType: newValue)
+                    do {
+                        try service.setClockEntryWorkType(clockEntryId: entry.id, workType: newValue)
+                    } catch {
+                        errorMessage = userFriendlyError(error, context: "update work type")
+                    }
                 }
 
                 if let todo = currentTodo {
@@ -1171,6 +1184,9 @@ struct IOSClockPage: View {
                     pendingClockInJobId = jobId
                     pendingClockInIsShop = isShop
                     showAlreadyClockedInAlert = true
+                case .notClockedIn(_):
+                    logger.warning("ClockIn got notClockedIn unexpectedly — showing refresh alert")
+                    showNotClockedInAlert = true
                 default:
                     logger.error("ClockIn JobsError: \(error)")
                     errorMessage = userFriendlyError(error, context: "clock in")
@@ -1565,7 +1581,8 @@ struct IOSClockPage: View {
 
     private func loadData() {
         isLoading = activeEntry == nil && todayEntries.isEmpty
-        errorMessage = nil
+        // Don't clear errorMessage here — let it persist until the load
+        // succeeds so users can read the error during a refresh attempt.
 
         Task {
             userLocation = await locationManager.getCurrentLocation()
@@ -1685,6 +1702,7 @@ struct IOSClockPage: View {
                 currentTodo = linkedTodo
                 workType = currentWorkType
                 isLoading = false
+                errorMessage = nil  // Clear errors on successful load
 
                 // Apply break state
                 activeBreakRecord = currentBreak

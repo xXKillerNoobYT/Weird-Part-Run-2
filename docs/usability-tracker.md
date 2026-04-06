@@ -194,9 +194,102 @@ None — all identified issues fixed.
 
 ---
 
+## Usability Hunter Results (Behavioral Scans)
+
+**Agent:** usability-hunter
+**Schedule:** Daily at 10:00 AM
+**Skill:** `xcode-ai/skills/usability-hunter/SKILL.md`
+**GitHub Label:** `usability-hunter`
+
+### Scanner Results (2026-04-06 — Run 2)
+
+| Scanner | Category | Violations | Severity |
+|---------|----------|-----------|----------|
+| 1 | Dismiss & Sheet Safety | 2 confirmed dismiss-after-await (PricingOverrideFlow, IOSJPOCreationPage) | CRITICAL |
+| 2 | Silent Failures | ~20+ empty catch blocks; try? on delete/save in IOSScheduleConfigPage, IOSClockPage | CRITICAL/HIGH |
+| 3 | Missing User Feedback | 20+ files missing success feedback on save/create (Settings, Scheduling, People) | HIGH |
+| 4 | Navigation & Exit Traps | 20+ Settings forms without dirty tracking/discard confirmation | MODERATE |
+| 5 | Form & Input Issues | 14 Save buttons without .disabled(); IOSEstimationSettingsPage EditSheet fixed | MODERATE |
+| 6 | Accessibility & Touch | Not fully scanned this run (grep -P not available on macOS) | LOW |
+
+### Scanner Baseline (2026-04-05)
+
+| Scanner | Category | Violations | Severity |
+|---------|----------|-----------|----------|
+| 1 | Dismiss & Sheet Safety | 163 sheets missing `interactiveDismissDisabled`, 34 dismiss-after-await files | CRITICAL/HIGH |
+| 2 | Silent Failures | 198 `try?` (72 files), 426 guard-let-service-return | CRITICAL/HIGH |
+| 3 | Missing User Feedback | TBD (first full run) | HIGH |
+| 4 | Navigation & Exit Traps | TBD (first full run) | HIGH |
+| 5 | Form & Input Issues | TBD (first full run) | MODERATE |
+| 6 | Accessibility & Touch | TBD (first full run) | MODERATE |
+
+### GitHub Issues Filed (2026-04-06 — Run 2)
+
+| Issue | Category | File(s) | Severity | Status |
+|-------|----------|---------|----------|--------|
+| #124 | Dismiss-after-await | PricingOverrideFlow.swift | CRITICAL | **FIXED 2026-04-06** — dismiss() before await, onComplete() in background Task |
+| #125 | Silent delete failures | IOSScheduleConfigPage.swift | CRITICAL | **FIXED 2026-04-06** — deleteShiftTemplate + deleteHoliday → do-catch with saveError |
+| #126 | Silent save failure | IOSClockPage.swift | CRITICAL | **FIXED 2026-04-06** — setClockEntryWorkType try? → do-catch with errorMessage |
+| #127 | Save button validation | IOSEstimationSettingsPage.swift | HIGH | **FIXED 2026-04-06** — EditEstimationQuestionSheet Save now .disabled on empty text |
+| #128 | Systemic empty catch blocks | 10+ files | HIGH | Open — needs per-file audit (write ops vs non-critical loads) |
+| #129 | Systemic dirty tracking | 20+ Settings forms | MODERATE | Open — needs hasUnsavedChanges + interactiveDismissDisabled |
+
+### GitHub Issues Filed (2026-04-05)
+
+| Issue | Category | File(s) | Severity | Status |
+|-------|----------|---------|----------|--------|
+| #112 | Dismiss-after-await | QRScanSheet.swift | CRITICAL | **Verified OK** — already uses `await MainActor.run { dismiss() }` |
+| #113 | Dismiss-after-await | CascadePriceEditSheet.swift | CRITICAL | **Verified OK** — only sync dismiss() buttons, no async context |
+| #114 | Dismiss-after-await | PartsBrandsPage.swift | CRITICAL | **Verified OK** — closed by commit 05c7f58 |
+| #115 | Silent save failure | WarehouseOnboardingWizard.swift | CRITICAL | **FIXED 2026-04-05** — finishOnboarding() try? → do-catch; don't dismiss on failure |
+| #116 | Silent save failure | PartsFlowWizard.swift | CRITICAL | **FIXED 2026-04-05** — saveAllProgress() try? → do-catch; error alert; blocks dismiss on failure |
+| #117 | Navigation trap | CompanySetupWizard.swift | HIGH | **Verified FIXED** — confirmationDialog for exit + step navigation in place |
+| #118 | Dismiss-after-async | IOSTeamDetailPage.swift | HIGH | **Verified OK** — deleteTeam uses `await MainActor.run { dismiss() }` correctly |
+| #119 | Form issues | IOSMovementWizard.swift | MODERATE | Open |
+| #120 | Missing dismiss guard | IOSWarehouseSettingsPage.swift | MODERATE | **Verified FIXED** — converted to ActiveSheet enum in recent work |
+| #121 | SYSTEMIC: try? | 72 files (198 instances) | HIGH | Open (2 fixed this run: #115, #116) |
+| #122 | SYSTEMIC: guard-let-return | 60+ files (426 instances) | HIGH | Open |
+| #123 | SYSTEMIC: interactiveDismissDisabled | 163 sheets missing guard | MODERATE | Open |
+
+---
+
+## Fixes Applied (2026-04-05 — Usability Enforcer Run)
+
+### P1 Fixes (Silent Save Failures — 2 files)
+
+| # | File | Issue | Fix |
+|---|------|-------|-----|
+| 1 | WarehouseOnboardingWizard.swift | `finishOnboarding()` used `try?` on `completeOnboarding()` — wizard could silently fail to mark itself complete | Replaced with `do-catch`; sets `loadError` and returns without dismissing on failure |
+| 2 | PartsFlowWizard.swift | `saveAllProgress()` used `try?` on `updatePart()` — part location/count data silently lost on DB error | Replaced with `do-catch`; collects failed part names, shows error alert, blocks dismiss until user acknowledges |
+
+### P3 Fixes (Accessibility / Code Quality — 3 files)
+
+| # | File | Issue | Fix |
+|---|------|-------|-----|
+| 3 | WizardStepPlacement.swift | `.font(.system(size: 7))` — 7pt font bypasses Dynamic Type, unreadable at normal viewing distance (DIS-008) | Replaced with `.font(.caption2).minimumScaleFactor(0.4)` |
+| 4 | WizardStepPlacement.swift | `placedUnit != nil ? "\(placedUnit!.name)..."` — force unwrap guarded by ternary nil check (DIS-011) | Replaced with `placedUnit.map { "\($0.name)..." } ?? "..."` |
+| 5 | IOSScheduleConfigPage.swift | 2× `existing != nil ? { fn(existing!.id) } : nil` — force unwrap in onDelete closures (DIS-011) | Replaced with `existing.map { x in { fn(x.id) } }` |
+
+### Verified Already Fixed (no code change needed)
+
+| # | Issue | Verification |
+|---|-------|-------------|
+| 6 | #112 QRScanSheet dismiss-after-await | Already uses `await MainActor.run { dismiss() }` — correct pattern |
+| 7 | #113 CascadePriceEditSheet dismiss-after-await | Only sync `Button("Done") { dismiss() }` — no async path |
+| 8 | #117 CompanySetupWizard navigation trap | Has confirmationDialog for exit + proper 8-step navigation |
+| 9 | #118 IOSTeamDetailPage dismiss-after-async | `deleteTeam()` uses `await MainActor.run { dismiss() }` — correct |
+| 10 | #120 IOSWarehouseSettingsPage dismiss guard | Converted to `ActiveSheet` enum pattern in previous work |
+
+**Build result:** 1014 tests pass, 0 failures.
+
+---
+
 ## Run History
 
 | Date | Scanners Run | Issues Found | Fixed | New GitHub Issues | New DevTODOs |
 |------|-------------|-------------|-------|-------------------|--------------|
 | 2026-04-04 | Full 6-check audit (all 170+ pages) — Round 1 | 22 | 22 | 0 | 0 |
 | 2026-04-04 | Deep fix pass — Round 2 (P3 sheets, loading states, .constant alerts) | 26 | 26 | 0 | 0 |
+| 2026-04-05 | **Usability Hunter** initial sweep — 6 scanners across 323 files | 12 issues filed | 0 | 12 (#112-#123) | 0 |
+| 2026-04-05 | **Usability Enforcer** — 8 scanners, focus on modified files + open issues | 7 fixes | 5 | 0 | 0 |
+| 2026-04-06 | **Usability Hunter** Run 2 — all 6 scanners, 5 files fixed | 10 findings | 5 (#124-#127 fixed, dismiss-after-sleep) | 6 (#124-#129) | 0 |

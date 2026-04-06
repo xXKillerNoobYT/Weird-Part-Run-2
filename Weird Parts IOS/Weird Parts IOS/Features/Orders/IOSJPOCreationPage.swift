@@ -1062,7 +1062,7 @@ struct IOSJPOCreationPage: View {
             }
             Task {
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
-                dismiss()
+                await MainActor.run { dismiss() }
             }
         } catch {
             submitError = userFriendlyError(error, context: "submit data")
