@@ -112,8 +112,9 @@ struct WizardStepPlacement: View {
     private func gridCell(row: Int, col: Int) -> some View {
         let placedUnit = units.first { $0.gridX == col && $0.gridY == row }
         let zone = zones.first { z in
-            guard let zx = z.gridX, let zy = z.gridY,
-                  let zw = z.gridWidth, let zh = z.gridHeight else { return false }
+            let zx = z.gridX; let zy = z.gridY
+            let zw = z.gridWidth; let zh = z.gridHeight
+            guard zw > 0, zh > 0 else { return false }
             return col >= zx && col < zx + zw && row >= zy && row < zy + zh
         }
 
@@ -129,7 +130,8 @@ struct WizardStepPlacement: View {
                         Image(systemName: iconForUnitType(unit.unitType))
                             .font(.caption2)
                         Text(unit.name)
-                            .font(.system(size: 7))
+                            .font(.caption2)
+                            .minimumScaleFactor(0.4)
                             .lineLimit(1)
                     }
                     .foregroundStyle(.white)
@@ -138,7 +140,7 @@ struct WizardStepPlacement: View {
             .frame(width: cellSize, height: cellSize)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(placedUnit != nil ? "\(placedUnit!.name) at row \(row), column \(col)" : "Empty cell at row \(row), column \(col)")
+        .accessibilityLabel(placedUnit.map { "\($0.name) at row \(row), column \(col)" } ?? "Empty cell at row \(row), column \(col)")
     }
 
     private func cellBackground(zone: WarehouseZone?, placedUnit: WarehouseStorageUnit?) -> Color {

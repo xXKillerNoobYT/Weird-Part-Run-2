@@ -14,14 +14,15 @@ struct PartsFlowWizard: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var currentStep = 1
-    @State private var parts: [Part] = []
-    @State private var filteredParts: [Part] = []
+    @State private var parts: [PartsService.PartWithDetails] = []
+    @State private var filteredParts: [PartsService.PartWithDetails] = []
     @State private var searchQuery = ""
     @State private var partCounts: [Int64: String] = [:]
     @State private var partLocations: [Int64: String] = [:]
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var savedCount = 0
+    @State private var saveErrorMessage: String?
 
     private let totalSteps = 3
     private let stepLabels = ["Parts List", "Count Entry", "Location Assignment"]
@@ -52,12 +53,22 @@ struct PartsFlowWizard: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Save & Exit") {
-                        saveAllProgress()
-                        dismiss()
+                        saveAllProgress(clearDraft: false)
+                        if saveErrorMessage == nil {
+                            dismiss()
+                        }
                     }
                 }
             }
             .task { loadParts() }
+            .alert("Save Error", isPresented: Binding(
+                get: { saveErrorMessage != nil },
+                set: { if !$0 { saveErrorMessage = nil } }
+            )) {
+                Button("OK") { saveErrorMessage = nil }
+            } message: {
+                if let msg = saveErrorMessage { Text(msg) }
+            }
         }
     }
 
@@ -123,13 +134,13 @@ struct PartsFlowWizard: View {
 
             // Parts list
             List {
-                ForEach(filteredParts, id: \.id) { part in
+                ForEach(filteredParts, id: \.part.id) { item in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(part.name)
+                            Text(item.part.name)
                                 .font(.subheadline)
                                 .fontWeight(.medium)
-                            if let code = part.code {
+                            if let code = item.part.code {
                                 Text(code)
                                     .font(.caption)
                                     .monospaced()
@@ -137,7 +148,7 @@ struct PartsFlowWizard: View {
                             }
                         }
                         Spacer()
-                        if let partId = part.id {
+                        if let partId = item.part.id {
                             if partCounts[partId] != nil || partLocations[partId] != nil {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(.green)
@@ -183,14 +194,14 @@ struct PartsFlowWizard: View {
             .padding(.horizontal)
 
             List {
-                ForEach(parts, id: \.id) { part in
-                    if let partId = part.id {
+                ForEach(parts, id: \.part.id) { item in
+                    if let partId = item.part.id {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(part.name)
+                                Text(item.part.name)
                                     .font(.subheadline)
                                     .fontWeight(.medium)
-                                if let code = part.code {
+                                if let code = item.part.code {
                                     Text(code)
                                         .font(.caption)
                                         .monospaced()
@@ -248,11 +259,11 @@ struct PartsFlowWizard: View {
             .padding(.horizontal)
 
             List {
-                ForEach(parts, id: \.id) { part in
-                    if let partId = part.id {
+                ForEach(parts, id: \.part.id) { item in
+                    if let partId = item.part.id {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Text(part.name)
+                                Text(item.part.name)
                                     .font(.subheadline)
                                     .fontWeight(.medium)
                                 Spacer()
@@ -282,7 +293,7 @@ struct PartsFlowWizard: View {
 
             // Save all button
             Button {
-                saveAllProgress()
+                saveAllProgress(clearDraft: false)
             } label: {
                 Label(
                     savedCount > 0 ? "Saved \(savedCount) Parts" : "Save All Locations",
@@ -321,8 +332,10 @@ struct PartsFlowWizard: View {
                 .buttonStyle(.borderedProminent)
             } else {
                 Button {
-                    saveAllProgress()
-                    dismiss()
+                    saveAllProgress(clearDraft: true)
+                    if saveErrorMessage == nil {
+                        dismiss()
+                    }
                 } label: {
                     Label("Finish", systemImage: "checkmark.circle.fill")
                         .frame(maxWidth: .infinity)
@@ -369,41 +382,60 @@ struct PartsFlowWizard: View {
         } else {
             let q = query.lowercased()
             filteredParts = parts.filter {
-                $0.name.lowercased().contains(q) ||
-                ($0.code?.lowercased().contains(q) ?? false)
+                $0.part.name.lowercased().contains(q) ||
+                ($0.part.code?.lowercased().contains(q) ?? false)
             }
         }
     }
 
-    private func saveAllProgress() {
-        // Save counts and locations to UserDefaults for resume
-        let countDict = partCounts.reduce(into: [String: String]()) { $0["\($1.key)"] = $1.value }
-        let locDict = partLocations.reduce(into: [String: String]()) { $0["\($1.key)"] = $1.value }
-
-        if let data = try? JSONEncoder().encode(countDict) {
-            UserDefaults.standard.set(data, forKey: "partsFlow_counts")
+    private func saveAllProgress(clearDraft: Bool) {
+        if clearDraft {
+            // Wizard finished — purge resume draft so next open starts fresh
+            UserDefaults.standard.removeObject(forKey: "partsFlow_counts")
+            UserDefaults.standard.removeObject(forKey: "partsFlow_locations")
+        } else {
+            // Save & Exit — persist draft so the wizard can be resumed later
+            let countDict = partCounts.reduce(into: [String: String]()) { $0["\($1.key)"] = $1.value }
+            let locDict = partLocations.reduce(into: [String: String]()) { $0["\($1.key)"] = $1.value }
+            if let data = try? JSONEncoder().encode(countDict) {
+                UserDefaults.standard.set(data, forKey: "partsFlow_counts")
+            }
+            if let data = try? JSONEncoder().encode(locDict) {
+                UserDefaults.standard.set(data, forKey: "partsFlow_locations")
+            }
         }
-        if let data = try? JSONEncoder().encode(locDict) {
-            UserDefaults.standard.set(data, forKey: "partsFlow_locations")
-        }
 
-        // Write counts to the database as stock adjustments
+        // Write location notes to the database
         savedCount = 0
-        for part in parts {
-            guard let partId = part.id else { continue }
+        var failedParts: [String] = []
+        for item in parts {
+            guard let partId = item.part.id else { continue }
 
-            // Save location as a free-text note on the part
+            // Build a combined note with location and count
+            var notesParts: [String] = []
             if let location = partLocations[partId],
                !location.trimmingCharacters(in: .whitespaces).isEmpty {
-                try? appCore.partsService?.updatePart(id: partId, notes: "Location: \(location)")
+                notesParts.append("Location: \(location)")
             }
-
-            // Save stock count
-            if let text = partCounts[partId],
-               let qty = Int(text) {
-                try? appCore.warehouseService?.adjustStock(partId: partId, quantity: qty, reason: "Parts Flow initial count")
+            if let text = partCounts[partId], let qty = Int(text) {
+                notesParts.append("Initial count: \(qty)")
                 savedCount += 1
             }
+
+            if !notesParts.isEmpty {
+                let combinedNotes = notesParts.joined(separator: " | ")
+                do {
+                    try appCore.partsService?.updatePart(id: partId, notes: combinedNotes)
+                } catch {
+                    failedParts.append(item.part.name)
+                }
+            }
+        }
+
+        if !failedParts.isEmpty {
+            let preview = failedParts.prefix(3).joined(separator: ", ")
+            let suffix = failedParts.count > 3 ? " and \(failedParts.count - 3) more" : ""
+            saveErrorMessage = "Failed to save \(failedParts.count) part(s): \(preview)\(suffix)"
         }
     }
 }

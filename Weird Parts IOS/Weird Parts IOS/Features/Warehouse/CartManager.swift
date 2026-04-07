@@ -1,8 +1,9 @@
 import SwiftUI
+import Combine
 import WiredPartCore
 
 /// Item in the warehouse cart — a part or bin being moved to a new location.
-struct CartItem: Identifiable, Equatable {
+struct CartItem: Identifiable, Equatable, Sendable {
     let id = UUID()
     let partId: Int64?
     let binId: Int64?
@@ -21,7 +22,6 @@ struct CartItem: Identifiable, Equatable {
 /// - Inject as `@StateObject` at the warehouse router level
 /// - Any bin/part list can add items via `addToCart()`
 /// - Cart sheet shows items and allows placing to new locations
-@MainActor
 final class CartManager: ObservableObject {
     @Published var items: [CartItem] = []
     @Published var isCartSheetPresented = false

@@ -380,16 +380,29 @@ struct WarehouseOnboardingWizard: View {
 
     private func saveAndExit() {
         saveProgressToDb()
-        // Also persist current step for resume
+        // Also persist current step for resume (non-fatal if this fails — main
+        // progress is already saved by saveProgressToDb; resume position may
+        // be off by one step at worst).
         if let service = appCore.warehouseService, let id = progress?.id {
-            try? service.updateOnboardingStep(id: id, currentStep: currentStep)
+            do {
+                try service.updateOnboardingStep(id: id, currentStep: currentStep)
+            } catch {
+                // Non-fatal: intentionally ignored; main progress already saved above
+            }
         }
         dismiss()
     }
 
     private func finishOnboarding() {
-        if let service = appCore.warehouseService, let id = progress?.id {
-            try? service.completeOnboarding(id: id)
+        guard let service = appCore.warehouseService, let id = progress?.id else {
+            dismiss()
+            return
+        }
+        do {
+            try service.completeOnboarding(id: id)
+        } catch {
+            loadError = userFriendlyError(error, context: "complete setup")
+            return  // Don't dismiss — let user see the error and retry
         }
         dismiss()
     }

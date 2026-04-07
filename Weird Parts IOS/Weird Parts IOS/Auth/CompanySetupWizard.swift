@@ -28,6 +28,7 @@ struct CompanySetupWizard: View {
 
     // Errors
     @State private var saveError: String?
+    @State private var showExitConfirmation = false
 
     let totalSteps = 8
 
@@ -45,8 +46,8 @@ struct CompanySetupWizard: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Exit") {
-                        saveProgress()
+                    Button("Exit Setup") {
+                        showExitConfirmation = true
                     }
                 }
             }
@@ -55,6 +56,20 @@ struct CompanySetupWizard: View {
                 Button("OK") { saveError = nil }
             } message: {
                 Text(saveError ?? "")
+            }
+            .confirmationDialog(
+                "Leave Company Setup?",
+                isPresented: $showExitConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Continue to App") {
+                    saveProgress()
+                    cleanupDraft()
+                    hasCompletedCompanySetup = true
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("You can finish setup anytime from the Getting Started checklist on your Dashboard. Everything works without completing setup.")
             }
         }
     }
@@ -527,6 +542,7 @@ struct CompanySetupWizard: View {
             }
 
             Button {
+                cleanupDraft()
                 hasCompletedCompanySetup = true
             } label: {
                 Text("Go to Dashboard")
@@ -686,37 +702,36 @@ struct CompanySetupWizard: View {
         }
     }
 
-    // MARK: - Persistence
+    // MARK: - Persistence (SQLite draft — no PII in UserDefaults)
 
     private func loadProgress() {
-        if let data = UserDefaults.standard.data(forKey: "companySetup_completedSteps"),
-           let saved = try? JSONDecoder().decode(Set<Int>.self, from: data) {
-            completedSteps = saved
-        }
-        if let data = UserDefaults.standard.data(forKey: "companySetup_skippedSteps"),
-           let saved = try? JSONDecoder().decode(Set<Int>.self, from: data) {
-            skippedSteps = saved
-        }
-        companyName = UserDefaults.standard.string(forKey: "companySetup_name") ?? ""
-        companyAddress = UserDefaults.standard.string(forKey: "companySetup_address") ?? ""
-        companyPhone = UserDefaults.standard.string(forKey: "companySetup_phone") ?? ""
-        companyEmail = UserDefaults.standard.string(forKey: "companySetup_email") ?? ""
-        selectedState = UserDefaults.standard.string(forKey: "companySetup_state") ?? "California"
-        currentStep = UserDefaults.standard.integer(forKey: "companySetup_currentStep")
+        guard let draft = try? appCore.settingsService?.loadSetupDraft() else { return }
+        completedSteps = draft.completedSteps
+        skippedSteps = draft.skippedSteps
+        companyName = draft.name
+        companyAddress = draft.address
+        companyPhone = draft.phone
+        companyEmail = draft.email
+        selectedState = draft.selectedState
+        currentStep = draft.currentStep
     }
 
     private func saveProgress() {
-        if let data = try? JSONEncoder().encode(completedSteps) {
-            UserDefaults.standard.set(data, forKey: "companySetup_completedSteps")
-        }
-        if let data = try? JSONEncoder().encode(skippedSteps) {
-            UserDefaults.standard.set(data, forKey: "companySetup_skippedSteps")
-        }
-        UserDefaults.standard.set(companyName, forKey: "companySetup_name")
-        UserDefaults.standard.set(companyAddress, forKey: "companySetup_address")
-        UserDefaults.standard.set(companyPhone, forKey: "companySetup_phone")
-        UserDefaults.standard.set(companyEmail, forKey: "companySetup_email")
-        UserDefaults.standard.set(selectedState, forKey: "companySetup_state")
-        UserDefaults.standard.set(currentStep, forKey: "companySetup_currentStep")
+        let draft = SettingsService.CompanySetupDraft(
+            currentStep: currentStep,
+            completedSteps: completedSteps,
+            skippedSteps: skippedSteps,
+            name: companyName,
+            address: companyAddress,
+            phone: companyPhone,
+            email: companyEmail,
+            selectedState: selectedState
+        )
+        try? appCore.settingsService?.saveSetupDraft(draft)
+    }
+
+    /// Remove draft row after the wizard finishes successfully.
+    private func cleanupDraft() {
+        try? appCore.settingsService?.deleteSetupDraft()
     }
 }

@@ -37,7 +37,9 @@ struct IOSWarehouseSettingsPage: View {
 
     private enum ActiveSheet: Identifiable {
         case help
-        var id: String { "help" }
+        case warehouseSetup
+        case partsFlowSetup
+        var id: String { String(describing: self) }
     }
 
     var body: some View {
@@ -58,8 +60,16 @@ struct IOSWarehouseSettingsPage: View {
                 .accessibilityLabel("Help")
             }
         }
-        .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .warehouseSetup:
+                WarehouseOnboardingWizard()
+                    .environmentObject(appCore)
+            case .partsFlowSetup:
+                PartsFlowWizard()
+                    .environmentObject(appCore)
+            case .help:
+                PageHelpSheet(
                 title: "Warehouse Settings Help",
                 sections: [
                     ("Locations", "Configure default receiving and staging locations used when new shipments arrive or parts are pulled."),
@@ -67,6 +77,7 @@ struct IOSWarehouseSettingsPage: View {
                     ("Policies", "Control whether movements require notes or approval, and set thresholds for auto-confirming small moves.")
                 ]
             )
+            }
         }
         .task { loadSettings() }
         .alert("Settings Saved", isPresented: $showSaveConfirmation) {
@@ -86,6 +97,21 @@ struct IOSWarehouseSettingsPage: View {
 
     private var settingsForm: some View {
         Form {
+            // Warehouse Setup (accessible anytime)
+            Section("Warehouse Setup") {
+                Button {
+                    activeSheet = .warehouseSetup
+                } label: {
+                    Label("Floor Plan Setup Wizard", systemImage: "wand.and.stars")
+                }
+
+                Button {
+                    activeSheet = .partsFlowSetup
+                } label: {
+                    Label("Parts-First Setup", systemImage: "shippingbox.fill")
+                }
+            }
+
             // Default locations
             Section("Default Locations") {
                 TextField("Receiving Location", text: $defaultReceivingLocation)

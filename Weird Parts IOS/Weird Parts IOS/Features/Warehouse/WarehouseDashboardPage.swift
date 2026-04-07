@@ -29,10 +29,14 @@ struct WarehouseDashboardPage: View {
     @State private var setupTier: WarehouseService.WarehouseSetupTier = .complete
     @AppStorage("warehouseSetupBannerDismissed") private var bannerDismissed = false
 
+    @StateObject private var cartManager = CartManager()
+
     private enum ActiveSheet: Identifiable {
         case newMovement
         case qrScanner
         case onboardingWizard
+        case partsFlowWizard
+        case cartSheet
         case help
 
         var id: String { String(describing: self) }
@@ -56,14 +60,23 @@ struct WarehouseDashboardPage: View {
         .background(DS.Background.page)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button { activeSheet = .help } label: {
-                    Image(systemName: "questionmark.circle")
+                HStack(spacing: 12) {
+                    CartBadgeButton(cartManager: cartManager)
+                    Button { activeSheet = .help } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                    .accessibilityLabel("Help")
                 }
-                .accessibilityLabel("Help")
             }
         }
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
+        }
+        .onChange(of: cartManager.isCartSheetPresented) { _, presented in
+            if presented {
+                activeSheet = .cartSheet
+                cartManager.isCartSheetPresented = false
+            }
         }
         .task {
             loadData()
@@ -92,6 +105,12 @@ struct WarehouseDashboardPage: View {
             .environmentObject(appCore)
         case .onboardingWizard:
             WarehouseOnboardingWizard()
+                .environmentObject(appCore)
+        case .partsFlowWizard:
+            PartsFlowWizard()
+                .environmentObject(appCore)
+        case .cartSheet:
+            CartSheetView(cartManager: cartManager)
                 .environmentObject(appCore)
         case .help:
             PageHelpSheet(
@@ -144,7 +163,7 @@ struct WarehouseDashboardPage: View {
                 HStack(spacing: 10) {
                     if setupTier == .none {
                         Button { activeSheet = .onboardingWizard } label: {
-                            Text("Start Setup")
+                            Text("Full Setup")
                                 .font(.caption)
                                 .fontWeight(.medium)
                                 .padding(.horizontal, 14)
@@ -155,8 +174,17 @@ struct WarehouseDashboardPage: View {
                         }
                         .buttonStyle(.plain)
 
-                        // "Just Count Parts" will link to PartsFlowWizard in Session 2
-                        // For now, show a disabled placeholder
+                        Button { activeSheet = .partsFlowWizard } label: {
+                            Text("Just Count Parts")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(Color.teal)
+                                .foregroundStyle(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        .buttonStyle(.plain)
                     } else if setupTier == .partsOnly {
                         Button { activeSheet = .onboardingWizard } label: {
                             Text("Set Up Floor Plan")
@@ -198,7 +226,7 @@ struct WarehouseDashboardPage: View {
 
     private var setupBannerTitle: String {
         switch setupTier {
-        case .none: "Set up your warehouse"
+        case .none: "Warehouse not configured"
         case .partsOnly: "Floor plan not configured"
         case .floorPlanInProgress: "Warehouse setup in progress"
         case .complete: ""
@@ -207,7 +235,7 @@ struct WarehouseDashboardPage: View {
 
     private var setupBannerSubtitle: String {
         switch setupTier {
-        case .none: "Unlock movements, staging, and audit tracking by setting up your warehouse."
+        case .none: "Your parts won't have accurate locations. Set up now or just count your parts to get started."
         case .partsOnly: "You have parts with locations. Add a floor plan to unlock full warehouse features."
         case .floorPlanInProgress: "Pick up where you left off to complete your warehouse configuration."
         case .complete: ""
