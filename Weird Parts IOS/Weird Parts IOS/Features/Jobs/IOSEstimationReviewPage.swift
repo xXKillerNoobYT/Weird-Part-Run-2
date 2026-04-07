@@ -16,68 +16,82 @@ struct IOSEstimationReviewPage: View {
     private enum ActiveSheet: Identifiable {
         case weekly
         case endOfJob
+        case help
         var id: String {
             switch self {
             case .weekly: return "weekly"
             case .endOfJob: return "endOfJob"
+            case .help: return "help"
             }
         }
     }
     @State private var activeSheet: ActiveSheet?
 
     var body: some View {
-        List {
+        Group {
             if isLoading {
-                Section { ProgressView("Loading reviews...") }
-            }
-            if let loadError {
-                Section { ErrorStateView(message: loadError) { Task { await loadData() } } }
-            }
-            if let actionError {
-                Section { Text(actionError).foregroundStyle(.red) }
-            }
-
-            // Current estimate summary
-            if let est = latestEstimate {
-                Section {
-                    LabeledContent("Estimated Days", value: String(format: "%.1f", est.estimatedDays ?? 0))
-                    LabeledContent("Estimated Hours", value: String(format: "%.0f", est.estimatedHours ?? 0))
-                    LabeledContent("Confidence", value: "\(Int(est.confidencePercent ?? 0))%")
-                    LabeledContent("Stage", value: est.stage.replacingOccurrences(of: "_", with: " ").capitalized)
-                } header: {
-                    Text("Current Estimate")
-                }
-            }
-
-            // Action buttons
-            Section {
-                Button {
-                    activeSheet = .weekly
-                } label: {
-                    Label("Submit Weekly Review", systemImage: "calendar.badge.clock")
-                }
-
-                Button {
-                    activeSheet = .endOfJob
-                } label: {
-                    Label("Submit End-of-Job Review", systemImage: "checkmark.seal")
-                }
-            } header: {
-                Text("New Review")
-            }
-
-            // Past reviews
-            if !reviews.isEmpty {
-                Section {
-                    ForEach(reviews) { review in
-                        reviewRow(review)
+                ProgressView("Loading reviews...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    if let loadError {
+                        Section { ErrorStateView(message: loadError) { Task { await loadData() } } }
                     }
-                } header: {
-                    Text("Review History (\(reviews.count))")
+                    if let actionError {
+                        Section { Text(actionError).foregroundStyle(.red) }
+                    }
+
+                    // Current estimate summary
+                    if let est = latestEstimate {
+                        Section {
+                            LabeledContent("Estimated Days", value: String(format: "%.1f", est.estimatedDays ?? 0))
+                            LabeledContent("Estimated Hours", value: String(format: "%.0f", est.estimatedHours ?? 0))
+                            LabeledContent("Confidence", value: "\(Int(est.confidencePercent ?? 0))%")
+                            LabeledContent("Stage", value: est.stage.replacingOccurrences(of: "_", with: " ").capitalized)
+                        } header: {
+                            Text("Current Estimate")
+                        }
+                    }
+
+                    // Action buttons
+                    Section {
+                        Button {
+                            activeSheet = .weekly
+                        } label: {
+                            Label("Submit Weekly Review", systemImage: "calendar.badge.clock")
+                        }
+
+                        Button {
+                            activeSheet = .endOfJob
+                        } label: {
+                            Label("Submit End-of-Job Review", systemImage: "checkmark.seal")
+                        }
+                    } header: {
+                        Text("New Review")
+                    }
+
+                    // Past reviews
+                    if !reviews.isEmpty {
+                        Section {
+                            ForEach(reviews) { review in
+                                reviewRow(review)
+                            }
+                        } header: {
+                            Text("Review History (\(reviews.count))")
+                        }
+                    }
                 }
             }
         }
         .navigationTitle("Estimation Reviews")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .accessibilityLabel("Help")
+            }
+        }
         .refreshable {
             await loadData()
         }
@@ -87,6 +101,16 @@ struct IOSEstimationReviewPage: View {
                 WeeklyReviewSheet(jobId: jobId) { await loadData() }
             case .endOfJob:
                 EndOfJobReviewSheet(jobId: jobId) { await loadData() }
+            case .help:
+                PageHelpSheet(
+                    title: "Estimation Reviews Help",
+                    sections: [
+                        ("Purpose", "Track how accurate your estimates were over the life of a job. Reviews capture actual hours and days vs the original estimate so future bids improve."),
+                        ("Weekly Review", "Submit a progress check at the end of each week. Notes any surprises, scope changes, or scheduling issues. Actual hours are calculated automatically from clock data."),
+                        ("End-of-Job Review", "Submit final actuals when the job closes. Provide actual days and hours worked. Lessons Learned feeds the AI to improve question selection for similar future jobs."),
+                        ("Variance", "The variance percentage shows how far off the estimate was. ±10% is good, ±25% is acceptable, anything beyond that is flagged red for follow-up."),
+                    ]
+                )
             }
         }
         .task { await loadData() }
@@ -213,12 +237,14 @@ private struct WeeklyReviewSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Submit") { Task { await save() } }
                         .disabled(isSaving)
                 }
             }
+            .interactiveDismissDisabled(isSaving)
         }
     }
 
@@ -308,12 +334,14 @@ private struct EndOfJobReviewSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Submit") { Task { await save() } }
                         .disabled(isSaving || actualDays.isEmpty || actualHours.isEmpty)
                 }
             }
+            .interactiveDismissDisabled(isSaving)
         }
     }
 

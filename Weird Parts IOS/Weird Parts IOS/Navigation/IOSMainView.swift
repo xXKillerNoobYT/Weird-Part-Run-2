@@ -82,6 +82,8 @@ struct IOSMainView: View {
         .sheet(isPresented: $showConflictReview) {
             SyncConflictReviewPage()
                 .environmentObject(appCore)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
         .confirmationDialog("Log out?", isPresented: $showLogoutConfirm, titleVisibility: .visible) {
             Button("Log Out", role: .destructive) {
@@ -105,6 +107,10 @@ struct IOSMainView: View {
                 badgeManager.refresh()
             }
         }
+        // Safety: this .onReceive closure captures tabPrefs and appCore strongly, but that is fine.
+        // IOSMainView is only shown when appCore.currentUser != nil (see WiredPartIOSApp.swift).
+        // On logout, currentUser becomes nil and SwiftUI tears down this entire view, which
+        // automatically cancels the Combine subscription. No manual deregistration needed.
         .onReceive(NotificationCenter.default.publisher(for: .navigateToModule)) { notification in
             if let moduleId = notification.userInfo?["moduleId"] as? String {
                 if tabPrefs.navigationStyle == .fullSidebar {
@@ -155,6 +161,8 @@ struct IOSMainView: View {
         .sheet(isPresented: aiDisplayMode == .sheet ? $showAIAssistant : .constant(false)) {
             IOSAIAssistantPanel(displayMode: $aiDisplayMode, isVisible: $showAIAssistant)
                 .environmentObject(appCore)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
         .overlay(alignment: .bottomTrailing) {
             if showAIAssistant && aiDisplayMode == .overlay {
@@ -199,12 +207,18 @@ struct IOSMainView: View {
                 UserMenuSheet(showLogoutConfirm: $showLogoutConfirm)
                     .environmentObject(appCore)
                     .environmentObject(tabPrefs)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
             case .tabEditor:
                 TabBarEditorView(allVisibleModules: filteredModules)
                     .environmentObject(tabPrefs)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
             case .aiAssistant:
                 IOSAIAssistantPanel(displayMode: $aiDisplayMode, isVisible: $showAIAssistant)
                     .environmentObject(appCore)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
             }
         }
         .overlay(alignment: .bottomTrailing) {
@@ -488,6 +502,8 @@ struct IOSMainView: View {
             .sheet(isPresented: $showTabEditor) {
                 TabBarEditorView(allVisibleModules: filteredModules)
                     .environmentObject(tabPrefs)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
             }
             .navigationDestination(for: String.self) { moduleId in
                 if let module = allModulesById[moduleId] {
@@ -549,6 +565,8 @@ struct ModuleHostView: View {
             UserMenuSheet(showLogoutConfirm: $showLogoutConfirm)
                 .environmentObject(appCore)
                 .environmentObject(tabPrefs)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .onAppear {
             if selectedTabId.isEmpty, let first = visibleTabsList.first {

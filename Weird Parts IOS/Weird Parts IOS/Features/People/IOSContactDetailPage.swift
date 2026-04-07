@@ -57,6 +57,8 @@ struct IOSContactDetailPage: View {
             case .editContact:
                 EditContactSheet(contactId: contactId) { loadData() }
                     .environmentObject(appCore)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
             case .help:
                 PageHelpSheet(
                     title: "Contact Detail Help",

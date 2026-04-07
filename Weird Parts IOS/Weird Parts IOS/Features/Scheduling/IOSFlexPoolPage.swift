@@ -9,6 +9,14 @@ import WiredPartCore
 struct IOSFlexPoolPage: View {
     @EnvironmentObject private var appCore: AppCore
 
+    // MARK: - Sheet Routing
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
+    @State private var activeSheet: ActiveSheet?
+
     // MARK: - State
 
     @State private var flexJobs: [FlexPoolJob] = []
@@ -42,6 +50,24 @@ struct IOSFlexPoolPage: View {
             }
         }
         .navigationTitle("Flex Pool")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .accessibilityLabel("Help")
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Flex Pool Help",
+                sections: [
+                    ("What Is the Flex Pool?", "The Flex Pool shows jobs that managers have made available for workers to self-claim. These are typically short-duration or overflow jobs that need coverage."),
+                    ("Claiming a Job", "Tap Claim on any job to request assignment. If approval is required, your request enters a Pending Approval state until a manager reviews it. Otherwise, the job disappears from the list — you are now assigned."),
+                    ("After Claiming", "Once claimed, the job appears on your schedule and in the Clock In list. Pull down to refresh if you don't see your new assignment right away."),
+                ]
+            )
+        }
         .refreshable { loadData() }
         .task { loadData() }
         .confirmationDialog(

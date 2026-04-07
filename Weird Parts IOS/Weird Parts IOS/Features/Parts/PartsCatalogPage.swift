@@ -178,11 +178,12 @@ struct PartsCatalogPage: View {
             Task { await loadPricingCache() }
         }
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .addPart:
-                PartFormSheet(part: nil, categories: categories, brands: brands) { await loadData() }
-            case .partDetail(let partRow):
-                PartDetailSheet(partRow: partRow, categories: categories, brands: brands) { await loadData() }
+            Group {
+                switch sheet {
+                case .addPart:
+                    PartFormSheet(part: nil, categories: categories, brands: brands) { await loadData() }
+                case .partDetail(let partRow):
+                    PartDetailSheet(partRow: partRow, categories: categories, brands: brands) { await loadData() }
             case .quickEdit(let partRow):
                 QuickEditSheet(part: partRow) { await loadData() }
             case .editPricing(let row):
@@ -232,7 +233,10 @@ struct PartsCatalogPage: View {
                         ("Pricing", "Toggle the $ icon to show pricing overlays on each part. Tap a part for full details, long-press for quick edit.")
                     ]
                 )
+                }
             }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .background(DS.Background.page)
         .onAppear {

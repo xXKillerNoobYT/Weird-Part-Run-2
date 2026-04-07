@@ -12,6 +12,7 @@ struct IOSContractorDetailPage: View {
     @State private var rating: PeopleService.ContractorRating?
     @State private var jobHistory: [PeopleService.ContractorJobSummary] = []
     @State private var notes: [PeopleService.ContractorNote] = []
+    @State private var isLoading = true
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
 
@@ -36,7 +37,10 @@ struct IOSContractorDetailPage: View {
 
     var body: some View {
         Group {
-            if let error = loadError {
+            if isLoading {
+                ProgressView("Loading...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = loadError {
                 ErrorStateView(message: error) { loadData() }
             } else {
                 detailList
@@ -222,6 +226,7 @@ struct IOSContractorDetailPage: View {
     private func loadData() {
         guard let service = appCore.peopleService else {
             loadError = "Service unavailable"
+            isLoading = false
             return
         }
         loadError = nil
@@ -232,6 +237,7 @@ struct IOSContractorDetailPage: View {
         } catch {
             loadError = userFriendlyError(error, context: "load contractor details")
         }
+        isLoading = false
     }
 }
 

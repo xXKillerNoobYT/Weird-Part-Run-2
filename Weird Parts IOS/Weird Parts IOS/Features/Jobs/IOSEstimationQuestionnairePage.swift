@@ -8,6 +8,13 @@ struct IOSEstimationQuestionnairePage: View {
     let stage: String
 
     @EnvironmentObject private var appCore: AppCore
+
+    private enum ActiveSheet: Identifiable {
+        case help
+        var id: String { "help" }
+    }
+    @State private var activeSheet: ActiveSheet?
+
     @State private var questions: [EstimationQuestion] = []
     @State private var responseValues: [Int64: String] = [:]
     @State private var unknowns: Set<Int64> = []
@@ -118,6 +125,25 @@ struct IOSEstimationQuestionnairePage: View {
             }
         }
         .navigationTitle("Estimation — \(stageLabel)")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { activeSheet = .help } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .accessibilityLabel("Help")
+            }
+        }
+        .sheet(item: $activeSheet) { _ in
+            PageHelpSheet(
+                title: "Estimation Questionnaire Help",
+                sections: [
+                    ("Purpose", "Answer these questions to generate a time-and-labor estimate for the job at this stage. Estimates improve as you update them at each stage."),
+                    ("Unknown Answers", "Tap the orange '?' button next to any question you can't answer yet. Unknown fields are excluded from the calculation but tracked so you can fill them in later."),
+                    ("Calculating", "Tap Calculate Estimate after filling in answers. The estimate shows days, hours, and a confidence score based on how many questions were answered versus marked unknown."),
+                    ("AI Insights", "The bottom section shows AI-generated insights based on similar jobs. These are suggestions only — review them alongside the estimate."),
+                ]
+            )
+        }
         .refreshable {
             await loadData()
         }

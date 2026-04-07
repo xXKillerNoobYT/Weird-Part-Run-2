@@ -21,6 +21,7 @@ struct DashboardDailyReportPage: View {
     @State private var budgetAlerts: [JobBudgetAlert] = []
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var timerCancellable: AnyCancellable?
 
     // My Hours
     @State private var myTodayHours: Double = 0
@@ -128,8 +129,14 @@ struct DashboardDailyReportPage: View {
             await loadData()
             appCore.onboardingManager?.markCompleted("daily-report-view")
         }
-        .onReceive(refreshTimer) { _ in
-            Task { await loadData() }
+        .onAppear {
+            timerCancellable = refreshTimer.sink { _ in
+                Task { await loadData() }
+            }
+        }
+        .onDisappear {
+            timerCancellable?.cancel()
+            timerCancellable = nil
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {

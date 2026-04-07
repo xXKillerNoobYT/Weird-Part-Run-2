@@ -94,6 +94,7 @@ struct IOSDailyReportTemplatesPage: View {
                 }
             }
         }
+        .refreshable { loadSettings() }
         .task { loadSettings() }
     }
 
