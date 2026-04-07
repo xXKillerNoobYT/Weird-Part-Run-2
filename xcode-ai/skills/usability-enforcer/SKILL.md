@@ -119,8 +119,16 @@ This agent ensures that **every page in the iOS app is functional, navigable, an
 12. **Error messages showing raw errors** — `localizedDescription` shown to users instead of friendly messages
 13. **Missing `.environmentObject(appCore)`** on sheets and navigation destinations
 14. **Async @State mutations off MainActor** — `@Sendable` functions that modify `@State` without `await MainActor.run {}`
+15. **Dismiss-after-await** — `dismiss()` called after `await` in same function (stale `@Environment(\.dismiss)` reference). See #112-#114.
+16. **Silent `try?`** — `try?` on save/delete/create operations with no error feedback shown to user. See #121.
+17. **Unawaited async saves** — Async save/persist functions called without `await`, dismiss fires before save completes. See #115-#116.
+18. **Missing `interactiveDismissDisabled`** — Sheets with form inputs (`TextField`, `TextEditor`) or `isSaving` state but no swipe-dismiss guard. See #123.
+19. **Save without feedback** — Save/create/update functions that complete successfully but show no toast, alert, or checkmark to the user.
+20. **Delete without confirmation** — Delete operations that execute without a `confirmationDialog` or confirmation alert.
 
 **Output:** List of defensive UX violations with severity.
+
+> **Integration with Usability Hunter:** This agent checks STRUCTURAL correctness (load states, error states, sheet existence). The Usability Hunter (`xcode-ai/skills/usability-hunter/SKILL.md`) checks BEHAVIORAL correctness (dismiss timing, async safety, silent failures, feedback presence). Both share `docs/usability-tracker.md`. Usability Hunter runs at 10 AM; this agent runs at 2 PM. Items 15-20 above mirror the Hunter's top-priority patterns for cross-verification.
 
 ### Scanner 8: Feature Completeness
 **Goal:** Verify each major feature area has full CRUD and the expected workflow.

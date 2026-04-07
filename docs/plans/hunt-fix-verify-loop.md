@@ -101,6 +101,21 @@ These are the "eyes" of the loop. They don't fix anything — they just produce 
 - **Output:** List of features described in plans but missing/broken in code
 - **Pass condition:** Every planned feature has working implementation
 
+### Scanner 8: Usability Patterns
+- **Input:** All `.swift` files in `Weird Parts IOS/`
+- **Output:** List of behavioral usability violations by category
+- **Skill:** `xcode-ai/skills/usability-hunter/SKILL.md`
+- **Scans for:**
+  - `dismiss()` after `await` in same function — stale dismiss reference
+  - `try?` on save/delete/create without error feedback — silent failures
+  - `guard let service = appCore.xxxService else { return }` without error state — silent bail
+  - `.sheet()` on forms with `@State` mutations but no `interactiveDismissDisabled` — accidental swipe-dismiss
+  - Save/create functions with no success feedback (no toast/alert/checkmark)
+  - Delete operations without `confirmationDialog` — accidental data loss
+  - Async functions called without `await` — unawaited saves
+- **Pass condition:** Zero CRITICAL or HIGH violations
+- **GitHub label:** `usability-hunter`
+
 ---
 
 ## The Fixer (What Happens To Each Issue)
@@ -113,6 +128,7 @@ When the scanners produce a list, the fixer picks the **top 5 by priority** and 
 3. SQL column mismatches (silent data corruption)
 4. Problems folder items (user-reported)
 5. Master issue list T1 (show-stoppers)
+5.5. **Usability patterns — dismiss bugs, silent failures, missing feedback** (CRITICAL behavioral bugs, GitHub `usability-hunter` label)
 6. Silent error handling (hidden failures)
 7. Master issue list T2 (high priority)
 8. Code pattern issues (TODOs, dead buttons, etc.)
@@ -155,6 +171,7 @@ Problems folder       → 0 open items
 Master issues T1      → 0 open
 Master issues T2      → 0 open
 Plan alignment        → all 14 modules verified
+Usability patterns    → 0 critical/high violations (Scanner 8)
 ```
 
 If ANY single check fails → the loop continues (back to SCAN).
@@ -175,6 +192,7 @@ LOOP STATUS — Iteration N
   Scanner 5 (Problems):    pass/fail  (N open)
   Scanner 6 (Issues):      pass/fail  (T1:N T2:M T3:K)
   Scanner 7 (Plans):       pass/fail  (N gaps)
+  Scanner 8 (Usability):   pass/fail  (N critical, M high)
   TOTAL OPEN:              N
   FIXED THIS ITERATION:    M
   TESTS ADDED:             K

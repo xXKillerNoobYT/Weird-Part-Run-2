@@ -2,7 +2,7 @@
 source: dev-improvement-scanner (2026-04-04)
 severity: Medium
 category: Security — PII Storage
-status: ANSWERED — ready for Xcode prompt (pending dev-pipeline-manager)
+status: DONE — Xcode prompt PE-035 written 2026-04-05 at xcode-ai/fix-prompts/PE-035-dis005-wizard-sqlite-draft.md
 github_issue: PENDING (gh not available, file manually)
 ---
 

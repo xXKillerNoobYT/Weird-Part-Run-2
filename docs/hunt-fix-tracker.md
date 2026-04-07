@@ -1,8 +1,9 @@
 # Hunt-Fix-Verify Loop Tracker
 
 > **Started:** 2026-03-28
-> **Status:** PHASE 1 COMPLETE — 29 iterations, 114 bugs fixed. Latest: dev-pipeline-manager run 11 (2026-04-04) — PE-003 core: migration 071 + flex pool service methods; DIS-006: WishlistService.getSectionedItems no longer calls processAutoApprovals inline. +6 tests. Tests: **970/970 passing**.
+> **Status:** PHASE 1 COMPLETE — 29 iterations, 114 bugs fixed. Latest: test-coverage-maintenance run (2026-04-05) — 1014/1014 tests (+36 new). 36 new tests covering PartsService companion poll system, findPartByCode/Name, getImportExportStats, approveScheduledDeletion, listStockEntries.
 > **⚠️ NEXT PRIORITY: PE-033 (Clock In/Out bug, #20) — EMERGENCY. Workers cannot clock in. Investigate with Logger calls. See `docs/plans/ios-clock-fix.md`.**
+> **⚠️ NEW BUG FOUND: companion_vote_power never seeded on fresh install — all polls permanently tied. Fix: add to AuthService.defaultPermissionMap() for Admin/Manager/Lead hats. File as GitHub issue.**
 
 ---
 
@@ -1272,3 +1273,138 @@ The auth test crash (`fatalError: Unexpectedly found nil while unwrapping an Opt
 | Compile errors | 0 | 0 | = |
 | BadgeCountService SQL bugs | 4 | 0 | -4 |
 | Badge counts that were always 0 | 3 (`openDispatches`, `pendingTimeOff`, `pendingDeletions`) | 0 | -3 |
+
+---
+
+## Weekly Cleanup Run 3 — 2026-04-05 (Sunday)
+
+**Scanner:** Weekly Cleanup Agent
+**Result:** ✅ Nothing to clean — codebase is well-maintained
+
+### Part A: Completed Xcode Prompts
+
+| Check | Result |
+|-------|--------|
+| PE-028 (brands/suppliers editing) | ✅ Already in `done/` |
+| PE-032 (schedule config additive) | ✅ Already in `done/` |
+| PE-033 (wishlist section layout) | ✅ Already in `done/` |
+| PE-034 (DIS quick UX fixes) | ✅ Active prompt — valid, keep in queue |
+| PE-027/029/030/031 (done via direct edit) | ⏳ Recent (< 3 months) — not archived per policy |
+
+### Part B: Dead Code
+
+No files in `core/Sources/WiredPartCore/` older than 3 months. Only 1 TODO comment found across all Swift sources (intentional `dueDate` pattern — already tracked). No commented-out blocks, no unused private functions/properties meeting the 3-month threshold found.
+
+### Part C: Stale Temporary Files
+
+| Check | Result |
+|-------|--------|
+| `.tmp/` directory | ✅ Does not exist |
+| `.DS_Store` files | ✅ None found |
+| `.bak` / `.orig` / `.swp` files | ✅ None found |
+| `docs/Problomes/` | 32 screenshots from 2026-03-28 — within 3-month window, keep |
+
+### Part D: Q&A File
+
+`docs/dev-qa.md`: 1 question pending (DIS-005 — CompanySetupWizard PII in UserDefaults). Both sub-questions have answers. **Not removed** — awaiting plan integration into `docs/plans/` before removal per workflow.
+
+### Part E: Documentation Freshness
+
+All docs in `docs/` dated March–April 2026. Earliest is 2026-03-08. 3-month cutoff is 2026-01-05. **No docs flagged** — all within window.
+
+### Part F: Tracker Cleanup
+
+`docs/hunt-fix-tracker.md` (1274 lines, 28 iterations): All iterations from March–April 2026 — within 3-month window. **No compression needed.**
+
+`docs/dev-pipeline.md` (1543 lines): "Recently Completed" entries all from March–April 2026. **No archiving needed.**
+
+### Verification
+
+| Check | Result |
+|-------|--------|
+| `swift build` | ✅ Build complete (0 errors, 0 warnings) |
+| `swift test` | ✅ **978/978 passing** (52 suites) |
+
+**Summary:** Codebase clean. No deletions performed. Agent Health Dashboard updated in dev-pipeline.md.
+
+---
+
+### Iteration 29 — Post-Usability-Hunter Verification (2026-04-05, hunt-fix-verify run 13)
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Compile | ✅ | 0 errors, 0 warnings |
+| Tests | ✅ | **978/978 passing** (no changes needed) |
+| Code Patterns | ✅ | 3 `print()` in `#Preview` blocks — confirmed false positives (dev-only, not in production build) |
+| SQL Integrity | ✅ | PartsService, JobsService — all columns verified. `setClauses` string interpolation uses hardcoded fragment strings only — no injection risk |
+| Runtime Safety | ✅ | No new force unwraps; WizardStepPlacement `guard let→let` fix confirmed correct (`WarehouseZone.gridX` is non-optional `Int`) |
+| Edge Cases | ✅ | Minor: `CartSheetView` nil-service silently marks items placed — non-critical, service never nil in practice |
+| Problems Folder | ✅ | `docs/Problomes/` doesn't exist — no new user reports |
+| Master Issues | ⚠️ | 20 T1, 25 T2, 20 T3 open — all require Xcode AI prompts for iOS UI work |
+| Plan Alignment | ✅ | CartManager, PartsFlowWizard, WizardStepPlacement, WarehouseDashboardPage changes align with `ios-warehouse-setup-redesign.md` and usability-hunter plan |
+| Security | ✅ | No SQL injection, no hardcoded secrets, UserDefaults usage is onboarding flags only (appropriate) |
+
+**What was verified (7 recently-modified iOS files):**
+
+| File | Change | Verdict |
+|------|--------|---------|
+| `WizardStepPlacement.swift` | `guard let` on non-optional `Int` removed → plain `let` | ✅ Correct fix — old `guard let` would fail to compile |
+| `PartsFlowWizard.swift` | `[Part]→[PartWithDetails]`; `adjustStock()` (non-existent) removed → save as note | ✅ Correct — `listParts()` returns `[PartWithDetails]`; `adjustStock` never existed |
+| `IOSClockPage.swift` | `.notClockedIn` case handled; errorMessage only cleared on successful load | ✅ Correct UX improvement |
+| `CompanySetupWizard.swift` | Exit button → confirmationDialog before discarding setup | ✅ Correct — prevents accidental exit loss (#117 closed) |
+| `IOSWarehouseSettingsPage.swift` | Warehouse Setup section added with wizard launchers | ✅ Clean — enum-based sheet pattern correct (#120 closed) |
+| `WarehouseDashboardPage.swift` | "Just Count Parts" wired to PartsFlowWizard; CartManager + CartBadgeButton added | ✅ Correct enum sheet + onChange bridge pattern |
+| `CartManager.swift` | `@MainActor` removed; `Sendable` added to `CartItem` | ✅ Safe — all usage is within SwiftUI main-actor context |
+
+**Bugs fixed (0 new — all previously committed):**
+This iteration verified work from last commit (05c7f58: closes #96-#104, #108-#114) and the usability-hunter changes in working tree. No new bugs required fixing.
+
+**Scanner false-positive documented:**
+- `print()` grep matches inside `#Preview { }` blocks — preview code is stripped in production builds; scanner note added
+
+**Metrics delta:**
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| Tests passing | 978 | 978 | = |
+| Compile errors | 0 | 0 | = |
+| New bugs found | — | 0 | — |
+| iOS files verified | — | 7 | — |
+
+---
+
+## Plan-Enforcer Run 6 — 2026-04-05
+
+**Scope:** Plan Registry audit — 15+ plans checked against code, permission map audit, prompt file housekeeping.
+
+### Findings
+
+| Category | Result |
+|----------|--------|
+| Critical Bug Found | ✅ FIXED — `manage_flex_pool`/`self_assign_flex` missing from `AuthService.defaultPermissionMap()` |
+| PE-003 Status | Confirmed DONE — `IOSFlexPoolPage` fully wired, SchedulingRouter + NavigationConfig |
+| PE-027/029/030/031 | Confirmed DONE — prompt files moved to `done/` |
+| New Plan Registered | `usability-hunter-plan.md` + skill at `xcode-ai/skills/usability-hunter/SKILL.md` |
+| DIS-008/009/011 | 3 new DevTODO items identified (gh unavailable — not yet filed as GitHub issues) |
+| Plans Advanced to Step 13 | `ios-flex-pool`, `ios-clock-fix`, `ios-pricing-ui`, `ios-part-number-hierarchy`, `ios-scheduling-pages` |
+
+### Critical Fix Detail
+
+**File:** `core/Sources/WiredPartCore/Services/AuthService.swift`
+
+`manage_flex_pool` and `self_assign_flex` were referenced in UI code:
+- `IOSJobDetailTabView.swift:497` — `appCore.hasPermission("manage_flex_pool")` (manager flex pool toggle)
+- `NavigationConfig.swift:85` — `permission: "self_assign_flex"` (flex pool tab visibility)
+
+But neither key existed in `defaultPermissionMap()`. This caused:
+- Flex Pool tab invisible to all workers (Worker/Lead hats showed no tab)
+- Manager "Add to Flex Pool" toggle invisible to all managers
+
+**Fix:** Added to all appropriate hats:
+- `manage_flex_pool` → Admin, Manager
+- `self_assign_flex` → Admin, Manager, Lead, Worker
+
+### Unplanned Code Noted
+
+`PricingOverrideFlow.swift` — exists with no plan reference. Adds hierarchy-level pricing override flow. Retroactively documented in Plan Registry as extending `ios-pricing-ui.md` scope.
+

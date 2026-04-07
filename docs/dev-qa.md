@@ -20,22 +20,9 @@
 
 ## Pending Questions
 
----
-
-### DIS-005 — Company PII in UserDefaults During Setup Wizard
-
-**Source:** `docs/DevTODO/DIS-005-userdefaults-pii-wizard.md`
-**Current State:** `CompanySetupWizard.swift` (lines 715-720) stores company name, address, phone, email in `UserDefaults` as wizard draft state. `UserDefaults` is unencrypted and readable on unencrypted device backups.
-**Proposed Change:** Verify cleanup happens on wizard completion, or migrate wizard state to SQLite (which benefits from iOS Data Protection).
-**Affected Modules:** Auth / Settings
-
-#### Questions:
-
-1. **As the Owner:** Are the `UserDefaults` keys (`companySetup_name`, `companySetup_address`, etc.) deleted after the wizard completes successfully? If yes, this is acceptable (temporary storage only). If not, this is a security issue that should be fixed.
-   > Answer: No — they are NOT deleted. Confirmed by code audit: no `removeObject` calls exist for any `companySetup_` keys. All 8 keys (including 4 PII keys) persist in the unencrypted plist indefinitely after wizard completion. This is a security issue.
-
-2. **As a Developer:** If wizard state does persist after completion, should we: (A) call `UserDefaults.standard.removeObject(forKey:)` for all 4 keys when wizard saves to DB, or (B) rewrite to store draft state in a `company_setup_draft` SQLite table that gets deleted after completion?
-   > Answer: Option B — migrate wizard draft state to a `company_setup_draft` SQLite table. SQLite benefits from iOS Data Protection (encryption at rest). Delete the draft row after wizard completion. This eliminates PII from the unencrypted UserDefaults plist entirely.
+> No pending questions. All Q&A have been answered and processed.
+> DIS-005 processed 2026-04-05 — Xcode prompt PE-035 written at `fix-prompts/PE-035-dis005-wizard-sqlite-draft.md`.
+> DIS-007 closed 2026-04-04 — non-issue (IOSMainView torn down on logout; comment added to source).
 
 ---
 
