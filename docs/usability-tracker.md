@@ -154,7 +154,16 @@ Replaced `isPresented: .constant(var != nil)` (read-only, non-dismissable) with 
 
 ## Remaining Issues
 
-None — all identified issues fixed.
+### From Usability Enforcer Run 2 (2026-04-06)
+
+| # | File | Scanner | Finding | Severity | Status |
+|---|------|---------|---------|----------|--------|
+| 1 | PartsFlowWizard.swift | 7 (Defensive UX) | `saveAllProgress()` is synchronous — `isSaving = true/false` flip in same event loop tick means `interactiveDismissDisabled` guard is cosmetically inactive; buttons never visually disable during save | MEDIUM | Tracked via PE-039 (queued) |
+| 2 | AuthService.swift | 7 (Defensive UX) | Legacy unsigned token shim in `parseLocalToken` has no removal deadline (DIS-014) | LOW | Tracked via DIS-014 DevTODO, GitHub issue PENDING |
+| 3 | AuthService.swift | 6 (Plan Alignment) | PIN hashing uses iterated SHA-256, not a memory-hard KDF (DIS-012) | MEDIUM | Tracked via DIS-012 DevTODO, GitHub issue PENDING |
+| 4 | AuthService.swift | 6 (Plan Alignment) | Legacy single-salt PIN hash path has no enforcement deadline (DIS-013) | MEDIUM | Tracked via DIS-013 DevTODO, GitHub issue PENDING |
+
+**Note:** Items 2-4 are auth security hardening (not usability). Filed as DevTODOs; gh CLI unavailable during this run so GitHub issues need manual filing.
 
 ---
 
@@ -200,6 +209,47 @@ None — all identified issues fixed.
 **Schedule:** Daily at 10:00 AM
 **Skill:** `xcode-ai/skills/usability-hunter/SKILL.md`
 **GitHub Label:** `usability-hunter`
+
+### Scanner Results (2026-04-06 — Usability Enforcer Run 2, all 8 scanners)
+
+**Scope:** 3 modified warehouse wizard files (IOSMovementWizard, PartsFlowWizard, WarehouseOnboardingWizard) + AuthService + new fix prompts (PE-038, PE-039) + new DevTODOs (DIS-012/013/014)
+**Build:** ✅ Build complete | **Tests:** ✅ 1030/1030 pass (up from 1014 — 16 new AuthService tests)
+
+| Scanner | Result | Notes |
+|---------|--------|-------|
+| 1 Page Load Integrity | ✅ PASS | All 3 wizards load cleanly; error/loading states present |
+| 2 Button & Action Verification | ✅ PASS | All buttons have real actions; no empty handlers |
+| 3 Modal & Sheet Dismiss | ✅ PASS | IOSMovementWizard uses `WizardSheet` enum; no multiple `.sheet()` issues |
+| 4 Navigation & Exit Paths | ✅ PASS | All wizards have Cancel/Save & Exit; Back buttons throughout |
+| 5 SQL vs Schema Audit | ✅ PASS | AuthService SQL verified by 1030 tests; wizard files use service layer only |
+| 6 Plan Alignment | ⚠️ PARTIAL | PE-036 ✅ done; PE-037/038/039 queued; DIS-012/013/014 DevTODOs need GitHub issues |
+| 7 Defensive UX Patterns | ⚠️ 2 MEDIUM | PartsFlowWizard sync save (PE-039 queued); DIS-014 legacy token shim |
+| 8 Feature Completeness | ✅ PASS | All 3 wizard flows complete with error/cancel/resume paths |
+
+**P1 fixes this run:** 0
+**P2 fixes this run:** 0 (PE-039 already queued for Xcode AI)
+**P3 fixes this run:** 0 (DIS-012/013/014 already have DevTODO files)
+
+### Scanner Results (2026-04-06 — Run 3) — Clean Pass
+
+**Build:** ✅ 1030/1030 tests pass | **New fixes:** 0 | **New issues filed:** 0 | **Issues closed:** 4 (#124-#127)
+
+| Scanner | Category | Findings | Verdict |
+|---------|----------|---------|---------|
+| 1 | Dismiss & Sheet Safety | 40 sheets missing `interactiveDismissDisabled` (Settings/Chat/People) | All covered by systemic #123 |
+| 2 | Silent Failures | ~19 `try?` on write-path keywords — all verified as reads or secondary ops in do-catch | No new CRITICAL. IOSAuditPage:828 `updateUserRating` acceptable (secondary in do-catch) |
+| 3 | Missing User Feedback | Settings `saveSettings()` buttons — all checked, have isSaving states | No new HIGH |
+| 4 | Navigation & Exit Traps | Wizard files without "Save & Exit" string — scanner false positives | IOSMovementWizard ✅ has Cancel; wizard step files are components not orchestrators |
+| 5 | Form & Input Issues | Save buttons flagged — all verified false positives (±2 line window too narrow for toolbar pattern) | **Scanner calibration note:** `.disabled()` is always 3-4 lines below `Button {…}` for toolbar buttons — need ±5 line window |
+| 6 | Accessibility | Small frame hits — all non-interactive (icons, decorative dots, color swatches with label text) | ThemesPage color swatches: 36px circle + text label = >44px total tap target. Acceptable |
+
+**Verified still-fixed from prior runs:**
+- ✅ #124 PricingOverrideFlow dismiss-after-await — `dismiss()` before await, onComplete in background Task
+- ✅ #125 IOSScheduleConfigPage silent deletes — `do-catch` with `saveError`
+- ✅ #126 IOSClockPage workType silent fail — `do-catch` with `errorMessage`
+- ✅ #127 EstimationSettingsPage Save without guard — `.disabled(isEmpty)` confirmed at lines 398, 486
+
+**Scanner 5 calibration issue:** The ±2 line scan window misses `.disabled()` on toolbar buttons because SwiftUI toolbar buttons always use multi-line `Button { … } label: { … }` syntax. Need ±5 lines in future runs.
 
 ### Scanner Results (2026-04-06 — Run 2)
 
@@ -293,3 +343,5 @@ None — all identified issues fixed.
 | 2026-04-05 | **Usability Hunter** initial sweep — 6 scanners across 323 files | 12 issues filed | 0 | 12 (#112-#123) | 0 |
 | 2026-04-05 | **Usability Enforcer** — 8 scanners, focus on modified files + open issues | 7 fixes | 5 | 0 | 0 |
 | 2026-04-06 | **Usability Hunter** Run 2 — all 6 scanners, 5 files fixed | 10 findings | 5 (#124-#127 fixed, dismiss-after-sleep) | 6 (#124-#129) | 0 |
+| 2026-04-06 | **Usability Hunter** Run 3 — all 6 scanners, 1030 tests pass | 0 new fixable | 0 | 0 | 0 |
+| 2026-04-06 | **Usability Enforcer** Run 2 — all 8 scanners, focus on 3 warehouse wizard files + AuthService changes | 2 medium findings (both tracked) | 0 | PENDING (gh unavailable) | 0 |

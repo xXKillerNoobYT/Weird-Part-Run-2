@@ -202,10 +202,13 @@ done
 
 ```bash
 # 5a. Save buttons without .disabled() validation
+# NOTE (2026-04-06 calibration): Use ±5 lines, NOT ±2 lines.
+# SwiftUI toolbar Button { … } label: { … } always places .disabled()
+# 3-4 lines AFTER the Button line — ±2 produces near 100% false positives.
 grep -rn 'Button.*[Ss]ave\|Button.*[Cc]reate\|Button.*[Ss]ubmit' --include="*.swift" "Weird Parts IOS/" | while read line; do
   file=$(echo "$line" | cut -d: -f1)
   linenum=$(echo "$line" | cut -d: -f2)
-  context=$(sed -n "$((linenum-2)),$((linenum+2))p" "$file")
+  context=$(sed -n "$((linenum-2)),$((linenum+5))p" "$file")
   if ! echo "$context" | grep -q "disabled\|\.disabled"; then
     echo "SAVE WITHOUT DISABLED: $line"
   fi
