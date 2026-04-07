@@ -1595,3 +1595,20 @@ _Appended by dev-pipeline-manager each run._
 - Issues processed: usability audit 44 issues found + 44 fixed (all iOS modules), DIS-005 Q&A answered (UserDefaults PII confirmed, Option B selected), DIS-007 resolved and closed
 - Bugs fixed: 44 usability issues fixed (alert binding, sheet(item:) pattern, ErrorStateView adoption across Reports + Office + Warehouse + Orders modules)
 - Pipeline health: OK — 978/978 green, build clean, cascade pricing UI live (catalog chip + pricing cascade view), flex pool UI live in job detail, job classification field added
+
+### End-of-Day Sync — 2026-04-06
+- Files committed: 37 (7 commits across core, tests, iOS UI, docs, prompts)
+- Commits created: 7
+  - a7ed218 feat(core): migration 072 + flex pool permissions
+  - de922a2 test(core): PartsServiceAdvancedTests suite (724 lines)
+  - 5135ee2 feat(ios): warehouse setup UX — PII→SQLite, Just Count Parts, cart badge
+  - 3ddbc61 fix(ios): sheet detents, timer lifecycle, help sheets, UX polish
+  - b0ff58c docs(pipeline): trackers, prompts, plans — plan-enforcer run 6 + usability-hunter
+  - adb23ee chore(prompts): remove PE-003/027/029/030/031 from active queue
+  - (prior unpushed) c9ee28e fix(ios): usability-hunter run 2 — 5 behavioral bugs fixed
+- Push status: success — adb23ee pushed to origin/main
+- Tests: 1014/1014 passing (53 suites)
+- Agent runs today: 7/7 — hunt-fix-verify ✅ (run 13/iter 29), test-coverage ✅ (+36 PartsService advanced tests), plan-enforcer ✅ (run 6), dev-improvement-scanner ✅ (run 9), dev-pipeline-manager ✅, github-issues-sync ✅ (run 7), github-sync-and-review ✅ (this run)
+- Issues processed: 9 usability issues (#115–#123) — 7 comments posted, PE-036/PE-037 new prompts filed
+- Bugs fixed: manage_flex_pool/self_assign_flex missing from AuthService (all role hats now correct); DIS-010 PartsFlowWizard clearDraft param; DIS-005 wizard PII in UserDefaults → SQLite migration implemented
+- Pipeline health: OK — 1014/1014 green, build clean, 4 active Xcode prompts ready (PE-034/035/036/037)
