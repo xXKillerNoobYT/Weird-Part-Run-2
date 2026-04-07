@@ -786,6 +786,7 @@ public final class AuthService: Sendable {
                 "view_job_financials", "create_jobs", "self_assign_ready_jobs", "self_assign_contact_jobs",
                 "view_all_jobs", "view_job_reports", "approve_time_off", "approve_orders",
                 "view_spending", "view_audit_log",
+                "manage_flex_pool", "self_assign_flex",
             ],
             "Manager": [
                 "view_parts_catalog", "edit_parts_catalog", "edit_pricing", "show_dollar_values",
@@ -804,6 +805,7 @@ public final class AuthService: Sendable {
                 "view_job_financials", "create_jobs", "self_assign_ready_jobs", "self_assign_contact_jobs",
                 "view_all_jobs", "view_job_reports", "approve_time_off", "approve_orders",
                 "view_spending",
+                "manage_flex_pool", "self_assign_flex",
             ],
             "Office": [
                 "view_parts_catalog", "edit_parts_catalog", "show_dollar_values",
@@ -827,6 +829,7 @@ public final class AuthService: Sendable {
                 // 39A expanded keys
                 "create_jobs", "self_assign_ready_jobs", "view_all_jobs",
                 "view_job_reports", "manage_warehouse",
+                "self_assign_flex",
             ],
             "Worker": [
                 "view_parts_catalog", "view_warehouse", "view_trucks", "move_stock_truck",
@@ -835,6 +838,7 @@ public final class AuthService: Sendable {
                 "use_chat", "view_chat",
                 // 39A expanded keys
                 "self_assign_ready_jobs", "self_assign_contact_jobs",
+                "self_assign_flex",
             ],
             "Apprentice": [
                 "view_parts_catalog", "view_trucks", "view_jobs", "clock_in_out", "view_labor",

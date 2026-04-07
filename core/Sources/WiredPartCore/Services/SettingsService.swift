@@ -672,6 +672,107 @@ public final class SettingsService: Sendable {
         }
     }
 
+    // MARK: - Company Setup Draft
+
+    /// Temporary wizard draft state — replaces UserDefaults storage for PII fields.
+    /// At most one row exists in `company_setup_draft`.
+    public struct CompanySetupDraft: Sendable {
+        public var currentStep: Int
+        public var completedSteps: Set<Int>
+        public var skippedSteps: Set<Int>
+        public var name: String
+        public var address: String
+        public var phone: String
+        public var email: String
+        public var selectedState: String
+
+        public init(
+            currentStep: Int = 0,
+            completedSteps: Set<Int> = [],
+            skippedSteps: Set<Int> = [],
+            name: String = "",
+            address: String = "",
+            phone: String = "",
+            email: String = "",
+            selectedState: String = "California"
+        ) {
+            self.currentStep = currentStep
+            self.completedSteps = completedSteps
+            self.skippedSteps = skippedSteps
+            self.name = name
+            self.address = address
+            self.phone = phone
+            self.email = email
+            self.selectedState = selectedState
+        }
+
+        init(row: Row) {
+            currentStep = Int(row["current_step"] as? Int64 ?? 0)
+            name = row["name"] as? String ?? ""
+            address = row["address"] as? String ?? ""
+            phone = row["phone"] as? String ?? ""
+            email = row["email"] as? String ?? ""
+            selectedState = row["selected_state"] as? String ?? "California"
+
+            if let json = row["completed_steps"] as? String,
+               let data = json.data(using: .utf8),
+               let decoded = try? JSONDecoder().decode(Set<Int>.self, from: data) {
+                completedSteps = decoded
+            } else {
+                completedSteps = []
+            }
+            if let json = row["skipped_steps"] as? String,
+               let data = json.data(using: .utf8),
+               let decoded = try? JSONDecoder().decode(Set<Int>.self, from: data) {
+                skippedSteps = decoded
+            } else {
+                skippedSteps = []
+            }
+        }
+    }
+
+    /// Load wizard draft (returns nil if no draft has been started).
+    public func loadSetupDraft() throws -> CompanySetupDraft? {
+        try db.writer.read { dbConnection in
+            try Row.fetchOne(dbConnection, sql: "SELECT * FROM company_setup_draft LIMIT 1")
+                .map { CompanySetupDraft(row: $0) }
+        }
+    }
+
+    /// Save/update wizard draft (upsert — only one row ever exists).
+    public func saveSetupDraft(_ draft: CompanySetupDraft) throws {
+        let completedJSON = (try? JSONEncoder().encode(draft.completedSteps))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        let skippedJSON = (try? JSONEncoder().encode(draft.skippedSteps))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+
+        try db.writer.write { dbConnection in
+            // Delete any existing row then insert fresh — simple single-row upsert
+            try dbConnection.execute(sql: "DELETE FROM company_setup_draft")
+            try dbConnection.execute(sql: """
+                INSERT INTO company_setup_draft
+                    (current_step, completed_steps, skipped_steps, name, address, phone, email, selected_state, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """, arguments: [
+                draft.currentStep,
+                completedJSON,
+                skippedJSON,
+                draft.name,
+                draft.address,
+                draft.phone,
+                draft.email,
+                draft.selectedState
+            ])
+        }
+    }
+
+    /// Delete draft after wizard completion.
+    public func deleteSetupDraft() throws {
+        try db.writer.write { dbConnection in
+            try dbConnection.execute(sql: "DELETE FROM company_setup_draft")
+        }
+    }
+
     // MARK: - Errors
 
     public enum SettingsError: Error, Sendable {

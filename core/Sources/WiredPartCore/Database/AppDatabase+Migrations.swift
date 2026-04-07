@@ -86,6 +86,7 @@ extension AppDatabase {
         registerMigration069ScheduleConfigTables(&migrator)
         registerMigration070WishlistItemsV2(&migrator)
         registerMigration071FlexPool(&migrator)
+        registerMigration072CompanySetupDraft(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -499,6 +500,26 @@ extension AppDatabase {
             try db.execute(sql: "ALTER TABLE jobs ADD COLUMN is_flex_pool INTEGER NOT NULL DEFAULT 0")
             try db.execute(sql: "ALTER TABLE jobs ADD COLUMN flex_pool_team_filter TEXT")
             try db.execute(sql: "ALTER TABLE jobs ADD COLUMN flex_pool_user_filter TEXT")
+        }
+    }
+
+    private static func registerMigration072CompanySetupDraft(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("072_company_setup_draft") { db in
+            // Wizard draft state — moves PII out of unencrypted UserDefaults into
+            // SQLite (encrypted at rest via iOS Data Protection).
+            // At most one row exists; deleted when the wizard completes.
+            try db.create(table: "company_setup_draft", ifNotExists: true) { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("current_step", .integer).notNull().defaults(to: 0)
+                t.column("completed_steps", .text)   // JSON-encoded Set<Int>
+                t.column("skipped_steps", .text)      // JSON-encoded Set<Int>
+                t.column("name", .text)
+                t.column("address", .text)
+                t.column("phone", .text)
+                t.column("email", .text)
+                t.column("selected_state", .text)
+                t.column("updated_at", .datetime).notNull().defaults(sql: "(datetime('now'))")
+            }
         }
     }
 }
