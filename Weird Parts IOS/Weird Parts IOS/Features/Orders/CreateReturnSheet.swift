@@ -64,6 +64,7 @@ struct CreateReturnSheet: View {
             }
             .navigationTitle("New Return")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

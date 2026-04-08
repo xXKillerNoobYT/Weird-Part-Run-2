@@ -39,6 +39,7 @@ struct IOSCreateVehicleSheet: View {
             }
             .navigationTitle("New Vehicle")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

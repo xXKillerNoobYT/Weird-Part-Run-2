@@ -55,6 +55,7 @@ struct CascadePriceEditSheet: View {
             }
             .navigationTitle("Pricing")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }

@@ -90,6 +90,7 @@ struct IOSMovementWizard: View {
                         .disabled(isExecuting)
                 }
             }
+            .interactiveDismissDisabled(isExecuting)
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
                 case .partScanner:

@@ -83,6 +83,7 @@ struct CreatePOSheet: View {
             }
             .navigationTitle("New Purchase Order")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

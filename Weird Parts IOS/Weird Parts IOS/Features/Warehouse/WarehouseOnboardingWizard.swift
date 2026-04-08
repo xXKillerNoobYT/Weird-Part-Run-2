@@ -57,6 +57,7 @@ struct WarehouseOnboardingWizard: View {
     @State private var currentStep = 1
     @State private var floorPlanId: Int64?
     @State private var loadError: String?
+    @State private var isSaving = false
     @State private var completedWizardSteps: Set<Int> = []
 
     // Step 1 state
@@ -133,9 +134,11 @@ struct WarehouseOnboardingWizard: View {
             }
             .navigationTitle(stepLabels[currentStep - 1])
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Save & Exit") { saveAndExit() }
+                        .disabled(isSaving)
                 }
             }
             .task { loadProgress() }
@@ -248,6 +251,7 @@ struct WarehouseOnboardingWizard: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+                .disabled(isSaving)
             }
 
             if currentStep < totalSteps {
@@ -262,6 +266,7 @@ struct WarehouseOnboardingWizard: View {
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(isSaving)
             } else {
                 Button {
                     finishOnboarding()
@@ -271,6 +276,7 @@ struct WarehouseOnboardingWizard: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.green)
+                .disabled(isSaving)
             }
 
             // Skip for Now (steps 2-8 only)
@@ -284,6 +290,7 @@ struct WarehouseOnboardingWizard: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
+                .disabled(isSaving)
             }
         }
         .padding()
@@ -379,6 +386,7 @@ struct WarehouseOnboardingWizard: View {
     }
 
     private func saveAndExit() {
+        isSaving = true
         saveProgressToDb()
         // Also persist current step for resume (non-fatal if this fails — main
         // progress is already saved by saveProgressToDb; resume position may
@@ -390,7 +398,11 @@ struct WarehouseOnboardingWizard: View {
                 // Non-fatal: intentionally ignored; main progress already saved above
             }
         }
-        dismiss()
+        isSaving = false
+        // Only dismiss if save succeeded (loadError is set by saveProgressToDb on failure)
+        if loadError == nil {
+            dismiss()
+        }
     }
 
     private func finishOnboarding() {
@@ -398,12 +410,15 @@ struct WarehouseOnboardingWizard: View {
             dismiss()
             return
         }
+        isSaving = true
         do {
             try service.completeOnboarding(id: id)
         } catch {
+            isSaving = false
             loadError = userFriendlyError(error, context: "complete setup")
             return  // Don't dismiss — let user see the error and retry
         }
+        isSaving = false
         dismiss()
     }
 }

@@ -41,6 +41,7 @@ struct IOSCreateTrailerSheet: View {
             }
             .navigationTitle("New Trailer")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

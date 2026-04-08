@@ -59,6 +59,7 @@ struct CreateChannelSheet: View {
             }
             .navigationTitle(isSupplier ? "Supplier Channel" : (isDM ? "New Message" : "New Channel"))
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

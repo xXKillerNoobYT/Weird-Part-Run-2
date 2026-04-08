@@ -68,6 +68,7 @@ struct CreateDispatchSheet: View {
             }
             .navigationTitle("New Dispatch")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

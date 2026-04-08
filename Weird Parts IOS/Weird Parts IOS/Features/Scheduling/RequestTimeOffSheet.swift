@@ -37,6 +37,7 @@ struct RequestTimeOffSheet: View {
             }
             .navigationTitle("Request Time Off")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
