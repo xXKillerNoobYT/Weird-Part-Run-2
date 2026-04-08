@@ -67,6 +67,7 @@ struct CartSheetView: View {
     @State private var placements: [UUID: String] = [:]
     @State private var placementError: String?
     @State private var placedItems: Set<UUID> = []
+    @State private var isPlacingItems = false
 
     var body: some View {
         NavigationStack {
@@ -93,9 +94,11 @@ struct CartSheetView: View {
                         Button("Clear All", role: .destructive) {
                             cartManager.removeAll()
                         }
+                        .disabled(isPlacingItems)
                     }
                 }
             }
+            .interactiveDismissDisabled(isPlacingItems)
             .alert("Error", isPresented: Binding(
                 get: { placementError != nil },
                 set: { if !$0 { placementError = nil } }
@@ -166,44 +169,64 @@ struct CartSheetView: View {
     // MARK: - Place All
 
     private var placeAllButton: some View {
-        Button {
-            placeAllItems()
-        } label: {
-            Label(
-                placedItems.count == cartManager.itemCount ? "All Placed!" : "Place All Items",
-                systemImage: placedItems.count == cartManager.itemCount ? "checkmark.circle.fill" : "arrow.right.circle.fill"
-            )
-            .frame(maxWidth: .infinity)
+        VStack(spacing: 8) {
+            if isPlacingItems {
+                ProgressView("Placing items\u{2026}")
+                    .font(.caption)
+            }
+            Button {
+                placeAllItems()
+            } label: {
+                Label(
+                    placedItems.count == cartManager.itemCount ? "All Placed!" : "Place All Items",
+                    systemImage: placedItems.count == cartManager.itemCount ? "checkmark.circle.fill" : "arrow.right.circle.fill"
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(placedItems.count == cartManager.itemCount ? .green : .blue)
+            .disabled(isPlacingItems || placements.values.allSatisfy { $0.trimmingCharacters(in: .whitespaces).isEmpty })
         }
-        .buttonStyle(.borderedProminent)
-        .tint(placedItems.count == cartManager.itemCount ? .green : .blue)
-        .disabled(placements.values.allSatisfy { $0.trimmingCharacters(in: .whitespaces).isEmpty })
         .padding()
         .background(Color(.secondarySystemBackground))
     }
 
     private func placeAllItems() {
-        for item in cartManager.items {
-            guard let location = placements[item.id],
-                  !location.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+        guard !isPlacingItems else { return }
+        isPlacingItems = true
 
-            // Update part location note
-            if let partId = item.partId {
-                do {
-                    try appCore.partsService?.updatePart(id: partId, notes: "Location: \(location)")
-                    placedItems.insert(item.id)
-                } catch {
-                    placementError = userFriendlyError(error, context: "place item")
+        // Capture state for use inside Task (avoid capturing mutable view)
+        let items = cartManager.items
+        let currentPlacements = placements
+        let service = appCore.partsService
+
+        Task {
+            var placed: Set<UUID> = []
+            var errorMsg: String?
+
+            for item in items {
+                guard let location = currentPlacements[item.id],
+                      !location.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+
+                if let partId = item.partId {
+                    do {
+                        try service?.updatePart(id: partId, notes: "Location: \(location)")
+                        placed.insert(item.id)
+                    } catch {
+                        errorMsg = userFriendlyError(error, context: "place item")
+                    }
+                } else {
+                    // Bin moves are logged but bins are not location-locked per spec
+                    placed.insert(item.id)
                 }
-            } else {
-                // Bin moves are logged but bins are not location-locked per spec
-                placedItems.insert(item.id)
             }
-        }
 
-        // Clear placed items from cart
-        if placedItems.count == cartManager.itemCount {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            placedItems.formUnion(placed)
+            if let msg = errorMsg { placementError = msg }
+            isPlacingItems = false
+
+            if placedItems.count == cartManager.itemCount {
+                try? await Task.sleep(for: .milliseconds(500))
                 cartManager.removeAll()
                 dismiss()
             }

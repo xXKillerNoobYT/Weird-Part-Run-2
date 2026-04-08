@@ -21,6 +21,7 @@ struct PartsFlowWizard: View {
     @State private var partLocations: [Int64: String] = [:]
     @State private var isLoading = true
     @State private var loadError: String?
+    @State private var isSaving = false
     @State private var savedCount = 0
     @State private var saveErrorMessage: String?
 
@@ -53,13 +54,12 @@ struct PartsFlowWizard: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Save & Exit") {
-                        saveAllProgress(clearDraft: false)
-                        if saveErrorMessage == nil {
-                            dismiss()
-                        }
+                        saveAllProgress(clearDraft: false, andDismiss: true)
                     }
+                    .disabled(isSaving)
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .task { loadParts() }
             .alert("Save Error", isPresented: Binding(
                 get: { saveErrorMessage != nil },
@@ -293,7 +293,7 @@ struct PartsFlowWizard: View {
 
             // Save all button
             Button {
-                saveAllProgress(clearDraft: false)
+                saveAllProgress(clearDraft: false, andDismiss: false)
             } label: {
                 Label(
                     savedCount > 0 ? "Saved \(savedCount) Parts" : "Save All Locations",
@@ -303,6 +303,7 @@ struct PartsFlowWizard: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(savedCount > 0 ? .green : .blue)
+            .disabled(isSaving)
             .padding(.horizontal)
             .padding(.bottom, 8)
         }
@@ -320,6 +321,7 @@ struct PartsFlowWizard: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+                .disabled(isSaving)
             }
 
             if currentStep < totalSteps {
@@ -330,18 +332,17 @@ struct PartsFlowWizard: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(isSaving)
             } else {
                 Button {
-                    saveAllProgress(clearDraft: true)
-                    if saveErrorMessage == nil {
-                        dismiss()
-                    }
+                    saveAllProgress(clearDraft: true, andDismiss: true)
                 } label: {
                     Label("Finish", systemImage: "checkmark.circle.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.green)
+                .disabled(isSaving)
             }
         }
         .padding()
@@ -388,13 +389,15 @@ struct PartsFlowWizard: View {
         }
     }
 
-    private func saveAllProgress(clearDraft: Bool) {
+    private func saveAllProgress(clearDraft: Bool, andDismiss: Bool) {
+        guard !isSaving else { return }
+        isSaving = true
+
+        // UserDefaults writes are synchronous + fast — safe on main thread
         if clearDraft {
-            // Wizard finished — purge resume draft so next open starts fresh
             UserDefaults.standard.removeObject(forKey: "partsFlow_counts")
             UserDefaults.standard.removeObject(forKey: "partsFlow_locations")
         } else {
-            // Save & Exit — persist draft so the wizard can be resumed later
             let countDict = partCounts.reduce(into: [String: String]()) { $0["\($1.key)"] = $1.value }
             let locDict = partLocations.reduce(into: [String: String]()) { $0["\($1.key)"] = $1.value }
             if let data = try? JSONEncoder().encode(countDict) {
@@ -405,37 +408,46 @@ struct PartsFlowWizard: View {
             }
         }
 
-        // Write location notes to the database
-        savedCount = 0
-        var failedParts: [String] = []
-        for item in parts {
-            guard let partId = item.part.id else { continue }
+        // Capture state for use inside the Task (avoid capturing mutable self)
+        let snapshot = parts
+        let counts = partCounts
+        let locations = partLocations
+        let service = appCore.partsService
 
-            // Build a combined note with location and count
-            var notesParts: [String] = []
-            if let location = partLocations[partId],
-               !location.trimmingCharacters(in: .whitespaces).isEmpty {
-                notesParts.append("Location: \(location)")
-            }
-            if let text = partCounts[partId], let qty = Int(text) {
-                notesParts.append("Initial count: \(qty)")
-                savedCount += 1
-            }
-
-            if !notesParts.isEmpty {
-                let combinedNotes = notesParts.joined(separator: " | ")
-                do {
-                    try appCore.partsService?.updatePart(id: partId, notes: combinedNotes)
-                } catch {
-                    failedParts.append(item.part.name)
+        // DB loop runs in a Task so SwiftUI renders isSaving=true before the loop starts
+        Task {
+            var count = 0
+            var failedParts: [String] = []
+            for item in snapshot {
+                guard let partId = item.part.id else { continue }
+                var notesParts: [String] = []
+                if let location = locations[partId],
+                   !location.trimmingCharacters(in: .whitespaces).isEmpty {
+                    notesParts.append("Location: \(location)")
+                }
+                if let text = counts[partId], let qty = Int(text) {
+                    notesParts.append("Initial count: \(qty)")
+                    count += 1
+                }
+                if !notesParts.isEmpty {
+                    let combined = notesParts.joined(separator: " | ")
+                    do {
+                        try service?.updatePart(id: partId, notes: combined)
+                    } catch {
+                        failedParts.append(item.part.name)
+                    }
                 }
             }
-        }
-
-        if !failedParts.isEmpty {
-            let preview = failedParts.prefix(3).joined(separator: ", ")
-            let suffix = failedParts.count > 3 ? " and \(failedParts.count - 3) more" : ""
-            saveErrorMessage = "Failed to save \(failedParts.count) part(s): \(preview)\(suffix)"
+            savedCount = count
+            if !failedParts.isEmpty {
+                let preview = failedParts.prefix(3).joined(separator: ", ")
+                let suffix = failedParts.count > 3 ? " and \(failedParts.count - 3) more" : ""
+                saveErrorMessage = "Failed to save \(failedParts.count) part(s): \(preview)\(suffix)"
+            }
+            isSaving = false
+            if andDismiss && saveErrorMessage == nil {
+                dismiss()
+            }
         }
     }
 }
