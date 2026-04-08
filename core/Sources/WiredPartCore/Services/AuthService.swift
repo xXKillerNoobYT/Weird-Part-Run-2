@@ -551,7 +551,7 @@ public final class AuthService: Sendable {
                 return rows.map { row in
                     ActiveSession(
                         id: "\(row["id"] as Int64? ?? 0)",
-                        userId: "\(row["device_id"] as Int64? ?? 0)",
+                        userId: row["device_id"] as? String ?? "unknown",
                         userName: row["user_name"] as? String ?? "Unknown",
                         createdAt: row["created_at"] as? String ?? "Unknown"
                     )
@@ -787,6 +787,7 @@ public final class AuthService: Sendable {
                 "view_all_jobs", "view_job_reports", "approve_time_off", "approve_orders",
                 "view_spending", "view_audit_log",
                 "manage_flex_pool", "self_assign_flex",
+                "companion_vote_power", "vote_veto",
             ],
             "Manager": [
                 "view_parts_catalog", "edit_parts_catalog", "edit_pricing", "show_dollar_values",
@@ -806,6 +807,7 @@ public final class AuthService: Sendable {
                 "view_all_jobs", "view_job_reports", "approve_time_off", "approve_orders",
                 "view_spending",
                 "manage_flex_pool", "self_assign_flex",
+                "companion_vote_power",
             ],
             "Office": [
                 "view_parts_catalog", "edit_parts_catalog", "show_dollar_values",
@@ -830,6 +832,7 @@ public final class AuthService: Sendable {
                 "create_jobs", "self_assign_ready_jobs", "view_all_jobs",
                 "view_job_reports", "manage_warehouse",
                 "self_assign_flex",
+                "companion_vote_power",
             ],
             "Worker": [
                 "view_parts_catalog", "view_warehouse", "view_trucks", "move_stock_truck",
