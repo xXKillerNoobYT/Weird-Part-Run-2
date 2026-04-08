@@ -30,6 +30,7 @@ struct WarehouseLocationsPage: View {
     @State private var activeSheet: ActiveSheet?
     @State private var selectedUnitId: Int64?
     @State private var searchText = ""
+    @State private var unitToDelete: WarehouseStorageUnit?
 
     // Grid state
     @State private var gridScale: CGFloat = 1.0
@@ -101,6 +102,21 @@ struct WarehouseLocationsPage: View {
         .sheet(item: $activeSheet) { sheet in
             sheetContent(for: sheet)
                 .environmentObject(appCore)
+        }
+        .confirmationDialog(
+            "Remove Storage Unit?",
+            isPresented: Binding(get: { unitToDelete != nil }, set: { if !$0 { unitToDelete = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let unit = unitToDelete {
+                Button("Remove \"\(unit.name)\"", role: .destructive) {
+                    deleteUnit(unit)
+                    unitToDelete = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { unitToDelete = nil }
+        } message: {
+            Text("This will permanently remove the storage unit and all its location data.")
         }
         .searchable(text: $searchText, prompt: "Search locations...")
         .refreshable { loadData() }
@@ -332,7 +348,7 @@ struct WarehouseLocationsPage: View {
                     }
                 }
                 Divider()
-                Button(role: .destructive) { deleteUnit(unit) } label: {
+                Button(role: .destructive) { unitToDelete = unit } label: {
                     Label("Remove", systemImage: "trash")
                 }
             }

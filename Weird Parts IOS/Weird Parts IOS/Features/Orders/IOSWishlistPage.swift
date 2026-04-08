@@ -16,6 +16,7 @@ struct IOSWishlistPage: View {
     @State private var searchText = ""
     @State private var loadError: String?
     @State private var activeSheet: ActiveSheet?
+    @State private var itemToDelete: WishlistItem?
 
     private enum ActiveSheet: Identifiable {
         case addItem
@@ -71,6 +72,21 @@ struct IOSWishlistPage: View {
                     dismissItem(item, reason: reason)
                 }
             }
+        }
+        .confirmationDialog(
+            "Delete Wishlist Item?",
+            isPresented: Binding(get: { itemToDelete != nil }, set: { if !$0 { itemToDelete = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let item = itemToDelete {
+                Button("Delete "\(item.partName)"", role: .destructive) {
+                    deleteItem(item)
+                    itemToDelete = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { itemToDelete = nil }
+        } message: {
+            Text("This item will be permanently removed from the wishlist.")
         }
         .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
@@ -249,7 +265,7 @@ struct IOSWishlistPage: View {
             .tint(.blue)
         }
         Button(role: .destructive) {
-            deleteItem(item)
+            itemToDelete = item
         } label: {
             Label("Delete", systemImage: "trash")
         }
@@ -457,12 +473,24 @@ struct IOSWishlistPage: View {
         }
         isLoading = totalCount == 0
         loadError = nil
-        do {
-            sections = try service.getSectionedItems()
-        } catch {
-            loadError = userFriendlyError(error, context: "load wishlist")
+        // Run auto-approvals in a background task before reading sections (DIS-006).
+        // processAutoApprovals was removed from getSectionedItems() to avoid main-thread
+        // DB writes inside a read; we fire it here as a detached utility task instead.
+        Task.detached(priority: .utility) {
+            _ = try? service.processAutoApprovals(by: "System (Auto)")
+            do {
+                let result = try service.getSectionedItems()
+                await MainActor.run {
+                    sections = result
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    loadError = userFriendlyError(error, context: "load wishlist")
+                    isLoading = false
+                }
+            }
         }
-        isLoading = false
     }
 
     // MARK: - Helpers
@@ -558,6 +586,7 @@ private struct DismissWishlistItemSheet: View {
             }
             .navigationTitle("Dismiss Item")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(!trimmedReason.isEmpty)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -636,9 +665,11 @@ private struct AddWishlistItemSheet: View {
             }
             .navigationTitle("Add Wishlist Item")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") { saveItem() }

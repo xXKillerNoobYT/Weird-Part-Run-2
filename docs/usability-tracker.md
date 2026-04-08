@@ -165,6 +165,37 @@ Replaced `isPresented: .constant(var != nil)` (read-only, non-dismissable) with 
 
 **Note:** Items 2-4 are auth security hardening (not usability). Filed as DevTODOs; gh CLI unavailable during this run so GitHub issues need manual filing.
 
+### From Usability Enforcer Run 3 (2026-04-08)
+
+**Scope:** IOSWishlistPage.swift — DIS-006 verification + full 8-scanner pass
+**Build:** ✅ Build complete | **Tests:** ✅ 1118/1118 pass (no change)
+
+| Scanner | Result | Notes |
+|---------|--------|-------|
+| 1 Page Load Integrity | ✅ PASS | `guard let service` → isLoading=false; DIS-006 Task.detached pattern verified correct |
+| 2 Button & Action Verification | ✅ PASS | All swipe actions and toolbar buttons have real handlers |
+| 3 Modal & Sheet Dismiss | ✅ PASS | Both sheets capture `@Environment(\.dismiss)` outside NavigationStack correctly |
+| 4 Navigation & Exit Paths | ✅ PASS | Reachable via OrdersRouter case "orders-wishlist" |
+| 5 SQL vs Schema Audit | ✅ PASS | WishlistItem model matches migrations 057+070 exactly |
+| 6 Plan Alignment | ✅ PASS | DIS-006 CLOSED and fully implemented |
+| 7 Defensive UX | ✅ PASS | No MainActor violations; delete now has confirmation dialog |
+| 8 Feature Completeness | ⚠️ PARTIAL | No edit action; no status filter — see tracked S2 items below |
+
+**Remaining S2 items (need design decision — not fixing autonomously):**
+
+| # | File | Scanner | Finding | Severity | Status |
+|---|------|---------|---------|----------|--------|
+| 5 | IOSWishlistPage.swift | 8 (Feature Complete) | No edit action on wishlist items — users can't update qty/priority/reason after creation | S2 | Needs design decision |
+| 6 | IOSWishlistPage.swift | 8 (Feature Complete) | No status filter UI — large wishlists have no way to see only pending/approved items | S2 | Needs design decision |
+
+### Fixes Applied (Run 3 — 2026-04-08)
+
+| # | File | Issue | Fix |
+|---|------|-------|-----|
+| 1 | IOSWishlistPage.swift | `deleteItem()` swipe action executed without confirmation — accidental data loss | Added `itemToDelete` state + `.confirmationDialog` with destructive confirmation |
+| 2 | IOSWishlistPage.swift | `AddWishlistItemSheet` has `TextField` + `isSaving` state but no `interactiveDismissDisabled` | Added `.interactiveDismissDisabled(isSaving)` + disabled Cancel button during save |
+| 3 | IOSWishlistPage.swift | `DismissWishlistItemSheet` has `TextEditor` but no dismiss guard — user can lose typed reason | Added `.interactiveDismissDisabled(!trimmedReason.isEmpty)` |
+
 ---
 
 ## Known Issues
@@ -229,6 +260,31 @@ Replaced `isPresented: .constant(var != nil)` (read-only, non-dismissable) with 
 **P1 fixes this run:** 0
 **P2 fixes this run:** 0 (PE-039 already queued for Xcode AI)
 **P3 fixes this run:** 0 (DIS-012/013/014 already have DevTODO files)
+
+### Scanner Results (2026-04-08 — Run 4)
+
+**Scope:** All 6 scanners across full iOS app (323+ Swift files)
+**Build:** ✅ Build complete | **Tests:** ✅ 1118/1118 pass (no change)
+
+| Scanner | Category | Findings | Verdict |
+|---------|----------|---------|---------|
+| 1 | Dismiss & Sheet Safety | 40+ sheets missing `interactiveDismissDisabled` (Settings/People/Parts/Orders/Notebooks) | All covered by systemic #123 — no new CRITICAL |
+| 2 | Silent Failures | 3 new `try?` on write-path: CompanySetupWizard draft save (line 730), IOSNotebookDetailPage default section create (line 915), IOSMessageThreadView notebook auto-save (line 370) | Filed #135, #136, #137 |
+| 3 | Missing User Feedback | WarehouseLocationsPage "Remove" unit button had no confirmation dialog — **FIXED** | 1 fix applied |
+| 4 | Navigation & Exit Traps | 20+ Settings forms without dirty tracking — covered by #129 | No new HIGH |
+| 5 | Form & Input Issues | IOSJPOCreationPage submit button is properly guarded (false positive from scanner). Settings save buttons are always-enabled by design. | No new HIGH |
+| 6 | Accessibility | Wizard progress indicator dots (10px) are decorative not interactive — false positives. Icon buttons without a11y labels — LOW, systemic. | No new HIGH |
+
+**Fixes applied (1):**
+- `WarehouseLocationsPage.swift` — "Remove" context menu button now sets `unitToDelete` state → `.confirmationDialog` with destructive confirmation before `deleteUnit()` is called
+
+**False positives confirmed:**
+- IOSHatsPage delete — uses `.alert("Delete Hat?", ...)` + `hatToDelete` state ✅
+- IOSPurchaseOrdersPage delete — uses `.alert` + `poToCancel` state ✅
+- IOSJPOCreationPage submit — `.disabled(cartItems.isEmpty || selectedJobId == nil || isSubmitting)` confirmed ✅
+- 10px frame() items in wizard progress dots — decorative, not tappable ✅
+
+---
 
 ### Scanner Results (2026-04-06 — Run 3) — Clean Pass
 
@@ -345,3 +401,5 @@ Replaced `isPresented: .constant(var != nil)` (read-only, non-dismissable) with 
 | 2026-04-06 | **Usability Hunter** Run 2 — all 6 scanners, 5 files fixed | 10 findings | 5 (#124-#127 fixed, dismiss-after-sleep) | 6 (#124-#129) | 0 |
 | 2026-04-06 | **Usability Hunter** Run 3 — all 6 scanners, 1030 tests pass | 0 new fixable | 0 | 0 | 0 |
 | 2026-04-06 | **Usability Enforcer** Run 2 — all 8 scanners, focus on 3 warehouse wizard files + AuthService changes | 2 medium findings (both tracked) | 0 | PENDING (gh unavailable) | 0 |
+| 2026-04-08 | **Usability Enforcer** Run 3 — all 8 scanners, focus on IOSWishlistPage (DIS-006 followup) | 3 fixes applied, 2 S2 tracked | 3 | 0 (gh unavailable) | 0 |
+| 2026-04-08 | **Usability Hunter** Run 4 — all 6 scanners, full app sweep | 4 findings (1 fixed, 3 filed) | 1 (WarehouseLocationsPage confirm dialog) | 3 (#135-#137) | 0 |

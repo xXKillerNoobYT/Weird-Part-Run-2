@@ -80,6 +80,7 @@ struct IOSWarehouseSettingsPage: View {
             }
         }
         .task { loadSettings() }
+        .interactiveDismissDisabled(isSaving)
         .alert("Settings Saved", isPresented: $showSaveConfirmation) {
             Button("OK", role: .cancel) { }
         } message: {
