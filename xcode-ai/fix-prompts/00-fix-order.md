@@ -2,8 +2,8 @@
 
 > **Phase 1 complete.** All 279 prompts (01–67A) are archived in `done/`.
 > **Phase 2 HIG/Security work complete.** PE-009a/b/c/d/e, PE-008a/b/c/d/e, PE-022, PE-001, PE-024, PE-025, PE-026 all done. All archived to `done/`.
-> **Phase 3 status (page-rebuild-enforcer 2026-04-06):** PE-034 ✅ DONE. PE-035 ✅ DONE. PE-036 ✅ DONE — all 3 wizards verified; WarehouseOnboardingWizard already had isSaving + interactiveDismissDisabled. PE-038 ✅ DONE — JobStageProgressBar font fixed directly (semantic .caption2 + minimumScaleFactor). PE-039 ✅ DONE — PartsFlowWizard DB loop wrapped in Task{}, isSaving lifecycle consolidated, andDismiss param added. DIS-009 partial — CartManager still pending.
-> **Active prompts (1 remaining):** PE-037 (sheet dismiss guard batch 1 — 9 Create/Form sheets).
+> **Phase 3 status (page-rebuild-enforcer 2026-04-06 + hunt-fix 2026-04-07):** PE-034 ✅ DONE. PE-035 ✅ DONE. PE-036 ✅ DONE — all 3 wizards verified; WarehouseOnboardingWizard already had isSaving + interactiveDismissDisabled. PE-037 ✅ DONE — all 9 Create/Form sheets confirmed to have interactiveDismissDisabled in working tree (hunt-fix run 14). PE-038 ✅ DONE — JobStageProgressBar font fixed directly. PE-039 ✅ DONE — PartsFlowWizard + CartManager both fully async. DIS-009 ✅ CLOSED — both locations verified async.
+> **Active prompts: 0 remaining.** Prompt queue is clear. Next work: DIS-012/013/014 security items (need design decisions), program-review GitHub issues #82-#95.
 
 ---
 
@@ -37,9 +37,9 @@
 | PE-003 | *(archived — work done)* | Flex pool UI — `IOSFlexPoolPage` (209 lines) wired in SchedulingRouter + NavigationConfig. `IOSJobDetailTabView` manager toggle. Permission fix: `manage_flex_pool`/`self_assign_flex` added to AuthService. | ✅ DONE 2026-04-05 |
 | PE-035 | *(archived — code done)* | Company Setup Wizard PII fix — Migration 072 + SettingsService + CompanySetupWizard fully migrated from UserDefaults to SQLite draft. | ✅ DONE 2026-04-06 — commits a7ed218 + 5135ee2. Prompt archived to done/. |
 | PE-036 | *(archived — code done)* | Wizard safety — IOSMovementWizard ✅, PartsFlowWizard ✅, WarehouseOnboardingWizard ✅ (`isSaving` + `interactiveDismissDisabled` + all buttons disabled — confirmed in working tree diff 2026-04-06). GitHub #115. | ✅ DONE — all 3 wizards hardened. Working tree uncommitted. |
-| PE-037 | `PE-037-sheet-interactive-dismiss-batch1.md` | Sheet dismiss guard batch 1 — add `.interactiveDismissDisabled(isSaving)` to 9 Create/Form sheets that already have isSaving. GitHub #120/#123. One-line change per file. | ⬜ READY — new 2026-04-05 |
+| PE-037 | *(archived — confirmed done 2026-04-07)* | Sheet dismiss guard batch 1 — all 9 sheets confirmed to have `.interactiveDismissDisabled(isSaving)` in working tree. Files: CreateChannelSheet, IOSCreateTrailerSheet, IOSCreateVehicleSheet, CreateNotebookSheet, CreatePOSheet, CreateReturnSheet, CascadePriceEditSheet, CreateDispatchSheet, RequestTimeOffSheet. GitHub #120/#123. | ✅ DONE — verified hunt-fix run 14 |
 | PE-038 | *(fixed directly — DIS-008 fully done)* | Fix hardcoded font `.system(size: compact ? 6 : 10)` in `JobStageProgressBar.swift:45` → `.system(.caption2, weight: .bold)` with `minimumScaleFactor`. Both files now use semantic Dynamic Type. | ✅ DONE 2026-04-06 — page-rebuild-enforcer, direct Swift edit |
-| PE-039 | *(partial — PartsFlowWizard done)* | PartsFlowWizard.saveAllProgress() DB loop wrapped in Task{}, isSaving lifecycle consolidated with andDismiss param. CartManager.placeAllItems() still synchronous — remaining work for next run. (DIS-009 partial) | ✅ PARTIAL 2026-04-06 — CartManager remaining |
+| PE-039 | *(archived — fully done 2026-04-07)* | PartsFlowWizard.saveAllProgress() DB loop wrapped in Task{}, isSaving lifecycle consolidated with andDismiss param. CartManager.placeAllItems() also confirmed in Task{} with isPlacingItems lifecycle. DIS-009 fully closed. | ✅ DONE — both locations confirmed async, hunt-fix run 14 |
 | PE-009a | *(closed — direct edit)* | HIG: 83 hardcoded font sizes → semantic styles (GitHub #11 closed) | ✅ closed — fixed directly in 38ca2bb; archive prompt to `done/` |
 | PE-009b | *(archived)* | HIG: 12 undersized tap targets (< 44×44pt) (GitHub #12) | ✅ done (2026-04-02) — direct edits 38ca2bb + contentShape pass; all 13 locations ≥44×44pt |
 | PE-009c | *(archived)* | HIG: 2 remaining swipe-to-delete (all 5 files confirmed) | ✅ done (2026-04-02) — all 5 files verified with candidate+dialog pattern |

@@ -1,9 +1,9 @@
 # Hunt-Fix-Verify Loop Tracker
 
 > **Started:** 2026-03-28
-> **Status:** PHASE 1 COMPLETE — 30 iterations, 117 bugs fixed. Latest: dev-improvement-scanner run 10 (2026-04-06) — 0 crashes/injection/NavigationView issues found. 3 new security findings: DIS-012 (PIN KDF strength), DIS-013 (legacy salt migration deadline), DIS-014 (unsigned token shim). All DevTODO files created. Previous: test-coverage-maintenance run — 1030/1030 tests (+16 new).
-> **⚠️ NEXT PRIORITY: PE-036/PE-037/PE-038/PE-039 Xcode AI prompts — ready to run.**
-> **⚠️ DIS-012/013 security items: need design decision on PIN KDF before implementation.**
+> **Status:** PHASE 1 COMPLETE — 32 iterations, 117 bugs fixed. Latest: test-coverage-maintenance run (2026-04-07) — 1118/1118 tests (+21 new). 21 new WarehouseService coverage tests: getMovement, previewMovement, executeMovement, getStockAtLocation, clearStagingTag, clearAllStagingTags, getPartStockLevels, zone CRUD, getPartName, getPartCode, getJobLinkForPOLine, listDistinctStockLocations, getPartStockByLocationType, getWarehouseLocationName/Names. PE-037 confirmed done (all 9 sheets). DIS-009 CLOSED (CartManager async). Prompt queue empty (0 active).
+> **⚠️ NEXT PRIORITY: DIS-012/013 security items — need design decision on PIN KDF (PBKDF2 vs Argon2id) before implementation.**
+> **⚠️ Program-review GitHub issues #82–#95 — page-by-page feature rebuilds are next major work phase.**
 
 ---
 
@@ -1483,4 +1483,47 @@ But neither key existed in `defaultPermissionMap()`. This caused:
 **Open items (not auto-fixable):**
 - DIS-012/013: Auth security hardening — needs design decision (PBKDF2 vs Argon2id) before implementation. Best done as one coordinated pass.
 - DIS-014: Remove legacy unsigned token `else` branch — safe to remove, 1-line change, but should be verified on-device first.
+
+---
+
+### Iteration 32 — Full 10-Scanner Pass (2026-04-07, hunt-fix-verify run 14)
+
+**Build:** ✅ 0 errors, 0 warnings
+**Tests:** ✅ **1097/1097 passing** (53 suites — up +67 from last logged count of 1030)
+
+**Scanner results:**
+
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Compile | ✅ PASS | 0 errors, 0 warnings |
+| Tests | ✅ PASS | 1097/1097 across 53 suites — LAN sync + BT sync integration tests run in parallel 75-second batches |
+| Code Patterns | ✅ PASS | `Text("Coming Soon")` in `IOSContentRouter.swift:361` is inside `struct PlaceholderView` — intentional stub view for unbuilt routes, not a forgotten TODO. No silent catches, no force casts, no empty buttons. |
+| SQL Integrity | ✅ PASS | `general_contractors.contact_name` verified valid in migration (line 1648). All recently modified service files clean. AuthService SQL all parameterized. |
+| Runtime Safety | ✅ PASS | `BreakService.swift:422` `TimeZone(secondsFromGMT: 0)!` — documented safe (0 offset is always valid GMT). No new unwraps. |
+| Edge Cases | ✅ PASS | No division by zero, no unguarded subscripts. |
+| DevTODO | ✅ | DIS-009 **CLOSED** — CartManager.placeAllItems() confirmed wrapped in Task{} in working tree. Both PartsFlowWizard + CartManager now fully async. DIS-012/013/014 open — need design decisions. |
+| GitHub Issues | ⚠️ | 129 open issues. Systemic: #121 (198 try?), #122 (426 guard-let bail), #128 (20+ empty catches), #129 (dirty tracking). Program-review: #82-#95 (feature-level rebuilds). |
+| Plan Alignment | ✅ PASS | PE-037 **DONE** — all 9 target sheets confirmed to have `.interactiveDismissDisabled(isSaving)`. PE-039 **DONE** — CartManager confirmed. Prompt queue now empty (0 active). |
+| Security | ✅ PASS | No SQL injection, no hardcoded secrets. DIS-012/013/014 tracked and awaiting design decisions. |
+
+**Changes made this iteration:**
+
+| Item | Action | Files Changed |
+|------|--------|---------------|
+| DIS-009 | **CLOSED** — CartManager.placeAllItems() already wrapped in Task{} in working tree; status updated to CLOSED | `docs/DevTODO/DIS-009-bulk-db-writes-main-thread.md` |
+| PE-037 | **CONFIRMED DONE** — All 9 sheets verified: CreateChannelSheet, IOSCreateTrailerSheet, IOSCreateVehicleSheet, CreateNotebookSheet, CreatePOSheet, CreateReturnSheet, CascadePriceEditSheet, CreateDispatchSheet, RequestTimeOffSheet | `xcode-ai/fix-prompts/00-fix-order.md` |
+| PE-039 | **FULLY DONE** — Both PartsFlowWizard (PE-039) and CartManager (DIS-009) confirmed fully async | `xcode-ai/fix-prompts/00-fix-order.md` |
+| Prompt queue | **CLEARED** — 0 active prompts remain | `xcode-ai/fix-prompts/00-fix-order.md` |
+
+**No new bugs found.** All scanners clean.
+
+**Metrics delta:**
+
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| Tests passing | 1030 | 1097 | +67 (previously sync-blocked by migration 072 fix; now all run) |
+| Compile errors | 0 | 0 | = |
+| Active Xcode prompts | 1 (PE-037) | 0 | -1 |
+| DIS-009 status | PARTIAL | CLOSED | ✅ |
+| Async main-thread risks | 2 locations | 0 | -2 |
 

@@ -2,7 +2,7 @@
 source: dev-improvement-scanner (2026-04-05)
 severity: Medium
 category: Performance — Main Thread Blocking
-status: PARTIAL — PartsFlowWizard.saveAllProgress() wrapped in Task{} 2026-04-06 (page-rebuild-enforcer / PE-039). CartManager.placeAllItems() still synchronous → remaining work.
+status: CLOSED — Both fixes confirmed in working tree 2026-04-07 (hunt-fix run 14). PartsFlowWizard wrapped in Task{} (PE-039, page-rebuild-enforcer 2026-04-06). CartManager.placeAllItems() also wrapped in Task{} with isPlacingItems lifecycle + interactiveDismissDisabled. Both locations fully async.
 github_issue: PENDING (gh not available, file manually)
 ---
 
