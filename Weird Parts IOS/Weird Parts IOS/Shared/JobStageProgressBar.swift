@@ -42,7 +42,8 @@ struct JobStageProgressBar: View {
 
                 if stage.status == "completed" {
                     Image(systemName: "checkmark")
-                        .font(.system(size: compact ? 6 : 10, weight: .bold))
+                        .font(compact ? .system(.caption2, weight: .bold) : .system(.caption, weight: .bold))
+                        .minimumScaleFactor(0.5)
                         .foregroundStyle(.white)
                 } else if stage.status == "in_progress" {
                     Circle()
