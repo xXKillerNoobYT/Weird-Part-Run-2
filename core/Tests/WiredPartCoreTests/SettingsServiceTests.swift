@@ -539,4 +539,100 @@ struct SettingsServiceTests {
         let stored = try svc.getSetting("alias_test")
         #expect(stored == "hello")
     }
+
+    // MARK: - CompanySetupDraft (DIS-005)
+
+    @Test("loadSetupDraft returns nil on fresh database")
+    func testLoadSetupDraftEmpty() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let draft = try svc.loadSetupDraft()
+        #expect(draft == nil)
+    }
+
+    @Test("saveSetupDraft persists all fields and loadSetupDraft retrieves them")
+    func testSaveAndLoadSetupDraft() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let original = SettingsService.CompanySetupDraft(
+            currentStep: 3,
+            completedSteps: [0, 1, 2],
+            skippedSteps: [4],
+            name: "Acme Corp",
+            address: "123 Main St",
+            phone: "555-1234",
+            email: "info@acme.com",
+            selectedState: "Texas"
+        )
+        try svc.saveSetupDraft(original)
+
+        let loaded = try svc.loadSetupDraft()
+        #expect(loaded != nil)
+        #expect(loaded?.currentStep == 3)
+        #expect(loaded?.completedSteps == [0, 1, 2])
+        #expect(loaded?.skippedSteps == [4])
+        #expect(loaded?.name == "Acme Corp")
+        #expect(loaded?.address == "123 Main St")
+        #expect(loaded?.phone == "555-1234")
+        #expect(loaded?.email == "info@acme.com")
+        #expect(loaded?.selectedState == "Texas")
+    }
+
+    @Test("saveSetupDraft overwrites previous draft (single-row upsert)")
+    func testSaveSetupDraftOverwrites() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let first = SettingsService.CompanySetupDraft(currentStep: 1, name: "First Corp")
+        try svc.saveSetupDraft(first)
+
+        let second = SettingsService.CompanySetupDraft(currentStep: 5, name: "Second Corp")
+        try svc.saveSetupDraft(second)
+
+        let loaded = try svc.loadSetupDraft()
+        #expect(loaded?.currentStep == 5)
+        #expect(loaded?.name == "Second Corp")
+    }
+
+    @Test("deleteSetupDraft removes the draft row")
+    func testDeleteSetupDraft() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        try svc.saveSetupDraft(SettingsService.CompanySetupDraft(currentStep: 2, name: "ToDelete"))
+        #expect(try svc.loadSetupDraft() != nil)
+
+        try svc.deleteSetupDraft()
+        #expect(try svc.loadSetupDraft() == nil)
+    }
+
+    @Test("deleteSetupDraft on empty table does not throw")
+    func testDeleteSetupDraftIdempotent() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        // Should not throw even if no row exists
+        #expect(throws: Never.self) {
+            try svc.deleteSetupDraft()
+        }
+    }
+
+    @Test("saveSetupDraft round-trips empty Set fields correctly")
+    func testSaveSetupDraftEmptySets() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let draft = SettingsService.CompanySetupDraft(
+            currentStep: 0,
+            completedSteps: [],
+            skippedSteps: []
+        )
+        try svc.saveSetupDraft(draft)
+
+        let loaded = try svc.loadSetupDraft()
+        #expect(loaded?.completedSteps == [])
+        #expect(loaded?.skippedSteps == [])
+    }
 }

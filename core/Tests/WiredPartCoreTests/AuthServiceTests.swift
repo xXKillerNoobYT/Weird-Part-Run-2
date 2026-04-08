@@ -185,6 +185,9 @@ struct AuthServiceTests {
         #expect(perms.contains("manage_settings"))
         #expect(perms.contains("view_parts_catalog"))
         #expect(perms.contains("manage_remote_sync"))
+        // companion_vote_power must be seeded for fresh installs (not just via migration)
+        #expect(perms.contains("companion_vote_power"))
+        #expect(perms.contains("vote_veto"))
     }
 
     @Test("hasPermission returns true for admin")
@@ -321,5 +324,162 @@ struct AuthServiceTests {
         let active = try auth.getActiveUsers()
         #expect(active.count == 1)
         #expect(active[0].displayName == "Admin")
+    }
+
+    // MARK: - createUser
+
+    @Test("createUser inserts a new active user and returns a valid id")
+    func testCreateUser() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
+
+        let newId = try auth.createUser(displayName: "Bob", pin: "5678", email: "bob@example.com")
+        #expect(newId > 0)
+
+        let user = try auth.getUser(newId)
+        #expect(user?.displayName == "Bob")
+        #expect(user?.email == "bob@example.com")
+        #expect(user?.isActive == 1)
+    }
+
+    @Test("createUser stores a salted pin that authenticates correctly")
+    func testCreateUserPinAuthenticates() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
+
+        let newId = try auth.createUser(displayName: "Alice", pin: "4321")
+        let result = try auth.authenticateByPin(userId: newId, pin: "4321")
+        #expect(result.success)
+    }
+
+    // MARK: - Hat Permissions
+
+    @Test("addHatPermission and getHatPermissions round-trip")
+    func testAddAndGetHatPermissions() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
+
+        let hatId = try db.writer.write { dbConn -> Int64 in
+            try dbConn.execute(sql: "INSERT INTO hats (name, level) VALUES ('TestHat', 1)")
+            return dbConn.lastInsertedRowID
+        }
+
+        try auth.addHatPermission(hatId: hatId, permissionKey: "can_edit")
+        try auth.addHatPermission(hatId: hatId, permissionKey: "can_delete")
+
+        let perms = try auth.getHatPermissions(hatId)
+        #expect(perms.contains("can_edit"))
+        #expect(perms.contains("can_delete"))
+        #expect(perms.count == 2)
+    }
+
+    @Test("addHatPermission is idempotent (INSERT OR IGNORE)")
+    func testAddHatPermissionIdempotent() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
+
+        let hatId = try db.writer.write { dbConn -> Int64 in
+            try dbConn.execute(sql: "INSERT INTO hats (name, level) VALUES ('Dup Hat', 2)")
+            return dbConn.lastInsertedRowID
+        }
+
+        try auth.addHatPermission(hatId: hatId, permissionKey: "can_view")
+        try auth.addHatPermission(hatId: hatId, permissionKey: "can_view") // duplicate — should not throw
+
+        let perms = try auth.getHatPermissions(hatId)
+        #expect(perms.count == 1)
+    }
+
+    @Test("removeHatPermission deletes the specified permission")
+    func testRemoveHatPermission() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
+
+        let hatId = try db.writer.write { dbConn -> Int64 in
+            try dbConn.execute(sql: "INSERT INTO hats (name, level) VALUES ('RemoveHat', 1)")
+            return dbConn.lastInsertedRowID
+        }
+
+        try auth.addHatPermission(hatId: hatId, permissionKey: "can_edit")
+        try auth.addHatPermission(hatId: hatId, permissionKey: "can_delete")
+        try auth.removeHatPermission(hatId: hatId, permissionKey: "can_edit")
+
+        let perms = try auth.getHatPermissions(hatId)
+        #expect(!perms.contains("can_edit"))
+        #expect(perms.contains("can_delete"))
+    }
+
+    // MARK: - getUserHats
+
+    @Test("getUserHats returns hat summaries for a seeded admin")
+    func testGetUserHats() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let result = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
+
+        let hats = try auth.getUserHats(result.user!.id!)
+        #expect(!hats.isEmpty)
+        #expect(hats.contains(where: { $0.name == "Admin" }))
+    }
+
+    @Test("getUserHats returns empty for user with no hats")
+    func testGetUserHatsEmpty() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        _ = try auth.seedFirstAdmin(displayName: "Admin", pin: "0000")
+
+        let userId = try auth.createUser(displayName: "Bare User", pin: "1111")
+        let hats = try auth.getUserHats(userId)
+        #expect(hats.isEmpty)
+    }
+
+    // MARK: - listRegisteredDevices
+
+    @Test("listRegisteredDevices returns empty on fresh database")
+    func testListRegisteredDevicesEmpty() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+
+        let devices = try auth.listRegisteredDevices()
+        #expect(devices.isEmpty)
+    }
+
+    // MARK: - listActiveSessions / deactivateSession
+
+    @Test("listActiveSessions returns empty on fresh database")
+    func testListActiveSessionsEmpty() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+
+        let sessions = try auth.listActiveSessions()
+        #expect(sessions.isEmpty)
+    }
+
+    @Test("deactivateSession marks a session as deactivated")
+    func testDeactivateSession() throws {
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+
+        let rowId = try db.writer.write { dbConn -> Int64 in
+            try dbConn.execute(sql: """
+                INSERT INTO _device_registry (device_id, device_name, is_trusted, is_deactivated, last_seen_at)
+                VALUES ('abc-device-123', 'iPhone 14', 1, 0, datetime('now'))
+            """)
+            return dbConn.lastInsertedRowID
+        }
+
+        var sessions = try auth.listActiveSessions()
+        #expect(sessions.count == 1)
+        #expect(sessions[0].userId == "abc-device-123")
+
+        try auth.deactivateSession(sessionId: "\(rowId)")
+
+        sessions = try auth.listActiveSessions()
+        #expect(sessions.isEmpty)
     }
 }
