@@ -1722,3 +1722,20 @@ _Appended by dev-pipeline-manager each run._
 - Issues processed: DIS-012/013/014 security DevTODOs created; PE-037 remains the only active prompt (9 Create/Form sheets batch)
 - Bugs fixed: 3 (userId String cast, companion_vote_power missing from defaultPermissionMap, async DB writes blocking main thread)
 - Pipeline health: OK — 1097/1097 green, build clean, 1 active prompt (PE-037), 3 security items pending design decision (DIS-012/013/014)
+
+### End-of-Day Sync — 2026-04-07 (run 2)
+- Files committed: 5 (WarehouseServiceExtTests.swift, DIS-009.md, dev-pipeline.md, hunt-fix-tracker.md, 00-fix-order.md)
+- Commits created: 2 (d314955 tests, fc52fc2 docs)
+- Push status: success — fc52fc2 pushed to origin/main
+- Tests: 1118/1118 passing (53 suites, +21 WarehouseService coverage tests added this run)
+- Agent runs today (cumulative): 7/7
+  - hunt-fix-verify ✅ run 14 — all 10 scanners clean; PE-037 + DIS-009 confirmed done
+  - test-coverage-maintenance ✅ — +21 WarehouseService tests (getMovement, previewMovement, executeMovement, getStockAtLocation, clearStagingTag/All, getPartStockLevels, zones, getPartName/Code, getJobLinkForPOLine, listDistinctStockLocations, getPartStockByLocationType, getWarehouseLocationName/Names)
+  - dev-improvement-scanner ✅ (run 10 — DIS-012/013/014 security findings; all other scanners clean)
+  - plan-enforcer ✅ (PE-037 DONE: all 9 sheets confirmed; PE-039 DONE: CartManager fully async)
+  - github-issues-sync ✅ (129 open issues logged; program-review #82-#95 identified as next major work)
+  - pipeline-manager ✅ (status tables updated)
+  - github-sync-and-review ✅ (this run)
+- Issues processed: DIS-009 CLOSED, PE-037 DONE, PE-039 DONE, prompt queue cleared (0 active)
+- Bugs fixed: 0 new (all scanners clean; prior fixes confirmed complete)
+- Pipeline health: OK — 1118/1118 green, build clean, 0 active Xcode prompts, next priorities: DIS-012/013 KDF design decision + program-review GitHub issues #82-#95
