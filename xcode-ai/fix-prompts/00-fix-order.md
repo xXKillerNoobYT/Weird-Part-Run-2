@@ -2,8 +2,8 @@
 
 > **Phase 1 complete.** All 279 prompts (01–67A) are archived in `done/`.
 > **Phase 2 HIG/Security work complete.** PE-009a/b/c/d/e, PE-008a/b/c/d/e, PE-022, PE-001, PE-024, PE-025, PE-026 all done. All archived to `done/`.
-> **Phase 3 status (github-issues-sync run 7, 2026-04-05):** PE-003/027/029/030/031 ALL DONE. PE-036 + PE-037 NEW — usability-hunter #115/#116/#119/#120/#123 → wizard safety + sheet dismiss guard batch.
-> **Active prompts (4 ready):** PE-034, PE-035, PE-036, PE-037.
+> **Phase 3 status (page-rebuild-enforcer 2026-04-06):** PE-034 ✅ DONE. PE-035 ✅ DONE. PE-036 ✅ DONE — all 3 wizards verified; WarehouseOnboardingWizard already had isSaving + interactiveDismissDisabled. PE-038 ✅ DONE — JobStageProgressBar font fixed directly (semantic .caption2 + minimumScaleFactor). PE-039 ✅ DONE — PartsFlowWizard DB loop wrapped in Task{}, isSaving lifecycle consolidated, andDismiss param added. DIS-009 partial — CartManager still pending.
+> **Active prompts (1 remaining):** PE-037 (sheet dismiss guard batch 1 — 9 Create/Form sheets).
 
 ---
 
@@ -27,7 +27,7 @@
 | PE-025 | *(archived)* | Teams empty state, Edit Tabs layout, Settings Page Layout descriptions (GitHub #30, #31, #32) | ✅ done (2026-04-04) — IOSTeamsPage, TabBarEditorView, TabBarPreferences, UserMenuSheet updated; committed 826dd18. Also includes CategoriesTreeView @State→@Binding fix (partial #46 impl). |
 | PE-026 | *(archived)* | Badge counts on all tabs (real-time, green/red tint), action button border rings, notebook update badges (GitHub #50, #51) | ✅ done (2026-04-04) — BadgeCountService + BadgeCountManager + ActionDot/actionRing on all approval/action pages |
 | PE-031 | *(done — direct edit)* | Clock In/Out bug fix — GPS permission race + alreadyClockedIn recovery (GitHub #20) | ✅ DONE 2026-04-04 — implemented directly: needsLocationPermission, alreadyClockedIn recovery, os.Logger, error banner |
-| PE-034 | `PE-034-dis-quick-ui-fixes.md` | Quick UX fixes: loading indicators, pull-to-refresh templates, sheet detents, timer lifecycle | ⬜ READY — prompt exists (correcting prior tracker error that said "never created") |
+| PE-034 | *(archived — code done)* | Quick UX fixes: loading indicators (3 pages), pull-to-refresh (templates), sheet detents (7 sheets), timer lifecycle (dashboard) | ✅ DONE 2026-04-06 — all 4 DIS fixes confirmed in code (commits 3ddbc61 + direct edits). Prompt archived to done/. |
 | PE-027 | *(done — direct edit)* | Part numbers at color level, supplier part numbers per color × supplier, search by PN + abbrev (GitHub #46) | ✅ DONE 2026-04-04 — migration 065, PartsService, CategoriesTreeView, CategoriesFormSheets, 4 tests |
 | PE-028 | *(archive — work done)* | Brands & Suppliers editing — Migration 066 + carry_status + bidirectional UI in PartsBrandsPage/PartsSuppliersPage (GitHub #47) | ✅ DONE 2026-04-04 — move `PE-028-brands-suppliers-editing.md` to `done/` |
 | PE-029 | *(done — direct edit)* | Price chips on catalog color rows, CascadePriceEditSheet with cascade, PartsPricingPage full impl (GitHub #48) | ✅ DONE 2026-04-04 — PricingService methods, CascadePriceEditSheet, PartsPricingPage, 4 tests |
@@ -35,9 +35,11 @@
 | PE-032 | *(archive — work done)* | Schedule Config additive — Migration 069 `shift_templates`+`company_holidays`, IOSScheduleConfigPage 823 lines with all sections (GitHub #29) | ✅ DONE 2026-04-04 — move `PE-032-schedule-config-additive.md` to `done/` |
 | PE-033 | *(archive — work done)* | Wishlist 3-section layout — Migration 070, WishlistService methods, IOSWishlistPage 3-section layout (GitHub #93) | ✅ DONE 2026-04-04 — move `PE-033-wishlist-section-layout.md` to `done/` |
 | PE-003 | *(archived — work done)* | Flex pool UI — `IOSFlexPoolPage` (209 lines) wired in SchedulingRouter + NavigationConfig. `IOSJobDetailTabView` manager toggle. Permission fix: `manage_flex_pool`/`self_assign_flex` added to AuthService. | ✅ DONE 2026-04-05 |
-| PE-035 | `PE-035-dis005-wizard-sqlite-draft.md` | Company Setup Wizard PII fix — migrate 8 UserDefaults keys to `company_setup_draft` SQLite table. Delete on completion. | ⬜ READY — new 2026-04-05 |
-| PE-036 | `PE-036-wizard-safety-hardening.md` | Wizard safety — IOSMovementWizard (Cancel disabled during execute, qty validation), WarehouseOnboardingWizard (isSaving + interactiveDismissDisabled + error feedback), PartsFlowWizard (isSaving guard + error feedback). GitHub #115/#116/#119. | ⬜ READY — new 2026-04-05 |
+| PE-035 | *(archived — code done)* | Company Setup Wizard PII fix — Migration 072 + SettingsService + CompanySetupWizard fully migrated from UserDefaults to SQLite draft. | ✅ DONE 2026-04-06 — commits a7ed218 + 5135ee2. Prompt archived to done/. |
+| PE-036 | *(archived — code done)* | Wizard safety — IOSMovementWizard ✅, PartsFlowWizard ✅, WarehouseOnboardingWizard ✅ (`isSaving` + `interactiveDismissDisabled` + all buttons disabled — confirmed in working tree diff 2026-04-06). GitHub #115. | ✅ DONE — all 3 wizards hardened. Working tree uncommitted. |
 | PE-037 | `PE-037-sheet-interactive-dismiss-batch1.md` | Sheet dismiss guard batch 1 — add `.interactiveDismissDisabled(isSaving)` to 9 Create/Form sheets that already have isSaving. GitHub #120/#123. One-line change per file. | ⬜ READY — new 2026-04-05 |
+| PE-038 | *(fixed directly — DIS-008 fully done)* | Fix hardcoded font `.system(size: compact ? 6 : 10)` in `JobStageProgressBar.swift:45` → `.system(.caption2, weight: .bold)` with `minimumScaleFactor`. Both files now use semantic Dynamic Type. | ✅ DONE 2026-04-06 — page-rebuild-enforcer, direct Swift edit |
+| PE-039 | *(partial — PartsFlowWizard done)* | PartsFlowWizard.saveAllProgress() DB loop wrapped in Task{}, isSaving lifecycle consolidated with andDismiss param. CartManager.placeAllItems() still synchronous — remaining work for next run. (DIS-009 partial) | ✅ PARTIAL 2026-04-06 — CartManager remaining |
 | PE-009a | *(closed — direct edit)* | HIG: 83 hardcoded font sizes → semantic styles (GitHub #11 closed) | ✅ closed — fixed directly in 38ca2bb; archive prompt to `done/` |
 | PE-009b | *(archived)* | HIG: 12 undersized tap targets (< 44×44pt) (GitHub #12) | ✅ done (2026-04-02) — direct edits 38ca2bb + contentShape pass; all 13 locations ≥44×44pt |
 | PE-009c | *(archived)* | HIG: 2 remaining swipe-to-delete (all 5 files confirmed) | ✅ done (2026-04-02) — all 5 files verified with candidate+dialog pattern |

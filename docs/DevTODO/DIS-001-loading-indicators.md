@@ -2,7 +2,7 @@
 source: dev-improvement-scanner (2026-04-04)
 severity: Medium
 category: UX — Loading States
-status: open
+status: DONE — implemented in commits 3ddbc61 (IOSEstimationReviewPage) + direct edit (IOSContractorDetailPage, IOSEstimationSettingsPage). All 3 pages now show ProgressView on initial load.
 github_issue: PENDING (gh not available, file manually)
 ---
 

@@ -2,7 +2,7 @@
 source: dev-improvement-scanner (2026-04-04)
 severity: Medium
 category: Performance — Timer Lifecycle
-status: open
+status: DONE — timer converted to Combine sink with onAppear/onDisappear lifecycle in commit 3ddbc61 (DashboardDailyReportPage).
 github_issue: PENDING (gh not available, file manually)
 ---
 

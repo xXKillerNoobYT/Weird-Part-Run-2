@@ -2,7 +2,7 @@
 source: dev-improvement-scanner (2026-04-04)
 severity: Medium
 category: Apple HIG — Sheet Presentation
-status: open
+status: DONE — .presentationDetents([.large]) + .presentationDragIndicator(.visible) added to all 7 sheets in commit 3ddbc61 (IOSMainView 4 sheets, PartsCatalogPage, IOSContactDetailPage, IOSHatsPage).
 github_issue: PENDING (gh not available, file manually)
 ---
 

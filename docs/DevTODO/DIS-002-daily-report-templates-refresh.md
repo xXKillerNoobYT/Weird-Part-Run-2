@@ -2,7 +2,7 @@
 source: dev-improvement-scanner (2026-04-04)
 severity: Medium
 category: UX — Pull-to-Refresh
-status: open
+status: DONE — .refreshable { loadSettings() } added to IOSDailyReportTemplatesPage in commit 3ddbc61.
 github_issue: PENDING (gh not available, file manually)
 ---
 

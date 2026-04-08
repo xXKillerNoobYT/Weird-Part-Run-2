@@ -2,7 +2,7 @@
 source: dev-improvement-scanner (2026-04-05)
 severity: Medium
 category: Apple HIG — Typography / Dynamic Type
-status: open
+status: done — WizardStepPlacement.swift fixed (uses .caption2 semantic style). JobStageProgressBar.swift fixed 2026-04-06 via page-rebuild-enforcer (PE-038 implemented directly).
 github_issue: PENDING (gh not available, file manually)
 ---
 

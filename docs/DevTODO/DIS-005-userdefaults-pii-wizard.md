@@ -2,7 +2,7 @@
 source: dev-improvement-scanner (2026-04-04)
 severity: Medium
 category: Security — PII Storage
-status: DONE — Xcode prompt PE-035 written 2026-04-05 at xcode-ai/fix-prompts/PE-035-dis005-wizard-sqlite-draft.md
+status: DONE — Migration 072 adds company_setup_draft table. SettingsService: loadSetupDraft/saveSetupDraft/deleteSetupDraft implemented. CompanySetupWizard fully migrated from UserDefaults to SQLite draft in commits a7ed218 + 5135ee2. Cleanup called on completion.
 github_issue: PENDING (gh not available, file manually)
 ---
 

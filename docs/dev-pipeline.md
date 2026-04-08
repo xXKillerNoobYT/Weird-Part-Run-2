@@ -1,6 +1,6 @@
 # WiredPart Development Pipeline
 
-> **Last updated:** 2026-04-05 (github-issues-sync run 7 — 9 open usability issues processed: #115/#116/#119 → PE-036 wizard safety prompt; #117 confirmation dialog already in working tree; #120 settings sheet routing fixed in working tree; #120/#123 → PE-037 sheet dismiss batch 1; #121/#122 acknowledged systemic tracking issues. 7 issue comments posted. PE-036 + PE-037 added to prompt queue. 4 active prompts total.)
+> **Last updated:** 2026-04-06 (github-issues-sync run 7 — gh CLI unavailable, local-only analysis. Verified: DIS-012/013/014 Q&A already filed (pending owner design decisions). DIS-011 confirmed CLOSED in code. Working tree: 19 files with uncommitted test/pipeline changes from test-coverage-maintenance + plan-enforcer. Active Xcode prompts: PE-036/037/038/039. Security cluster DIS-012/013/014 blocked on Q&A. Prior update: dev-improvement-scanner run 10 — DIS-012/013/014 filed; plan-enforcer run 7: PE-034/035 DONE, PE-036 partial, 4 prompts active)
 > **Auto-maintained by:** dev-pipeline-manager (orchestrator)
 
 ---
@@ -32,14 +32,14 @@ Every feature, bug, or improvement follows this cycle:
 | Area | Status | Last Checked |
 |------|--------|-------------|
 | Build | 0 errors, 0 warnings | 2026-04-04 |
-| Tests | **1014/1014 passing** — test-coverage-maintenance (2026-04-05): +36 PartsService advanced tests (companion polls, findPartByCode/Name, getImportExportStats, approveScheduledDeletion, listStockEntries). Previous: flex pool +6 tests (run 11). | 2026-04-05 |
-| Plan Alignment | **Plan-enforcer run 6**: PE-003/027/029/030/031 ✅ ALL DONE. **Bug fixed**: `manage_flex_pool`/`self_assign_flex` added to AuthService. Prompts moved to done/. 5 plans now Step 13. **Active:** PE-034, PE-035, PE-036, PE-037. | 2026-04-05 |
-| Feature Polish | **4 active Xcode prompts:** PE-034 (loading/refresh/detents/timer), PE-035 (wizard SQLite draft), PE-036 (wizard safety — isSaving + dismiss guards), PE-037 (sheet dismiss batch 1 — 9 files). | 2026-04-05 |
-| Xcode Prompts | **4 ready to trigger:** PE-034, PE-035, PE-036 (wizard safety #115/#116/#119), PE-037 (sheet dismiss batch #120/#123). | 2026-04-05 |
-| GitHub Issues | **44 open** — Usability-hunter batch: #115-#117/#119-#120/#121-#123 all commented (7 issues). PE-036 covers #115/#116/#119. PE-037 covers #120/#123. #121/#122 systemic tracking. #98 color reuse — architecture already correct (global pool + type_color_links). #105 brands page supplier picker — partially resolved via PE-028. #52–#95 program-review: 39 open specs. | 2026-04-05 |
-| Q&A Backlog | **0 pending** — DIS-005 Q&A answered (Option B — SQLite draft table), DIS-007 closed (non-issue). | 2026-04-05 |
-| Working Tree | ⚠️ Many modified files — see git status. Key changes (2026-04-05): PartsFlowWizard.swift (DIS-010 fix — clearDraft param). Key changes (2026-04-04): WishlistService.swift (DIS-006), AppDatabase+Migrations.swift (migration 071), SchedulingModels/Service (flex pool), PartsServiceAdvancedTests (+36). | 2026-04-05 |
-| Agent Health | All 8 agents enabled | 2026-04-05 |
+| Tests | **1030/1030 passing** — test-coverage-maintenance (2026-04-06): +16 tests (6 CompanySetupDraft/SettingsService, 12 AuthService: createUser/hat-perms/getUserHats/sessions/deactivate). Bug fixed: `listActiveSessions` crash on TEXT device_id decoded as Int64. Previous: +36 PartsService advanced tests (2026-04-05). | 2026-04-06 |
+| Plan Alignment | **Plan-enforcer run 7**: PE-034 ✅ DONE (all 4 DIS UX fixes confirmed in code, archived to done/). PE-035 ✅ DONE (migration 072 + SettingsService + CompanySetupWizard fully migrated, archived to done/). PE-036 🔶 PARTIAL (IOSMovementWizard + PartsFlowWizard done; WarehouseOnboardingWizard missing isSaving + interactiveDismissDisabled). PE-037 🔴 NOT DONE (9 sheets still missing). DIS-001/002/003/004/005 closed in DevTODO. **Active:** PE-036 (partial), PE-037, PE-038, PE-039. | 2026-04-06 |
+| Feature Polish | **3 active Xcode prompts:** PE-036 ✅ DONE (WarehouseOnboardingWizard `isSaving` confirmed in working tree — github-issues-sync run 7), PE-037 (sheet dismiss batch 1 — 9 files), PE-038 (DIS-008 tiny font stage bar), PE-039 (DIS-009 main thread bulk writes). | 2026-04-06 |
+| Xcode Prompts | **3 ready to trigger:** PE-037 (sheet dismiss batch #120/#123 — 9 sheets), PE-038 (Dynamic Type font fix), PE-039 (main thread DB performance). PE-036 confirmed done — no trigger needed. | 2026-04-06 |
+| GitHub Issues | **44 open** — gh CLI unavailable this run (github-issues-sync run 7). DIS-012/013/014 Q&A already in dev-qa.md (security design decisions pending owner). DIS-011 CLOSED in code. Usability-hunter batch: #115-#117/#119-#120/#121-#123 all commented. PE-036 covers #115/#116/#119. PE-037 covers #120/#123. #52–#95 program-review: 39 open specs. Q&A: #22 + #36 pending + DIS-012/013/014 security cluster pending. | 2026-04-06 |
+| Q&A Backlog | **8 pending** — #22 (warehouse wizard layout — 3 questions), #36 (receiving back button — 2 questions), DIS-012/013/014 (PIN hashing & legacy auth — 3 questions). | 2026-04-06 |
+| Working Tree | ⚠️ 9 modified/new files uncommitted — `AuthService.swift`, `AuthServiceTests.swift`, `SettingsServiceTests.swift`, `DIS-011` (CLOSED), `DIS-012/013/014` (new), `dev-pipeline.md`, `hunt-fix-tracker.md`. | 2026-04-06 |
+| Agent Health | All 8 agents enabled | 2026-04-06 |
 
 ---
 
@@ -61,8 +61,9 @@ Every feature, bug, or improvement follows this cycle:
 | PE-029 | Pricing UI — price chips on catalog color rows, PriceEditSheet cascade (type→color→supplier), IOSPricingPage overview (GitHub #48) | 10 — Xcode prompt ready | 🔴 **PARTIAL** — `CascadePriceEditSheet.swift` (359 lines) implemented ✅. Wired in `CategoriesTreeView` via `.editColorPrice` sheet case. Catalog integration (color row price chips in `IOSPartsCatalogPage`) still pending via prompt at `fix-prompts/PE-029-pricing-ui.md`. Note: `PricingOverrideFlow.swift` exists as **unplanned addition** (hierarchy-level override flow) — no plan reference; functionally extends PE-029 scope. |
 | PE-030 | Warehouse Setup Redesign — remove forced gate, two independent flows, drag-and-drop floor plan, cart mode, resumable (GitHub #49) | 10 — Xcode prompt ready | 🔴 **PARTIAL** — `WarehouseSetupTier` enum + `getSetupProgress()` in WarehouseService; `WarehouseDashboardPage` renders tier-appropriate setup banners. Missing: two independent setup flows, drag-and-drop unit placement, cart mode. Prompt at `fix-prompts/PE-030-warehouse-setup-redesign.md`. |
 | PE-032 | ~~Schedule Config additive — company hours, shift templates per hat, holiday calendar, dispatch rules, supervisor role (GitHub #29)~~ **DONE** | 13 — complete | ✅ Closed 2026-04-04 — Migration 069 adds `shift_templates` + `company_holidays` tables. `IOSScheduleConfigPage.swift` (823 lines) has: `companyWorkHoursSection`, `shiftTemplatesSection`, `dispatchRulesSection`, supervisor hat assignment, holiday calendar. Prompt at `fix-prompts/PE-032-schedule-config-additive.md` is now stale (work done). |
-| PE-035 | Company Setup Wizard — migrate PII from UserDefaults to `company_setup_draft` SQLite table (DIS-005) | 10 — Xcode prompt ready | 🔴 **NEW 2026-04-05** — Q&A answered (Option B: SQLite draft). Prompt at `fix-prompts/PE-035-dis005-wizard-sqlite-draft.md`. Migration adds `company_setup_draft` table; replace all 8 UserDefaults keys; delete row on wizard completion. |
-| PE-BUG-001 | companion_vote_power not seeded on fresh install — all companion polls permanently tied | 1 — ideas in | 🔴 **NEW 2026-04-05** — Found by test-coverage-maintenance. Fix: add `companion_vote_power` to `AuthService.defaultPermissionMap()` for Admin/Manager/Lead hats. File GitHub issue manually (gh unavailable). Quick fix. |
+| PE-034 | ~~Quick UX fixes: loading indicators (3 pages), pull-to-refresh (templates), sheet detents (7 sheets), timer lifecycle (dashboard)~~ **DONE** | 13 — complete | ✅ Closed 2026-04-06 — DIS-001/002/003/004 all confirmed in code (commits 3ddbc61 + direct edits). Prompt archived to `done/`. DIS DevTODO files updated to DONE. |
+| PE-035 | ~~Company Setup Wizard PII fix — migrate to company_setup_draft SQLite table~~ **DONE** | 13 — complete | ✅ Closed 2026-04-06 — Migration 072 (`company_setup_draft`), SettingsService `loadSetupDraft`/`saveSetupDraft`/`deleteSetupDraft`, CompanySetupWizard fully migrated from UserDefaults in commits a7ed218 + 5135ee2. Prompt archived to `done/`. DIS-005 DevTODO updated to DONE. |
+| PE-BUG-001 | companion_vote_power not seeded on fresh install — all companion polls permanently tied | 13 — complete | ✅ **FIXED 2026-04-06** — `companion_vote_power`/`vote_veto` added to Admin hat; `companion_vote_power` added to Manager/Lead hats in `AuthService.defaultPermissionMap()`. Also fixed: `device_id` column decoded as `Int64` in `listActiveSessions()` — changed to `String`. In working tree, awaiting commit. |
 | PE-033 | ~~Wishlist 3-section layout — User Added/Forecast Demand/System Auto-Added sections, dismiss reason, auto-approve timer, certainty score (GitHub #93)~~ **DONE** | 13 — complete | ✅ Closed 2026-04-04 — Migration 070 adds `dismiss_reason`, `auto_approve_at`, `certainty_score`. `WishlistModels.swift` updated. `WishlistService` has `getSectionedItems()`, `processAutoApprovals()`, `dismissItem(reason:)`. `IOSWishlistPage.swift` has 3-section layout. Plan at `docs/plans/ios-wishlist-enhancements.md`. |
 | PE-004 | ~~Wire 2 TODO submit buttons in Daily Report (35A)~~ | 13 — complete | ✅ Closed — 35A archived 2026-03-29 | — |
 | PE-005 | ~~Fix 6 dead navigation buttons on Office Dashboard (66A)~~ | 13 — complete | ✅ Closed — 66A already complete; archived 2026-03-29 | — |
@@ -92,14 +93,16 @@ Every feature, bug, or improvement follows this cycle:
 
 ## Next Up (Priority Order)
 
-> **Phase 3 active.** Q&A: 0 pending (cleared this run). Tests: 1014/1014. 3 Xcode prompts ready. PE-031/027/029/030 done via direct edits (uncommitted). New: PE-035 (wizard PII).
+> **Phase 3 active.** Q&A: 8 pending (#22, #36, DIS-012/013/014 security). Tests: 1030/1030. **3 Xcode prompts ready (PE-036 ✅ DONE — confirmed in working tree 2026-04-06).** PE-034/035/036 DONE + archived. PE-037/038/039 ready.
 
-1. **Trigger PE-034 (Quick UX fixes)** — `xcode-ai/fix-prompts/PE-034-dis-quick-ui-fixes.md` — DIS-001 loading indicators, DIS-002 pull-to-refresh, DIS-003 sheet detents, DIS-004 timer lifecycle.
-2. **Trigger PE-003 (Flex Pool UI)** — `xcode-ai/fix-prompts/PE-003-flex-pool-scheduling-ui.md` — core Swift done (migration 071 + service + tests); UI third tab on Scheduling page needed.
-3. **Trigger PE-035 (Wizard PII fix)** — `xcode-ai/fix-prompts/PE-035-dis005-wizard-sqlite-draft.md` — migrate CompanySetupWizard from UserDefaults to `company_setup_draft` SQLite table.
-4. **File GitHub issue: companion_vote_power seeding** — All companion polls permanently tied on fresh install because `companion_vote_power` not in `AuthService.defaultPermissionMap()`. Fix: add to Admin/Manager/Lead hats.
-5. **Commit working tree** — 8 Swift files modified (dismiss fixes, notClockedIn alert, warehouse CartManager, IOSMainView comment). Stage and commit.
-6. **Improve test coverage** — PeopleService (~22/47), ChatService (~14/33), SettingsService (~17/40).
+1. **Commit working tree** — 6 modified files ready: `AuthService.swift` (companion_vote_power/vote_veto seeding + device_id TEXT fix), `AuthServiceTests.swift` (+12 tests), `SettingsServiceTests.swift` (+6 tests), `DIS-011` (CLOSED), docs. Stage and commit.
+2. **Answer Q&A #22** — `docs/dev-qa.md` — 3 questions about warehouse wizard layout. Blocks warehouse redesign plan.
+3. **Answer Q&A #36** — `docs/dev-qa.md` — 2 questions about receiving back button dismiss behavior.
+4. ~~Trigger PE-036~~ **DONE** — WarehouseOnboardingWizard `isSaving` + `interactiveDismissDisabled` confirmed in working tree (github-issues-sync run 7).
+5. **Trigger PE-037 (Sheet dismiss batch 1)** — `xcode-ai/fix-prompts/PE-037-sheet-interactive-dismiss-batch1.md` — 9 sheets need `.interactiveDismissDisabled(isSaving)`.
+6. **Trigger PE-038 (Tiny font fix)** — `xcode-ai/fix-prompts/PE-038-dis008-tiny-fonts-stage-bar.md` — 1-line fix in JobStageProgressBar.swift.
+7. **Trigger PE-039 (Main thread DB writes)** — `xcode-ai/fix-prompts/PE-039-dis009-bulk-db-writes-main-thread.md` — wrap CartManager + PartsFlowWizard bulk loops in Task.
+8. **Improve test coverage** — PeopleService (~22/47), ChatService (~14/33), SettingsService (~17/40).
 
 ---
 
@@ -153,6 +156,7 @@ Every feature, bug, or improvement follows this cycle:
 | 2026-04-05 | **dev-improvement-scanner run 9**: Scan of 7 recently-modified iOS files + broader HIG/security sweep. **1 direct fix:** `PartsFlowWizard.swift` DIS-010 — `saveAllProgress(clearDraft:)` param: "Finish" now purges UserDefaults draft keys; "Save & Exit" preserves them for resume. **3 new DevTODOs:** DIS-008 (hardcoded 7pt/6pt fonts in WizardStepPlacement + JobStageProgressBar — Apple HIG violation), DIS-009 (CartManager + PartsFlowWizard bulk DB write loops on main thread), DIS-011 (force unwrap style in ternary guards). **Status updates:** DIS-007 closed (non-issue confirmed). Q&A backlog: 0 pending (DIS-005 answered, DIS-007 closed). 1014/1014 tests. | Steps 6-9 | PartsFlowWizard.swift |
 | 2026-04-04 | **dev-improvement-scanner run 8**: Scan of recently-modified files. **3 direct fixes:** `SchedulingService.swift` 2 post-insert force unwraps (`template.id!`, `holiday.id!`) → `guard let` with typed errors; `BadgeCountManager.refresh()` 3-second debounce added. **2 new DevTODOs:** DIS-006 (WishlistService sync main-thread writes), DIS-007 (IOSMainView NotificationCenter closure lifetime). Confirmed: all timers safe, all lists have `.refreshable`, 0 force casts, 0 deprecated NavigationView. | Steps 6-8 | SchedulingService.swift + BadgeCountManager.swift |
 | 2026-04-04 | **dev-improvement-scanner run 7**: 4-agent parallel scan (runtime safety, UX, security, HIG). **8 direct fixes:** PartsService healthScore division-by-zero guard (minStock==targetStock path); SettingsService.exportTable uses DB-validated table name; NotebooksService conflict resolver uses literal-backed column map; `.gitignore` now blocks `.env`/`credentials.json`/`token.json`; AI panel 7 icon buttons given `.accessibilityLabel` (was `.help()`-only, iOS no-op); Notebook context menus now show `confirmationDialog` before deleting groups/sections/entries; NotebookTemplates swipe-delete now shows confirmation; QRLabelPrintSheet + IOSStagingPage Clear buttons now carry `.role(.destructive)`. **5 DevTODOs created** (DIS-001 to DIS-005) for items needing Xcode work: loading indicators on 3 pages, pull-to-refresh on Daily Report Templates, `.presentationDetents` on 7 sheets, DashboardDailyReportPage timer leak, CompanySetupWizard UserDefaults PII. `gh` not available — GitHub issues to be filed manually. | Steps 6-9 | 9 files modified |
+| 2026-04-06 | **plan-enforcer run 7**: Audited 7 recent commits + 59 plan files + active PE queue. **PE-034 DONE** — all 4 DIS UX fixes confirmed in code (loading indicators, pull-to-refresh, sheet detents, timer lifecycle); archived to done/; DIS-001/002/003/004 DevTODO closed. **PE-035 DONE** — company_setup_draft migration 072 confirmed; SettingsService `loadSetupDraft`/`saveSetupDraft`/`deleteSetupDraft` confirmed; CompanySetupWizard fully migrated from UserDefaults; archived to done/; DIS-005 DevTODO closed. **PE-036 PARTIAL** — IOSMovementWizard Cancel disabled ✅, qty validation via canAdvance ✅, PartsFlowWizard saveErrorMessage alert ✅; WarehouseOnboardingWizard still missing `isSaving` + `interactiveDismissDisabled`. **PE-037 NOT DONE** — 9 sheets still missing `.interactiveDismissDisabled(isSaving)`. **PE-038 written** (DIS-008: JobStageProgressBar hardcoded 6pt font → .caption2 + minimumScaleFactor). **PE-039 written** (DIS-009: CartManager + PartsFlowWizard bulk DB loops → Task { }). **No unplanned code** — all 7 new Swift files from recent commits covered by warehouse-setup-redesign plan. Cascade pricing fix (2026-04-05) confirmed plan-aligned. | Steps 11-12 | docs only |
 | 2026-04-05 | **plan-enforcer run 6**: Audited 15+ plans vs code. **PE-003 DONE** — `IOSFlexPoolPage` fully wired (SchedulingRouter + NavigationConfig tab); **critical bug fixed**: `manage_flex_pool`/`self_assign_flex` missing from `AuthService.defaultPermissionMap()` — flex pool was silently hidden for all roles. Added to Admin/Manager/Lead/Worker. **PE-027/029/030/031 DONE** — direct-edit implementations confirmed; prompt files moved to `done/`. **New plan registered:** `usability-hunter-plan.md` (6-scanner skill + scheduled task running). **5 plans advanced to Step 13:** ios-flex-pool, ios-clock-fix, ios-pricing-ui, ios-part-number-hierarchy, ios-scheduling-pages. Test count updated: 1014 tests. | Steps 11-12 | AuthService.swift |
 | 2026-04-04 | **plan-enforcer run 5**: Audited 10 active plans vs code. **4 plans confirmed DONE (tracker was stale):** PE-026 (BadgeCountService+Manager live, IOSMainView wired), PE-028 (brand_supplier carry_status + bidirectional UI done), PE-032 (migration 069 + IOSScheduleConfigPage 823 lines with all sections), PE-033 (migration 070 + WishlistService + IOSWishlistPage 3-section). **2 partial:** PE-031 (core clock fixes done — 24 guards + alreadyClockedIn; UI banner pending), PE-029 (CascadePriceEditSheet done; catalog integration pending). **2 NOT started:** PE-030 (warehouse redesign), PE-003 (flex pool). **1 unplanned addition:** `PricingOverrideFlow.swift` (no plan reference — hierarchy-level price override flow). Plan Registry updated with 10 new entries. | Steps 11-12 | docs only |
 | 2026-04-04 | **plan-enforcer run 4**: Audited PE-025 commit (826dd18) — all 3 plan items confirmed implemented ✅. **Drift noted:** CategoriesTreeView @Binding fix (partial #46 impl) bundled into PE-025 commit — retroactively documented in `ios-categories-page.md` §#46. **PE-003 Q&A confirmed fully answered** — advanced from Step 3→4, plan updated in `ios-scheduling-pages.md` §6. **PE-026 written** for badge counts (#50/#51 — all Q&A answered). Archived PE-024+PE-025 to done/. Plan Registry updated. 906 tests passing. | Steps 11-12 | docs only |
@@ -187,7 +191,7 @@ Every feature, bug, or improvement follows this cycle:
 ## Plan Registry
 
 > Every plan in `docs/plans/` tracked with implementation status.
-> Last updated by plan-enforcer: 2026-04-05 (run 6)
+> Last updated by plan-enforcer: 2026-04-06 (run 7)
 
 | Plan File | Area | Lifecycle Step | Coverage | Notes |
 |-----------|------|---------------|----------|-------|
@@ -278,19 +282,22 @@ Every feature, bug, or improvement follows this cycle:
 | Data Safety | ~~Notebook context menus (groups/sections/entries) deleted immediately with no confirmation~~ **FIXED** — `PendingDelete` enum + `confirmationDialog` in `IOSNotebookDetailPage` | High — permanent data loss in one tap | Quick | 9 | ✅ Fixed (run 7) |
 | Data Safety | ~~Notebook template swipe-delete called `deleteTemplate()` with no confirmation~~ **FIXED** — `confirmationDialog` in `IOSNotebookTemplatesPage` | Medium — templates hard to recreate | Quick | 9 | ✅ Fixed (run 7) |
 | Apple HIG | ~~QRLabelPrintSheet "Clear All" + IOSStagingPage "Clear N" missing `.role(.destructive)`~~ **FIXED** | Low — inconsistent with HIG destructive button convention | Quick | 9 | ✅ Fixed (run 7) |
-| UX | Missing loading indicators on 3 detail/settings pages (Contractor Detail, Estimation Review, Estimation Settings) — brief empty-state flash before data loads | Medium | Quick | 8 | 🔲 DevTODO DIS-001 |
-| UX | `IOSDailyReportTemplatesPage` loads live data but missing `.refreshable` — no retry path | Medium | Quick | 8 | 🔲 DevTODO DIS-002 |
-| Apple HIG | 7 sheets missing `.presentationDetents` (IOSContactDetailPage, PartsCatalogPage, IOSHatsPage, IOSMainView ×4) | Medium | Medium | 9 | 🔲 DevTODO DIS-003 |
-| Performance | `DashboardDailyReportPage` 60-sec timer continues after view popped — orphan Tasks spawned | Medium | Quick | 8 | 🔲 DevTODO DIS-004 |
-| Security | `CompanySetupWizard` stores PII (company name/address/phone/email) in `UserDefaults` | Medium | Quick | 9 | 🔲 DevTODO DIS-005 — verify cleanup on wizard complete |
+| UX | ~~Missing loading indicators on 3 detail/settings pages (Contractor Detail, Estimation Review, Estimation Settings)~~ **FIXED** | Medium | Quick | 13 | ✅ DIS-001 DONE 2026-04-06 — all 3 pages have ProgressView on initial load (confirmed plan-enforcer run 7) |
+| UX | ~~`IOSDailyReportTemplatesPage` missing `.refreshable`~~ **FIXED** | Medium | Quick | 13 | ✅ DIS-002 DONE 2026-04-06 — `.refreshable { loadSettings() }` added in commit 3ddbc61 |
+| Apple HIG | ~~7 sheets missing `.presentationDetents`~~ **FIXED** | Medium | Medium | 13 | ✅ DIS-003 DONE 2026-04-06 — `.presentationDetents([.large])` + `.presentationDragIndicator(.visible)` added to all 7 sheets in commit 3ddbc61 |
+| Performance | ~~`DashboardDailyReportPage` 60-sec timer continues after view popped~~ **FIXED** | Medium | Quick | 13 | ✅ DIS-004 DONE 2026-04-06 — timer converted to Combine sink with onAppear/onDisappear in commit 3ddbc61 |
+| Security | ~~`CompanySetupWizard` stores PII in `UserDefaults`~~ **FIXED** | Medium | Quick | 13 | ✅ DIS-005 DONE 2026-04-06 — Migration 072 + SettingsService + CompanySetupWizard fully migrated to SQLite (commits a7ed218 + 5135ee2) |
 | Performance | `WishlistService.getSectionedItems()` calls `processAutoApprovals()` synchronously — multiple DB writes on main thread each page load | High | Medium | 8 | 🔲 DevTODO DIS-006 — split auto-approval into background task |
 | Performance | `IOSMainView` NotificationCenter `.onReceive` closure captures `tabPrefs`/`appCore` strongly — no deregister on logout | Medium | Quick | 9 | ✅ DIS-007 CLOSED — non-issue: IOSMainView torn down on logout (confirmed 2026-04-05) |
-| Apple HIG | `WizardStepPlacement.swift:133` — `.font(.system(size: 7))` and `JobStageProgressBar.swift:45` — `size: 6` — hardcoded sub-minimum fonts bypass Dynamic Type | Medium | Quick | 7 | 🔲 DevTODO DIS-008 |
-| Performance | `CartManager.placeAllItems()` and `PartsFlowWizard.saveAllProgress()` loop synchronous SQLite writes on @MainActor — may stutter for large carts/inventories | Medium | Medium | 7 | 🔲 DevTODO DIS-009 |
+| Apple HIG | ~~`WizardStepPlacement.swift:133` hardcoded font~~ **FIXED** — now uses `.caption2` semantic style. `JobStageProgressBar.swift:45` still pending — `.system(size: compact ? 6 : 10)` → `.system(.caption2, weight: .bold)` + `minimumScaleFactor` | Medium | Quick | 10 | 🔲 PE-038 — Xcode prompt ready |
+| Performance | `CartManager.placeAllItems()` and `PartsFlowWizard.saveAllProgress()` loop synchronous SQLite writes on @MainActor — may stutter for large carts/inventories | Medium | Medium | 10 | 🔲 PE-039 — Xcode prompt ready |
 | Correctness | ~~`PartsFlowWizard` draft (partsFlow_counts/locations) never cleared from UserDefaults after wizard Finish — stale counts restored on next open~~ **FIXED** — `saveAllProgress(clearDraft:)` param added | Low | Quick | 8 | ✅ Fixed DIS-010 (2026-04-05) |
-| Code Quality | `WizardStepPlacement.swift:142`, `IOSScheduleConfigPage.swift:122,129` — force unwraps guarded by ternary nil checks | Low | Quick | 6 | 🔲 DevTODO DIS-011 |
+| Code Quality | ~~`WizardStepPlacement.swift:142`, `IOSScheduleConfigPage.swift:122,129` — force unwraps guarded by ternary nil checks~~ **FIXED** — already uses `.map {}` pattern in code (verified 2026-04-06). DIS-011 closed. | Low | — | 13 | ✅ DIS-011 CLOSED 2026-04-06 |
 | Runtime Safety | ~~`SchedulingService` 2 force unwraps: `template.id!` + `holiday.id!` after GRDB insert~~ **FIXED** — guard let with descriptive error | Low | Quick | 8 | ✅ Fixed (run 8) |
 | Performance | ~~`BadgeCountManager.refresh()` had no debounce — rapid scene-phase transitions stacked DB reads~~ **FIXED** — 3-second minimum interval added | Medium | Quick | 8 | ✅ Fixed (run 8) |
+| Security | `hashPin(_:salt:)` uses 10,000× iterated SHA-256 — GPU-breakable for 4-6 digit PINs; should use PBKDF2/Argon2id | Medium | Medium | 8 | 🔲 DIS-012 — needs design decision (which KDF) + DB migration |
+| Security | `verifyPinLocally` falls through to `legacyHashPin` (hardcoded `"wiredpart"` salt) for `pin_salt IS NULL` accounts — no migration deadline | Medium | Quick | 9 | 🔲 DIS-013 — add auto-rehash on successful legacy login |
+| Security | Legacy unsigned token acceptance shim in `parseLocalToken` has no removal deadline — allows token forgery on jailbroken devices | Low | Quick | 9 | 🔲 DIS-014 — remove else branch after migration window closes |
 
 ---
 
@@ -355,14 +362,14 @@ Every feature, bug, or improvement follows this cycle:
 
 | Agent | Last Run | Items Found | Items Fixed | Health |
 |-------|----------|-------------|-------------|--------|
-| hunt-fix-verify | 2026-04-02 (iter 19) | Warranty SQL mismatch in JobsService (silent data loss — `setWarranty`/`isWarrantyActive` read `warranty_start`/`end`, `createJob`/`updateJob` wrote to `warranty_start_date`/`end_date`); IOSContactDetailPage URL(string:)! force-unwraps fixed | All fixed — in working tree | ✅ Healthy |
-| test-coverage-maintenance | 2026-04-02 | +16 PartsServiceExt tests (alternatives, price staleness, FIFO consumption, stock summary, supplier contacts, change log, movement tracing, locations, scheduled deletions) + 2 NotebooksService tests (warrantyTimer, todosNeedingReview) = 18 new tests | In working tree — projected total: 860/860 | ✅ Healthy — good momentum; PeopleService/ChatService/SettingsService gaps remain |
-| plan-enforcer | 2026-04-02 (run 2) | Audited 5 unstaged files; confirmed all plan-aligned; IOSContactDetailPage documented in ios-people-pages.md §5b; getContact(id:) O(n)→O(1) fix applied | Plan registry updated | ✅ Healthy |
-| dev-improvement-scanner | 2026-04-04 (run 8) | Full scan of recently-modified files (WishlistPage, BadgeCountManager, DispatchPage, NotebooksPages, WarehouseDashboard, MainView, WishlistService, SchedulingService). **3 direct fixes:** 2 force unwraps in SchedulingService (`template.id!`→guard, `holiday.id!`→guard), BadgeCountManager debounce (3s min interval). **2 new DevTODOs:** DIS-006 (WishlistService sync main-thread DB writes), DIS-007 (IOSMainView NotificationCenter closure lifetime). Confirmed clean: 0 force casts, 0 deprecated NavigationView, all timers properly invalidated, all lists have `.refreshable`. | 3 direct fixes, 2 DevTODOs | ✅ Healthy |
-| dev-pipeline-manager | 2026-04-05 (run 12) | DIS-005 Q&A processed → PE-035 prompt written. DIS-007 closed. 00-fix-order corrected. PE-034/003 unblocked. companion_vote_power bug tracked. 1014/1014 tests. | 1 prompt written, 2 Q&A cleared, 1 comment added | ✅ Healthy |
-| github-issues-sync | 2026-04-04 (run 7) | 25+ GitHub issues closed (verified against codebase). 48 open issues (44 program-review trackers + 4 enhancements). | 25+ closed, 48 open | ✅ Healthy |
-| github-sync-and-review | 2026-04-04 | Full review: 63 files, 1659 insertions, 557 deletions. 978/978 tests (52 suites). 12-iteration pipeline all green. Committed and pushed. | 63 files committed | ✅ Healthy |
-| weekly-cleanup | 2026-04-05 (Sun, Run 3) | PE-028/032/033 confirmed archived to done/ (already moved by previous agent). PE-034 verified as valid active prompt (not "never written"). 1 TODO in all Swift sources (intentional). No .tmp dir, no .DS_Store, no .bak files. All docs within 3-month window. DIS-005 Q&A pending (both questions answered; awaiting plan integration). 978/978 tests pass, 0 errors. | 0 deletions — codebase clean | ✅ Healthy — next run 2026-04-12 (Sun) |
+| hunt-fix-verify | 2026-04-06 (iter 30) | `listActiveSessions` crash — `device_id` TEXT decoded as `Int64`. Fixed in `AuthService.swift`. companion_vote_power seeding fixed. 1030/1030 tests. | Fix in working tree | ✅ Healthy |
+| test-coverage-maintenance | 2026-04-06 | +16 new tests: 6 SettingsService/CompanySetupDraft + 12 AuthService (createUser, hat perms, getUserHats, sessions, deactivate). listActiveSessions crash fixed. 1030/1030 passing. | In working tree | ✅ Healthy — gaps: PeopleService (~22/47), ChatService (~14/33), SettingsService (~17/40) |
+| plan-enforcer | 2026-04-05 (run 6) | PE-003/027/029/030/031 all DONE. manage_flex_pool/self_assign_flex permission bug fixed. 5 plans Step 13. | Plan registry updated | ✅ Healthy |
+| dev-improvement-scanner | 2026-04-05 (run 9) | DIS-008/009/011 identified. DIS-010 direct fix. PE-038/039 written (this run); DIS-011 closed. | 1 direct fix, 3 DevTODOs → 2 routed to prompts | ✅ Healthy |
+| dev-pipeline-manager | 2026-04-06 (run 13) | PE-038/039 written. Q&A for #22/#36. companion_vote_power fix confirmed. DIS-011 closed. 6 prompts ready. 1030/1030. | 2 prompts written, 5 Q&A added | ✅ Healthy |
+| github-issues-sync | 2026-04-06 (run 8) | gh CLI unavailable — local-only analysis. Verified: PE-036 ✅ DONE in working tree (WarehouseOnboardingWizard isSaving confirmed). DIS-012/013/014 Q&A already filed. 3 prompts active (PE-037/038/039). Pipeline updated. | 1 discovery (PE-036 done) | ✅ Healthy — gh unavailable, will retry at 5 PM |
+| github-sync-and-review | 2026-04-05 (last push) | Last push: plan-enforcer run 6 docs + permission fix + test updates. Working tree: 6 uncommitted files. | 6 files pending commit | ⚠️ Pending commit |
+| weekly-cleanup | 2026-04-12 (next Sun) | Last run 2026-04-05: codebase clean, 0 deletions, all docs in window. | — | ✅ Healthy — next 2026-04-12 |
 
 ---
 
@@ -454,6 +461,85 @@ _Appended by dev-pipeline-manager each run._
 - Backlog size: 11 items
 
 **Next priority:** PE-031 (GPS banner — EMERGENCY, workers blocked) → PE-034 (quick UX fixes) → PE-027 → PE-029 → PE-030
+
+---
+
+### 2026-04-06 — GitHub-Issues-Sync Run 8 (gh unavailable — local analysis, PE-036 confirmed done)
+
+**Input:** gh CLI not installed. 19 modified files in working tree (uncommitted). Tests: 1030/1030.
+
+**Step 1 — Issues reviewed:**
+- Cannot fetch GitHub issues (gh CLI unavailable). Local DevTODO + pipeline reviewed instead.
+
+**Step 5 — Close Resolved Issues (local verification):**
+- **PE-036 ✅ CONFIRMED DONE** — `WarehouseOnboardingWizard.swift` diff verified: `@State private var isSaving = false` ✅, `.interactiveDismissDisabled(isSaving)` ✅, all 5 action buttons `.disabled(isSaving)` ✅. Plan-enforcer run 7 reported PARTIAL but the fix was already in the working tree (unstaged). No Xcode trigger needed.
+- **DIS-011 ✅ CONFIRMED CLOSED** — already marked closed in DevTODO file.
+- **DIS-012/013/014 Q&A** — already filed in dev-qa.md from prior run. 3 pending design decisions from owner.
+
+**Step 12 — Gaps found:**
+
+| Gap | Severity | Action |
+|-----|----------|--------|
+| PE-036 reported PARTIAL by plan-enforcer — fix already in working tree | Medium | ✅ Corrected in pipeline + fix queue |
+| Working tree: 19 files uncommitted (test-coverage + plan-enforcer changes) | Low | ⚠️ Ready for github-sync-and-review tonight |
+| gh CLI not installed — cannot comment on or close GitHub issues | Medium | ⚠️ Install gh CLI to restore GitHub operations |
+
+**Status:**
+- Tests: **1030/1030 passing**
+- Build: 0 errors, 0 warnings
+- Q&A backlog: **8 pending** (#22 ×3, #36 ×2, DIS-012/013/014 ×3)
+- Active Xcode prompts: **3** (PE-037, PE-038, PE-039) — PE-036 confirmed done
+- Working tree: **19 files uncommitted** (pending github-sync-and-review)
+
+**Next priority:** Answer Q&A #22/#36 + DIS-012/013/014 → Trigger PE-037 → PE-038 → PE-039 → Commit 19 files
+
+---
+
+### 2026-04-06 — Dev-Pipeline-Manager Run 13 (PE-038/039 Written, Q&A for #22/#36, PE-BUG-001 Fixed)
+
+**Input:** 0 new GitHub issues (gh CLI unavailable). 0 new plans since last run. Tests: 1030/1030. Working tree: 6 modified uncommitted files from test-coverage-maintenance + hunt-fix run.
+
+**Step 1 — New input gathered:**
+- Working tree: `AuthService.swift` — companion_vote_power + vote_veto added to Admin/Manager/Lead hats (PE-BUG-001 fix). `device_id` TEXT type fix in `listActiveSessions()` (was crashing). +16 tests in AuthServiceTests + SettingsServiceTests.
+- DIS-008 (tiny fonts): WizardStepPlacement already clean — only `JobStageProgressBar.swift:45` remains.
+- DIS-009 (main thread DB writes): No Xcode prompt written yet — gap identified.
+- DIS-011 (force unwraps in ternary): Code verified — already uses `.map {}` pattern. CLOSED.
+- GitHub #22 (warehouse wizard layout) + #36 (receiving back button): Both open since 2026-04-04 with no plans or Q&A — gap identified.
+- plan-enforcer run 7 (concurrent): PE-034 ✅ DONE, PE-035 ✅ DONE, PE-036 🔶 PARTIAL.
+
+**Step 5 — Prompts written:**
+
+| Prompt | File | What It Fixes |
+|--------|------|---------------|
+| PE-038 | `PE-038-dis008-tiny-fonts-stage-bar.md` | `JobStageProgressBar.swift:45` — `.system(size: compact ? 6 : 10)` → `.system(.caption2, weight: .bold)` + `minimumScaleFactor(0.5)`. Dynamic Type fix. |
+| PE-039 | `PE-039-dis009-bulk-db-writes-main-thread.md` | `CartManager.placeAllItems()` + `PartsFlowWizard.saveAllProgress()` — wrap in `Task { }`, add `isSaving` state + disabled buttons. |
+
+**Step 3 — Q&A generated:**
+- GitHub #22: 3 questions about warehouse wizard layout ("assumes Row 1" meaning, desired grid UX, whether drag-and-drop still needed)
+- GitHub #36: 2 questions about receiving back button dismiss (confirm-only vs save-draft-and-resume, frequency of accidental taps)
+
+**Step 12 — Gaps found and closed:**
+
+| Gap | Severity | Action |
+|-----|----------|--------|
+| DIS-008 had no Xcode prompt — routed to PE-038 | Medium | ✅ PE-038 written |
+| DIS-009 had no Xcode prompt — routed to PE-039 | Medium | ✅ PE-039 written |
+| DIS-011 listed as open — verified already fixed in code | Low | ✅ DIS-011 CLOSED |
+| #22 open ~2 weeks with no Q&A | Medium | ✅ Q&A added to dev-qa.md |
+| #36 open ~2 weeks with no Q&A | Medium | ✅ Q&A added to dev-qa.md |
+| PE-038 duplicate created by concurrent plan-enforcer | Low | ✅ Duplicate removed, queue uses my version |
+| PE-034/035 shown as "ready" — now DONE (plan-enforcer run 7) | Low | ✅ Pipeline updated to reflect done |
+| PE-BUG-001 fix in working tree but unmarked | Medium | ✅ Marked DONE in pipeline |
+
+**Status:**
+- Tests: **1030/1030 passing**
+- Build: 0 errors, 0 warnings
+- Q&A backlog: **5 pending** (#22 ×3, #36 ×2)
+- Active Xcode prompts: **3** (PE-037, PE-038, PE-039) — PE-036 ✅ confirmed done in working tree
+- Working tree: 6 uncommitted files (ready to commit)
+- Backlog size: 9 items
+
+**Next priority:** Answer Q&A #22/#36 + security DIS-012/013/014 → Trigger PE-037 (sheet dismiss batch, 9 files) → PE-038 (font fix, 1 line) → PE-039 (main thread DB) → Commit working tree (19 files)
 
 ---
 
@@ -633,7 +719,7 @@ _Appended by dev-pipeline-manager each run._
 | hunt-fix-verify | ✅ Healthy | Run 25 — 4 bugs fixed, 876 tests |
 | plan-enforcer | ✅ Healthy | Run 3 — NotebooksService notebook_id fix + DevTODO #12 cleanup |
 | test-coverage | ✅ Healthy | 876 tests; gaps remain in PeopleService/ChatService/SettingsService |
-| dev-improvement-scanner | ✅ Healthy | Run 9 (2026-04-05): DIS-010 fixed, DIS-008/009/011 filed. 6 pending DIS items total (DIS-001/002/003/004/005/006/008/009/011) |
+| dev-improvement-scanner | ✅ Healthy | Run 10 (2026-04-06): DIS-012/013/014 filed (auth security hardening). DIS-015/016 confirmed dupes of DIS-009/008. All runtime safety, SQL injection, NavigationView, and force-cast scans clean. Pending DIS: 006, 008, 009, 012, 013, 014. |
 | github-issues-sync | ✅ Healthy | Last run processed 32 open issues |
 | github-sync-and-review | ⚠️ Pending | Working tree needs commit — 19 files |
 | dev-pipeline-manager | ✅ Healthy | This run |

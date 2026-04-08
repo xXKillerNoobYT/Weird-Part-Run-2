@@ -1,9 +1,9 @@
 # Hunt-Fix-Verify Loop Tracker
 
 > **Started:** 2026-03-28
-> **Status:** PHASE 1 COMPLETE — 29 iterations, 114 bugs fixed. Latest: test-coverage-maintenance run (2026-04-05) — 1014/1014 tests (+36 new). 36 new tests covering PartsService companion poll system, findPartByCode/Name, getImportExportStats, approveScheduledDeletion, listStockEntries.
-> **⚠️ NEXT PRIORITY: PE-033 (Clock In/Out bug, #20) — EMERGENCY. Workers cannot clock in. Investigate with Logger calls. See `docs/plans/ios-clock-fix.md`.**
-> **⚠️ NEW BUG FOUND: companion_vote_power never seeded on fresh install — all polls permanently tied. Fix: add to AuthService.defaultPermissionMap() for Admin/Manager/Lead hats. File as GitHub issue.**
+> **Status:** PHASE 1 COMPLETE — 30 iterations, 117 bugs fixed. Latest: dev-improvement-scanner run 10 (2026-04-06) — 0 crashes/injection/NavigationView issues found. 3 new security findings: DIS-012 (PIN KDF strength), DIS-013 (legacy salt migration deadline), DIS-014 (unsigned token shim). All DevTODO files created. Previous: test-coverage-maintenance run — 1030/1030 tests (+16 new).
+> **⚠️ NEXT PRIORITY: PE-036/PE-037/PE-038/PE-039 Xcode AI prompts — ready to run.**
+> **⚠️ DIS-012/013 security items: need design decision on PIN KDF before implementation.**
 
 ---
 
@@ -1407,4 +1407,80 @@ But neither key existed in `defaultPermissionMap()`. This caused:
 ### Unplanned Code Noted
 
 `PricingOverrideFlow.swift` — exists with no plan reference. Adds hierarchy-level pricing override flow. Retroactively documented in Plan Registry as extending `ios-pricing-ui.md` scope.
+
+---
+
+### Iteration 30 — Migration SQL Syntax + companion_vote_power Fresh Install (2026-04-06)
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Compile | ✅ | 0 errors, 0 warnings |
+| Tests | ❌→✅ | **1014→1020 passing** (migration 072 SQL syntax error fixed) |
+| Code Patterns | ✅ | No new issues. Empty `{ }` bodies confirmed intentional (cancel/documented). DIS-011 already fixed in code. |
+| SQL Integrity | ✅ | migration 072 `company_setup_draft` syntax fixed; SettingsService SQL fully parameterized |
+| Runtime Safety | ✅ | No new force unwraps in core. DIS-011 already resolved. |
+| Edge Cases | ✅ | Fresh install companion_vote_power seeding fixed |
+| Problems Folder | ✅ | N/A — Problomes/ doesn't exist |
+| DevTODO | ⚠️ | DIS-009 still open (main thread bulk DB writes) — needs Xcode AI prompt |
+| Master Issues | ⚠️ | DIS-008 still open (tiny hardcoded fonts) — needs Xcode AI prompt |
+| Plan Alignment | ✅ | Prompt queue PE-034/035/036/037 ready for user |
+| Security | ✅ | No SQL injection, no hardcoded secrets |
+
+**Bug 1: Migration 072 — `DEFAULT datetime('now')` without parentheses**
+- **File:** `AppDatabase+Migrations.swift:521`
+- **Root cause:** SQLite requires function calls in DEFAULT expressions to be wrapped in `()`. `.defaults(sql: "datetime('now')")` generates `DEFAULT datetime('now')` which is a syntax error. Correct form: `DEFAULT (datetime('now'))`.
+- **Fix:** Changed to `.defaults(sql: "(datetime('now'))")`
+- **Impact:** ALL 1014 tests were failing (the migration runs during test setup, so every test suite crashed at DB init)
+- **Tests:** 1020 now passing (6 additional via linter pickup of pre-existing tests in AuthServiceTests.swift)
+
+**Bug 2: `companion_vote_power` / `vote_veto` not in defaultPermissionMap()**
+- **File:** `AuthService.swift` — `defaultPermissionMap()`
+- **Root cause:** Migration 073 seeds these permissions by querying existing hats, but on fresh install the migration runs BEFORE `seedFirstAdmin()` creates hats → no rows found → no permissions seeded → `defaultPermissionMap()` also missing these keys → permanent tie on all companion polls for fresh installs
+- **Fix:** Added `companion_vote_power` to Admin/Manager/Lead, `vote_veto` to Admin in `defaultPermissionMap()`
+- **Test added:** Extended `testAdminPermissions()` to assert `companion_vote_power` and `vote_veto` are present after `seedFirstAdmin()`
+
+**Open items (not auto-fixable):**
+- DIS-008: Hardcoded tiny fonts in WizardStepPlacement + JobStageProgressBar → DevTODO filed, Xcode AI prompt needed
+- DIS-009: Bulk SQLite writes on main thread (CartManager, PartsFlowWizard) → DevTODO filed, needs proper Swift Concurrency design
+
+---
+
+### Iteration 31 — Dev-Improvement Security Scan (2026-04-06)
+
+**Scanner:** dev-improvement-scanner (run 10)
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Compile | ✅ | 0 errors, 0 warnings (prior state — build not re-run this iteration) |
+| Tests | ✅ | 1030/1030 passing (prior state — no new core tests this iteration) |
+| Runtime Safety | ✅ | **CLEAN** — 0 `as!` force casts, 0 `try!`, 0 genuine force unwraps found |
+| SQL Integrity | ✅ | **CLEAN** — All dynamic SQL uses closed enum mapping or `?` placeholder generation. Zero injection vectors. |
+| Code Patterns | ✅ | NavigationView (deprecated): 0 instances. All navigation uses NavigationStack. |
+| Security | ⚠️ | 3 new findings filed: DIS-012 (PIN KDF strength), DIS-013 (legacy salt migration deadline), DIS-014 (unsigned token shim) |
+| Apple HIG | ⚠️ | DIS-008 (JobStageProgressBar hardcoded fonts) confirmed still pending PE-038 — not a new finding |
+| Accessibility | ✅ | 377 `.accessibilityLabel` usages found — healthy coverage |
+| UserDefaults | ⚠️ | PartsFlowWizard stores part counts/locations in UserDefaults — noted as minor consistency issue (relates to DIS-009 scope) |
+| Empty/Error States | ✅ | `.task` error handling confirmed: all use internal `do/catch` in called functions |
+
+**New findings filed (DIS-012/013/014):**
+- DIS-012: `hashPin(_:salt:)` uses 10,000× SHA-256 — GPU-breakable for 4-6 digit PINs. Needs PBKDF2/Argon2id migration + `pin_hash_version` column.
+- DIS-013: `verifyPinLocally()` falls through to `legacyHashPin()` (hardcoded `"wiredpart"` salt) for any user with `pin_salt IS NULL`. No re-hash deadline enforced.
+- DIS-014: `parseLocalToken()` accepts unsigned tokens (no HMAC) as a backward-compat shim. No removal deadline. Low risk (requires jailbreak to exploit).
+
+**Confirmed NOT new (already tracked):**
+- DIS-015 scan finding → duplicate of DIS-009 (PartsFlowWizard UserDefaults, different aspect — main thread writes is the primary concern)
+- DIS-016 scan finding → duplicate of DIS-008 (JobStageProgressBar font sizes — PE-038 ready)
+
+**DevTODO files created:**
+- `docs/DevTODO/DIS-012-pin-hashing-weak-kdf.md`
+- `docs/DevTODO/DIS-013-legacy-pin-salt-path.md`
+- `docs/DevTODO/DIS-014-unsigned-token-shim.md`
+
+**GitHub issues:** PENDING — `gh` not available. File manually: DIS-012, DIS-013, DIS-014 as security/enhancement issues.
+
+**Open items (not auto-fixable):**
+- DIS-012/013: Auth security hardening — needs design decision (PBKDF2 vs Argon2id) before implementation. Best done as one coordinated pass.
+- DIS-014: Remove legacy unsigned token `else` branch — safe to remove, 1-line change, but should be verified on-device first.
 

@@ -2,7 +2,7 @@
 source: dev-improvement-scanner (2026-04-05)
 severity: Low
 category: Code Quality — Force Unwraps
-status: open
+status: CLOSED — already fixed in code (verified 2026-04-06, hunt-fix iteration 30)
 github_issue: PENDING (gh not available, file manually)
 ---
 
