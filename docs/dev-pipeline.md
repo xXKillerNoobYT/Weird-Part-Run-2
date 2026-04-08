@@ -1,6 +1,6 @@
 # WiredPart Development Pipeline
 
-> **Last updated:** 2026-04-06 (github-issues-sync run 7 — gh CLI unavailable, local-only analysis. Verified: DIS-012/013/014 Q&A already filed (pending owner design decisions). DIS-011 confirmed CLOSED in code. Working tree: 19 files with uncommitted test/pipeline changes from test-coverage-maintenance + plan-enforcer. Active Xcode prompts: PE-036/037/038/039. Security cluster DIS-012/013/014 blocked on Q&A. Prior update: dev-improvement-scanner run 10 — DIS-012/013/014 filed; plan-enforcer run 7: PE-034/035 DONE, PE-036 partial, 4 prompts active)
+> **Last updated:** 2026-04-07 (github-sync-and-review EOD — 1097/1097 tests green. 8 commits pushed: AuthService userId cast fix + companion_vote_power seeding, 1847 lines of new tests (Auth/Scheduling/Settings), CartManager + PartsFlowWizard async Task{} DB writes (DIS-009 partial), PE-036/PE-037 isSaving + interactiveDismissDisabled across 11 wizard/sheet files, PE-038 JobStageProgressBar semantic font, DevTODO DIS-012/013/014 filed. Active prompt: PE-037 (9 sheets remaining). Security cluster DIS-012/013/014 blocked on owner design decision (PBKDF2 vs Argon2id).)
 > **Auto-maintained by:** dev-pipeline-manager (orchestrator)
 
 ---
@@ -1698,3 +1698,27 @@ _Appended by dev-pipeline-manager each run._
 - Issues processed: 9 usability issues (#115–#123) — 7 comments posted, PE-036/PE-037 new prompts filed
 - Bugs fixed: manage_flex_pool/self_assign_flex missing from AuthService (all role hats now correct); DIS-010 PartsFlowWizard clearDraft param; DIS-005 wizard PII in UserDefaults → SQLite migration implemented
 - Pipeline health: OK — 1014/1014 green, build clean, 4 active Xcode prompts ready (PE-034/035/036/037)
+
+### End-of-Day Sync — 2026-04-07
+- Files committed: 40 (8 commits total)
+- Commits created: 8
+  - 6da428b fix(auth): correct userId cast and seed companion_vote_power on fresh install
+  - 0530557 test: expand AuthService, Scheduling, Settings coverage (+1847 lines)
+  - bc61f3a fix(ios): move CartManager + PartsFlowWizard DB writes off main thread (DIS-009 partial)
+  - 2527af4 fix(ios): add isSaving guard + interactiveDismissDisabled to 11 wizard/sheet files (PE-036/037)
+  - f5544e3 fix(ios): semantic Dynamic Type font in JobStageProgressBar (DIS-008/PE-038)
+  - 1060100 docs: update trackers, DevTODO DIS-012/013/014, fix-prompt queue (iterations 30-31)
+  - 2014ae9 chore: remove archived PE-034/035 from active prompt queue
+  - (prior unpushed from yesterday merged into push)
+- Push status: success — 2014ae9 pushed to origin/main
+- Tests: 1097/1097 passing (53 suites)
+- Agent runs today: 6/7
+  - hunt-fix-verify ✅ (iters 30+31 — SQL syntax + companion_vote_power + security scan)
+  - test-coverage-maintenance ✅ (+1847 lines Auth/Scheduling/Settings tests)
+  - dev-improvement-scanner ✅ (run 10 — DIS-012/013/014 security findings)
+  - page-rebuild-enforcer/plan-enforcer ✅ (PE-034/035/036/038/039 completed/archived)
+  - github-issues-sync ⚠️ — Q&A for #22/#36 captured in dev-qa.md but no explicit run logged
+  - github-sync-and-review ✅ (this run)
+- Issues processed: DIS-012/013/014 security DevTODOs created; PE-037 remains the only active prompt (9 Create/Form sheets batch)
+- Bugs fixed: 3 (userId String cast, companion_vote_power missing from defaultPermissionMap, async DB writes blocking main thread)
+- Pipeline health: OK — 1097/1097 green, build clean, 1 active prompt (PE-037), 3 security items pending design decision (DIS-012/013/014)
