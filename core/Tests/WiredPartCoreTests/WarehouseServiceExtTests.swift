@@ -274,6 +274,331 @@ struct WarehouseServiceExtTests {
         }
     }
 
+    // MARK: - getMovement
+
+    @Test("getMovement returns nil for non-existent ID")
+    func testGetMovementNil() throws {
+        let env = try E2ETestHelpers.setUp()
+        let result = try env.warehouse.getMovement(id: 99999)
+        #expect(result == nil)
+    }
+
+    @Test("getMovement returns movement after createMovement")
+    func testGetMovementAfterCreate() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let movId = try env.warehouse.createMovement(
+            partId: partId,
+            qty: 10,
+            fromLocationType: nil,
+            fromLocationId: nil,
+            toLocationType: "warehouse",
+            toLocationId: 1,
+            movementType: "receive",
+            reason: "Initial",
+            performedBy: env.adminUserId
+        )
+
+        let movement = try env.warehouse.getMovement(id: movId)
+        #expect(movement != nil)
+        #expect(movement?.qty == 10)
+        #expect(movement?.movementType == "receive")
+        #expect(movement?.partId == partId)
+    }
+
+    // MARK: - previewMovement
+
+    @Test("previewMovement returns PreviewLine with correct fields")
+    func testPreviewMovement() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Preview Part", categoryId: catId)
+
+        let preview = try env.warehouse.previewMovement(
+            partId: partId,
+            qty: 5,
+            fromLocationType: "warehouse",
+            fromLocationId: 1,
+            toLocationType: "job",
+            toLocationId: 1
+        )
+
+        #expect(preview.partName == "Preview Part")
+        #expect(preview.qty == 5)
+        #expect(!preview.fromLabel.isEmpty)
+        #expect(!preview.toLabel.isEmpty)
+        #expect(!preview.movementType.isEmpty)
+    }
+
+    // MARK: - executeMovement
+
+    @Test("executeMovement validates and creates movement record")
+    func testExecuteMovement() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        // Seed stock so the movement is valid
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 50)
+
+        let movId = try env.warehouse.executeMovement(
+            partId: partId,
+            qty: 10,
+            fromLocationType: "warehouse",
+            fromLocationId: 1,
+            toLocationType: "job",
+            toLocationId: 1,
+            reason: "Job pull",
+            performedBy: env.adminUserId
+        )
+        #expect(movId > 0)
+
+        // Verify movement was recorded
+        let movement = try env.warehouse.getMovement(id: movId)
+        #expect(movement?.qty == 10)
+        #expect(movement?.movementType == "transfer")
+    }
+
+    // MARK: - getStockAtLocation
+
+    @Test("getStockAtLocation returns empty for location with no stock")
+    func testGetStockAtLocationEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let stock = try env.warehouse.getStockAtLocation(locationType: "warehouse", locationId: 999)
+        #expect(stock.isEmpty)
+    }
+
+    @Test("getStockAtLocation returns parts after seeding stock")
+    func testGetStockAtLocationWithStock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 30, locationType: "warehouse", locationId: 1)
+
+        let stock = try env.warehouse.getStockAtLocation(locationType: "warehouse", locationId: 1)
+        #expect(!stock.isEmpty)
+        #expect(stock.contains(where: { $0.partId == partId }))
+        #expect(stock.first(where: { $0.partId == partId })?.qty == 30)
+    }
+
+    // MARK: - clearStagingTag / clearAllStagingTags
+
+    @Test("clearStagingTag soft-deletes a staging tag")
+    func testClearStagingTag() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 20)
+
+        let stockId: Int64 = try env.db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: "SELECT id FROM stock WHERE part_id = ? LIMIT 1", arguments: [partId])?["id"] ?? 1
+        }
+        let tagId = try env.warehouse.createStagingTag(stockId: stockId, taggedBy: env.adminUserId)
+
+        var staged = try env.warehouse.getStagedItems()
+        #expect(staged.count >= 1)
+
+        try env.warehouse.clearStagingTag(id: tagId)
+
+        staged = try env.warehouse.getStagedItems()
+        #expect(!staged.contains(where: { $0.id == tagId }))
+    }
+
+    @Test("clearAllStagingTags removes all tags")
+    func testClearAllStagingTags() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 20)
+
+        let stockId: Int64 = try env.db.writer.read { dbConn in
+            try Row.fetchOne(dbConn, sql: "SELECT id FROM stock WHERE part_id = ? LIMIT 1", arguments: [partId])?["id"] ?? 1
+        }
+        _ = try env.warehouse.createStagingTag(stockId: stockId, taggedBy: env.adminUserId)
+
+        var staged = try env.warehouse.getStagedItems()
+        #expect(!staged.isEmpty)
+
+        try env.warehouse.clearAllStagingTags()
+
+        staged = try env.warehouse.getStagedItems()
+        #expect(staged.isEmpty)
+    }
+
+    // MARK: - getPartStockLevels
+
+    @Test("getPartStockLevels returns zeroes for part with no stock")
+    func testPartStockLevelsEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let levels = try env.warehouse.getPartStockLevels(partId: partId)
+        #expect(levels.partId == partId)
+        #expect(levels.currentShelfQty == 0)
+        #expect(levels.minStock == 0)
+    }
+
+    @Test("getPartStockLevels reflects seeded stock quantity")
+    func testPartStockLevelsWithStock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Stocked Part", categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 42)
+
+        let levels = try env.warehouse.getPartStockLevels(partId: partId)
+        #expect(levels.currentShelfQty == 42)
+        #expect(levels.partName == "Stocked Part")
+    }
+
+    // MARK: - Zone CRUD (addZone / listZones / updateZone / deleteZone)
+
+    @Test("Zone CRUD: add, list, update, delete")
+    func testZoneCRUD() throws {
+        let env = try E2ETestHelpers.setUp()
+        let floorPlan = try env.warehouse.createFloorPlan(name: "Zone Test Plan", widthInches: 480, lengthInches: 360)
+        let fpId = floorPlan.id!
+
+        // Add a zone
+        let zone = try env.warehouse.addZone(floorPlanId: fpId, zoneType: "rack", label: "Rack A")
+        #expect(zone.id != nil)
+        #expect(zone.zoneType == "rack")
+        #expect(zone.label == "Rack A")
+
+        // List zones
+        let zones = try env.warehouse.listZones(floorPlanId: fpId)
+        #expect(zones.count == 1)
+        #expect(zones[0].label == "Rack A")
+
+        // Update zone
+        try env.warehouse.updateZone(id: zone.id!, label: "Rack B", colorHex: "#FF0000")
+        let updatedZones = try env.warehouse.listZones(floorPlanId: fpId)
+        #expect(updatedZones[0].label == "Rack B")
+        #expect(updatedZones[0].colorHex == "#FF0000")
+
+        // Delete zone
+        try env.warehouse.deleteZone(id: zone.id!)
+        let afterDelete = try env.warehouse.listZones(floorPlanId: fpId)
+        #expect(afterDelete.isEmpty)
+    }
+
+    // MARK: - getPartName / getPartCode
+
+    @Test("getPartName returns part name for existing part")
+    func testGetPartName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Named Part", categoryId: catId)
+
+        let name = try env.warehouse.getPartName(partId: partId)
+        #expect(name == "Named Part")
+    }
+
+    @Test("getPartName returns nil for non-existent part")
+    func testGetPartNameNil() throws {
+        let env = try E2ETestHelpers.setUp()
+        let name = try env.warehouse.getPartName(partId: 99999)
+        #expect(name == nil)
+    }
+
+    @Test("getPartCode returns code for existing part")
+    func testGetPartCode() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        // seedPart generates a code like "TW-XXXX" — verify it round-trips
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let code = try env.warehouse.getPartCode(partId: partId)
+        #expect(code != nil)
+        #expect(code?.hasPrefix("TW-") == true)
+    }
+
+    // MARK: - getJobLinkForPOLine
+
+    @Test("getJobLinkForPOLine returns nil for PO line with no JPO")
+    func testGetJobLinkForPOLineNil() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-LINK-01", supplierId: supplierId)
+
+        let poLineId: Int64 = try env.db.writer.write { db in
+            try db.execute(
+                sql: "INSERT INTO po_line_items (po_id, part_id, qty_ordered, created_at) VALUES (?, ?, 5, datetime('now'))",
+                arguments: [poId, partId]
+            )
+            return db.lastInsertedRowID
+        }
+
+        let link = try env.warehouse.getJobLinkForPOLine(poLineId: poLineId)
+        #expect(link == nil)
+    }
+
+    // MARK: - listDistinctStockLocations
+
+    @Test("listDistinctStockLocations returns empty when no stock exists")
+    func testListDistinctStockLocationsEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let locations = try env.warehouse.listDistinctStockLocations()
+        #expect(locations.isEmpty)
+    }
+
+    @Test("listDistinctStockLocations returns location after seeding stock")
+    func testListDistinctStockLocationsWithStock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+
+        let locations = try env.warehouse.listDistinctStockLocations()
+        #expect(!locations.isEmpty)
+        #expect(locations.contains(where: { $0.locationType == "warehouse" }))
+    }
+
+    // MARK: - getPartStockByLocationType
+
+    @Test("getPartStockByLocationType returns empty for part with no stock")
+    func testPartStockByLocationTypeEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let result = try env.warehouse.getPartStockByLocationType(partId: partId)
+        #expect(result.isEmpty)
+    }
+
+    @Test("getPartStockByLocationType groups stock by location type")
+    func testPartStockByLocationTypeWithStock() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 25)
+
+        let result = try env.warehouse.getPartStockByLocationType(partId: partId)
+        #expect(!result.isEmpty)
+        let warehouseEntry = result.first(where: { $0.locationType == "warehouse" })
+        #expect(warehouseEntry != nil)
+        #expect(warehouseEntry?.totalQty == 25)
+    }
+
+    // MARK: - getWarehouseLocationName / getWarehouseLocationNames
+
+    @Test("getWarehouseLocationName returns nil for non-existent location")
+    func testGetWarehouseLocationNameNil() throws {
+        let env = try E2ETestHelpers.setUp()
+        let name = try env.warehouse.getWarehouseLocationName(id: 99999)
+        #expect(name == nil)
+    }
+
+    @Test("getWarehouseLocationNames returns empty dict for empty input")
+    func testGetWarehouseLocationNamesEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let names = try env.warehouse.getWarehouseLocationNames(ids: [])
+        #expect(names.isEmpty)
+    }
+
     // MARK: - Receiving Session Items (unit_cost fix)
 
     @Test("getSessionItems reads unit_cost column correctly")
