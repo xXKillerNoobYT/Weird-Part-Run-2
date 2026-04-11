@@ -16,7 +16,7 @@ struct DatabaseTests {
         #expect(tableExists)
     }
 
-    @Test("All 61 migrations (000-060) apply successfully")
+    @Test("All 74 migrations (000-073) apply successfully")
     func testAllMigrationsApply() throws {
         let db = try AppDatabase.openInMemoryDatabase()
 
@@ -93,9 +93,19 @@ struct DatabaseTests {
         }
     }
 
-    @Test("Schema version is 61")
+    @Test("Schema version is 74")
     func testSchemaVersion() throws {
-        #expect(AppDatabase.schemaVersion == 61)
+        #expect(AppDatabase.schemaVersion == 74)
+    }
+
+    @Test("Migration 073 adds grid_rows and grid_cols to warehouse_floor_plans")
+    func testMigration073FloorPlanGridDimensions() throws {
+        let db = try AppDatabase.openInMemoryDatabase()
+        let columns = try db.writer.read { db in
+            try db.columns(in: "warehouse_floor_plans").map(\.name)
+        }
+        #expect(columns.contains("grid_rows"), "warehouse_floor_plans should have grid_rows after migration 073")
+        #expect(columns.contains("grid_cols"), "warehouse_floor_plans should have grid_cols after migration 073")
     }
 
     @Test("Users table has correct columns")
