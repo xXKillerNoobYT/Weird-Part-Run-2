@@ -617,6 +617,7 @@ struct ShiftTemplateEditSheet: View {
     @State private var breakMinutes = 30
     @State private var breakPaid = false
     @State private var overtimeRule = "company_default"
+    @State private var showDeleteConfirm = false
 
     private let dayOrder = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
     private let dayLabels = ["M", "T", "W", "Th", "F", "Sa", "Su"]
@@ -686,7 +687,7 @@ struct ShiftTemplateEditSheet: View {
                 if onDelete != nil {
                     Section {
                         Button(role: .destructive) {
-                            onDelete?()
+                            showDeleteConfirm = true
                         } label: {
                             Label("Delete Template", systemImage: "trash")
                         }
@@ -705,6 +706,15 @@ struct ShiftTemplateEditSheet: View {
                 }
             }
             .onAppear { populateFromExisting() }
+            .confirmationDialog("Delete this template?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+                Button("Delete Template", role: .destructive) {
+                    onDelete?()
+                    dismiss()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This action cannot be undone.")
+            }
         }
     }
 
@@ -768,6 +778,7 @@ struct HolidayEditSheet: View {
     @State private var selectedDate = Date()
     @State private var isPaid = true
     @State private var isRecurring = false
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         NavigationStack {
@@ -785,7 +796,7 @@ struct HolidayEditSheet: View {
                 if onDelete != nil {
                     Section {
                         Button(role: .destructive) {
-                            onDelete?()
+                            showDeleteConfirm = true
                         } label: {
                             Label("Delete Holiday", systemImage: "trash")
                         }
@@ -804,6 +815,15 @@ struct HolidayEditSheet: View {
                 }
             }
             .onAppear { populateFromExisting() }
+            .confirmationDialog("Delete this holiday?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+                Button("Delete Holiday", role: .destructive) {
+                    onDelete?()
+                    dismiss()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This action cannot be undone.")
+            }
         }
     }
 

@@ -74,6 +74,7 @@ struct CategoryFormSheet: View {
                 }
             }
         }
+        .interactiveDismissDisabled(isSaving)
     }
 
     private func saveAndDismiss() async {
@@ -172,6 +173,7 @@ struct StyleFormSheet: View {
                 }
             }
         }
+        .interactiveDismissDisabled(isSaving)
     }
 
     private func saveAndDismiss() async {
@@ -270,6 +272,7 @@ struct TypeFormSheet: View {
                 }
             }
         }
+        .interactiveDismissDisabled(isSaving)
     }
 
     private func saveAndDismiss() async {
@@ -477,6 +480,7 @@ struct ColorFormSheet: View {
                 }
             }
         }
+        .interactiveDismissDisabled(isSaving)
     }
 
     // MARK: - Preset Button

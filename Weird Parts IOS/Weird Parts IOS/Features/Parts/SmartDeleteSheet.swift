@@ -37,6 +37,7 @@ struct SmartDeleteSheet: View {
             }
             .task { await checkInventory() }
         }
+        .interactiveDismissDisabled(isProcessing)
     }
 
     @ViewBuilder

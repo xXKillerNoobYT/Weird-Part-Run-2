@@ -198,6 +198,39 @@ Replaced `isPresented: .constant(var != nil)` (read-only, non-dismissable) with 
 
 ---
 
+### Usability Enforcer Run 4 (2026-04-10)
+
+**Scope:** 4 modified files from DIS-015 fix set: `IOSWeeklyReviewSheet.swift`, `IOSAuditSummaryView.swift`, `ReceivingRoutingFlow.swift`, `QRScannerAdapter.swift`
+**Build:** ✅ Build complete | **Tests:** ✅ 1162/1162 pass (up from 1118 — 44 new tests from WarehouseServiceExtTests, OrdersServiceTests, DashboardServiceTests)
+
+| Scanner | Result | Notes |
+|---------|--------|-------|
+| 1 Page Load Integrity | ✅ PASS | All 3 UI files have isLoading/ProgressView/ErrorStateView correctly |
+| 2 Button & Action Verification | ✅ PASS | All buttons wired; DIS-015 userId guards in place across all 4 action handlers in ReceivingRoutingFlow |
+| 3 Modal & Sheet Dismiss | ⚠️ FIXED | `AdjustDiscrepancySheet` (inside IOSAuditSummaryView) missing `interactiveDismissDisabled(isSaving)` — added |
+| 4 Navigation & Exit Paths | ✅ PASS | ReceivingRoutingFlow has onDismiss at routeConfirmed; Cancel in parent context |
+| 5 SQL vs Schema Audit | ⚠️ FIXED | `QRScannerAdapter.tableForEntityType(.bin)` returned `"bin_locations"` — no such table exists. Fixed to `"warehouse_bins"` |
+| 6 Plan Alignment | ✅ PASS | DIS-015 verified implemented; DIS-016 tracked in DevTODO; `IOSWeeklyReviewSheet` userId guard confirmed at line 336 |
+| 7 Defensive UX | ⚠️ TRACKED | `IOSWeeklyReviewSheet.submitReview()` is synchronous — `isSubmitting` true/false flip in same call stack, `interactiveDismissDisabled` effectively cosmetic. Same pattern as PE-039. Tracked. |
+| 8 Feature Completeness | ✅ PASS | All modified files are sheets/components, not list pages |
+
+### Fixes Applied (Run 4 — 2026-04-10)
+
+| # | File | Scanner | Issue | Fix |
+|---|------|---------|-------|-----|
+| 1 | QRScannerAdapter.swift | 5 (SQL vs Schema) | `tableForEntityType(.bin)` returned `"bin_locations"` — no such table in DB; scanning bin QR codes would throw SQL error | Changed to `"warehouse_bins"` (correct table per migration 000) |
+| 2 | IOSAuditSummaryView.swift | 3 (Modal & Sheet Dismiss) | `AdjustDiscrepancySheet` has Stepper + TextField + `isSaving` state but no `interactiveDismissDisabled` — user can swipe-dismiss during save | Added `.interactiveDismissDisabled(isSaving)` on NavigationStack |
+| 3 | IOSAuditSummaryView.swift | 7 (Defensive UX) | `AdjustDiscrepancySheet.applyAdjustment()` used `"load audit summary"` as error context — incorrect and confusing if shown to user | Changed to `"adjust audit count"` |
+
+### Remaining/Tracked (Run 4)
+
+| # | File | Scanner | Finding | Severity | Status |
+|---|------|---------|---------|----------|--------|
+| 7 | IOSWeeklyReviewSheet.swift | 7 (Defensive UX) | `submitReview()` synchronous — `isSubmitting` never visually activates, `interactiveDismissDisabled` guard is cosmetically inactive | MEDIUM | Same pattern as PE-039; track alongside that issue |
+| 8 | 7 files (DIS-016) | 7 (Defensive UX) | `currentUser?.id ?? 1` write-path anti-pattern (worse than DIS-015: fallback is admin user ID) | HIGH | Tracked in DevTODO DIS-016, GitHub #140 |
+
+---
+
 ## Known Issues
 
 ### From Problomes Screenshots (2026-03-28)
@@ -260,6 +293,37 @@ Replaced `isPresented: .constant(var != nil)` (read-only, non-dismissable) with 
 **P1 fixes this run:** 0
 **P2 fixes this run:** 0 (PE-039 already queued for Xcode AI)
 **P3 fixes this run:** 0 (DIS-012/013/014 already have DevTODO files)
+
+### Scanner Results (2026-04-10 — Run 5)
+
+**Scope:** All 6 scanners across full iOS app (325+ Swift files)
+**Build:** ✅ Build complete | **Tests:** ✅ 1165/1165 pass (up from 1142 — 23 new tests)
+
+| Scanner | Category | Findings | Verdict |
+|---------|----------|---------|---------|
+| 1 | Dismiss & Sheet Safety | 6 sheets with `isSaving`/`isProcessing` but no `interactiveDismissDisabled`: CategoriesFormSheets (4 structs), PartsSuppliersPage SupplierFormSheet, SmartDeleteSheet | **FIXED** — added `.interactiveDismissDisabled` to all 6. Filed #143 for 30+ remaining Settings/People/Chat sheets |
+| 2 | Silent Failures | 6× `try? svc?.updateSessionItem` in IOSReceiveShipmentPage (Reset to Expected, Clear All, qty steppers). 3 new empty catch blocks in AppCore, CompanySetupWizard, LoginView | **Filed #141** (ReceiveShipment), **Filed #142** (empty catches in auth flows) |
+| 3 | Missing User Feedback | No new findings beyond previously tracked issues | No new HIGH |
+| 4 | Navigation & Exit Traps | ShiftTemplateEditSheet + HolidayEditSheet delete buttons fire immediately without confirmation | **FIXED** — added `@State showDeleteConfirm` + `.confirmationDialog` + `dismiss()` to both sheets |
+| 5 | Form & Input Issues | "Manufacturer part number", "Account Number", "Trailer Number" TextFields missing keyboardType — these are alphanumeric codes, not pure numeric (false positive for scanner 5c) | Acceptable — alpha-numeric code fields don't need numberPad |
+| 6 | Accessibility & Touch | Wizard progress dots (10px) — confirmed decorative in Run 4 | No new HIGH |
+
+**False positives confirmed:**
+- IOSHatsPage delete → uses `hatToDelete` state + `.alert` ✅
+- IOSPurchaseOrdersPage delete → uses `poToCancel` state + `.alert` ✅
+- "Manufacturer part number" TextField → alphanumeric code, not numeric input ✅
+- Wizard 10px progress dots → non-interactive decorative elements ✅
+
+**Fixes applied (7):**
+1. `CategoriesFormSheets.swift` — CategoryFormSheet: added `.interactiveDismissDisabled(isSaving)` to NavigationStack
+2. `CategoriesFormSheets.swift` — StyleFormSheet: added `.interactiveDismissDisabled(isSaving)` to NavigationStack
+3. `CategoriesFormSheets.swift` — TypeFormSheet: added `.interactiveDismissDisabled(isSaving)` to NavigationStack
+4. `CategoriesFormSheets.swift` — ColorFormSheet: added `.interactiveDismissDisabled(isSaving)` to NavigationStack
+5. `PartsSuppliersPage.swift` — SupplierFormSheet: added `.interactiveDismissDisabled(isSaving)` to NavigationStack
+6. `SmartDeleteSheet.swift` — added `.interactiveDismissDisabled(isProcessing)` to NavigationStack
+7. `IOSScheduleConfigPage.swift` — ShiftTemplateEditSheet + HolidayEditSheet: added `showDeleteConfirm` state + `.confirmationDialog` with destructive confirmation + `dismiss()` after delete
+
+---
 
 ### Scanner Results (2026-04-08 — Run 4)
 
@@ -403,3 +467,5 @@ Replaced `isPresented: .constant(var != nil)` (read-only, non-dismissable) with 
 | 2026-04-06 | **Usability Enforcer** Run 2 — all 8 scanners, focus on 3 warehouse wizard files + AuthService changes | 2 medium findings (both tracked) | 0 | PENDING (gh unavailable) | 0 |
 | 2026-04-08 | **Usability Enforcer** Run 3 — all 8 scanners, focus on IOSWishlistPage (DIS-006 followup) | 3 fixes applied, 2 S2 tracked | 3 | 0 (gh unavailable) | 0 |
 | 2026-04-08 | **Usability Hunter** Run 4 — all 6 scanners, full app sweep | 4 findings (1 fixed, 3 filed) | 1 (WarehouseLocationsPage confirm dialog) | 3 (#135-#137) | 0 |
+| 2026-04-10 | **Usability Hunter** Run 5 — all 6 scanners, full app sweep | 9 findings (7 fixed, 2 filed) | 7 (6 interactiveDismissDisabled, 2 confirmationDialog) | 3 (#141-#143) | 0 |
+| 2026-04-10 | **Usability Enforcer** Run 4 — all 8 scanners, focus on 4 modified files (DIS-015 fix set + new tests) | 3 fixes, 2 tracked | 3 | 0 | 0 |

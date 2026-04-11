@@ -570,6 +570,7 @@ private struct SupplierFormSheet: View {
                 }
             }
         }
+        .interactiveDismissDisabled(isSaving)
     }
 
     private func saveAndDismiss() async {
