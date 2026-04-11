@@ -2,8 +2,8 @@
 source: dev-improvement-scanner (2026-04-06)
 severity: Low
 category: Security — Legacy Token Acceptance
-status: open
-github_issue: PENDING — needs manual filing (gh unavailable in scheduled run 2026-04-06)
+status: CLOSED — fixed 2026-04-08 (hunt-fix iteration 34)
+github_issue: "#132 — filed 2026-04-07 (plan-enforcer run 8), CLOSED 2026-04-08"
 ---
 
 # DIS-014: Legacy Unsigned Token Acceptance Path Has No Removal Deadline

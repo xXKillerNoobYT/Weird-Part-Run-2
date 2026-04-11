@@ -732,21 +732,17 @@ public final class AuthService: Sendable {
     }
 
     /// Parse and verify a signed local token. Returns nil if invalid or tampered.
+    /// Legacy unsigned token path removed 2026-04-08 — all tokens generated since
+    /// PE-008a (2026-03-31) are HMAC-signed. Unsigned tokens are now rejected.
     static func parseLocalToken(_ token: String) -> TokenPayload? {
         let parts = token.split(separator: ".", maxSplits: 1)
+        guard parts.count == 2 else { return nil }
 
-        // Support legacy unsigned tokens (plain base64) during migration
-        let payloadB64: String
-        if parts.count == 2 {
-            payloadB64 = String(parts[0])
-            let sigB64 = String(parts[1])
-            guard let sigData = Data(base64Encoded: sigB64) else { return nil }
-            let expected = HMAC<SHA256>.authenticationCode(for: Data(payloadB64.utf8), using: signingKey)
-            guard Data(sigData) == Data(expected) else { return nil }
-        } else {
-            // Legacy unsigned token — accept but it will be replaced on next login
-            payloadB64 = token
-        }
+        let payloadB64 = String(parts[0])
+        let sigB64 = String(parts[1])
+        guard let sigData = Data(base64Encoded: sigB64) else { return nil }
+        let expected = HMAC<SHA256>.authenticationCode(for: Data(payloadB64.utf8), using: signingKey)
+        guard Data(sigData) == Data(expected) else { return nil }
 
         guard let data = Data(base64Encoded: payloadB64) else { return nil }
         guard let payload = try? JSONDecoder().decode(TokenPayload.self, from: data) else { return nil }

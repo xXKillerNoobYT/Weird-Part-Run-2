@@ -74,6 +74,26 @@ struct AuthServiceTests {
         #expect(AuthService.parseLocalToken("not-valid-base64!!!") == nil)
     }
 
+    @Test("parseLocalToken rejects unsigned legacy tokens (DIS-014 regression)")
+    func testParseTokenRejectsUnsigned() throws {
+        // Simulate a pre-PE-008a unsigned token: plain base64 payload with no signature.
+        // These should now be rejected since the shim was removed 2026-04-08.
+        let payload = AuthService.TokenPayload(sub: 42, iat: 1000, exp: 9999999999999, type: "local")
+        let data = try JSONEncoder().encode(payload)
+        let unsignedToken = data.base64EncodedString()  // no "." separator — legacy format
+        #expect(AuthService.parseLocalToken(unsignedToken) == nil)
+    }
+
+    @Test("parseLocalToken rejects tampered signature")
+    func testParseTokenRejectsTamperedSig() throws {
+        let token = try #require(AuthService.generateLocalToken(userId: 42))
+        // Flip a character in the signature portion
+        let parts = token.split(separator: ".", maxSplits: 1)
+        guard parts.count == 2 else { return }
+        let tampered = "\(parts[0]).AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        #expect(AuthService.parseLocalToken(tampered) == nil)
+    }
+
     // MARK: - Seed First Admin
 
     @Test("seedFirstAdmin creates user, hats, permissions, settings")
