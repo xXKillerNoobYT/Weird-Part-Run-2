@@ -31,9 +31,6 @@ struct IOSReceiveShipmentPage: View {
     @State private var highlightedItemId: Int64?
     @State private var scanError: String?
 
-    // Discard confirmation
-    @State private var showDiscardConfirmation = false
-
     // Unrouted items warning (62H)
     @State private var showUnroutedWarning = false
 
@@ -100,14 +97,6 @@ struct IOSReceiveShipmentPage: View {
             let qty = receivedQtys[item.id] ?? 0
             return qty > 0 && routingResults[item.id] == nil
         }
-    }
-
-    /// Whether the user has entered data that would be lost by navigating away.
-    private var hasUnsavedWork: Bool {
-        guard activeSessionId != nil else { return false }
-        let hasQuantities = receivedQtys.values.contains(where: { $0 > 0 })
-        let hasRouting = !routingResults.isEmpty
-        return hasQuantities || hasRouting
     }
 
     var body: some View {
@@ -310,8 +299,14 @@ struct IOSReceiveShipmentPage: View {
                     // Reset to Expected / Clear All buttons (61L)
                     HStack(spacing: 12) {
                         Button {
-                            for item in sessionItems {
-                                receivedQtys[item.id] = item.expectedQty
+                            let svc = appCore.warehouseService
+                            let items = sessionItems
+                            for item in items { receivedQtys[item.id] = item.expectedQty }
+                            Task {
+                                guard let svc else { return }
+                                for item in items {
+                                    try? svc.updateSessionItem(itemId: item.id, receivedQty: item.expectedQty)
+                                }
                             }
                         } label: {
                             Label("Reset to Expected", systemImage: "arrow.counterclockwise")
@@ -320,8 +315,14 @@ struct IOSReceiveShipmentPage: View {
                         .buttonStyle(.bordered)
 
                         Button(role: .destructive) {
-                            for item in sessionItems {
-                                receivedQtys[item.id] = 0
+                            let svc = appCore.warehouseService
+                            let items = sessionItems
+                            for item in items { receivedQtys[item.id] = 0 }
+                            Task {
+                                guard let svc else { return }
+                                for item in items {
+                                    try? svc.updateSessionItem(itemId: item.id, receivedQty: 0)
+                                }
                             }
                         } label: {
                             Label("Clear All", systemImage: "xmark.circle")
@@ -436,19 +437,15 @@ struct IOSReceiveShipmentPage: View {
                     }
                 }
 
-                // Cancel session button
+                // Cancel session button (quantities are auto-saved — no discard dialog needed)
                 Section {
                     Button(role: .destructive) {
-                        if hasUnsavedWork {
-                            showDiscardConfirmation = true
-                        } else {
-                            activeSessionId = nil
-                            sessionItems = []
-                            priceVerifications = [:]
-                            receivedQtys = [:]
-                            routingResults = [:]
-                            loadData()
-                        }
+                        activeSessionId = nil
+                        sessionItems = []
+                        priceVerifications = [:]
+                        receivedQtys = [:]
+                        routingResults = [:]
+                        loadData()
                     } label: {
                         HStack {
                             Spacer()
@@ -478,17 +475,14 @@ struct IOSReceiveShipmentPage: View {
         }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
+                // Quantities are auto-saved — no discard dialog needed (PE-041)
                 Button {
-                    if hasUnsavedWork {
-                        showDiscardConfirmation = true
-                    } else {
-                        activeSessionId = nil
-                        sessionItems = []
-                        priceVerifications = [:]
-                        receivedQtys = [:]
-                        routingResults = [:]
-                        loadData()
-                    }
+                    activeSessionId = nil
+                    sessionItems = []
+                    priceVerifications = [:]
+                    receivedQtys = [:]
+                    routingResults = [:]
+                    loadData()
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
@@ -513,19 +507,6 @@ struct IOSReceiveShipmentPage: View {
             Button("OK") { scanError = nil }
         } message: {
             Text(scanError ?? "")
-        }
-        .confirmationDialog("Discard Receiving Data?", isPresented: $showDiscardConfirmation, titleVisibility: .visible) {
-            Button("Keep Working", role: .cancel) { }
-            Button("Discard", role: .destructive) {
-                receivedQtys = [:]
-                routingResults = [:]
-                priceVerifications = [:]
-                activeSessionId = nil
-                sessionItems = []
-                loadData()
-            }
-        } message: {
-            Text("You have unsaved receiving data. Going back will discard all entered quantities and routing decisions.")
         }
         // Unrouted items warning before completing (62H)
         .confirmationDialog(
@@ -620,7 +601,11 @@ struct IOSReceiveShipmentPage: View {
                     Button {
                         let current = receivedQtys[item.id] ?? item.expectedQty
                         if current > 0 {
-                            receivedQtys[item.id] = current - 1
+                            let newQty = current - 1
+                            receivedQtys[item.id] = newQty
+                            let svc = appCore.warehouseService
+                            let iid = item.id
+                            Task { try? svc?.updateSessionItem(itemId: iid, receivedQty: newQty) }
                         }
                     } label: {
                         Image(systemName: "minus.circle.fill")
@@ -641,7 +626,11 @@ struct IOSReceiveShipmentPage: View {
 
                     Button {
                         let current = receivedQtys[item.id] ?? item.expectedQty
-                        receivedQtys[item.id] = current + 1
+                        let newQty = current + 1
+                        receivedQtys[item.id] = newQty
+                        let svc = appCore.warehouseService
+                        let iid = item.id
+                        Task { try? svc?.updateSessionItem(itemId: iid, receivedQty: newQty) }
                     } label: {
                         Image(systemName: "plus.circle.fill")
                             .font(.title3)
@@ -652,7 +641,11 @@ struct IOSReceiveShipmentPage: View {
                     // Quick-fill to expected qty (shown when quantity differs)
                     if (receivedQtys[item.id] ?? item.expectedQty) != item.expectedQty {
                         Button {
-                            receivedQtys[item.id] = item.expectedQty
+                            let newQty = item.expectedQty
+                            receivedQtys[item.id] = newQty
+                            let svc = appCore.warehouseService
+                            let iid = item.id
+                            Task { try? svc?.updateSessionItem(itemId: iid, receivedQty: newQty) }
                         } label: {
                             Text("All")
                                 .font(.caption)
@@ -849,9 +842,13 @@ struct IOSReceiveShipmentPage: View {
             return
         }
 
-        // Auto-increment received quantity
+        // Auto-increment received quantity and auto-save (PE-041)
         let currentQty = receivedQtys[item.id] ?? item.expectedQty
-        receivedQtys[item.id] = currentQty + 1
+        let newQty = currentQty + 1
+        receivedQtys[item.id] = newQty
+        let svc = appCore.warehouseService
+        let iid = item.id
+        Task { try? svc?.updateSessionItem(itemId: iid, receivedQty: newQty) }
 
         // Highlight the matched item (triggers auto-scroll via onChange)
         withAnimation {
@@ -888,11 +885,12 @@ struct IOSReceiveShipmentPage: View {
         }
         do {
             sessionItems = try service.getSessionItems(sessionId: sessionId)
-            // Pre-fill received quantities from expected (61L)
-            // Default to expected qty so the user only needs to adjust discrepancies
+            // Restore saved quantities from DB (PE-041: auto-save draft persistence).
+            // If the item has a saved receivedQty > 0, use it (resumed session).
+            // Otherwise fall back to expectedQty so fresh sessions are pre-filled (61L).
             for item in sessionItems {
                 if receivedQtys[item.id] == nil {
-                    receivedQtys[item.id] = item.expectedQty
+                    receivedQtys[item.id] = item.receivedQty > 0 ? item.receivedQty : item.expectedQty
                 }
             }
         } catch {
@@ -907,6 +905,11 @@ struct IOSReceiveShipmentPage: View {
             isLoading = false
             return
         }
+        guard let userId = appCore.currentUser?.id else {
+            actionError = "Not logged in. Please log in and try again."
+            return
+        }
+
         isCompleting = true
         actionError = nil
 
@@ -921,7 +924,6 @@ struct IOSReceiveShipmentPage: View {
             // Items that were already routed (staged, written off, returned) have their
             // movements created during the routing flow. The session completion adds
             // warehouse stock for unrouted items.
-            let userId = appCore.currentUser?.id ?? 0
             try warehouseService.completeSession(sessionId: sessionId, completedBy: userId)
 
             // Process price verifications -> create cost layers
