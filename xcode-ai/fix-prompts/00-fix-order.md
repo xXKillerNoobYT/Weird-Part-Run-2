@@ -22,6 +22,7 @@
 
 | # | File | What It Fixes | Status |
 |---|------|---------------|--------|
+| PE-042 | `PE-042-cart-mode-ui.md` | Cart Mode UI — multi-bin tap-to-select, Place Cart sheet, area picker, async bin move (GitHub #138). Service layer done (commit 71aa8bf). | 🔲 **NEXT** — Xcode AI |
 | PE-041 | `PE-041-receiving-auto-save-draft.md` | Receiving session: auto-save `receivedQtys` to DB on each qty change; remove discard confirmation (GitHub #36) | ✅ **DONE 2026-04-08** — direct Swift edit |
 | PE-040 | `PE-040-warehouse-wizard-dragdrop-placement.md` | Warehouse wizard step 4: dimensions-first input → true drag-and-drop placement replacing tap-to-place (GitHub #22) | ✅ **DONE 2026-04-08** — direct Swift edit + migration 073 |
 | PE-022 | *(archived)* | Hat assignment UX (GitHub #17): tappable hat rows → HatDetailSheet, People Dashboard management tiles, Employee Detail "Permissions Granted" section | ✅ done (2026-03-31) |
