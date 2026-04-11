@@ -254,6 +254,46 @@ struct WarehouseFloorPlanTests {
         #expect(code.contains("A") || code.contains("L2") || code.contains("3"))
     }
 
+    // MARK: - Grid Dimensions (PE-040)
+
+    @Test("updateFloorPlanGrid persists rows and cols")
+    func testUpdateFloorPlanGrid() throws {
+        let env = try freshEnv()
+
+        let plan = try env.warehouse.createFloorPlan(name: "Grid Test", widthInches: 480, lengthInches: 720)
+        // Fresh plan has nil grid dimensions
+        #expect(plan.gridRows == nil)
+        #expect(plan.gridCols == nil)
+
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: plan.id!, rows: 12, cols: 8)
+
+        let updated = try env.warehouse.getFloorPlan(id: plan.id!)
+        #expect(updated?.gridRows == 12)
+        #expect(updated?.gridCols == 8)
+    }
+
+    @Test("updateFloorPlanGrid overwrites previously saved dimensions")
+    func testUpdateFloorPlanGridOverwrite() throws {
+        let env = try freshEnv()
+
+        let plan = try env.warehouse.createFloorPlan(name: "Grid Overwrite", widthInches: 240, lengthInches: 360)
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: plan.id!, rows: 5, cols: 4)
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: plan.id!, rows: 10, cols: 6)
+
+        let fetched = try env.warehouse.getFloorPlan(id: plan.id!)
+        #expect(fetched?.gridRows == 10)
+        #expect(fetched?.gridCols == 6)
+    }
+
+    @Test("updateFloorPlanGrid on non-existent ID is a silent no-op")
+    func testUpdateFloorPlanGridMissingId() throws {
+        let env = try freshEnv()
+        // Should not throw — UPDATE on a missing row affects 0 rows silently
+        try env.warehouse.updateFloorPlanGrid(floorPlanId: 99999, rows: 10, cols: 10)
+        let plans = try env.warehouse.listFloorPlans()
+        #expect(plans.isEmpty)
+    }
+
     // MARK: - Onboarding
 
     @Test("Warehouse onboarding lifecycle")

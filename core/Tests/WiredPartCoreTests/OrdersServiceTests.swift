@@ -571,6 +571,31 @@ struct OrdersServiceTests {
         #expect(route == "transfer")
     }
 
+    @Test("smartRouteJPOLine writes NULL status_updated_by when userId is nil")
+    func testSmartRouteNilUserIdWritesNull() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-SR-03", name: "Smart Route Nil User")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "RouteTestCat3")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Route Part 3", categoryId: catId)
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO jpo_line_items (jpo_id, part_id, qty_requested, created_at)
+                VALUES (?, ?, 3, datetime('now'))
+                """, arguments: [jpoId, partId])
+            return db.lastInsertedRowID
+        }
+
+        // userId = nil — system-triggered routing; status_updated_by must be NULL, not 0
+        _ = try env.orders.smartRouteJPOLine(lineId: lineId, partId: partId, userId: nil)
+        let updatedBy = try env.db.writer.read { db in
+            try Int64.fetchOne(db, sql: "SELECT status_updated_by FROM jpo_line_items WHERE id = ?",
+                               arguments: [lineId])
+        }
+        #expect(updatedBy == nil, "status_updated_by must be NULL when no userId is provided — not 0")
+    }
+
     // MARK: - setJPOLineTransferId
 
     @Test("setJPOLineTransferId links a transfer movement to a JPO line")
@@ -630,6 +655,61 @@ struct OrdersServiceTests {
             try Int64.fetchOne(db, sql: "SELECT current_stage_id FROM jobs WHERE id = ?", arguments: [jobId])
         }
         #expect(currentStageId == stage2Id)
+    }
+
+    // MARK: - cancelJPOLineTransfer
+
+    @Test("cancelJPOLineTransfer clears transfer_id on JPO line")
+    func testCancelJPOLineTransferClearsLink() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CJLT-01", name: "Cancel Transfer Job")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "CancelTransferCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Cancel Transfer Part", categoryId: catId)
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 0, notes: nil)
+
+        // Set a transfer_id and keep qty_requested = 0 so the reverse-movement
+        // path inside cancelJPOLineTransfer is skipped (qty > 0 guard). This
+        // avoids a GRDB reentrancy crash: both services share the same in-memory
+        // writer, so calling warehouseService.createMovement from inside another
+        // write transaction deadlocks.
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE jpo_line_items SET transfer_id = 999, qty_requested = 0 WHERE id = ?",
+                arguments: [lineId]
+            )
+        }
+        let before = try env.db.writer.read { db -> Int64? in
+            try Int64.fetchOne(db, sql: "SELECT transfer_id FROM jpo_line_items WHERE id = ?", arguments: [lineId])
+        }
+        #expect(before == 999)
+
+        try env.orders.cancelJPOLineTransfer(lineId: lineId, reversedBy: env.adminUserId, warehouseService: env.warehouse)
+
+        let after = try env.db.writer.read { db -> Int64? in
+            try Int64.fetchOne(db, sql: "SELECT transfer_id FROM jpo_line_items WHERE id = ?", arguments: [lineId])
+        }
+        #expect(after == nil, "transfer_id must be cleared after cancel")
+    }
+
+    @Test("cancelJPOLineTransfer on line with no transfer_id is a silent no-op")
+    func testCancelJPOLineTransferNoOp() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CJLT-02", name: "No Transfer Job")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "NoTransferCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "No Transfer Part", categoryId: catId)
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 1, notes: nil)
+
+        // transfer_id is nil from the start — should not throw
+        try env.orders.cancelJPOLineTransfer(lineId: lineId, reversedBy: env.adminUserId, warehouseService: env.warehouse)
+
+        let transferId = try env.db.writer.read { db -> Int64? in
+            try Int64.fetchOne(db, sql: "SELECT transfer_id FROM jpo_line_items WHERE id = ?", arguments: [lineId])
+        }
+        #expect(transferId == nil)
     }
 
     @Test("markStageComplete stays on current stage when it is the last stage")
