@@ -33,7 +33,7 @@ Every feature, bug, or improvement follows this cycle:
 |------|--------|-------------|
 | Build | 0 errors, 0 warnings | 2026-04-08 |
 | Tests | **1142/1142 passing** — test-coverage-maintenance (2026-04-09): +16 new tests covering 16 WarehouseService methods (receiving session updates, return processing, audit finalize/adjust/recount, consolidation vote lifecycle, multi-user audit queries, low-confidence verification). Previous: 1126 (2026-04-08). | 2026-04-09 |
-| Plan Alignment | **hunt-fix-verify run 34** (2026-04-08): PE-040 + PE-041 both confirmed done (page-rebuild-enforcer). Migration 073 test coverage added. Schema version updated to 74. | 2026-04-08 |
+| Plan Alignment | **plan-enforcer run 10** (2026-04-10): PE-040/PE-041 both fully verified in working tree code. `WizardStepPlacement.swift` Phase A + Phase B confirmed, 6 qty-mutation paths in `IOSReceiveShipmentPage.swift` auto-save confirmed. Cart mode gap (#138) confirmed missing (`moveBinsToArea`/`saveUnitPlacement` absent from WarehouseService). No new drift detected. | 2026-04-10 |
 | Feature Polish | **1 active DevTODO (DIS-015), 0 active Xcode prompts.** PE-040/PE-041 done. DIS-012/013 still blocked on KDF decision. DIS-014 ✅ CLOSED. DIS-015 NEW: `currentUser?.id ?? 0` anti-pattern in 6 write-op files (GitHub #139). | 2026-04-09 |
 | Xcode Prompts | **0 active.** See `xcode-ai/fix-prompts/00-fix-order.md`. | 2026-04-08 |
 | GitHub Issues | **~73 open** — #139 NEW (DIS-015: `currentUser?.id ?? 0` in 6 write-op files). Previous: #133 (PricingOverrideFlow no plan), #134 (WishlistService — pending commit+close), #135-#137 (silent failures campaign), #138 (Cart Mode). Security: #130 (PIN KDF), #131 (legacy salt). Systemic: #121-#123, #128-#129. Program-review: #67-#95. | 2026-04-09 |
@@ -193,6 +193,7 @@ Every feature, bug, or improvement follows this cycle:
 | 2026-03-31 | PE-009b partial direct fix: 13 tap targets expanded to ≥44×44pt across 10 iOS files (38ca2bb + working tree uncommitted). Prompt `PE-009b-tap-targets.md` may be archivable if coverage verified complete. | Steps 11 | 38ca2bb + wt |
 | 2026-03-31 | DashboardService: 2 SQL column bugs found in working tree — `suppliers.contact_email` (actual: `email`) and `po_line_items.quantity` (actual: `qty_ordered`). Unstaged — needs commit. | Step 6 | WIP |
 | 2026-03-31 | dev-improvement-scanner run 3: 2 force unwraps (BaseRepository:129, ConflictResolver:493 → compactMap). 4 hardcoded userId bugs fixed: AITools (userId:0→real, threaded through chatWithTools+IOSAIAssistantPanel), QRScanner (userId:1×2 → appCore.currentUser?.id). 5 files changed. 790 tests passing. | Steps 6-8 | — |
+| 2026-04-10 | **plan-enforcer run 10** — Full plan vs code audit. **PE-040 code verified:** `WizardStepPlacement.swift` — Phase A (rows×cols steppers → confirmGrid → `updateFloorPlanGrid`) ✅; Phase B (`.onDrag`/`.dropDestination` grid, re-drag of placed units, `draggingUnitId` clearing) ✅; back-compat DB restore (`gridRows`/`gridCols` from `WarehouseFloorPlan` rehydrates `gridDimensions` on `loadData`) ✅; all 7 plan verification points pass. **PE-041 code verified:** `IOSReceiveShipmentPage.swift` — auto-save via `Task { try? svc?.updateSessionItem(itemId:receivedQty:) }` at 6 mutation sites (minus stepper, plus stepper, All button, Reset button, Clear button, barcode scanner) ✅; restore-on-resume in `loadSessionItems` correctly sets `receivedQtys[item.id] = item.receivedQty` ✅; discard confirmation removed ✅; unrouted-items warning kept (correct per plan). **Cart mode gap confirmed:** `moveBinsToArea`/`saveUnitPlacement` not in WarehouseService — already tracked as #138, awaiting Q&A. **DIS-015 Xcode prompt ready** in `docs/DevTODO/DIS-015-hardcoded-userid-zero-fallback.md`. **Working tree: 24 files pending commit.** Q&A backlog: 4 pending. No new drift. | Steps 11-12 | docs only |
 | 2026-04-08 | **plan-enforcer run 9** — Audited 5 recent commits + all active plans. **PE-040 DONE confirmed** — `WizardStepPlacement.swift` has Phase A (rows×cols form → `updateFloorPlanGrid`) + Phase B (`.onDrag`/`.dropDestination` grid). Migration 073 registered + test added. Schema version = 74. **PE-041 DONE confirmed** — `IOSReceiveShipmentPage.swift` calls `updateSessionItem` in `Task {}` at 4 call sites; discard confirmation removed (unrouted-items warning kept, correct). **Active Work Items table updated:** PE-040 + PE-041 closed. **Next Up updated:** 0 prompts, commit working tree priority 2. **Plan gap logged:** `saveUnitPlacement`/`moveBinsToArea` not in WarehouseService (Cart mode unimplemented). **PricingOverrideFlow.swift:** unplanned addition confirmed (already noted in PE-029, not a new gap). Q&A: 2 pending (DIS-012/013 — KDF, blocked). 1121/1121 tests. | Steps 11-12 | docs only |
 | 2026-04-08 | **dev-pipeline-manager run 14** — Q&A #22 (warehouse wizard row-1 + tap-to-place) fully answered → plan updated + PE-040 written. Q&A #36 (receiving back button) fully answered → new plan `ios-receiving-draft-persistence.md` + PE-041 written. dev-qa.md cleaned (2 processed sections removed). Q&A backlog: 8→3 (only DIS-012/013/014 pending). Prompt queue: 0→2. | Steps 2-5 | docs only |
 | 2026-03-31 | **PE-022 Q&A processed**: all 5 owner answers integrated into `ios-hat-assignment-ux.md` plan. Q&A removed from `dev-qa.md`. `getHatMembers(hatId:)` + `HatMember` struct added to PeopleService. Xcode prompt `PE-022-hat-assignment-ux.md` written — covers HatDetailSheet, AddEmployeeToHatSheet, People Dashboard Management tiles, EmployeeDetail Permissions Granted section. | Steps 3-10 | — |
@@ -1784,3 +1785,30 @@ _Appended by dev-pipeline-manager each run._
   3. **#135-#137 specific silent failures** — 3 concrete instances of the systemic #128 campaign now tracked individually; need to be rolled into a silent-failures remediation plan before any agent auto-fixes them
 **Backlog size:** ~72 open issues (~14 program-review, ~8 usability systemic, ~4 active work, rest lower priority)
 **Next priority:** (1) Owner: answer DIS-012/013 Q&A + #133/#138 Q&A | (2) `github-sync-and-review`: commit working tree + close #134 | (3) `test-coverage-maintenance`: PeopleService/ChatService/SettingsService gaps
+
+---
+
+### End-of-Day Sync — 2026-04-09 (github-sync-and-review run 3)
+- Files committed: 28 (24 modified + 4 new)
+- Commits created: 7
+  1. `security(auth)`: DIS-014 — remove unsigned token shim
+  2. `fix(db)`: schemaVersion 61→74 accuracy fix
+  3. `feat(warehouse)`: PE-040 — floor plan grid dimensions + wizard drag-drop
+  4. `feat(orders)`: PE-041 — receiving session auto-save draft
+  5. `fix(orders)`: DIS-015 partial — propagate nullable userId through smartRouteJPOLine
+  6. `test`: receiving session, floor plan grid, orders coverage (+464 lines)
+  7. `docs(pipeline)`: tracker + plan updates for 2026-04-08/09 runs
+- Push status: success (8 commits pushed — 1 prior + 7 this run; origin now at e037800)
+- Tests: 1142/1142 passing
+- Agent runs today: 6/7 active agents ran
+  - ✅ hunt-fix-verify: iter 34 (2026-04-08) — DIS-014 closed, schemaVersion fixed
+  - ✅ test-coverage-maintenance: (2026-04-09) — +16 tests, 1142 total
+  - ✅ plan-enforcer: run 10 (2026-04-10) — PE-040/PE-041 verified, Cart Mode gap confirmed
+  - ✅ dev-improvement-scanner: run 11 (2026-04-09) — DIS-015 found, #139 filed
+  - ✅ dev-pipeline-manager: run 15 (2026-04-09) — #133-#138 processed, Q&A generated
+  - ⚠️ github-issues-sync: last run 2026-04-06 — gh CLI unavailable in scheduled context (recurring issue)
+  - ✅ github-sync-and-review: this run
+  - — weekly-cleanup: not due (next 2026-04-12)
+- Issues processed: 6 (#133-#138 added to tracker)
+- Bugs fixed: 2 (DIS-014 fully closed; DIS-015 partial — service layer fixed, 6 iOS write paths pending PE-042 Xcode prompt)
+- Pipeline health: OK — 1142/1142 green, build clean, 0 active Xcode prompts, 4 pending Q&A owner decisions (DIS-012/013/133/138)
