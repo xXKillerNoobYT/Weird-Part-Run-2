@@ -3,7 +3,9 @@
 > **Phase 1 complete.** All 279 prompts (01–67A) are archived in `done/`.
 > **Phase 2 HIG/Security work complete.** PE-009a/b/c/d/e, PE-008a/b/c/d/e, PE-022, PE-001, PE-024, PE-025, PE-026 all done. All archived to `done/`.
 > **Phase 3 status (page-rebuild-enforcer 2026-04-06 + hunt-fix 2026-04-07):** PE-034 ✅ DONE. PE-035 ✅ DONE. PE-036 ✅ DONE — all 3 wizards verified; WarehouseOnboardingWizard already had isSaving + interactiveDismissDisabled. PE-037 ✅ DONE — all 9 Create/Form sheets confirmed to have interactiveDismissDisabled in working tree (hunt-fix run 14). PE-038 ✅ DONE — JobStageProgressBar font fixed directly. PE-039 ✅ DONE — PartsFlowWizard + CartManager both fully async. DIS-009 ✅ CLOSED — both locations verified async.
-> **Active prompts: 0 remaining.** Prompt queue is clear. Next work: DIS-012/013/014 security items (need design decisions), program-review GitHub issues #82-#95.
+> **PE-041 ✅ DONE (page-rebuild-enforcer 2026-04-08):** Receiving session auto-save draft — auto-save on every qty change (minus/plus/All/Reset/Clear/barcode), restore from DB on resume, discard confirmation removed. 1118 tests pass.
+> **PE-040 ✅ DONE (page-rebuild-enforcer 2026-04-08):** WizardStepPlacement complete rewrite — Phase A dimensions form (rows×cols steppers → Confirm Grid → saves grid_rows/grid_cols via migration 073), Phase B drag-and-drop grid via .onDrag/.dropDestination, placed units can be re-dragged, back-compat: gridDimensions auto-restored from DB on load. 1118 tests pass.
+> DIS-012/013/014 security items still blocked on owner design decisions.
 
 ---
 
@@ -20,6 +22,8 @@
 
 | # | File | What It Fixes | Status |
 |---|------|---------------|--------|
+| PE-041 | `PE-041-receiving-auto-save-draft.md` | Receiving session: auto-save `receivedQtys` to DB on each qty change; remove discard confirmation (GitHub #36) | ✅ **DONE 2026-04-08** — direct Swift edit |
+| PE-040 | `PE-040-warehouse-wizard-dragdrop-placement.md` | Warehouse wizard step 4: dimensions-first input → true drag-and-drop placement replacing tap-to-place (GitHub #22) | ✅ **DONE 2026-04-08** — direct Swift edit + migration 073 |
 | PE-022 | *(archived)* | Hat assignment UX (GitHub #17): tappable hat rows → HatDetailSheet, People Dashboard management tiles, Employee Detail "Permissions Granted" section | ✅ done (2026-03-31) |
 | PE-001 | *(archived)* | Tool page rename: "Tool Registry" → "All Tools", "Tool Admin" → "Management" | ✅ done (2026-03-31) |
 | PE-008c | *(archived)* | People → Permissions banner: warns admin when users still have legacy PIN hashes (auto-upgrade on login is already in place) | ✅ done (2026-03-31) |

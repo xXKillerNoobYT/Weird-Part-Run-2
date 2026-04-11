@@ -1,8 +1,13 @@
 # Hunt-Fix-Verify Loop Tracker
 
 > **Started:** 2026-03-28
-> **Status:** PHASE 1 COMPLETE — 32 iterations, 117 bugs fixed. Latest: test-coverage-maintenance run (2026-04-07) — 1118/1118 tests (+21 new). 21 new WarehouseService coverage tests: getMovement, previewMovement, executeMovement, getStockAtLocation, clearStagingTag, clearAllStagingTags, getPartStockLevels, zone CRUD, getPartName, getPartCode, getJobLinkForPOLine, listDistinctStockLocations, getPartStockByLocationType, getWarehouseLocationName/Names. PE-037 confirmed done (all 9 sheets). DIS-009 CLOSED (CartManager async). Prompt queue empty (0 active).
+> **Status:** PHASE 1 COMPLETE — 35 iterations, 122 bugs fixed. Latest: hunt-fix-verify run 35 (2026-04-09) — **1 direct core fix:** `OrdersService.smartRouteJPOLine` signature changed to accept `userId: Int64?` (was `Int64`), and `addJPOLineItem` call updated from `userId ?? 0` to `userId` directly — writes NULL instead of 0 for system-triggered routing. **1 new test:** `testSmartRouteNilUserIdWritesNull` (proves NULL stored, not 0). **1 GitHub issue closed:** #134 (WishlistService auto-approvals) — fix verified in code, issue description confirmed fix landed 2026-04-07.
+> **test-coverage-maintenance run (2026-04-09):** +16 tests. **New methods covered (WarehouseService):** `updateSessionItem`, `recordScan`, `getReturnItems`, `processReturn`, `finalizeAuditSession`, `adjustAuditCount`, `recordAuditRecount`, `castConsolidationVote`, `managerOverrideConsolidation`, `applyConsolidation`, `dismissConsolidation`, `getMultiUserAuditAssignments` (×2 — empty + sessionId filter), `getMyMultiUserAuditAssignments`, `getLowConfidencePartsForVerification` (×2 — below threshold + excludes session). All **1142** tests passing.
+> **test-coverage-maintenance run (2026-04-08):** +5 tests. **New methods covered:** `updateFloorPlanGrid` (PE-040 — 3 tests: persists rows/cols, overwrites dimensions, silent no-op on missing ID); `cancelJPOLineTransfer` (2 tests: clears transfer_id, silent no-op when nil). **Code health:** 0 compile errors. All **1127** tests passing.
+> **plan-enforcer run 9 (2026-04-08):** PE-040 + PE-041 confirmed done in code. GitHub #138 filed for Cart mode plan gap. dev-pipeline.md Plan Registry updated. No new bugs found.
+> **dev-improvement-scanner run 11 (2026-04-09):** **1 direct fix:** `IOSReceiveShipmentPage.completeReceiving()` — `currentUser?.id ?? 0` anti-pattern replaced with proper `guard let userId` + auth error (GitHub #139). **1 new DevTODO:** DIS-015 — `currentUser?.id ?? 0` in 6 remaining write operation files. **GitHub #139 filed.** Security audit: DIS-012/013 still open (KDF blocked on design decision); DIS-014 CLOSED.
 > **⚠️ NEXT PRIORITY: DIS-012/013 security items — need design decision on PIN KDF (PBKDF2 vs Argon2id) before implementation.**
+> **⚠️ Working tree has large uncommitted set — github-sync-and-review should commit PE-040/PE-041 impls + migration 073 + DIS-014 fix + DIS-015 fix + smartRouteJPOLine nil-userId fix + 6 new tests.**
 > **⚠️ Program-review GitHub issues #82–#95 — page-by-page feature rebuilds are next major work phase.**
 
 ---
@@ -24,6 +29,40 @@
 ---
 
 ## Iteration Log
+
+### Iteration 35 — hunt-fix-verify run 35 (2026-04-09)
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Compile | ✅ | 0 errors, 0 warnings |
+| Tests | ✅ | 1127/1127 passing (+1 new test) |
+| Code Patterns | ✅ | No empty catches, no force casts, no dead buttons, no stub UI |
+| SQL Integrity | ✅ | All recently modified services verified clean; all column names match schema |
+| Runtime Safety | ✅ | All array subscripts guarded; no unguarded optionals found |
+| Edge Cases | ✅ | No first-launch failures detected |
+| Problems Folder | ✅ | 32 screenshots (unchanged — pre-existing) |
+| Master Issues | ⚠️ | DIS-012/013 blocked on design decision; #139 (DIS-015) open with DevTODO |
+| Plan Alignment | ✅ | PE-040/PE-041 confirmed in code; grid_rows/grid_cols in schema |
+| Security | ✅ | No SQL injection; DIS-014 fully closed; DIS-012/013 tracked |
+
+**Fix applied:**
+- `OrdersService.swift:834` — `smartRouteJPOLine(lineId:partId:userId:)` signature changed from `userId: Int64` → `userId: Int64?`. Callers passing a non-optional `Int64` still work (Swift implicit lift). The `addJPOLineItem` call on line 690 updated from `userId ?? 0` → `userId`. When userId is nil (system-triggered routing), GRDB now writes NULL to `status_updated_by` instead of 0.
+
+**Root cause:** `jpo_line_items.status_updated_by` is a nullable column (no `.notNull()` in migration 3579), so storing 0 as a sentinel was incorrect — 0 is not a valid user ID and could corrupt audit trail queries that check for specific user IDs.
+
+**GitHub issues closed:**
+- #134 ([Bug] WishlistService auto-approvals never fire) — fix verified in code. `IOSWishlistPage.loadData()` correctly calls `processAutoApprovals` in `Task.detached` before `getSectionedItems`. Fix landed 2026-04-07, issue was left open by mistake.
+
+**Tests added:** 1
+- `testSmartRouteNilUserIdWritesNull` — creates a JPO line, calls `smartRouteJPOLine(userId: nil)`, then reads `status_updated_by` with `Int64.fetchOne` and asserts it is `nil`. Note: `Int64?.fetchOne` would return `Int64??` (double optional), making `== nil` check fail incorrectly — use `Int64.fetchOne` which returns `Int64?` and properly flattens NULL.
+
+**Still open (tracked):**
+- DIS-012/013: PIN KDF upgrade — blocked on design decision (PBKDF2 vs Argon2id)
+- DIS-015 (GitHub #139): `currentUser?.id ?? 0` in 6 iOS write paths — needs Xcode AI pass
+- GitHub #130/131: Security issues tied to DIS-012/013
+
+---
 
 ### Iteration 1 — SQL Column/Table Audit (2026-03-28)
 
@@ -100,8 +139,8 @@ All have `isTableNotFoundError` → empty result handling.
 
 | Metric | Baseline | Current | Delta |
 |--------|----------|---------|-------|
-| Core tests | 545 | 548 | +3 |
-| Test suites | 40 | 40 | = |
+| Core tests | 545 | 1121 | +576 |
+| Test suites | 40 | 53 | +13 |
 | Compile errors | 0 | 0 | = |
 | Compile warnings | 0 | 0 | = |
 | SQL mismatches fixed | 0 | ~31 | -31 |
@@ -113,6 +152,8 @@ All have `isTableNotFoundError` → empty result handling.
 | Force casts | 0 | 0 | = |
 | Problems folder | 32 | 16 open | -16 (10 SQL + 6 sheet fixes) |
 | Master issues | 65 | 65 | Triaged (many addressed by SQL/sheet fixes) |
+| Security fixes | 0 | 1 | DIS-014: unsigned token shim removed |
+| Schema version accuracy | stale (61) | correct (74) | +13 migrations tracked |
 
 ---
 
@@ -1526,4 +1567,57 @@ But neither key existed in `defaultPermissionMap()`. This caused:
 | Active Xcode prompts | 1 (PE-037) | 0 | -1 |
 | DIS-009 status | PARTIAL | CLOSED | ✅ |
 | Async main-thread risks | 2 locations | 0 | -2 |
+
+---
+
+### Iteration 34 — Security Hardening + Schema Version Sync (2026-04-08)
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Compile | ✅ | 0 errors, 0 warnings (transient incremental ordering error self-resolved on retry) |
+| Tests | ✅ | 1121/1121 passing (+3 new) |
+| Code Patterns | ✅ | All catch blocks intentional; no empty buttons; no force casts |
+| SQL Integrity | ✅ | No new mismatches |
+| Runtime Safety | ✅ | No force unwraps in core |
+| Edge Cases | ✅ | No new edge case issues |
+| Problems Folder | ✅ | `docs/Problomes/` does not exist (clean) |
+| Master Issues | ⚠️ | DIS-012/013/014 still open; DIS-014 now CLOSED |
+| Plan Alignment | ✅ | PE-040/PE-041 now marked done (page-rebuild-enforcer 2026-04-08) |
+| Security | ✅ | DIS-014 fixed; DIS-012/013 pending design decision |
+
+**Fixes applied (3 files, 3 issues):**
+
+| Fix | File | Details |
+|-----|------|---------|
+| DIS-014 CLOSED | `AuthService.swift:735` | Removed legacy unsigned token `else` branch — all tokens since PE-008a (2026-03-31) are HMAC-signed; unsigned tokens now return `nil` |
+| Schema version stale | `AppDatabase.swift:12` | Updated `schemaVersion` from 61 → 74 (74 actual migrations: 000-073) |
+| Migration test stale | `DatabaseTests.swift` | Updated "All 61 migrations" → "All 74 migrations"; updated `testSchemaVersion` 61→74; added `testMigration073FloorPlanGridDimensions` for grid_rows/grid_cols columns |
+
+**Tests added (3 new — now 1121 total):**
+- `testParseTokenRejectsUnsigned` — verifies unsigned tokens are rejected (DIS-014 regression guard)
+- `testParseTokenRejectsTamperedSig` — verifies HMAC signature tampering is detected
+- `testMigration073FloorPlanGridDimensions` — verifies migration 073 added grid_rows/grid_cols to warehouse_floor_plans
+
+**Security status:**
+- DIS-014 (unsigned token shim) — ✅ CLOSED — removed 2026-04-08
+- DIS-013 (legacy PIN re-hash) — Login-time auto-upgrade already in place (lines 167-177). No change needed for Option A. Remaining work is enforcement deadline (Option B) — pending owner decision.
+- DIS-012 (PBKDF2 upgrade) — Still blocked on KDF design decision (PBKDF2 vs Argon2id)
+
+**GitHub issues:**
+- #132 (unsigned token shim) — can be closed; fix applied
+
+**Observation — PE-040/PE-041 done:**
+The page-rebuild-enforcer completed PE-040 (warehouse wizard drag-and-drop) and PE-041 (receiving auto-save draft) on 2026-04-08, including migration 073 (grid_rows/grid_cols). Test coverage for migration 073 added this iteration.
+
+**Result:** 1121 tests passing, 0 errors, 0 warnings.
+
+**Iteration deltas:**
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| Tests passing | 1118 | 1121 | +3 |
+| Compile errors | 0 | 0 | = |
+| Security issues (active) | 3 | 2 | -1 (DIS-014 closed) |
+| Schema version accuracy | Stale (61/74) | Correct (74/74) | ✅ |
+| Active Xcode prompts | 2 (PE-040/PE-041) | 0 | -2 (both completed by page-rebuild-enforcer) |
 

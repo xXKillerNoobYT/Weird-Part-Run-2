@@ -20,56 +20,55 @@
 
 ## Pending Questions
 
-> Added 2026-04-06 (dev-pipeline-manager run 13): 2 design questions for GitHub issues #22 and #36 that have been open without plans.
-
 ---
 
-### GitHub #22 — Warehouse Setup Wizard: Unit Layout Assumptions
+### PricingOverrideFlow — Retroactive Plan for Unplanned 616-Line Feature
 
-**Issue:** `Warehouse Setup Wizard assumes all items on Row 1` (filed 2026-04-04)
-**Current State:** `WizardStepPlacement.swift` has a tap-to-place grid where the user taps cells to assign storage units to floor plan positions. The wizard currently does not pre-fill any positions — it starts with an empty grid. The plan (`docs/plans/ios-warehouse-setup-redesign.md`) describes drag-and-drop placement as "remaining" work.
-**Proposed Change:** Before writing a prompt, need to understand what layout input is actually needed and what "Row 1" assumption means in practice.
-**Affected Modules:** Warehouse (WizardStepPlacement.swift, WarehouseService)
+**GitHub Issue:** `#133`
+**Current State:** `PricingOverrideFlow.swift` (616 lines) exists and is wired into `PartsPricingPage.swift:592` as `PricingTierSetSheet`. It implements a 6-state multi-step sheet (selectLevel → selectEntity → setPrice → preview → resolveConflicts → done) that lets an admin set a price at any hierarchy level (Category / Sub-category / Part Type / Brand / Color) with conflict resolution. This file was **never in any plan** and was not requested — it appeared as an unplanned addition alongside PE-029 (CascadePriceEditSheet).
+**Proposed Change:** Three options: **(A)** Write a retroactive plan for it (officially adopt it as a known feature), **(B)** Remove it (it's unused until wired into the UI more broadly), or **(C)** Keep it as a zero-plan file (carry technical debt, no owner intent documented).
+**Affected Modules:** Parts → Pricing
 
 #### Questions:
 
-1. **As the Owner:** When you set up the warehouse wizard, what do you mean by "assumes all items on Row 1"? Is it that the wizard pre-fills all units into the first row instead of letting you drag them into position? Or is there a different behavior you've observed?
-   > Answer: Yes — the wizard pre-fills all units into Row 1 instead of leaving them unplaced. That is the bug.
+1. **As the Owner:** Do you want to keep `PricingOverrideFlow.swift` (hierarchy-level bulk price setter) as a real feature? It lets you set a price at category or brand level and push it down to all items below — a "price sweep" capability. Is that something you need, or was this added speculatively?
+   > Answer: _pending_
 
-2. **As an Owner/Designer:** What should the ideal layout input look like? Should the user type in the number of rows and columns first (e.g., "my warehouse is 3 rows × 5 columns"), then drag units into that grid? Or should it auto-calculate a reasonable layout from the count of units?
-   > Answer: Dimensions first. User enters rows × cols (e.g. 3×5), then drags units into that explicit grid. Do not auto-calculate.
+2. **As the Owner:** If keeping it — should the plan be extended to describe when and where this is accessible? (E.g., only admins on the Pricing page, or also in the category tree editor?) Or do you want it removed until a proper design is done?
+   > Answer: _pending_
 
-3. **As a Developer:** The current `WizardStepPlacement.swift` already has a tap-to-place grid with dynamic rows/columns. Is PE-030 (warehouse setup redesign prompt) still needed, or is the grid functional enough and #22 is a different/specific bug in that grid?
-   > Answer: PE-030 (or a successor prompt) is still needed. Tap-to-place is insufficient — the redesign must implement dimensions-first input followed by true drag-and-drop placement. Tap-to-place becomes legacy.
+3. **As a Developer:** `PricingTierSetSheet` is wired in but the conflict resolution step (`resolveConflicts` state) has no tests. If we're keeping this, should coverage be added before it's used more broadly?
+   > Answer: _pending_
 
 **Slots to fill:**
-- [ ] What "assumes Row 1" means specifically — bug or design gap?
-- [ ] Whether drag-and-drop is still needed or tap-to-place is acceptable
-- [ ] What happens to the current tap-to-place grid if this changes
+- [ ] Keep, remove, or defer?
+- [ ] If keep: scope (where accessible, who can use it)
+- [ ] If keep: test coverage requirement
 
 ---
 
-### GitHub #36 — Receiving Session: Back Button Discards Work
+### Cart Mode — WarehouseService Missing Service Methods (PE-030 follow-on)
 
-**Issue:** `Receiving back button discards work with no confirmation` (filed 2026-04-04)
-**Current State:** `IOSReceivingSessionPage.swift` (or related receiving flow) allows the user to navigate back while a receiving session is in progress, discarding all scanned quantities without warning. This is a data-loss risk.
-**Proposed Change:** Add a confirmation dialog when the user taps Back or swipes to dismiss during an active receiving session. The dialog should offer: "Save Draft", "Discard Changes", "Cancel".
-**Affected Modules:** Warehouse receiving flow
+**GitHub Issue:** `#138`
+**Current State:** `docs/plans/ios-warehouse-setup-redesign.md` describes a "Moving Cart Mode" where a worker loads multiple bins into a virtual cart and then specifies a single destination for all of them. The plan calls for two WarehouseService methods: `saveUnitPlacement(unitId:row:col:zoneId:)` and `moveBinsToArea(binIds:[Int64], targetAreaId:Int64)`. **Neither method exists in WarehouseService.swift.** The drag-and-drop floor plan (PE-040 ✅) is done, but Cart Mode is a separate unimplemented flow.
+**Proposed Change:** Build the two missing service methods + the Cart mode UI flow (tap to add bins to cart → Place Cart → specify destination → bulk move all).
+**Affected Modules:** Warehouse → Setup + Movements
 
 #### Questions:
 
-1. **As the Owner:** During receiving, if a worker accidentally taps Back, should their scanned quantities be auto-saved as a draft (so they can resume), or just confirmed before discarding? Is a simple "Are you sure? Your scanned quantities will be lost" dialog enough, or do you need a save-and-resume capability?
-   > Answer: Auto-save draft + resume. Silent draft persistence on any dismiss (Back tap, swipe, app backgrounding). No confirm dialog needed if drafts are reliable. User can resume from where they left off.
+1. **As the Owner:** Is Cart Mode a priority right now? It's designed for moving many bins at once during initial warehouse setup (e.g., "I just received 20 boxes, assign them all to Zone A"). Is that a workflow you actively need, or can it wait?
+   > Answer: _pending_
 
-2. **As an Employee (warehouse):** How often does the Back button get accidentally tapped during receiving? Is this a real pain point, or just a theoretical risk?
-   > Answer: Real, recurring pain — happens regularly in the field. High priority.
+2. **As a Manager:** In day-to-day use, how often would workers need to move multiple bins to the same destination vs. moving them one at a time? This helps decide whether Cart Mode is worth the implementation effort now.
+   > Answer: _pending_
+
+3. **As a Developer:** `moveBinsToArea` would need to create individual `stock_movements` records for each bin, or a batch movement record. Given the current movements schema, do you want: **(A)** one movement record per bin (auditable but verbose), or **(B)** a single batch movement record referencing all bin IDs?
+   > Answer: _pending_
 
 **Slots to fill:**
-- [ ] Confirm/discard only, or save-draft-and-resume?
-- [ ] Which file handles the receiving session dismiss gesture
-
----
-
+- [ ] Priority: build now vs. defer to PE-030b
+- [ ] Batch vs. per-bin movement records
+- [ ] Whether Cart Mode UI lives inside the warehouse wizard or as a standalone action
 
 ---
 

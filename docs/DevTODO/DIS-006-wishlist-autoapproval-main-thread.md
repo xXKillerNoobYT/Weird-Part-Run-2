@@ -2,8 +2,8 @@
 source: dev-improvement-scanner (2026-04-04)
 severity: High
 category: Performance — Main Thread Blocking
-status: partial — core fixed 2026-04-04
-github_issue: PENDING (gh not available, file manually)
+status: CLOSED — fully fixed 2026-04-07 (dev-improvement-scanner run 10)
+github_issue: "#134 — filed + auto-closed 2026-04-07"
 ---
 
 # DIS-006: WishlistService.processAutoApprovals() Blocks Main Thread

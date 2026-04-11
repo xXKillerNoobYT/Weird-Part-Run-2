@@ -107,3 +107,15 @@ Xcode prompt: `PE-030-warehouse-setup-redesign.md` (COMPLEX — will need sub-pr
 
 ## Priority
 Medium — app is usable without it. No blocking current workflows. Plan for Phase 3.5 of iOS page rebuild.
+
+---
+
+## Q&A Decisions Applied (GitHub #22 — 2026-04-08)
+
+These answers were provided by the owner and are now locked design decisions:
+
+1. **"Assumes Row 1" confirmed as bug** — wizard pre-fills all units into Row 1 instead of leaving them unplaced for manual drag-and-drop.
+2. **Dimensions-first design chosen** — user enters explicit rows × cols (e.g., 3×5) before seeing the grid. Do NOT auto-calculate from unit count.
+3. **True drag-and-drop required** — tap-to-place becomes legacy. `WizardStepPlacement.swift` must be rewritten to implement iOS drag-and-drop using DragGesture/DropDelegate or `.dropDestination(for:)`.
+
+**Xcode Prompt:** `xcode-ai/fix-prompts/PE-040-warehouse-wizard-dragdrop-placement.md`

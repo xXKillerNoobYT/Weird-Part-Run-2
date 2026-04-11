@@ -19,7 +19,24 @@
 - **Read CLAUDE.md first** for project standards and architecture rules.
 - **Read the plan file** referenced in the prompt for design context.
 
-## Prompt Order (work top to bottom)
+## ⬇️ NEXT PROMPT (Phase 3 — 2026-04-08)
+
+**No active prompts in queue.** PE-041 and PE-040 were completed directly (page-rebuild-enforcer 2026-04-08).
+
+Waiting for new prompts from dev-pipeline-manager (10AM) or owner Q&A responses.
+
+---
+
+## Phase 3 Active Queue (work these in order)
+
+| # | Prompt File | What It Fixes | Status |
+|---|-------------|---------------|--------|
+| 1 | `PE-041-receiving-auto-save-draft.md` | Receiving qty auto-saved on change; remove discard dialog (GitHub #36) | ✅ DONE 2026-04-08 |
+| 2 | `PE-040-warehouse-wizard-dragdrop-placement.md` | WizardStepPlacement: dimensions form + drag-and-drop (GitHub #22) | ✅ DONE 2026-04-08 |
+
+---
+
+## Phase 1 + Phase 2 Prompt History (archived)
 
 ### Tier 0: Critical Fixes (do first)
 1. `34A-ui-quality-audit.md`

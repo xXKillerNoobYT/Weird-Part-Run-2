@@ -7,8 +7,8 @@
 
 ---
 
-## Current Page: Fix Queue Drain (all 44 pages complete — working through PE queue)
-## Status: PASS — 44/44 pages complete, fix queue 3/4 items resolved
+## Current Page: Fix Queue Drain (all 44 pages complete — PE queue now empty)
+## Status: PASS — 44/44 pages complete, fix queue 5/5 items resolved
 
 ---
 
@@ -121,3 +121,4 @@ _Legend: ? = Not started, 🔄 = In Progress, ✅ = Pass, ❌ = Blocked_
 | 2026-04-04 | Tier 6: Tools (3 pages), Settings, Reports, QR, First-Time Use, JPO List | 0 | 0 | ✅ (970) | ✅ |
 | 2026-04-05 | Tier 7: Standard Filter Bar, Help Button, Save & Exit Patterns | 5 | 5 | ✅ (1014) | ✅ |
 | 2026-04-06 | Fix queue drain: PE-036 verified (WarehouseOnboardingWizard already done), PE-038 (JobStageProgressBar font→Dynamic Type), PE-039 partial (PartsFlowWizard DB loop→Task{}+isSaving) | 2 | 2 | ✅ (1030) | ✅ |
+| 2026-04-08 | Fix queue drain: PE-041 (receiving auto-save draft: all qty mutations → updateSessionItem Task{}, restore from DB on resume, discard dialog removed), PE-040 (WizardStepPlacement rewrite: Phase A dimensions form + migration 073 + updateFloorPlanGrid, Phase B drag-and-drop via .onDrag/.dropDestination) | 2 | 2 | ✅ (1118) | ✅ |

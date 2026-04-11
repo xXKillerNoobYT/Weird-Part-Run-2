@@ -3,7 +3,7 @@ source: dev-improvement-scanner (2026-04-06)
 severity: Medium
 category: Security — PIN Hashing Strength
 status: open
-github_issue: PENDING — needs manual filing (gh unavailable in scheduled run 2026-04-06)
+github_issue: "#130 — filed 2026-04-07 (plan-enforcer run 8)"
 ---
 
 # DIS-012: PIN Hashing Uses Iterated SHA-256, Not a Memory-Hard KDF

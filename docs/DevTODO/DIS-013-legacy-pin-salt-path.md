@@ -3,7 +3,7 @@ source: dev-improvement-scanner (2026-04-06)
 severity: Medium
 category: Security — Legacy PIN Verification Path
 status: open
-github_issue: PENDING — needs manual filing (gh unavailable in scheduled run 2026-04-06)
+github_issue: "#131 — filed 2026-04-07 (plan-enforcer run 8)"
 ---
 
 # DIS-013: Legacy Single-Salt PIN Hash Path Permanently Reachable
