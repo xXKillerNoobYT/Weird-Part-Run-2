@@ -1,6 +1,6 @@
 # WiredPart Development Pipeline
 
-> **Last updated:** 2026-04-10 (github-issues-sync run — **4 issues closed:** #135 (CompanySetupWizard draft auto-save now logs via OSLog), #136 (findOrCreateDefaultSectionId now throws instead of try?), #137 (autoSaveToJobNotebook logs via OSLog on failure), #140/DIS-016 (all 7 `?? 1` write-path guards applied). **Cart Mode service layer done:** `moveBinsToArea` + `saveUnitPlacement` added to WarehouseService (commit 71aa8bf), 3 new tests (1165 total). **PE-042** Xcode prompt created for Cart Mode UI. **GitHub #138** service comment posted. Tests: 1165/1165 passing.)
+> **Last updated:** 2026-04-10 (github-issues-sync run — **10 issues closed:** #115 #116 #117 #119 #120 (wizard/page usability — already fixed by PE-035/036/039), #135 #136 #137 (silent failures — OSLog + throws fix), #140/DIS-016 (all 7 `?? 1` guards). **Cart Mode service:** `moveBinsToArea` + `saveUnitPlacement` added (commit 71aa8bf). PE-042 Xcode prompt queued. Tests: 1165/1165 passing. ~59 issues open.)
 > **Auto-maintained by:** dev-pipeline-manager (orchestrator)
 
 ---
@@ -36,7 +36,7 @@ Every feature, bug, or improvement follows this cycle:
 | Plan Alignment | **plan-enforcer run 11** (2026-04-10): DIS-015 write-path fixes verified. QRScannerAdapter SQL confirmed. Cart Mode service gap (#138) now partially resolved — service done, UI pending PE-042. | 2026-04-10 |
 | Feature Polish | **0 active DevTODOs.** DIS-016 ✅ CLOSED. DIS-015 ✅ CLOSED. DIS-014 ✅ CLOSED. DIS-012/013 still blocked on KDF decision. 1 active Xcode prompt: PE-042 (Cart Mode UI). | 2026-04-10 |
 | Xcode Prompts | **1 active: PE-042** (Cart Mode UI — `xcode-ai/fix-prompts/PE-042-cart-mode-ui.md`). Service layer done. | 2026-04-10 |
-| GitHub Issues | **~69 open** — #140 ✅ CLOSED (DIS-016). #139 ✅ CLOSED (DIS-015). #135 ✅ CLOSED (CompanySetupWizard). #136 ✅ CLOSED (NotebookDetailPage). #137 ✅ CLOSED (MessageThreadView). Open: #138 (Cart Mode — service done, UI pending), #133 (PricingOverrideFlow no plan). Security: #130 (PIN KDF), #131 (legacy salt). Systemic: #121-#123, #128-#129. Program-review: #67-#95. | 2026-04-10 |
+| GitHub Issues | **~59 open** — This run: #115 #116 #117 #119 #120 #135 #136 #137 #140 all CLOSED (10 total). Open bugs: #138 (Cart Mode UI pending PE-042), #133 (PricingOverrideFlow), #130-#131 (KDF security). Systemic: #121-#123, #128-#129. Program-review: #67-#95. | 2026-04-10 |
 | Q&A Backlog | **2 pending** — DIS-012/013 (PIN KDF, blocked), #133 (PricingOverrideFlow plan — keep/remove?). | 2026-04-10 |
 | Working Tree | ✅ Clean — all changes committed in 3 commits (46ceab5, 42b61e4, 71aa8bf). | 2026-04-10 |
 | Agent Health | All 8 agents enabled | 2026-04-08 |
