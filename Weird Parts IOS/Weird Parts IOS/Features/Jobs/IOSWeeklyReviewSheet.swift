@@ -333,7 +333,11 @@ struct IOSWeeklyReviewSheet: View {
             reviewNotes += "\n\(trimmedNotes)"
         }
 
-        let userId = appCore.currentUser?.id ?? 0
+        guard let userId = appCore.currentUser?.id else {
+            submitError = "Not logged in. Please log in and try again."
+            isSubmitting = false
+            return
+        }
 
         do {
             try estimationService.submitWeeklyReview(

@@ -1035,12 +1035,12 @@ struct ReceivingRoutingFlow: View {
         routingError = nil
 
         do {
-            guard let service = appCore.warehouseService else {
-                routingError = "Warehouse service unavailable"
+            guard let service = appCore.warehouseService,
+                  let userId = appCore.currentUser?.id else {
+                routingError = appCore.currentUser == nil ? "Not logged in. Please log in and try again." : "Warehouse service unavailable"
                 isProcessing = false
                 return
             }
-            let userId = appCore.currentUser?.id ?? 0
             try service.stageReceivedPartsForJob(
                 partId: partId,
                 qty: receivedQty,
@@ -1064,12 +1064,12 @@ struct ReceivingRoutingFlow: View {
         routingError = nil
 
         do {
-            guard let service = appCore.warehouseService else {
-                routingError = "Warehouse service unavailable"
+            guard let service = appCore.warehouseService,
+                  let userId = appCore.currentUser?.id else {
+                routingError = appCore.currentUser == nil ? "Not logged in. Please log in and try again." : "Warehouse service unavailable"
                 isProcessing = false
                 return
             }
-            let userId = appCore.currentUser?.id ?? 0
             let qtyToStage = min(receivedQty, demand.qtyNeeded)
             try service.stageReceivedPartsForJob(
                 partId: partId,
@@ -1095,12 +1095,12 @@ struct ReceivingRoutingFlow: View {
         routingError = nil
 
         do {
-            guard let service = appCore.warehouseService else {
-                routingError = "Warehouse service unavailable"
+            guard let service = appCore.warehouseService,
+                  let userId = appCore.currentUser?.id else {
+                routingError = appCore.currentUser == nil ? "Not logged in. Please log in and try again." : "Warehouse service unavailable"
                 isProcessing = false
                 return
             }
-            let userId = appCore.currentUser?.id ?? 0
             try service.returnDamagedToSupplier(
                 partId: partId,
                 qty: receivedQty,
@@ -1124,12 +1124,12 @@ struct ReceivingRoutingFlow: View {
         routingError = nil
 
         do {
-            guard let service = appCore.warehouseService else {
-                routingError = "Warehouse service unavailable"
+            guard let service = appCore.warehouseService,
+                  let userId = appCore.currentUser?.id else {
+                routingError = appCore.currentUser == nil ? "Not logged in. Please log in and try again." : "Warehouse service unavailable"
                 isProcessing = false
                 return
             }
-            let userId = appCore.currentUser?.id ?? 0
             try service.writeOffReceivedPart(
                 partId: partId,
                 qty: receivedQty,

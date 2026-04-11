@@ -326,15 +326,16 @@ struct IOSAuditSummaryView: View {
 
     private func resolveMultiUserAudit() {
         guard let service = appCore.warehouseService,
-              let part = partToResolve else {
-            actionError = "Service not available"
+              let part = partToResolve,
+              let userId = appCore.currentUser?.id else {
+            actionError = appCore.currentUser == nil ? "Not logged in. Please log in and try again." : "Service not available"
             return
         }
         do {
             let result = try service.resolveMultiUserAudit(
                 partId: part.partId,
                 sessionId: sessionId,
-                resolvedBy: appCore.currentUser?.id ?? 0
+                resolvedBy: userId
             )
             if result == nil {
                 actionError = "No consensus could be reached. Ensure all users have submitted their counts."
@@ -443,6 +444,7 @@ private struct AdjustDiscrepancySheet: View {
             .onAppear {
                 newQty = discrepancy.countedQty
             }
+            .interactiveDismissDisabled(isSaving)
         }
     }
 
@@ -465,7 +467,7 @@ private struct AdjustDiscrepancySheet: View {
             onAdjust()
             dismiss()
         } catch {
-            errorMessage = userFriendlyError(error, context: "load audit summary")
+            errorMessage = userFriendlyError(error, context: "adjust audit count")
         }
         isSaving = false
     }

@@ -339,8 +339,11 @@ private struct AddContractorNoteSheet: View {
             errorMessage = "Service unavailable"
             return
         }
+        guard let userId = appCore.currentUser?.id else {
+            errorMessage = "Not logged in. Please log in and try again."
+            return
+        }
         do {
-            let userId = appCore.currentUser?.id ?? 1
             try service.addContractorNote(
                 contractorId: contractorId,
                 content: content.trimmingCharacters(in: .whitespaces),

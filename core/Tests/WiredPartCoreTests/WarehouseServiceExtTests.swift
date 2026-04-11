@@ -640,4 +640,191 @@ struct WarehouseServiceExtTests {
             #expect(first.unitPrice == 12.50)
         }
     }
+
+    // MARK: - Audit Sessions
+
+    @Test("createAuditSession returns a valid session ID")
+    func testCreateAuditSession() throws {
+        let env = try E2ETestHelpers.setUp()
+        let sessionId = try env.warehouse.createAuditSession(
+            scope: "full",
+            zone: "Zone A",
+            sampleSize: 50,
+            includeZeroStock: false,
+            notes: "Monthly audit",
+            userId: env.adminUserId
+        )
+        #expect(sessionId > 0)
+    }
+
+    @Test("createAuditSession with no zone or sample size")
+    func testCreateAuditSessionMinimal() throws {
+        let env = try E2ETestHelpers.setUp()
+        let sessionId = try env.warehouse.createAuditSession(
+            scope: "spot",
+            zone: nil,
+            sampleSize: nil,
+            includeZeroStock: true,
+            notes: nil,
+            userId: env.adminUserId
+        )
+        #expect(sessionId > 0)
+    }
+
+    // MARK: - Receiving: Stage / Write-Off / Supplier Return
+
+    @Test("stageReceivedPartsForJob creates a receiving_staged movement")
+    func testStageReceivedPartsForJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        let movementId = try env.warehouse.stageReceivedPartsForJob(
+            partId: partId,
+            qty: 10,
+            jobId: jobId,
+            performedBy: env.adminUserId,
+            notes: "Staged for panel job"
+        )
+        #expect(movementId > 0)
+
+        // Verify the movement record exists with the correct type
+        let movements = try env.warehouse.listMovements(limit: 10)
+        let staged = movements.first { $0.movementType == "receiving_staged" }
+        #expect(staged != nil)
+    }
+
+    @Test("writeOffReceivedPart creates a write_off movement")
+    func testWriteOffReceivedPart() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let movementId = try env.warehouse.writeOffReceivedPart(
+            partId: partId,
+            qty: 3,
+            reason: "Arrived damaged",
+            performedBy: env.adminUserId,
+            notes: "Box was crushed"
+        )
+        #expect(movementId > 0)
+
+        let movements = try env.warehouse.listMovements(limit: 10)
+        let writeOff = movements.first { $0.movementType == "write_off" }
+        #expect(writeOff != nil)
+    }
+
+    @Test("returnDamagedToSupplier creates a return_to_supplier movement")
+    func testReturnDamagedToSupplier() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let movementId = try env.warehouse.returnDamagedToSupplier(
+            partId: partId,
+            qty: 2,
+            returnType: "replacement",
+            performedBy: env.adminUserId,
+            notes: "Defective batch"
+        )
+        #expect(movementId > 0)
+
+        let movements = try env.warehouse.listMovements(limit: 10)
+        let returned = movements.first { $0.movementType == "return_to_supplier" }
+        #expect(returned != nil)
+    }
+
+    @Test("returnDamagedToSupplier with refund type")
+    func testReturnDamagedToSupplierRefund() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let movementId = try env.warehouse.returnDamagedToSupplier(
+            partId: partId,
+            qty: 1,
+            returnType: "refund",
+            performedBy: env.adminUserId
+        )
+        #expect(movementId > 0)
+    }
+
+    // MARK: - Storage Hierarchy: createStorageUnit, deleteStorageLevel, deleteStorageArea, assignPartToBin
+
+    @Test("createStorageUnit builds full hierarchy with levels and areas")
+    func testCreateStorageUnit() throws {
+        let env = try E2ETestHelpers.setUp()
+        let plan = try env.warehouse.createFloorPlan(name: "Main WH", widthInches: 400, lengthInches: 300)
+
+        let unit = try env.warehouse.createStorageUnit(
+            floorPlanId: plan.id!,
+            name: "Rack A",
+            unitType: "rack",
+            levels: 3,
+            areasPerLevel: 4
+        )
+        #expect(unit.id != nil)
+
+        // Verify levels were created
+        let levels = try env.warehouse.listLevelsForUnit(unitId: unit.id!)
+        #expect(levels.count == 3)
+
+        // Verify areas under the first level
+        let areas = try env.warehouse.listAreasForLevel(levelId: levels[0].id!)
+        #expect(areas.count == 4)
+    }
+
+    @Test("deleteStorageLevel soft-deletes the level")
+    func testDeleteStorageLevel() throws {
+        let env = try E2ETestHelpers.setUp()
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 200, lengthInches: 200)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "S1", unitType: "shelf")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "L1")
+
+        let levelsBefore = try env.warehouse.listLevelsForUnit(unitId: unit.id!)
+        #expect(levelsBefore.count == 1)
+
+        try env.warehouse.deleteStorageLevel(id: level.id!)
+
+        let levelsAfter = try env.warehouse.listLevelsForUnit(unitId: unit.id!)
+        #expect(levelsAfter.isEmpty)
+    }
+
+    @Test("deleteStorageArea soft-deletes the area")
+    func testDeleteStorageArea() throws {
+        let env = try E2ETestHelpers.setUp()
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 200, lengthInches: 200)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "S1", unitType: "shelf")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "L1")
+        let area = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 1)
+
+        let areasBefore = try env.warehouse.listAreasForLevel(levelId: level.id!)
+        #expect(areasBefore.count == 1)
+
+        try env.warehouse.deleteStorageArea(id: area.id!)
+
+        let areasAfter = try env.warehouse.listAreasForLevel(levelId: level.id!)
+        #expect(areasAfter.isEmpty)
+    }
+
+    @Test("assignPartToBin links a part to a bin")
+    func testAssignPartToBin() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 200, lengthInches: 200)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "S1", unitType: "shelf")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "L1")
+        let area = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 1)
+        let bin = try env.warehouse.addBin(areaId: area.id!, binNumber: 1)
+
+        try env.warehouse.assignPartToBin(binId: bin.id!, partId: partId)
+
+        // Verify the assignment by reading the bin
+        let bins = try env.warehouse.listBinsForArea(areaId: area.id!)
+        let updatedBin = bins.first { $0.id == bin.id }
+        #expect(updatedBin?.assignedPartId == partId)
+    }
 }

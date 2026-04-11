@@ -199,6 +199,10 @@ struct IOSAuditSetupView: View {
             errorMessage = "Warehouse service not available"
             return
         }
+        guard let userId = appCore.currentUser?.id else {
+            errorMessage = "Not logged in. Please log in and try again."
+            return
+        }
         isSaving = true
         errorMessage = nil
         do {
@@ -208,7 +212,7 @@ struct IOSAuditSetupView: View {
                 sampleSize: auditScope == .spotCheck ? spotCheckCount : nil,
                 includeZeroStock: includeZeroStock,
                 notes: notes.isEmpty ? nil : notes,
-                userId: appCore.currentUser?.id ?? 1
+                userId: userId
             )
             onAuditCreated?(sessionId)
             dismiss()

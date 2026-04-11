@@ -2,8 +2,8 @@
 source: dev-improvement-scanner (2026-04-09)
 severity: Medium
 category: Code Quality — Hardcoded User ID Fallback
-status: open
-github_issue: "#139 — filed 2026-04-09 (dev-improvement-scanner run 11)"
+status: partially-fixed — write paths resolved 2026-04-10 (hunt-fix-verify run 36)
+github_issue: "#139 — filed 2026-04-09, write-path fix comment posted 2026-04-10"
 ---
 
 # DIS-015: `currentUser?.id ?? 0` Anti-Pattern in Write Operations
@@ -18,16 +18,21 @@ anti-pattern rule (feedback_hardcoded_user_ids.md) explicitly forbids this.
 **Already fixed:** `IOSReceiveShipmentPage.swift:922` — `completeSession(completedBy:)` now
 uses `guard let userId = appCore.currentUser?.id else { actionError = ...; return }`.
 
-## Remaining Locations
+## Fixed (hunt-fix-verify run 36, 2026-04-10)
+
+| File | Line | Status |
+|------|------|--------|
+| `Features/Jobs/IOSWeeklyReviewSheet.swift` | 336 | ✅ Fixed — `guard let userId` with `submitError` display |
+| `Features/Warehouse/IOSAuditSummaryView.swift` | 337 | ✅ Fixed — merged into existing guard block |
+| `Features/Warehouse/ReceivingRoutingFlow.swift` | 1043, 1072, 1103, 1132 | ✅ Fixed — all 4 routing writes use guard, ternary error message |
+
+## Remaining Locations (read-only — acceptable)
 
 | File | Line | Write Operation |
 |------|------|-----------------|
-| `AI/IOSAIAssistantPanel.swift` | 546 | AI session/history query (passes userId) |
-| `Features/Scheduling/IOSFlexPoolPage.swift` | 34 | Load flex pool items (read — low risk) |
-| `Features/Jobs/IOSWeeklyReviewSheet.swift` | 336 | Submit weekly review |
-| `Features/Warehouse/ReceivingRoutingFlow.swift` | 1043, 1072, 1103, 1132 | 4 routing decision writes (createdBy) |
-| `Features/Warehouse/IOSAuditSummaryView.swift` | 337 | Resolve audit discrepancy (resolvedBy:) |
-| `Features/Parts/PartsCompanionsPage.swift` | 872 | Companion vote/action |
+| `AI/IOSAIAssistantPanel.swift` | 546 | AI session/history query — read, returns empty if uid=0 |
+| `Features/Scheduling/IOSFlexPoolPage.swift` | 34 | Load flex pool items — read, returns empty list |
+| `Features/Parts/PartsCompanionsPage.swift` | 872 | `getActivePolls`/`getLastWeekResults` — read, returns empty |
 
 ## Suggested Fix (per file)
 

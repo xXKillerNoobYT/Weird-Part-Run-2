@@ -488,4 +488,65 @@ struct DashboardServiceTests {
         let snap = try dash.getFinancialSnapshot()
         #expect(snap.outstandingPOValue >= 500.0)
     }
+
+    // MARK: - processQRScan
+
+    @Test("processQRScan with empty string returns invalid source")
+    func testProcessQRScanInvalid() throws {
+        let (_, dash) = try freshEnv()
+        // Empty string is the one case QRCodec explicitly marks as invalid
+        let result = try dash.processQRScan("")
+        #expect(result.source == .invalid)
+        #expect(result.entityId == nil)
+    }
+
+    @Test("processQRScan with unrecognized string returns external source")
+    func testProcessQRScanUnrecognized() throws {
+        let (_, dash) = try freshEnv()
+        // Non-WiredPart strings are treated as external barcodes, not invalid
+        let result = try dash.processQRScan("not-a-valid-qr-code-!!!###")
+        #expect(result.source == .external)
+        #expect(result.entityId == nil)
+    }
+
+    @Test("processQRScan with V2 part QR finds the part")
+    func testProcessQRScanV2Part() throws {
+        let (env, dash) = try freshEnv()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        // Encode a V2 part QR and scan it through the dashboard
+        let payload = QRPayload(type: .part, id: partId, code: "P-\(partId)", meta: nil)
+        let qrString = try QRCodec.encode(payload)
+
+        let result = try dash.processQRScan(qrString)
+        #expect(result.source == .wiredPartV2)
+        #expect(result.entityType == .part)
+        #expect(result.entityId == partId)
+        #expect(result.isFound)
+    }
+
+    @Test("processQRScan with V2 QR for non-existent entity returns not_found")
+    func testProcessQRScanPartNotFound() throws {
+        let (_, dash) = try freshEnv()
+
+        // Encode a QR for a part ID that does not exist
+        let payload = QRPayload(type: .part, id: 99999, code: "GHOST", meta: nil)
+        let qrString = try QRCodec.encode(payload)
+
+        let result = try dash.processQRScan(qrString)
+        #expect(result.source == .wiredPartV2)
+        #expect(!result.isFound)
+        #expect(result.fields["_status"] == "not_found")
+    }
+
+    @Test("processQRScan with plain barcode searches catalog as external code")
+    func testProcessQRScanExternalCode() throws {
+        let (_, dash) = try freshEnv()
+        // A plain non-JSON string is treated as an external code
+        let result = try dash.processQRScan("BARCODE-ABC123")
+        #expect(result.source == .external)
+        // No matching part in DB → not found
+        #expect(!result.isFound)
+    }
 }

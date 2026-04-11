@@ -1,14 +1,19 @@
 # Hunt-Fix-Verify Loop Tracker
 
 > **Started:** 2026-03-28
-> **Status:** PHASE 1 COMPLETE — 35 iterations, 122 bugs fixed. Latest: hunt-fix-verify run 35 (2026-04-09) — **1 direct core fix:** `OrdersService.smartRouteJPOLine` signature changed to accept `userId: Int64?` (was `Int64`), and `addJPOLineItem` call updated from `userId ?? 0` to `userId` directly — writes NULL instead of 0 for system-triggered routing. **1 new test:** `testSmartRouteNilUserIdWritesNull` (proves NULL stored, not 0). **1 GitHub issue closed:** #134 (WishlistService auto-approvals) — fix verified in code, issue description confirmed fix landed 2026-04-07.
+> **Status:** PHASE 1 COMPLETE — 37 iterations, 135 bugs fixed. Latest: **page-rebuild-enforcer run (2026-04-10):** **DIS-016 FIXED** — all 7 `currentUser?.id ?? 1` write-path anti-patterns replaced with proper `guard let userId` guards across IOSMessageThreadView (used captured userId from outer guard), IOSCustomerDetailPage ×2 (addCommunicationEntry + createPaymentRecord), IOSContractorDetailPage (addContractorNote), IOSProcurementPage (pullFromWarehouse), IOSNotebookDetailPage (createBlockEntry), IOSAuditSetupView (createAuditSession). **GitHub #140 CLOSED.** DevTODO marked fixed. `?? 1` pattern confirmed eliminated (grep returns 0 results). All **1162** tests passing.
+> **test-coverage-maintenance run (2026-04-10):** +20 tests (1142 → 1162). **New methods covered:** `createAuditSession` (×2), `stageReceivedPartsForJob`, `writeOffReceivedPart`, `returnDamagedToSupplier` (×2), `createStorageUnit`, `deleteStorageLevel`, `deleteStorageArea`, `assignPartToBin` (WarehouseService); `holdJPOLineWithChat` (×2), `generatePOsFromProcurement` (×3 — two-supplier split, same-supplier merge, empty) (OrdersService); `processQRScan` (×5 — invalid/empty, V2 found, V2 not-found, external code, unrecognized) (DashboardService). **1 production bug fixed:** `QRScannerAdapter.searchCatalog` was referencing non-existent `sku`/`barcode` columns on `parts` table — corrected to `code`/`manufacturer_part_number`. All **1162** tests passing.
+> **hunt-fix-verify run 36 (2026-04-10):** **6 iOS write-path DIS-015 fixes** across `IOSWeeklyReviewSheet.swift`, `IOSAuditSummaryView.swift`, and `ReceivingRoutingFlow.swift` (4 locations). All write-path `currentUser?.id ?? 0` anti-patterns replaced with proper `guard let userId` guards. **GitHub issue #139 CLOSED.** Scanner 3 false-positive noted: `print()` inside `#Preview` blocks is not production code. **0 new tests** (iOS-layer fix, no core service change). All **1142** tests passing.
+> **hunt-fix-verify run 35 (2026-04-09):** **1 direct core fix:** `OrdersService.smartRouteJPOLine` signature changed to accept `userId: Int64?` (was `Int64`), and `addJPOLineItem` call updated from `userId ?? 0` to `userId` directly — writes NULL instead of 0 for system-triggered routing. **1 new test:** `testSmartRouteNilUserIdWritesNull` (proves NULL stored, not 0). **1 GitHub issue closed:** #134 (WishlistService auto-approvals) — fix verified in code, issue description confirmed fix landed 2026-04-07.
 > **test-coverage-maintenance run (2026-04-09):** +16 tests. **New methods covered (WarehouseService):** `updateSessionItem`, `recordScan`, `getReturnItems`, `processReturn`, `finalizeAuditSession`, `adjustAuditCount`, `recordAuditRecount`, `castConsolidationVote`, `managerOverrideConsolidation`, `applyConsolidation`, `dismissConsolidation`, `getMultiUserAuditAssignments` (×2 — empty + sessionId filter), `getMyMultiUserAuditAssignments`, `getLowConfidencePartsForVerification` (×2 — below threshold + excludes session). All **1142** tests passing.
 > **test-coverage-maintenance run (2026-04-08):** +5 tests. **New methods covered:** `updateFloorPlanGrid` (PE-040 — 3 tests: persists rows/cols, overwrites dimensions, silent no-op on missing ID); `cancelJPOLineTransfer` (2 tests: clears transfer_id, silent no-op when nil). **Code health:** 0 compile errors. All **1127** tests passing.
-> **plan-enforcer run 9 (2026-04-08):** PE-040 + PE-041 confirmed done in code. GitHub #138 filed for Cart mode plan gap. dev-pipeline.md Plan Registry updated. No new bugs found.
+> **plan-enforcer run 10 (2026-04-10):** Full plan-vs-code audit. PE-040 (`WizardStepPlacement.swift`) and PE-041 (`IOSReceiveShipmentPage.swift`) both code-verified at the call-site level — all 7 Phase A/B behaviors and all 6 qty-mutation auto-save paths confirmed. Cart mode gap (#138) re-confirmed: `moveBinsToArea`/`saveUnitPlacement` absent. 0 new bugs, 0 new drift. 24 files pending commit. Q&A: 4 pending (PricingOverrideFlow, Cart Mode, DIS-012/013). dev-pipeline.md Plan Registry updated.
 > **dev-improvement-scanner run 11 (2026-04-09):** **1 direct fix:** `IOSReceiveShipmentPage.completeReceiving()` — `currentUser?.id ?? 0` anti-pattern replaced with proper `guard let userId` + auth error (GitHub #139). **1 new DevTODO:** DIS-015 — `currentUser?.id ?? 0` in 6 remaining write operation files. **GitHub #139 filed.** Security audit: DIS-012/013 still open (KDF blocked on design decision); DIS-014 CLOSED.
-> **⚠️ NEXT PRIORITY: DIS-012/013 security items — need design decision on PIN KDF (PBKDF2 vs Argon2id) before implementation.**
-> **⚠️ Working tree has large uncommitted set — github-sync-and-review should commit PE-040/PE-041 impls + migration 073 + DIS-014 fix + DIS-015 fix + smartRouteJPOLine nil-userId fix + 6 new tests.**
+> **plan-enforcer run 11 (2026-04-10):** DIS-015 write-path fixes in 3 iOS files confirmed (IOSWeeklyReviewSheet:336, IOSAuditSummaryView:337, ReceivingRoutingFlow:1043/1072/1103/1132). QRScannerAdapter.swift SQL fix confirmed aligned to qr_plan.md schema. `ios-receiving-draft-persistence.md` + `ios-warehouse-setup-redesign.md` unchanged. qr_plan.md added to Plan Registry. No new drift. dev-pipeline.md updated. GitHub #139 confirmed CLOSED.
+> **⚠️ ALSO OPEN: DIS-012/013 security items — need design decision on PIN KDF (PBKDF2 vs Argon2id) before implementation.**
+> **⚠️ Working tree has large uncommitted set — github-sync-and-review should commit PE-040/PE-041 impls + migration 073 + DIS-014 fix + DIS-015 full write-path fix + smartRouteJPOLine nil-userId fix + QRScannerAdapter SQL fix + all new tests + DIS-016 full fix (7 files).**
 > **⚠️ Program-review GitHub issues #82–#95 — page-by-page feature rebuilds are next major work phase.**
+> **⚠️ Scanner 3 note: `print()` inside `#Preview` blocks is not production code — scanner grep produces false positives. Filter is: exclude lines where `#Preview` appears earlier in the same block.**
 
 ---
 
@@ -29,6 +34,77 @@
 ---
 
 ## Iteration Log
+
+### Iteration 37 — dev-improvement-scanner run 12 (2026-04-10)
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Force Casts (`as!`) | ✅ | 0 found in core or UI layer |
+| Force Unwraps | ✅ | No unguarded `!` on optionals in core; UI patterns use guard properly |
+| `fatalError` | ✅ | 0 found anywhere |
+| Empty catches | ✅ | 0 empty `catch { }` blocks in core or UI |
+| SQL Injection | ✅ | All dynamic SQL uses allowedFields allowlist guards (ToolsService verified) |
+| Security (UserDefaults for secrets) | ✅ | No PIN/password/token stored in UserDefaults |
+| Security (unowned references) | ✅ | 0 `unowned self` closures |
+| `print()` in production code | ✅ | All 3 instances inside `#Preview` blocks — not production code |
+| DIS-015 `?? 0` write paths | ✅ | All write paths fixed. 3 remaining read-only `?? 0` confirmed acceptable |
+| DIS-016 `?? 1` write paths | 🔴 | **NEW: 7 write-op files use `?? 1` (admin ID fallback)** — GitHub #140 filed |
+| NavigationView (deprecated) | ✅ | 0 NavigationView usages — all use NavigationStack |
+| Tap target sizes | ✅ | Small `.frame(width:)` values are all icon images inside larger buttons |
+| Tests | ✅ | 1162/1162 passing (no changes this run) |
+
+**New Bugs Found:**
+1. **DIS-016 [HIGH]** — `currentUser?.id ?? 1` in 7 write-op files. 7 locations across IOSMessageThreadView (×1), IOSCustomerDetailPage (×2), IOSContractorDetailPage (×1), IOSProcurementPage (×1), IOSNotebookDetailPage (×1), IOSAuditSetupView (×1). All pass admin user ID (1) to audit columns when user is not authenticated. GitHub #140. DevTODO at `docs/DevTODO/DIS-016-hardcoded-userid-one-fallback.md`.
+
+**Fixes Applied:** 0 (all findings are UI-layer — left for Xcode AI per workflow rules)
+
+**GitHub Issues Filed:** 1 (#140 — DIS-016)
+
+**DevTODO Files Created:** 1 (`DIS-016-hardcoded-userid-one-fallback.md`)
+
+**Tests Added:** 0
+
+---
+
+### Iteration 36 — hunt-fix-verify run 36 (2026-04-10)
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Compile | ✅ | 0 errors, 0 warnings |
+| Tests | ✅ | 1142/1142 passing (unchanged) |
+| Code Patterns | ✅ | No empty catches, no force casts, no dead buttons, no stub UI. 3 `print()` calls in `#Preview` blocks — false positives (not production code) |
+| SQL Integrity | ✅ | No new column mismatches; known patterns confirmed clean |
+| Runtime Safety | ✅ | No unguarded force unwraps, no array subscript risks |
+| Edge Cases | ✅ | No new first-launch failures |
+| Problems Folder | ✅ | `docs/Problomes/` path does not exist — folder removed/renamed; pre-existing 32 screenshots were always pre-existing backlog |
+| Master Issues | ⚠️ | #139 CLOSED. DIS-012/013 still blocked on KDF design decision; #138 cart mode open |
+| Plan Alignment | ✅ | No new drift detected |
+| Security | ✅ | No SQL injection, no hardcoded secrets; DIS-012/013 still tracked |
+
+**Fixes applied (6 iOS write paths — DIS-015 completion):**
+
+1. `IOSWeeklyReviewSheet.swift:336` — `let userId = appCore.currentUser?.id ?? 0` → `guard let userId = appCore.currentUser?.id else { submitError = "Not logged in..."; isSubmitting = false; return }`
+2. `IOSAuditSummaryView.swift:337` — `resolvedBy: appCore.currentUser?.id ?? 0` → merged `let userId = appCore.currentUser?.id` into the existing `guard let service, let part` block; now `resolvedBy: userId`
+3. `ReceivingRoutingFlow.swift:1043,1072,1103,1132` — all 4 routing write paths (`stageReceivedPartsForJob` ×2, `returnDamagedToSupplier`, `writeOffReceivedPart`) — `let userId = appCore.currentUser?.id ?? 0` removed, merged into guard block via `replace_all`; ternary error message distinguishes not-logged-in vs service-unavailable
+
+**Root cause:** Same as prior iterations — `?? 0` fallback writes a sentinel non-user-ID to `performed_by`/`resolved_by`/`reviewed_by` columns, corrupting audit trails. The `guard let userId` pattern ensures the action is only attempted when a real user session exists.
+
+**Scanner improvement noted:**
+- Scanner 3 `print()` grep produces false positives when `print()` appears inside `#Preview` blocks. These are not production code (Preview macro is stripped in release builds). Future scanner runs should note this caveat. A proper fix would require context-aware parsing, but the current grepping approach is acceptable for a scheduled scan.
+
+**GitHub issues:**
+- #139 CLOSED — all write-path `currentUser?.id ?? 0` instances fixed
+
+**Tests added:** 0 (iOS-layer fix; no core service changes — no new unit test surface)
+
+**Still open (tracked):**
+- DIS-012/013: PIN KDF upgrade — blocked on design decision (PBKDF2 vs Argon2id). GitHub #130, #131.
+- #138: Cart mode — `moveBinsToArea`/`saveUnitPlacement` not implemented. Design decision pending.
+- #122, #121, #128, #123, #129: Systemic usability issues (guard-let silences, try? swallowing, missing interactiveDismissDisabled) — require broader sweep
+
+---
 
 ### Iteration 35 — hunt-fix-verify run 35 (2026-04-09)
 

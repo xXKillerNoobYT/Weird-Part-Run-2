@@ -931,7 +931,10 @@ struct IOSProcurementPage: View {
             pullActionError = "Warehouse service not available"
             return
         }
-        let userId = appCore.currentUser?.id ?? 1
+        guard let userId = appCore.currentUser?.id else {
+            pullActionError = "Not logged in. Please log in and try again."
+            return
+        }
 
         isPulling.insert(item.id)
         defer { isPulling.remove(item.id) }

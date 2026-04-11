@@ -884,7 +884,10 @@ struct IOSNotebookDetailPage: View {
                     loadError = "No section available for panel schedule"
                     return
                 }
-                let userId = appCore.currentUser?.id ?? 1
+                guard let userId = appCore.currentUser?.id else {
+                    loadError = "Not logged in. Please log in and try again."
+                    return
+                }
                 _ = try service.createBlockEntry(
                     sectionId: sectionId,
                     blockType: "panel_schedule",

@@ -531,8 +531,11 @@ private struct AddCommunicationSheet: View {
             errorMessage = "Service unavailable"
             return
         }
+        guard let userId = appCore.currentUser?.id else {
+            errorMessage = "Not logged in. Please log in and try again."
+            return
+        }
         do {
-            let userId = appCore.currentUser?.id ?? 1
             try service.addCommunicationEntry(
                 customerId: customerId,
                 commType: commType,
@@ -603,8 +606,11 @@ private struct AddPaymentSheet: View {
         f.dateFormat = "yyyy-MM-dd"
         let dueDateStr = f.string(from: dueDate)
 
+        guard let userId = appCore.currentUser?.id else {
+            errorMessage = "Not logged in. Please log in and try again."
+            return
+        }
         do {
-            let userId = appCore.currentUser?.id ?? 1
             try service.createPaymentRecord(
                 customerId: customerId,
                 jobId: nil,

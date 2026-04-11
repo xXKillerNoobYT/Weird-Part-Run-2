@@ -164,16 +164,16 @@ public final class QRAutoFillService: Sendable {
 
     private func searchCatalog(code: String) throws -> [String: String] {
         try db.writer.read { dbConnection in
-            // Search parts by code, SKU, or barcode
+            // Search parts by code or manufacturer part number (parts table has no sku/barcode columns)
             guard let row = try Row.fetchOne(
                 dbConnection,
                 sql: """
                     SELECT * FROM parts
-                    WHERE (code = ? OR sku = ? OR barcode = ?)
+                    WHERE (code = ? OR manufacturer_part_number = ?)
                     AND deleted_at IS NULL
                     LIMIT 1
                     """,
-                arguments: [code, code, code]
+                arguments: [code, code]
             ) else {
                 return ["_status": "not_found"]
             }
@@ -198,7 +198,7 @@ public final class QRAutoFillService: Sendable {
         case .part: return "parts"
         case .job: return "jobs"
         case .supplier: return "suppliers"
-        case .bin: return "bin_locations"
+        case .bin: return "warehouse_bins"
         case .vehicle: return "vehicles"
         case .tool: return "tools"
         case .employee: return "users"

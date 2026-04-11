@@ -739,4 +739,119 @@ struct OrdersServiceTests {
         }
         #expect(currentStageId == finalStageId)
     }
+
+    // MARK: - holdJPOLineWithChat
+
+    @Test("holdJPOLineWithChat creates chat channel and sends first message")
+    func testHoldJPOLineWithChat() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 5, notes: nil)
+
+        let channelId = try env.orders.holdJPOLineWithChat(
+            lineId: lineId,
+            holdReason: "Awaiting price approval",
+            userId: env.adminUserId,
+            partName: "Test Wire",
+            jpoId: jpoId
+        )
+        #expect(channelId > 0)
+
+        // Verify the chat channel was created
+        let channelCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM chat_channels WHERE id = ?", arguments: [channelId]) ?? 0
+        }
+        #expect(channelCount == 1)
+
+        // Verify the first message was posted with the hold reason
+        let messageCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM chat_messages WHERE channel_id = ? AND content = ?",
+                arguments: [channelId, "Awaiting price approval"]) ?? 0
+        }
+        #expect(messageCount == 1)
+    }
+
+    @Test("holdJPOLineWithChat adds manager as admin member of channel")
+    func testHoldJPOLineChatMembership() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 3, notes: nil)
+
+        let channelId = try env.orders.holdJPOLineWithChat(
+            lineId: lineId,
+            holdReason: "Need manager sign-off",
+            userId: env.adminUserId,
+            partName: "Breaker",
+            jpoId: jpoId
+        )
+
+        // The holding user should be an admin in the channel
+        let role = try env.db.writer.read { db in
+            try String.fetchOne(db,
+                sql: "SELECT role FROM chat_channel_members WHERE channel_id = ? AND user_id = ?",
+                arguments: [channelId, env.adminUserId])
+        }
+        #expect(role == "admin")
+    }
+
+    // MARK: - generatePOsFromProcurement
+
+    @Test("generatePOsFromProcurement groups items by supplier into separate POs")
+    func testGeneratePOsFromProcurement() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId1 = try E2ETestHelpers.seedPart(env, name: "Wire A", categoryId: catId)
+        let partId2 = try E2ETestHelpers.seedPart(env, name: "Wire B", categoryId: catId)
+        let suppId1 = try E2ETestHelpers.seedSupplier(env, name: "Supplier Alpha")
+        let suppId2 = try E2ETestHelpers.seedSupplier(env, name: "Supplier Beta")
+
+        let items = [
+            OrdersService.ProcurementGenerateItem(partId: partId1, supplierId: suppId1, quantity: 10, unitCost: 2.50, jpoLineIds: []),
+            OrdersService.ProcurementGenerateItem(partId: partId2, supplierId: suppId2, quantity: 5, unitCost: 8.00, jpoLineIds: []),
+        ]
+
+        let result = try env.orders.generatePOsFromProcurement(items: items)
+        // Two suppliers → two POs
+        #expect(result.createdPOs.count == 2)
+        #expect(result.totalLineItems == 2)
+
+        // PO numbers should be unique
+        let poNumbers = result.createdPOs.map { $0.poNumber }
+        #expect(Set(poNumbers).count == 2)
+    }
+
+    @Test("generatePOsFromProcurement merges same-supplier items into one PO")
+    func testGeneratePOsSameSupplierMerge() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId1 = try E2ETestHelpers.seedPart(env, name: "Wire A", categoryId: catId)
+        let partId2 = try E2ETestHelpers.seedPart(env, name: "Conduit B", categoryId: catId)
+        let suppId = try E2ETestHelpers.seedSupplier(env)
+
+        let items = [
+            OrdersService.ProcurementGenerateItem(partId: partId1, supplierId: suppId, quantity: 20, unitCost: 1.00, jpoLineIds: []),
+            OrdersService.ProcurementGenerateItem(partId: partId2, supplierId: suppId, quantity: 10, unitCost: 3.50, jpoLineIds: []),
+        ]
+
+        let result = try env.orders.generatePOsFromProcurement(items: items)
+        // Same supplier → one PO with two line items
+        #expect(result.createdPOs.count == 1)
+        #expect(result.totalLineItems == 2)
+    }
+
+    @Test("generatePOsFromProcurement with empty input returns empty result")
+    func testGeneratePOsEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let result = try env.orders.generatePOsFromProcurement(items: [])
+        #expect(result.createdPOs.isEmpty)
+        #expect(result.totalLineItems == 0)
+    }
 }
