@@ -2680,6 +2680,29 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    /// Move multiple bins to a target area in a single transaction (Cart Mode multi-bin transfer).
+    ///
+    /// Updates `area_id` for each bin in `binIds`. Bins not found in the database are silently
+    /// skipped so partial-cart moves don't abort on a stale ID.
+    public func moveBinsToArea(binIds: [Int64], targetAreaId: Int64) throws {
+        guard !binIds.isEmpty else { return }
+        try db.writer.write { dbConn in
+            for binId in binIds {
+                try dbConn.execute(
+                    sql: "UPDATE warehouse_bins SET area_id = ? WHERE id = ? AND deleted_at IS NULL",
+                    arguments: [targetAreaId, binId]
+                )
+            }
+        }
+    }
+
+    /// Save a storage unit's grid placement and zone assignment (Cart Mode placement step).
+    ///
+    /// Thin, intent-named wrapper over `updateStorageUnit` for use by Cart mode UI.
+    public func saveUnitPlacement(unitId: Int64, gridX: Int, gridY: Int, zoneId: Int64?) throws {
+        try updateStorageUnit(id: unitId, gridX: gridX, gridY: gridY, zoneId: zoneId)
+    }
+
     // =========================================================================
     // MARK: - Part Assignments
     // =========================================================================

@@ -827,4 +827,52 @@ struct WarehouseServiceExtTests {
         let updatedBin = bins.first { $0.id == bin.id }
         #expect(updatedBin?.assignedPartId == partId)
     }
+
+    // MARK: - Cart Mode: moveBinsToArea, saveUnitPlacement
+
+    @Test("moveBinsToArea moves all specified bins to the target area")
+    func testMoveBinsToArea_movesAllBins() throws {
+        let env = try E2ETestHelpers.setUp()
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 300, lengthInches: 300)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "Cart", unitType: "cart")
+        let level = try env.warehouse.addStorageLevel(unitId: unit.id!, levelCode: "L1")
+        let sourceArea = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 1)
+        let targetArea = try env.warehouse.addStorageArea(levelId: level.id!, areaNumber: 2)
+
+        let bin1 = try env.warehouse.addBin(areaId: sourceArea.id!, binNumber: 1)
+        let bin2 = try env.warehouse.addBin(areaId: sourceArea.id!, binNumber: 2)
+
+        try env.warehouse.moveBinsToArea(binIds: [bin1.id!, bin2.id!], targetAreaId: targetArea.id!)
+
+        let targetBins = try env.warehouse.listBinsForArea(areaId: targetArea.id!)
+        let movedIds = Set(targetBins.compactMap { $0.id })
+        #expect(movedIds.contains(bin1.id!))
+        #expect(movedIds.contains(bin2.id!))
+        // Source area should now be empty
+        let sourceBins = try env.warehouse.listBinsForArea(areaId: sourceArea.id!)
+        #expect(sourceBins.isEmpty)
+    }
+
+    @Test("moveBinsToArea with empty binIds is a no-op")
+    func testMoveBinsToArea_emptyListIsNoOp() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Should not throw for an empty binIds array
+        try env.warehouse.moveBinsToArea(binIds: [], targetAreaId: 999)
+    }
+
+    @Test("saveUnitPlacement updates grid position and zone for a storage unit")
+    func testSaveUnitPlacement_updatesGridAndZone() throws {
+        let env = try E2ETestHelpers.setUp()
+        let plan = try env.warehouse.createFloorPlan(name: "WH", widthInches: 300, lengthInches: 300)
+        let unit = try env.warehouse.addStorageUnit(floorPlanId: plan.id!, name: "U1", unitType: "shelf", gridX: 0, gridY: 0)
+        let zone = try env.warehouse.addZone(floorPlanId: plan.id!, zoneType: "storage", label: "Zone A", colorHex: "#FF0000")
+
+        try env.warehouse.saveUnitPlacement(unitId: unit.id!, gridX: 3, gridY: 5, zoneId: zone.id!)
+
+        let units = try env.warehouse.listStorageUnits(floorPlanId: plan.id!)
+        let updated = units.first { $0.id == unit.id }
+        #expect(updated?.gridX == 3)
+        #expect(updated?.gridY == 5)
+        #expect(updated?.zoneId == zone.id!)
+    }
 }
