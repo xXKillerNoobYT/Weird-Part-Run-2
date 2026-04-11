@@ -2192,6 +2192,16 @@ public final class WarehouseService: Sendable {
         }
     }
 
+    /// Save user-defined grid dimensions to a floor plan (PE-040 — wizard dimensions form).
+    public func updateFloorPlanGrid(floorPlanId: Int64, rows: Int, cols: Int) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE warehouse_floor_plans SET grid_rows = ?, grid_cols = ?, updated_at = datetime('now') WHERE id = ?",
+                arguments: [rows, cols, floorPlanId]
+            )
+        }
+    }
+
     /// List all active floor plans.
     public func listFloorPlans() throws -> [WarehouseFloorPlan] {
         try db.writer.read { dbConn in

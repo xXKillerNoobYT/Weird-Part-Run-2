@@ -11,6 +11,10 @@ public struct WarehouseFloorPlan: Codable, FetchableRecord, MutablePersistableRe
     public var widthInches: Int
     public var lengthInches: Int
     public var isActive: Bool
+    /// User-defined grid rows (PE-040). Nil = not yet set (wizard uses dimensions form).
+    public var gridRows: Int?
+    /// User-defined grid columns (PE-040). Nil = not yet set (wizard uses dimensions form).
+    public var gridCols: Int?
     public var createdAt: String?
     public var updatedAt: String?
     public var deletedAt: String?
@@ -20,6 +24,8 @@ public struct WarehouseFloorPlan: Codable, FetchableRecord, MutablePersistableRe
         case widthInches = "width_inches"
         case lengthInches = "length_inches"
         case isActive = "is_active"
+        case gridRows = "grid_rows"
+        case gridCols = "grid_cols"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case deletedAt = "deleted_at"

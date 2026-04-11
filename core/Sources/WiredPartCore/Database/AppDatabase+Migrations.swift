@@ -87,6 +87,7 @@ extension AppDatabase {
         registerMigration070WishlistItemsV2(&migrator)
         registerMigration071FlexPool(&migrator)
         registerMigration072CompanySetupDraft(&migrator)
+        registerMigration073FloorPlanGridDimensions(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -500,6 +501,20 @@ extension AppDatabase {
             try db.execute(sql: "ALTER TABLE jobs ADD COLUMN is_flex_pool INTEGER NOT NULL DEFAULT 0")
             try db.execute(sql: "ALTER TABLE jobs ADD COLUMN flex_pool_team_filter TEXT")
             try db.execute(sql: "ALTER TABLE jobs ADD COLUMN flex_pool_user_filter TEXT")
+        }
+    }
+
+    private static func registerMigration073FloorPlanGridDimensions(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("073_floor_plan_grid_dimensions") { db in
+            // Add user-defined grid dimensions to floor plans (PE-040).
+            // Before this migration, grid size was derived from width_inches / 60,
+            // which meant users could never set it explicitly. Now grid_rows and
+            // grid_cols are persisted directly so the wizard can offer a
+            // dimensions-first flow.
+            try db.alter(table: "warehouse_floor_plans") { t in
+                t.add(column: "grid_rows", .integer)
+                t.add(column: "grid_cols", .integer)
+            }
         }
     }
 
