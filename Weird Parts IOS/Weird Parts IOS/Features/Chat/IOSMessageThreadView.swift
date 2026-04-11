@@ -1,5 +1,6 @@
 import SwiftUI
 import WiredPartCore
+import OSLog
 
 /// Full message thread view for a chat channel.
 ///
@@ -12,6 +13,8 @@ struct IOSMessageThreadView: View {
 
     let channelId: Int64
     let channelName: String
+
+    private let logger = Logger(subsystem: "com.wiredpart.ios", category: "MessageThreadView")
 
     @State private var messages: [ChatService.MessageRow] = []
     @State private var messageAttachments: [Int64: [ChatService.MessageAttachment]] = [:]
@@ -363,11 +366,15 @@ struct IOSMessageThreadView: View {
                     attachments: pendingAttachments
                 )
 
-                // Auto-save photo/file attachments to job notebook (best effort)
+                // Auto-save photo/file attachments to job notebook (best effort — failure is non-fatal)
                 for att in pendingAttachments where att.type == "photo" || att.type == "file" {
                     if let attachments = try? service.getMessageAttachments(messageId: msgId),
                        let saved = attachments.first(where: { $0.attachmentType == att.type }) {
-                        try? service.autoSaveToJobNotebook(channelId: channelId, attachment: saved, userId: userId)
+                        do {
+                            try service.autoSaveToJobNotebook(channelId: channelId, attachment: saved, userId: userId)
+                        } catch {
+                            logger.warning("autoSaveToJobNotebook failed for attachment \(saved.id) — attachment exists in chat but not in job notebook: \(error.localizedDescription)")
+                        }
                     }
                 }
             }

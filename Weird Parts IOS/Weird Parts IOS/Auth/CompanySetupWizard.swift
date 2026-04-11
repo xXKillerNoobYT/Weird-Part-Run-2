@@ -1,5 +1,6 @@
 import SwiftUI
 import WiredPartCore
+import OSLog
 
 /// Guided 8-step company setup wizard for new businesses.
 /// Shows after bootstrap when @AppStorage("hasCompletedCompanySetup") is false AND user is admin.
@@ -30,6 +31,7 @@ struct CompanySetupWizard: View {
     @State private var saveError: String?
     @State private var showExitConfirmation = false
 
+    private let logger = Logger(subsystem: "com.wiredpart.ios", category: "CompanySetupWizard")
     let totalSteps = 8
 
     var body: some View {
@@ -727,7 +729,11 @@ struct CompanySetupWizard: View {
             email: companyEmail,
             selectedState: selectedState
         )
-        try? appCore.settingsService?.saveSetupDraft(draft)
+        do {
+            try appCore.settingsService?.saveSetupDraft(draft)
+        } catch {
+            logger.warning("saveSetupDraft failed — wizard progress may be lost on app switch: \(error.localizedDescription)")
+        }
     }
 
     /// Remove draft row after the wizard finishes successfully.

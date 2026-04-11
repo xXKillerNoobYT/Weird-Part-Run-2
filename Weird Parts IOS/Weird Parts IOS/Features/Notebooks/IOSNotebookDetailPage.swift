@@ -880,7 +880,7 @@ struct IOSNotebookDetailPage: View {
                 try service.updateBlockEntry(entryId: existingEntryId, content: nil, blockData: jsonString)
             } else {
                 // Create new panel_schedule block entry in the first available section
-                guard let sectionId = findOrCreateDefaultSectionId(service: service, notebookId: notebookId) else {
+                guard let sectionId = try findOrCreateDefaultSectionId(service: service, notebookId: notebookId) else {
                     loadError = "No section available for panel schedule"
                     return
                 }
@@ -905,7 +905,7 @@ struct IOSNotebookDetailPage: View {
     }
 
     /// Find the first available section ID, or create a default section if none exist.
-    private func findOrCreateDefaultSectionId(service: NotebooksService, notebookId: Int64) -> Int64? {
+    private func findOrCreateDefaultSectionId(service: NotebooksService, notebookId: Int64) throws -> Int64? {
         // Check grouped sections first
         if let sectionId = hierarchy?.groups.first?.sections.first?.id {
             return sectionId
@@ -914,8 +914,8 @@ struct IOSNotebookDetailPage: View {
         if let sectionId = hierarchy?.ungroupedSections.first?.id {
             return sectionId
         }
-        // No sections exist — create a default one
-        return try? service.createSection(notebookId: notebookId, groupId: nil, name: "General")
+        // No sections exist — create a default one (throws on failure so caller can surface the error)
+        return try service.createSection(notebookId: notebookId, groupId: nil, name: "General")
     }
 
     private func findPanelScheduleEntryId() -> Int64? {
