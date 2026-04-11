@@ -687,7 +687,7 @@ public final class OrdersService: Sendable {
             return dbConn.lastInsertedRowID
         }
         // Smart route the new line
-        _ = try smartRouteJPOLine(lineId: lineId, partId: partId, userId: userId ?? 0)
+        _ = try smartRouteJPOLine(lineId: lineId, partId: partId, userId: userId)
         return lineId
     }
 
@@ -831,7 +831,7 @@ public final class OrdersService: Sendable {
     /// Check stock and auto-route a JPO line item.
     /// Returns "transfer" if stock is available at the shop, "pending" if it needs ordering.
     @discardableResult
-    public func smartRouteJPOLine(lineId: Int64, partId: Int64, userId: Int64) throws -> String {
+    public func smartRouteJPOLine(lineId: Int64, partId: Int64, userId: Int64?) throws -> String {
         try db.writer.write { dbConn -> String in
             // Check shop stock (sum across all locations)
             let shopStock = try Int.fetchOne(dbConn, sql: """
