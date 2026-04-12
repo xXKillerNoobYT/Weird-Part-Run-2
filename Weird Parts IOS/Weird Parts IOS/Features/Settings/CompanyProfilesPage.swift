@@ -8,6 +8,7 @@ import WiredPartCore
 struct CompanyProfilesPage: View {
     @EnvironmentObject private var appCore: AppCore
     @State private var profiles: [CompanyProfile] = []
+    @State private var isLoading = true
     private enum ActiveSheet: Identifiable {
         case help
         case create
@@ -27,58 +28,65 @@ struct CompanyProfilesPage: View {
     @State private var showDeleteConfirm = false
 
     var body: some View {
-        List {
-            if profiles.isEmpty {
-                Section {
-                    Text("No company profiles yet. Tap + to create one.")
-                        .foregroundStyle(.secondary)
-                }
+        Group {
+            if isLoading {
+                ProgressView("Loading profiles...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ForEach(profiles, id: \.id) { profile in
-                    Button {
-                        activeSheet = .edit(profile)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Text(profile.companyName)
-                                    .font(.headline)
-                                if profile.isPrimary == 1 {
-                                    Text("Primary")
-                                        .font(.caption2)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Color.accentColor.opacity(0.15))
-                                        .clipShape(Capsule())
+                List {
+                    if profiles.isEmpty {
+                        Section {
+                            Text("No company profiles yet. Tap + to create one.")
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        ForEach(profiles, id: \.id) { profile in
+                            Button {
+                                activeSheet = .edit(profile)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack {
+                                        Text(profile.companyName)
+                                            .font(.headline)
+                                        if profile.isPrimary == 1 {
+                                            Text("Primary")
+                                                .font(.caption2)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(Color.accentColor.opacity(0.15))
+                                                .clipShape(Capsule())
+                                        }
+                                    }
+                                    if let branch = profile.branchName {
+                                        Text(branch)
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    if let phone = profile.phone {
+                                        Text(phone)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
                                 }
                             }
-                            if let branch = profile.branchName {
-                                Text(branch)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if let phone = profile.phone {
-                                Text(phone)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    profileToDelete = profile
+                                    showDeleteConfirm = true
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
                             }
                         }
                     }
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) {
-                            profileToDelete = profile
-                            showDeleteConfirm = true
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-                }
-            }
 
-            if let error = errorMessage {
-                Section {
-                    Text(error)
-                        .foregroundStyle(.red)
-                        .font(.caption)
+                    if let error = errorMessage {
+                        Section {
+                            Text(error)
+                                .foregroundStyle(.red)
+                                .font(.caption)
+                        }
+                    }
                 }
             }
         }
@@ -137,13 +145,15 @@ struct CompanyProfilesPage: View {
     private func loadProfiles() {
         guard let service = appCore.settingsService else {
             errorMessage = "Settings service unavailable"
+            isLoading = false
             return
         }
         do {
             profiles = try service.listCompanyProfiles()
         } catch {
-            errorMessage = userFriendlyError(error, context: "save company profile")
+            errorMessage = userFriendlyError(error, context: "load company profiles")
         }
+        isLoading = false
     }
 
     private func deleteProfile(_ profile: CompanyProfile) {

@@ -64,7 +64,8 @@ struct IOSEmployeeDetailPage: View {
                     ) { name, email, phone in
                         guard let service = appCore.peopleService else {
                             loadError = "People service not available"
-                            return
+                            struct ServiceUnavailableError: Error {}
+                            throw ServiceUnavailableError()
                         }
                         try service.updateEmployeeContact(
                             employeeId: emp.id,
