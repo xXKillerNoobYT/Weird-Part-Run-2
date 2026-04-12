@@ -304,9 +304,12 @@ struct IOSReceiveShipmentPage: View {
                             for item in items { receivedQtys[item.id] = item.expectedQty }
                             Task {
                                 guard let svc else { return }
+                                var failed = 0
                                 for item in items {
-                                    try? svc.updateSessionItem(itemId: item.id, receivedQty: item.expectedQty)
+                                    do { try svc.updateSessionItem(itemId: item.id, receivedQty: item.expectedQty) }
+                                    catch { failed += 1 }
                                 }
+                                if failed > 0 { actionError = "Failed to save \(failed) item(s). Pull down to refresh." }
                             }
                         } label: {
                             Label("Reset to Expected", systemImage: "arrow.counterclockwise")
@@ -320,9 +323,12 @@ struct IOSReceiveShipmentPage: View {
                             for item in items { receivedQtys[item.id] = 0 }
                             Task {
                                 guard let svc else { return }
+                                var failed = 0
                                 for item in items {
-                                    try? svc.updateSessionItem(itemId: item.id, receivedQty: 0)
+                                    do { try svc.updateSessionItem(itemId: item.id, receivedQty: 0) }
+                                    catch { failed += 1 }
                                 }
+                                if failed > 0 { actionError = "Failed to clear \(failed) item(s). Pull down to refresh." }
                             }
                         } label: {
                             Label("Clear All", systemImage: "xmark.circle")
@@ -605,7 +611,10 @@ struct IOSReceiveShipmentPage: View {
                             receivedQtys[item.id] = newQty
                             let svc = appCore.warehouseService
                             let iid = item.id
-                            Task { try? svc?.updateSessionItem(itemId: iid, receivedQty: newQty) }
+                            Task {
+                                do { try svc?.updateSessionItem(itemId: iid, receivedQty: newQty) }
+                                catch { actionError = "Could not save quantity change." }
+                            }
                         }
                     } label: {
                         Image(systemName: "minus.circle.fill")
@@ -630,7 +639,10 @@ struct IOSReceiveShipmentPage: View {
                         receivedQtys[item.id] = newQty
                         let svc = appCore.warehouseService
                         let iid = item.id
-                        Task { try? svc?.updateSessionItem(itemId: iid, receivedQty: newQty) }
+                        Task {
+                            do { try svc?.updateSessionItem(itemId: iid, receivedQty: newQty) }
+                            catch { actionError = "Could not save quantity change." }
+                        }
                     } label: {
                         Image(systemName: "plus.circle.fill")
                             .font(.title3)
@@ -645,7 +657,10 @@ struct IOSReceiveShipmentPage: View {
                             receivedQtys[item.id] = newQty
                             let svc = appCore.warehouseService
                             let iid = item.id
-                            Task { try? svc?.updateSessionItem(itemId: iid, receivedQty: newQty) }
+                            Task {
+                                do { try svc?.updateSessionItem(itemId: iid, receivedQty: newQty) }
+                                catch { actionError = "Could not save quantity change." }
+                            }
                         } label: {
                             Text("All")
                                 .font(.caption)
@@ -848,7 +863,10 @@ struct IOSReceiveShipmentPage: View {
         receivedQtys[item.id] = newQty
         let svc = appCore.warehouseService
         let iid = item.id
-        Task { try? svc?.updateSessionItem(itemId: iid, receivedQty: newQty) }
+        Task {
+            do { try svc?.updateSessionItem(itemId: iid, receivedQty: newQty) }
+            catch { scanError = "Barcode scan quantity could not be saved." }
+        }
 
         // Highlight the matched item (triggers auto-scroll via onChange)
         withAnimation {
