@@ -22,78 +22,80 @@
 
 ---
 
-### PricingOverrideFlow — Retroactive Plan for Unplanned 616-Line Feature
+### Colors & Parts Redesign — Reusable Colors, Per-Color Part Numbers, General Brand Default
 
-**GitHub Issue:** `#133`
-**Current State:** `PricingOverrideFlow.swift` (616 lines) exists and is wired into `PartsPricingPage.swift:592` as `PricingTierSetSheet`. It implements a 6-state multi-step sheet (selectLevel → selectEntity → setPrice → preview → resolveConflicts → done) that lets an admin set a price at any hierarchy level (Category / Sub-category / Part Type / Brand / Color) with conflict resolution. This file was **never in any plan** and was not requested — it appeared as an unplanned addition alongside PE-029 (CascadePriceEditSheet).
-**Proposed Change:** Three options: **(A)** Write a retroactive plan for it (officially adopt it as a known feature), **(B)** Remove it (it's unused until wired into the UI more broadly), or **(C)** Keep it as a zero-plan file (carry technical debt, no owner intent documented).
-**Affected Modules:** Parts → Pricing
+**GitHub Issues:** `#98` `#99` `#100` `#105` `#106` `#107`
+**Current State:** Colors in the parts catalog are currently nested under specific (type, brand) combinations — a color defined under "PVC Conduit → Cantex" is a separate entity from the same color under "PVC Conduit → General". There is no shared color pool. Part numbers can only be set at the type level. The "General" brand is not auto-selected when creating a new type detail. New Brand and Supplier forms have no linked counterpart picker.
+**Proposed Change:** Make colors reusable across brands and types (a shared color pool). Each (color + brand) combination becomes its own unique "part" (SKU). Color detail panels gain part number + price override fields. General brand auto-selected on new type detail. Brand removal requires confirmation. New Brand/Supplier forms gain a linked picker for the counterpart.
+**Affected Modules:** Parts → Catalog, Pricing, Brands, Suppliers
 
 #### Questions:
 
-1. **As the Owner:** Do you want to keep `PricingOverrideFlow.swift` (hierarchy-level bulk price setter) as a real feature? It lets you set a price at category or brand level and push it down to all items below — a "price sweep" capability. Is that something you need, or was this added speculatively?
-   > Answer: **Keep it.** Write a retroactive plan — officially adopt as a known feature.
+1. **As the Owner:** Right now a "color" only exists under a specific (type, brand) pair. You want colors to be reusable — e.g., "Gray" exists once and can be linked to multiple types and brands. Does this mean we need to **migrate existing colors** into a shared pool, or start fresh (keep old data as-is, new colors use the shared pool)?
+   > Answer: _pending_
 
-2. **As the Owner:** If keeping it — should the plan be extended to describe when and where this is accessible? (E.g., only admins on the Pricing page, or also in the category tree editor?) Or do you want it removed until a proper design is done?
-   > Answer: **Pricing page + category tree editor.** Accessible from both locations.
+2. **As the Owner:** Issue #100 says "each color under General or a Brand should be a different part." Does this mean: when you add "Gray" under type "PVC Conduit" for both General and Cantex, you get **two distinct parts** (each with their own part number, price, stock)? Or is it one part with two supplier pricing tiers?
+   > Answer: _pending_
 
-3. **As a Developer:** `PricingTierSetSheet` is wired in but the conflict resolution step (`resolveConflicts` state) has no tests. If we're keeping this, should coverage be added before it's used more broadly?
-   > Answer: **Yes — tests required before broader use.** Block further wiring until resolveConflicts has test coverage.
+3. **As a Manager:** When creating a new part type, should selecting "General" brand be the default? And if a worker tries to remove the General brand from a type that has no other brand, should the app block it or just warn them?
+   > Answer: _pending_
+
+4. **As a Developer:** Making colors reusable would require either: **(A)** a new `shared_colors` table + migration to move existing color records there (schema change, cleaner long-term), or **(B)** a simpler approach where colors remain per-type but can be "copied/linked" to other types on demand (no schema change, no data migration needed). Option A is architecturally cleaner but riskier for existing data. Which do you prefer?
+   > Answer: _pending_
+
+5. **As a Developer (for #105):** The "New Brand" and "New Supplier" forms currently save independently. Adding a linked picker means when you create a new brand you can immediately link a supplier (and vice versa). Should this be: **(A)** a simple optional picker that shows existing suppliers/brands (no inline creation), or **(B)** a full inline create-or-pick widget (create new supplier while creating a new brand in one flow)?
+   > Answer: _pending_
+
+6. **As a User (for #106):** On the Color detail panel, you want to be able to add a part number and override the type-level pricing. Should the color-level part number **replace** the type-level part number in searches, or **supplement** it (both are searchable, and the color-level wins for display)?
+   > Answer: _pending_
 
 **Slots to fill:**
-- [x] Keep, remove, or defer? → **Keep — retroactive plan**
-- [x] If keep: scope (where accessible, who can use it) → **Pricing page + category tree editor**
-- [x] If keep: test coverage requirement → **Yes, tests before broader use**
+- [ ] Migration strategy: move existing colors vs. new pool only vs. start fresh
+- [ ] One part per (color + brand) vs. one part with multi-tier pricing
+- [ ] General brand default behavior: block remove vs. warn only
+- [ ] Schema approach: new shared table vs. copy-on-demand
+- [ ] New Brand/Supplier form: simple counterpart picker vs. inline create-or-pick
 
 ---
 
-### Cart Mode — WarehouseService Missing Service Methods (PE-030 follow-on)
+### #143 — interactiveDismissDisabled Systemic Audit (Settings, People, Chat)
 
-**GitHub Issue:** `#138`
-**Current State:** `docs/plans/ios-warehouse-setup-redesign.md` describes a "Moving Cart Mode" where a worker loads multiple bins into a virtual cart and then specifies a single destination for all of them. The plan calls for two WarehouseService methods: `saveUnitPlacement(unitId:row:col:zoneId:)` and `moveBinsToArea(binIds:[Int64], targetAreaId:Int64)`. **Neither method exists in WarehouseService.swift.** The drag-and-drop floor plan (PE-040 ✅) is done, but Cart Mode is a separate unimplemented flow.
-**Proposed Change:** Build the two missing service methods + the Cart mode UI flow (tap to add bins to cart → Place Cart → specify destination → bulk move all).
-**Affected Modules:** Warehouse → Setup + Movements
+**GitHub Issue:** `#143` (also relates to `#123`)
+**Current State:** Usability-hunter Scanner 1 found 30+ sheets across the app — specifically in Settings, People, and Chat modules — that do NOT use `.interactiveDismissDisabled()`. This means users can swipe-down on a form sheet and lose all unsaved changes with no warning. Several specific worst-cases were already fixed via do-catch (#135, #136, #137, #141), but the dismiss-guard gap is separate and still systemic at 30+ sites.
+**Proposed Change:** Add `.interactiveDismissDisabled(hasUnsavedChanges)` to all form sheets that collect user input, blocking mid-form swipe-dismiss when data would be lost. A "hasUnsavedChanges" computed var compares current form state to initial loaded state.
+**Affected Modules:** Settings, People, Chat (30+ sheets)
 
 #### Questions:
 
-1. **As the Owner:** Is Cart Mode a priority right now? It's designed for moving many bins at once during initial warehouse setup (e.g., "I just received 20 boxes, assign them all to Zone A"). Is that a workflow you actively need, or can it wait?
-   > Answer: **Build now.** This is a priority.
+1. **As the Owner:** Cart Mode just shipped and program-review page rebuilds (#82–#95) are the next major phase. Is protecting users from accidental sheet dismiss a high priority **now**, or can this campaign wait until after the first page-rebuild wave?
+   > Answer: _pending_
 
-2. **As a Manager:** In day-to-day use, how often would workers need to move multiple bins to the same destination vs. moving them one at a time? This helps decide whether Cart Mode is worth the implementation effort now.
-   > Answer: **Frequent enough to justify.** Build it now — bulk moves are common during setup and receiving.
+2. **As a Manager:** Which module is the highest risk for data-loss on accidental dismiss? (Settings forms, People/HR forms, or Chat/messaging forms?) This determines which of the 30+ sheets to fix first.
+   > Answer: _pending_
 
-3. **As a Developer:** `moveBinsToArea` would need to create individual `stock_movements` records for each bin, or a batch movement record. Given the current movements schema, do you want: **(A)** one movement record per bin (auditable but verbose), or **(B)** a single batch movement record referencing all bin IDs?
-   > Answer: **(A) One movement record per bin.** Full per-bin audit trail.
+3. **As a Developer:** Two approaches: **(A)** `@State var isDirty: Bool` + `.onChange` tracking on each sheet individually (precise — only blocks when data was actually changed), or **(B)** `.interactiveDismissDisabled(true)` unconditionally on all form sheets (simpler, always blocks dismiss even on untouched forms). Owner preference?
+   > Answer: _pending_
+
+4. **As a Developer:** Should this be an Xcode prompt (UI-only surgery, Xcode AI does the 30+ edits) or should we write a hunt-fix automation script that scans `.sheet { }` and auto-patches the simple cases? At 30+ locations, a script would be faster.
+   > Answer: _pending_
 
 **Slots to fill:**
-- [x] Priority: build now vs. defer to PE-030b → **Build now**
-- [x] Batch vs. per-bin movement records → **Per-bin (one record each)**
-- [x] Whether Cart Mode UI lives inside the warehouse wizard or as a standalone action → **Both**
+- [ ] Priority: do now vs. after first page-rebuild wave
+- [ ] Module priority order (Settings vs. People vs. Chat)
+- [ ] Approach: per-sheet dirty tracking vs. unconditional block
+- [ ] Method: Xcode prompt vs. automated scan-and-patch script
 
 ---
 
-### DIS-012 / DIS-013 / DIS-014 — PIN Hashing & Legacy Auth Path Hardening
+## Processed / Closed Q&A (Reference Log)
 
-**Plans:** `docs/DevTODO/DIS-012-pin-hashing-weak-kdf.md`, `docs/DevTODO/DIS-013-legacy-pin-salt-path.md`, `docs/DevTODO/DIS-014-unsigned-token-shim.md`
-**Current State:** `AuthService.hashPin()` uses 10,000× iterated SHA-256 (fast hash, GPU-crackable in seconds for 4-6 digit PINs). `legacyHashPin()` (single salt) is still reachable for un-migrated users. Unsigned token acceptance shim from PE-008a has no removal deadline.
-**Proposed Change:** Upgrade to PBKDF2 (CommonCrypto, no new deps) or Argon2id. Add `pin_hash_version` column. Re-hash on next login (transparent upgrade). Eventually remove legacy paths.
-**Affected Modules:** AuthService (core Swift), AuthService migrations.
+> These entries were fully answered, design decisions integrated into plan docs, and removed from Pending.
 
-#### Questions:
+- **PricingOverrideFlow** (#133) — Processed 2026-04-12. Keep + retroactive plan at `docs/plans/ios-pricing-override-flow.md`. Accessible from Pricing page + CategoriesTreeView. Tests required before CategoriesTreeView wiring. GitHub #133 CLOSED.
+- **Cart Mode** (#138) — Processed 2026-04-12. Build now. Per-bin movement records. Both wizard + standalone. Service (commit 71aa8bf) + UI (PE-042) complete. GitHub #138 CLOSED.
+- **DIS-012/013 PIN KDF** (#130/#131) — Processed 2026-04-12. Defer to v2. PBKDF2 via CommonCrypto when ready. Legacy path removal timing TBD. Issues remain open as v2 backlog.
 
-1. **As the Owner (Security Priority):** For a shop app on local LAN — PINs require physical device access to crack offline. Is upgrading PIN hashing to PBKDF2 a priority now, or is the current 10k-SHA-256 + per-user-salt good enough for v1? (It's much better than most shop apps — this is a hardening improvement, not a critical vulnerability.)
-   > Answer: **Defer to v2.** Current 10k-SHA-256 + per-user salt is acceptable for LAN-only shop use.
-
-2. **As a Developer:** If we upgrade to PBKDF2, which approach: (A) CommonCrypto PBKDF2 (no new dependencies, 100k iterations) or (B) Argon2id via Swift-Argon2 package (memory-hard, harder to add as a Swift Package)? Recommendation: Option A — CommonCrypto is already available on Apple platforms, no package manager changes needed.
-   > Answer: **(A) PBKDF2 via CommonCrypto** when we do upgrade in v2. No new dependencies.
-
-3. **As the Owner (Legacy Cleanup):** The legacy single-salt PIN path (DIS-013) and unsigned token shim (DIS-014) exist for backward compatibility. Is there a version cutoff where we can remove these? (e.g., "anyone still on the app from before 2026-03-30 will need to re-login once") Or should these stay permanently?
-   > Answer: **Defer decision.** Will decide on legacy path removal timing later.
-
-**Slots to fill:**
-- [x] Priority decision: upgrade now vs v2 → **Defer to v2**
-- [x] KDF choice: PBKDF2 vs Argon2id → **PBKDF2 (CommonCrypto, when ready)**
-- [ ] Legacy path removal: yes/no + cutoff version → **Deferred**
+---
 
 ## Question Template
 

@@ -413,6 +413,7 @@ private struct AddCustomerContactSheet: View {
     @State private var phone = ""
     @State private var email = ""
     @State private var errorMessage: String?
+    @State private var isSaving = false
 
     var body: some View {
         NavigationStack {
@@ -441,19 +442,22 @@ private struct AddCustomerContactSheet: View {
             }
             .navigationTitle("Add Contact")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(firstName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(firstName.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
             }
         }
     }
 
     private func save() {
+        isSaving = true
+        defer { isSaving = false }
         guard let service = appCore.peopleService else {
             errorMessage = "Service unavailable"
             return
@@ -488,6 +492,7 @@ private struct AddCommunicationSheet: View {
     @State private var commType = "note"
     @State private var content = ""
     @State private var errorMessage: String?
+    @State private var isSaving = false
 
     private let typeOptions = ["note", "call", "email", "meeting"]
 
@@ -514,19 +519,22 @@ private struct AddCommunicationSheet: View {
             }
             .navigationTitle("Add Note")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(content.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(content.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
             }
         }
     }
 
     private func save() {
+        isSaving = true
+        defer { isSaving = false }
         guard let service = appCore.peopleService else {
             errorMessage = "Service unavailable"
             return
@@ -563,6 +571,7 @@ private struct AddPaymentSheet: View {
     @State private var invoiceNumber = ""
     @State private var dueDate = Date().addingTimeInterval(30 * 86400)
     @State private var errorMessage: String?
+    @State private var isSaving = false
 
     var body: some View {
         NavigationStack {
@@ -581,19 +590,22 @@ private struct AddPaymentSheet: View {
             }
             .navigationTitle("Add Invoice")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(amountText.isEmpty)
+                        .disabled(amountText.isEmpty || isSaving)
                 }
             }
         }
     }
 
     private func save() {
+        isSaving = true
+        defer { isSaving = false }
         guard let service = appCore.peopleService else {
             errorMessage = "Service unavailable"
             return

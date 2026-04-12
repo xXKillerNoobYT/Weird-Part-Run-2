@@ -253,9 +253,9 @@ struct DevicePairingView: View {
                 pairingCode: pairingCode.trimmingCharacters(in: .whitespaces)
             )
 
-            // Save pairing state
+            // Save pairing state — must succeed or sync will never work
             if let service = appCore.settingsService {
-                try? service.upsertSettingsMap([
+                try service.upsertSettingsMap([
                     "shop_server_address": shop.address,
                     "auto_sync": "true",
                     "sync_interval": "60",

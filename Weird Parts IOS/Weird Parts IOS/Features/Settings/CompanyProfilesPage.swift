@@ -182,6 +182,7 @@ private struct CompanyProfileEditor: View {
     @State private var taxId = ""
     @State private var isPrimary = false
     @State private var errorMessage: String?
+    @State private var isSaving = false
 
     var body: some View {
         NavigationStack {
@@ -218,13 +219,14 @@ private struct CompanyProfileEditor: View {
             }
             .navigationTitle(profile == nil ? "New Profile" : "Edit Profile")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
-                        .disabled(companyName.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(companyName.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
             }
             .onAppear { loadFromProfile() }
@@ -248,6 +250,8 @@ private struct CompanyProfileEditor: View {
     }
 
     private func save() {
+        isSaving = true
+        defer { isSaving = false }
         var record = CompanyProfile(
             id: profile?.id,
             companyName: companyName.trimmingCharacters(in: .whitespaces),

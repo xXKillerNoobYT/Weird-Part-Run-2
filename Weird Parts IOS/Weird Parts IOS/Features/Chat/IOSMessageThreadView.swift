@@ -70,6 +70,7 @@ struct IOSMessageThreadView: View {
         }
         .navigationTitle(channelName)
         .navigationBarTitleDisplayMode(.inline)
+        .interactiveDismissDisabled(isSending)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {

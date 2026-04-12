@@ -370,6 +370,7 @@ private struct EditEmployeeContactSheet: View {
             }
             .navigationTitle("Edit Contact Info")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

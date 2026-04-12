@@ -294,6 +294,7 @@ private struct PushBackSheet: View {
     @Binding var reason: String
     let onSubmit: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var isSubmitting = false
 
     var body: some View {
         NavigationStack {
@@ -309,15 +310,18 @@ private struct PushBackSheet: View {
             }
             .navigationTitle("Push Back")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSubmitting)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Submit") {
+                        isSubmitting = true
                         onSubmit()
+                        isSubmitting = false
                     }
-                    .disabled(reason.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(reason.trimmingCharacters(in: .whitespaces).isEmpty || isSubmitting)
                 }
             }
         }

@@ -79,7 +79,7 @@ struct IOSWishlistPage: View {
             titleVisibility: .visible
         ) {
             if let item = itemToDelete {
-                Button("Delete "\(item.partName)"", role: .destructive) {
+                Button("Delete \"\(item.partName)\"", role: .destructive) {
                     deleteItem(item)
                     itemToDelete = nil
                 }

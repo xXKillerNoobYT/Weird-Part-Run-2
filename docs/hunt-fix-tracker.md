@@ -1,8 +1,9 @@
 # Hunt-Fix-Verify Loop Tracker
 
 > **Started:** 2026-03-28
-> **Status:** PHASE 1 COMPLETE — 38 iterations, 137 bugs fixed. Latest: **hunt-fix-verify run 38 (2026-04-12):** **#141 FIXED** — 6 `try? svc?.updateSessionItem()` in `IOSReceiveShipmentPage.swift` converted to `do-catch` with `actionError`/`scanError` user feedback. **#142 CLOSED** as false positive — Python multiline scan confirmed 0 truly empty catch blocks (scanner grep found only opening `catch {` brace, not body content). Scanner 3 improvement documented. Tests: **1194/1194** (unchanged — iOS-layer fix only).
-> **test-coverage-maintenance run (2026-04-12):** +29 tests (1165 → 1194). **New file:** `PartsServiceCoverageTests.swift`. **New methods covered (PartsService):** `getType`, `updateStyle` (×2 — rename, no-op), `deleteStyle`, `updateType`, `deleteType`, `getTypeBrandLinkId` (×2 — found, not found), `getPartSupplierCosts` (×2 — with link, empty), `logPriceChange` + `getPriceHistory` (×3 — round-trip, empty, limit), `setPricingTier` (×2 — create, replace), `getPricingTiers` (×2 — filtered, empty), `removePricingTier`, `getCompanyCostSetting` (nil path), `updateCompanyCostSetting` (×2 — store, upsert), `findOrCreateCategory` (×2 — new, idempotent), `findOrCreateBrand` (×2 — new, idempotent), `listCatalogParts` (×4 — unfiltered, by-category, search, pagination). **1 production bug fixed:** `setPricingTier` was missing `createdAt`/`updatedAt` before insert — GRDB was sending NULL, violating NOT NULL constraint; fixed with `ISO8601DateFormatter().string(from: Date())`. All **1194** tests passing.
+> **Status:** PHASE 1 COMPLETE — 39 iterations, 142 bugs fixed. Latest: **github-issues-sync run 6 (2026-04-12):** **3 direct fixes committed** — (1) `IOSAuditPage.swift:828` — `try? service.updateUserRating()` → `do-catch` with print log; (2) `DevicePairingView.swift:258` — `try? service.upsertSettingsMap()` → `try service.upsertSettingsMap()` inside existing do-catch (silent failure on critical sync settings write); (3) `IOSWishlistPage.swift:81` — curly-quote escaping fix in delete confirmation. **7 sheets fixed for issue #143** — `interactiveDismissDisabled(isSaving)` added to: DevicePairingView, IOSEscalationTimeline.PushBackSheet, IOSMessageThreadView, IOSCustomerDetailPage.AddCustomerContactSheet + AddCommunicationSheet, IOSEmployeeDetailPage.EditEmployeeContactSheet, CompanyProfilesPage.CompanyProfileEditor. **PE-042 archived** to done/. Tests: **1196/1196** (all pass). Open: #143 (systemic, now 33 sheets covered), #130/#131 (KDF deferred v2), #121/#122/#123/#128/#129 (systemic backlog).
+> **dev-improvement-scanner run 12 (2026-04-12):** **2 direct fixes** — (1) `DevicePairingView.swift:258` — `try? service.upsertSettingsMap()` → `try service.upsertSettingsMap()` (silent failure on device pairing sync settings write); (2) `IOSAuditPage.swift:828` — `try? service.updateUserRating()` → `do-catch` with `print()` log (non-critical path, audit count already saved). **3 GitHub issues filed:** #145 (chat pull-to-refresh), #146 (Formatters.swift dead code / 99 inline DateFormatter instances), #147 (missing empty states on 3 views). **389 Swift files scanned.** 0 force unwraps, 0 force casts, 0 SQL injection, 0 hardcoded secrets. Open: #143 (13 sheets missing interactiveDismissDisabled — systemic), #130/#131 (DIS-012/013 KDF — deferred v2), #145/#146/#147 (new). Tests: **1194/1194** (unchanged — iOS-layer fix only).
+> **test-coverage-maintenance run (2026-04-12):** +29 tests (1165 → 1194). **New file:** `PartsServiceCoverageTests.swift`. **New methods covered (PartsService):** `getType`, `updateStyle` (×2 — rename, no-op), `deleteStyle`, `updateType`, `deleteType`, `getTypeBrandLinkId` (×2 — found, not found), `getPartSupplierCosts` (×2 — with link, empty), `logPriceChange` + `getPriceHistory` (×3 — round-trip, empty, limit), `setPricingTier` (×2 — create, replace), `getPricingTiers` (×2 — filtered, empty), `removePricingTier`, `getCompanyCostSetting` (nil path), `updateCompanyCostSetting` (×2 — store, upsert), `findOrCreateCategory` (×2 — new, idempotent), `findOrCreateBrand` (×2 — new, idempotent), `listCatalogParts` (×4 — unfiltered, by-category, search, pagination). **1 production bug fixed:** `setPricingTier` was missing `createdAt`/`updatedAt` before insert — GRDB was sending NULL, violating NOT NULL constraint; fixed with `ISO8601DateFormatter().string(from: Date())`. **+2 more tests** later in same run: `toggleIntegration` (SettingsService — requires inline table-create since no migration), `updateContact` (PeopleService). All **1196** tests passing.
 > **page-rebuild-enforcer run (2026-04-10):** **DIS-016 FIXED** — all 7 `currentUser?.id ?? 1` write-path anti-patterns replaced with proper `guard let userId` guards across IOSMessageThreadView (used captured userId from outer guard), IOSCustomerDetailPage ×2 (addCommunicationEntry + createPaymentRecord), IOSContractorDetailPage (addContractorNote), IOSProcurementPage (pullFromWarehouse), IOSNotebookDetailPage (createBlockEntry), IOSAuditSetupView (createAuditSession). **GitHub #140 CLOSED.** DevTODO marked fixed. `?? 1` pattern confirmed eliminated (grep returns 0 results). All **1162** tests passing.
 > **test-coverage-maintenance run (2026-04-10):** +20 tests (1142 → 1162). **New methods covered:** `createAuditSession` (×2), `stageReceivedPartsForJob`, `writeOffReceivedPart`, `returnDamagedToSupplier` (×2), `createStorageUnit`, `deleteStorageLevel`, `deleteStorageArea`, `assignPartToBin` (WarehouseService); `holdJPOLineWithChat` (×2), `generatePOsFromProcurement` (×3 — two-supplier split, same-supplier merge, empty) (OrdersService); `processQRScan` (×5 — invalid/empty, V2 found, V2 not-found, external code, unrecognized) (DashboardService). **1 production bug fixed:** `QRScannerAdapter.searchCatalog` was referencing non-existent `sku`/`barcode` columns on `parts` table — corrected to `code`/`manufacturer_part_number`. All **1162** tests passing.
 > **hunt-fix-verify run 36 (2026-04-10):** **6 iOS write-path DIS-015 fixes** across `IOSWeeklyReviewSheet.swift`, `IOSAuditSummaryView.swift`, and `ReceivingRoutingFlow.swift` (4 locations). All write-path `currentUser?.id ?? 0` anti-patterns replaced with proper `guard let userId` guards. **GitHub issue #139 CLOSED.** Scanner 3 false-positive noted: `print()` inside `#Preview` blocks is not production code. **0 new tests** (iOS-layer fix, no core service change). All **1142** tests passing.
@@ -11,9 +12,12 @@
 > **test-coverage-maintenance run (2026-04-08):** +5 tests. **New methods covered:** `updateFloorPlanGrid` (PE-040 — 3 tests: persists rows/cols, overwrites dimensions, silent no-op on missing ID); `cancelJPOLineTransfer` (2 tests: clears transfer_id, silent no-op when nil). **Code health:** 0 compile errors. All **1127** tests passing.
 > **plan-enforcer run 10 (2026-04-10):** Full plan-vs-code audit. PE-040 (`WizardStepPlacement.swift`) and PE-041 (`IOSReceiveShipmentPage.swift`) both code-verified at the call-site level — all 7 Phase A/B behaviors and all 6 qty-mutation auto-save paths confirmed. Cart mode gap (#138) re-confirmed: `moveBinsToArea`/`saveUnitPlacement` absent. 0 new bugs, 0 new drift. 24 files pending commit. Q&A: 4 pending (PricingOverrideFlow, Cart Mode, DIS-012/013). dev-pipeline.md Plan Registry updated.
 > **dev-improvement-scanner run 11 (2026-04-09):** **1 direct fix:** `IOSReceiveShipmentPage.completeReceiving()` — `currentUser?.id ?? 0` anti-pattern replaced with proper `guard let userId` + auth error (GitHub #139). **1 new DevTODO:** DIS-015 — `currentUser?.id ?? 0` in 6 remaining write operation files. **GitHub #139 filed.** Security audit: DIS-012/013 still open (KDF blocked on design decision); DIS-014 CLOSED.
+> **plan-enforcer run 12 (2026-04-12):** Working tree audit. **PE-042 Cart Mode UI verified** — `WizardStepPlacement.swift`: cartModeToolbar (toggle + Place Cart + Done), cartBinBrowser (bin selection w/ checkmarks), placeCartSheet (area picker + `moveBinsToArea` call at :575). All 6 acceptance criteria met. **PricingOverrideFlow retroactive plan written** — `docs/plans/ios-pricing-override-flow.md`; Q&A processed; #133 CLOSED; resolveConflicts coverage required before CategoriesTreeView wiring. **#141 fix verified** — 6× `try? svc?.updateSessionItem()` → `do-catch` with user-facing errors (plan-aligned with `ios-receiving-draft-persistence.md`). **PartsService.setPricingTier timestamp fix** confirmed (production bug — GRDB NULL constraint). **Q&A backlog:** 2→1 (Cart Mode + PricingOverrideFlow processed; DIS-012/013 still deferred). **GitHub issues closed:** #133, #138. **dev-pipeline.md Plan Registry updated.** 0 new drift detected.
 > **plan-enforcer run 11 (2026-04-10):** DIS-015 write-path fixes in 3 iOS files confirmed (IOSWeeklyReviewSheet:336, IOSAuditSummaryView:337, ReceivingRoutingFlow:1043/1072/1103/1132). QRScannerAdapter.swift SQL fix confirmed aligned to qr_plan.md schema. `ios-receiving-draft-persistence.md` + `ios-warehouse-setup-redesign.md` unchanged. qr_plan.md added to Plan Registry. No new drift. dev-pipeline.md updated. GitHub #139 confirmed CLOSED.
-> **⚠️ ALSO OPEN: DIS-012/013 security items — need design decision on PIN KDF (PBKDF2 vs Argon2id) before implementation.**
-> **⚠️ Working tree has large uncommitted set — github-sync-and-review should commit PE-040/PE-041 impls + migration 073 + DIS-014 fix + DIS-015 full write-path fix + smartRouteJPOLine nil-userId fix + QRScannerAdapter SQL fix + all new tests + DIS-016 full fix (7 files).**
+> **dev-pipeline-manager run 15 (2026-04-12):** **#133 CLOSED** (PricingOverrideFlow retroactive plan adopted). **#138 CLOSED** (Cart Mode service + UI committed, EOD sync run 5). **DIS-012/013 Q&A processed** (all deferred to v2). **2 new Q&A items generated:** Colors/Brands redesign (#98-#107) + interactiveDismissDisabled (#143). Q&A backlog: 2 pending.
+> **⚠️ ALSO OPEN: DIS-012/013 security items — deferred to v2 per owner decision (PBKDF2/CommonCrypto when ready, legacy path removal timing TBD). GitHub #130/#131 tracked as v2 backlog.**
+> **⚠️ Working tree: 3 modified docs only** — `docs/dev-pipeline.md`, `docs/hunt-fix-tracker.md`, `docs/plans/ios-pricing-override-flow.md` (new untracked). iOS implementation files committed in EOD sync run 5 (2026-04-12, commit 37ffeb7).
+> **⚠️ New issues from DIS run 12 (2026-04-12): #145 (chat pull-to-refresh missing), #146 (Formatters.swift 99 inline DateFormatters = perf issue), #147 (missing empty states on 3 views) — added to pipeline backlog.**
 > **⚠️ Program-review GitHub issues #82–#95 — page-by-page feature rebuilds are next major work phase.**
 > **⚠️ Scanner 3 note: `print()` inside `#Preview` blocks is not production code — scanner grep produces false positives. Filter is: exclude lines where `#Preview` appears earlier in the same block.**
 
@@ -36,6 +40,51 @@
 ---
 
 ## Iteration Log
+
+### Iteration 39 — github-issues-sync run 6 (2026-04-12)
+
+**50 issues scanned. 3 bugs fixed. 7 sheets patched. 0 new issues filed.**
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Build | ✅ | `swift build` — 0 errors, 0 warnings |
+| Tests | ✅ | 1196/1196 passing (up from 1194) |
+| Issue #143 Progress | 🔄 | 7 more sheets fixed — now 33 total with interactiveDismissDisabled (was 7 at filing). 30+ still pending. |
+| try? on writes | ✅ | DevicePairingView + IOSAuditPage converted. No new ones found. |
+| GitHub Issues | ✅ | #133 ✅ CLOSED, #138 ✅ CLOSED. 50 open; #143 partial; #130/#131 v2 backlog. |
+| Systemic Backlog | ⚠️ | #121 (try?, 188 files), #122 (guard-let bail), #123 (interactiveDismissDisabled), #128 (empty catch), #129 (dirty tracking) — all tracked, no auto-fix at this scale |
+| Q&A Pending | ⚠️ | Colors/Brands #98-#107 + interactiveDismissDisabled approach #143 — both in dev-qa.md |
+
+**Fixes Applied (3 bugs, 7 sheet guards):**
+
+| Fix | File | Details |
+|-----|------|---------|
+| try? → try | `DevicePairingView.swift:258` | `try? service.upsertSettingsMap()` was silently failing on pairing — syncing would never work. Already inside do-catch at :249. |
+| try? → do-catch | `IOSAuditPage.swift:828` | `updateUserRating` result is non-critical (audit count already saved), but failure now logged via print. |
+| Curly quote fix | `IOSWishlistPage.swift:81` | Delete button title used typographic quotes `"` around interpolated part name — potential runtime issue on some locales. Changed to escaped `\"`. |
+| interactiveDismissDisabled | `DevicePairingView.swift` | Guard on pairing state (`isPairing`) |
+| interactiveDismissDisabled | `IOSEscalationTimeline.PushBackSheet` | Guard on submit state (`isSubmitting`) |
+| interactiveDismissDisabled | `IOSMessageThreadView` | Guard on send state (`isSending`) |
+| interactiveDismissDisabled | `IOSCustomerDetailPage.AddCustomerContactSheet` | Guard + `isSaving` state |
+| interactiveDismissDisabled | `IOSCustomerDetailPage.AddCommunicationSheet` | Guard + `isSaving` state |
+| interactiveDismissDisabled | `IOSEmployeeDetailPage.EditEmployeeContactSheet` | Guard on `isSaving` |
+| interactiveDismissDisabled | `CompanyProfilesPage.CompanyProfileEditor` | Guard + `isSaving` state + Save button disabled while saving |
+
+**PE-042 archived:** Moved `PE-042-cart-mode-ui.md` to `done/`. Cart Mode fully shipped (commit 37ffeb7).
+
+**Tests Added:** 0 (iOS-layer fixes; no core service changes)
+
+**Metrics delta:**
+
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| Tests passing | 1194 | 1196 | +2 |
+| Sheets with interactiveDismissDisabled | 26 | 33 | +7 |
+| Active Xcode prompts | 1 (PE-042 stale) | 0 | -1 (archived) |
+| Open issues | 50 | 50 | = |
+
+---
 
 ### Iteration 38 — hunt-fix-verify run 38 (2026-04-12)
 

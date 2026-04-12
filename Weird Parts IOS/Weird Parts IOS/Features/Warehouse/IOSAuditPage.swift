@@ -824,12 +824,17 @@ struct IOSAuditPage: View {
                 countedBy: userId
             )
 
-            // Update user rating
-            try? service.updateUserRating(
-                userId: userId,
-                action: "audit",
-                result: auditCount.variance == 0 ? "accurate" : "inaccurate"
-            )
+            // Update user rating — non-critical but log failures
+            do {
+                try service.updateUserRating(
+                    userId: userId,
+                    action: "audit",
+                    result: auditCount.variance == 0 ? "accurate" : "inaccurate"
+                )
+            } catch {
+                // Rating update failed — audit count is already saved; continue
+                print("[IOSAuditPage] updateUserRating failed (non-critical): \(error)")
+            }
 
             countResult = CountResult(
                 partName: item.partName,
