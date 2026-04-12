@@ -531,4 +531,32 @@ struct PeopleServiceTests {
         let members = try env.people.getHatMembers(hatId: hatId)
         #expect(members.isEmpty)
     }
+
+    @Test("updateContact changes contact fields")
+    func testUpdateContact() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let contactId = try env.people.createContact(
+            entityType: "customer",
+            entityId: 1,
+            firstName: "Jane",
+            lastName: "Smith",
+            role: "PM",
+            phone: "555-0001"
+        )
+
+        try env.people.updateContact(
+            id: contactId,
+            firstName: "Janet",
+            lastName: "Jones",
+            phone: "555-9999",
+            email: "janet@example.com",
+            role: "Superintendent"
+        )
+
+        let updated = try #require(try env.people.getContact(id: contactId))
+        #expect(updated.firstName == "Janet")
+        #expect(updated.lastName == "Jones")
+        #expect(updated.phone == "555-9999")
+    }
 }

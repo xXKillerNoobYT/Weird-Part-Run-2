@@ -479,6 +479,39 @@ struct SettingsServiceTests {
         #expect(integrations.count >= 0)
     }
 
+    @Test("toggleIntegration enables and disables an integration row")
+    func testToggleIntegration() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        // The integrations table is not in core migrations — create it manually for this test.
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                CREATE TABLE IF NOT EXISTS integrations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    is_enabled INTEGER NOT NULL DEFAULT 1,
+                    last_sync_at TEXT
+                )
+                """)
+            try dbConn.execute(sql: """
+                INSERT INTO integrations (id, name, description, is_enabled)
+                VALUES (1, 'TestIntegration', 'Test desc', 1)
+                """)
+        }
+
+        try svc.toggleIntegration("1", enabled: false)
+        let integrations = try svc.listIntegrations()
+        let row = try #require(integrations.first(where: { $0.id == "1" }))
+        #expect(row.isEnabled == false)
+
+        try svc.toggleIntegration("1", enabled: true)
+        let integrations2 = try svc.listIntegrations()
+        let row2 = try #require(integrations2.first(where: { $0.id == "1" }))
+        #expect(row2.isEnabled == true)
+    }
+
     // MARK: - Audit Log
 
     @Test("listAuditLog returns empty on fresh database with no writes")
