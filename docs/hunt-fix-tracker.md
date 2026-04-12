@@ -1,7 +1,9 @@
 # Hunt-Fix-Verify Loop Tracker
 
 > **Started:** 2026-03-28
-> **Status:** PHASE 1 COMPLETE — 37 iterations, 135 bugs fixed. Latest: **page-rebuild-enforcer run (2026-04-10):** **DIS-016 FIXED** — all 7 `currentUser?.id ?? 1` write-path anti-patterns replaced with proper `guard let userId` guards across IOSMessageThreadView (used captured userId from outer guard), IOSCustomerDetailPage ×2 (addCommunicationEntry + createPaymentRecord), IOSContractorDetailPage (addContractorNote), IOSProcurementPage (pullFromWarehouse), IOSNotebookDetailPage (createBlockEntry), IOSAuditSetupView (createAuditSession). **GitHub #140 CLOSED.** DevTODO marked fixed. `?? 1` pattern confirmed eliminated (grep returns 0 results). All **1162** tests passing.
+> **Status:** PHASE 1 COMPLETE — 38 iterations, 137 bugs fixed. Latest: **hunt-fix-verify run 38 (2026-04-12):** **#141 FIXED** — 6 `try? svc?.updateSessionItem()` in `IOSReceiveShipmentPage.swift` converted to `do-catch` with `actionError`/`scanError` user feedback. **#142 CLOSED** as false positive — Python multiline scan confirmed 0 truly empty catch blocks (scanner grep found only opening `catch {` brace, not body content). Scanner 3 improvement documented. Tests: **1194/1194** (unchanged — iOS-layer fix only).
+> **test-coverage-maintenance run (2026-04-12):** +29 tests (1165 → 1194). **New file:** `PartsServiceCoverageTests.swift`. **New methods covered (PartsService):** `getType`, `updateStyle` (×2 — rename, no-op), `deleteStyle`, `updateType`, `deleteType`, `getTypeBrandLinkId` (×2 — found, not found), `getPartSupplierCosts` (×2 — with link, empty), `logPriceChange` + `getPriceHistory` (×3 — round-trip, empty, limit), `setPricingTier` (×2 — create, replace), `getPricingTiers` (×2 — filtered, empty), `removePricingTier`, `getCompanyCostSetting` (nil path), `updateCompanyCostSetting` (×2 — store, upsert), `findOrCreateCategory` (×2 — new, idempotent), `findOrCreateBrand` (×2 — new, idempotent), `listCatalogParts` (×4 — unfiltered, by-category, search, pagination). **1 production bug fixed:** `setPricingTier` was missing `createdAt`/`updatedAt` before insert — GRDB was sending NULL, violating NOT NULL constraint; fixed with `ISO8601DateFormatter().string(from: Date())`. All **1194** tests passing.
+> **page-rebuild-enforcer run (2026-04-10):** **DIS-016 FIXED** — all 7 `currentUser?.id ?? 1` write-path anti-patterns replaced with proper `guard let userId` guards across IOSMessageThreadView (used captured userId from outer guard), IOSCustomerDetailPage ×2 (addCommunicationEntry + createPaymentRecord), IOSContractorDetailPage (addContractorNote), IOSProcurementPage (pullFromWarehouse), IOSNotebookDetailPage (createBlockEntry), IOSAuditSetupView (createAuditSession). **GitHub #140 CLOSED.** DevTODO marked fixed. `?? 1` pattern confirmed eliminated (grep returns 0 results). All **1162** tests passing.
 > **test-coverage-maintenance run (2026-04-10):** +20 tests (1142 → 1162). **New methods covered:** `createAuditSession` (×2), `stageReceivedPartsForJob`, `writeOffReceivedPart`, `returnDamagedToSupplier` (×2), `createStorageUnit`, `deleteStorageLevel`, `deleteStorageArea`, `assignPartToBin` (WarehouseService); `holdJPOLineWithChat` (×2), `generatePOsFromProcurement` (×3 — two-supplier split, same-supplier merge, empty) (OrdersService); `processQRScan` (×5 — invalid/empty, V2 found, V2 not-found, external code, unrecognized) (DashboardService). **1 production bug fixed:** `QRScannerAdapter.searchCatalog` was referencing non-existent `sku`/`barcode` columns on `parts` table — corrected to `code`/`manufacturer_part_number`. All **1162** tests passing.
 > **hunt-fix-verify run 36 (2026-04-10):** **6 iOS write-path DIS-015 fixes** across `IOSWeeklyReviewSheet.swift`, `IOSAuditSummaryView.swift`, and `ReceivingRoutingFlow.swift` (4 locations). All write-path `currentUser?.id ?? 0` anti-patterns replaced with proper `guard let userId` guards. **GitHub issue #139 CLOSED.** Scanner 3 false-positive noted: `print()` inside `#Preview` blocks is not production code. **0 new tests** (iOS-layer fix, no core service change). All **1142** tests passing.
 > **hunt-fix-verify run 35 (2026-04-09):** **1 direct core fix:** `OrdersService.smartRouteJPOLine` signature changed to accept `userId: Int64?` (was `Int64`), and `addJPOLineItem` call updated from `userId ?? 0` to `userId` directly — writes NULL instead of 0 for system-triggered routing. **1 new test:** `testSmartRouteNilUserIdWritesNull` (proves NULL stored, not 0). **1 GitHub issue closed:** #134 (WishlistService auto-approvals) — fix verified in code, issue description confirmed fix landed 2026-04-07.
@@ -34,6 +36,50 @@
 ---
 
 ## Iteration Log
+
+### Iteration 38 — hunt-fix-verify run 38 (2026-04-12)
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Compile | ✅ | 0 errors, 0 warnings (`swift build` — core) |
+| Tests | ✅ | 1194/1194 passing (no changes to core — count from test-coverage run earlier today) |
+| Code Patterns — empty catches | ✅ | Python multiline scan confirms **0 truly empty catch blocks** anywhere in codebase. Issue #142 was a false positive (grep found `catch {` opening line, not empty body) |
+| Code Patterns — `print()` | ✅ | 3 instances in `#Preview` blocks — confirmed false positives, not production code |
+| Code Patterns — `try?` on writes | 🔴 **FIXED** | 6× `try? svc?.updateSessionItem()` in `IOSReceiveShipmentPage.swift` — converted to do-catch. **#141 CLOSED.** |
+| Code Patterns — `?? 0` / `?? 1` writes | ✅ | 0 remaining — already fixed in prior iterations |
+| SQL Integrity | ✅ | All known patterns clean. `moveBinsToArea` (new) verified: `warehouse_bins.area_id` exists. `estimated_days` in SchedulingService is computed alias, not column. `returned_at` in ToolsService is `NULL AS returned_at` alias, not column reference |
+| Runtime Safety | ✅ | All array subscripts guarded. Division by zero in WarehouseService guarded by `if totalWithMin > 0` |
+| Edge Cases | ✅ | No first-launch failures detected |
+| Problems Folder | ✅ | `docs/Problomes/` does not exist (expected) |
+| GitHub Issues | ✅ | #141 CLOSED, #142 CLOSED. Open: #143 (30+ sheets missing interactiveDismissDisabled — systemic/ongoing), #130/#131 (DIS-012/013 KDF — design decision blocked), #138 (cart mode — pending), #121/#122/#123/#128 (systemic patterns — backlog) |
+| Plan Alignment | ✅ | No new drift detected. `moveBinsToArea`/`saveUnitPlacement` in WarehouseService confirmed added (#138 implementation landed) |
+| Security | ✅ | No SQL injection, no hardcoded secrets. TabBarPreferences uses UserDefaults for tab order (non-sensitive). DIS-012/013 still tracked |
+
+**Scanner 3 improvement noted:**
+- `grep -rn 'catch {'` is an unreliable empty-catch detector — it finds the opening brace, not the body
+- Proper check: verify next non-blank line after `catch {` is `}` (truly empty)
+- Python multiline scan is the correct tool — added to scanner specification
+
+**Fixes Applied (2):**
+
+1. **#141 [HIGH] — IOSReceiveShipmentPage.swift: 6× try? on updateSessionItem → do-catch**
+   - `:308` — Reset to Expected loop: collects failure count, shows consolidated `actionError`
+   - `:324` — Clear All loop: collects failure count, shows consolidated `actionError`
+   - `:608` — Decrement stepper: `actionError = "Could not save quantity change."`
+   - `:633` — Increment stepper: `actionError = "Could not save quantity change."`
+   - `:648` — Fill-to-expected button: `actionError = "Could not save quantity change."`
+   - `:851` — Barcode scan auto-increment: `scanError = "Barcode scan quantity could not be saved."`
+
+2. **#142 [FALSE POSITIVE] — Closed** — All 11 listed catch blocks have proper handlers (errorMessage, saveError, logger.warning, or non-fatal comments)
+
+**GitHub Issues:**
+- #141 CLOSED — fix applied
+- #142 CLOSED — false positive, scanner improvement documented
+
+**Tests Added:** 0 (iOS-layer fix; no core service changes)
+
+---
 
 ### Iteration 37 — dev-improvement-scanner run 12 (2026-04-10)
 
