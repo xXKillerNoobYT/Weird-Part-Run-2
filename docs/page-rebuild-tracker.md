@@ -7,8 +7,8 @@
 
 ---
 
-## Current Page: Fix Queue Drain (all 44 pages complete — PE queue now empty)
-## Status: PASS — 44/44 pages complete, fix queue 5/5 items resolved
+## Current Page: DIS-016 Fix (all 44 pages complete — working open issue queue)
+## Status: PASS — 44/44 pages complete, DIS-016 (7 files) fixed 2026-04-10
 
 ---
 
@@ -122,3 +122,4 @@ _Legend: ? = Not started, 🔄 = In Progress, ✅ = Pass, ❌ = Blocked_
 | 2026-04-05 | Tier 7: Standard Filter Bar, Help Button, Save & Exit Patterns | 5 | 5 | ✅ (1014) | ✅ |
 | 2026-04-06 | Fix queue drain: PE-036 verified (WarehouseOnboardingWizard already done), PE-038 (JobStageProgressBar font→Dynamic Type), PE-039 partial (PartsFlowWizard DB loop→Task{}+isSaving) | 2 | 2 | ✅ (1030) | ✅ |
 | 2026-04-08 | Fix queue drain: PE-041 (receiving auto-save draft: all qty mutations → updateSessionItem Task{}, restore from DB on resume, discard dialog removed), PE-040 (WizardStepPlacement rewrite: Phase A dimensions form + migration 073 + updateFloorPlanGrid, Phase B drag-and-drop via .onDrag/.dropDestination) | 2 | 2 | ✅ (1118) | ✅ |
+| 2026-04-10 | DIS-016: fixed all 7 `currentUser?.id ?? 1` write-path anti-patterns (IOSMessageThreadView, IOSCustomerDetailPage ×2, IOSContractorDetailPage, IOSProcurementPage, IOSNotebookDetailPage, IOSAuditSetupView). `?? 1` eliminated from entire codebase. GitHub #140 closed. | 7 | 7 | ✅ (1162) | ✅ |
