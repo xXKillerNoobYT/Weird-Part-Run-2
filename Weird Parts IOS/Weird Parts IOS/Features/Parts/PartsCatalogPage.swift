@@ -1380,6 +1380,7 @@ private struct PartFormSheet: View {
     @State private var costPrice = ""
     @State private var markupPercent = ""
     @State private var saveError: String?
+    @State private var isSaving = false
 
     private let partTypes = ["standard", "special_order", "custom"]
 
@@ -1433,19 +1434,29 @@ private struct PartFormSheet: View {
             }
             .navigationTitle(part == nil ? "New Part" : "Edit Part")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        Task {
-                            await save()
-                            dismiss()
-                            await onSave()
+                    if isSaving {
+                        ProgressView().tint(.white)
+                    } else {
+                        Button("Save") {
+                            Task {
+                                isSaving = true
+                                await save()
+                                isSaving = false
+                                if saveError == nil {
+                                    dismiss()
+                                    await onSave()
+                                }
+                            }
                         }
+                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || selectedCategoryId == 0)
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || selectedCategoryId == 0)
                 }
             }
             .onAppear {
@@ -1458,6 +1469,14 @@ private struct PartFormSheet: View {
                     costPrice = String(format: "%.2f", p.companyCostPrice)
                     markupPercent = String(format: "%.1f", p.companyMarkupPercent)
                 }
+            }
+            .alert("Save Failed", isPresented: Binding(
+                get: { saveError != nil },
+                set: { if !$0 { saveError = nil } }
+            )) {
+                Button("OK") { saveError = nil }
+            } message: {
+                Text(saveError ?? "")
             }
         }
     }

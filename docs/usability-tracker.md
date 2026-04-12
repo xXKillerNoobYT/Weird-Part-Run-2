@@ -8,9 +8,91 @@
 
 ## Latest Run
 
-**Date:** 2026-04-04
-**Method:** Full manual audit of all 170+ iOS pages across 13 modules
-**Result:** 44 issues found, 44 fixed, 0 remaining
+**Date:** 2026-04-12
+**Agent:** usability-hunter
+**Method:** Full 6-scanner behavioral pass across all Swift files in Weird Parts IOS/
+**Result:** 3 CRITICAL fixes applied (PartFormSheet + 2 companion sheets), 3 GitHub issues filed (#148-#150), 1196 tests pass
+
+---
+
+## Usability Hunter Run 1 (2026-04-12)
+
+**Scope:** All Swift files in `Weird Parts IOS/Weird Parts IOS/` — behavioral usability patterns (dismiss safety, silent failures, feedback, navigation, forms, accessibility)
+**Build:** ✅ Build complete | **Tests:** ✅ 1196/1196 pass (no change)
+
+### Scanner Summary
+
+| Scanner | Finding | Count | Action |
+|---------|---------|-------|--------|
+| 1 Dismiss & Sheet Safety | Files with both await + dismiss() | 30 candidates | 3 fixed (PartFormSheet + 2 companion sheets) |
+| 1 Dismiss & Sheet Safety | Missing interactiveDismissDisabled | 40 files | Covered by existing #143 |
+| 2 Silent Failure Detection | try? on mutate ops | 12 flagged | Most false positives (FileManager, JSON decode); existing #121 covers systemic |
+| 2 Silent Failure Detection | Empty catch blocks | 30+ | Existing #128 covers systemic |
+| 3 Missing User Feedback | Delete without confirm | 11 flagged | All false positives (use hatToDelete dialog, smartDelete sheet, in-memory ops) |
+| 4 Navigation & Exit Traps | Wizard without Save & Exit | IOSMovementWizard confirmed | Filed #148 |
+| 4 Navigation & Exit Traps | Forms without dirty tracking | 30+ Settings forms | Existing #129 covers systemic |
+| 5 Form & Input Issues | Save buttons without .disabled() | 7 Settings pages | Filed #150 (LOW — settings have defaults) |
+| 5 Form & Input Issues | TextField without keyboard dismiss | ~30 pages | Filed #149 |
+| 6 Accessibility | Small tap targets <44px | Scanner error (macOS grep -P) | Deferred |
+| 6 Accessibility | Color-only indicators | 0 confirmed | Pass |
+
+### Fixes Applied (Run 1 — 2026-04-12)
+
+| # | File | Scanner | Issue | Fix |
+|---|------|---------|-------|-----|
+| 1 | PartsCatalogPage.swift (PartFormSheet) | 1 (Dismiss Safety) | `Task { await save(); dismiss() }` with no `interactiveDismissDisabled` — user could swipe-dismiss mid-save, losing unsaved part data; `saveError` set but never displayed | Added `@State isSaving`, `interactiveDismissDisabled(isSaving)`, Cancel `.disabled(isSaving)`, `ProgressView` spinner while saving, error alert for `saveError` |
+| 2 | PartsCompanionsPage.swift (CompanionRuleForm) | 1 (Dismiss Safety) | `isSaving` present but no `interactiveDismissDisabled` — swipe-dismiss possible during companion rule save | Added `interactiveDismissDisabled(isSaving)` + Cancel `.disabled(isSaving)` |
+| 3 | PartsCompanionsPage.swift (AlternativeFormSheet) | 1 (Dismiss Safety) | Same — `isSaving` present but no `interactiveDismissDisabled` | Added `interactiveDismissDisabled(isSaving)` + Cancel `.disabled(isSaving)` |
+
+### Issues Filed (Run 1 — 2026-04-12)
+
+| # | Issue | Severity |
+|---|-------|----------|
+| #148 | IOSMovementWizard missing Save & Exit | HIGH |
+| #149 | ~30 pages missing keyboard dismiss | MODERATE |
+| #150 | Settings save buttons lack .disabled() validation | LOW |
+
+### False Positive Rate
+- Scanner 3 (delete confirm): ~90% false positive — scanner can't see that calls route through `hatToDelete` dialog, `SmartDeleteSheet`, or are in-memory ops
+- Scanner 2 (try? mutate): ~65% false positive — FileManager.createDirectory, JSONDecoder.decode flagged as "mutate" but are safe optional reads
+
+---
+
+## Usability Enforcer Run 6 (2026-04-12)
+
+**Scope:** 8 recently modified files from git status: `DevicePairingView`, `IOSEscalationTimeline`, `IOSMessageThreadView`, `IOSWishlistPage`, `IOSCustomerDetailPage`, `IOSEmployeeDetailPage`, `CompanyProfilesPage`, `IOSAuditPage`
+**Build:** ✅ Build complete | **Tests:** ✅ 1196/1196 pass (no change)
+
+| Scanner | File(s) | Result | Notes |
+|---------|---------|--------|-------|
+| 1 Page Load Integrity | All 8 | ✅ PASS | All have isLoading/ProgressView/ErrorStateView; proper guard-let-service patterns |
+| 2 Button & Action Verification | IOSMessageThreadView | ⚠️ **DEAD BUTTONS** | Photo attach button + reference picker buttons set state vars (`showPhotoPicker`, `showReferencePicker`) but no sheet/PhotosPicker consumes them — P2, Xcode prompt PE-043 filed |
+| 3 Modal & Sheet Dismiss | All 8 | ✅ PASS | All use `ActiveSheet` enum + `.sheet(item:)` pattern; all sheets have Cancel+Save; `interactiveDismissDisabled` present on all forms |
+| 4 Navigation & Exit Paths | All 8 | ✅ PASS | All reachable; all have `.navigationTitle`; back nav via NavigationStack |
+| 5 SQL vs Schema | All 8 (UI only) | ✅ PASS | These are UI files only; service calls verified via existing tests |
+| 6 Plan Alignment | All 8 | ✅ PASS | All features match plans; Chat attachment pickers are explicitly phase-2 work |
+| 7 Defensive UX | IOSEmployeeDetailPage | ⚠️ **FIXED** | `onSave` closure used `guard ... else { return }` inside a `throws` closure — caller treated as success and called `dismiss()` silently on service nil. Fixed: `throw ServiceUnavailableError()` |
+| 7 Defensive UX | CompanyProfilesPage | ⚠️ **FIXED** | No `isLoading` state — "No company profiles yet" flashed before first load completed. Fixed: added `@State isLoading = true`, ProgressView branch, `isLoading = false` in `loadProfiles()` |
+| 7 Defensive UX | IOSAuditPage | ⚠️ **FIXED** | `startCounting()` called `startNewSession()` then returned — user had to tap part twice to begin counting. Fixed: after session starts, immediately proceeds to count if `activeSession != nil` |
+| 8 Feature Completeness | All 8 | ✅ PASS | All have appropriate CRUD/list/search/refresh/empty-state coverage for their scope |
+
+### Fixes Applied (Run 6 — 2026-04-12)
+
+| # | File | Scanner | Issue | Fix |
+|---|------|---------|-------|-----|
+| 1 | IOSEmployeeDetailPage.swift | 7 (Defensive UX) | `onSave` closure in `.editContact` sheet used `guard let service ... else { return }` inside a `throws -> Void` closure — callee treated silent return as success and called `dismiss()` | Changed to `throw ServiceUnavailableError()` so error propagates to `EditEmployeeContactSheet.save()` catch block |
+| 2 | CompanyProfilesPage.swift | 1 (Page Load) | No `@State isLoading` — empty-state text visible during initial async load before data arrived | Added `isLoading = true` state, `Group { if isLoading { ProgressView } else { List } }` body structure, `isLoading = false` at end of `loadProfiles()` |
+| 3 | IOSAuditPage.swift | 7 (Defensive UX) | `startCounting()` auto-started a session via `startNewSession()` then returned — user had to tap a part twice to enter count flow | Changed to `if activeSession == nil { startNewSession(); guard activeSession != nil else { return } }` so count flow opens on first tap |
+
+### Queued for Xcode AI (Run 6 — 2026-04-12)
+
+| # | File | Scanner | Issue | Prompt |
+|---|------|---------|-------|--------|
+| 1 | IOSMessageThreadView.swift | 2 (Buttons) | Photo attach + reference picker buttons are dead — `showPhotoPicker`/`showReferencePicker` state vars set but no `PhotosPicker`/sheet consumes them | PE-043 `PE-043-message-thread-attachment-pickers.md` |
+
+---
+
+## Prior Run Summary (2026-04-04)
 
 ---
 

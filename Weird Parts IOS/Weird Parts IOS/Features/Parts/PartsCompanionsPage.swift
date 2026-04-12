@@ -1154,9 +1154,11 @@ private struct CompanionRuleFormSheet: View {
             }
             .navigationTitle(editingRule == nil ? "New Companion Rule" : "Edit Rule")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
@@ -1364,9 +1366,11 @@ private struct AlternativeFormSheet: View {
             }
             .navigationTitle("New Alternative")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
