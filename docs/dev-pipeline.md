@@ -1838,3 +1838,24 @@ _Appended by dev-pipeline-manager each run._
 - Issues processed: 0 new this run (10 closed 2026-04-10 already logged)
 - Bugs fixed: 0 new this run (DIS-016 fully closed 2026-04-10; 1 active Xcode prompt: PE-042)
 - Pipeline health: OK — 1165/1165 green, build clean, 1 active Xcode prompt (PE-042 Cart Mode UI), 2 pending Q&A (DIS-012/013 KDF decision), ~59 open issues
+
+### End-of-Day Sync — 2026-04-12 (github-sync-and-review run 5)
+- Files committed: 7
+- Commits created: 5
+  1. `fix(ios)`: 50d891d — IOSReceiveShipmentPage: 6× try? → do-catch with user feedback (#141)
+  2. `feat(ios)`: 8f791bc — WizardStepPlacement: Cart Mode bulk bin placement (PE-042)
+  3. `fix(core)`: 4a2b6ec — PartsService.setPricingTier: set createdAt/updatedAt before insert
+  4. `test(core)`: 7dac843 — +29 tests: PartsServiceCoverageTests, PeopleService, SettingsService (1165→1194)
+  5. `docs`: 39285d5 — tracker iter 38, dev-qa Cart Mode + PricingOverrideFlow Q&A answered
+- Push status: success — origin advanced to 39285d5 (5 commits)
+- Tests: 1194/1194 passing (54 suites, all green)
+- Agent runs today: 3 confirmed runs
+  - ✅ hunt-fix-verify: iter 38 (2026-04-12) — #141 FIXED (6× try?→do-catch), #142 closed (false positive)
+  - ✅ test-coverage-maintenance: (2026-04-12) — +29 tests, 1 production bug fixed (setPricingTier NULL timestamps)
+  - ✅ page-rebuild-enforcer: (2026-04-12) — Cart Mode PE-042 iOS UI added (WizardStepPlacement)
+  - ⚠️ dev-improvement-scanner: last confirmed 2026-04-10 (run 11)
+  - ⚠️ dev-pipeline-manager: last confirmed 2026-04-09 (run 15)
+  - ⚠️ github-issues-sync: last confirmed 2026-04-10 (run 4)
+- Issues processed: 2 (#141 CLOSED, #142 CLOSED)
+- Bugs fixed: 2 (#141 silent failures → user feedback; setPricingTier NULL timestamp crash)
+- Pipeline health: OK — 1194/1194 green, build clean, Cart Mode iOS UI shipped (PE-042), dev-qa Q&A answered for Cart Mode + PricingOverrideFlow, ~57 open issues
