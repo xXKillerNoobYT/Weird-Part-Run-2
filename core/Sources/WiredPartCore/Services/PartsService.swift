@@ -2367,6 +2367,9 @@ public final class PartsService: Sendable {
                 setBy: setBy,
                 notes: notes
             )
+            let now = ISO8601DateFormatter().string(from: Date())
+            tier.createdAt = now
+            tier.updatedAt = now
             try tier.insert(dbConn)
             return tier
         }
