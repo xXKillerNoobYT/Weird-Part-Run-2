@@ -1815,3 +1815,26 @@ _Appended by dev-pipeline-manager each run._
 - Issues processed: 6 (#133-#138 added to tracker)
 - Bugs fixed: 2 (DIS-014 fully closed; DIS-015 partial — service layer fixed, 6 iOS write paths pending PE-042 Xcode prompt)
 - Pipeline health: OK — 1142/1142 green, build clean, 0 active Xcode prompts, 4 pending Q&A owner decisions (DIS-012/013/133/138)
+
+---
+
+### End-of-Day Sync — 2026-04-12 (github-sync-and-review run 4)
+- Files committed: 2 (usability-hunter run 5 + page-rebuild-tracker DIS-016 log)
+- Commits created: 2
+  1. `fix(ios)`: 8b08e09 — usability-hunter run 5 (dismiss guards + delete confirmations, 5 files)
+  2. `docs(tracker)`: dc7c383 — DIS-016 fix logged in page-rebuild-tracker
+- Push status: success — origin advanced from 623ca68 → dc7c383 (2 commits, 7 files total)
+- Tests: 1165/1165 passing (53 suites, all green)
+- Agent runs today: 0 new agent runs — all activity was from 2026-04-10
+  - ✅ hunt-fix-verify: iter 35/36 (2026-04-10) — DIS-015/DIS-016 fixed
+  - ✅ usability-hunter: run 5 (2026-04-10) — 7 fixes (dismiss guards, confirmationDialogs), #141-#143 filed
+  - ✅ plan-enforcer: run 11 (2026-04-10) — DIS-015 write-paths verified, QR plan registered
+  - ✅ github-issues-sync: run 4 (2026-04-10) — 10 issues closed (#115-#117 #119-#120 #135-#137 #140)
+  - ⚠️ test-coverage-maintenance: last run 2026-04-09 — not run 2026-04-10/11/12
+  - ⚠️ dev-improvement-scanner: last run 2026-04-09 (run 11) — not run today
+  - ⚠️ dev-pipeline-manager: last run 2026-04-09 (run 15) — not run today
+  - ⚠️ github-sync-and-review: this run (2026-04-12) — bridging 2-day gap
+  - ⚠️ weekly-cleanup: due today (2026-04-12) — not confirmed run
+- Issues processed: 0 new this run (10 closed 2026-04-10 already logged)
+- Bugs fixed: 0 new this run (DIS-016 fully closed 2026-04-10; 1 active Xcode prompt: PE-042)
+- Pipeline health: OK — 1165/1165 green, build clean, 1 active Xcode prompt (PE-042 Cart Mode UI), 2 pending Q&A (DIS-012/013 KDF decision), ~59 open issues
