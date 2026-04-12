@@ -26,6 +26,16 @@ struct WizardStepPlacement: View {
     // Phase B — drag-and-drop
     @State private var draggingUnitId: Int64?
 
+    // Cart Mode (PE-042)
+    @State private var isCartMode = false
+    @State private var cartBinIds: Set<Int64> = []
+    @State private var showingPlaceCartSheet = false
+    @State private var isMoving = false
+    @State private var cartError: String?
+    @State private var allBins: [FloorPlanBinInfo] = []
+    @State private var allAreas: [WarehouseStorageArea] = []
+    @State private var selectedAreaId: Int64?
+
     private let cellSize: CGFloat = 60
 
     var body: some View {
@@ -95,25 +105,37 @@ struct WizardStepPlacement: View {
 
     private func dragDropPhase(dims: (rows: Int, cols: Int)) -> some View {
         VStack(spacing: 0) {
-            // Unplaced units drag source
-            unplacedUnitsBar
+            // Cart Mode toolbar
+            cartModeToolbar
 
-            // Grid
-            ScrollView([.horizontal, .vertical]) {
-                dropGrid(rows: dims.rows, cols: dims.cols)
-                    .padding()
+            if isCartMode {
+                // Cart Mode: bin selection list
+                cartModeBanner
+                cartBinBrowser
+            } else {
+                // Normal: drag-and-drop
+                unplacedUnitsBar
+
+                ScrollView([.horizontal, .vertical]) {
+                    dropGrid(rows: dims.rows, cols: dims.cols)
+                        .padding()
+                }
+
+                placedUnitsList
             }
 
-            // Progress bar + placed list
-            placedUnitsList
-
-            // Allow re-setting grid dimensions
-            Button("Change Grid Dimensions") {
-                gridDimensions = nil
+            // Allow re-setting grid dimensions (only when not in cart mode)
+            if !isCartMode {
+                Button("Change Grid Dimensions") {
+                    gridDimensions = nil
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 8)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .padding(.bottom, 8)
+        }
+        .sheet(isPresented: $showingPlaceCartSheet) {
+            placeCartSheet
         }
     }
 
@@ -308,6 +330,261 @@ struct WizardStepPlacement: View {
         }
     }
 
+    // MARK: - Cart Mode (PE-042)
+
+    private var cartModeToolbar: some View {
+        HStack {
+            if isCartMode {
+                Text("Cart Mode")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                if !cartBinIds.isEmpty {
+                    Text("\(cartBinIds.count)")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.orange, in: Capsule())
+                }
+                Spacer()
+                Button("Place Cart") {
+                    showingPlaceCartSheet = true
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+                .disabled(cartBinIds.isEmpty)
+
+                Button("Done") {
+                    isCartMode = false
+                    cartBinIds.removeAll()
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Spacer()
+                Button {
+                    isCartMode = true
+                    loadBinsForCartMode()
+                } label: {
+                    Label("Cart Mode", systemImage: "cart.fill")
+                        .font(.subheadline)
+                }
+                .buttonStyle(.bordered)
+                .tint(.orange)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+    }
+
+    private var cartModeBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "cart.fill")
+                .foregroundStyle(.orange)
+            Text("Tap bins to add them to your cart, then place them in a new area.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.1))
+    }
+
+    private var cartBinBrowser: some View {
+        Group {
+            if allBins.isEmpty {
+                ContentUnavailableView(
+                    "No Bins",
+                    systemImage: "tray",
+                    description: Text("Create bins in storage areas first.")
+                )
+            } else {
+                List {
+                    ForEach(allBins, id: \.bin.id) { info in
+                        Button {
+                            guard let binId = info.bin.id else { return }
+                            if cartBinIds.contains(binId) {
+                                cartBinIds.remove(binId)
+                            } else {
+                                cartBinIds.insert(binId)
+                            }
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(info.bin.binCode)
+                                        .font(.body)
+                                        .fontWeight(.medium)
+                                    Text("\(info.unitName) — \(info.areaCode)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if let binId = info.bin.id, cartBinIds.contains(binId) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.orange)
+                                        .imageScale(.large)
+                                } else {
+                                    Image(systemName: "circle")
+                                        .foregroundStyle(.secondary)
+                                        .imageScale(.large)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+    }
+
+    private var placeCartSheet: some View {
+        NavigationStack {
+            VStack(spacing: 20) {
+                Text("\(cartBinIds.count) bin\(cartBinIds.count == 1 ? "" : "s") selected")
+                    .font(.headline)
+
+                if allAreas.isEmpty {
+                    ContentUnavailableView(
+                        "No Areas",
+                        systemImage: "square.dashed",
+                        description: Text("Create storage areas first.")
+                    )
+                } else {
+                    List(allAreas, id: \.id, selection: $selectedAreaId) { area in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(area.areaCode)
+                                    .font(.body)
+                                    .fontWeight(.medium)
+                                if let loc = area.fullLocationCode {
+                                    Text(loc)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            if selectedAreaId == area.id {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(.blue)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            selectedAreaId = area.id
+                        }
+                    }
+                    .listStyle(.plain)
+                }
+
+                if let err = cartError {
+                    Text(err)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .padding(.horizontal)
+                }
+
+                Button {
+                    moveBinsToSelectedArea()
+                } label: {
+                    HStack {
+                        if isMoving {
+                            ProgressView()
+                                .tint(.white)
+                        }
+                        Text("Move Bins")
+                            .fontWeight(.semibold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+                .disabled(selectedAreaId == nil || isMoving)
+                .padding(.horizontal)
+            }
+            .padding(.top)
+            .navigationTitle("Place Cart")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        showingPlaceCartSheet = false
+                        cartError = nil
+                    }
+                    .disabled(isMoving)
+                }
+            }
+            .interactiveDismissDisabled(isMoving)
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    // MARK: - Cart Mode Actions
+
+    private func loadBinsForCartMode() {
+        guard let svc = appCore.warehouseService else { return }
+        var loadedBins: [FloorPlanBinInfo] = []
+        var loadedAreas: [WarehouseStorageArea] = []
+
+        do {
+            for unit in units {
+                guard let unitId = unit.id else { continue }
+                let levels = try svc.listLevelsForUnit(unitId: unitId)
+                for level in levels {
+                    guard let levelId = level.id else { continue }
+                    let areas = try svc.listAreasForLevel(levelId: levelId)
+                    loadedAreas.append(contentsOf: areas)
+                    for area in areas {
+                        guard let areaId = area.id else { continue }
+                        let bins = try svc.listBinsForArea(areaId: areaId)
+                        for bin in bins {
+                            loadedBins.append(FloorPlanBinInfo(
+                                bin: bin,
+                                areaCode: area.areaCode,
+                                unitName: unit.name
+                            ))
+                        }
+                    }
+                }
+            }
+            allBins = loadedBins
+            allAreas = loadedAreas
+        } catch {
+            stepError = userFriendlyError(error, context: "load bins for cart mode")
+        }
+    }
+
+    private func moveBinsToSelectedArea() {
+        guard let svc = appCore.warehouseService else {
+            cartError = "Warehouse service not available"
+            return
+        }
+        guard let targetAreaId = selectedAreaId else {
+            cartError = "Select a destination area"
+            return
+        }
+
+        isMoving = true
+        cartError = nil
+
+        Task {
+            do {
+                try svc.moveBinsToArea(binIds: Array(cartBinIds), targetAreaId: targetAreaId)
+                cartBinIds.removeAll()
+                selectedAreaId = nil
+                showingPlaceCartSheet = false
+                loadData()
+                loadBinsForCartMode()
+            } catch {
+                cartError = userFriendlyError(error, context: "move bins")
+            }
+            isMoving = false
+        }
+    }
+
     // MARK: - Helpers
 
     private func iconForUnitType(_ type: String) -> String {
@@ -334,4 +611,13 @@ struct WizardStepPlacement: View {
         default: return .gray
         }
     }
+}
+
+// MARK: - Supporting Types
+
+/// Flattened bin info for Cart Mode display.
+struct FloorPlanBinInfo {
+    let bin: WarehouseBin
+    let areaCode: String
+    let unitName: String
 }
