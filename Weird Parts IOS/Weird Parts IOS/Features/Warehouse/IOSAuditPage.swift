@@ -787,10 +787,10 @@ struct IOSAuditPage: View {
     }
 
     private func startCounting(_ item: CountingItem) {
-        guard activeSession != nil else {
-            // Auto-start a session
+        if activeSession == nil {
+            // Auto-start a session, then immediately proceed to count if successful
             startNewSession()
-            return
+            guard activeSession != nil else { return }
         }
         countingPart = item
         countResult = nil
