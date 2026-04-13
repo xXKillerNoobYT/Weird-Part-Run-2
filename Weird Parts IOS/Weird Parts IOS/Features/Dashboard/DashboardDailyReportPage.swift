@@ -718,8 +718,12 @@ private struct ReportProblemSheet: View {
             }
             .navigationTitle("Report Problem")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismissSheet() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismissSheet() }
+                        .disabled(isSaving)
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Submit") {
                         submitProblem()
@@ -934,8 +938,12 @@ private struct SubmitDailyReportSheet: View {
             }
             .navigationTitle("Daily Report")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Submit") {
                         submitReport()

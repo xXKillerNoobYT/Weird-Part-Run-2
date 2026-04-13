@@ -813,9 +813,11 @@ struct ToolCheckoutSheet: View {
                 }
             }
             .navigationTitle("Checkout Tool")
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Checkout") {
@@ -908,9 +910,11 @@ struct ToolReturnSheet: View {
                 }
             }
             .navigationTitle("Return Tool")
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Return") {
@@ -1009,9 +1013,11 @@ struct ToolEditSheet: View {
                 }
             }
             .navigationTitle("Edit Tool")
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(hasManagePermission ? "Save" : "Submit for Verification") {
@@ -1113,9 +1119,11 @@ struct ToolReportIssueSheet: View {
                 }
             }
             .navigationTitle("Report Issue")
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Submit") {
@@ -1236,9 +1244,11 @@ struct ToolApproveEditSheet: View {
                 }
             }
             .navigationTitle("Approve Edit")
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Approve") {
@@ -1343,9 +1353,11 @@ struct ToolTradeSheet: View {
                 }
             }
             .navigationTitle("Trade Tool")
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Send Request") {
@@ -1466,9 +1478,11 @@ struct TradeResponseSheet: View {
                 }
             }
             .navigationTitle("Respond to Trade")
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
             }
         }
@@ -1551,9 +1565,11 @@ struct LostStolenReportSheet: View {
                 }
             }
             .navigationTitle("Report \(reportType.capitalized)")
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Submit Report") {
@@ -1644,9 +1660,11 @@ struct MaintenanceConfigSheet: View {
                 }
             }
             .navigationTitle("Add Maintenance Rule")
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {

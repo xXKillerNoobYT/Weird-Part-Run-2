@@ -330,6 +330,7 @@ private struct AddEstimationQuestionSheet: View {
     @State private var choicesText = ""
     @State private var weight = 1.0
     @State private var saveError: String?
+    @State private var isSaving = false
 
     private let groups = ["scope", "complexity", "access", "materials", "labor"]
     private let stages = ["bid", "pre_start", "during", "before_trim", "punch_list"]
@@ -389,19 +390,28 @@ private struct AddEstimationQuestionSheet: View {
             }
             .navigationTitle("Add Question")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { Task { await save() } }
-                        .disabled(questionText.trimmingCharacters(in: .whitespaces).isEmpty)
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Save") { Task { await save() } }
+                            .disabled(questionText.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
                 }
             }
         }
     }
 
     private func save() async {
+        guard !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
         guard let svc = appCore.jobEstimationService else {
             saveError = "Service not available"
             return
@@ -437,6 +447,7 @@ private struct EditEstimationQuestionSheet: View {
     @State private var questionText: String
     @State private var weight: Double
     @State private var saveError: String?
+    @State private var isSaving = false
 
     init(question: EstimationQuestion, onSave: @escaping () async -> Void) {
         self.question = question
@@ -477,19 +488,28 @@ private struct EditEstimationQuestionSheet: View {
             }
             .navigationTitle("Edit Question")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { Task { await save() } }
-                        .disabled(questionText.trimmingCharacters(in: .whitespaces).isEmpty)
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Save") { Task { await save() } }
+                            .disabled(questionText.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
                 }
             }
         }
     }
 
     private func save() async {
+        guard !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
         guard let svc = appCore.jobEstimationService,
               let qid = question.id else {
             saveError = "Estimation service not available"
