@@ -1920,3 +1920,15 @@ _Appended by dev-pipeline-manager each run._
 **Backlog size:** ~52 open issues. Blocked on Q&A: 3 blocks (Colors/Brands + #143/#149 dismiss bundle). Backlog (future phases): 5 items. Program-review: #82–#95 (14 issues, next major phase).
 
 **Next priority:** Owner answers to Colors/Brands Q&A (#98-#107) and #143/#149 Q&A. Once answered, PE-COLORS plan can be finalized and PE-DISMISS campaign can start. Immediate: PE-043 is NEXT in Xcode AI queue — user should run it when ready.
+
+### End-of-Day Sync — 2026-04-12
+
+- Files committed: 12 (10 iOS UI + 2 docs)
+- Commits created: 2 (+ 2 pre-existing = 4 total pushed)
+- Push status: success (main → origin/main, 4 commits ahead merged)
+- Tests: 1217/1217 passing (54 suites)
+- Build: 0 errors, 0 warnings
+- Agent runs today: 7/7 (hunt-fix-verify ×run40, dev-improvement-scanner ×run13, page-rebuild-enforcer ×2 runs AM+PM, usability-hunter ×run1+run2, pipeline-manager ×run16, github-issues-sync ×run7)
+- Issues processed: #146 major sweep (37 inline formatters → Formatters.swift), #151 fixed (wrong-thread resolve)
+- Bugs fixed: 37 inline DateFormatter allocations eliminated + formatter-mutation race condition fixed
+- Pipeline health: OK — all agents active, #146 sweep 80% complete (46 of ~90 remaining instances cleared), PE-043 queued next in Xcode AI, Q&A blocks (#143/#149 bundle + Colors/Brands) pending owner input
