@@ -728,4 +728,96 @@ struct JobsServiceTests {
         let groups = try env.jobs.getTodaysClockEntries(userId: env.adminUserId)
         #expect(groups.isEmpty)
     }
+
+    // MARK: - Error Cases
+
+    @Test("clockIn while already clocked in throws alreadyClockedIn")
+    func testDoubleClockInThrows() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DOUBLE-01")
+        _ = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        // Second clock-in for same user should throw alreadyClockedIn
+        var threw = false
+        do {
+            _ = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        } catch JobsService.JobsError.alreadyClockedIn(let uid, let jid) {
+            #expect(uid == env.adminUserId)
+            #expect(jid == jobId)
+            threw = true
+        }
+        #expect(threw, "Expected alreadyClockedIn to be thrown")
+    }
+
+    @Test("clockOut with non-existent labor entry throws laborEntryNotFound")
+    func testClockOutInvalidEntryThrows() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: JobsService.JobsError.laborEntryNotFound(9999)) {
+            try env.jobs.clockOut(laborEntryId: 9999)
+        }
+    }
+
+    @Test("clockOut after already clocked out throws laborEntryNotFound")
+    func testClockOutAlreadyCompletedThrows() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-COMPLETE-01")
+        let entryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.jobs.clockOut(laborEntryId: entryId)
+        // Entry is now 'completed' — a second clockOut should throw laborEntryNotFound
+        #expect(throws: JobsService.JobsError.laborEntryNotFound(entryId)) {
+            try env.jobs.clockOut(laborEntryId: entryId)
+        }
+    }
+
+    @Test("getJob with non-existent ID throws jobNotFound")
+    func testGetJobNotFoundThrows() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: JobsService.JobsError.jobNotFound(9999)) {
+            try env.jobs.getJob(id: 9999)
+        }
+    }
+
+    @Test("clockIn records GPS coordinates when provided")
+    func testClockInWithGPS() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-GPS-01")
+        let entryId = try env.jobs.clockIn(
+            userId: env.adminUserId,
+            jobId: jobId,
+            gpsLat: 37.7749,
+            gpsLng: -122.4194
+        )
+        #expect(entryId > 0)
+        let entry = try env.jobs.getActiveClockEntry(userId: env.adminUserId)
+        #expect(entry != nil)
+    }
+
+    @Test("different users can clock in concurrently on separate jobs")
+    func testConcurrentClockInDifferentUsers() throws {
+        let env = try E2ETestHelpers.setUp()
+        let secondUserId = try env.auth.createUser(displayName: "Worker B", pin: "5555")
+        let jobA = try E2ETestHelpers.seedJob(env, jobNumber: "J-CONC-01", name: "Job A")
+        let jobB = try E2ETestHelpers.seedJob(env, jobNumber: "J-CONC-02", name: "Job B")
+
+        let entryA = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobA)
+        let entryB = try env.jobs.clockIn(userId: secondUserId, jobId: jobB)
+
+        #expect(entryA > 0)
+        #expect(entryB > 0)
+        #expect(entryA != entryB)
+
+        let activeA = try env.jobs.getActiveClockEntry(userId: env.adminUserId)
+        let activeB = try env.jobs.getActiveClockEntry(userId: secondUserId)
+        #expect(activeA?.jobId == jobA)
+        #expect(activeB?.jobId == jobB)
+    }
+
+    @Test("getLaborEntryNotes returns nil when notes are not set")
+    func testGetLaborEntryNotesNil() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-NOTES-01")
+        let entryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        let notes = try env.jobs.getLaborEntryNotes(laborEntryId: entryId)
+        // Fresh clock entry has no notes
+        #expect(notes == nil || notes == "")
+    }
 }

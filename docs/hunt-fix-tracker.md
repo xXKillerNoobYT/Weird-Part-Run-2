@@ -1,7 +1,11 @@
 # Hunt-Fix-Verify Loop Tracker
 
 > **Started:** 2026-03-28
-> **Status:** PHASE 1 COMPLETE — 39 iterations, 142 bugs fixed. Latest: **github-issues-sync run 6 (2026-04-12):** **3 direct fixes committed** — (1) `IOSAuditPage.swift:828` — `try? service.updateUserRating()` → `do-catch` with print log; (2) `DevicePairingView.swift:258` — `try? service.upsertSettingsMap()` → `try service.upsertSettingsMap()` inside existing do-catch (silent failure on critical sync settings write); (3) `IOSWishlistPage.swift:81` — curly-quote escaping fix in delete confirmation. **7 sheets fixed for issue #143** — `interactiveDismissDisabled(isSaving)` added to: DevicePairingView, IOSEscalationTimeline.PushBackSheet, IOSMessageThreadView, IOSCustomerDetailPage.AddCustomerContactSheet + AddCommunicationSheet, IOSEmployeeDetailPage.EditEmployeeContactSheet, CompanyProfilesPage.CompanyProfileEditor. **PE-042 archived** to done/. Tests: **1196/1196** (all pass). Open: #143 (systemic, now 33 sheets covered), #130/#131 (KDF deferred v2), #121/#122/#123/#128/#129 (systemic backlog).
+> **Status:** PHASE 1 COMPLETE — 43 iterations, 156 bugs fixed. Latest: **github-issues-sync run 7 (2026-04-13):** **1 direct fix (#151):** `ChatService.resolveQAThreadByChannel(channelId:resolvedBy:)` added — `handleAction(.markResolved)` in `IOSMessageThreadView` now resolves the Q&A thread linked to the current channel (was using `threads.first` = wrong thread every time). **1 test added:** `testResolveQAThreadByChannel`. **2 issues closed:** #151 (wrong thread resolved), #145 (pull-to-refresh already in working tree from page-rebuild-enforcer run). **2 issues commented:** #152 (PE-043 NEXT), #146 (partial Formatters sweep — 7 replaced, 90+ remain). All **1217** tests passing. Open: #148 (IOSMovementWizard Save & Exit — Xcode prompt needed), #149 (keyboard dismiss systemic), #150 (Settings .disabled() validation).
+> **dev-improvement-scanner run 13 (2026-04-12):** **5 direct fixes** — (1) `IOSSyncManager.pairWithShop:395` — `try? service.upsertSettingsMap()` → `try` (without shop_server_address, ALL future syncs silently connect to empty address); (2) `IOSSyncManager.pairWithShop:402` — `try? ChangeTracker.registerPeerDevice()` → `do-catch` with `logger.error()` (best-effort registration); (3+4) `IOSSyncManager.swift:177,449` — 2 inline `ISO8601DateFormatter()` for `lastSyncDate` → `Formatters.iso8601Basic`; (5-11) `IOSClockPage.swift` — 7 inline `ISO8601DateFormatter()` across `breakElapsedMinutes`/`breakElapsedSeconds`/`updateElapsedText`/today-prefix replaced with `Formatters.iso8601Fractional`, `Formatters.iso8601Basic`, `Formatters.localDateFormatter`. `Formatters.swift` extended with `iso8601Fractional` + `iso8601Basic` cached instances. **1 GitHub issue filed:** #151 (`IOSMessageThreadView.handleAction(.markResolved)` resolves wrong thread — `threads.first(where: { _ in true })` always picks first Q&A thread globally, not channel's thread). **0 force unwraps, 0 force casts, 0 SQL injection found.** Open: #151 (new — wrong thread resolved), #146 (88 remaining inline DateFormatters), #147 (empty states partial), #143 (interactiveDismissDisabled Q&A pending), #130/#131 (KDF deferred v2).
+> **page-rebuild-enforcer run (2026-04-12):** **3 direct fixes** — (1) `IOSMessageThreadView.swift` — `.refreshable { loadMessages() }` added to message ScrollView (**#145 CLOSED**); (2) `IOSEscalationTimeline.swift` — `steps.isEmpty` branch added with `EmptyStateView` (escalation icon + "No Escalation History" guidance text — partial #147); (3) `Formatters.swift` + `IOSClockPage.swift` — `localDateFormatter` (local-tz yyyy-MM-dd) + `localDateTimeFormatter` (local-tz yyyy-MM-dd'T'HH:mm:ss) added to Formatters; 4 inline `DateFormatter()` instances in IOSClockPage replaced with cached formatters (partial **#146** — 95 of 99 remaining across 43 files). **Tests: 1196/1196 (all pass).** Open: #146 (95 remaining inline DateFormatter instances — full sweep needed), #147 (2 of 3 empty state views still unidentified), #143 (systemic interactiveDismissDisabled — pending Q&A), #130/#131 (KDF deferred v2).
+> **hunt-fix-verify run 40 (2026-04-12):** **3 direct fixes** — (1) `IOSSyncManager.swift:352,362` — `try? ConflictResolver.markConflictReviewed()` → `do-catch` with `logger.error()` (silent failure left sync conflicts permanently unreviewed); (2) `IOSDashboardQRScannerPage.swift:599` — `try? service.setUserCurrentPosition()` → `do-catch` with `print()` log (non-critical position update); (3) `00-fix-order.md` — PE-042 status corrected (was still showing as NEXT after being archived; PE-043 now correctly marked NEXT). **0 new issues filed** (all patterns explained). Build: **0 errors, 0 warnings**. Tests: **1196/1196** (all pass). Open: #143 (systemic interactiveDismissDisabled), #130/#131 (KDF deferred v2), #121/#122/#123/#128/#129 (systemic backlog), #145/#146/#147 (pipeline).
+> **github-issues-sync run 6 (2026-04-12):** **3 direct fixes committed** — (1) `IOSAuditPage.swift:828` — `try? service.updateUserRating()` → `do-catch` with print log; (2) `DevicePairingView.swift:258` — `try? service.upsertSettingsMap()` → `try service.upsertSettingsMap()` inside existing do-catch (silent failure on critical sync settings write); (3) `IOSWishlistPage.swift:81` — curly-quote escaping fix in delete confirmation. **7 sheets fixed for issue #143** — `interactiveDismissDisabled(isSaving)` added to: DevicePairingView, IOSEscalationTimeline.PushBackSheet, IOSMessageThreadView, IOSCustomerDetailPage.AddCustomerContactSheet + AddCommunicationSheet, IOSEmployeeDetailPage.EditEmployeeContactSheet, CompanyProfilesPage.CompanyProfileEditor. **PE-042 archived** to done/. Tests: **1196/1196** (all pass). Open: #143 (systemic, now 33 sheets covered), #130/#131 (KDF deferred v2), #121/#122/#123/#128/#129 (systemic backlog).
 > **dev-improvement-scanner run 12 (2026-04-12):** **2 direct fixes** — (1) `DevicePairingView.swift:258` — `try? service.upsertSettingsMap()` → `try service.upsertSettingsMap()` (silent failure on device pairing sync settings write); (2) `IOSAuditPage.swift:828` — `try? service.updateUserRating()` → `do-catch` with `print()` log (non-critical path, audit count already saved). **3 GitHub issues filed:** #145 (chat pull-to-refresh), #146 (Formatters.swift dead code / 99 inline DateFormatter instances), #147 (missing empty states on 3 views). **389 Swift files scanned.** 0 force unwraps, 0 force casts, 0 SQL injection, 0 hardcoded secrets. Open: #143 (13 sheets missing interactiveDismissDisabled — systemic), #130/#131 (DIS-012/013 KDF — deferred v2), #145/#146/#147 (new). Tests: **1194/1194** (unchanged — iOS-layer fix only).
 > **test-coverage-maintenance run (2026-04-12):** +29 tests (1165 → 1194). **New file:** `PartsServiceCoverageTests.swift`. **New methods covered (PartsService):** `getType`, `updateStyle` (×2 — rename, no-op), `deleteStyle`, `updateType`, `deleteType`, `getTypeBrandLinkId` (×2 — found, not found), `getPartSupplierCosts` (×2 — with link, empty), `logPriceChange` + `getPriceHistory` (×3 — round-trip, empty, limit), `setPricingTier` (×2 — create, replace), `getPricingTiers` (×2 — filtered, empty), `removePricingTier`, `getCompanyCostSetting` (nil path), `updateCompanyCostSetting` (×2 — store, upsert), `findOrCreateCategory` (×2 — new, idempotent), `findOrCreateBrand` (×2 — new, idempotent), `listCatalogParts` (×4 — unfiltered, by-category, search, pagination). **1 production bug fixed:** `setPricingTier` was missing `createdAt`/`updatedAt` before insert — GRDB was sending NULL, violating NOT NULL constraint; fixed with `ISO8601DateFormatter().string(from: Date())`. **+2 more tests** later in same run: `toggleIntegration` (SettingsService — requires inline table-create since no migration), `updateContact` (PeopleService). All **1196** tests passing.
 > **page-rebuild-enforcer run (2026-04-10):** **DIS-016 FIXED** — all 7 `currentUser?.id ?? 1` write-path anti-patterns replaced with proper `guard let userId` guards across IOSMessageThreadView (used captured userId from outer guard), IOSCustomerDetailPage ×2 (addCommunicationEntry + createPaymentRecord), IOSContractorDetailPage (addContractorNote), IOSProcurementPage (pullFromWarehouse), IOSNotebookDetailPage (createBlockEntry), IOSAuditSetupView (createAuditSession). **GitHub #140 CLOSED.** DevTODO marked fixed. `?? 1` pattern confirmed eliminated (grep returns 0 results). All **1162** tests passing.
@@ -40,6 +44,44 @@
 ---
 
 ## Iteration Log
+
+### Iteration 40 — hunt-fix-verify run 40 (2026-04-12)
+
+**3 bugs fixed. 0 new issues filed.**
+
+**Scanner results:**
+| Scanner | Status | Details |
+|---------|--------|---------|
+| Build | ✅ | `swift build` — 0 errors, 0 warnings |
+| Tests | ✅ | 1196/1196 passing (no core changes) |
+| Code Patterns — silent `try?` on writes | 🔴 **FIXED** | 2 instances converted to do-catch with logging |
+| Code Patterns — dead buttons `{ }` | ✅ | All `Button(...) { }` with `.cancel` role are correct dismiss buttons. One `Button("Yes, for \(selectedJobName)") { }` is intentional (comment in file confirms — selectedJobId already set). |
+| Code Patterns — `print()` | ✅ | 3 in `#Preview` blocks — confirmed false positives (documented) |
+| Code Patterns — force casts `as!` | ✅ | 0 found |
+| Code Patterns — force unwraps | ✅ | 0 found |
+| Code Patterns — stub UI | ✅ | 0 `Text("TODO")` / `Text("Placeholder")` / `Text("Coming soon")` found |
+| SQL Integrity | ✅ | All 8 known-mismatch patterns clean. `first_name`/`last_name` on `entity_contacts`/`general_contractors` (correct). `contact_name` in customers query is computed alias. `estimated_days` is computed alias. `returned_at` is `NULL AS returned_at`. |
+| 00-fix-order.md | 🔴 **FIXED** | PE-042 was still listed as 🔲 NEXT despite being archived in run 39 — corrected; PE-043 now correctly marked NEXT |
+
+**Fixes Applied:**
+
+| Fix | File | Details |
+|-----|------|---------|
+| `try?` → do-catch | `IOSSyncManager.swift:352,362` | `markConflictReviewed()` was silently failing — would leave sync conflicts permanently unreviewed in the UI. Added `os.Logger` + `logger.error()`. |
+| `try?` → do-catch | `IOSDashboardQRScannerPage.swift:599` | `setUserCurrentPosition()` silent failure on QR scan — non-critical but now logged via `print()`. |
+| Queue correction | `00-fix-order.md` | PE-042 status corrected from 🔲 NEXT → ✅ DONE; PE-043 moved to NEXT. |
+
+**Tests Added:** 0 (iOS-layer fixes only; no core service changes)
+
+**Metrics delta:**
+
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+| Tests passing | 1196 | 1196 | = |
+| `try?` on write paths | 2 | 0 | -2 |
+| Prompt queue accuracy | Stale | Correct | fixed |
+
+---
 
 ### Iteration 39 — github-issues-sync run 6 (2026-04-12)
 
@@ -719,6 +761,29 @@ These bugs were in `generateToolCheckoutsReport` — would crash any time a user
 ---
 
 ## Weekly Cleanup Log
+
+### Weekly Cleanup — 2026-04-13 (Run 3)
+
+**Build:** ✅ 0 errors, 0 warnings
+**Tests:** ✅ 1217/1217 passing
+
+**Part A — Xcode Prompt Archival:** 6 completed prompt files physically moved to `done/` — PE-036, PE-037, PE-039, PE-040, PE-041, PE-042. All were marked ✅ done in `00-fix-order.md` but still in active directory. PE-043 remains as NEXT. `00-next-prompt.md` retained (stale content but < 3 months old).
+
+**Part B — Dead Code:** 2 candidates found — `parseDateYMD` in `PeopleService.swift:1965` and `formatDate` in `BreakService.swift:448`. Both are unused private functions. Neither qualifies for removal (both added March 2026, < 3 months old). Flagged for future cleanup.
+
+**Part C — Temp Files:** No `.tmp/` directory exists. No `.DS_Store` outside `.git`. No `.bak`/`.orig`/`.swp` files. `docs/Problomes /` contains 34 screenshots (all from March–April 2026, within 3-month window) — kept.
+
+**Part D — Q&A Cleanup:** `docs/dev-qa.md` already clean. 2 pending blocks (Colors/Brands + Dismiss/Keyboard) — correctly in Pending. 3 processed entries in Reference Log — already integrated into plans.
+
+**Part E — Documentation Freshness:** All docs modified March–April 2026. Zero docs older than 3 months. No staleness warnings needed.
+
+**Part F — Tracker Cleanup:** All hunt-fix iterations started 2026-03-28. All within 3 months. No compression needed. `dev-pipeline.md` recent work all from March–April 2026 — no archival needed.
+
+**GitHub Issues Filed:** 0 (no unresolvable issues found)
+
+**Summary:** Clean project state. Main action: 6 archived prompts moved to correct directory.
+
+---
 
 ### Weekly Cleanup — 2026-04-05 (Run 2)
 

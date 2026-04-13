@@ -1,8 +1,8 @@
 # iOS Foundation Fixes — Design Plan
 
-> **Status:** ALL DONE — Prompts 01-10 complete
-> **Prompts:** `xcode-ai/fix-prompts/done/` (01-10 archived)
-> **Last updated:** 2026-03-21
+> **Status:** COMPLETE — Prompts 01-10 done; 35A-I cancelled (GRDB fully absent, confirmed 2026-04-12)
+> **Prompts:** `xcode-ai/fix-prompts/done/` (01-10 archived); 35A-I never written (moot)
+> **Last updated:** 2026-04-12 (plan-enforcer run 13)
 
 ---
 
@@ -72,4 +72,6 @@ These rules were established by prompts 01-10 and must be followed everywhere:
 
 ---
 
-*All prompts complete — these patterns are the baseline for all future work*
+*Prompts 01-10 complete — these patterns are the baseline for all future work.*
+
+*Prompts 35A-I (GRDB removal pass) are **cancelled** — zero `import GRDB` statements exist anywhere in the iOS app as of 2026-04-12. AppCore.swift, PartsCategoriesPage.swift, and DataRefreshNotifier.swift contain only comments referencing GRDB for architectural context; no actual import or GRDB API calls remain in UI layers. The underlying objective is fully achieved.*

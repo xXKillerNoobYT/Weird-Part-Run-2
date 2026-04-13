@@ -244,4 +244,73 @@ struct WishlistServiceTests {
         #expect(sections.autoAdded.count == 1)
         #expect(sections.autoAdded[0].partName == "System Part")
     }
+
+    // MARK: - Edge Cases & Error Paths
+
+    @Test("getItem returns nil for non-existent ID")
+    func testGetItemNil() throws {
+        let (_, wishlist) = try freshEnv()
+        let item = try wishlist.getItem(id: 9999)
+        #expect(item == nil)
+    }
+
+    @Test("approveItem throws itemNotFound for missing item")
+    func testApproveItemNotFound() throws {
+        let (_, wishlist) = try freshEnv()
+        #expect(throws: WishlistService.WishlistError.itemNotFound(9999)) {
+            try wishlist.approveItem(id: 9999, by: "Admin")
+        }
+    }
+
+    @Test("approveItem throws alreadyProcessed when item is not pending")
+    func testApproveItemAlreadyApproved() throws {
+        let (_, wishlist) = try freshEnv()
+        let item = try wishlist.addItem(partName: "Double-Approve Part", sourceType: "manual")
+        _ = try wishlist.approveItem(id: item.id!, by: "First Approver")
+        // Approving again should throw alreadyProcessed with the item's id and current status
+        #expect(throws: WishlistService.WishlistError.alreadyProcessed(item.id!, "approved")) {
+            _ = try wishlist.approveItem(id: item.id!, by: "Second Approver")
+        }
+    }
+
+    @Test("sendToProcurement throws invalidStatus when item is still pending")
+    func testSendToProcurementNotApproved() throws {
+        let (_, wishlist) = try freshEnv()
+        let item = try wishlist.addItem(partName: "Pending Part", sourceType: "manual")
+        // Item is pending — can't send to procurement yet
+        #expect(throws: (any Error).self) {
+            try wishlist.sendToProcurement(id: item.id!)
+        }
+    }
+
+    @Test("reopenItem throws invalidStatus when item is not dismissed")
+    func testReopenItemNotDismissed() throws {
+        let (_, wishlist) = try freshEnv()
+        let item = try wishlist.addItem(partName: "Active Part", sourceType: "manual")
+        // Item is pending — reopen should throw invalidStatus
+        #expect(throws: (any Error).self) {
+            try wishlist.reopenItem(id: item.id!)
+        }
+    }
+
+    @Test("deleteItem throws itemNotFound for non-existent ID")
+    func testDeleteItemNotFound() throws {
+        let (_, wishlist) = try freshEnv()
+        #expect(throws: WishlistService.WishlistError.itemNotFound(9999)) {
+            try wishlist.deleteItem(id: 9999)
+        }
+    }
+
+    @Test("getSectionedItems with statusFilter only returns matching items")
+    func testGetSectionedItemsWithFilter() throws {
+        let (_, wishlist) = try freshEnv()
+        _ = try wishlist.addItem(partName: "Pending Manual", sourceType: "manual")
+        let approved = try wishlist.addItem(partName: "Approved Manual", sourceType: "manual")
+        _ = try wishlist.approveItem(id: approved.id!, by: "Admin")
+
+        // Filter to approved only — should not include pending item
+        let sections = try wishlist.getSectionedItems(statusFilter: "approved")
+        #expect(sections.userAdded.count == 1)
+        #expect(sections.userAdded[0].partName == "Approved Manual")
+    }
 }

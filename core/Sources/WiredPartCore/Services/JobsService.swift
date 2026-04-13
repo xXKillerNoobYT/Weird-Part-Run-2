@@ -20,7 +20,7 @@ public final class JobsService: Sendable {
     // MARK: - Error Types
     // =========================================================================
 
-    public enum JobsError: Error, Sendable {
+    public enum JobsError: Error, Sendable, Equatable {
         case jobNotFound(Int64)
         case laborEntryNotFound(Int64)
         case alreadyClockedIn(userId: Int64, jobId: Int64)

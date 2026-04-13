@@ -15,10 +15,39 @@ enum Formatters {
         return f
     }()
 
+    /// UTC yyyy-MM-dd — for ISO 8601 storage and DB comparisons.
     static let shortDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         f.timeZone = TimeZone(identifier: "UTC")
+        return f
+    }()
+
+    /// Local-timezone yyyy-MM-dd — for "today" display labels and local date comparisons.
+    static let localDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    /// Local-timezone yyyy-MM-dd'T'HH:mm:ss — for parsing non-ISO datetime strings (e.g. break records).
+    static let localDateTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        return f
+    }()
+
+    /// ISO 8601 with fractional seconds — for parsing server timestamps (e.g. `2026-04-12T14:30:00.000Z`).
+    static let iso8601Fractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    /// ISO 8601 without fractional seconds — for parsing basic server timestamps (e.g. `2026-04-12T14:30:00Z`).
+    static let iso8601Basic: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
         return f
     }()
 

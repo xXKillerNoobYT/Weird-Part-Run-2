@@ -1260,6 +1260,18 @@ public final class ChatService: Sendable {
         }
     }
 
+    /// Resolve the Q&A thread linked to a specific channel.
+    /// Uses `channel_id` to find the correct thread — avoids the "first thread in DB" bug.
+    public func resolveQAThreadByChannel(channelId: Int64, resolvedBy: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                UPDATE qa_threads SET status = 'resolved', answered_by = ?, answered_at = datetime('now'),
+                    closed_at = datetime('now'), updated_at = datetime('now')
+                WHERE channel_id = ? AND deleted_at IS NULL
+                """, arguments: [resolvedBy, channelId])
+        }
+    }
+
     // =========================================================================
     // MARK: - Supplier Communication Bridge
     // =========================================================================

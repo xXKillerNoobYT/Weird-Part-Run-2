@@ -19,7 +19,7 @@ public final class WishlistService: Sendable {
     // MARK: - Error Types
     // =========================================================================
 
-    public enum WishlistError: LocalizedError, Sendable {
+    public enum WishlistError: LocalizedError, Sendable, Equatable {
         case itemNotFound(Int64)
         case invalidStatus(String)
         case alreadyProcessed(Int64, String)

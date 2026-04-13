@@ -188,6 +188,9 @@ struct IOSMessageThreadView: View {
                     .padding(.horizontal)
                     .padding(.vertical, 8)
                 }
+                .refreshable {
+                    loadMessages()
+                }
                 .onChange(of: messages.count) {
                     if let last = messages.last {
                         withAnimation {
@@ -399,13 +402,10 @@ struct IOSMessageThreadView: View {
         switch action {
         case .markResolved:
             do {
-                let threads = try service.listQAThreads()
-                if let thread = threads.first(where: { _ in true }) {
-                    try service.resolveQAThread(threadId: thread.id, resolvedBy: userId)
-                    loadThreadInfo()
-                }
+                try service.resolveQAThreadByChannel(channelId: channelId, resolvedBy: userId)
+                loadThreadInfo()
             } catch {
-                actionError = userFriendlyError(error, context: "send message")
+                actionError = userFriendlyError(error, context: "resolve thread")
             }
         case .addPeople, .escalate, .pushBack, .approve, .reject:
             break // Wired in later prompts (42D)

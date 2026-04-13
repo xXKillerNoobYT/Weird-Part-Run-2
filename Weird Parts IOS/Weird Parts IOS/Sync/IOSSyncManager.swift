@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import os
 import WiredPartCore
 
 /// Manages the overall sync lifecycle for the iOS app.
@@ -32,6 +33,8 @@ final class IOSSyncManager {
         let success: Bool
         let error: String?
     }
+
+    private let logger = Logger(subsystem: "com.wiredpart.ios", category: "IOSSyncManager")
 
     private var syncTimer: Timer?
     private var syncIntervalSeconds: TimeInterval = 60
@@ -173,8 +176,7 @@ final class IOSSyncManager {
         let success = errorMessage == nil
         if success {
             syncStatus = .synced
-            let formatter = ISO8601DateFormatter()
-            lastSyncDate = formatter.string(from: Date())
+            lastSyncDate = Formatters.iso8601Basic.string(from: Date())
         } else {
             syncStatus = .error
         }
@@ -349,7 +351,11 @@ final class IOSSyncManager {
     /// Mark a single conflict as reviewed.
     func markConflictReviewed(conflictId: Int64) {
         guard let db else { return }
-        try? ConflictResolver.markConflictReviewed(db: db, conflictId: conflictId)
+        do {
+            try ConflictResolver.markConflictReviewed(db: db, conflictId: conflictId)
+        } catch {
+            logger.error("[IOSSyncManager] markConflictReviewed failed for id \(conflictId): \(error.localizedDescription)")
+        }
         refreshConflictCount()
     }
 
@@ -359,7 +365,11 @@ final class IOSSyncManager {
         let conflicts = getUnreviewedConflicts()
         for conflict in conflicts {
             if let id = conflict.id {
-                try? ConflictResolver.markConflictReviewed(db: db, conflictId: id)
+                do {
+                    try ConflictResolver.markConflictReviewed(db: db, conflictId: id)
+                } catch {
+                    logger.error("[IOSSyncManager] markConflictReviewed failed for id \(id): \(error.localizedDescription)")
+                }
             }
         }
         refreshConflictCount()
@@ -379,21 +389,25 @@ final class IOSSyncManager {
         let deviceId = DeviceIdentity.current
         let deviceName = UIDevice.current.name
 
-        // Store the server address for future syncs
+        // Store the server address for future syncs (must succeed — without it, all future syncs fail)
         if let service = settingsService {
-            try? service.upsertSettingsMap([
+            try service.upsertSettingsMap([
                 "shop_server_address": shopAddress,
             ], category: "sync")
         }
 
-        // Register this device with the shop
+        // Register this device with the shop (best effort — pairing can proceed if this fails)
         if let db {
-            try? ChangeTracker.registerPeerDevice(
-                db: db,
-                peerId: deviceId,
-                peerName: deviceName,
-                platform: "iOS"
-            )
+            do {
+                try ChangeTracker.registerPeerDevice(
+                    db: db,
+                    peerId: deviceId,
+                    peerName: deviceName,
+                    platform: "iOS"
+                )
+            } catch {
+                logger.error("[IOSSyncManager] registerPeerDevice failed (non-fatal): \(error.localizedDescription)")
+            }
         }
 
         syncProgressMessage = "Device registered."
@@ -431,8 +445,7 @@ final class IOSSyncManager {
                 syncProgressMessage = "Initial sync complete."
                 syncProgressPercent = 1.0
                 syncStatus = .synced
-                let formatter = ISO8601DateFormatter()
-                lastSyncDate = formatter.string(from: Date())
+                lastSyncDate = Formatters.iso8601Basic.string(from: Date())
             } else {
                 let state = await engine.getState()
                 syncProgressMessage = nil

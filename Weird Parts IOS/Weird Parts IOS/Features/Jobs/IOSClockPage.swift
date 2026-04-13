@@ -612,12 +612,9 @@ struct IOSClockPage: View {
     }
 
     private func breakElapsedMinutes(_ record: BreakRecord) -> Int {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let basic = ISO8601DateFormatter()
-        basic.formatOptions = [.withInternetDateTime]
-        let local = DateFormatter()
-        local.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        let formatter = Formatters.iso8601Fractional
+        let basic = Formatters.iso8601Basic
+        let local = Formatters.localDateTimeFormatter
 
         guard let start = formatter.date(from: record.startedAt)
                 ?? basic.date(from: record.startedAt)
@@ -1034,11 +1031,7 @@ struct IOSClockPage: View {
     private func checkDispatchStatus() {
         guard let userId = appCore.currentUser?.id else { return }
 
-        let today: String = {
-            let fmt = DateFormatter()
-            fmt.dateFormat = "yyyy-MM-dd"
-            return fmt.string(from: Date())
-        }()
+        let today = Formatters.localDateFormatter.string(from: Date())
 
         // Check for dispatch entries via SchedulingService
         if let schedulingService = appCore.schedulingService {
@@ -1084,11 +1077,7 @@ struct IOSClockPage: View {
             return
         }
 
-        let today: String = {
-            let fmt = DateFormatter()
-            fmt.dateFormat = "yyyy-MM-dd"
-            return fmt.string(from: Date())
-        }()
+        let today = Formatters.localDateFormatter.string(from: Date())
 
         // Create a dispatch entry so the assignment is tracked
         if let schedulingService = appCore.schedulingService {
@@ -1385,12 +1374,9 @@ struct IOSClockPage: View {
     }
 
     private func breakElapsedSeconds(_ record: BreakRecord) -> Int {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let basic = ISO8601DateFormatter()
-        basic.formatOptions = [.withInternetDateTime]
-        let local = DateFormatter()
-        local.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        let formatter = Formatters.iso8601Fractional
+        let basic = Formatters.iso8601Basic
+        let local = Formatters.localDateTimeFormatter
 
         guard let start = formatter.date(from: record.startedAt)
                 ?? basic.date(from: record.startedAt)
@@ -1494,10 +1480,8 @@ struct IOSClockPage: View {
     }
 
     private func updateElapsedText(clockInISO: String) {
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let isoBasic = ISO8601DateFormatter()
-        isoBasic.formatOptions = [.withInternetDateTime]
+        let isoFormatter = Formatters.iso8601Fractional
+        let isoBasic = Formatters.iso8601Basic
 
         guard let clockInDate = isoFormatter.date(from: clockInISO)
                 ?? isoBasic.date(from: clockInISO) else {
@@ -1613,7 +1597,7 @@ struct IOSClockPage: View {
 
             // Load today's entries
             let entries = try service.listLaborEntries(userId: userId, limit: 50)
-            let todayPrefix = ISO8601DateFormatter().string(from: Date()).prefix(10)
+            let todayPrefix = Formatters.localDateFormatter.string(from: Date())
             let todayE = entries.filter { $0.clockIn.hasPrefix(String(todayPrefix)) }
             let todayH = todayE.reduce(0.0) { $0 + $1.regularHours + $1.overtimeHours }
 

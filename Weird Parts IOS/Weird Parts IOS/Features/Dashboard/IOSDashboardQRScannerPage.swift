@@ -594,9 +594,13 @@ struct IOSDashboardQRScannerPage: View {
                     directions = try? service.getDirections(fromAreaId: fromAreaId, toAreaId: locationInfo.areaId)
                 }
 
-                // Update user position to this scanned location
+                // Update user position to this scanned location (non-critical)
                 if let service = appCore.warehouseService, let userId = appCore.currentUser?.id {
-                    try? service.setUserCurrentPosition(userId: userId, areaId: locationInfo.areaId)
+                    do {
+                        try service.setUserCurrentPosition(userId: userId, areaId: locationInfo.areaId)
+                    } catch {
+                        print("[IOSDashboardQRScannerPage] setUserCurrentPosition failed (non-critical): \(error)")
+                    }
                 }
 
                 await MainActor.run {

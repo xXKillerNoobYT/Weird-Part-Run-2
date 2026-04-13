@@ -57,6 +57,12 @@ struct IOSEscalationTimeline: View {
                         .frame(maxWidth: .infinity)
                 } else if let error = loadError {
                     ErrorStateView(message: error) { Task { loadSteps() } }
+                } else if steps.isEmpty {
+                    EmptyStateView(
+                        icon: "arrow.up.arrow.down.circle",
+                        title: "No Escalation History",
+                        message: "This question has not been escalated yet. Use the buttons below to escalate or push back."
+                    )
                 } else {
                     timelineView
                 }

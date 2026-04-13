@@ -58,32 +58,40 @@
 
 ---
 
-### #143 — interactiveDismissDisabled Systemic Audit (Settings, People, Chat)
+### #143/#149 — Dismiss Safety & Keyboard Dismiss Systemic Audit (Settings, People, Chat, 30+ pages)
 
-**GitHub Issue:** `#143` (also relates to `#123`)
-**Current State:** Usability-hunter Scanner 1 found 30+ sheets across the app — specifically in Settings, People, and Chat modules — that do NOT use `.interactiveDismissDisabled()`. This means users can swipe-down on a form sheet and lose all unsaved changes with no warning. Several specific worst-cases were already fixed via do-catch (#135, #136, #137, #141), but the dismiss-guard gap is separate and still systemic at 30+ sites.
-**Proposed Change:** Add `.interactiveDismissDisabled(hasUnsavedChanges)` to all form sheets that collect user input, blocking mid-form swipe-dismiss when data would be lost. A "hasUnsavedChanges" computed var compares current form state to initial loaded state.
-**Affected Modules:** Settings, People, Chat (30+ sheets)
+**GitHub Issues:** `#143` (also `#123`) + `#149`
+**Current State:**
+- **#143:** 30+ form sheets do NOT use `.interactiveDismissDisabled()` — users can swipe-down and lose all unsaved changes with no warning. 33 sheets now covered (partial); systemic remainder open.
+- **#149:** ~30 scrollable pages with text fields do NOT use `.scrollDismissesKeyboard(.interactively)` — the keyboard stays locked up when users scroll away from a text field, blocking content below.
+**Proposed Change:**
+- **#143:** Add `.interactiveDismissDisabled(hasUnsavedChanges)` to all form sheets. A `hasUnsavedChanges` computed var compares current form state to initial state.
+- **#149:** Add `.scrollDismissesKeyboard(.interactively)` to all `List` / `ScrollView` containers that contain text fields.
+**Affected Modules:** Settings, People, Chat, Orders, Fleet, Scheduling (30+ sheets + 30+ pages)
 
 #### Questions:
 
-1. **As the Owner:** Cart Mode just shipped and program-review page rebuilds (#82–#95) are the next major phase. Is protecting users from accidental sheet dismiss a high priority **now**, or can this campaign wait until after the first page-rebuild wave?
+1. **As the Owner:** Cart Mode just shipped and program-review page rebuilds (#82–#95) are the next major phase. Is protecting users from accidental sheet dismiss (#143) and fixing keyboard lock (#149) a high priority **now**, or can this campaign wait until after the first page-rebuild wave?
    > Answer: _pending_
 
-2. **As a Manager:** Which module is the highest risk for data-loss on accidental dismiss? (Settings forms, People/HR forms, or Chat/messaging forms?) This determines which of the 30+ sheets to fix first.
+2. **As a Manager:** For #143, which module is the highest risk for data-loss on accidental dismiss? (Settings forms, People/HR forms, or Chat/messaging forms?) This determines which of the remaining sheets to fix first.
    > Answer: _pending_
 
-3. **As a Developer:** Two approaches: **(A)** `@State var isDirty: Bool` + `.onChange` tracking on each sheet individually (precise — only blocks when data was actually changed), or **(B)** `.interactiveDismissDisabled(true)` unconditionally on all form sheets (simpler, always blocks dismiss even on untouched forms). Owner preference?
+3. **As a Developer:** Two approaches for #143: **(A)** `@State var isDirty: Bool` + `.onChange` tracking on each sheet individually (precise — only blocks when data was actually changed), or **(B)** `.interactiveDismissDisabled(true)` unconditionally on all form sheets (simpler, always blocks dismiss even on untouched forms). Owner preference?
    > Answer: _pending_
 
-4. **As a Developer:** Should this be an Xcode prompt (UI-only surgery, Xcode AI does the 30+ edits) or should we write a hunt-fix automation script that scans `.sheet { }` and auto-patches the simple cases? At 30+ locations, a script would be faster.
+4. **As a Developer:** Should #143 be an Xcode prompt (UI-only surgery, Xcode AI does the 30+ edits) or should we write a hunt-fix automation script that scans `.sheet { }` and auto-patches the simple cases? At 30+ locations, a script would be faster.
+   > Answer: _pending_
+
+5. **As a Developer:** For #149 (keyboard dismiss): `.scrollDismissesKeyboard(.interactively)` is a straightforward one-liner on every `List`/`ScrollView` that contains a `TextField`. Should this be added in the same campaign as #143 (same Xcode prompt or script), or handled separately since it's lower risk? The fix is mechanical enough that it could be auto-scripted independently of #143.
    > Answer: _pending_
 
 **Slots to fill:**
 - [ ] Priority: do now vs. after first page-rebuild wave
-- [ ] Module priority order (Settings vs. People vs. Chat)
+- [ ] Module priority order (Settings vs. People vs. Chat) for #143
 - [ ] Approach: per-sheet dirty tracking vs. unconditional block
 - [ ] Method: Xcode prompt vs. automated scan-and-patch script
+- [ ] #149 keyboard dismiss: same campaign as #143, or separate?
 
 ---
 

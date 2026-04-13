@@ -7,8 +7,8 @@
 
 ---
 
-## Current Page: DIS-016 Fix (all 44 pages complete — working open issue queue)
-## Status: PASS — 44/44 pages complete, DIS-016 (7 files) fixed 2026-04-10
+## Current Page: Open Issue Queue (all 44 pages complete)
+## Status: PASS — 44/44 pages complete. Run 2026-04-12: #145 fixed (chat pull-to-refresh), IOSEscalationTimeline empty state added, #146 partial (Formatters.swift + IOSClockPage 4 DateFormatter instances cached)
 
 ---
 
@@ -123,3 +123,4 @@ _Legend: ? = Not started, 🔄 = In Progress, ✅ = Pass, ❌ = Blocked_
 | 2026-04-06 | Fix queue drain: PE-036 verified (WarehouseOnboardingWizard already done), PE-038 (JobStageProgressBar font→Dynamic Type), PE-039 partial (PartsFlowWizard DB loop→Task{}+isSaving) | 2 | 2 | ✅ (1030) | ✅ |
 | 2026-04-08 | Fix queue drain: PE-041 (receiving auto-save draft: all qty mutations → updateSessionItem Task{}, restore from DB on resume, discard dialog removed), PE-040 (WizardStepPlacement rewrite: Phase A dimensions form + migration 073 + updateFloorPlanGrid, Phase B drag-and-drop via .onDrag/.dropDestination) | 2 | 2 | ✅ (1118) | ✅ |
 | 2026-04-10 | DIS-016: fixed all 7 `currentUser?.id ?? 1` write-path anti-patterns (IOSMessageThreadView, IOSCustomerDetailPage ×2, IOSContractorDetailPage, IOSProcurementPage, IOSNotebookDetailPage, IOSAuditSetupView). `?? 1` eliminated from entire codebase. GitHub #140 closed. | 7 | 7 | ✅ (1162) | ✅ |
+| 2026-04-12 | Open issue queue: **#145 FIXED** — `.refreshable { loadMessages() }` added to IOSMessageThreadView ScrollView. **IOSEscalationTimeline empty state** — `steps.isEmpty` branch added with EmptyStateView (steps always populated by service, but guard is correct per checklist). **#146 partial** — `Formatters.localDateFormatter` + `Formatters.localDateTimeFormatter` added to Formatters.swift; 4 inline `DateFormatter()` instances in IOSClockPage (`breakElapsedMinutes` ×1, `breakElapsedSeconds` ×1, `checkDispatchStatus` ×1, `assignFlexJob` ×1) replaced with cached formatters. 95 remaining inline instances tracked in #146 for future sweep. | 3 | 3 | ✅ (1196) | ✅ |
