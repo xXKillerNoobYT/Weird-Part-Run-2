@@ -496,30 +496,16 @@ struct IOSWishlistPage: View {
     // MARK: - Helpers
 
     private func daysUntilAutoApprove(_ dateString: String) -> Int {
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime]
-        guard let date = isoFormatter.date(from: dateString) else { return 0 }
+        guard let date = Formatters.iso8601Basic.date(from: dateString) else { return 0 }
         let interval = date.timeIntervalSinceNow
         return max(0, Int(ceil(interval / 86400)))
     }
 
     private func formatDate(_ dateString: String) -> String {
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime]
-
-        let sqlFormatter = DateFormatter()
-        sqlFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-
-        let displayFormatter = DateFormatter()
-        displayFormatter.dateStyle = .short
-        displayFormatter.timeStyle = .none
-
-        if let date = isoFormatter.date(from: dateString) {
-            return displayFormatter.string(from: date)
-        } else if let date = sqlFormatter.date(from: dateString) {
-            return displayFormatter.string(from: date)
-        }
-        return dateString
+        let date = Formatters.iso8601Basic.date(from: dateString)
+            ?? Formatters.sqlDateTimeFormatter.date(from: dateString)
+        guard let date else { return dateString }
+        return Formatters.shortDateDisplayFormatter.string(from: date)
     }
 }
 

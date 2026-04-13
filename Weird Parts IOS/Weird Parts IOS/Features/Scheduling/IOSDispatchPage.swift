@@ -76,9 +76,7 @@ struct IOSDispatchPage: View {
     }
 
     private func dateString(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: date)
+        Formatters.localDateFormatter.string(from: date)
     }
 
     private var weekStartStr: String { dateString(weekStart) }
@@ -587,9 +585,7 @@ private struct DispatchAssignSheet: View {
                         let jid = jobId ?? selectedJobId
                         let uid = workerId ?? selectedWorkerId
                         guard let jid, let uid else { return }
-                        let fmt = DateFormatter()
-                        fmt.dateFormat = "yyyy-MM-dd"
-                        onAssign(jid, uid, fmt.string(from: entryDate), timeSlot)
+                        onAssign(jid, uid, Formatters.localDateFormatter.string(from: entryDate), timeSlot)
                         dismiss()
                     }
                     .disabled((jobId ?? selectedJobId) == nil || (workerId ?? selectedWorkerId) == nil)
@@ -600,9 +596,7 @@ private struct DispatchAssignSheet: View {
                 selectedJobId = jobId
                 selectedWorkerId = workerId
                 // Parse initial date
-                let fmt = DateFormatter()
-                fmt.dateFormat = "yyyy-MM-dd"
-                if let d = fmt.date(from: date) { entryDate = d }
+                if let d = Formatters.localDateFormatter.date(from: date) { entryDate = d }
                 // Load employees
                 if let service = appCore.peopleService {
                     allEmployees = (try? service.listEmployees()) ?? []

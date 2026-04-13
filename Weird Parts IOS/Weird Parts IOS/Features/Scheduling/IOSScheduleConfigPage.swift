@@ -398,13 +398,10 @@ struct IOSScheduleConfigPage: View {
         isSaving = true
         saveError = nil
 
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-
         do {
             try service.upsertSettingsMap([
-                "work_day_start": formatter.string(from: workDayStart),
-                "work_day_end": formatter.string(from: workDayEnd),
+                "work_day_start": Formatters.timeHHmmFormatter.string(from: workDayStart),
+                "work_day_end": Formatters.timeHHmmFormatter.string(from: workDayEnd),
                 "lunch_duration": "\(lunchDuration)",
                 "lunch_paid": lunchPaid ? "1" : "0",
                 "work_days": workDays.sorted().joined(separator: ","),
@@ -435,11 +432,8 @@ struct IOSScheduleConfigPage: View {
         // Load settings
         do {
             let s = try settings.getSettingsByCategory("scheduling")
-            let formatter = DateFormatter()
-            formatter.dateFormat = "HH:mm"
-
-            if let v = s["work_day_start"], let d = formatter.date(from: v) { workDayStart = d }
-            if let v = s["work_day_end"], let d = formatter.date(from: v) { workDayEnd = d }
+            if let v = s["work_day_start"], let d = Formatters.timeHHmmFormatter.date(from: v) { workDayStart = d }
+            if let v = s["work_day_end"], let d = Formatters.timeHHmmFormatter.date(from: v) { workDayEnd = d }
             if let v = s["lunch_duration"], let n = Int(v) { lunchDuration = n }
             if let v = s["lunch_paid"] { lunchPaid = v == "1" }
             if let v = s["work_days"], !v.isEmpty {
@@ -728,18 +722,14 @@ struct ShiftTemplateEditSheet: View {
             selectedDays = Set(days)
         }
         // Parse times
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        if let d = formatter.date(from: t.startTime) { startTime = d }
-        if let d = formatter.date(from: t.endTime) { endTime = d }
+        if let d = Formatters.timeHHmmFormatter.date(from: t.startTime) { startTime = d }
+        if let d = Formatters.timeHHmmFormatter.date(from: t.endTime) { endTime = d }
         breakMinutes = t.breakMinutes
         breakPaid = t.breakPaid
         overtimeRule = t.overtimeRule
     }
 
     private func save() {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
         let daysArray = dayOrder.filter { selectedDays.contains($0) }
         let daysJSON = (try? JSONEncoder().encode(daysArray)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
 
@@ -748,8 +738,8 @@ struct ShiftTemplateEditSheet: View {
             name: name.trimmingCharacters(in: .whitespaces),
             hatId: selectedHatId == 0 ? nil : selectedHatId,
             workDays: daysJSON,
-            startTime: formatter.string(from: startTime),
-            endTime: formatter.string(from: endTime),
+            startTime: Formatters.timeHHmmFormatter.string(from: startTime),
+            endTime: Formatters.timeHHmmFormatter.string(from: endTime),
             breakMinutes: breakMinutes,
             breakPaid: breakPaid,
             overtimeRule: overtimeRule
@@ -832,18 +822,14 @@ struct HolidayEditSheet: View {
         name = h.name
         isPaid = h.isPaid
         isRecurring = h.isRecurring
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        if let d = formatter.date(from: h.date) { selectedDate = d }
+        if let d = Formatters.localDateFormatter.date(from: h.date) { selectedDate = d }
     }
 
     private func save() {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
         onSave(HolidayData(
             existingId: existing?.id,
             name: name.trimmingCharacters(in: .whitespaces),
-            date: formatter.string(from: selectedDate),
+            date: Formatters.localDateFormatter.string(from: selectedDate),
             isPaid: isPaid,
             isRecurring: isRecurring
         ))

@@ -112,21 +112,13 @@ struct TimelinePriorityColor {
         guard let dateString = dateString, !dateString.isEmpty else { return nil }
 
         // ISO 8601 with timezone
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime]
-        if let date = iso.date(from: dateString) { return date }
+        if let date = Formatters.iso8601Basic.date(from: dateString) { return date }
 
         // SQLite datetime: "yyyy-MM-dd HH:mm:ss"
-        let sqlFormatter = DateFormatter()
-        sqlFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        sqlFormatter.locale = Locale(identifier: "en_US_POSIX")
-        if let date = sqlFormatter.date(from: dateString) { return date }
+        if let date = Formatters.sqlDateTimeFormatter.date(from: dateString) { return date }
 
         // Date-only: "yyyy-MM-dd"
-        let dateOnly = DateFormatter()
-        dateOnly.dateFormat = "yyyy-MM-dd"
-        dateOnly.locale = Locale(identifier: "en_US_POSIX")
-        if let date = dateOnly.date(from: String(dateString.prefix(10))) { return date }
+        if let date = Formatters.localDateFormatter.date(from: String(dateString.prefix(10))) { return date }
 
         return nil
     }

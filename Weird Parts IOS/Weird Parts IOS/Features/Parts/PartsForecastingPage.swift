@@ -735,23 +735,10 @@ struct PartsForecastingPage: View {
     // MARK: - Helpers
 
     private func formatTimestamp(_ iso: String) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: iso) {
-            let display = DateFormatter()
-            display.dateStyle = .medium
-            display.timeStyle = .short
-            return display.string(from: date)
-        }
-        // Try without fractional seconds
-        formatter.formatOptions = [.withInternetDateTime]
-        if let date = formatter.date(from: iso) {
-            let display = DateFormatter()
-            display.dateStyle = .medium
-            display.timeStyle = .short
-            return display.string(from: date)
-        }
-        return iso
+        let date = Formatters.iso8601Fractional.date(from: iso)
+            ?? Formatters.iso8601Basic.date(from: iso)
+        guard let date else { return iso }
+        return Formatters.mediumDateTimeFormatter.string(from: date)
     }
 }
 

@@ -51,12 +51,8 @@ struct IOSWeeklyReviewSheet: View {
     }
 
     private var weekRangeFormatted: String {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "MMM d"
         let (start, end) = weekRange
-        let endFmt = DateFormatter()
-        endFmt.dateFormat = "MMM d, yyyy"
-        return "\(fmt.string(from: start)) \u{2013} \(endFmt.string(from: end))"
+        return "\(Formatters.monthDayFormatter.string(from: start)) \u{2013} \(Formatters.monthDayYearFormatter.string(from: end))"
     }
 
     private var todoProgress: Double {
@@ -274,10 +270,8 @@ struct IOSWeeklyReviewSheet: View {
         }
 
         let (start, end) = weekRange
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        let startStr = fmt.string(from: start)
-        let endStr = fmt.string(from: end)
+        let startStr = Formatters.localDateFormatter.string(from: start)
+        let endStr = Formatters.localDateFormatter.string(from: end)
 
         do {
             // Get all labor entries for this job and filter to this week's date range

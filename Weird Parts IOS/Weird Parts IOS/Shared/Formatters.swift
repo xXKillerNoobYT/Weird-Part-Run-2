@@ -57,6 +57,73 @@ enum Formatters {
         return f
     }()
 
+    /// Full dateStyle — for dashboard greeting dates (e.g., "Sunday, April 12, 2026").
+    static let fullDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .full
+        return f
+    }()
+
+    /// Medium date + short time — for session/receipt display (e.g., "Apr 12, 2026, 2:30 PM").
+    static let mediumDateTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
+
+    /// HH:mm — for work-schedule time strings stored in settings (e.g., "08:00", "17:30").
+    static let timeHHmmFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
+    /// Day-of-week abbreviation — for chart axis labels (e.g., "Mon", "Tue").
+    static let dayOfWeekFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE"
+        return f
+    }()
+
+    /// ISO 8601 date-only (UTC) — for ETA/delivery date fields (e.g., "2026-04-12").
+    static let iso8601DateOnly: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withFullDate]
+        return f
+    }()
+
+    /// Short date display — for condensed date cells (e.g., "4/12/26").
+    static let shortDateDisplayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .short
+        f.timeStyle = .none
+        return f
+    }()
+
+    /// SQLite datetime — for parsing "yyyy-MM-dd HH:mm:ss" DB strings.
+    /// Uses en_US_POSIX locale to ensure reliable fixed-format parsing.
+    static let sqlDateTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    /// Month + day — for week range start labels (e.g., "Apr 12").
+    static let monthDayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d"
+        return f
+    }()
+
+    /// Month + day + year — for week range end labels (e.g., "Apr 12, 2026").
+    static let monthDayYearFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d, yyyy"
+        return f
+    }()
+
     static let currencyFormatter: NumberFormatter = {
         let f = NumberFormatter()
         f.numberStyle = .currency

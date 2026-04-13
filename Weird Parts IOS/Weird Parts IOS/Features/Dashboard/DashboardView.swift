@@ -467,9 +467,7 @@ struct DashboardView: View {
     }
 
     private var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .full
-        return formatter.string(from: Date())
+        Formatters.fullDateFormatter.string(from: Date())
     }
 
     // MARK: - Clock Status Banner
@@ -944,10 +942,8 @@ struct DashboardView: View {
                 clockedInJobName = clockStatus.jobName
                 clockedInJobNumber = clockStatus.jobNumber
                 if let timeStr = clockStatus.clockInTimestamp {
-                    let isoFull = ISO8601DateFormatter()
-                    isoFull.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                    clockInTime = isoFull.date(from: timeStr)
-                        ?? ISO8601DateFormatter().date(from: timeStr)
+                    clockInTime = Formatters.iso8601Fractional.date(from: timeStr)
+                        ?? Formatters.iso8601Basic.date(from: timeStr)
                     updateClockDuration()
                 } else {
                     clockInTime = nil
@@ -976,14 +972,10 @@ struct DashboardView: View {
         do {
             // Labor hours for past 7 days
             let laborRows = try service.getLaborChartData()
-            let dayFormatter = DateFormatter()
-            dayFormatter.dateFormat = "EEE"
-            let isoFormatter = DateFormatter()
-            isoFormatter.dateFormat = "yyyy-MM-dd"
             let laborDays = laborRows.map { row in
-                let date = isoFormatter.date(from: row.dateString) ?? Date()
+                let date = Formatters.localDateFormatter.date(from: row.dateString) ?? Date()
                 return LaborDayData(
-                    dayLabel: dayFormatter.string(from: date),
+                    dayLabel: Formatters.dayOfWeekFormatter.string(from: date),
                     date: row.dateString,
                     regularHours: row.regularHours,
                     overtimeHours: row.overtimeHours

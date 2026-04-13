@@ -454,12 +454,9 @@ struct IOSPODetailPage: View {
             }
             .onAppear {
                 // Pre-populate with current ETA if available
-                if let current = po?.expectedDelivery {
-                    let fmt = ISO8601DateFormatter()
-                    fmt.formatOptions = [.withFullDate]
-                    if let date = fmt.date(from: String(current.prefix(10))) {
-                        etaDate = date
-                    }
+                if let current = po?.expectedDelivery,
+                   let date = Formatters.iso8601DateOnly.date(from: String(current.prefix(10))) {
+                    etaDate = date
                 }
             }
         }
@@ -1039,9 +1036,7 @@ struct IOSPODetailPage: View {
             actionMessage = "Service not available"
             return
         }
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withFullDate]
-        let dateStr = fmt.string(from: etaDate)
+        let dateStr = Formatters.iso8601DateOnly.string(from: etaDate)
         do {
             try service.updatePOExpectedDelivery(id: poId, expectedDelivery: dateStr)
             activeSheet = nil
@@ -2133,38 +2128,23 @@ struct IOSPODetailPage: View {
 
     /// Format a session date string for display (e.g. "Mar 15, 2026 2:30 PM").
     private func formatSessionDate(_ dateStr: String) -> String {
-        // Try full datetime first, then date-only
-        let isoFull = ISO8601DateFormatter()
-        isoFull.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let isoDate = ISO8601DateFormatter()
-        isoDate.formatOptions = [.withFullDate]
-
-        let date = isoFull.date(from: dateStr)
-            ?? isoDate.date(from: String(dateStr.prefix(10)))
-
+        let date = Formatters.iso8601Fractional.date(from: dateStr)
+            ?? Formatters.iso8601DateOnly.date(from: String(dateStr.prefix(10)))
         guard let date else { return String(dateStr.prefix(16)) }
-
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
+        return Formatters.mediumDateTimeFormatter.string(from: date)
     }
 
     // MARK: - Date Helpers
 
     private func daysSince(_ dateStr: String?) -> Int {
-        guard let str = dateStr else { return 0 }
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withFullDate]
-        guard let date = fmt.date(from: String(str.prefix(10))) else { return 0 }
+        guard let str = dateStr,
+              let date = Formatters.iso8601DateOnly.date(from: String(str.prefix(10))) else { return 0 }
         return max(0, Calendar.current.dateComponents([.day], from: date, to: Date()).day ?? 0)
     }
 
     private func daysUntil(_ dateStr: String?) -> Int? {
-        guard let str = dateStr else { return nil }
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withFullDate]
-        guard let date = fmt.date(from: String(str.prefix(10))) else { return nil }
+        guard let str = dateStr,
+              let date = Formatters.iso8601DateOnly.date(from: String(str.prefix(10))) else { return nil }
         return Calendar.current.dateComponents([.day], from: Date(), to: date).day
     }
 

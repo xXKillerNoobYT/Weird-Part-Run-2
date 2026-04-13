@@ -24,15 +24,11 @@ struct IOSSubSchedulePage: View {
     }
 
     private var dateString: String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: selectedDate)
+        Formatters.localDateFormatter.string(from: selectedDate)
     }
 
     private var displayDate: String {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        return f.string(from: selectedDate)
+        Formatters.dateFormatter.string(from: selectedDate)
     }
 
     var body: some View {
@@ -175,14 +171,10 @@ struct IOSSubSchedulePage: View {
     // MARK: - Helpers
 
     private func formatDate(_ dateString: String) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        if let date = f.date(from: String(dateString.prefix(10))) {
-            f.dateStyle = .short
-            f.timeStyle = .none
-            return f.string(from: date)
+        guard let date = Formatters.localDateFormatter.date(from: String(dateString.prefix(10))) else {
+            return String(dateString.prefix(10))
         }
-        return String(dateString.prefix(10))
+        return Formatters.shortDateDisplayFormatter.string(from: date)
     }
 
     // MARK: - Data Loading
