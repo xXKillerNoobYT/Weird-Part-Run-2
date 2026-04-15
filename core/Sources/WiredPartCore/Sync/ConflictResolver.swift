@@ -338,11 +338,17 @@ public enum ConflictResolver {
         let localRow = try getLocalRecord(db: db, tableName: table, recordId: recordId)
 
         guard let existingRow = localRow else {
-            // Record doesn't exist locally — plain INSERT
+            // Record doesn't exist locally — plain INSERT (handles NULLs correctly)
             let columns = recordDataFields.keys.sorted()
-            let placeholders = columns.map { _ in "?" }.joined(separator: ", ")
+            let placeholders = columns.map { key -> String in
+                if case .none = recordDataFields[key] as String?? { return "NULL" }
+                return "?"
+            }.joined(separator: ", ")
             let columnList = columns.map { "\"\($0)\"" }.joined(separator: ", ")
-            let values = columns.map { recordDataFields[$0] ?? "" }
+            let values: [String] = columns.compactMap { key -> String? in
+                if let val = recordDataFields[key] { return val }
+                return nil  // NULL columns use literal NULL, no parameter
+            }
 
             try db.execute(
                 sql: "INSERT OR IGNORE INTO \(quotedTable(table)) (\(columnList)) VALUES (\(placeholders))",
@@ -392,11 +398,17 @@ public enum ConflictResolver {
         guard let existingRow = localRow else {
             // Record doesn't exist locally
             if let recordDataFields = parseJsonField(change.recordData) {
-                // We have full record data — INSERT it
+                // We have full record data — INSERT it (handles NULLs correctly)
                 let columns = recordDataFields.keys.sorted()
-                let placeholders = columns.map { _ in "?" }.joined(separator: ", ")
+                let placeholders = columns.map { key -> String in
+                    if case .none = recordDataFields[key] as String?? { return "NULL" }
+                    return "?"
+                }.joined(separator: ", ")
                 let columnList = columns.map { "\"\($0)\"" }.joined(separator: ", ")
-                let values = columns.map { recordDataFields[$0] ?? "" }
+                let values: [String] = columns.compactMap { key -> String? in
+                    if let val = recordDataFields[key] { return val }
+                    return nil
+                }
 
                 try db.execute(
                     sql: "INSERT OR IGNORE INTO \(quotedTable(table)) (\(columnList)) VALUES (\(placeholders))",
@@ -429,7 +441,7 @@ public enum ConflictResolver {
         table: String,
         recordId: String,
         localRow: Row,
-        incomingFields: [String: String],
+        incomingFields: [String: String?],
         change: IncomingChange,
         localDeviceId: String
     ) throws -> Int {
@@ -448,7 +460,7 @@ public enum ConflictResolver {
 
         let remoteTimestamp = change.timestamp
 
-        var mergedData: [String: String] = [:]
+        var mergedData: [String: String?] = [:]
         var conflictEntries: [ConflictLogEntry] = []
 
         for (field, remoteValue) in incomingFields {
@@ -473,7 +485,7 @@ public enum ConflictResolver {
                     recordId: recordId,
                     fieldName: field,
                     localValue: localValue,
-                    remoteValue: remoteValue,
+                    remoteValue: remoteValue ?? "(NULL)",
                     winner: winner,
                     localDevice: localDeviceId,
                     remoteDevice: change.deviceId,
@@ -487,11 +499,21 @@ public enum ConflictResolver {
             }
         }
 
-        // Apply merged fields
+        // Apply merged fields — handles NULL values correctly (fixes #196)
         if !mergedData.isEmpty {
-            let setClauses = mergedData.keys.sorted().map { "\"\($0)\" = ?" }.joined(separator: ", ")
-            let values = mergedData.keys.sorted().compactMap { mergedData[$0] }
-            var args: [any DatabaseValueConvertible] = values
+            let sortedKeys = mergedData.keys.sorted()
+            // Explicit String return type avoids GRDB SQL interpolation inference ambiguity
+            let setClauses: String = sortedKeys.map { (key: String) -> String in
+                if case .none = mergedData[key] as String?? {
+                    return "\"\(key)\" = NULL"
+                }
+                return "\"\(key)\" = ?"
+            }.joined(separator: ", ")
+            // Only include non-nil values as bound parameters
+            var args: [any DatabaseValueConvertible] = sortedKeys.compactMap { key -> String? in
+                if let val = mergedData[key] { return val }
+                return nil
+            }
             args.append(recordId)
 
             try db.execute(
@@ -557,18 +579,18 @@ public enum ConflictResolver {
 
     /// Parse a JSON string into a dictionary.
     /// Handles: nil → nil, already a dict string → parsed, garbage → nil.
-    static func parseJsonField(_ field: String?) -> [String: String]? {
+    /// NSNull values are preserved as nil to maintain SQL NULL semantics (fixes #196).
+    static func parseJsonField(_ field: String?) -> [String: String?]? {
         guard let str = field, !str.isEmpty else { return nil }
         guard let data = str.data(using: .utf8) else { return nil }
 
         do {
             let obj = try JSONSerialization.jsonObject(with: data)
             if let dict = obj as? [String: Any] {
-                var result: [String: String] = [:]
+                var result: [String: String?] = [:]
                 for (key, value) in dict {
                     if value is NSNull {
-                        // Represent NULL as empty string — the column may need NULL
-                        result[key] = ""
+                        result[key] = nil as String?  // preserve SQL NULL
                     } else if let s = value as? String {
                         result[key] = s
                     } else {
