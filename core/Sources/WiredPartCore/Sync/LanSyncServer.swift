@@ -373,7 +373,7 @@ public final class LanSyncServer: Sendable {
             return await handleStatus(state: state)
 
         case ("GET", "/sync/key"):
-            return await handleKeyExchange(state: state)
+            return await handleKeyExchange(headers: request.headers, state: state)
 
         case ("POST", "/sync/push"):
             return await handlePush(body: request.body, headers: request.headers, state: state)
@@ -453,17 +453,19 @@ public final class LanSyncServer: Sendable {
     private static func handleStatus(
         state: SyncServerState
     ) async -> (Int, Data) {
-        let pendingCount = await state.outbox.count
-        let syncAt = await state.lastSyncAt
+        // Fix #176: This endpoint is unauthenticated (used for LAN discovery/health checks).
+        // Return only non-sensitive fields. Device identity, company, pending counts, and
+        // last sync time are all information-leak vectors to anyone on the LAN.
+        // Full metadata lives behind the authenticated /sync/push and /sync/pull endpoints.
         let serverPort = await state.port
         let response = SyncStatusResponse(
-            deviceId: state.deviceId,
-            deviceName: state.deviceName,
-            companyId: state.companyId,
-            appVersion: "1.0.0",
-            pendingChanges: pendingCount,
-            lastSyncAt: syncAt,
-            port: serverPort
+            deviceId: "",           // redacted (was: state.deviceId)
+            deviceName: "",         // redacted (was: state.deviceName)
+            companyId: "",          // redacted (was: state.companyId)
+            appVersion: "1.0.0",    // safe: version probing
+            pendingChanges: 0,      // redacted: activity signal
+            lastSyncAt: nil,        // redacted: activity signal
+            port: serverPort        // safe: already known by caller
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -473,7 +475,17 @@ public final class LanSyncServer: Sendable {
 
     /// Return this server's X25519 key agreement public key.
     /// Peers call this before their first encrypted sync to set up the shared key.
-    private static func handleKeyExchange(state: SyncServerState) async -> (Int, Data) {
+    ///
+    /// Fix #191: Requires caller to identify their company via the X-Company-ID header.
+    /// A device that doesn't already know the company ID cannot initiate an encrypted
+    /// session — this prevents unknown LAN peers from pre-computing shared keys.
+    private static func handleKeyExchange(headers: [String: String], state: SyncServerState) async -> (Int, Data) {
+        let expectedCompanyId = state.companyId
+        guard let sentCompanyId = headers["x-company-id"],
+              sentCompanyId == expectedCompanyId else {
+            let json = #"{"error":"company_id_required"}"#
+            return (403, Data(json.utf8))
+        }
         let pubKey = state.kaPublicKeyB64
         let response = SyncKeyResponse(key: pubKey)
         let encoder = JSONEncoder()
@@ -598,11 +610,17 @@ public final class LanSyncServer: Sendable {
     }
 
     /// Encrypt response data if a shared key is available (i.e. request was encrypted).
-    /// Falls back to plaintext on failure.
+    /// If no shared key: request arrived unencrypted, so plaintext response is expected.
+    /// If encryption fails with a key present: fail-closed (500) rather than leaking plaintext.
     private static func encryptIfNeeded(_ data: Data, sharedKeyData: Data?) -> (Int, Data) {
-        guard let keyData = sharedKeyData,
-              let encrypted = try? SyncCrypto.encryptAESGCM(data: data, keyData: keyData) else {
+        guard let keyData = sharedKeyData else {
+            // No shared key — plaintext session, plaintext response is correct.
             return (200, data)
+        }
+        guard let encrypted = try? SyncCrypto.encryptAESGCM(data: data, keyData: keyData) else {
+            // Encryption failed despite having a key — fail closed, never send plaintext.
+            let errorJson = #"{"error":"encryption_failed"}"#
+            return (500, Data(errorJson.utf8))
         }
         return (200, encrypted)
     }
@@ -641,8 +659,13 @@ public final class LanSyncServer: Sendable {
             return (401, Data(json.utf8))
 
         case .rejected(let reason):
-            let json = "{\"error\":\"certificate_rejected\",\"reason\":\"\(reason)\"}"
-            return (403, Data(json.utf8))
+            // Fix #184: reason comes from an untrusted certificate — encode with JSONEncoder
+            // so special characters (", \, etc.) are escaped rather than injected into the string.
+            struct CertRejectedError: Encodable { let error: String; let reason: String }
+            let obj = CertRejectedError(error: "certificate_rejected", reason: reason)
+            let data = (try? JSONEncoder().encode(obj))
+                ?? Data(#"{"error":"certificate_rejected","reason":"unknown"}"#.utf8)
+            return (403, data)
         }
     }
 }

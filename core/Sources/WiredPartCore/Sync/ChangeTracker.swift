@@ -65,12 +65,14 @@ public enum ChangeTracker {
 
     // MARK: - Pending Changes
 
-    /// Get all unsynced changes, ordered by timestamp.
-    public static func getPendingChanges(db: AppDatabase) throws -> [ChangeLogEntry] {
+    /// Get unsynced changes, ordered by timestamp. Capped at `limit` rows to prevent OOM on
+    /// long-offline devices with large backlogs.
+    public static func getPendingChanges(db: AppDatabase, limit: Int = 500) throws -> [ChangeLogEntry] {
         try db.writer.read { dbConnection in
             try ChangeLogEntry.fetchAll(
                 dbConnection,
-                sql: "SELECT * FROM _change_log WHERE synced = 0 ORDER BY timestamp ASC"
+                sql: "SELECT * FROM _change_log WHERE synced = 0 ORDER BY timestamp ASC LIMIT ?",
+                arguments: [limit]
             )
         }
     }
@@ -161,14 +163,15 @@ public enum ChangeTracker {
         }
     }
 
-    /// Get changes since a specific sequence number.
-    /// Used when a peer requests our changes — we only send what they haven't seen.
-    public static func getChangesSince(db: AppDatabase, sinceSequence: Int64) throws -> [ChangeLogEntry] {
+    /// Get changes since a specific sequence number. Capped at `limit` rows to prevent OOM on
+    /// long-offline peers with large backlogs. Callers should check if the batch is full and
+    /// re-request with the last returned sequence to paginate.
+    public static func getChangesSince(db: AppDatabase, sinceSequence: Int64, limit: Int = 500) throws -> [ChangeLogEntry] {
         try db.writer.read { dbConnection in
             try ChangeLogEntry.fetchAll(
                 dbConnection,
-                sql: "SELECT * FROM _change_log WHERE sequence > ? ORDER BY sequence ASC",
-                arguments: [sinceSequence]
+                sql: "SELECT * FROM _change_log WHERE sequence > ? ORDER BY sequence ASC LIMIT ?",
+                arguments: [sinceSequence, limit]
             )
         }
     }

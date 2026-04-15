@@ -22,6 +22,7 @@ struct CartItem: Identifiable, Equatable, Sendable {
 /// - Inject as `@StateObject` at the warehouse router level
 /// - Any bin/part list can add items via `addToCart()`
 /// - Cart sheet shows items and allows placing to new locations
+@MainActor
 final class CartManager: ObservableObject {
     @Published var items: [CartItem] = []
     @Published var isCartSheetPresented = false

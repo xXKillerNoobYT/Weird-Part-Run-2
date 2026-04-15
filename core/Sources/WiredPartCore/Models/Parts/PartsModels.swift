@@ -9,13 +9,20 @@ public struct PartCategory: Codable, FetchableRecord, MutablePersistableRecord, 
     public var name: String
     public var description: String?
     public var sortOrder: Int
+    public var isActive: Int
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
+    public init(id: Int64? = nil, name: String, description: String? = nil, sortOrder: Int = 0, isActive: Int = 1, deletedAt: String? = nil, createdAt: String? = nil, updatedAt: String? = nil) {
+        self.id = id; self.name = name; self.description = description; self.sortOrder = sortOrder
+        self.isActive = isActive; self.deletedAt = deletedAt; self.createdAt = createdAt; self.updatedAt = updatedAt
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, name, description
         case sortOrder = "sort_order"
+        case isActive = "is_active"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -80,15 +87,19 @@ public struct PartStyle: Codable, FetchableRecord, MutablePersistableRecord, Sen
     public var categoryId: Int64
     public var name: String
     public var description: String?
-    public var sortOrder: Int
-    public var deletedAt: String?
-    public var createdAt: String?
-    public var updatedAt: String?
+    public var imageUrl: String? = nil
+    public var sortOrder: Int = 0
+    public var isActive: Int = 1
+    public var deletedAt: String? = nil
+    public var createdAt: String? = nil
+    public var updatedAt: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, name, description
         case categoryId = "category_id"
+        case imageUrl = "image_url"
         case sortOrder = "sort_order"
+        case isActive = "is_active"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -105,17 +116,22 @@ public struct PartType: Codable, FetchableRecord, MutablePersistableRecord, Send
     public var styleId: Int64
     public var name: String
     public var description: String?
-    public var sortOrder: Int
-    public var defaultUnitCost: Double?
-    public var deletedAt: String?
-    public var createdAt: String?
-    public var updatedAt: String?
+    public var color: String? = nil
+    public var imageUrl: String? = nil
+    public var sortOrder: Int = 0
+    public var defaultUnitCost: Double? = nil
+    public var isActive: Int = 1
+    public var deletedAt: String? = nil
+    public var createdAt: String? = nil
+    public var updatedAt: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, name, description
+        case id, name, description, color
         case styleId = "style_id"
+        case imageUrl = "image_url"
         case sortOrder = "sort_order"
         case defaultUnitCost = "default_unit_cost"
+        case isActive = "is_active"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
@@ -218,12 +234,19 @@ public struct Brand: Codable, FetchableRecord, MutablePersistableRecord, Sendabl
     public var name: String
     public var website: String?
     public var notes: String?
+    public var isActive: Int
     public var deletedAt: String?
     public var createdAt: String?
     public var updatedAt: String?
 
+    public init(id: Int64? = nil, name: String, website: String? = nil, notes: String? = nil, isActive: Int = 1, deletedAt: String? = nil, createdAt: String? = nil, updatedAt: String? = nil) {
+        self.id = id; self.name = name; self.website = website; self.notes = notes
+        self.isActive = isActive; self.deletedAt = deletedAt; self.createdAt = createdAt; self.updatedAt = updatedAt
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, name, website, notes
+        case isActive = "is_active"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
         case updatedAt = "updated_at"

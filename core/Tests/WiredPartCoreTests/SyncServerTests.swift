@@ -56,9 +56,10 @@ struct SyncServerTests {
         #expect(httpResponse.statusCode == 200)
 
         let status = try JSONDecoder().decode(SyncStatusResponse.self, from: data)
-        #expect(status.deviceId == "dev-1")
-        #expect(status.deviceName == "Shop Mac")
-        #expect(status.companyId == "co-1")
+        // Fix #176: sensitive fields are redacted from the unauthenticated /sync/status endpoint.
+        #expect(status.deviceId == "")
+        #expect(status.deviceName == "")
+        #expect(status.companyId == "")
         #expect(status.port == port)
 
         await server.stop()

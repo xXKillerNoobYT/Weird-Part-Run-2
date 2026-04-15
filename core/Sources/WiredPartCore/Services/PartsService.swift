@@ -630,7 +630,8 @@ public final class PartsService: Sendable {
             categoryId: categoryId,
             name: name,
             description: description,
-            sortOrder: sortOrder
+            sortOrder: sortOrder,
+            isActive: 1
         )
         try db.writer.write { dbConn in
             try record.insert(dbConn)
@@ -743,7 +744,8 @@ public final class PartsService: Sendable {
             styleId: styleId,
             name: name,
             description: description,
-            sortOrder: sortOrder
+            sortOrder: sortOrder,
+            isActive: 1
         )
         try db.writer.write { dbConn in
             try record.insert(dbConn)
@@ -3087,8 +3089,11 @@ public final class PartsService: Sendable {
         do {
             try db.writer.write { dbConn in
                 // Single aggregate query: fetch all parts with their consumption + stock in one pass
+                // Fix #188: also select user-set target_stock_level so we can treat it as
+                // a floor for forecast_target_qty / forecast_suggested_order.
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT p.id, COALESCE(p.min_stock_level, 0) AS min_stock,
+                        COALESCE(p.target_stock_level, 0) AS user_target,
                         COALESCE(m30.consumed, 0) AS consumed30,
                         COALESCE(m90.consumed, 0) AS consumed90,
                         COALESCE(s.total_qty, 0) AS current_stock
@@ -3119,6 +3124,7 @@ public final class PartsService: Sendable {
                 for row in rows {
                     let partId: Int64 = row["id"]
                     let minStock: Int = row["min_stock"]
+                    let userTarget: Int = row["user_target"] ?? 0   // Fix #188
                     let consumed30: Int = row["consumed30"]
                     let consumed90: Int = row["consumed90"]
                     let currentStock: Int = row["current_stock"]
@@ -3134,8 +3140,13 @@ public final class PartsService: Sendable {
                         daysUntilLow = 999
                     }
 
-                    let forecastReorderPoint = Int(adu30 * 7)
-                    let forecastTargetQty = forecastReorderPoint * 2
+                    // Fix #188: User-set min/target act as floors — never let the
+                    // auto-computed reorder point or target fall below what the user
+                    // explicitly configured.
+                    let autoReorderPoint = Int(adu30 * 7)
+                    let forecastReorderPoint = max(autoReorderPoint, minStock)
+                    let autoTargetQty = forecastReorderPoint * 2
+                    let forecastTargetQty = max(autoTargetQty, userTarget)
                     let forecastSuggestedOrder = max(0, forecastTargetQty - currentStock)
 
                     try dbConn.execute(
@@ -5245,8 +5256,10 @@ public final class PartsService: Sendable {
                 headers += ["category", "style", "type", "brand", "color"]
             }
             if groups.contains(.pricing) {
-                columns += ["p.company_cost_price AS cost_price", "p.company_markup_percent AS markup_percent",
-                             "ROUND(p.company_cost_price * (1.0 + p.company_markup_percent / 100.0), 2) AS sell_price"]
+                // Fix #209: use weighted_avg_cost (actual FIFO/LIFO cost) not company_cost_price,
+                // so exported sell prices match what the app displays.
+                columns += ["p.weighted_avg_cost AS cost_price", "p.company_markup_percent AS markup_percent",
+                             "ROUND(p.weighted_avg_cost * (1.0 + p.company_markup_percent / 100.0), 2) AS sell_price"]
                 headers += ["cost_price", "markup_percent", "sell_price"]
             }
             if groups.contains(.stockLevels) {
@@ -5385,15 +5398,19 @@ public final class PartsService: Sendable {
             let whereClause: String
             switch entityType {
             case "category": whereClause = "p.category_id = ?"
-            case "style": whereClause = "p.style_id = ?"
-            case "type": whereClause = "p.type_id = ?"
-            case "brand": whereClause = "p.brand_id = ?"
-            case "color": whereClause = "p.color_id = ?"
-            case "part": whereClause = "p.id = ?"
-            default: whereClause = "1=0"
+            case "style":    whereClause = "p.style_id = ?"
+            case "type":     whereClause = "p.type_id = ?"
+            case "brand":    whereClause = "p.brand_id = ?"
+            case "color":    whereClause = "p.color_id = ?"
+            case "part":     whereClause = "p.id = ?"
+            default:
+                // Unknown entityType — nothing could match. Return empty immediately
+                // to avoid passing 1 SQL argument with 0 placeholders (GRDB error 21).
+                return InventoryCheck(totalStock: 0, partsWithStock: [], alternativeParts: [])
             }
 
-            // Sum stock from both stock tables (stock.qty + stock_entries.quantity)
+            // Sum stock from both stock tables (stock.qty + stock_entries.quantity).
+            // GROUP BY is required so HAVING filters each part's computed total correctly.
             let rows = try Row.fetchAll(db, sql: """
                 SELECT p.id, p.name,
                        COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0)
@@ -5401,6 +5418,7 @@ public final class PartsService: Sendable {
                        AS total_stock
                 FROM parts p
                 WHERE \(whereClause) AND p.deleted_at IS NULL
+                GROUP BY p.id, p.name
                 HAVING total_stock > 0
             """, arguments: [entityId])
 
@@ -5757,7 +5775,7 @@ public final class PartsService: Sendable {
         try db.writer.read { dbConn in
             let rows = try Row.fetchAll(dbConn, sql: """
                 SELECT id, po_number, status,
-                       COALESCE((SELECT SUM(qty * unit_cost) FROM po_line_items WHERE po_id = purchase_orders.id AND deleted_at IS NULL), 0) AS total,
+                       COALESCE((SELECT SUM(qty_ordered * unit_cost) FROM po_line_items WHERE po_id = purchase_orders.id AND deleted_at IS NULL), 0) AS total,
                        created_at
                 FROM purchase_orders
                 WHERE supplier_id = ? AND deleted_at IS NULL

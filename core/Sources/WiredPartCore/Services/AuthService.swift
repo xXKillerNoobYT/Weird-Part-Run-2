@@ -713,6 +713,7 @@ public final class AuthService: Sendable {
         if addStatus != errSecSuccess && addStatus != errSecDuplicateItem {
             // Key generated but not persisted — tokens will invalidate on next app launch.
             // errSecDuplicateItem is benign (item was added between our read and write).
+            print("[AuthService] WARNING: SecItemAdd failed (OSStatus \(addStatus)) — signing key in memory only. Tokens will not survive app restart.")
         }
         return SymmetricKey(data: keyData)
     }()
