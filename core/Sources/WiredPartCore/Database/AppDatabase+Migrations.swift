@@ -1,6 +1,28 @@
 import Foundation
 import GRDB
 
+// MARK: - Safe Column Addition Helper (fixes #201)
+
+/// Adds a column only if it doesn't already exist, avoiding both try? (which swallows real errors)
+/// and duplicate-column crashes on re-run.
+private func addColumnIfMissing(
+    _ db: Database,
+    table: String,
+    column: String,
+    type: Database.ColumnType,
+    defaultValue: (any DatabaseValueConvertible)? = nil
+) throws {
+    let columns = try db.columns(in: table).map(\.name)
+    guard !columns.contains(column) else { return }
+    try db.alter(table: table) { t in
+        if let def = defaultValue {
+            t.add(column: column, type).defaults(to: def)
+        } else {
+            t.add(column: column, type)
+        }
+    }
+}
+
 // MARK: - Migration Registration
 //
 // Ports all 18 TypeScript migrations (000–017) to GRDB DatabaseMigrator.
@@ -3522,10 +3544,8 @@ extension AppDatabase {
                           columns: ["location_type", "location_id"], unique: true)
 
             // Add part_category and do_not_restock to location_stock_targets
-            try? db.alter(table: "location_stock_targets") { t in
-                t.add(column: "part_category", .text).defaults(to: "common")
-                t.add(column: "do_not_restock", .integer).defaults(to: 0)
-            }
+            try addColumnIfMissing(db, table: "location_stock_targets", column: "part_category", type: .text, defaultValue: "common")
+            try addColumnIfMissing(db, table: "location_stock_targets", column: "do_not_restock", type: .integer, defaultValue: 0)
         }
     }
 }
@@ -3576,22 +3596,18 @@ extension AppDatabase {
     private static func registerMigration032JPOPerPartStatus(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("032_jpo_per_part_status") { db in
             // Add per-line status fields to jpo_line_items
-            try? db.alter(table: "jpo_line_items") { t in
-                t.add(column: "line_status", .text).defaults(to: "pending")
-                t.add(column: "hold_reason", .text)
-                t.add(column: "reject_reason", .text)
-                t.add(column: "chat_thread_id", .integer)
-                t.add(column: "po_line_id", .integer)
-                t.add(column: "transfer_id", .integer)
-                t.add(column: "status_updated_at", .text)
-                t.add(column: "status_updated_by", .integer)
-            }
+            try addColumnIfMissing(db, table: "jpo_line_items", column: "line_status", type: .text, defaultValue: "pending")
+            try addColumnIfMissing(db, table: "jpo_line_items", column: "hold_reason", type: .text)
+            try addColumnIfMissing(db, table: "jpo_line_items", column: "reject_reason", type: .text)
+            try addColumnIfMissing(db, table: "jpo_line_items", column: "chat_thread_id", type: .integer)
+            try addColumnIfMissing(db, table: "jpo_line_items", column: "po_line_id", type: .integer)
+            try addColumnIfMissing(db, table: "jpo_line_items", column: "transfer_id", type: .integer)
+            try addColumnIfMissing(db, table: "jpo_line_items", column: "status_updated_at", type: .text)
+            try addColumnIfMissing(db, table: "jpo_line_items", column: "status_updated_by", type: .integer)
 
             // Add delivery option to job_purchase_orders
-            try? db.alter(table: "job_parts_orders") { t in
-                t.add(column: "delivery_option", .text).defaults(to: "partial")
-                t.add(column: "delivery_locked", .integer).defaults(to: 0)
-            }
+            try addColumnIfMissing(db, table: "job_parts_orders", column: "delivery_option", type: .text, defaultValue: "partial")
+            try addColumnIfMissing(db, table: "job_parts_orders", column: "delivery_locked", type: .integer, defaultValue: 0)
 
             // Backfill existing lines to "pending"
             try db.execute(sql: """
@@ -3652,15 +3668,17 @@ extension AppDatabase {
             }
 
             // Add stage_id to jpo_line_items (auto-assigned from category mapping)
-            try? db.alter(table: "jpo_line_items") { t in
-                t.add(column: "stage_id", .integer)
-                    .references("job_stages")
+            if !(try db.columns(in: "jpo_line_items").map(\.name)).contains("stage_id") {
+                try db.alter(table: "jpo_line_items") { t in
+                    t.add(column: "stage_id", .integer).references("job_stages")
+                }
             }
 
             // Add current_stage_id to jobs
-            try? db.alter(table: "jobs") { t in
-                t.add(column: "current_stage_id", .integer)
-                    .references("job_stages")
+            if !(try db.columns(in: "jobs").map(\.name)).contains("current_stage_id") {
+                try db.alter(table: "jobs") { t in
+                    t.add(column: "current_stage_id", .integer).references("job_stages")
+                }
             }
 
             // Indexes
@@ -3712,11 +3730,14 @@ extension AppDatabase {
         migrator.registerMigration("036_clock_todo_integration") { db in
             // Add linked_todo_id and work_type to labor_entries
             // so workers can track what they're doing + classify work type
-            try? db.alter(table: "labor_entries") { t in
-                t.add(column: "linked_todo_id", .integer)
-                    .references("notebook_entries", onDelete: .setNull)
-                t.add(column: "work_type", .text)
-                    .defaults(to: "new_work")  // "new_work" or "warranty"
+            let leCols = try db.columns(in: "labor_entries").map(\.name)
+            if !leCols.contains("linked_todo_id") {
+                try db.alter(table: "labor_entries") { t in
+                    t.add(column: "linked_todo_id", .integer)
+                        .references("notebook_entries", onDelete: .setNull)
+                    t.add(column: "work_type", .text)
+                        .defaults(to: "new_work")
+                }
             }
         }
     }
@@ -3766,30 +3787,38 @@ extension AppDatabase {
             try db.create(index: "idx_nsg_notebook", on: "notebook_section_groups", columns: ["notebook_id"])
 
             // Add group_id and additional columns to notebook_sections
-            try? db.alter(table: "notebook_sections") { t in
-                t.add(column: "group_id", .integer)
-                    .references("notebook_section_groups", onDelete: .setNull)
-                t.add(column: "is_collapsed", .integer).notNull().defaults(to: 0)
-                t.add(column: "updated_at", .text).defaults(sql: "(datetime('now'))")
+            let nsCols = try db.columns(in: "notebook_sections").map(\.name)
+            if !nsCols.contains("group_id") {
+                try db.alter(table: "notebook_sections") { t in
+                    t.add(column: "group_id", .integer)
+                        .references("notebook_section_groups", onDelete: .setNull)
+                    t.add(column: "is_collapsed", .integer).notNull().defaults(to: 0)
+                    t.add(column: "updated_at", .text).defaults(sql: "(datetime('now'))")
+                }
             }
 
             // Add block content columns to notebook_entries
-            try? db.alter(table: "notebook_entries") { t in
-                t.add(column: "block_type", .text).notNull().defaults(to: "text")
-                t.add(column: "block_data", .text)         // JSON for type-specific data
-                t.add(column: "heading_level", .integer)     // 1, 2, 3 for headings
-                t.add(column: "checklist_items", .text)      // JSON array of {text, checked}
-                t.add(column: "photo_path", .text)
-                t.add(column: "reference_type", .text)       // "part", "po", "jpo", "job"
-                t.add(column: "reference_id", .integer)
-                t.add(column: "is_completed", .integer).notNull().defaults(to: 0)
-                t.add(column: "notebook_id", .integer)       // Direct notebook reference for queries
+            let neCols = try db.columns(in: "notebook_entries").map(\.name)
+            if !neCols.contains("block_type") {
+                try db.alter(table: "notebook_entries") { t in
+                    t.add(column: "block_type", .text).notNull().defaults(to: "text")
+                    t.add(column: "block_data", .text)
+                    t.add(column: "heading_level", .integer)
+                    t.add(column: "checklist_items", .text)
+                    t.add(column: "photo_path", .text)
+                    t.add(column: "reference_type", .text)
+                    t.add(column: "reference_id", .integer)
+                    t.add(column: "is_completed", .integer).notNull().defaults(to: 0)
+                    t.add(column: "notebook_id", .integer)
+                }
             }
         }
     }
+}
 
-    // MARK: - Migration 043: Payment Tracking
+// MARK: - Migration 043: Payment Tracking
 
+extension AppDatabase {
     private static func registerMigration043PaymentTracking(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("043_payment_tracking") { db in
             // Payment records for customer invoicing / AR tracking
@@ -3865,23 +3894,19 @@ extension AppDatabase {
     private static func registerMigration044JobClassifications(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("044_job_classifications") { db in
             // Warranty, classification, payment hold, and continuous columns on jobs
-            try? db.alter(table: "jobs") { t in
-                // Warranty fields
-                t.add(column: "warranty_start", .text)
-                t.add(column: "warranty_end", .text)
-                t.add(column: "warranty_duration_days", .integer)
-
-                // Job classification: "standard", "continuous", "service_call"
-                t.add(column: "job_classification", .text).defaults(to: "standard")
-
-                // Payment hold
-                t.add(column: "payment_hold_amount", .double)
-                t.add(column: "payment_hold_date", .text)
-                t.add(column: "payment_hold_reason", .text)
-
-                // Continuous job fields
-                t.add(column: "is_continuous", .integer).notNull().defaults(to: 0)
-                t.add(column: "continuous_schedule", .text)
+            let jobCols044 = try db.columns(in: "jobs").map(\.name)
+            if !jobCols044.contains("warranty_start") {
+                try db.alter(table: "jobs") { t in
+                    t.add(column: "warranty_start", .text)
+                    t.add(column: "warranty_end", .text)
+                    t.add(column: "warranty_duration_days", .integer)
+                    t.add(column: "job_classification", .text).defaults(to: "standard")
+                    t.add(column: "payment_hold_amount", .double)
+                    t.add(column: "payment_hold_date", .text)
+                    t.add(column: "payment_hold_reason", .text)
+                    t.add(column: "is_continuous", .integer).notNull().defaults(to: 0)
+                    t.add(column: "continuous_schedule", .text)
+                }
             }
         }
     }
@@ -3891,14 +3916,17 @@ extension AppDatabase {
     private static func registerMigration045TodoClassification(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("045_todo_classification") { db in
             // Work classification columns on notebook_entries
-            try? db.alter(table: "notebook_entries") { t in
-                t.add(column: "work_classification", .text)
-                t.add(column: "classification_reviewed", .integer).notNull().defaults(to: 0)
+            let neCols045 = try db.columns(in: "notebook_entries").map(\.name)
+            if !neCols045.contains("work_classification") {
+                try db.alter(table: "notebook_entries") { t in
+                    t.add(column: "work_classification", .text)
+                    t.add(column: "classification_reviewed", .integer).notNull().defaults(to: 0)
                 t.add(column: "classification_reviewed_by", .integer)
                 t.add(column: "classification_reviewed_at", .text)
                 t.add(column: "warranty_timer_start", .text)
                 t.add(column: "warranty_timer_end", .text)
                 t.add(column: "is_question", .integer).notNull().defaults(to: 0)
+                }
             }
 
             // Classification audit history
@@ -3921,10 +3949,7 @@ extension AppDatabase {
     private static func registerMigration046HalfDayScheduling(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("046_half_day_scheduling") { db in
             // Add time_slot column to job_dispatch for AM/PM/Full day scheduling
-            try? db.alter(table: "job_dispatch") { t in
-                t.add(column: "time_slot", .text).defaults(to: "full")
-                // Values: "full", "am", "pm"
-            }
+            try addColumnIfMissing(db, table: "job_dispatch", column: "time_slot", type: .text, defaultValue: "full")
         }
     }
 
@@ -4160,11 +4185,9 @@ extension AppDatabase {
             try db.create(index: "idx_tmc_tool", on: "tool_maintenance_configs", columns: ["tool_id"])
 
             // Add usage tracking and confidence columns to tools
-            try? db.alter(table: "tools") { t in
-                t.add(column: "total_usage_hours", .double).defaults(to: 0)
-                t.add(column: "confidence_score", .double).defaults(to: 1.0)
-                t.add(column: "last_maintenance_date", .text)
-            }
+            try addColumnIfMissing(db, table: "tools", column: "total_usage_hours", type: .double, defaultValue: 0)
+            try addColumnIfMissing(db, table: "tools", column: "confidence_score", type: .double, defaultValue: 1.0)
+            try addColumnIfMissing(db, table: "tools", column: "last_maintenance_date", type: .text)
         }
     }
 }
@@ -4203,10 +4226,8 @@ extension AppDatabase {
             try db.create(index: "idx_vs_type", on: "vehicle_stock", columns: ["stock_type"])
 
             // Add fuel_level column to vehicles (0.0–1.0, nullable)
-            try? db.alter(table: "vehicles") { t in
-                t.add(column: "fuel_level", .double)
-                t.add(column: "next_maintenance_date", .text)
-            }
+            try addColumnIfMissing(db, table: "vehicles", column: "fuel_level", type: .double)
+            try addColumnIfMissing(db, table: "vehicles", column: "next_maintenance_date", type: .text)
 
             // Trailer attachments — which trailer is attached to which vehicle
             try db.create(table: "trailer_attachments") { t in
@@ -4273,10 +4294,8 @@ extension AppDatabase {
             try db.create(index: "idx_ts_trailer", on: "trailer_stock", columns: ["trailer_id"])
 
             // Location tracking columns on job_trailers
-            try? db.alter(table: "job_trailers") { t in
-                t.add(column: "is_at_shop", .integer).defaults(to: 1)
-                t.add(column: "linked_warehouse_id", .integer)
-            }
+            try addColumnIfMissing(db, table: "job_trailers", column: "is_at_shop", type: .integer, defaultValue: 1)
+            try addColumnIfMissing(db, table: "job_trailers", column: "linked_warehouse_id", type: .integer)
 
             // Trailer location history — tracks shop/job_site/in_transit transitions
             try db.create(table: "trailer_location_history") { t in
@@ -4468,9 +4487,7 @@ extension AppDatabase {
     private static func registerMigration055OfficeChannel(_ migrator: inout DatabaseMigrator) {
         migrator.registerMigration("055_office_channel") { db in
             // Add is_system column to chat_channels
-            try? db.alter(table: "chat_channels") { t in
-                t.add(column: "is_system", .boolean).notNull().defaults(to: false)
-            }
+            try addColumnIfMissing(db, table: "chat_channels", column: "is_system", type: .boolean, defaultValue: false)
         }
     }
 
