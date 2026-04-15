@@ -323,4 +323,67 @@ struct WarehouseFloorPlanTests {
         // After completion, either record shows completed or is cleared
         #expect(after != nil || initial == nil)
     }
+
+    // MARK: - Flow Onboarding (startFlowOnboarding / updateFlowProgress)
+
+    @Test("startFlowOnboarding creates a progress record with correct flow metadata")
+    func testStartFlowOnboarding() throws {
+        let env = try freshEnv()
+
+        let progress = try env.warehouse.startFlowOnboarding(
+            flowType: "parts",
+            totalSteps: 3
+        )
+
+        #expect(progress.currentStep == 1)
+        #expect(progress.flowType == "parts")
+        #expect(progress.totalSteps == 3)
+        #expect(progress.id != nil)
+        // A new flow starts at step 1 with no step data
+        #expect(progress.stepsProgress == nil)
+    }
+
+    @Test("startFlowOnboarding can be linked to a floor plan")
+    func testStartFlowOnboardingWithFloorPlan() throws {
+        let env = try freshEnv()
+
+        let plan = try env.warehouse.createFloorPlan(name: "Flow Test Plan", widthInches: 240, lengthInches: 360)
+        let progress = try env.warehouse.startFlowOnboarding(
+            flowType: "floor_plan",
+            totalSteps: 9,
+            floorPlanId: plan.id
+        )
+
+        #expect(progress.floorPlanId == plan.id)
+        #expect(progress.flowType == "floor_plan")
+        #expect(progress.totalSteps == 9)
+    }
+
+    @Test("updateFlowProgress advances currentStep and persists stepData JSON")
+    func testUpdateFlowProgress() throws {
+        let env = try freshEnv()
+
+        let progress = try env.warehouse.startFlowOnboarding(flowType: "parts", totalSteps: 3)
+        guard let progressId = progress.id else {
+            #expect(Bool(false), "startFlowOnboarding must return a record with an id")
+            return
+        }
+
+        let stepDataJSON = #"{"selectedCategory":"paint","count":5}"#
+        try env.warehouse.updateFlowProgress(id: progressId, currentStep: 2, stepData: stepDataJSON)
+
+        // Read back via the DB directly to verify persistence
+        let updated = try env.db.writer.read { db in
+            try WarehouseOnboardingProgress.fetchOne(db, key: progressId)
+        }
+        #expect(updated?.currentStep == 2)
+        #expect(updated?.stepsProgress == stepDataJSON)
+    }
+
+    @Test("updateFlowProgress is a no-op for non-existent ID")
+    func testUpdateFlowProgressMissingId() throws {
+        let env = try freshEnv()
+        // Should not throw — guard let inside the function handles missing row
+        try env.warehouse.updateFlowProgress(id: 99999, currentStep: 5)
+    }
 }

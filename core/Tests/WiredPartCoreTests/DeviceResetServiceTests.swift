@@ -165,11 +165,18 @@ struct DeviceResetServiceTests {
         }
         #expect(isDeactivated == 1)
 
-        // Verify change log entry was created
+        // Verify change log entry was created.
+        // _change_log.record_id is INTEGER (see migration 000_change_log); for device registry
+        // entries the service stores record_id=0 and embeds the actual device_id in changed_fields.
         let changeCount: Int = try db.writer.read { dbConnection in
             try Int.fetchOne(
                 dbConnection,
-                sql: "SELECT COUNT(*) FROM _change_log WHERE table_name = '_device_registry' AND record_id = 'my-dev'"
+                sql: """
+                    SELECT COUNT(*) FROM _change_log
+                    WHERE table_name = '_device_registry'
+                      AND record_id = 0
+                      AND changed_fields LIKE '%my-dev%'
+                    """
             )!
         }
         #expect(changeCount == 1)
