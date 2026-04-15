@@ -1,6 +1,6 @@
 # WiredPart Development Pipeline
 
-> **Last updated:** 2026-04-13 (dev-pipeline-manager run 16 — 5 new issues #148-#152 cataloged, #151 queued for direct fix, PE-043 confirmed NEXT)
+> **Last updated:** 2026-04-13 (dev-pipeline-manager run 17 — 30 new issues from April 2026 full program audit triaged and prioritized; Next Up reordered; 3 Q&A architectural questions added; Backlog updated with all 30 issues)
 > **Auto-maintained by:** dev-pipeline-manager (orchestrator)
 
 ---
@@ -32,14 +32,14 @@ Every feature, bug, or improvement follows this cycle:
 | Area | Status | Last Checked |
 |------|--------|-------------|
 | Build | 0 errors, 0 warnings | 2026-04-12 |
-| Tests | **1217/1217 passing** — github-issues-sync run 7 (2026-04-13): +1 test for #151 fix (`testResolveQAThreadByChannel`). Committed baseline: 1196 (EOD sync run 5, 2026-04-12). | 2026-04-13 |
-| Plan Alignment | All agents ran 2026-04-12. No new plan drift. PE-043 queued. `ios-foundation-fixes.md` CLOSED (2026-04-12). 0 drift issues open. | 2026-04-13 |
+| Tests | **1222/1222 passing** — test-coverage-maintenance run (2026-04-14): **3 failures fixed** (BadgeCountService ×2 `status='submitted'` query mismatch with valid transitions map; DeviceResetService `record_id` type mismatch in change_log check) + **5 new tests** (1 `in_review` edge case for pendingApprovals, 4 flow-onboarding tests for `startFlowOnboarding`/`updateFlowProgress`). | 2026-04-14 |
+| Plan Alignment | **plan-enforcer run 14 (2026-04-14):** Full working tree audit. **1 plan drift found:** `ios-pricing-override-flow.md` — CategoriesTreeView wired (category row:348, type row:488) before required resolveConflicts tests + before edit_pricing permission guard. GitHub #229 filed. Plan Registry updated. All April audit fixes (#175/#177/#180/#181/#197/#198/#201/#202/#205/#210) confirmed plan-aligned. CLAUDE.md GitHub Issues section confirmed propagated correctly. 0 other drift. | 2026-04-14 |
 | Feature Polish | **0 active DevTODOs.** DIS-016 ✅ CLOSED. DIS-015 ✅ CLOSED. DIS-014 ✅ CLOSED. DIS-012/013 deferred to v2. PE-042 ✅ archived. New: #151 (wrong thread resolved — direct fix queued), #148 (IOSMovementWizard missing Save & Exit — Xcode prompt needed). | 2026-04-13 |
 | Xcode Prompts | **1 active: PE-043 (NEXT).** Dead photo + reference pickers in IOSMessageThreadView. GitHub #152. Prompt at `fix-prompts/PE-043-message-thread-attachment-pickers.md`. | 2026-04-13 |
-| GitHub Issues | **50 open** (2026-04-13: #151 ✅ CLOSED direct fix, #145 ✅ CLOSED pull-to-refresh already in working tree). PE-043 still NEXT. #148 (IOSMovementWizard Save & Exit), #149 (keyboard dismiss), #150 (Settings .disabled()) still open. | 2026-04-13 |
-| Q&A Backlog | **3 pending** — Colors/Brands redesign (#98-#107, Step 3) + interactiveDismissDisabled #143/#149 bundle (Step 3) + keyboard dismiss #149 added to #143 block. Both in dev-qa.md. | 2026-04-13 |
-| Working Tree | ⚠️ **16 modified files + 1 untracked** — iOS: `IOSEscalationTimeline`, `IOSMessageThreadView`, `IOSDashboardQRScannerPage`, `IOSClockPage`, `Formatters`, `IOSSyncManager`. Core: `JobsService`, `WishlistService`. Tests: `ChatServiceTests`, `JobsServiceTests`, `WishlistServiceTests`. Docs: `dev-pipeline`, `hunt-fix-tracker`, `page-rebuild-tracker`, `ios-foundation-fixes`, `00-fix-order`. New: `PE-043-message-thread-attachment-pickers.md`. | 2026-04-13 |
-| Agent Health | All 8 agents ran on 2026-04-12. All ✅ healthy. | 2026-04-13 |
+| GitHub Issues | **55+ open** (2026-04-14: **dev-improvement-scanner run 11**: #230 NEW — `encryptIfNeeded` silent plaintext fallback (Critical Security), #231 NEW — Keychain `AfterFirstUnlockThisDeviceOnly` too permissive (Medium Security), #232 NEW — IOSJobDetailTabView division-by-zero crash **FIXED**. 2026-04-14: #229 plan drift filed by plan-enforcer. 2026-04-13: #151 ✅ CLOSED. **30 new issues from April audit** — #179–#228 range. Security: #191 (unauthenticated key exchange), #184 (JSON injection). Data: #180, #181, #220. Concurrency: #185, #187, #190, #222. Full list → Backlog section.) | 2026-04-14 |
+| Q&A Backlog | **4 pending blocks** — (1) Colors/Brands redesign (#98-#107, 6 questions), (2) dismiss safety #143/#149 bundle (5 questions), (3) April audit architectural decisions (#221/#223/#224/#227 — 3 questions, just added 2026-04-13). All in `docs/dev-qa.md`. | 2026-04-13 |
+| Working Tree | ⚠️ **Working tree has uncommitted changes** — iOS: Parts pages (DashboardView, CategoriesEditorPanel, CategoriesTreeView, PartsBrandsPage, PartsCatalogPage, PartsForecastingPage, PartsImportExportPage, PartsPricingPage, PartsSuppliersPage, PricingBulkEditSheet, PricingOverrideFlow, PricingSettingsSheet). Core: AppDatabase+Migrations, PartsModels, AuthService, JobsService, OrdersService, PartsService, PeopleService, SchedulingService, ConflictResolver, MultipeerManager, PeerManager. Docs: dev-pipeline, hunt-fix-tracker, forecasting-page-redesign. Untracked: `ForecastSettingsSheet.swift`, `docs/plans/parts-section-audit-fix-plan.md`, `docs/Problomes/Screenshot 2026-04-12...`. **Needs EOD commit.** | 2026-04-13 |
+| Agent Health | dev-improvement-scanner run 11 ✅ 2026-04-14. All 8 agents ran on 2026-04-12. All ✅ healthy. | 2026-04-14 |
 
 ---
 
@@ -107,16 +107,23 @@ Every feature, bug, or improvement follows this cycle:
 
 ## Next Up (Priority Order)
 
-> **Phase 3 active.** Q&A: **2 pending** (Colors/Brands redesign #98-#107 + interactiveDismissDisabled #143). Tests: 1217/1217. **1 active Xcode prompt: PE-043.** #151 ✅ CLOSED. #145 ✅ CLOSED. DIS-012/013 deferred to v2. github-issues-sync run 7 (2026-04-13).
+> **Phase 3 active.** Q&A: **2 pending** (Colors/Brands redesign #98-#107 + interactiveDismissDisabled #143). Tests: 1217/1217. **1 active Xcode prompt: PE-043.** **30 new issues from April audit** now triaged — security/data/concurrency flagged as CRITICAL. DIS-012/013 deferred to v2. github-issues-sync run 7 (2026-04-13).
 
-1. **Answer Colors & Parts Redesign Q&A** — `docs/dev-qa.md` — 6 questions about schema approach (shared color pool vs. per-type), data migration strategy, and part identity model (#98-#107). Potential schema change — Q&A must come before any plan or code.
-2. **Answer #143 Q&A (interactiveDismissDisabled)** — `docs/dev-qa.md` — 4 questions: priority vs. page-rebuild wave, module order (Settings/People/Chat), dirty-tracking vs. unconditional, Xcode prompt vs. automation script.
-3. **Commit working tree** — `github-sync-and-review` — 13 files: 8 iOS fixes from dev-improvement-scanner run 12 (DevicePairingView, IOSAuditPage, IOSWishlistPage, IOSCustomerDetailPage, IOSEmployeeDetailPage, CompanyProfilesPage, IOSEscalationTimeline, IOSMessageThreadView), 3 docs (dev-pipeline.md, hunt-fix-tracker.md, ios-pricing-override-flow.md), PE-042 prompt (archive).
-4. **PricingOverrideFlow — resolveConflicts test coverage** — `ios-pricing-override-flow.md` — 6 scenarios required (no-conflict, replace, keep, mixed, error). Required before CategoriesTreeView wiring. Assign to test-coverage-maintenance.
-5. **PricingOverrideFlow — CategoriesTreeView wiring** — Write Xcode prompt (PE-043) to wire `PricingTierSetSheet` into the category tree editor. **Blocked on #4 above.**
-6. **Improve test coverage** — PeopleService (~22/47), ChatService (~14/33), SettingsService (~17/40).
-7. **Program-review issues #82–#95** — 14 open page rebuild specs. Next major wave once Colors/Brands Q&A is answered.
-8. **Systemic silent failures** — #121 (198 `try?`), #122 (426 guard-let bails), #128 (0 truly empty catches — may be closeable), #129 (dirty tracking — now Q&A pending via #143). Need owner prioritization.
+1. 🚨 **[SECURITY] Fix #191** — `LanSyncServer.swift` — `/sync/key-exchange` endpoint returns X25519 public key without any authentication check. Any device on the LAN can initiate encrypted sessions without being a paired peer. Add peer certificate check before key exchange. **Core Swift — fix directly.**
+2. 🚨 **[SECURITY] Fix #184** — `LanSyncServer.swift` — JSON injection in certificate rejection error response. Error message from untrusted cert is interpolated directly into JSON string. Use `JSONEncoder` or escape the string. **Core Swift — fix directly.**
+3. 🔴 **[DATA] Fix #180** — `JobsService.swift` or notebooks service — `addEntry()` does not set `notebook_id` — breaks direct lookups and badge counts. **Core Swift — fix directly.**
+4. 🔴 **[DATA] Fix #181** — `DeviceResetService.swift` — writes text UUID string into `record_id` (INTEGER column) in change log. Will cause GRDB type mismatch on sync. Use `0` or remove that log entry. **Core Swift — fix directly.**
+5. 🔴 **[DATA] Fix #220** — `ConflictResolver.swift` or sync apply path — sync silently drops UPDATE operations when the record doesn't exist locally (should upsert instead). **Core Swift — fix directly.**
+6. 🔴 **[MEMORY] Fix #215** — `IOSSyncManager.swift` — missing `deinit` — NotificationCenter observer and heartbeat timer leak on logout. Add `deinit { }` that calls `NotificationCenter.default.removeObserver(self)` and invalidates timer. **Direct Swift edit.**
+7. 🔴 **[MEMORY] Fix #216** — `IOSClockPage.swift` — `@State` holding `Timer` reference — Timer won't be invalidated on view disappear. Move to `@StateObject` or use `.onDisappear { timer?.invalidate() }`. **Direct Swift edit.**
+8. 🔴 **[CONCURRENCY] Fix #185** — `CartManager.swift` — missing `@MainActor` — the only `ObservableObject` in the codebase without it, causing potential UI update races. **Direct Swift edit.**
+9. **Answer Colors & Parts Redesign Q&A** — `docs/dev-qa.md` — 6 questions about schema approach (shared color pool vs. per-type), data migration strategy, and part identity model (#98-#107). Potential schema change — Q&A must come before any plan or code.
+10. **Answer #143 Q&A (interactiveDismissDisabled)** — `docs/dev-qa.md` — 4 questions: priority vs. page-rebuild wave, module order (Settings/People/Chat), dirty-tracking vs. unconditional, Xcode prompt vs. automation script.
+11. **Commit working tree** — `github-sync-and-review` — large working tree: Parts iOS pages, core service fixes, migrations, docs. All 1217 tests passing.
+12. **PricingOverrideFlow — resolveConflicts test coverage** — `ios-pricing-override-flow.md` — 6 scenarios required (no-conflict, replace, keep, mixed, error). Required before CategoriesTreeView wiring. Assign to test-coverage-maintenance.
+13. **Improve test coverage** — PeopleService (~22/47), ChatService (~14/33), SettingsService (~17/40).
+14. **Program-review issues #82–#95** — 14 open page rebuild specs. Next major wave once Colors/Brands Q&A is answered.
+15. **Systemic silent failures** — #121 (198 `try?`), #122 (426 guard-let bails), #128 (0 truly empty catches — may be closeable), #129 (dirty tracking — now Q&A pending via #143). Need owner prioritization.
 
 ---
 
@@ -143,9 +150,40 @@ Every feature, bug, or improvement follows this cycle:
 | 9 | Write test coverage for PeopleService (47 methods, ~22 tested) | Quality | 7 | test-coverage-maintenance |
 | 10 | Write test coverage for ChatService (33 methods, ~14 tested) | Quality | 7 | test-coverage-maintenance |
 | 11 | Write test coverage for SettingsService (40 methods, ~17 tested) | Quality | 7 | test-coverage-maintenance |
-| 12 | **#145** — IOSChatPage pull-to-refresh missing (opens to cached data, no refresh action on thread list) | UX | 5 | hunt-fix-verify |
-| 13 | **#146** — `Formatters.swift` dead code + 99 inline `DateFormatter` instances across codebase (perf: should be `static let` singletons) | Performance | 6→7 | dev-improvement-scanner |
+| 12 | **#145** ✅ CLOSED — IOSChatPage pull-to-refresh (github-issues-sync run 7) | UX | 13 | ✅ done |
+| 13 | **#146** — `Formatters.swift` 46 remaining inline `DateFormatter` instances (major sweep run #146 complete — 37 eliminated). | Performance | 6→7 | dev-improvement-scanner |
 | 14 | **#147** — Missing empty states on 3 views (empty thread list, empty tools list, empty team roster) | UX | 5 | hunt-fix-verify |
+| — | **── APRIL 2026 AUDIT ISSUES (filed 2026-04-13) ──** | — | — | — |
+| 🚨 | **#191** [Security] Sync key exchange endpoint returns X25519 public key **without auth** — any LAN device can initiate encrypted session | Security | 1 | hunt-fix-verify |
+| 🚨 | **#184** [Security] JSON injection in cert rejection error response — untrusted string interpolated into raw JSON | Security | 1 | hunt-fix-verify |
+| 🚨 | **#228** [Auth][Security] SecItemAdd result unchecked — signing key may not persist to Keychain | Security | 1 | dev-improvement-scanner |
+| 🔴 | **#220** [Sync][Bug] Sync silently drops UPDATE when record doesn't exist locally — should upsert | Data | 1 | hunt-fix-verify |
+| 🔴 | **#181** [Sync][Bug] DeviceResetService writes text UUID to integer record_id column | Data | 1 | hunt-fix-verify |
+| 🔴 | **#180** [Notebooks][Bug] addEntry() does not set notebook_id — breaks lookups and badges | Data | 1 | hunt-fix-verify |
+| 🔴 | **#215** [UI][Bug] IOSSyncManager missing deinit — observer and timer leak on logout | Memory | 5 | direct edit |
+| 🔴 | **#216** [UI][Bug] @State holding Timer in IOSClockPage — timer not invalidated on dismiss | Memory | 5 | direct edit |
+| 🔴 | **#185** [Warehouse][Bug] CartManager missing @MainActor — only ObservableObject without it | Concurrency | 5 | direct edit |
+| 🔴 | **#188** [Parts][Bug] Forecasting ignores user-configured MIN/TARGET/MAX in reorder calculations | Feature gap | 5 | hunt-fix-verify |
+| 🔴 | **#212** [Parts][Bug] Model structs missing schema columns (PartCategory, PartStyle, PartType, Brand) | Data | 5 | hunt-fix-verify |
+| 🔴 | **#209** [Parts][Bug] Export sell price uses company_cost_price instead of weighted_avg_cost | Data | 5 | hunt-fix-verify |
+| 🔴 | **#207** [Scheduling][Bug] Time-off approval ignores existing dispatch conflicts | Logic | 5 | hunt-fix-verify |
+| 🔴 | **#190** [Sync][Bug] LanSyncServer continuation resume guard is not atomic | Concurrency | 5 | hunt-fix-verify |
+| 🔴 | **#187** [Sync][Bug] PeerDiscovery @unchecked Sendable with racy callback setter | Concurrency | 5 | hunt-fix-verify |
+| 🔴 | **#183** [Sync][Bug] Change log queries have no LIMIT — potential OOM on large backlogs | Performance | 5 | hunt-fix-verify |
+| 🟡 | **#222** [Concurrency] @unchecked Sendable on BaseRepository and PeerDiscovery | Concurrency | 5 | hunt-fix-verify |
+| 🟡 | **#219** [UI][Bug] IOSLaborOverviewPage missing proper empty state | UX | 5 | hunt-fix-verify |
+| 🟡 | **#218** [Accessibility][Bug] Color-only status indicators in schedule calendar | Accessibility | 5 | direct/Xcode |
+| 🟡 | **#217** [UI][Bug] IOSPublicReportView always shows error — dead-end route | UX | 5 | direct edit |
+| 🟡 | **#213** [Data][Bug] No string length or negative value validation on create/update | Data | 5 | hunt-fix-verify |
+| 🟡 | **#192** [Settings][Bug] 5 Settings pages flash defaults before data loads — no loading indicator | UX | 5 | Xcode prompt |
+| 🟡 | **#179** [Scheduling][Bug] Silently swallowed errors in dispatch/schedule creation sheets | UX | 5 | direct/Xcode |
+| 🟡 | **#186** [Accessibility][Bug] Hardcoded 7px font in warehouse placement grid | Accessibility | 5 | direct edit |
+| 🔵 | **#227** [Parts][Performance] Service-layer pagination missing — Parts catalog fetches all rows | Performance | 2 | plan needed |
+| 🔵 | **#226** [Code Quality] Debug print() statements in production code | Quality | 5 | dev-improvement-scanner |
+| 🔵 | **#225** [Sync][Info] DeviceIdentity.current should be let instead of var | Quality | 5 | direct edit |
+| 🔵 | **#224** [Parts][Info] Forecasting ADU includes transfer movements — inflates demand | Logic | 2 | plan needed |
+| 🔵 | **#223** [Performance] BaseRepository.findAll() has no default limit | Performance | 2 | plan needed |
+| 🔵 | **#221** [Sync][Info] LWW uses row-level timestamps for field-level conflicts | Architecture | 2 | plan needed |
 
 ---
 
@@ -173,6 +211,7 @@ Every feature, bug, or improvement follows this cycle:
 | 2026-04-05 | **dev-improvement-scanner run 9**: Scan of 7 recently-modified iOS files + broader HIG/security sweep. **1 direct fix:** `PartsFlowWizard.swift` DIS-010 — `saveAllProgress(clearDraft:)` param: "Finish" now purges UserDefaults draft keys; "Save & Exit" preserves them for resume. **3 new DevTODOs:** DIS-008 (hardcoded 7pt/6pt fonts in WizardStepPlacement + JobStageProgressBar — Apple HIG violation), DIS-009 (CartManager + PartsFlowWizard bulk DB write loops on main thread), DIS-011 (force unwrap style in ternary guards). **Status updates:** DIS-007 closed (non-issue confirmed). Q&A backlog: 0 pending (DIS-005 answered, DIS-007 closed). 1014/1014 tests. | Steps 6-9 | PartsFlowWizard.swift |
 | 2026-04-04 | **dev-improvement-scanner run 8**: Scan of recently-modified files. **3 direct fixes:** `SchedulingService.swift` 2 post-insert force unwraps (`template.id!`, `holiday.id!`) → `guard let` with typed errors; `BadgeCountManager.refresh()` 3-second debounce added. **2 new DevTODOs:** DIS-006 (WishlistService sync main-thread writes), DIS-007 (IOSMainView NotificationCenter closure lifetime). Confirmed: all timers safe, all lists have `.refreshable`, 0 force casts, 0 deprecated NavigationView. | Steps 6-8 | SchedulingService.swift + BadgeCountManager.swift |
 | 2026-04-04 | **dev-improvement-scanner run 7**: 4-agent parallel scan (runtime safety, UX, security, HIG). **8 direct fixes:** PartsService healthScore division-by-zero guard (minStock==targetStock path); SettingsService.exportTable uses DB-validated table name; NotebooksService conflict resolver uses literal-backed column map; `.gitignore` now blocks `.env`/`credentials.json`/`token.json`; AI panel 7 icon buttons given `.accessibilityLabel` (was `.help()`-only, iOS no-op); Notebook context menus now show `confirmationDialog` before deleting groups/sections/entries; NotebookTemplates swipe-delete now shows confirmation; QRLabelPrintSheet + IOSStagingPage Clear buttons now carry `.role(.destructive)`. **5 DevTODOs created** (DIS-001 to DIS-005) for items needing Xcode work: loading indicators on 3 pages, pull-to-refresh on Daily Report Templates, `.presentationDetents` on 7 sheets, DashboardDailyReportPage timer leak, CompanySetupWizard UserDefaults PII. `gh` not available — GitHub issues to be filed manually. | Steps 6-9 | 9 files modified |
+| 2026-04-14 | **dev-improvement-scanner run 11**: 3-agent parallel scan (runtime safety, security, HIG/UX) across 324 Swift files. **2 direct fixes:** (1) `IOSJobDetailTabView.swift:1184` — division-by-zero when `stages.count == 1`; guard added (`dotCount > 1 ? ... : geo.size.width`). #232 filed + closed. (2) `PartsForecastingPage.swift` — 4 error context strings all said "load forecast" regardless of operation; fixed to "dismiss recommendation", "recalculate forecasts", "approve recommendation", "save forecast settings". **2 new security issues filed:** #230 (`encryptIfNeeded` silent plaintext fallback on AES-GCM failure — Critical), #231 (Keychain `AfterFirstUnlockThisDeviceOnly` → `WhenUnlockedThisDeviceOnly` — Medium). **Key confirmations:** SpendingChart division-by-zero already guarded (total==0 check line 19); no force unwraps in production Swift; no deprecated NavigationView; 5 `print()` calls confirmed (already tracked as #226); brute-force lockout comment says "acceptable for local-only auth" (already tracked under #131). HIG: 172 sheets without `.presentationDetents` confirmed — scale too large for single-session fix, already tracked as systemic issue in PE-DISMISS backlog. | Steps 6-9 | 3 files modified |
 | 2026-04-07 | **dev-improvement-scanner run 10**: Full codebase sweep — runtime safety, security, HIG, UX, performance. **1 direct fix:** `IOSWishlistPage.loadData()` — DIS-006 was incomplete: `processAutoApprovals()` was removed from `getSectionedItems()` core but never re-added as a background Task in the UI. Auto-approvals were silently never firing. Fixed with `Task.detached(priority: .utility)` wrapping both `processAutoApprovals()` + `getSectionedItems()`, with `MainActor.run { }` for state updates. GitHub #134 filed + closed. DIS-006 DevTODO closed. **Scan results:** 0 force unwraps/casts in production, 0 deprecated NavigationView, 0 SQL injection, 0 `fatalError` in production, 0 `try!` in production, 0 PII in UserDefaults (all non-sensitive flags). **DispatchQueue.main.asyncAfter:** 7 usages — all confirmed correct (2s animation timer pattern for toast/banner hide). **Debug prints:** 3 `print()` calls — all inside `#Preview` blocks, never in production paths. **Deferred:** DIS-012/013/014 security cluster blocked on owner KDF design decision. | Steps 6-9 | IOSWishlistPage.swift |
 | 2026-04-07 | **plan-enforcer run 8**: Audited 8 recent commits + active DevTODO/GitHub issues. **DIS-012/013/014 GitHub issues filed** — #130 (PIN KDF), #131 (legacy salt), #132 (unsigned token shim). DevTODO files updated with issue numbers. **Working tree snapshot:** `WarehouseServiceExtTests.swift` staged (+325 lines, getMovement/previewMovement/executeMovement coverage) but uncommitted. `DIS-009/hunt-fix-tracker/00-fix-order` unstaged status updates. **Plan drift:** dev-pipeline issue count was 44 → actual 64 open issues. **PricingOverrideFlow.swift confirmed unplanned** — wired in PartsPricingPage:592 as `PricingTierSetSheet`; no plan ref; functional (hierarchy price setter with 5-step flow + conflict resolution). **PE-031 confirmed done** (ios-clock-fix.md says Step 13 ✅; `needsLocationPermission` + `alreadyClockedIn` recovery both in IOSClockPage). **No new compile errors. No new SQL drift. Q&A: 8 pending (unchanged).** | Steps 11-12 | docs only |
 | 2026-04-06 | **plan-enforcer run 7**: Audited 7 recent commits + 59 plan files + active PE queue. **PE-034 DONE** — all 4 DIS UX fixes confirmed in code (loading indicators, pull-to-refresh, sheet detents, timer lifecycle); archived to done/; DIS-001/002/003/004 DevTODO closed. **PE-035 DONE** — company_setup_draft migration 072 confirmed; SettingsService `loadSetupDraft`/`saveSetupDraft`/`deleteSetupDraft` confirmed; CompanySetupWizard fully migrated from UserDefaults; archived to done/; DIS-005 DevTODO closed. **PE-036 PARTIAL** — IOSMovementWizard Cancel disabled ✅, qty validation via canAdvance ✅, PartsFlowWizard saveErrorMessage alert ✅; WarehouseOnboardingWizard still missing `isSaving` + `interactiveDismissDisabled`. **PE-037 NOT DONE** — 9 sheets still missing `.interactiveDismissDisabled(isSaving)`. **PE-038 written** (DIS-008: JobStageProgressBar hardcoded 6pt font → .caption2 + minimumScaleFactor). **PE-039 written** (DIS-009: CartManager + PartsFlowWizard bulk DB loops → Task { }). **No unplanned code** — all 7 new Swift files from recent commits covered by warehouse-setup-redesign plan. Cascade pricing fix (2026-04-05) confirmed plan-aligned. | Steps 11-12 | docs only |
@@ -217,7 +256,7 @@ Every feature, bug, or improvement follows this cycle:
 ## Plan Registry
 
 > Every plan in `docs/plans/` tracked with implementation status.
-> Last updated by plan-enforcer: 2026-04-12 (run 12)
+> Last updated by plan-enforcer: 2026-04-14 (run 14)
 
 | Plan File | Area | Lifecycle Step | Coverage | Notes |
 |-----------|------|---------------|----------|-------|
@@ -227,7 +266,7 @@ Every feature, bug, or improvement follows this cycle:
 | `ios-fresh-install-resilience.md` | Cross-cutting | Step 7 (fine-tune) | **Partial** — Priority 1 (clock page crash) fixed. Most services have `isTableNotFoundError` guards (24 in JobsService, 3-29 in all other services). Empty-result crashes (tables exist but no rows) not yet fully addressed for gated pages. | Broad improvement; remaining gaps are UX-level (empty states, gated pages) |
 | `ios-brands-suppliers-editing.md` | Parts | Step 13 — complete ✅ | **Full** — Migration 066 adds `carry_status` to `brand_supplier_links`. Service methods in PartsService. UI in PartsBrandsPage + PartsSuppliersPage. Schema drift: plan said new `brand_supplier_relationships` table; implementation extends existing `brand_supplier_links` (functionally equivalent). | PE-028 DONE 2026-04-04 |
 | `ios-pricing-ui.md` | Parts | Step 13 — complete ✅ | **Full** — `CascadePriceEditSheet.swift` wired in CategoriesTreeView ✅. `PartsPricingPage` cascade view (supplier→color→type) ✅. 4 pricing tests ✅. PE-029 moved to `done/` (2026-04-05). **PricingOverrideFlow.swift now tracked separately** — see `ios-pricing-override-flow.md`. | PE-029 DONE 2026-04-05 |
-| `ios-pricing-override-flow.md` | Parts | Step 7 (tests needed) | **Partial** — `PricingTierSetSheet` (616 lines): 6-state flow (selectLevel→selectEntity→setPrice→preview→resolveConflicts→done). Wired in `PartsPricingPage:592` ✅. setPricingTier timestamp bug fixed (2026-04-12, committed EOD run 5). **Blocking:** `resolveConflicts` step has 0 tests — required before CategoriesTreeView wiring. Outstanding: (1) test coverage for 6 conflict scenarios, (2) CategoriesTreeView wiring (PE-043). #133 CLOSED 2026-04-12. | Adopted 2026-04-12; tests next |
+| `ios-pricing-override-flow.md` | Parts | Step 7 (tests needed) | **Partial + ⚠️ DRIFT** — `PricingTierSetSheet` wired in `PartsPricingPage:592` ✅ AND `CategoriesTreeView` (category row:348 + type row:488) ⚠️. **Plan drift (run 14, 2026-04-14):** CategoriesTreeView wired before required resolveConflicts tests + before edit_pricing permission guard. GitHub #229 filed. Missing: 6 resolveConflicts test scenarios + permission guard. | #229 OPEN — tests + guard required before safe use |
 | `ios-warehouse-setup-redesign.md` | Warehouse | Step 13 — complete ✅ | **Full** — Setup tiers ✅, two flows ✅, CartManager ✅. PE-040 ✅ (dimensions-first + drag-drop). **PE-042 DONE 2026-04-12** — Cart Mode UI in `WizardStepPlacement.swift`: cartModeToolbar, cartBinBrowser, cartModeBanner, placeCartSheet. `moveBinsToArea` + `saveUnitPlacement` committed (71aa8bf + EOD run 5). #138 CLOSED 2026-04-12. | PE-040 ✅ PE-042 ✅ all committed |
 | `ios-receiving-draft-persistence.md` | Warehouse | Step 13 — complete ✅ | **Full** — **PE-041 DONE 2026-04-08** — `IOSReceiveShipmentPage.swift`: `updateSessionItem(itemId:receivedQty:)` called in `Task {}` on every qty change (minus/plus/All/Reset/Clear/barcode, line 608/633/648/851). Discard confirmation removed. Unrouted-items warning kept (correct per plan). Quantities restore from DB on session reopen via existing `loadSessionItems()`. | PE-041 DONE |
 | `ios-schedule-config-redesign.md` | Scheduling | Step 13 — complete ✅ | **Full** — Migration 069 adds `shift_templates` + `company_holidays`. IOSScheduleConfigPage.swift (823 lines) has: company work hours, shift templates per hat, holiday calendar, dispatch rules, supervisor hat assignment. | PE-032 DONE 2026-04-04 |
@@ -245,7 +284,8 @@ Every feature, bug, or improvement follows this cycle:
 | `ios-office-pages.md` | Office | Step 10 (prompts queued) | **Partial** — all files exist; 50A-D pending (dashboard AI briefing, approvals queue, office chat) | 66A pending: 6 dead buttons on office dashboard |
 | `ios-reports-pages.md` | Reports | Step 10 (prompts queued) | **Partial** — all files exist; 49A-D pending (categories, export, fleet/warehouse reports, builder) | Architecturally clean — no GRDB |
 | `ios-settings-pages.md` | Settings | Step 10 (prompts queued) | **Partial** — all files exist; 52A-F pending (grouped nav, operations/warehouse/template/functional pages) | |
-| `forecasting-page-redesign.md` | Parts/Forecast | Step 11 (audited) | **Full** — all 8 prompts 23A-23H marked DONE | location_stock_targets, target_recommendations, location picker all built |
+| `forecasting-page-redesign.md` | Parts/Forecast | Step 13 — complete ✅ | **Full** — all 8 prompts 23A-23H DONE. **23E confirmed DONE (plan-enforcer run 13, 2026-04-13):** `ForecastSettingsSheet.swift` (12.6KB) built and wired — ADU/APW config form per location type, toolbar button, `.forecastSettings` sheet case in PartsForecastingPage. | location_stock_targets, target_recommendations, location picker, settings sheet all built |
+| `parts-section-audit-fix-plan.md` | Parts | Step 13 — complete ✅ | **Full** — Comprehensive audit of all 8 Parts pages + PartsService + PartsModels. **Session 1 (2026-04-12):** Phase 1 (5 bugs fixed, deep SQL audit done), Phase 2 (23B-23H found largely built), Phase 3 (pricing gaps validated as implemented), Phase 4 (14/15 try? → do-catch; 1 remaining is harmless Task.sleep). 8 GitHub issues total: 6 closed as fixed, 1 closed as not-a-bug, 2 filed as feature gaps (#162 settings UI, #163 free space UI — now closed per 23E confirmation). | Parts audit complete 2026-04-12 |
 | `ios-catalog-page.md` | Parts | Step 11 (audited) | **Full** | |
 | `ios-categories-page.md` | Parts | Step 11 (audited) | **Partial** — 14A-14G prompts done; **#46 decisions added 2026-04-04**: part numbers at Color level, optional supplier part numbers, per-session tree state (✅ implemented 826dd18 via @Binding), enhanced search. PE-046a/b pending. | Tree state fix committed; part number schema + UI still needed |
 | `ios-pricing-system.md` | Parts | Step 11 (audited) | **Full** | |
@@ -408,6 +448,9 @@ Every feature, bug, or improvement follows this cycle:
 | [#150](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/150) | [Usability] Scanner 5a: Settings save buttons lack `.disabled()` validation guard | Enhancement | Step 2 — backlog | New (usability-hunter run 1, 2026-04-12). Systemic (20+ Settings forms). After #143 Q&A answered. | 🟡 Open — backlog |
 | [#151](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/151) | [Bug] IOSMessageThreadView.handleAction(.markResolved) resolves wrong thread | Bug | Step 5 — ready to code | New (DIS run 13, 2026-04-12). `threads.first(where: { _ in true })` picks first Q&A thread globally. Direct fix: match by threadId. | 🔴 Open — ready to fix |
 | [#152](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/152) | [Chat] IOSMessageThreadView: photo + reference picker buttons are dead (no sheets wired) | Bug | Step 10 — Xcode prompt ready | **PE-043 queued as NEXT** — prompt at `fix-prompts/PE-043-message-thread-attachment-pickers.md`. PhotosPicker + 3 reference list sheets needed. | 🔴 Open — PE-043 NEXT |
+| [#227](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/227) | [Parts][Performance] Service-layer pagination missing — all parts rows fetched into memory | Performance | Step 2 — backlog | DIS run 14 (2026-04-13). `fetchParts`/`searchParts` return all rows; UI slices to pageSize=25. Needs limit/offset params at service layer. Medium impact now, high for large catalogs. | 🟡 Open — backlog |
+| [#228](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/228) | [Auth] SecItemAdd return unchecked — signing key may silently not persist to Keychain | Security/Stability | Step 2 — partial fix done | DIS run 14 (2026-04-13). Return now captured; non-success status noted. Follow-up: add `Logger` call + Settings diagnostics warning. | 🟡 Open — partial |
+| [#229](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/229) | [Plan Drift] CategoriesTreeView pricingOverride wired before resolveConflicts tests | Plan Drift | Step 7 — tests needed | plan-enforcer run 14 (2026-04-14). Context menus added to category row (line 348) + type row (line 488) in CategoriesTreeView. Missing: 6 resolveConflicts test scenarios + edit_pricing permission guard. Plan `ios-pricing-override-flow.md` explicitly blocked wiring on tests-first. | 🔴 Open — blocking safe use |
 
 ---
 
@@ -421,6 +464,7 @@ Every feature, bug, or improvement follows this cycle:
 | test-coverage-maintenance | 2026-04-12 | +29 tests: PartsServiceCoverageTests.swift (new file). +2: toggleIntegration (SettingsService), updateContact (PeopleService). 1 prod bug fixed: setPricingTier NULL constraint. Working tree: +220 lines (ChatService, Jobs, Wishlist tests not yet committed). | 31+ tests added | ✅ Healthy — gaps remain: PeopleService, ChatService, SettingsService |
 | plan-enforcer | 2026-04-12 (run 13) | Working tree audit: all 8 unstaged changes traced to active issues (#121, #123, #146). ios-foundation-fixes.md CLOSED (GRDB absent). PE-043 queued. Plan Registry updated. 0 new drift. | Plan registry updated, PE-043 queued | ✅ Healthy |
 | dev-improvement-scanner | 2026-04-12 (run 13) | 5 direct fixes: IOSSyncManager (2 try? silences + 2 inline DateFormatter), IOSClockPage (7 inline DateFormatters). #151 filed (wrong thread). 0 force unwraps/casts/SQL injection. | 5 direct fixes, 1 issue filed | ✅ Healthy |
+| dev-improvement-scanner | 2026-04-13 (run 14) | 6 direct fixes: PartsService colorPatterns[0]→.first, AuthService SecItemAdd result capture, context-aware empty states in Pricing/Forecasting/Suppliers/Brands pages. 2 issues filed: #227 (service pagination), #228 (SecItemAdd logging). 0 force unwraps, 0 force casts, 0 SQL injection. Tests: 1217/1217. | 6 fixes, 2 issues filed | ✅ Healthy |
 | dev-pipeline-manager | 2026-04-13 (run 16) | 5 new issues #148-#152 cataloged. #151 queued as direct fix (Step 5). PE-043 NEXT confirmed. #149 bundled into #143 Q&A. Agent health updated. Working tree status updated (16 modified + 1 untracked). | 5 issues cataloged, Q&A updated | ✅ Healthy |
 | github-issues-sync | 2026-04-12 (run 6) | 3 direct fixes committed: IOSAuditPage, DevicePairingView, IOSWishlistPage. 7 sheets interactiveDismissDisabled added. PE-042 archived. #145 CLOSED. Tests: 1196/1196. | 3 fixes, 7 sheets guarded, 1 issue closed | ✅ Healthy |
 | usability-enforcer | 2026-04-12 (run 1) | 3 part form sheets dismiss safety fixed. 3 new issues filed: #148 (IOSMovementWizard Save & Exit), #149 (30 pages keyboard dismiss), #150 (Settings .disabled()). | 3 fixes, 3 issues filed | ✅ Healthy |
@@ -1920,6 +1964,47 @@ _Appended by dev-pipeline-manager each run._
 **Backlog size:** ~52 open issues. Blocked on Q&A: 3 blocks (Colors/Brands + #143/#149 dismiss bundle). Backlog (future phases): 5 items. Program-review: #82–#95 (14 issues, next major phase).
 
 **Next priority:** Owner answers to Colors/Brands Q&A (#98-#107) and #143/#149 Q&A. Once answered, PE-COLORS plan can be finalized and PE-DISMISS campaign can start. Immediate: PE-043 is NEXT in Xcode AI queue — user should run it when ready.
+
+---
+
+### Pipeline Update — 2026-04-13 (dev-pipeline-manager run 17)
+
+**Input:** 30 new GitHub issues (#179–#228) from April 2026 full program audit. 4 recent commits (Formatters sweep, usability-hunter run 2, github-issues-sync run 7, #151 fix). 1 new untracked plan (`parts-section-audit-fix-plan.md`). 1 new untracked Problome screenshot (2026-04-12).
+
+**Plans created:** 0 (all new issues are bugs, not features — `parts-section-audit-fix-plan.md` already exists untracked from plan-enforcer run 13)
+
+**Q&A generated:** 1 new block — April 2026 architectural decisions (#221 LWW field-level, #223/#227 pagination approach, #224 ADU inflation). 3 questions. Added to `docs/dev-qa.md`. **Total Q&A pending: 4 blocks, 14 questions.**
+
+**Q&A answered:** 0 (no owner input)
+
+**New issues triaged:**
+| Tier | Count | Issues | Action |
+|------|-------|--------|--------|
+| 🚨 Security | 3 | #184 (JSON injection), #191 (unauth key exchange), #228 (SecItemAdd) | hunt-fix-verify — immediate |
+| 🔴 Data integrity | 3 | #180 (missing notebook_id), #181 (UUID in int col), #220 (sync drops UPDATE) | hunt-fix-verify — immediate |
+| 🔴 Memory/Concurrency | 5 | #185 (@MainActor), #187 (race), #190 (atomic), #215 (deinit leak), #216 (Timer leak) | hunt-fix-verify + direct edits |
+| 🔴 Feature bugs | 4 | #188 (forecasting MIN/MAX), #207 (time-off conflict), #209 (wrong price), #212 (missing cols) | hunt-fix-verify |
+| 🟡 UI/UX bugs | 8 | #179, #186, #192, #213, #217, #218, #219, #222 | Xcode prompts + direct edits |
+| 🔵 Architectural info | 4 | #221, #223, #224, #227 | Q&A added — blocked on owner |
+| 🔵 Code quality | 3 | #225, #226, + #183 (no LIMIT) | dev-improvement-scanner |
+
+**Agent health:** All 8 agents ✅ healthy. All ran 2026-04-12/13. hunt-fix-verify=run40, dev-improvement=run14, plan-enforcer=run13, github-issues=run7, usability=run2, page-rebuild=run(PM), test-coverage=run(+29), github-sync=EOD.
+
+**plan-enforcer run 14 (2026-04-14):** 1 plan drift found — #229. See Master Status.
+
+**Gaps found:**
+1. **30 April audit issues unprocessed** — now triaged and routed to pipeline. Security tier (#184/#191) is highest priority for next agent runs.
+2. **Working tree large** — 33 modified files (April audit fixes: #175/#177/#180/#181/#197/#198/#201/#202/#205/#210 + Parts pages + docs). `github-sync-and-review` should commit.
+3. **#229 NEW — plan drift:** CategoriesTreeView pricingOverride wired without tests or permission guard. **Needs: 6 resolveConflicts tests + edit_pricing guard before this is safe.**
+4. **PE-043 awaiting user** — Xcode AI prompt ready at `fix-prompts/PE-043-message-thread-attachment-pickers.md`. Run when ready.
+5. **Q&A backlog growing** — 4 blocks, 14 questions. Owner needs to answer Colors/Brands + dismiss safety to unblock next feature wave.
+6. **#146 (46 remaining Formatters)** — low-impact (≤2 per file), continue eliminating over multiple scanner runs.
+
+**Backlog size:** 53+ open issues (added #229). Critical: 3 security + 1 plan drift. Blocked on Q&A: 4 blocks.
+
+**Next priority:** hunt-fix-verify → security bugs #184/#191. **test-coverage → PricingOverrideFlow resolveConflicts tests (#229).** Owner → Q&A answers. User → trigger PE-043 in Xcode AI.
+
+---
 
 ### End-of-Day Sync — 2026-04-12
 

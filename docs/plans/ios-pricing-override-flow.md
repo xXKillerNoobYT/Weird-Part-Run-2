@@ -71,21 +71,27 @@ selectLevel → selectEntity → setPrice → preview → resolveConflicts → d
 | File | Location | Status |
 |------|----------|--------|
 | `PartsPricingPage.swift` | Line 592 | ✅ Wired |
-| `CategoriesTreeView.swift` | Not yet added | 🔲 Needs wiring (owner decision) |
+| `CategoriesTreeView.swift` | Lines 348 (category row) + 488 (type row) | ⚠️ Wired but INCOMPLETE — missing tests + permission guard (GitHub #229) |
 
 ---
 
 ## Outstanding Work
 
-### 1. Test Coverage for `resolveConflicts` Step (REQUIRED before broader use)
+### 1. Test Coverage for `resolveConflicts` Step (REQUIRED — plan violation open)
 - The conflict resolution step (`resolveConflicts` state + `applyWithConflictResolution`) has **zero tests**
-- Tests must be added to cover: conflict detection, Replace decision, Keep decision, mixed decisions
+- Tests must be added to cover: conflict detection, Replace decision, Keep decision, mixed decisions, service unavailable, timestamp validation
 - Service layer: `PartsService.OverrideConflict` + `setPricingTier` (production bug fixed 2026-04-12 — missing `createdAt`/`updatedAt` now set)
-- **This blocks wiring into CategoriesTreeView** (owner decision: tests first)
+- **GitHub #229 tracks this violation** — CategoriesTreeView was wired before tests were written
+- **Plan-enforcer run 14 (2026-04-14):** Drift detected. Issue filed.
 
-### 2. Wire into CategoriesTreeView
-- Add a "Set Price for This Category/Style/Type" action in the tree editor
-- Opens `PricingTierSetSheet` with `onDone: { await loadData() }`
+### 2. Permission Guard in CategoriesTreeView (REQUIRED — plan violation open)
+- Context menus at lines 348 + 488 show "Set Pricing Override" to all users
+- Must be gated by `edit_pricing` permission (Admin hat only)
+- **GitHub #229 also tracks this**
+
+### 3. Wire into CategoriesTreeView (PARTIALLY DONE — see above)
+- Context menus wired for category rows (line 348) AND type rows (line 488)
+- `PricingTierSetSheet` presented on both with `onDone: { loadColorPrices() }`
 - Only visible to users with `edit_pricing` permission
 - Implementation: Xcode prompt needed (write PE-046c or similar)
 

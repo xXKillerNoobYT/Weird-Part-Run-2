@@ -95,6 +95,30 @@
 
 ---
 
+### April 2026 Audit — Architectural Decisions Needed
+
+**GitHub Issues:** `#221` `#223` `#224` `#227`
+**Context:** The April 2026 full program audit found 4 issues that require a design decision before a fix can be coded. These are not clear-cut bugs — each has meaningful trade-offs between approaches. All other audit issues (#179–#220, #222, #225–#226, #228) are clear bugs being fixed directly by the scanner agents.
+**Affected Modules:** Sync (LWW strategy), Parts (pagination + forecasting logic)
+
+#### Questions:
+
+1. **As the Owner — #224 (Forecasting ADU inflation):** The forecasting Average Daily Usage (ADU) calculation currently counts **transfer movements** between locations as demand. This inflates ADU and triggers false reorder alerts. For example, if you move 50 PVC fittings from warehouse to the van, that shows up as "50 units of demand." Should we: **(A)** Exclude transfer movements from ADU (only count sales/installations/consumption), or **(B)** Keep transfers in ADU but show them as a separate line item so managers can see both numbers?
+   > Answer: _pending_
+
+2. **As the Owner — #221 (LWW sync conflict resolution):** When two devices edit the same record simultaneously, the system uses "Last Write Wins" — whichever device synced last wins the whole row. This means if Device A changes the part name and Device B changes the price at the same time, one change gets lost entirely. A more precise fix would track timestamps per-field (so name from Device A + price from Device B both survive). **(A)** Accept this known limitation for v1 (row-level LWW is simpler and fast), or **(B)** Upgrade to field-level conflict resolution (schema change: adds `_field_timestamps` JSON column, more complex but no data loss)?
+   > Answer: _pending_
+
+3. **As a Developer — #223/#227 (Pagination):** `BaseRepository.findAll()` has no row limit — calling it on large tables (parts catalog with thousands of parts) loads everything into memory. Two approaches: **(A)** Add `LIMIT 500` as a default with explicit override opt-out (quick fix, low risk), or **(B)** Full cursor-based pagination with `offset` parameter across all service methods that return lists (correct fix, more work, breaks some call sites). Which approach?
+   > Answer: _pending_
+
+**Slots to fill:**
+- [ ] ADU calculation: exclude transfers vs. show separately
+- [ ] LWW granularity: row-level (keep) vs. field-level (upgrade)
+- [ ] Pagination: default-limit band-aid vs. full cursor pagination
+
+---
+
 ## Processed / Closed Q&A (Reference Log)
 
 > These entries were fully answered, design decisions integrated into plan docs, and removed from Pending.

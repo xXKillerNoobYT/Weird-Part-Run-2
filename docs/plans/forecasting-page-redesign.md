@@ -131,13 +131,13 @@ When tapping a part, the detail sheet becomes a full editor (design modeled afte
 | Prompt | What | Status |
 |--------|------|--------|
 | 23A | Service layer cleanup: raw SQL → `PartsService`, platform guards, recalculate button, trend indicators | ✅ DONE |
-| 23B | AI integration: `GetForecastDataTool`, page context notifications | Queued |
-| 23C | Stat cards as toggle filters, delete chip bar | Queued |
-| 23D | Per-location backbone: `location_stock_targets` migration + 4 service methods | Queued |
-| 23E | Forecast settings: `forecast_settings` + `location_free_space` migrations + seed data + service | Queued |
-| 23F | Target recommendation engine: `target_recommendations` migration + daily engine + approve/dismiss | Queued |
-| 23G | Location picker UI, recommendation filter + cards, approve/dismiss actions | Queued |
-| 23H | Detail panel redesign: full part editor, stock health bars, editable MIN/TARGET/MAX | Queued |
+| 23B | AI integration: `GetForecastDataTool`, page context notifications | ✅ DONE (context posting via NotificationCenter) |
+| 23C | Stat cards as toggle filters, delete chip bar | ✅ DONE (3 tappable stat cards replace chip bar) |
+| 23D | Per-location backbone: `location_stock_targets` migration + 4 service methods | ✅ DONE (migration 029 + service methods) |
+| 23E | Forecast settings: `forecast_settings` + `location_free_space` migrations + seed data + service | ✅ DONE (ForecastSettingsSheet.swift built 12.6KB, wired into PartsForecastingPage as .forecastSettings sheet case — toolbar button + ADU/APW config form) |
+| 23F | Target recommendation engine: `target_recommendations` migration + daily engine + approve/dismiss | ✅ DONE (migration 031 + engine + approve/dismiss with reason) |
+| 23G | Location picker UI, recommendation filter + cards, approve/dismiss actions | ✅ DONE (location chips + recommendation cards) |
+| 23H | Detail panel redesign: full part editor, stock health bars, editable MIN/TARGET/MAX | ✅ DONE (4 sections with health bars + validation) |
 
 **Dependencies:** 23A → 23B (independent) → 23C (independent) → 23D → 23E → 23F → 23G → 23H
 

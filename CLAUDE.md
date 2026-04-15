@@ -90,6 +90,22 @@ Errors are learning opportunities. When something breaks:
 
 ---
 
+## GitHub Issues = Master Todo List
+
+**GitHub Issues is the single source of truth** for all bugs, features, and improvements. Every unfixed problem MUST have a GitHub issue. Every fix should reference and close its issue.
+
+**Rules:**
+
+1. **Find something broken? File it.** Every bug, gap, or missing feature gets a GitHub issue with: title prefix `[Area][Type]`, description of what's wrong, impact, and fix approach.
+2. **Fix something? Close the issue.** When you fix a bug, close the corresponding issue with a comment describing what was done.
+3. **Ask before filing ambiguous issues.** If you're unsure whether something is a bug or intended behavior, ask the user first. Get the right info before filing.
+4. **Keep issues up to date.** As work progresses, update issue descriptions, add comments with progress, and close completed items. Stale issues are worse than no issues.
+5. **Check existing issues first.** Before filing a new issue, search to make sure it's not already tracked. Reference related issues with `#number`.
+6. **Issue format:** Use `[Area]` prefix (e.g., `[Parts]`, `[Orders]`, `[Scheduling]`) and `[Type]` (e.g., `[Bug]`, `[Feature]`, `[UX]`). Include a "Status" line: `OPEN`, `IN PROGRESS`, or `FIXED`.
+7. **Program Review issues (#52-#66)** are the parent tracking issues for each feature area. New issues should reference their parent when applicable.
+
+---
+
 ## File Organization
 
 **Deliverables vs Intermediates:**
