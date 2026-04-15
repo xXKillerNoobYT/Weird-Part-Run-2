@@ -20,9 +20,11 @@
 
 ## Pending Questions
 
----
+_None. All three April 2026 clusters answered 2026-04-14 — see Processed / Closed Q&A (Reference Log) below._
 
-### Colors & Parts Redesign — Reusable Colors, Per-Color Part Numbers, General Brand Default
+<!-- ARCHIVED CLUSTERS (answered 2026-04-14, see reference log) -->
+
+<!-- ### Colors & Parts Redesign — Reusable Colors, Per-Color Part Numbers, General Brand Default
 
 **GitHub Issues:** `#98` `#99` `#100` `#105` `#106` `#107`
 **Current State:** Colors in the parts catalog are currently nested under specific (type, brand) combinations — a color defined under "PVC Conduit → Cantex" is a separate entity from the same color under "PVC Conduit → General". There is no shared color pool. Part numbers can only be set at the type level. The "General" brand is not auto-selected when creating a new type detail. New Brand and Supplier forms have no linked counterpart picker.
@@ -116,6 +118,7 @@
 - [ ] ADU calculation: exclude transfers vs. show separately
 - [ ] LWW granularity: row-level (keep) vs. field-level (upgrade)
 - [ ] Pagination: default-limit band-aid vs. full cursor pagination
+-->
 
 ---
 
@@ -126,6 +129,10 @@
 - **PricingOverrideFlow** (#133) — Processed 2026-04-12. Keep + retroactive plan at `docs/plans/ios-pricing-override-flow.md`. Accessible from Pricing page + CategoriesTreeView. Tests required before CategoriesTreeView wiring. GitHub #133 CLOSED.
 - **Cart Mode** (#138) — Processed 2026-04-12. Build now. Per-bin movement records. Both wizard + standalone. Service (commit 71aa8bf) + UI (PE-042) complete. GitHub #138 CLOSED.
 - **DIS-012/013 PIN KDF** (#130/#131) — Processed 2026-04-12. Defer to v2. PBKDF2 via CommonCrypto when ready. Legacy path removal timing TBD. Issues remain open as v2 backlog.
+- **Colors & Parts Redesign** (#98, #99, #100, #105, #106, #107) — **Processed 2026-04-14**. REBUILD with concept reframe: "colors" is actually **Variants** (color-based OR named-only, e.g. standard/fire-rated/metal boxes). Each (color + brand) is a **distinct SKU** via new `color_brand_skus` table (matches how every parts retailer works). **"General" is a MODE** (brand deferred to supplier-pick time on PO/JPO) — NOT a brand row default. New Brand/Supplier forms use **simple counterpart picker** (no inline-create). Color-level `part_number` **replaces** type-level entirely. Design plan: `docs/plans/colors-parts-redesign.md`. GitHub issues remain OPEN pending implementation.
+- **Dismiss Safety Campaign** (#143) — **Processed 2026-04-14**. **DO NOW**, before page-rebuild wave (sets the pattern for rebuilds to adopt). Module order: **People/HR → Chat → Settings** (by data-loss stakes). Approach: **per-sheet dirty tracking** (`@State var isDirty` + `.onChange` watchers + `.interactiveDismissDisabled(isDirty)`). Method: **Xcode AI prompts**, one per sheet, with mandatory 4-section header (Page Overview / Broken Behavior / Goal / Exact Change). Plan: `docs/plans/dismiss-safety-campaign.md`.
+- **Keyboard Dismiss Campaign** (#149) — **Processed 2026-04-14**. **Separate, lower-priority campaign slotted after #143 completes**. One-liner pattern (`.scrollDismissesKeyboard(.interactively)`) but kept separate to keep #143 Xcode prompts laser-focused on data-loss. Plan: `docs/plans/dismiss-safety-campaign.md` (phase 2 section).
+- **April 2026 Audit Closures** (#221, #223, #224, #227) — **Processed 2026-04-14**. **#224 ADU:** exclude transfer movements entirely (two-line SQL filter change in `PartsService.swift` ~line 3099). **#221 LWW:** upgrade to **per-field timestamps** — new `_field_timestamps` JSON column on every synced table, `ConflictResolver` updated to consult it. **#223/#227 Pagination:** phased — ship `LIMIT 500` default to `BaseRepository.findAll()` NOW with `unlimited: true` override, then full audit of call sites, then cursor pagination cutover in one clean pass. Plans: `docs/plans/april-2026-audit-closures.md`, `docs/plans/sync-field-timestamps-upgrade.md`, `docs/plans/pagination-cutover.md`.
 
 ---
 

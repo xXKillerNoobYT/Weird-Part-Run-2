@@ -22,6 +22,7 @@
 
 | # | File | What It Fixes | Status |
 |---|------|---------------|--------|
+| PE-044 | `PE-044-dismiss-guard-ios-employees-page.md` | **CANONICAL TEMPLATE** for #143 Dismiss Safety campaign (Phase 1A, People/HR first). Adds per-sheet dirty tracking + discard-changes alert + `.interactiveDismissDisabled(isDirty)` to IOSEmployeesPage new/edit employee sheet. Follow-up prompts PE-045+ reference this as the pattern. Plan: `docs/plans/dismiss-safety-campaign.md`. GitHub #143 / #123. | 🔲 **QUEUED** — Xcode AI (highest priority after PE-043) |
 | PE-043 | `PE-043-message-thread-attachment-pickers.md` | IOSMessageThreadView: wire dead photo + reference picker buttons — PhotosPicker + 3 reference list sheets (usability-enforcer 2026-04-12). GitHub #152. | 🔲 **NEXT** — Xcode AI |
 | PE-042 | *(archived)* | Cart Mode UI — multi-bin tap-to-select, Place Cart sheet, area picker, async bin move (GitHub #138). WizardStepPlacement.swift fully implemented. | ✅ **DONE 2026-04-12** — direct Swift edit (commit 37ffeb7) |
 | PE-041 | `PE-041-receiving-auto-save-draft.md` | Receiving session: auto-save `receivedQtys` to DB on each qty change; remove discard confirmation (GitHub #36) | ✅ **DONE 2026-04-08** — direct Swift edit |

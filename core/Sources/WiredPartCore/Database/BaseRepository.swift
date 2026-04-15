@@ -33,11 +33,15 @@ public class BaseRepository: @unchecked Sendable {
     }
 
     /// Get all records matching an optional WHERE clause.
+    ///
+    /// Fix #223: `limit` defaults to 1000 to prevent accidental full-table scans
+    /// on large tables (parts, stock_movements, stock). Pass `limit: nil` to opt
+    /// into unlimited results for cases that genuinely need it.
     public func findAll(
         where whereClause: String? = nil,
         params: [any DatabaseValueConvertible] = [],
         orderBy: String? = nil,
-        limit: Int? = nil,
+        limit: Int? = 1000,
         offset: Int? = nil
     ) throws -> [Row] {
         try db.writer.read { db in

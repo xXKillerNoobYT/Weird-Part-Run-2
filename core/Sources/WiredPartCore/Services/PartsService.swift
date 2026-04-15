@@ -517,6 +517,10 @@ public final class PartsService: Sendable {
     /// Create a new category. Returns the inserted row ID.
     @discardableResult
     public func createCategory(name: String, description: String? = nil) throws -> Int64 {
+        // Fix #213: validate inputs before insert
+        try Validators.requireName(name, field: "Category name")
+        try Validators.requireText(description, field: "Category description", limit: Validators.Limits.description)
+
         var record = PartCategory(
             name: name,
             description: description,
@@ -626,6 +630,10 @@ public final class PartsService: Sendable {
     /// Create a new style under a category. Returns the inserted row ID.
     @discardableResult
     public func createStyle(categoryId: Int64, name: String, description: String? = nil, sortOrder: Int = 0) throws -> Int64 {
+        // Fix #213: validate inputs
+        try Validators.requireName(name, field: "Style name")
+        try Validators.requireText(description, field: "Style description", limit: Validators.Limits.description)
+
         var record = PartStyle(
             categoryId: categoryId,
             name: name,
@@ -740,6 +748,10 @@ public final class PartsService: Sendable {
     /// Create a new type under a style. Returns the inserted row ID.
     @discardableResult
     public func createType(styleId: Int64, name: String, description: String? = nil, sortOrder: Int = 0) throws -> Int64 {
+        // Fix #213: validate inputs
+        try Validators.requireName(name, field: "Type name")
+        try Validators.requireText(description, field: "Type description", limit: Validators.Limits.description)
+
         var record = PartType(
             styleId: styleId,
             name: name,
@@ -1178,6 +1190,21 @@ public final class PartsService: Sendable {
         shelfLocation: String? = nil,
         binLocation: String? = nil
     ) throws -> Int64 {
+        // Fix #213: validate inputs before creating the Part record
+        try Validators.requireName(name, field: "Part name")
+        try Validators.requireText(code, field: "Part code", limit: Validators.Limits.code)
+        try Validators.requireText(description, field: "Part description", limit: Validators.Limits.description)
+        try Validators.requireText(manufacturerPartNumber, field: "Manufacturer part number", limit: Validators.Limits.code)
+        try Validators.requireText(notes, field: "Notes", limit: Validators.Limits.notes)
+        try Validators.requireText(imageUrl, field: "Image URL", limit: Validators.Limits.url)
+        try Validators.requireNonNegative(companyCostPrice, field: "Cost price")
+        try Validators.requireNonNegative(companyMarkupPercent, field: "Markup percent")
+        if let w = weightLbs { try Validators.requireNonNegative(w, field: "Weight") }
+        if let m = minStockLevel { try Validators.requireNonNegative(m, field: "Min stock") }
+        if let m = maxStockLevel { try Validators.requireNonNegative(m, field: "Max stock") }
+        if let t = targetStockLevel { try Validators.requireNonNegative(t, field: "Target stock") }
+        if let r = reorderPoint { try Validators.requireNonNegative(r, field: "Reorder point") }
+
         var record = Part(
             categoryId: categoryId,
             styleId: styleId,
@@ -1415,6 +1442,11 @@ public final class PartsService: Sendable {
     /// Create a new brand. Returns the inserted row ID.
     @discardableResult
     public func createBrand(name: String, website: String? = nil, notes: String? = nil) throws -> Int64 {
+        // Fix #213: validate inputs
+        try Validators.requireName(name, field: "Brand name")
+        try Validators.requireText(website, field: "Website", limit: Validators.Limits.url)
+        try Validators.requireText(notes, field: "Notes", limit: Validators.Limits.notes)
+
         var record = Brand(name: name, website: website, notes: notes)
         try db.writer.write { dbConn in
             try record.insert(dbConn)
@@ -1519,6 +1551,16 @@ public final class PartsService: Sendable {
         accountNumber: String? = nil,
         notes: String? = nil
     ) throws -> Int64 {
+        // Fix #213: validate inputs
+        try Validators.requireName(name, field: "Supplier name")
+        try Validators.requireText(contactName, field: "Contact name", limit: Validators.Limits.name)
+        try Validators.requireText(email, field: "Email", limit: Validators.Limits.name)
+        try Validators.requireText(phone, field: "Phone", limit: Validators.Limits.name)
+        try Validators.requireText(address, field: "Address", limit: Validators.Limits.description)
+        try Validators.requireText(website, field: "Website", limit: Validators.Limits.url)
+        try Validators.requireText(accountNumber, field: "Account number", limit: Validators.Limits.code)
+        try Validators.requireText(notes, field: "Notes", limit: Validators.Limits.notes)
+
         var record = Supplier(
             name: name,
             contactName: contactName,
@@ -1846,6 +1888,10 @@ public final class PartsService: Sendable {
         companyCostPrice: Double,
         companyMarkupPercent: Double
     ) throws -> Part {
+        // Fix #213: validate pricing inputs — negative prices or markups are never valid
+        try Validators.requireNonNegative(companyCostPrice, field: "Cost price")
+        try Validators.requireNonNegative(companyMarkupPercent, field: "Markup percent")
+
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -3101,14 +3147,14 @@ public final class PartsService: Sendable {
                     LEFT JOIN (
                         SELECT part_id, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume', 'transfer', 'return_to_supplier')
+                        WHERE movement_type IN ('consume', 'return_to_supplier')
                           AND created_at >= datetime('now', '-30 days') AND deleted_at IS NULL
                         GROUP BY part_id
                     ) m30 ON m30.part_id = p.id
                     LEFT JOIN (
                         SELECT part_id, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume', 'transfer', 'return_to_supplier')
+                        WHERE movement_type IN ('consume', 'return_to_supplier')
                           AND created_at >= datetime('now', '-90 days') AND deleted_at IS NULL
                         GROUP BY part_id
                     ) m90 ON m90.part_id = p.id
@@ -3341,14 +3387,14 @@ public final class PartsService: Sendable {
                     LEFT JOIN (
                         SELECT part_id, from_location_type AS lt, from_location_id AS lid, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume','transfer')
+                        WHERE movement_type IN ('consume')
                           AND created_at >= datetime('now','-30 days') AND deleted_at IS NULL
                         GROUP BY part_id, from_location_type, from_location_id
                     ) c30 ON c30.part_id = combos.part_id AND c30.lt = combos.lt AND c30.lid = combos.lid
                     LEFT JOIN (
                         SELECT part_id, from_location_type AS lt, from_location_id AS lid, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
-                        WHERE movement_type IN ('consume','transfer')
+                        WHERE movement_type IN ('consume')
                           AND created_at >= datetime('now','-90 days') AND deleted_at IS NULL
                         GROUP BY part_id, from_location_type, from_location_id
                     ) c90 ON c90.part_id = combos.part_id AND c90.lt = combos.lt AND c90.lid = combos.lid
@@ -3598,7 +3644,7 @@ public final class PartsService: Sendable {
                     let consumed = try Int.fetchOne(dbConn, sql: """
                         SELECT COALESCE(SUM(ABS(qty)), 0) FROM stock_movements
                         WHERE part_id = ? AND from_location_type = ? AND from_location_id = ?
-                          AND movement_type IN ('consume', 'transfer')
+                          AND movement_type IN ('consume')
                           AND created_at >= datetime('now', '-\(windowDays) days')
                           AND deleted_at IS NULL
                         """, arguments: [partId, locType, locId]) ?? 0
@@ -3609,7 +3655,7 @@ public final class PartsService: Sendable {
                     let consumed = try Int.fetchOne(dbConn, sql: """
                         SELECT COALESCE(SUM(ABS(qty)), 0) FROM stock_movements
                         WHERE part_id = ? AND from_location_type = ? AND from_location_id = ?
-                          AND movement_type IN ('consume', 'transfer')
+                          AND movement_type IN ('consume')
                           AND created_at >= datetime('now', '-\(s.aduLookbackDays) days')
                           AND deleted_at IS NULL
                         """, arguments: [partId, locType, locId]) ?? 0
