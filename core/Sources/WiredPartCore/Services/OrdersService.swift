@@ -39,6 +39,36 @@ public final class OrdersService: Sendable {
         }
     }
 
+    // MARK: - Status Transition Rules (fixes #205)
+
+    /// Valid JPO status transitions. Any transition not in this map is rejected.
+    private static let validJPOTransitions: [String: Set<String>] = [
+        // "submitted" = worker submits JPO for manager approval (used by BadgeCountService)
+        // "approved" = admin direct approval bypass (valid shortcut from draft)
+        // "pending" = internal queue state (all are valid first steps from draft)
+        "draft":          ["pending", "submitted", "approved", "rejected"],
+        "submitted":      ["in_review", "approved", "rejected", "pending"],
+        "pending":        ["in_review", "approved", "rejected"],
+        "in_review":      ["approved", "rejected"],
+        "rejected":       ["draft", "pending", "submitted"],
+        "approved":       ["ordered", "in_procurement"],
+        "in_procurement": ["ordered", "backorder"],
+        "ordered":        ["partial", "received", "backorder"],
+        "backorder":      ["ordered", "received"],
+        "partial":        ["received"],
+        "received":       ["staged", "delivered", "complete"],
+        "staged":         ["delivered"],
+        "delivered":      ["complete"],
+    ]
+
+    /// Valid PO status transitions.
+    private static let validPOTransitions: [String: Set<String>] = [
+        "draft":    ["ordered"],
+        "ordered":  ["partial", "received"],
+        "partial":  ["received"],
+        "received": ["complete"],
+    ]
+
     // =========================================================================
     // MARK: - Result Types
     // =========================================================================
@@ -640,6 +670,13 @@ public final class OrdersService: Sendable {
 
             let oldStatus: String = row["status"] ?? "draft"
 
+            // Validate status transition (fixes #205)
+            if let allowed = Self.validJPOTransitions[oldStatus] {
+                guard allowed.contains(status) else {
+                    throw OrdersError.invalidStatusTransition(entity: "JPO", from: oldStatus, to: status)
+                }
+            }
+
             // Update the JPO status
             try dbConn.execute(
                 sql: """
@@ -1063,24 +1100,73 @@ public final class OrdersService: Sendable {
                     }
                 }
 
-                // Build final items with stock info and suppliers
-                var items: [ProcurementItem] = []
-                for (partId, data) in partDemand {
-                    let shopStock = try Int.fetchOne(dbConn, sql: """
-                        SELECT COALESCE(SUM(qty), 0) FROM stock
-                        WHERE part_id = ? AND deleted_at IS NULL
-                        """, arguments: [partId]) ?? 0
+                // Fix #177: Batch-fetch stock, part info, and suppliers for ALL parts at once
+                // instead of querying 3 times per part in the loop (was O(3N) queries).
+                let partIds = Array(partDemand.keys)
+                let idPlaceholders = partIds.isEmpty ? "NULL" : partIds.map { _ in "?" }.joined(separator: ",")
+                let idArgs = StatementArguments(partIds)
 
-                    let stockInfo = try Row.fetchOne(dbConn, sql: """
-                        SELECT COALESCE(min_stock_level, 0) AS min_stock,
+                // 1. Shop stock totals per part
+                var stockByPart: [Int64: Int] = [:]
+                if !partIds.isEmpty {
+                    let stockRows = try Row.fetchAll(dbConn, sql: """
+                        SELECT part_id, COALESCE(SUM(qty), 0) AS total_qty FROM stock
+                        WHERE part_id IN (\(idPlaceholders)) AND deleted_at IS NULL
+                        GROUP BY part_id
+                        """, arguments: idArgs)
+                    for row in stockRows {
+                        if let pid: Int64 = row["part_id"] { stockByPart[pid] = row["total_qty"] ?? 0 }
+                    }
+                }
+
+                // 2. Part min/target/max levels
+                var infoByPart: [Int64: (min: Int, target: Int, max: Int)] = [:]
+                if !partIds.isEmpty {
+                    let infoRows = try Row.fetchAll(dbConn, sql: """
+                        SELECT id, COALESCE(min_stock_level, 0) AS min_stock,
                                COALESCE(target_stock_level, 0) AS target_stock,
                                COALESCE(max_stock_level, 0) AS max_stock
-                        FROM parts WHERE id = ?
-                        """, arguments: [partId])
+                        FROM parts WHERE id IN (\(idPlaceholders))
+                        """, arguments: idArgs)
+                    for row in infoRows {
+                        if let pid: Int64 = row["id"] {
+                            infoByPart[pid] = (
+                                min: row["min_stock"] ?? 0,
+                                target: row["target_stock"] ?? 0,
+                                max: row["max_stock"] ?? 0
+                            )
+                        }
+                    }
+                }
 
-                    let minStock: Int = stockInfo?["min_stock"] ?? 0
-                    let targetStock: Int = stockInfo?["target_stock"] ?? 0
-                    let maxStock: Int = stockInfo?["max_stock"] ?? 0
+                // 3. Suppliers per part
+                var suppliersByPart: [Int64: [Row]] = [:]
+                if !partIds.isEmpty {
+                    let supRows = try Row.fetchAll(dbConn, sql: """
+                        SELECT psl.part_id, s.id, s.name, psl.supplier_cost_price, s.reliability_score,
+                               COALESCE(CAST(s.delivery_days AS INTEGER), 14) AS processing_days,
+                               psl.is_preferred
+                        FROM part_supplier_links psl
+                        JOIN suppliers s ON s.id = psl.supplier_id
+                        WHERE psl.part_id IN (\(idPlaceholders))
+                          AND psl.deleted_at IS NULL AND s.deleted_at IS NULL
+                        ORDER BY psl.is_preferred DESC, s.name ASC
+                        """, arguments: idArgs)
+                    for row in supRows {
+                        if let pid: Int64 = row["part_id"] {
+                            suppliersByPart[pid, default: []].append(row)
+                        }
+                    }
+                }
+
+                // Build final items from pre-fetched data — no queries in this loop
+                var items: [ProcurementItem] = []
+                for (partId, data) in partDemand {
+                    let shopStock = stockByPart[partId] ?? 0
+                    let info = infoByPart[partId] ?? (min: 0, target: 0, max: 0)
+                    let minStock = info.min
+                    let targetStock = info.target
+                    let maxStock = info.max
                     let delta = targetStock - shopStock
 
                     let urgency: String
@@ -1089,16 +1175,7 @@ public final class OrdersService: Sendable {
                     else if shopStock < targetStock { urgency = "below_target" }
                     else { urgency = "good" }
 
-                    // Fetch suppliers for this part
-                    let supplierRows = try Row.fetchAll(dbConn, sql: """
-                        SELECT s.id, s.name, psl.supplier_cost_price, s.reliability_score,
-                               COALESCE(CAST(s.delivery_days AS INTEGER), 14) AS processing_days,
-                               psl.is_preferred
-                        FROM part_supplier_links psl
-                        JOIN suppliers s ON s.id = psl.supplier_id
-                        WHERE psl.part_id = ? AND psl.deleted_at IS NULL AND s.deleted_at IS NULL
-                        ORDER BY psl.is_preferred DESC, s.name ASC
-                        """, arguments: [partId])
+                    let supplierRows = suppliersByPart[partId] ?? []
 
                     var supplierOptions: [PartSupplierOption] = supplierRows.map { sRow in
                         let suppId: Int64 = sRow["id"] ?? 0
@@ -1335,16 +1412,18 @@ public final class OrdersService: Sendable {
                 }
 
                 // Link POs to JPOs via po_jpo_links
-                let uniqueJPOIds = Set(supplierItems.flatMap { item in
-                    // Resolve JPO IDs from jpo_line_items
-                    item.jpoLineIds.compactMap { lineId -> Int64? in
-                        try? Int64.fetchOne(dbConn,
+                var uniqueJPOIds = Set<Int64>()
+                for item in supplierItems {
+                    for lineId in item.jpoLineIds {
+                        if let jpoId = try Int64.fetchOne(dbConn,
                             sql: "SELECT jpo_id FROM jpo_line_items WHERE id = ?",
-                            arguments: [lineId])
+                            arguments: [lineId]) {
+                            uniqueJPOIds.insert(jpoId)
+                        }
                     }
-                })
+                }
                 for jpoId in uniqueJPOIds {
-                    try? dbConn.execute(
+                    try dbConn.execute(
                         sql: """
                             INSERT OR IGNORE INTO po_jpo_links (po_id, jpo_id, created_at)
                             VALUES (?, ?, datetime('now'))
@@ -1617,10 +1696,10 @@ public final class OrdersService: Sendable {
                 )
             }
 
-            // Link PO to JPO
-            try? dbConn.execute(
+            // Link PO to JPO (fixes #203: removed try? to propagate errors)
+            try dbConn.execute(
                 sql: """
-                    INSERT INTO po_jpo_links (po_id, jpo_id, created_at)
+                    INSERT OR IGNORE INTO po_jpo_links (po_id, jpo_id, created_at)
                     VALUES (?, ?, datetime('now'))
                     """,
                 arguments: [poId, jpoId]
@@ -1811,8 +1890,25 @@ public final class OrdersService: Sendable {
     }
 
     /// Update the status of a purchase order.
-    public func updatePOStatus(id: Int64, status: String) throws {
+    /// Fixes #195: fetch old status BEFORE update. Fixes #204: accept userId instead of hardcoding 1.
+    public func updatePOStatus(id: Int64, status: String, userId: Int64? = nil) throws {
         try db.writer.write { dbConn in
+            // 1. Fetch old status BEFORE the update (fixes #195)
+            guard let row = try Row.fetchOne(
+                dbConn,
+                sql: "SELECT status FROM purchase_orders WHERE id = ? AND deleted_at IS NULL",
+                arguments: [id]
+            ) else { return }
+            let oldStatus: String = row["status"] ?? "draft"
+
+            // Validate status transition (fixes #205)
+            if let allowed = Self.validPOTransitions[oldStatus] {
+                guard allowed.contains(status) else {
+                    throw OrdersError.invalidStatusTransition(entity: "PO", from: oldStatus, to: status)
+                }
+            }
+
+            // 2. Update status
             try dbConn.execute(
                 sql: """
                     UPDATE purchase_orders
@@ -1821,13 +1917,14 @@ public final class OrdersService: Sendable {
                     """,
                 arguments: [status, id]
             )
-            // Record in status history
+
+            // 3. Record in status history with captured oldStatus and real userId
             try dbConn.execute(
                 sql: """
                     INSERT INTO order_status_history (entity_type, entity_id, old_status, new_status, changed_by, created_at)
-                    VALUES ('purchase_order', ?, (SELECT status FROM purchase_orders WHERE id = ?), ?, 1, datetime('now'))
+                    VALUES ('purchase_order', ?, ?, ?, ?, datetime('now'))
                     """,
-                arguments: [id, id, status]
+                arguments: [id, oldStatus, status, userId ?? 1]
             )
         }
     }

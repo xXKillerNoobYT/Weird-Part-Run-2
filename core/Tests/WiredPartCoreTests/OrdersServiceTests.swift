@@ -46,7 +46,8 @@ struct OrdersServiceTests {
         let env = try E2ETestHelpers.setUp()
         let jobId = try E2ETestHelpers.seedJob(env)
         let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
-        try env.orders.updateJPOStatus(id: jpoId, status: "approved")
+        // draft → pending is the valid first transition (fixes #205 validation)
+        try env.orders.updateJPOStatus(id: jpoId, status: "pending")
     }
 
     @Test("Create JPO with lines in one call")
@@ -110,7 +111,8 @@ struct OrdersServiceTests {
         let env = try E2ETestHelpers.setUp()
         let supplierId = try E2ETestHelpers.seedSupplier(env)
         let poId = try env.orders.createPurchaseOrder(poNumber: "PO-STS", supplierId: supplierId, notes: nil)
-        try env.orders.updatePOStatus(id: poId, status: "sent")
+        // draft → ordered is the valid first PO transition (fixes #205 validation; "sent" removed)
+        try env.orders.updatePOStatus(id: poId, status: "ordered")
     }
 
     @Test("Delete PO")
@@ -194,6 +196,8 @@ struct OrdersServiceTests {
         let supplierId = try E2ETestHelpers.seedSupplier(env)
 
         let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        // Must follow valid transitions: draft → pending → approved (fixes #205 validation)
+        try env.orders.updateJPOStatus(id: jpoId, status: "pending")
         try env.orders.updateJPOStatus(id: jpoId, status: "approved")
 
         let poId = try env.orders.generatePOFromJPO(jpoId: jpoId, supplierId: supplierId)
@@ -365,8 +369,8 @@ struct OrdersServiceTests {
         let partId = try E2ETestHelpers.seedPart(env, name: "Lock Line Part", categoryId: catId)
         let lineId = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 5, unitPrice: 1.00)
 
-        // Move PO out of draft
-        try env.orders.updatePOStatus(id: poId, status: "sent")
+        // Move PO out of draft (draft → ordered is valid; "sent" removed in #205)
+        try env.orders.updatePOStatus(id: poId, status: "ordered")
 
         #expect(throws: (any Error).self) {
             try env.orders.updatePOLineItem(lineId: lineId, quantity: 10, unitPrice: 2.00)

@@ -29,8 +29,8 @@ struct BadgeCountServiceTests {
 
     // MARK: - pendingApprovals: JPO with status='submitted'
 
-    @Test("pendingApprovals counts submitted JPOs")
-    func testPendingApprovalsCountsSubmittedJPOs() throws {
+    @Test("pendingApprovals counts pending/in-review JPOs")
+    func testPendingApprovalsCountsPendingJPOs() throws {
         let env = try E2ETestHelpers.setUp()
         let service = BadgeCountService(db: env.db)
 
@@ -42,7 +42,8 @@ struct BadgeCountServiceTests {
             createdBy: env.adminUserId
         )
         let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
-        try env.orders.updateJPOStatus(id: jpoId, status: "submitted")
+        // "draft" → "pending" is the valid transition for submitting a JPO for approval
+        try env.orders.updateJPOStatus(id: jpoId, status: "pending")
 
         let counts = try service.getAllBadgeCounts()
         #expect(counts.pendingApprovals == 1)
@@ -232,8 +233,32 @@ struct BadgeCountServiceTests {
             createdBy: env.adminUserId
         )
         let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
-        try env.orders.updateJPOStatus(id: jpoId, status: "submitted")
+        // "draft" → "pending" is the valid transition for submitting a JPO for approval
+        try env.orders.updateJPOStatus(id: jpoId, status: "pending")
 
+        #expect(try service.pendingApprovalCount() == 1)
+    }
+
+    @Test("pendingApprovals also counts in_review JPOs (both states need approver action)")
+    func testPendingApprovalsCountsInReviewJPOs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = BadgeCountService(db: env.db)
+
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-BADGE-INR",
+            jobName: "In-Review Badge Test",
+            customerName: "Test Customer",
+            status: "active",
+            createdBy: env.adminUserId
+        )
+        // Advance: draft → pending → in_review (both valid transitions)
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+        try env.orders.updateJPOStatus(id: jpoId, status: "pending")
+        try env.orders.updateJPOStatus(id: jpoId, status: "in_review")
+
+        let counts = try service.getAllBadgeCounts()
+        // An in_review JPO still requires approver action — must appear in pendingApprovals
+        #expect(counts.pendingApprovals == 1)
         #expect(try service.pendingApprovalCount() == 1)
     }
 
