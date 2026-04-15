@@ -147,7 +147,7 @@ public final class BadgeCountService: Sendable {
         var counts = BadgeCounts()
 
         counts.pendingApprovals = try safeCount(sql:
-            "SELECT COUNT(*) FROM job_parts_orders WHERE status = 'submitted' AND deleted_at IS NULL"
+            "SELECT COUNT(*) FROM job_parts_orders WHERE status IN ('pending', 'in_review') AND deleted_at IS NULL"
         )
 
         counts.activeClockedIn = try safeCount(sql:
@@ -190,9 +190,10 @@ public final class BadgeCountService: Sendable {
               AND deleted_at IS NULL
         """)
 
-        // tool_edit_log is a planned future table (not yet in schema) — returns 0 gracefully
+        // Fix #165: was querying non-existent tool_edit_log. Actual table is tool_change_log
+        // (migration 050), column is verification_status (not status).
         counts.pendingToolEdits = try safeCount(sql:
-            "SELECT COUNT(*) FROM tool_edit_log WHERE status = 'pending' AND deleted_at IS NULL"
+            "SELECT COUNT(*) FROM tool_change_log WHERE verification_status = 'pending' AND deleted_at IS NULL"
         )
 
         counts.pendingDeletions = try safeCount(sql:
@@ -225,10 +226,10 @@ public final class BadgeCountService: Sendable {
             """, arguments: [uid])
         }
 
-        // Oldest pending date — find the oldest submitted JPO for tint calculation
+        // Oldest pending date — find the oldest pending/in-review JPO for tint calculation
         counts.oldestPendingDate = try safeString(sql: """
             SELECT MIN(created_at) FROM job_parts_orders
-            WHERE status = 'submitted' AND deleted_at IS NULL
+            WHERE status IN ('pending', 'in_review') AND deleted_at IS NULL
         """)
 
         return counts
@@ -236,10 +237,10 @@ public final class BadgeCountService: Sendable {
 
     // MARK: - Individual Counts (for targeted refresh)
 
-    /// Count of JPOs awaiting approval.
+    /// Count of JPOs awaiting approval (pending + in-review = needs approver action).
     public func pendingApprovalCount() throws -> Int {
         try safeCount(sql:
-            "SELECT COUNT(*) FROM job_parts_orders WHERE status = 'submitted' AND deleted_at IS NULL"
+            "SELECT COUNT(*) FROM job_parts_orders WHERE status IN ('pending', 'in_review') AND deleted_at IS NULL"
         )
     }
 

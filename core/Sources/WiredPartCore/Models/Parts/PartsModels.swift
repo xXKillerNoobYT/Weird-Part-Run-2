@@ -44,6 +44,8 @@ public struct LocationStockTarget: Codable, FetchableRecord, MutablePersistableR
     public var forecastSuggestedOrder: Int?
     public var forecastLastRun: String?
     public var certaintyRating: Double?
+    public var partCategory: String?       // "common" or "critical" per part per location
+    public var doNotRestock: Int?           // 1 = deplete naturally then remove
     public var deletedAt: String?
     public var updatedAt: String?
 
@@ -61,6 +63,8 @@ public struct LocationStockTarget: Codable, FetchableRecord, MutablePersistableR
         case forecastSuggestedOrder = "forecast_suggested_order"
         case forecastLastRun = "forecast_last_run"
         case certaintyRating = "certainty_rating"
+        case partCategory = "part_category"
+        case doNotRestock = "do_not_restock"
         case deletedAt = "deleted_at"
         case updatedAt = "updated_at"
     }
@@ -320,6 +324,7 @@ public struct BrandSupplierLink: Codable, FetchableRecord, MutablePersistableRec
     public var isActive: Int
     public var deletedAt: String?
     public var createdAt: String?
+    public var carryStatus: String?
 
     enum CodingKeys: String, CodingKey {
         case id, notes
@@ -329,6 +334,7 @@ public struct BrandSupplierLink: Codable, FetchableRecord, MutablePersistableRec
         case isActive = "is_active"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
+        case carryStatus = "carry_status"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -451,6 +457,36 @@ public struct PartSupplierLink: Codable, FetchableRecord, MutablePersistableReco
         case isPreferred = "is_preferred"
         case deletedAt = "deleted_at"
         case createdAt = "created_at"
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
+}
+
+// MARK: - Stock (primary stock table — fixes #200)
+
+/// Model for the primary `stock` table (migration 002).
+/// Tracks current quantity of each part at each location.
+public struct Stock: Codable, FetchableRecord, MutablePersistableRecord, Sendable {
+    public static let databaseTableName = "stock"
+    public var id: Int64?
+    public var partId: Int64
+    public var locationType: String
+    public var locationId: Int64
+    public var qty: Int
+    public var supplierId: Int64?
+    public var lastCounted: String?
+    public var deletedAt: String?
+    public var updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, qty
+        case partId = "part_id"
+        case locationType = "location_type"
+        case locationId = "location_id"
+        case supplierId = "supplier_id"
+        case lastCounted = "last_counted"
+        case deletedAt = "deleted_at"
+        case updatedAt = "updated_at"
     }
 
     public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
@@ -705,6 +741,26 @@ public struct ForecastSettings: Codable, FetchableRecord, MutablePersistableReco
     public var criticalMaxMultiplier: Double
     public var freeSpaceSuppressThreshold: Int
     public var updatedAt: String?
+
+    public init(
+        id: Int64? = nil, locationType: String, locationId: Int64? = nil,
+        usageUnit: String, aduLookbackDays: Int, windowWeeks: Int, minDataDays: Int,
+        commonMinMultiplier: Double, commonTargetMultiplier: Double, commonMaxMultiplier: Double,
+        criticalMinMultiplier: Double, criticalTargetMultiplier: Double, criticalMaxMultiplier: Double,
+        freeSpaceSuppressThreshold: Int, updatedAt: String? = nil
+    ) {
+        self.id = id; self.locationType = locationType; self.locationId = locationId
+        self.usageUnit = usageUnit; self.aduLookbackDays = aduLookbackDays
+        self.windowWeeks = windowWeeks; self.minDataDays = minDataDays
+        self.commonMinMultiplier = commonMinMultiplier
+        self.commonTargetMultiplier = commonTargetMultiplier
+        self.commonMaxMultiplier = commonMaxMultiplier
+        self.criticalMinMultiplier = criticalMinMultiplier
+        self.criticalTargetMultiplier = criticalTargetMultiplier
+        self.criticalMaxMultiplier = criticalMaxMultiplier
+        self.freeSpaceSuppressThreshold = freeSpaceSuppressThreshold
+        self.updatedAt = updatedAt
+    }
 
     enum CodingKeys: String, CodingKey {
         case id

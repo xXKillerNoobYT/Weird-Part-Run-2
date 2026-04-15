@@ -362,13 +362,15 @@ public final class NotebooksService: Sendable {
             }
 
             // Insert the entry
+            // Fix #180: include notebook_id so direct lookups and badge-count queries work.
+            // Previously, notebook_id was NULL — entries were only reachable via section_id JOIN.
             try dbConn.execute(
                 sql: """
                     INSERT INTO notebook_entries
-                    (section_id, title, content, entry_type, created_by, sort_order, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
+                    (notebook_id, section_id, title, content, entry_type, created_by, sort_order, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
                     """,
-                arguments: [sectionId, title, content, entryType, createdBy]
+                arguments: [notebookId, sectionId, title, content, entryType, createdBy]
             )
             return dbConn.lastInsertedRowID
         }

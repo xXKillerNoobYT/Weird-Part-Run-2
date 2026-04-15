@@ -24,6 +24,7 @@ public final class SchedulingService: Sendable {
         case timeOffRequestNotFound(Int64)
         case invalidStatus(String)
         case insertFailed(String)
+        case doubleBooking(userId: Int64, date: String)
     }
 
     // =========================================================================
@@ -615,6 +616,7 @@ public final class SchedulingService: Sendable {
     // =========================================================================
 
     /// Creates a new dispatch entry (assign user to job on a date).
+    /// Checks for double-booking before inserting (fixes #198).
     @discardableResult
     public func createDispatch(
         jobId: Int64,
@@ -623,6 +625,19 @@ public final class SchedulingService: Sendable {
         notes: String? = nil
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            // Check for existing dispatch on this date for this user
+            let existingCount = try Int.fetchOne(
+                dbConn,
+                sql: """
+                    SELECT COUNT(*) FROM job_dispatch
+                    WHERE user_id = ? AND dispatch_date = ? AND deleted_at IS NULL
+                    """,
+                arguments: [userId, date]
+            ) ?? 0
+            if existingCount > 0 {
+                throw SchedulingError.doubleBooking(userId: userId, date: date)
+            }
+
             try dbConn.execute(
                 sql: """
                     INSERT INTO job_dispatch

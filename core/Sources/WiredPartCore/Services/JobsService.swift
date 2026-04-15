@@ -915,19 +915,35 @@ public final class JobsService: Sendable {
                 throw JobsError.laborEntryNotFound(laborEntryId)
             }
 
-            // Calculate hours as the difference using julianday
-            // (julianday(clock_out) - julianday(clock_in)) * 24
+            // Calculate raw elapsed hours
+            let rawHours = try Double.fetchOne(dbConn, sql: """
+                SELECT ROUND((julianday(datetime('now')) - julianday(clock_in)) * 24, 2)
+                FROM labor_entries WHERE id = ?
+                """, arguments: [laborEntryId]) ?? 0
+
+            // Subtract break time (fixes #206)
+            let breakMinutes = try Double.fetchOne(dbConn, sql: """
+                SELECT COALESCE(SUM(duration_minutes), 0)
+                FROM break_records WHERE labor_entry_id = ? AND deleted_at IS NULL
+                """, arguments: [laborEntryId]) ?? 0
+            let totalHours = max(0, rawHours - (breakMinutes / 60.0))
+
+            // Split into regular/overtime at 8-hour daily threshold
+            let regularHours = min(totalHours, 8.0)
+            let overtimeHours = max(0, totalHours - 8.0)
+
             try dbConn.execute(
                 sql: """
                     UPDATE labor_entries
                     SET clock_out = datetime('now'),
                         clock_out_gps_lat = ?,
                         clock_out_gps_lng = ?,
-                        regular_hours = ROUND((julianday(datetime('now')) - julianday(clock_in)) * 24, 2),
+                        regular_hours = ROUND(?, 2),
+                        overtime_hours = ROUND(?, 2),
                         status = 'completed'
                     WHERE id = ?
                     """,
-                arguments: [gpsLat, gpsLng, laborEntryId]
+                arguments: [gpsLat, gpsLng, regularHours, overtimeHours, laborEntryId]
             )
 
             return laborEntryId

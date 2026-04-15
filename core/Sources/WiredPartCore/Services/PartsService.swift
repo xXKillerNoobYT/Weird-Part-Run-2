@@ -415,6 +415,12 @@ public final class PartsService: Sendable {
                     sql: "SELECT type_id, brand_id, color_id FROM parts WHERE deleted_at IS NULL"
                 )
 
+                // Also fetch explicit type-color links (colors linked to types even without parts yet)
+                let typeColorLinks = try Row.fetchAll(
+                    dbConn,
+                    sql: "SELECT type_id, color_id FROM type_color_links"
+                )
+
                 // Build brand+type -> color IDs map
                 var brandTypeColorMap: [String: Set<Int64>] = [:] // "typeId-brandId" -> color IDs (brandId = -1 for General)
                 for row in catalogParts {
@@ -423,6 +429,14 @@ public final class PartsService: Sendable {
                     guard let colorId: Int64 = row["color_id"] else { continue }
                     let key = "\(typeId)-\(brandId)"
                     brandTypeColorMap[key, default: []].insert(colorId)
+                }
+
+                // Merge type_color_links into the General (no brand) node for each type
+                for row in typeColorLinks {
+                    guard let typeId: Int64 = row["type_id"],
+                          let colorId: Int64 = row["color_id"] else { continue }
+                    let generalKey = "\(typeId)--1"
+                    brandTypeColorMap[generalKey, default: []].insert(colorId)
                 }
 
                 // Index colors by ID for quick lookup
@@ -543,13 +557,28 @@ public final class PartsService: Sendable {
         }
     }
 
-    /// Soft-delete a category.
+    /// Soft-delete a category and cascade to child styles and types (fixes #210).
     public func deleteCategory(id: Int64) throws {
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: "UPDATE part_categories SET deleted_at = datetime('now') WHERE id = ?",
                 arguments: [id]
             )
+            // Cascade to child styles
+            try dbConn.execute(
+                sql: "UPDATE part_styles SET deleted_at = datetime('now') WHERE category_id = ? AND deleted_at IS NULL",
+                arguments: [id]
+            )
+            // Cascade to child types (via styles)
+            let styleIds = try Int64.fetchAll(dbConn,
+                sql: "SELECT id FROM part_styles WHERE category_id = ?", arguments: [id])
+            if !styleIds.isEmpty {
+                let placeholders = styleIds.map { _ in "?" }.joined(separator: ",")
+                try dbConn.execute(
+                    sql: "UPDATE part_types SET deleted_at = datetime('now') WHERE style_id IN (\(placeholders)) AND deleted_at IS NULL",
+                    arguments: StatementArguments(styleIds)
+                )
+            }
         }
     }
 
@@ -638,11 +667,16 @@ public final class PartsService: Sendable {
         }
     }
 
-    /// Soft-delete a style.
+    /// Soft-delete a style and cascade to child types (fixes #210).
     public func deleteStyle(id: Int64) throws {
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: "UPDATE part_styles SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [id]
+            )
+            // Cascade to child types
+            try dbConn.execute(
+                sql: "UPDATE part_types SET deleted_at = datetime('now') WHERE style_id = ? AND deleted_at IS NULL",
                 arguments: [id]
             )
         }
@@ -1053,7 +1087,7 @@ public final class PartsService: Sendable {
                     )
                 } else {
                     // Abbreviation match: search color names by expanded abbreviation
-                    let colorPattern = colorPatterns[0]  // Primary expansion
+                    let colorPattern = colorPatterns.first ?? pattern  // Primary expansion
                     return try Part.fetchAll(
                         dbConn,
                         sql: """
@@ -1170,7 +1204,8 @@ public final class PartsService: Sendable {
             try record.insert(dbConn)
         }
         guard let partId = record.id else { throw PartsError.invalidInput("Failed to get ID after insert") }
-        // Log creation in audit trail (non-fatal if migration hasn't run)
+        // Log creation in audit trail — intentionally non-fatal: part creation must succeed
+        // even if part_change_log table doesn't exist yet (pre-migration-033 databases)
         try? logPartChange(partId: partId, userId: nil, userName: nil, action: "created", context: "Catalog")
         return partId
     }
@@ -1278,6 +1313,7 @@ public final class PartsService: Sendable {
             track("shelf_location", "shelf_location", shelfLocation)
             track("bin_location", "bin_location", binLocation)
             if !changes.isEmpty {
+                // Intentionally non-fatal: update must succeed even if audit log table is missing
                 try? logPartFieldChanges(partId: id, userId: nil, userName: nil, changes: changes, context: "Catalog Edit")
             }
         }
@@ -1845,6 +1881,8 @@ public final class PartsService: Sendable {
     ///   - poLineId: Optional PO line item reference
     ///   - supplierId: Optional supplier reference for return tracking
     /// - Returns: The created CostLayer
+    /// Add a cost layer, recalculate weighted avg cost, and log history — all in one transaction.
+    /// Fixes #208: previously used 3 separate transactions; crash between them left pricing inconsistent.
     @discardableResult
     public func addCostLayer(
         partId: Int64,
@@ -1855,7 +1893,7 @@ public final class PartsService: Sendable {
     ) throws -> CostLayer {
         guard qty > 0 else { throw PartsError.invalidQuantity }
 
-        let layer = try db.writer.write { dbConn -> CostLayer in
+        return try db.writer.write { dbConn -> CostLayer in
             var layer = CostLayer(
                 partId: partId,
                 purchaseDate: ISO8601DateFormatter().string(from: Date()),
@@ -1865,22 +1903,20 @@ public final class PartsService: Sendable {
                 unitCost: unitCost
             )
             try layer.insert(dbConn)
+
+            try Self.recalculateWeightedAvgCostInternal(dbConn: dbConn, partId: partId)
+
+            try Self.logPriceChangeInternal(
+                dbConn: dbConn,
+                partId: partId,
+                changeType: "cost_update",
+                newValue: unitCost,
+                source: poLineId != nil ? "receiving" : "manual",
+                sourceId: poLineId
+            )
+
             return layer
         }
-
-        // Recalculate weighted average cost
-        try recalculateWeightedAvgCost(partId: partId)
-
-        // Log price history
-        try logPriceChange(
-            partId: partId,
-            changeType: "cost_update",
-            newValue: unitCost,
-            source: poLineId != nil ? "receiving" : "manual",
-            sourceId: poLineId
-        )
-
-        return layer
     }
 
     /// Consume parts using FIFO ordering — oldest batches are used first.
@@ -1956,11 +1992,11 @@ public final class PartsService: Sendable {
                 remaining -= take
             }
 
+            // Recalculate weighted average inside same transaction (fixes #208)
+            try Self.recalculateWeightedAvgCostInternal(dbConn: dbConn, partId: partId)
+
             return records
         }
-
-        // Recalculate weighted average after consumption
-        try recalculateWeightedAvgCost(partId: partId)
 
         return consumptions
     }
@@ -2042,11 +2078,11 @@ public final class PartsService: Sendable {
                 remaining -= restore
             }
 
+            // Recalculate weighted average inside same transaction (fixes #208)
+            try Self.recalculateWeightedAvgCostInternal(dbConn: dbConn, partId: partId)
+
             return records
         }
-
-        // Recalculate weighted average after return
-        try recalculateWeightedAvgCost(partId: partId)
 
         return reversed
     }
@@ -2056,26 +2092,31 @@ public final class PartsService: Sendable {
     /// This is company-wide — location doesn't matter for pricing.
     public func recalculateWeightedAvgCost(partId: Int64) throws {
         try db.writer.write { dbConn in
-            let row = try Row.fetchOne(dbConn, sql: """
-                SELECT
-                    COALESCE(SUM(remaining_qty * unit_cost), 0) AS total_value,
-                    COALESCE(SUM(remaining_qty), 0) AS total_qty
-                FROM cost_layers
-                WHERE part_id = ? AND remaining_qty > 0
-                """, arguments: [partId])
-
-            let totalValue: Double = row?["total_value"] ?? 0
-            let totalQty: Int = row?["total_qty"] ?? 0
-            let weightedAvg = totalQty > 0 ? totalValue / Double(totalQty) : 0
-
-            try dbConn.execute(
-                sql: """
-                    UPDATE parts SET weighted_avg_cost = ?, updated_at = datetime('now')
-                    WHERE id = ?
-                    """,
-                arguments: [weightedAvg, partId]
-            )
+            try Self.recalculateWeightedAvgCostInternal(dbConn: dbConn, partId: partId)
         }
+    }
+
+    /// Internal: runs inside an existing transaction (fixes #208 atomicity).
+    private static func recalculateWeightedAvgCostInternal(dbConn: Database, partId: Int64) throws {
+        let row = try Row.fetchOne(dbConn, sql: """
+            SELECT
+                COALESCE(SUM(remaining_qty * unit_cost), 0) AS total_value,
+                COALESCE(SUM(remaining_qty), 0) AS total_qty
+            FROM cost_layers
+            WHERE part_id = ? AND remaining_qty > 0
+            """, arguments: [partId])
+
+        let totalValue: Double = row?["total_value"] ?? 0
+        let totalQty: Int = row?["total_qty"] ?? 0
+        let weightedAvg = totalQty > 0 ? totalValue / Double(totalQty) : 0
+
+        try dbConn.execute(
+            sql: """
+                UPDATE parts SET weighted_avg_cost = ?, updated_at = datetime('now')
+                WHERE id = ?
+                """,
+            arguments: [weightedAvg, partId]
+        )
     }
 
     /// Get all cost layers (batches) for a part, optionally filtering to non-empty only.
@@ -2169,20 +2210,42 @@ public final class PartsService: Sendable {
         changedBy: Int64? = nil
     ) throws {
         try db.writer.write { dbConn in
-            var record = PriceHistory(
-                partId: partId,
-                pricingTierId: pricingTierId,
-                changeType: changeType,
-                oldValue: oldValue,
-                newValue: newValue,
-                oldSellPrice: oldSellPrice,
-                newSellPrice: newSellPrice,
-                source: source,
-                sourceId: sourceId,
-                changedBy: changedBy
+            try Self.logPriceChangeInternal(
+                dbConn: dbConn, partId: partId, pricingTierId: pricingTierId,
+                changeType: changeType, oldValue: oldValue, newValue: newValue,
+                oldSellPrice: oldSellPrice, newSellPrice: newSellPrice,
+                source: source, sourceId: sourceId, changedBy: changedBy
             )
-            try record.insert(dbConn)
         }
+    }
+
+    /// Internal: runs inside an existing transaction (fixes #208 atomicity).
+    private static func logPriceChangeInternal(
+        dbConn: Database,
+        partId: Int64? = nil,
+        pricingTierId: Int64? = nil,
+        changeType: String,
+        oldValue: Double? = nil,
+        newValue: Double? = nil,
+        oldSellPrice: Double? = nil,
+        newSellPrice: Double? = nil,
+        source: String? = nil,
+        sourceId: Int64? = nil,
+        changedBy: Int64? = nil
+    ) throws {
+        var record = PriceHistory(
+            partId: partId,
+            pricingTierId: pricingTierId,
+            changeType: changeType,
+            oldValue: oldValue,
+            newValue: newValue,
+            oldSellPrice: oldSellPrice,
+            newSellPrice: newSellPrice,
+            source: source,
+            sourceId: sourceId,
+            changedBy: changedBy
+        )
+        try record.insert(dbConn)
     }
 
     /// Get price change history for a part.
@@ -3019,63 +3082,49 @@ public final class PartsService: Sendable {
     /// Recalculate Average Daily Usage (ADU) for the last 30 and 90 days
     /// from stock_movements. Updates each part's forecast fields.
     ///
-    /// This is a batch operation that runs across all non-deleted parts.
+    /// Uses a single aggregate query instead of per-part queries (fixes #193 N+1).
     public func recalculateForecasts() throws {
         do {
             try db.writer.write { dbConn in
-                // Get all active parts
-                let partIds = try Int64.fetchAll(
-                    dbConn,
-                    sql: "SELECT id FROM parts WHERE deleted_at IS NULL"
-                )
+                // Single aggregate query: fetch all parts with their consumption + stock in one pass
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT p.id, COALESCE(p.min_stock_level, 0) AS min_stock,
+                        COALESCE(m30.consumed, 0) AS consumed30,
+                        COALESCE(m90.consumed, 0) AS consumed90,
+                        COALESCE(s.total_qty, 0) AS current_stock
+                    FROM parts p
+                    LEFT JOIN (
+                        SELECT part_id, SUM(ABS(qty)) AS consumed
+                        FROM stock_movements
+                        WHERE movement_type IN ('consume', 'transfer', 'return_to_supplier')
+                          AND created_at >= datetime('now', '-30 days') AND deleted_at IS NULL
+                        GROUP BY part_id
+                    ) m30 ON m30.part_id = p.id
+                    LEFT JOIN (
+                        SELECT part_id, SUM(ABS(qty)) AS consumed
+                        FROM stock_movements
+                        WHERE movement_type IN ('consume', 'transfer', 'return_to_supplier')
+                          AND created_at >= datetime('now', '-90 days') AND deleted_at IS NULL
+                        GROUP BY part_id
+                    ) m90 ON m90.part_id = p.id
+                    LEFT JOIN (
+                        SELECT part_id, SUM(qty) AS total_qty
+                        FROM stock WHERE deleted_at IS NULL
+                        GROUP BY part_id
+                    ) s ON s.part_id = p.id
+                    WHERE p.deleted_at IS NULL
+                    """)
 
-                for partId in partIds {
-                    // ADU 30: total outbound movements in last 30 days / 30
-                    let consumed30 = try Int.fetchOne(
-                        dbConn,
-                        sql: """
-                            SELECT COALESCE(SUM(ABS(qty)), 0)
-                            FROM stock_movements
-                            WHERE part_id = ?
-                              AND movement_type IN ('consume', 'transfer', 'return_to_supplier')
-                              AND created_at >= datetime('now', '-30 days')
-                              AND deleted_at IS NULL
-                            """,
-                        arguments: [partId]
-                    ) ?? 0
+                // Compute derived values and bulk-update
+                for row in rows {
+                    let partId: Int64 = row["id"]
+                    let minStock: Int = row["min_stock"]
+                    let consumed30: Int = row["consumed30"]
+                    let consumed90: Int = row["consumed90"]
+                    let currentStock: Int = row["current_stock"]
+
                     let adu30 = Double(consumed30) / 30.0
-
-                    // ADU 90: total outbound movements in last 90 days / 90
-                    let consumed90 = try Int.fetchOne(
-                        dbConn,
-                        sql: """
-                            SELECT COALESCE(SUM(ABS(qty)), 0)
-                            FROM stock_movements
-                            WHERE part_id = ?
-                              AND movement_type IN ('consume', 'transfer', 'return_to_supplier')
-                              AND created_at >= datetime('now', '-90 days')
-                              AND deleted_at IS NULL
-                            """,
-                        arguments: [partId]
-                    ) ?? 0
                     let adu90 = Double(consumed90) / 90.0
-
-                    // Current stock
-                    let currentStock = try Int.fetchOne(
-                        dbConn,
-                        sql: """
-                            SELECT COALESCE(SUM(qty), 0) FROM stock
-                            WHERE part_id = ? AND deleted_at IS NULL
-                            """,
-                        arguments: [partId]
-                    ) ?? 0
-
-                    // Days until low (using ADU-30 as primary indicator)
-                    let minStock = try Int.fetchOne(
-                        dbConn,
-                        sql: "SELECT COALESCE(min_stock_level, 0) FROM parts WHERE id = ?",
-                        arguments: [partId]
-                    ) ?? 0
 
                     let daysUntilLow: Int
                     if adu30 > 0 {
@@ -3085,13 +3134,8 @@ public final class PartsService: Sendable {
                         daysUntilLow = 999
                     }
 
-                    // Suggested reorder point = ADU-30 * 7 (one week lead buffer)
                     let forecastReorderPoint = Int(adu30 * 7)
-
-                    // Target qty = reorder point * 2
                     let forecastTargetQty = forecastReorderPoint * 2
-
-                    // Suggested order = target - current stock (clamped to 0)
                     let forecastSuggestedOrder = max(0, forecastTargetQty - currentStock)
 
                     try dbConn.execute(
@@ -3260,95 +3304,88 @@ public final class PartsService: Sendable {
     }
 
     /// Recalculate forecasts per-location based on stock movements.
+    /// Uses aggregate queries instead of per-combo queries (fixes #194 N+1).
     public func recalculateForecastsPerLocation() throws {
         do {
             try db.writer.write { dbConn in
-                // Get all active part-location combinations with movements
-                let combinations = try Row.fetchAll(dbConn, sql: """
-                    SELECT DISTINCT part_id, to_location_type AS lt, to_location_id AS lid
-                    FROM stock_movements
-                    WHERE deleted_at IS NULL AND to_location_type IS NOT NULL
-                    UNION
-                    SELECT DISTINCT part_id, from_location_type AS lt, from_location_id AS lid
-                    FROM stock_movements
-                    WHERE deleted_at IS NULL AND from_location_type IS NOT NULL
+                // Single aggregate: consumption + movement counts per (part, location) combo
+                let aggRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT
+                        combos.part_id, combos.lt AS loc_type, combos.lid AS loc_id,
+                        COALESCE(c30.consumed, 0) AS consumed30,
+                        COALESCE(c90.consumed, 0) AS consumed90,
+                        COALESCE(mc.cnt, 0) AS movement_count,
+                        COALESCE(sk.total_qty, 0) AS current_stock,
+                        COALESCE(lst.id, 0) AS lst_id,
+                        COALESCE(lst.min_stock, p.min_stock_level, 0) AS min_stock,
+                        COALESCE(lst.target_stock, p.target_stock_level, 0) AS target_stock
+                    FROM (
+                        SELECT DISTINCT part_id, to_location_type AS lt, to_location_id AS lid
+                        FROM stock_movements WHERE deleted_at IS NULL AND to_location_type IS NOT NULL
+                        UNION
+                        SELECT DISTINCT part_id, from_location_type AS lt, from_location_id AS lid
+                        FROM stock_movements WHERE deleted_at IS NULL AND from_location_type IS NOT NULL
+                    ) combos
+                    LEFT JOIN parts p ON p.id = combos.part_id
+                    LEFT JOIN (
+                        SELECT part_id, from_location_type AS lt, from_location_id AS lid, SUM(ABS(qty)) AS consumed
+                        FROM stock_movements
+                        WHERE movement_type IN ('consume','transfer')
+                          AND created_at >= datetime('now','-30 days') AND deleted_at IS NULL
+                        GROUP BY part_id, from_location_type, from_location_id
+                    ) c30 ON c30.part_id = combos.part_id AND c30.lt = combos.lt AND c30.lid = combos.lid
+                    LEFT JOIN (
+                        SELECT part_id, from_location_type AS lt, from_location_id AS lid, SUM(ABS(qty)) AS consumed
+                        FROM stock_movements
+                        WHERE movement_type IN ('consume','transfer')
+                          AND created_at >= datetime('now','-90 days') AND deleted_at IS NULL
+                        GROUP BY part_id, from_location_type, from_location_id
+                    ) c90 ON c90.part_id = combos.part_id AND c90.lt = combos.lt AND c90.lid = combos.lid
+                    LEFT JOIN (
+                        SELECT part_id,
+                            COALESCE(from_location_type, to_location_type) AS lt,
+                            COALESCE(from_location_id, to_location_id) AS lid,
+                            COUNT(*) AS cnt
+                        FROM stock_movements WHERE deleted_at IS NULL
+                        GROUP BY part_id, lt, lid
+                    ) mc ON mc.part_id = combos.part_id AND mc.lt = combos.lt AND mc.lid = combos.lid
+                    LEFT JOIN (
+                        SELECT part_id, location_type, location_id, SUM(qty) AS total_qty
+                        FROM stock WHERE deleted_at IS NULL
+                        GROUP BY part_id, location_type, location_id
+                    ) sk ON sk.part_id = combos.part_id AND sk.location_type = combos.lt AND sk.location_id = combos.lid
+                    LEFT JOIN location_stock_targets lst
+                        ON lst.part_id = combos.part_id AND lst.location_type = combos.lt
+                        AND lst.location_id = combos.lid AND lst.deleted_at IS NULL
+                    WHERE p.deleted_at IS NULL
                     """)
 
-                for combo in combinations {
-                    let partId: Int64 = combo["part_id"]
-                    let locType: String = combo["lt"] ?? "warehouse"
-                    let locId: Int64 = combo["lid"] ?? 1
+                // Compute derived values and upsert
+                for row in aggRows {
+                    let partId: Int64 = row["part_id"]
+                    let locType: String = row["loc_type"] ?? "warehouse"
+                    let locId: Int64 = row["loc_id"] ?? 1
+                    let consumed30: Int = row["consumed30"]
+                    let consumed90: Int = row["consumed90"]
+                    let movementCount: Int = row["movement_count"]
+                    let currentStock: Int = row["current_stock"]
+                    let lstId: Int64 = row["lst_id"]
+                    let minStock: Int = row["min_stock"]
+                    let targetStock: Int = row["target_stock"]
 
-                    // ADU-30: outbound movements from this location
-                    let consumed30 = try Int.fetchOne(dbConn, sql: """
-                        SELECT COALESCE(SUM(ABS(qty)), 0) FROM stock_movements
-                        WHERE part_id = ? AND from_location_type = ? AND from_location_id = ?
-                          AND movement_type IN ('consume', 'transfer')
-                          AND created_at >= datetime('now', '-30 days')
-                          AND deleted_at IS NULL
-                        """, arguments: [partId, locType, locId]) ?? 0
                     let adu30 = Double(consumed30) / 30.0
-
-                    let consumed90 = try Int.fetchOne(dbConn, sql: """
-                        SELECT COALESCE(SUM(ABS(qty)), 0) FROM stock_movements
-                        WHERE part_id = ? AND from_location_type = ? AND from_location_id = ?
-                          AND movement_type IN ('consume', 'transfer')
-                          AND created_at >= datetime('now', '-90 days')
-                          AND deleted_at IS NULL
-                        """, arguments: [partId, locType, locId]) ?? 0
                     let adu90 = Double(consumed90) / 90.0
-
-                    // Movement count for certainty
-                    let movementCount = try Int.fetchOne(dbConn, sql: """
-                        SELECT COUNT(*) FROM stock_movements
-                        WHERE part_id = ? AND (
-                            (from_location_type = ? AND from_location_id = ?) OR
-                            (to_location_type = ? AND to_location_id = ?)
-                        ) AND deleted_at IS NULL
-                        """, arguments: [partId, locType, locId, locType, locId]) ?? 0
                     let certainty = min(1.0, Double(movementCount) / 50.0)
 
-                    // Current stock at this location
-                    let currentStock = try Int.fetchOne(dbConn, sql: """
-                        SELECT COALESCE(SUM(qty), 0) FROM stock
-                        WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
-                        """, arguments: [partId, locType, locId]) ?? 0
-
-                    // Get min stock target
-                    let minStock = try Int.fetchOne(dbConn, sql: """
-                        SELECT COALESCE(
-                            (SELECT min_stock FROM location_stock_targets
-                             WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL),
-                            (SELECT min_stock_level FROM parts WHERE id = ?),
-                            0
-                        )
-                        """, arguments: [partId, locType, locId, partId]) ?? 0
-
-                    // Days until low
                     let daysUntilLow: Int
                     if adu30 > 0 {
                         daysUntilLow = max(0, Int(Double(currentStock - minStock) / adu30))
                     } else {
                         daysUntilLow = 999
                     }
-
-                    let targetStock = try Int.fetchOne(dbConn, sql: """
-                        SELECT COALESCE(
-                            (SELECT target_stock FROM location_stock_targets
-                             WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL),
-                            (SELECT target_stock_level FROM parts WHERE id = ?),
-                            0
-                        )
-                        """, arguments: [partId, locType, locId, partId]) ?? 0
                     let suggestedOrder = max(0, targetStock - currentStock)
 
-                    // Upsert location_stock_targets
-                    let existing = try Row.fetchOne(dbConn, sql: """
-                        SELECT id FROM location_stock_targets
-                        WHERE part_id = ? AND location_type = ? AND location_id = ? AND deleted_at IS NULL
-                        """, arguments: [partId, locType, locId])
-
-                    if let existingId: Int64 = existing?["id"] {
+                    if lstId > 0 {
                         try dbConn.execute(sql: """
                             UPDATE location_stock_targets SET
                                 forecast_adu_30 = ?, forecast_adu_90 = ?,
@@ -3356,15 +3393,15 @@ public final class PartsService: Sendable {
                                 forecast_last_run = datetime('now'), certainty_rating = ?,
                                 updated_at = datetime('now')
                             WHERE id = ?
-                            """, arguments: [adu30, adu90, daysUntilLow, suggestedOrder, certainty, existingId])
+                            """, arguments: [adu30, adu90, daysUntilLow, suggestedOrder, certainty, lstId])
                     } else {
                         try dbConn.execute(sql: """
                             INSERT INTO location_stock_targets
                                 (part_id, location_type, location_id, min_stock, target_stock, max_stock,
                                  forecast_adu_30, forecast_adu_90, forecast_days_until_low,
                                  forecast_suggested_order, forecast_last_run, certainty_rating)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?)
-                            """, arguments: [partId, locType, locId, minStock, targetStock, 0,
+                            VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, datetime('now'), ?)
+                            """, arguments: [partId, locType, locId, minStock, targetStock,
                                            adu30, adu90, daysUntilLow, suggestedOrder, certainty])
                     }
                 }
@@ -3907,12 +3944,11 @@ public final class PartsService: Sendable {
         }
     }
 
-    /// Soft-delete a companion rule by deactivating it.
-    /// (companion_rules does not have a deleted_at column, so we set is_active = 0.)
+    /// Soft-delete a companion rule — sets both is_active and deleted_at for consistency (fixes #211).
     public func deleteCompanionRule(id: Int64) throws {
         try db.writer.write { dbConn in
             try dbConn.execute(
-                sql: "UPDATE companion_rules SET is_active = 0, updated_at = datetime('now') WHERE id = ?",
+                sql: "UPDATE companion_rules SET is_active = 0, deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
                 arguments: [id]
             )
         }
@@ -6513,12 +6549,14 @@ public final class PartsService: Sendable {
                        pc.name AS category_name,
                        b.name AS brand_name,
                        ps.name AS style_name,
+                       pt.name AS type_name,
                        pcol.name AS color_name,
                        COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) AS total_stock
                 FROM parts p
                 LEFT JOIN part_categories pc ON pc.id = p.category_id
                 LEFT JOIN brands b ON b.id = p.brand_id
                 LEFT JOIN part_styles ps ON ps.id = p.style_id
+                LEFT JOIN part_types pt ON pt.id = p.type_id
                 LEFT JOIN part_colors pcol ON pcol.id = p.color_id
                 WHERE \(whereSQL)
                 ORDER BY \(orderSQL) \(dir)
@@ -6532,7 +6570,7 @@ public final class PartsService: Sendable {
                     part: part,
                     categoryName: row["category_name"] as String?,
                     styleName: row["style_name"] as String?,
-                    typeName: nil,
+                    typeName: row["type_name"] as String?,
                     colorName: row["color_name"] as String?,
                     brandName: row["brand_name"] as String?,
                     totalStock: row["total_stock"] as Int

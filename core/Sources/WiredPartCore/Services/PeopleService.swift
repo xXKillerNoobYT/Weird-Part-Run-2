@@ -24,6 +24,7 @@ public final class PeopleService: Sendable {
         case employeeNotFound(Int64)
         case customerNotFound(Int64)
         case contactNotFound(Int64)
+        case cannotDeleteBuiltinHat
     }
 
     // =========================================================================
@@ -1005,11 +1006,19 @@ public final class PeopleService: Sendable {
         }
     }
 
-    /// Delete a hat by ID (hard delete — hats table has no deleted_at).
+    /// Delete a hat by ID. Protects built-in hats from deletion (fixes #199).
     public func deleteHat(id: Int64) throws {
         try db.writer.write { dbConn in
+            let isBuiltin = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COALESCE(is_builtin, 0) FROM hats WHERE id = ?",
+                arguments: [id]
+            ) ?? 0
+            guard isBuiltin == 0 else {
+                throw PeopleError.cannotDeleteBuiltinHat
+            }
             try dbConn.execute(
-                sql: "DELETE FROM hats WHERE id = ?",
+                sql: "DELETE FROM hats WHERE id = ? AND is_builtin = 0",
                 arguments: [id]
             )
         }

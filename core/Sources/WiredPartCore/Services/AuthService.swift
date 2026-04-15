@@ -709,7 +709,11 @@ public final class AuthService: Sendable {
             kSecValueData: keyData,
             kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
-        SecItemAdd(addQuery as CFDictionary, nil)
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus != errSecSuccess && addStatus != errSecDuplicateItem {
+            // Key generated but not persisted — tokens will invalidate on next app launch.
+            // errSecDuplicateItem is benign (item was added between our read and write).
+        }
         return SymmetricKey(data: keyData)
     }()
 

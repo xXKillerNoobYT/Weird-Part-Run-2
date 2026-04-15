@@ -294,13 +294,16 @@ public final class ReportsService: Sendable {
     public func getProfitabilitySummary() throws -> [JobProfitRow] {
         do {
             return try db.writer.read { dbConn -> [JobProfitRow] in
+                // Fix #164: Labor cost must use employee pay_rate (what we pay them),
+                // NOT billing_rate (what we charge the customer). Overtime at 1.5x.
                 let sql = """
                     SELECT j.id, j.job_name,
                            COALESCE(j.estimated_hours, 0) * COALESCE(j.billing_rate, 0) AS revenue,
-                           COALESCE((SELECT SUM(le.regular_hours + le.overtime_hours)
+                           COALESCE((SELECT SUM(le.regular_hours * COALESCE(u.pay_rate, 0) +
+                                                le.overtime_hours * COALESCE(u.pay_rate, 0) * 1.5)
                                      FROM labor_entries le
-                                     WHERE le.job_id = j.id AND le.deleted_at IS NULL), 0)
-                               * COALESCE(j.billing_rate, 0) AS labor_cost,
+                                     LEFT JOIN users u ON u.id = le.user_id
+                                     WHERE le.job_id = j.id AND le.deleted_at IS NULL), 0) AS labor_cost,
                            COALESCE((SELECT SUM(jp.qty_consumed * COALESCE(jp.unit_cost_at_consume, 0))
                                      FROM job_parts jp
                                      WHERE jp.job_id = j.id AND jp.deleted_at IS NULL), 0) AS material_cost

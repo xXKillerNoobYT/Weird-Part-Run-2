@@ -102,14 +102,18 @@ public final class DeviceResetService: Sendable {
                 arguments: [deviceId]
             )
 
-            // Also log this in the change log so it syncs to peers
+            // Log this change so it syncs to peers.
+            // Fix #181: _change_log.record_id is INTEGER but _device_registry's primary key
+            // is the text device_id UUID. We use 0 for record_id and include the actual
+            // device_id in changed_fields JSON so peers can identify the affected row.
+            let changedFieldsJSON = #"{"is_deactivated":1,"device_id":"\#(deviceId)"}"#
             try dbConnection.execute(
                 sql: """
                     INSERT INTO _change_log
                         (table_name, record_id, operation, device_id, changed_fields, timestamp)
-                    VALUES ('_device_registry', ?, 'UPDATE', ?, '["is_deactivated"]', datetime('now'))
+                    VALUES ('_device_registry', 0, 'UPDATE', ?, ?, datetime('now'))
                     """,
-                arguments: [deviceId, deviceId]
+                arguments: [deviceId, changedFieldsJSON]
             )
         }
     }
