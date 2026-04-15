@@ -2017,3 +2017,17 @@ _Appended by dev-pipeline-manager each run._
 - Issues processed: #146 major sweep (37 inline formatters → Formatters.swift), #151 fixed (wrong-thread resolve)
 - Bugs fixed: 37 inline DateFormatter allocations eliminated + formatter-mutation race condition fixed
 - Pipeline health: OK — all agents active, #146 sweep 80% complete (46 of ~90 remaining instances cleared), PE-043 queued next in Xcode AI, Q&A blocks (#143/#149 bundle + Colors/Brands) pending owner input
+
+---
+
+### End-of-Day Sync — 2026-04-14
+
+- Files committed: 30 (core services, sync, migrations, iOS Parts UI, tests, docs)
+- Commits created: 8
+- Push status: success (main → origin/main, 8 commits ahead pushed)
+- Tests: 1222/1222 passing (54 suites, +5 from 1217)
+- Build: 0 errors, 0 warnings
+- Agent runs today: 4/7 (hunt-fix-verify ×run41, test-coverage ×1, dev-improvement-scanner ×run11, plan-enforcer ×run14; pipeline-manager and github-issues-sync ran 2026-04-13)
+- Issues processed: #196 (sync NULL semantics), #201 (migration try? safety), #205 (JPO/PO status validation), #206 (SQL type inference bug in ConflictResolver), #229 (plan drift — pricing permission guard), #230/#231 (security findings)
+- Bugs fixed: 5 test failures resolved (ConflictResolver SQL type inference, JPO/PO transitions, "submitted" status gap); 2 improvement-scanner fixes (div-by-zero guard, error context strings); 1 plan drift (#229)
+- Pipeline health: OK — all 8 agents healthy; security tier (#184/#191/#228/#230/#231) is next priority for hunt-fix; PE-043 still queued for Xcode AI; Q&A backlog 4 blocks/14 questions pending owner input
