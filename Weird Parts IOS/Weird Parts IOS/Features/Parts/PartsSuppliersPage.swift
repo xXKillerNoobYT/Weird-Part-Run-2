@@ -308,24 +308,29 @@ struct PartsSuppliersPage: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "building.2")
+        let isSearching = !searchText.isEmpty
+        return VStack(spacing: 16) {
+            Image(systemName: isSearching ? "magnifyingglass" : "building.2")
                 .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
-            Text("No Suppliers Yet")
+            Text(isSearching ? "No Results" : "No Suppliers Yet")
                 .font(.title3)
                 .fontWeight(.semibold)
-            Text("Add suppliers to track your parts sources and pricing.")
+            Text(isSearching
+                 ? "Try a different search term."
+                 : "Add suppliers to track your parts sources and pricing.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
-            Button {
-                activeSheet = .addSupplier
-            } label: {
-                Label("Add Supplier", systemImage: "plus.circle.fill")
+            if !isSearching {
+                Button {
+                    activeSheet = .addSupplier
+                } label: {
+                    Label("Add Supplier", systemImage: "plus.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -381,7 +386,12 @@ struct PartsSuppliersPage: View {
             loadError = "Parts service not available"
             return
         }
-        let context = (try? service.buildSupplierAIContext()) ?? ""
+        let context: String
+        do {
+            context = try service.buildSupplierAIContext()
+        } catch {
+            context = "" // AI context non-critical; panel will work without it
+        }
         NotificationCenter.default.post(
             name: .suppliersPageActive,
             object: nil,
@@ -734,7 +744,11 @@ private struct SupplierDetailSheet: View {
                 case .addContact:
                     AddSupplierContactSheet(supplierId: supplier.id) {
                         if let service = appCore.partsService {
-                            contacts = (try? service.getSupplierContacts(supplierId: supplier.id)) ?? []
+                            do {
+                                contacts = try service.getSupplierContacts(supplierId: supplier.id)
+                            } catch {
+                                loadError = userFriendlyError(error, context: "reload contacts")
+                            }
                         }
                     }
                     .environmentObject(appCore)
@@ -1079,7 +1093,11 @@ private struct SupplierDetailSheet: View {
                 carryStatus: newStatus
             )
             // Reload brands to reflect the change
-            linkedBrands = (try? service.getSupplierBrands(supplierId: supplier.id)) ?? []
+            do {
+                linkedBrands = try service.getSupplierBrands(supplierId: supplier.id)
+            } catch {
+                loadError = userFriendlyError(error, context: "reload brands")
+            }
         } catch {
             loadError = userFriendlyError(error, context: "update carry status")
         }

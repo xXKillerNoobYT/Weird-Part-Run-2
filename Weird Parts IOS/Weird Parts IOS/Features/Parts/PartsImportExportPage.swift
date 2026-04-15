@@ -523,11 +523,16 @@ struct PartsImportExportPage: View {
 
                 // Duplicate detection: by code first, then by name
                 var existingPart: Part?
-                if let c = code, !c.isEmpty {
-                    existingPart = try? service.findPartByCode(c)
-                }
-                if existingPart == nil {
-                    existingPart = try? service.findPartByName(partName)
+                do {
+                    if let c = code, !c.isEmpty {
+                        existingPart = try service.findPartByCode(c)
+                    }
+                    if existingPart == nil {
+                        existingPart = try service.findPartByName(partName)
+                    }
+                } catch {
+                    preview.errors.append(ImportError(rowNumber: lineIdx + 1, message: "Duplicate check failed: \(error.localizedDescription)"))
+                    continue
                 }
 
                 if let existing = existingPart {

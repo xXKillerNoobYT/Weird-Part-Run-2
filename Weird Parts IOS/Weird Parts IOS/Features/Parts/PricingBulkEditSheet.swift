@@ -126,8 +126,12 @@ struct PricingBulkEditSheet: View {
                 saveError = "Parts service not available"
                 return
             }
-            pricingMode = (try? service.getCompanyCostSetting(key: "pricing_mode")) ?? "markup"
-            categories = (try? service.listCategories()) ?? []
+            do {
+                pricingMode = try service.getCompanyCostSetting(key: "pricing_mode") ?? "markup"
+                categories = try service.listCategories()
+            } catch {
+                saveError = userFriendlyError(error, context: "load pricing settings")
+            }
         }
     }
 

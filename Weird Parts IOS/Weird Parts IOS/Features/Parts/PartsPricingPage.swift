@@ -565,14 +565,15 @@ struct PartsPricingPage: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "dollarsign.circle")
+        let isFiltered = !searchText.isEmpty || showMissingPriceOnly
+        return VStack(spacing: 16) {
+            Image(systemName: isFiltered ? "magnifyingglass" : "dollarsign.circle")
                 .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
-            Text("No Pricing Data")
+            Text(isFiltered ? "No Results" : "No Pricing Data")
                 .font(.title3)
                 .fontWeight(.semibold)
-            Text("Add parts to the catalog to manage pricing.")
+            Text(isFiltered ? "Try adjusting your search or filters." : "Add parts to the catalog to manage pricing.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -777,7 +778,12 @@ struct PartsPricingPage: View {
                 linkedColors = linkedColors.filter { seen.insert($0.0).inserted }
 
                 let colorRows = linkedColors.map { (colorId, colorName, hexCode) -> CascadeColorRow in
-                    let resolved = try? service.getEffectivePrice(colorId: colorId, typeId: typeId)
+                    let resolved: PartsService.ResolvedCascadeCost?
+                    do {
+                        resolved = try service.getEffectivePrice(colorId: colorId, typeId: typeId)
+                    } catch {
+                        resolved = nil // Price resolution failed; show as unpriced
+                    }
                     return CascadeColorRow(
                         id: colorId,
                         name: colorName,

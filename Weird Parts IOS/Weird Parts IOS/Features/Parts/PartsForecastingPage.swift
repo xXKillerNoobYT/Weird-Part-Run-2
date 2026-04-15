@@ -13,10 +13,12 @@ struct PartsForecastingPage: View {
 
     private enum ActiveSheet: Identifiable {
         case help
+        case forecastSettings
         case forecastDetail(PartsService.ForecastDataRow)
         var id: String {
             switch self {
             case .help: return "help"
+            case .forecastSettings: return "forecastSettings"
             case .forecastDetail(let row): return "forecastDetail_\(row.id)"
             }
         }
@@ -71,6 +73,8 @@ struct PartsForecastingPage: View {
                         ("Actions", "Tap Recalculate to refresh all forecasts. Use the lightbulb icon to see AI-generated reorder recommendations.")
                     ]
                 )
+            case .forecastSettings:
+                ForecastSettingsSheet { await loadData() }
             case .forecastDetail(let row):
                 ForecastDetailSheet(row: row)
             }
@@ -107,6 +111,11 @@ struct PartsForecastingPage: View {
                     }
                 }
             }
+            ToolbarItem(placement: .secondaryAction) {
+                Button { activeSheet = .forecastSettings } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button { activeSheet = .help } label: {
                     Image(systemName: "questionmark.circle")
@@ -133,7 +142,7 @@ struct PartsForecastingPage: View {
                             try service.dismissRecommendation(id: recId, userId: userId, reason: dismissReason)
                             await loadRecommendations()
                         } catch {
-                            loadError = userFriendlyError(error, context: "load forecast")
+                            loadError = userFriendlyError(error, context: "dismiss recommendation")
                         }
                         dismissReason = ""
                         dismissingRecommendation = nil
@@ -449,14 +458,17 @@ struct PartsForecastingPage: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "chart.line.uptrend.xyaxis")
+        let isFiltered = !searchText.isEmpty || filterUrgency != .all
+        return VStack(spacing: 16) {
+            Image(systemName: isFiltered ? "magnifyingglass" : "chart.line.uptrend.xyaxis")
                 .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
-            Text("No Forecast Data")
+            Text(isFiltered ? "No Results" : "No Forecast Data")
                 .font(.title3)
                 .fontWeight(.semibold)
-            Text("Forecast data is generated from order history and stock movements. Add parts and process orders to see forecasts.")
+            Text(isFiltered
+                 ? "Try adjusting your search or urgency filter."
+                 : "Forecast data is generated from order history and stock movements. Add parts and process orders to see forecasts.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -507,7 +519,7 @@ struct PartsForecastingPage: View {
             await loadData()
         } catch {
             await MainActor.run {
-                loadError = userFriendlyError(error, context: "load forecast")
+                loadError = userFriendlyError(error, context: "recalculate forecasts")
             }
         }
         await MainActor.run {
@@ -608,7 +620,7 @@ struct PartsForecastingPage: View {
             await loadRecommendations()
             await loadData()
         } catch {
-            loadError = userFriendlyError(error, context: "load forecast")
+            loadError = userFriendlyError(error, context: "approve recommendation")
         }
     }
 
@@ -1109,7 +1121,13 @@ private struct ForecastDetailSheet: View {
                 Label("Add to Wishlist", systemImage: "heart")
             }
             Button {
-                showComingSoon = true
+                // Post notification to navigate to catalog filtered to this part
+                NotificationCenter.default.post(
+                    name: .init("navigateToPartsCatalog"),
+                    object: nil,
+                    userInfo: ["searchText": row.part.name]
+                )
+                dismiss()
             } label: {
                 Label("View in Catalog", systemImage: "list.bullet")
             }
@@ -1177,7 +1195,7 @@ private struct ForecastDetailSheet: View {
             }
         } catch {
             await MainActor.run {
-                editError = userFriendlyError(error, context: "load forecast")
+                editError = userFriendlyError(error, context: "save forecast settings")
                 isSaving = false
             }
         }

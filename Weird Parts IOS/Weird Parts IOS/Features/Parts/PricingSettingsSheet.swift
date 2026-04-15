@@ -98,9 +98,13 @@ struct PricingSettingsSheet: View {
             saveError = "Parts service not available"
             return
         }
-        pricingMode = (try? service.getCompanyCostSetting(key: "pricing_mode")) ?? "markup"
-        defaultMarkup = (try? service.getCompanyCostSetting(key: "default_markup_percent")) ?? "50"
-        staleThresholdDays = (try? service.getCompanyCostSetting(key: "stale_price_threshold_days")) ?? "90"
+        do {
+            pricingMode = try service.getCompanyCostSetting(key: "pricing_mode") ?? "markup"
+            defaultMarkup = try service.getCompanyCostSetting(key: "default_markup_percent") ?? "50"
+            staleThresholdDays = try service.getCompanyCostSetting(key: "stale_price_threshold_days") ?? "90"
+        } catch {
+            saveError = userFriendlyError(error, context: "load pricing settings")
+        }
     }
 
     private func save() async {

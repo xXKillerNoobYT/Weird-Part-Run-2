@@ -740,7 +740,12 @@ struct ColorSupplierPartNumbersSection: View {
         guard let service = appCore.partsService else { return }
         isLoading = true
         Task.detached {
-            let results = (try? service.getColorSupplierPartNumbers(colorId: colorId)) ?? []
+            let results: [(supplierId: Int64, supplierName: String, supplierPartNumber: String?)]
+            do {
+                results = try service.getColorSupplierPartNumbers(colorId: colorId)
+            } catch {
+                results = [] // Non-critical: supplier part numbers may not be configured
+            }
             await MainActor.run {
                 supplierParts = results
                 isLoading = false

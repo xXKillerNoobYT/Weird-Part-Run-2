@@ -210,24 +210,29 @@ struct PartsBrandsPage: View {
 
     @ViewBuilder
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "tag")
+        let isSearching = !searchText.isEmpty
+        return VStack(spacing: 16) {
+            Image(systemName: isSearching ? "magnifyingglass" : "tag")
                 .decorativeIconFont(48)
                 .foregroundStyle(.secondary)
-            Text("No Brands Yet")
+            Text(isSearching ? "No Results" : "No Brands Yet")
                 .font(.title3)
                 .fontWeight(.semibold)
-            Text("Add brands to organize your parts by manufacturer.")
+            Text(isSearching
+                 ? "Try a different search term."
+                 : "Add brands to organize your parts by manufacturer.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
-            Button {
-                activeSheet = .addBrand
-            } label: {
-                Label("Add Brand", systemImage: "plus.circle.fill")
+            if !isSearching {
+                Button {
+                    activeSheet = .addBrand
+                } label: {
+                    Label("Add Brand", systemImage: "plus.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -274,7 +279,7 @@ struct PartsBrandsPage: View {
             deleteError = nil
             await loadData()
         } catch {
-            deleteError = userFriendlyError(error, context: "load brands")
+            deleteError = userFriendlyError(error, context: "delete brand")
         }
     }
 }
@@ -780,7 +785,7 @@ struct BrandSupplierPickerSheet: View {
             }
             isLoading = false
         } catch {
-            loadError = userFriendlyError(error, context: "load brands")
+            loadError = userFriendlyError(error, context: "load supplier list")
             isLoading = false
         }
     }
@@ -805,7 +810,7 @@ struct BrandSupplierPickerSheet: View {
         } catch {
             await MainActor.run {
                 isSaving = false
-                loadError = userFriendlyError(error, context: "load brands")
+                loadError = userFriendlyError(error, context: "save brand-supplier links")
             }
         }
     }

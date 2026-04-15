@@ -87,7 +87,11 @@ struct PricingTierSetSheet: View {
                     loadError = "Service not available"
                     return
                 }
-                pricingMode = (try? service.getCompanyCostSetting(key: "pricing_mode")) ?? "markup"
+                do {
+                    pricingMode = try service.getCompanyCostSetting(key: "pricing_mode") ?? "markup"
+                } catch {
+                    loadError = userFriendlyError(error, context: "load pricing mode")
+                }
             }
             .alert("Error", isPresented: Binding<Bool>(
                 get: { loadError != nil },

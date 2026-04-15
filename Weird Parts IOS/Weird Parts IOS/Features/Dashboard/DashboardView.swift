@@ -65,8 +65,9 @@ struct DashboardView: View {
     @State private var isLoading = true
     @State private var loadError: String?
 
-    private let refreshTimer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
-    private let clockTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
+    // Lifecycle-aware timers — only fire when dashboard is visible (fixes #214)
+    @State private var refreshCancellable: AnyCancellable?
+    @State private var clockCancellable: AnyCancellable?
 
     var body: some View {
         NavigationStack {
@@ -116,15 +117,18 @@ struct DashboardView: View {
                         "context": "Dashboard: \(stats.activeJobs) active jobs, \(stats.totalStock) total stock, \(stats.partTypes) part types, \(stats.pendingOrders) pending orders, \(stats.lowStockCount) low stock, \(stats.employeeCount) employees. Clocked in: \(isCurrentlyClockedIn ? (clockedInJobName ?? "yes") : "no")."
                     ]
                 )
+                // Start timers only when visible (fixes #214)
+                refreshCancellable = Timer.publish(every: 60, on: .main, in: .common)
+                    .autoconnect()
+                    .sink { _ in Task { await loadData() } }
+                clockCancellable = Timer.publish(every: 30, on: .main, in: .common)
+                    .autoconnect()
+                    .sink { _ in updateClockDuration() }
             }
             .onDisappear {
                 NotificationCenter.default.post(name: .dashboardPageInactive, object: nil)
-            }
-            .onReceive(refreshTimer) { _ in
-                Task { await loadData() }
-            }
-            .onReceive(clockTimer) { _ in
-                updateClockDuration()
+                refreshCancellable?.cancel()
+                clockCancellable?.cancel()
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {

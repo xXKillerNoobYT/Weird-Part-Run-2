@@ -1181,7 +1181,8 @@ struct IOSJobDetailTabView: View {
             // Progress bar with dots
             GeometryReader { geo in
                 let dotCount = stages.count
-                let spacing = geo.size.width / CGFloat(dotCount - 1)
+                // Guard against single-stage (or empty) scenario to prevent division by zero.
+                let spacing = dotCount > 1 ? geo.size.width / CGFloat(dotCount - 1) : geo.size.width
 
                 ZStack(alignment: .leading) {
                     // Background track

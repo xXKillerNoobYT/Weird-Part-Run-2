@@ -38,6 +38,7 @@ struct CategoriesTreeView: View {
         case addColor
         case help
         case editColorPrice(colorId: Int64, typeId: Int64)
+        case pricingOverride
 
         var id: String {
             switch self {
@@ -47,6 +48,7 @@ struct CategoriesTreeView: View {
             case .addColor: return "addColor"
             case .help: return "help"
             case .editColorPrice(let cId, let tId): return "editColorPrice-\(cId)-\(tId)"
+            case .pricingOverride: return "pricingOverride"
             }
         }
     }
@@ -222,6 +224,10 @@ struct CategoriesTreeView: View {
                 CascadePriceEditSheet(colorId: colorId, typeId: typeId) {
                     loadColorPrices()
                 }
+            case .pricingOverride:
+                PricingTierSetSheet {
+                    loadColorPrices()
+                }
             }
         }
         .task { loadColorPrices() }
@@ -240,8 +246,11 @@ struct CategoriesTreeView: View {
                     for brandNode in typeNode.brandNodes {
                         for color in brandNode.colors {
                             let colorId = color.id ?? 0
-                            if let resolved = try? parts.getEffectivePrice(colorId: colorId, typeId: typeId) {
+                            do {
+                                let resolved = try parts.getEffectivePrice(colorId: colorId, typeId: typeId)
                                 cache[colorId] = resolved.effectiveCost
+                            } catch {
+                                // Price resolution failed for this color; skip silently in cache build
                             }
                         }
                     }
@@ -336,6 +345,13 @@ struct CategoriesTreeView: View {
                 }
             }
             .accessibilityIdentifier("categoryRow_\(catId)")
+            .contextMenu {
+                Button {
+                    activeSheet = .pricingOverride
+                } label: {
+                    Label("Set Pricing Override", systemImage: "dollarsign.circle")
+                }
+            }
 
             // Children (styles)
             if isExpanded {
@@ -467,6 +483,13 @@ struct CategoriesTreeView: View {
                     } else {
                         expandedTypes.insert(typeId)
                     }
+                }
+            }
+            .contextMenu {
+                Button {
+                    activeSheet = .pricingOverride
+                } label: {
+                    Label("Set Pricing Override", systemImage: "dollarsign.circle")
                 }
             }
 

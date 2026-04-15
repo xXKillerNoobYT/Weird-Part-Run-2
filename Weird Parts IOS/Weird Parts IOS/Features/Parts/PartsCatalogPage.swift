@@ -1161,7 +1161,12 @@ struct PartsCatalogPage: View {
             }
         }
         // Also load pricing mode
-        let mode = (try? service.getCompanyCostSetting(key: "pricing_mode")) ?? "markup"
+        let mode: String
+        do {
+            mode = try service.getCompanyCostSetting(key: "pricing_mode") ?? "markup"
+        } catch {
+            mode = "markup" // Fallback default; settings table may not exist yet
+        }
         await MainActor.run {
             partPricingCache = cache
             pricingMode = mode
@@ -1636,7 +1641,12 @@ private struct PartDetailSheet: View {
             var names: [Int64: String] = [:]
             if !entries.isEmpty, let whService = appCore.warehouseService {
                 let ids = Array(Set(entries.map(\.warehouseId)))
-                names = (try? whService.getWarehouseLocationNames(ids: ids)) ?? [:]
+                do {
+                    names = try whService.getWarehouseLocationNames(ids: ids)
+                } catch {
+                    // Non-critical: stock entries still display, just without location names
+                    names = [:]
+                }
             }
 
             await MainActor.run {
