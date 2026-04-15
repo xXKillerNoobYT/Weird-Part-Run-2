@@ -68,12 +68,14 @@ public struct ReceivedMultipeerMessage: Sendable {
 /// Discovery info: `device_id`, `device_name`, `company_id`
 /// Auto-invite same-company peers, auto-accept same-company invitations.
 /// Uses `MCEncryptionRequired` for all sessions.
+/// @unchecked Sendable: All mutable state is guarded by `syncQueue` (serial DispatchQueue).
+/// Any new mutable property MUST be accessed only from syncQueue. (Fixes #202)
 public final class MultipeerManager: NSObject, @unchecked Sendable {
 
-    /// Called when the peer list changes.
+    /// Called when the peer list changes. GUARDED BY syncQueue
     public var onPeersChanged: (([MultipeerPeerInfo]) -> Void)?
 
-    /// Called when data is received from a peer.
+    /// Called when data is received from a peer. GUARDED BY syncQueue
     public var onDataReceived: ((ReceivedMultipeerMessage) -> Void)?
 
     private static let serviceType = "wiredpart-sync"
@@ -82,14 +84,15 @@ public final class MultipeerManager: NSObject, @unchecked Sendable {
     private let deviceName: String
     private let companyId: String
 
+    /// All mutable state below is GUARDED BY syncQueue — do not access without it.
     private let syncQueue = DispatchQueue(label: "com.wiredpart.multipeer.sync", qos: .utility)
-    private var localPeerId: MCPeerID!
-    private var session: MCSession!
-    private var advertiser: MCNearbyServiceAdvertiser?
-    private var browser: MCNearbyServiceBrowser?
-    private var peers: [String: PeerEntry] = [:]  // keyed by device_id
-    private var receiveQueue: [ReceivedMultipeerMessage] = []
-    private var isRunning = false
+    private var localPeerId: MCPeerID!         // GUARDED BY syncQueue
+    private var session: MCSession!             // GUARDED BY syncQueue
+    private var advertiser: MCNearbyServiceAdvertiser?  // GUARDED BY syncQueue
+    private var browser: MCNearbyServiceBrowser?        // GUARDED BY syncQueue
+    private var peers: [String: PeerEntry] = [:]        // GUARDED BY syncQueue
+    private var receiveQueue: [ReceivedMultipeerMessage] = []  // GUARDED BY syncQueue
+    private var isRunning = false               // GUARDED BY syncQueue
 
     /// Internal peer tracking with MCPeerID association.
     private struct PeerEntry {
@@ -260,7 +263,7 @@ extension MultipeerManager: MCSessionDelegate {
         syncQueue.async { [weak self] in
             guard let self else { return }
 
-            // Find sender's device_id
+            // Find sender's device_id (reads self.peers, requires syncQueue)
             var fromDeviceId = peerID.displayName
             for (_, entry) in self.peers {
                 if entry.mcPeerId == peerID {
@@ -274,7 +277,14 @@ extension MultipeerManager: MCSessionDelegate {
                 data: data
             )
             self.receiveQueue.append(message)
-            self.onDataReceived?(message)
+
+            // Fix #175: Capture callback, then fire OUTSIDE syncQueue to avoid deadlock.
+            // If the callback tries to call any method that uses syncQueue.sync, we would
+            // deadlock because syncQueue is a serial queue already holding this block.
+            let callback = self.onDataReceived
+            DispatchQueue.main.async {
+                callback?(message)
+            }
         }
     }
 

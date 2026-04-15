@@ -515,11 +515,13 @@ public actor PeerManager {
     private func resolveSharedKey(baseURL: String, peerDeviceId: String) async -> Data? {
         // Use cached peer KA public key if available
         let peerKAKey: String
-        if let cached = peerKAPublicKeys[peerDeviceId] {
+        if let cached = peerKAPublicKeys[peerDeviceId], !cached.isEmpty {
             peerKAKey = cached
+        } else if let fetched = await fetchPeerKAPublicKey(baseURL: baseURL, peerDeviceId: peerDeviceId) {
+            peerKAKey = fetched
         } else {
-            // Fetch from peer — old peers return 404; we cache "" to skip on future syncs
-            peerKAKey = await fetchPeerKAPublicKey(baseURL: baseURL, peerDeviceId: peerDeviceId)
+            // Peer doesn't support encryption — sync will proceed unencrypted (logged in fetchPeerKAPublicKey)
+            return nil
         }
         guard !peerKAKey.isEmpty, !kaPrivateKeyB64.isEmpty else { return nil }
         return try? SyncCrypto.deriveSharedKeyData(
@@ -529,11 +531,11 @@ public actor PeerManager {
     }
 
     /// Call GET /sync/key on the peer to get their X25519 KA public key.
-    /// Caches the result (or "" if not supported). Non-throwing — returns "" on any failure.
-    private func fetchPeerKAPublicKey(baseURL: String, peerDeviceId: String) async -> String {
+    /// Returns the key if successful, nil if encryption is not supported.
+    /// Fixes #197: no longer silently falls back — callers must handle nil explicitly.
+    private func fetchPeerKAPublicKey(baseURL: String, peerDeviceId: String) async -> String? {
         guard let url = URL(string: "\(baseURL)/sync/key") else {
-            peerKAPublicKeys[peerDeviceId] = ""
-            return ""
+            return nil
         }
         var req = URLRequest(url: url)
         req.timeoutInterval = 5
@@ -545,8 +547,10 @@ public actor PeerManager {
             peerKAPublicKeys[peerDeviceId] = decoded.key
             return decoded.key
         }
-        peerKAPublicKeys[peerDeviceId] = ""   // Peer doesn't support encryption
-        return ""
+        // Log warning — encryption negotiation failed
+        print("[SyncSecurity] WARNING: Peer \(peerDeviceId) does not support encryption. Sync data will be sent unencrypted over LAN.")
+        peerKAPublicKeys[peerDeviceId] = ""
+        return nil
     }
 
     /// Attach encrypted or plaintext body + headers to a URLRequest.
