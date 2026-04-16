@@ -157,6 +157,8 @@ struct IOSEmployeeDetailPage: View {
                 }
             }
         }
+        // Fix #149: dismiss keyboard when scrolling employee detail lists
+        .scrollDismissesKeyboard(.interactively)
         .listStyle(.insetGrouped)
     }
 
@@ -237,6 +239,8 @@ struct IOSEmployeeDetailPage: View {
                 }
             }
         }
+        // Fix #149: dismiss keyboard when scrolling employee detail lists
+        .scrollDismissesKeyboard(.interactively)
         .listStyle(.insetGrouped)
     }
 
@@ -274,6 +278,8 @@ struct IOSEmployeeDetailPage: View {
                 }
             }
         }
+        // Fix #149: dismiss keyboard when scrolling employee detail lists
+        .scrollDismissesKeyboard(.interactively)
         .listStyle(.insetGrouped)
     }
 

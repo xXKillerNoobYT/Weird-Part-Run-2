@@ -90,6 +90,8 @@ struct CompanyProfilesPage: View {
                 }
             }
         }
+        // Fix #149: dismiss keyboard when scrolling profiles list
+        .scrollDismissesKeyboard(.interactively)
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 Button {

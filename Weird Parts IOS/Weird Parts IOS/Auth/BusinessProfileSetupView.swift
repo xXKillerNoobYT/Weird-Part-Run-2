@@ -152,6 +152,8 @@ struct BusinessProfileSetupView: View {
                 .padding(.bottom, 32)
             }
         }
+        // Fix #149: dismiss keyboard when scrolling through profile form
+        .scrollDismissesKeyboard(.interactively)
         .navigationTitle("Business Profile")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $navigateToAdmin) {

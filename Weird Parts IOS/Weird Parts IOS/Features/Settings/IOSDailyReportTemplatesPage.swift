@@ -159,6 +159,8 @@ struct IOSDailyReportTemplatesPage: View {
                 .buttonStyle(.borderedProminent)
             }
         }
+        // Fix #149: dismiss keyboard when scrolling template editor
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: - Preview

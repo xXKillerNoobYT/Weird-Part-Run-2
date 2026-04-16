@@ -66,6 +66,8 @@ struct CreateDispatchSheet: View {
                     }
                 }
             }
+            // Fix #149: dismiss keyboard when scrolling dispatch form
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("New Dispatch")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(isSaving)

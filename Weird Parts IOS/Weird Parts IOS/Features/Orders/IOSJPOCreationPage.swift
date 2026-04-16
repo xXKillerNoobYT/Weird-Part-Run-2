@@ -135,6 +135,8 @@ struct IOSJPOCreationPage: View {
                     }
                     .padding()
                 }
+                // Fix #149: dismiss keyboard when scrolling order creation
+                .scrollDismissesKeyboard(.interactively)
             }
         }
         .navigationTitle("New Parts Order")

@@ -159,6 +159,8 @@ struct IOSOrganizationThresholdsPage: View {
                 .buttonStyle(.borderedProminent)
             }
         }
+        // Fix #149: dismiss keyboard when scrolling threshold settings
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: - Actions

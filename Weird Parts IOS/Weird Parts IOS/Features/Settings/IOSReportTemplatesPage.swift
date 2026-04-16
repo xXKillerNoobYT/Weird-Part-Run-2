@@ -156,6 +156,8 @@ struct IOSReportTemplatesPage: View {
                 }
             }
         }
+        // Fix #149: dismiss keyboard when scrolling templates list
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private func templateRow(_ template: ReportsService.SavedReport) -> some View {

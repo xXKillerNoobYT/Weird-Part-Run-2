@@ -67,6 +67,8 @@ struct CreateScheduleEntrySheet: View {
                     }
                 }
             }
+            // Fix #149: dismiss keyboard when scrolling through entry form
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("New Schedule Entry")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

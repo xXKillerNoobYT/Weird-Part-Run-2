@@ -187,6 +187,8 @@ struct IOSForecastSettingsPage: View {
                 .buttonStyle(.borderedProminent)
             }
         }
+        // Fix #149: dismiss keyboard when scrolling forecast settings
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private func multiplierRow(_ label: String, value: Binding<Double>) -> some View {

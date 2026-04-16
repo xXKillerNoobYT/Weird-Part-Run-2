@@ -42,6 +42,8 @@ struct CompanySetupWizard: View {
                     stepContent
                         .padding()
                 }
+                // Fix #149: dismiss keyboard when scrolling through setup steps
+                .scrollDismissesKeyboard(.interactively)
                 navigationFooter
             }
             .navigationTitle("Company Setup")

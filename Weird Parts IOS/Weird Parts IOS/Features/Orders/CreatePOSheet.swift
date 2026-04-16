@@ -81,6 +81,8 @@ struct CreatePOSheet: View {
                     }
                 }
             }
+            // Fix #149: dismiss keyboard when scrolling PO form
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("New Purchase Order")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(isSaving)

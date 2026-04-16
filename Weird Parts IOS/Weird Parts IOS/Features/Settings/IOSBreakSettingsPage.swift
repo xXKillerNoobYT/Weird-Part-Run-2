@@ -161,6 +161,8 @@ struct IOSBreakSettingsPage: View {
                 .buttonStyle(.borderedProminent)
             }
         }
+        // Fix #149: dismiss keyboard when scrolling break settings
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: - Section 1: State Required Paid
@@ -470,7 +472,8 @@ struct IOSBreakSettingsPage: View {
             breakBonusAmount = breakBonus?.bonusAmount ?? 0
             breakBonusEnabled = breakBonus?.isEnabled ?? false
         } catch {
-            // Non-critical
+            // Non-critical — bonus data is supplemental; missing bonuses don't affect break compliance
+            // usability-hunter: acceptable
         }
     }
 

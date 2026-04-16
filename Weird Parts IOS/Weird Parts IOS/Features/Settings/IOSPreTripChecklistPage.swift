@@ -230,6 +230,8 @@ struct IOSPreTripChecklistPage: View {
                 .buttonStyle(.borderedProminent)
             }
         }
+        // Fix #149: dismiss keyboard when scrolling checklist editor
+        .scrollDismissesKeyboard(.interactively)
         .alert("Add Item", isPresented: $showAddItem) {
             TextField("Item name", text: $newItemName)
             Toggle("Critical item", isOn: $newItemCritical)

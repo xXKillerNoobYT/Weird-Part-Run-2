@@ -202,6 +202,8 @@ struct IOSContractorDetailPage: View {
                 Text("Notes")
             }
         }
+        // Fix #149: dismiss keyboard when scrolling contractor detail list
+        .scrollDismissesKeyboard(.interactively)
         .listStyle(.insetGrouped)
     }
 

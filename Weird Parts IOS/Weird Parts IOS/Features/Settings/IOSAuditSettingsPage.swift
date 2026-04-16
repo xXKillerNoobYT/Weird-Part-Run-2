@@ -158,6 +158,8 @@ struct IOSAuditSettingsPage: View {
                 .buttonStyle(.borderedProminent)
             }
         }
+        // Fix #149: dismiss keyboard when scrolling audit settings
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: - Actions

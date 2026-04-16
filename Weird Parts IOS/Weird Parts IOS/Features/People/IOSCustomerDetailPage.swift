@@ -293,6 +293,8 @@ struct IOSCustomerDetailPage: View {
                 Text("Lifetime Stats")
             }
         }
+        // Fix #149: dismiss keyboard when scrolling customer detail
+        .scrollDismissesKeyboard(.interactively)
         .listStyle(.insetGrouped)
     }
 

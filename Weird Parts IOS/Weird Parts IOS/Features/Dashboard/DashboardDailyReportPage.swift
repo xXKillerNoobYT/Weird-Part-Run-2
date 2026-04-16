@@ -114,6 +114,8 @@ struct DashboardDailyReportPage: View {
                 .padding(.vertical)
             }
         }
+        // Fix #149: dismiss keyboard when scrolling report page
+        .scrollDismissesKeyboard(.interactively)
         .refreshable { await loadData() }
         .background(DS.Background.page)
         .navigationTitle("Daily Report")

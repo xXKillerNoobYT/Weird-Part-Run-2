@@ -68,6 +68,8 @@ struct IOSClockOutQuestionsPage: View {
                         }
                     }
                 }
+                // Fix #149: dismiss keyboard when scrolling questions list
+                .scrollDismissesKeyboard(.interactively)
             }
         }
         .navigationTitle("Clock-Out Questions")
