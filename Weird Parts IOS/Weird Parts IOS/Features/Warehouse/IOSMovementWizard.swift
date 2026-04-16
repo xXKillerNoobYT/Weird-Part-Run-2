@@ -41,6 +41,9 @@ struct IOSMovementWizard: View {
     @State private var executeError: String?
     @State private var executeSuccess = false
 
+    // Draft restore banner
+    @State private var hasDraftRestored = false
+
     // Sheets
     private enum WizardSheet: Identifiable {
         case partScanner
@@ -73,12 +76,37 @@ struct IOSMovementWizard: View {
             VStack(spacing: 0) {
                 FirstVisitHint(pageId: "movementWizard", message: "Follow the 5 steps to move parts. The system guides you through each one.")
 
+                // Draft-restored banner
+                if hasDraftRestored {
+                    HStack(spacing: 8) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .foregroundStyle(.blue)
+                        Text("Draft restored — pick up where you left off.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            hasDraftRestored = false
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.blue.opacity(0.08))
+                }
+
                 wizardStepper
                 Divider()
                 ScrollView {
                     stepContent
                         .padding()
                 }
+                // Fix #149: dismiss keyboard when scrolling through wizard steps
+                .scrollDismissesKeyboard(.interactively)
                 Divider()
                 navigationBar
             }
@@ -89,7 +117,19 @@ struct IOSMovementWizard: View {
                     Button("Cancel") { dismiss() }
                         .disabled(isExecuting)
                 }
+                // Fix #148: Save & Exit saves draft to UserDefaults so user can resume later
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !executeSuccess {
+                        Button {
+                            saveDraft()
+                        } label: {
+                            Label("Save & Exit", systemImage: "square.and.arrow.down")
+                        }
+                        .disabled(isExecuting)
+                    }
+                }
             }
+            .task { restoreDraft() }
             .interactiveDismissDisabled(isExecuting)
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
@@ -943,23 +983,86 @@ struct IOSMovementWizard: View {
             }
             isExecuting = false
             executeSuccess = true
+            clearDraft()
             appCore.onboardingManager?.markCompleted("wh-movement-start")
         } catch {
             isExecuting = false
             executeError = userFriendlyError(error, context: "save movement")
         }
     }
+
+    // MARK: - Draft Persistence (#148)
+
+    private static let draftKey = "movementWizardDraft"
+
+    private struct WizardDraftPayload: Codable {
+        var currentStep: Int
+        var fromLocationType: String
+        var fromLocationId: String
+        var toLocationType: String
+        var toLocationId: String
+        var selectedParts: [WizardPart]
+        var reason: String
+        var notes: String
+        var referenceNumber: String
+    }
+
+    private func saveDraft() {
+        let draft = WizardDraftPayload(
+            currentStep: currentStep,
+            fromLocationType: fromLocationType,
+            fromLocationId: fromLocationId,
+            toLocationType: toLocationType,
+            toLocationId: toLocationId,
+            selectedParts: selectedParts,
+            reason: reason,
+            notes: notes,
+            referenceNumber: referenceNumber
+        )
+        if let data = try? JSONEncoder().encode(draft) {
+            UserDefaults.standard.set(data, forKey: Self.draftKey)
+        }
+        dismiss()
+    }
+
+    private func restoreDraft() {
+        guard let data = UserDefaults.standard.data(forKey: Self.draftKey),
+              let draft = try? JSONDecoder().decode(WizardDraftPayload.self, from: data) else { return }
+        currentStep = draft.currentStep
+        fromLocationType = draft.fromLocationType
+        fromLocationId = draft.fromLocationId
+        toLocationType = draft.toLocationType
+        toLocationId = draft.toLocationId
+        selectedParts = draft.selectedParts
+        reason = draft.reason
+        notes = draft.notes
+        referenceNumber = draft.referenceNumber
+        hasDraftRestored = true
+    }
+
+    private func clearDraft() {
+        UserDefaults.standard.removeObject(forKey: Self.draftKey)
+    }
 }
 
 // MARK: - Wizard Part Model
 
-private struct WizardPart: Identifiable, Sendable {
-    let id = UUID()
+private struct WizardPart: Identifiable, Sendable, Codable {
+    let id: UUID
     let partId: Int64
     let name: String
     let code: String?
     var qty: Int
     let availableQty: Int
+
+    init(partId: Int64, name: String, code: String?, qty: Int, availableQty: Int) {
+        self.id = UUID()
+        self.partId = partId
+        self.name = name
+        self.code = code
+        self.qty = qty
+        self.availableQty = availableQty
+    }
 }
 
 // MARK: - Part Search Row
