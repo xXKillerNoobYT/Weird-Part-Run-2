@@ -428,6 +428,91 @@ struct PartsServiceCoverageTests {
         #expect(!conflicts.isEmpty, "Style-level tier should be flagged as conflict for category-level change")
     }
 
+    // MARK: - resolveConflicts decisions (Fix #229)
+    // These tests cover the service-layer behavior driven by the iOS PricingOverrideFlow UI.
+    // The UI collects Replace/Keep decisions in `conflictDecisions: [Int64: Bool]` and then
+    // calls `removePricingTier(tierId:)` for each "Replace" entry before calling setPricingTier.
+
+    @Test("resolveConflicts Replace decision — sub-tier is soft-deleted and new tier applied")
+    func testResolveConflictsReplace() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (catId, styleId, _) = try E2ETestHelpers.seedPartHierarchy(env, category: "ReplaceCat", style: "ReplaceStyle", type: "ReplaceType")
+
+        // Existing override at style level (the conflict)
+        let styleTier = try env.parts.setPricingTier(styleId: styleId, markupPercent: 40, setBy: env.adminUserId)
+        let styleTierId = try #require(styleTier.id)
+
+        // UI decision: Replace → remove the old sub-tier
+        try env.parts.removePricingTier(tierId: styleTierId)
+
+        // Then set the new category-level tier
+        _ = try env.parts.setPricingTier(categoryId: catId, markupPercent: 60, setBy: env.adminUserId)
+
+        // Verify: style tier is soft-deleted (not visible in active tiers)
+        let activeTiers = try env.parts.getPricingTiers(styleId: styleId)
+        #expect(activeTiers.isEmpty, "Replaced style tier should be soft-deleted and absent from active tiers")
+
+        // Verify: new category tier exists with correct markup
+        let catTiers = try env.parts.getPricingTiers(categoryId: catId)
+        let catTier = try #require(catTiers.first)
+        #expect(abs((catTier.markupPercent ?? 0) - 60.0) < 0.001, "Category tier markup should be 60%")
+    }
+
+    @Test("resolveConflicts Keep decision — sub-tier is preserved alongside new parent tier")
+    func testResolveConflictsKeep() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (catId, styleId, _) = try E2ETestHelpers.seedPartHierarchy(env, category: "KeepCat", style: "KeepStyle", type: "KeepType")
+
+        // Existing override at style level (the conflict)
+        _ = try env.parts.setPricingTier(styleId: styleId, markupPercent: 35, setBy: env.adminUserId)
+
+        // UI decision: Keep → do NOT remove the sub-tier; just apply the new parent tier
+        _ = try env.parts.setPricingTier(categoryId: catId, markupPercent: 55, setBy: env.adminUserId)
+
+        // Verify: style tier still active (not deleted)
+        let styleTiers = try env.parts.getPricingTiers(styleId: styleId)
+        #expect(!styleTiers.isEmpty, "Kept style tier should still be active")
+        let styleTier = try #require(styleTiers.first)
+        #expect(abs((styleTier.markupPercent ?? 0) - 35.0) < 0.001, "Kept style tier markup should remain 35%")
+
+        // Verify: new category tier coexists
+        let catTiers = try env.parts.getPricingTiers(categoryId: catId)
+        #expect(!catTiers.isEmpty, "New category tier should exist alongside kept sub-tier")
+        let catTier = try #require(catTiers.first)
+        #expect(abs((catTier.markupPercent ?? 0) - 55.0) < 0.001, "Category tier markup should be 55%")
+    }
+
+    @Test("resolveConflicts Mixed decisions — one sub-tier replaced, one kept")
+    func testResolveConflictsMixed() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (catId, styleId, _) = try E2ETestHelpers.seedPartHierarchy(env, category: "MixedCat", style: "MixedStyle", type: "MixedType1")
+        let typeId2 = try env.parts.createType(styleId: styleId, name: "MixedType2")
+
+        // Two conflicts: one at typeId (will be replaced), one at typeId2 (will be kept)
+        let tierToReplace = try env.parts.setPricingTier(typeId: catId, markupPercent: 20, setBy: env.adminUserId)
+        let replaceId = try #require(tierToReplace.id)
+        _ = try env.parts.setPricingTier(typeId: typeId2, markupPercent: 30, setBy: env.adminUserId)
+
+        // UI decisions: Replace tierToReplace, Keep tier2 (no-op for keep)
+        try env.parts.removePricingTier(tierId: replaceId)
+
+        // New category-level tier applied after conflict resolution
+        _ = try env.parts.setPricingTier(categoryId: catId, markupPercent: 50, setBy: env.adminUserId)
+
+        // Verify: replaced tier is gone
+        let replacedTiers = try env.parts.getPricingTiers(typeId: catId)
+        #expect(replacedTiers.isEmpty, "Replaced tier should be soft-deleted")
+
+        // Verify: kept tier still active
+        let keptTiers = try env.parts.getPricingTiers(typeId: typeId2)
+        #expect(!keptTiers.isEmpty, "Kept tier should still be active")
+        #expect(abs((keptTiers.first?.markupPercent ?? 0) - 30.0) < 0.001)
+
+        // Verify: new parent category tier present
+        let catTiers = try env.parts.getPricingTiers(categoryId: catId)
+        #expect(!catTiers.isEmpty, "New category tier should be present")
+    }
+
     // MARK: - getPreviewParts
 
     @Test("getPreviewParts returns empty when no parts match scope")

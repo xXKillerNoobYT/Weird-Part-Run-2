@@ -20,7 +20,34 @@
 
 ## Pending Questions
 
-_None. All three April 2026 clusters answered 2026-04-14 — see Processed / Closed Q&A (Reference Log) below._
+### #148 — IOSMovementWizard Save & Exit (Draft Persistence for Multi-Step Wizard)
+
+**GitHub Issue:** `#148`
+**Current State:** `IOSMovementWizard.swift` has only a "Cancel" button that discards all wizard state. A user starting a multi-step movement wizard who gets interrupted (phone call, app switch) loses all progress with no recovery path.
+**Proposed Change:** Add a "Save & Exit" toolbar button that persists the current wizard draft and allows re-entry to resume. Draft can be stored in UserDefaults (simple, per-device) or a `movement_wizard_drafts` DB table (more robust, syncs across devices).
+**Affected Modules:** Warehouse → Movement Wizard
+
+#### Questions:
+
+1. **As the Owner:** Is mid-wizard draft persistence important enough to do now, or can workers reasonably restart the wizard when interrupted? Movement wizards are short flows — is losing draft state a real pain point in daily use?
+   > Answer: _pending_
+
+2. **As a Manager:** If we add draft persistence, should it be **per device** (UserDefaults — wizard resumes only on the same phone) or **cross-device** (DB table — a manager starts a wizard on their phone, hands off to a worker who can resume on their device)?
+   > Answer: _pending_
+
+3. **As a Developer:** The wizard has 4 steps (select part → select source location → select destination → confirm). Draft state is 4–6 fields. Two approaches: **(A)** UserDefaults keyed by `"movementWizardDraft"` — simple, no schema change, per-device only, or **(B)** New `movement_wizard_drafts` table — syncs, multi-device resume, requires migration. Which fits current architecture better?
+   > Answer: _pending_
+
+4. **As a Developer:** Should "Save & Exit" preserve the draft **indefinitely** (shown on next wizard open as "Resume draft?") or for a **time window** (e.g., 24 hours, then auto-discard)? Indefinite drafts risk stale data if parts move while the draft sits.
+   > Answer: _pending_
+
+**Slots to fill:**
+- [ ] Priority: do now vs. defer
+- [ ] Persistence scope: per-device vs. cross-device
+- [ ] Storage: UserDefaults vs. DB table
+- [ ] Draft lifetime: indefinite vs. time-bounded
+
+---
 
 <!-- ARCHIVED CLUSTERS (answered 2026-04-14, see reference log) -->
 
