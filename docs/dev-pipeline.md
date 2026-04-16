@@ -2051,3 +2051,17 @@ _Appended by dev-pipeline-manager each run._
 - Issues processed: #196 (sync NULL semantics), #201 (migration try? safety), #205 (JPO/PO status validation), #206 (SQL type inference bug in ConflictResolver), #229 (plan drift — pricing permission guard), #230/#231 (security findings)
 - Bugs fixed: 5 test failures resolved (ConflictResolver SQL type inference, JPO/PO transitions, "submitted" status gap); 2 improvement-scanner fixes (div-by-zero guard, error context strings); 1 plan drift (#229)
 - Pipeline health: OK — all 8 agents healthy; security tier (#184/#191/#228/#230/#231) is next priority for hunt-fix; PE-043 still queued for Xcode AI; Q&A backlog 4 blocks/14 questions pending owner input
+
+---
+
+### End-of-Day Sync — 2026-04-15
+
+- Files committed: 79 (12 core formatter sweep, 1 Validators, 6 sync fixes, 4 test files, 39 iOS UI, 15 remaining formatter sweep + docs, 2 nonisolated fix + coverage tests)
+- Commits created: 7
+- Push status: success (main → origin/main, 10 commits ahead of prior origin pushed total)
+- Tests: 1241/1241 passing (55 suites, +24 vs 1217 baseline; +19 vs prior 1222 EOD entry)
+- Build: 0 errors, 0 warnings
+- Agent runs today (2026-04-14): 7/7 (usability-hunter run3, usability-enforcer run8, hunt-fix-verify run41, test-coverage ×2 sessions, dev-improvement-scanner run11, plan-enforcer run14, pipeline-manager run18; github-issues-sync last ran 2026-04-13)
+- Issues processed: #146 (CoreFormatters sweep complete — 88+ allocations eliminated across all services), #167 (flex pool team filter enforcement), #174 (delete-vs-update conflict now logged), #187 (PeerDiscovery callback race fixed with NSLock), #207 (time-off approval now checks dispatch conflicts), #213 (Validators utility added), #220 (missing local record → skipped, not errored), #222 (BaseRepository/PeerDiscovery @unchecked Sendable contracts documented)
+- Bugs fixed: 6 core bugs (#174/#187/#207/#167/#220 sync+scheduling) + 9 usability-enforcer fixes (2 compile errors, 5 dismiss guards, 1 test helper, 1 false-positive) + 2 hunt-fix-verify bugs + 3 test-coverage production bugs = ~20 total
+- Pipeline health: OK — security tier (#184/#191/#228/#230/#231) remains next priority for hunt-fix-verify; #229 (CategoriesTreeView permission guard) needs 6 resolveConflicts tests before safe; PE-043 Xcode AI prompt queued; Q&A backlog 4 blocks/14 questions pending owner
