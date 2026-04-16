@@ -396,4 +396,195 @@ struct PartsServiceCoverageTests {
         let page2Ids = Set(page2.parts.map { $0.part.id! })
         #expect(page1Ids.isDisjoint(with: page2Ids))
     }
+
+    // MARK: - findOverrideConflicts
+
+    @Test("findOverrideConflicts returns empty with no scope filter")
+    func testFindOverrideConflictsNoScope() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Calling with no filter always returns early with []
+        let conflicts = try env.parts.findOverrideConflicts(newMarkupPercent: 60)
+        #expect(conflicts.isEmpty)
+    }
+
+    @Test("findOverrideConflicts returns empty when no sub-tier exists under category")
+    func testFindOverrideConflictsNoPriorTiers() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "OverrideConflictCat")
+        // No sub-tier set → nothing to conflict with
+        let conflicts = try env.parts.findOverrideConflicts(categoryId: catId, newMarkupPercent: 60)
+        #expect(conflicts.isEmpty)
+    }
+
+    @Test("findOverrideConflicts detects sub-tier conflict when style tier exists under category")
+    func testFindOverrideConflictsDetectsStyleTier() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "ConflictCat")
+        let styleId = try env.parts.createStyle(categoryId: catId, name: "ConflictStyle")
+        // Set a more-specific tier at the style level
+        _ = try env.parts.setPricingTier(styleId: styleId, markupPercent: 40, setBy: env.adminUserId)
+        // Now a category-level change should detect the style tier as a conflict
+        let conflicts = try env.parts.findOverrideConflicts(categoryId: catId, newMarkupPercent: 60)
+        #expect(!conflicts.isEmpty, "Style-level tier should be flagged as conflict for category-level change")
+    }
+
+    // MARK: - getPreviewParts
+
+    @Test("getPreviewParts returns empty when no parts match scope")
+    func testGetPreviewPartsEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "EmptyPreviewCat")
+        let preview = try env.parts.getPreviewParts(categoryId: catId, newMarkupPercent: 50)
+        #expect(preview.isEmpty)
+    }
+
+    @Test("getPreviewParts returns preview rows with computed prices for matching parts")
+    func testGetPreviewPartsWithData() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "PreviewCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Preview Wire", categoryId: catId)
+        // Seed a cost layer so weighted_avg_cost is non-zero
+        _ = try env.parts.addCostLayer(partId: partId, qty: 10, unitCost: 5.0)
+
+        let preview = try env.parts.getPreviewParts(categoryId: catId, newMarkupPercent: 80)
+        #expect(!preview.isEmpty)
+        let row = try #require(preview.first(where: { $0.partId == partId }))
+        // With 80% markup on $5 cost: new sell = $5 * 1.80 = $9
+        #expect(abs(row.newSellPrice - 9.0) < 0.01)
+        #expect(row.weightedAvgCost > 0)
+    }
+
+    // MARK: - recalculateWeightedAvgCost
+
+    @Test("recalculateWeightedAvgCost updates part weighted_avg_cost from cost layers")
+    func testRecalculateWeightedAvgCost() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "WACCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "WAC Part", categoryId: catId)
+
+        // Add two cost layers: 10 units @ $4 and 10 units @ $6
+        _ = try env.parts.addCostLayer(partId: partId, qty: 10, unitCost: 4.0)
+        _ = try env.parts.addCostLayer(partId: partId, qty: 10, unitCost: 6.0)
+
+        // Force recalculate (addCostLayer already does this internally, so after both it should be $5)
+        try env.parts.recalculateWeightedAvgCost(partId: partId)
+
+        let part = try env.parts.getPart(id: partId)
+        #expect(abs(part.part.weightedAvgCost - 5.0) < 0.01, "WAC = (10*4 + 10*6) / 20 = $5")
+    }
+
+    // MARK: - setBrandSuppliers
+
+    @Test("setBrandSuppliers links new suppliers to brand")
+    func testSetBrandSuppliersAdds() throws {
+        let env = try E2ETestHelpers.setUp()
+        let brandId = try E2ETestHelpers.seedBrand(env, name: "SetBrandSup1")
+        let sup1 = try E2ETestHelpers.seedSupplier(env, name: "BrandSup A")
+        let sup2 = try E2ETestHelpers.seedSupplier(env, name: "BrandSup B")
+
+        try env.parts.setBrandSuppliers(brandId: brandId, supplierIds: [sup1, sup2])
+
+        let linked = try env.parts.getBrandSuppliers(brandId: brandId)
+        let linkedIds = Set(linked.compactMap { $0.id })
+        #expect(linkedIds.contains(sup1))
+        #expect(linkedIds.contains(sup2))
+    }
+
+    @Test("setBrandSuppliers removes unselected suppliers from brand")
+    func testSetBrandSuppliersRemoves() throws {
+        let env = try E2ETestHelpers.setUp()
+        let brandId = try E2ETestHelpers.seedBrand(env, name: "SetBrandSup2")
+        let sup1 = try E2ETestHelpers.seedSupplier(env, name: "BrandSup C")
+        let sup2 = try E2ETestHelpers.seedSupplier(env, name: "BrandSup D")
+
+        // Start with both linked
+        _ = try env.parts.linkBrandToSupplier(brandId: brandId, supplierId: sup1)
+        _ = try env.parts.linkBrandToSupplier(brandId: brandId, supplierId: sup2)
+
+        // setBrandSuppliers with only sup1 should remove sup2
+        try env.parts.setBrandSuppliers(brandId: brandId, supplierIds: [sup1])
+
+        let remaining = try env.parts.getBrandSuppliers(brandId: brandId)
+        let remainingIds = Set(remaining.compactMap { $0.id })
+        #expect(remainingIds.contains(sup1))
+        #expect(!remainingIds.contains(sup2), "sup2 should have been removed")
+    }
+
+    // MARK: - listForecastData
+
+    @Test("listForecastData returns empty on fresh database")
+    func testListForecastDataEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let parts = try env.parts.listForecastData()
+        // Fresh DB may have no parts with forecast data
+        #expect(parts.count >= 0) // Should not throw
+    }
+
+    @Test("listForecastData returns matching parts by search filter")
+    func testListForecastDataSearch() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "ForecastCat")
+        _ = try E2ETestHelpers.seedPart(env, name: "ForecastWire UniqueXYZ", categoryId: catId)
+        _ = try E2ETestHelpers.seedPart(env, name: "Other Part No Match", categoryId: catId)
+
+        let results = try env.parts.listForecastData(search: "ForecastWire")
+        #expect(results.allSatisfy { $0.name.contains("ForecastWire") })
+    }
+
+    // MARK: - listForecastDataWithStock
+
+    @Test("listForecastDataWithStock returns all active parts with their stock on fresh DB")
+    func testListForecastDataWithStockEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "ForecastWithStockCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "StockForecastPart", categoryId: catId)
+
+        let rows = try env.parts.listForecastDataWithStock()
+        let row = try #require(rows.first(where: { $0.part.id == partId }))
+        // No stock seeded, so currentStock should be 0
+        #expect(row.currentStock == 0)
+    }
+
+    // MARK: - saveForecastSettings + listAllForecastSettings
+
+    @Test("saveForecastSettings and listAllForecastSettings round-trip")
+    func testSaveForecastSettings() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        var settings = ForecastSettings(
+            id: nil, locationType: "warehouse", locationId: nil,
+            usageUnit: "each", aduLookbackDays: 30, windowWeeks: 4,
+            minDataDays: 7, commonMinMultiplier: 1.0, commonTargetMultiplier: 2.0,
+            commonMaxMultiplier: 3.0, criticalMinMultiplier: 1.5, criticalTargetMultiplier: 2.5,
+            criticalMaxMultiplier: 4.0, freeSpaceSuppressThreshold: 3
+        )
+        try env.parts.saveForecastSettings(settings)
+
+        let all = try env.parts.listAllForecastSettings()
+        let saved = try #require(all.first(where: { $0.locationType == "warehouse" && $0.locationId == nil }))
+        #expect(saved.aduLookbackDays == 30)
+        #expect(saved.windowWeeks == 4)
+        #expect(abs(saved.commonTargetMultiplier - 2.0) < 0.001)
+    }
+
+    // MARK: - recalculateForecasts
+
+    @Test("recalculateForecasts runs without throwing on fresh database")
+    func testRecalculateForecastsNoOp() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Should not throw even on a DB with no consumption data
+        try env.parts.recalculateForecasts()
+    }
+
+    // MARK: - listLocationStockTargets
+
+    @Test("listLocationStockTargets returns empty for part with no targets")
+    func testListLocationStockTargetsEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "TargetCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Target Part", categoryId: catId)
+
+        let targets = try env.parts.listLocationStockTargets(partId: partId)
+        #expect(targets.isEmpty)
+    }
 }

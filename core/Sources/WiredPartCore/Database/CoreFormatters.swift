@@ -55,7 +55,7 @@ public enum CoreFormatters {
     }
 
     /// `yyyy-MM-dd` — for date-only columns produced by SQLite `date()` function.
-    nonisolated(unsafe) public static let yearMonthDay: DateFormatter = {
+    public static let yearMonthDay: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         f.timeZone = TimeZone(identifier: "UTC")
@@ -63,14 +63,14 @@ public enum CoreFormatters {
     }()
 
     /// `yyyy-MM-dd'T'HH:mm:ss` — for parsing non-ISO datetime strings (T-separator, no zone).
-    nonisolated(unsafe) public static let dateTimeT: DateFormatter = {
+    public static let dateTimeT: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
         return f
     }()
 
     /// `yyyy-MM-dd HH:mm:ss` — for parsing space-separated datetime strings.
-    nonisolated(unsafe) public static let dateTimeSpace: DateFormatter = {
+    public static let dateTimeSpace: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd HH:mm:ss"
         return f
