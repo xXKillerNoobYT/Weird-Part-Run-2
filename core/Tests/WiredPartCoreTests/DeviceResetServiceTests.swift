@@ -258,4 +258,16 @@ struct DeviceResetServiceTests {
         let admins = try service.getAdminUsers()
         #expect(admins.isEmpty)
     }
+
+    // MARK: - pushDeactivationToPeers
+
+    @Test("pushDeactivationToPeers returns 0 when no peers are connected")
+    func testPushDeactivationNoPeers() async throws {
+        let db = try freshDB()
+        let service = DeviceResetService(db: db)
+        let peerManager = PeerManager(db: db)
+        // With no discovered peers, syncWithAllPeers returns empty results
+        let notified = await service.pushDeactivationToPeers(peerManager: peerManager)
+        #expect(notified == 0)
+    }
 }

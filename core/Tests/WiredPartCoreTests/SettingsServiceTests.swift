@@ -668,4 +668,85 @@ struct SettingsServiceTests {
         #expect(loaded?.completedSteps == [])
         #expect(loaded?.skippedSteps == [])
     }
+
+    // MARK: - getSettingValue
+
+    @Test("getSettingValue returns nil for a key that does not exist")
+    func testGetSettingValueMissing() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+        let val = try svc.getSettingValue("nonexistent_key_xyz")
+        #expect(val == nil)
+    }
+
+    @Test("getSettingValue returns value after upsertSetting")
+    func testGetSettingValueAfterUpsert() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+        try svc.upsertSetting(key: "test_key", value: "hello_world")
+        let val = try svc.getSettingValue("test_key")
+        #expect(val == "hello_world")
+    }
+
+    @Test("getSettingValue returns updated value after second upsert")
+    func testGetSettingValueUpdated() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+        try svc.upsertSetting(key: "mutable_key", value: "first")
+        try svc.upsertSetting(key: "mutable_key", value: "second")
+        let val = try svc.getSettingValue("mutable_key")
+        #expect(val == "second")
+    }
+
+    // MARK: - getCompanyProfile / updateCompanyProfile
+
+    @Test("getCompanyProfile throws when profile does not exist")
+    func testGetCompanyProfileNotFound() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+        #expect(throws: (any Error).self) {
+            _ = try svc.getCompanyProfile(99999)
+        }
+    }
+
+    @Test("getCompanyProfile returns profile after create")
+    func testGetCompanyProfileRoundTrip() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        // created_at is NOT NULL in the schema — must be provided explicitly
+        let profile = CompanyProfile(
+            companyName: "Acme Electric",
+            email: "info@acme.com",
+            createdAt: "2026-04-16 00:00:00",
+            updatedAt: "2026-04-16 00:00:00"
+        )
+        let newId = try svc.createCompanyProfile(profile)
+        let fetched = try svc.getCompanyProfile(newId)
+
+        #expect(fetched.companyName == "Acme Electric")
+        #expect(fetched.email == "info@acme.com")
+    }
+
+    @Test("updateCompanyProfile persists changes")
+    func testUpdateCompanyProfile() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let profile = CompanyProfile(
+            companyName: "OldName Co",
+            createdAt: "2026-04-16 00:00:00",
+            updatedAt: "2026-04-16 00:00:00"
+        )
+        let newId = try svc.createCompanyProfile(profile)
+        var fetched = try svc.getCompanyProfile(newId)
+
+        fetched.companyName = "NewName LLC"
+        fetched.phone = "555-1234"
+        try svc.updateCompanyProfile(fetched)
+
+        let updated = try svc.getCompanyProfile(newId)
+        #expect(updated.companyName == "NewName LLC")
+        #expect(updated.phone == "555-1234")
+    }
 }

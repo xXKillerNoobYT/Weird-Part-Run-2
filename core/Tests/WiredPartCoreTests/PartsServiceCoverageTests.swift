@@ -513,6 +513,51 @@ struct PartsServiceCoverageTests {
         #expect(!catTiers.isEmpty, "New category tier should be present")
     }
 
+    @Test("resolveConflicts No conflicts — setPricingTier completes immediately with no removals")
+    func testResolveConflictsNoConflicts() throws {
+        // When a scope has no existing sub-level overrides, the UI skips the conflict sheet
+        // entirely and calls setPricingTier directly. This test confirms that path works.
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "NoConflictCat")
+
+        // No prior sub-tiers exist — call setPricingTier directly (no removals needed)
+        let tier = try env.parts.setPricingTier(
+            categoryId: catId,
+            markupPercent: 45,
+            setBy: env.adminUserId
+        )
+
+        #expect(tier.id != nil, "Tier should have a valid id")
+        let activeTiers = try env.parts.getPricingTiers(categoryId: catId)
+        #expect(activeTiers.count == 1, "Exactly one active tier should exist")
+        #expect(abs((activeTiers.first?.markupPercent ?? 0) - 45.0) < 0.001)
+    }
+
+    @Test("setPricingTier timestamp validation — createdAt and updatedAt are NOT NULL")
+    func testSetPricingTierTimestampsNotNull() throws {
+        // Verifies Fix #229: tier.createdAt/updatedAt are always set by setPricingTier,
+        // satisfying the NOT NULL constraint in the schema.
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "TimestampCat")
+
+        let tier = try env.parts.setPricingTier(
+            categoryId: catId,
+            markupPercent: 25.0,
+            setBy: env.adminUserId
+        )
+
+        #expect(tier.createdAt != nil, "createdAt must not be nil (schema NOT NULL)")
+        #expect(tier.updatedAt != nil, "updatedAt must not be nil (schema NOT NULL)")
+        // Also confirm the stored row has timestamps
+        let stored = try env.parts.getPricingTiers(categoryId: catId)
+        let storedTier = try #require(stored.first)
+        #expect(storedTier.createdAt != nil, "Stored tier createdAt must not be nil")
+        #expect(storedTier.updatedAt != nil, "Stored tier updatedAt must not be nil")
+    }
+
+    // Note: "Service unavailable → error shown" is an iOS UI scenario (PricingOverrideFlow
+    // displays an error alert when the core throws). Covered by manual testing of PricingTierSetSheet.
+
     // MARK: - getPreviewParts
 
     @Test("getPreviewParts returns empty when no parts match scope")

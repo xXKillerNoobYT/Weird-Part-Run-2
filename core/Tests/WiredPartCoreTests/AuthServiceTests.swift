@@ -182,6 +182,75 @@ struct AuthServiceTests {
         #expect(result.message == "Invalid PIN")
     }
 
+    // MARK: - Lockout State
+
+    @Test("lockoutSecondsRemaining returns nil when no failed attempts")
+    func testLockoutNilOnFreshState() throws {
+        AuthService.resetAllLoginAttempts()
+        #expect(AuthService.lockoutSecondsRemaining(userId: 9001) == nil)
+    }
+
+    @Test("lockoutSecondsRemaining returns positive seconds after 5 failed PINs")
+    func testLockoutAfterFiveFailures() throws {
+        AuthService.resetAllLoginAttempts()
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "LockAdmin", pin: "9999")
+        let userId = seed.user!.id!
+
+        // 5 wrong attempts triggers 30-second lockout
+        for _ in 1...5 {
+            _ = try auth.authenticateByPin(userId: userId, pin: "0000")
+        }
+
+        let seconds = AuthService.lockoutSecondsRemaining(userId: userId)
+        #expect(seconds != nil)
+        #expect((seconds ?? 0) > 0)
+    }
+
+    @Test("resetAllLoginAttempts clears active lockout")
+    func testResetClearsLockout() throws {
+        // Use a private userId unlikely to collide with parallel tests
+        // (parallel tests always create userId=1 via seedFirstAdmin)
+        // We manually manipulate static state via the public reset method.
+        AuthService.resetAllLoginAttempts()
+
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "ResetAdmin", pin: "7777")
+        let userId = seed.user!.id!
+
+        // Trigger lockout with 3 wrong PINs (count ≥ 3 → 5s lockout)
+        _ = try auth.authenticateByPin(userId: userId, pin: "0000")
+        _ = try auth.authenticateByPin(userId: userId, pin: "0000")
+        _ = try auth.authenticateByPin(userId: userId, pin: "0000")
+
+        // Immediately reset — lockout should disappear regardless of timing
+        AuthService.resetAllLoginAttempts()
+        #expect(AuthService.lockoutSecondsRemaining(userId: userId) == nil)
+    }
+
+    @Test("lockoutSecondsRemaining returns nil after successful login clears the counter")
+    func testLockoutClearedOnSuccessfulAuth() throws {
+        AuthService.resetAllLoginAttempts()
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "ClearAdmin", pin: "5555")
+        let userId = seed.user!.id!
+
+        // 2 wrong attempts — not yet locked
+        _ = try auth.authenticateByPin(userId: userId, pin: "0000")
+        _ = try auth.authenticateByPin(userId: userId, pin: "0000")
+        #expect(AuthService.lockoutSecondsRemaining(userId: userId) == nil)
+
+        // Correct PIN clears the counter
+        let result = try auth.authenticateByPin(userId: userId, pin: "5555")
+        #expect(result.success)
+        #expect(AuthService.lockoutSecondsRemaining(userId: userId) == nil)
+
+        AuthService.resetAllLoginAttempts()
+    }
+
     @Test("authenticateByPin rejects non-existent user")
     func testAuthBadUser() throws {
         let db = try freshDB()

@@ -820,4 +820,112 @@ struct JobsServiceTests {
         // Fresh clock entry has no notes
         #expect(notes == nil || notes == "")
     }
+
+    // MARK: - removeTeamMember
+
+    @Test("removeTeamMember soft-deletes a team member row")
+    func testRemoveTeamMember() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-TEAM-01")
+
+        let memberId = try env.jobs.addTeamMember(jobId: jobId, userId: env.adminUserId, role: "member")
+        var members = try env.jobs.getTeamMembers(jobId: jobId)
+        #expect(members.count == 1)
+
+        try env.jobs.removeTeamMember(id: memberId)
+
+        members = try env.jobs.getTeamMembers(jobId: jobId)
+        #expect(members.isEmpty, "Soft-deleted member should not appear in active team list")
+    }
+
+    @Test("removeTeamMember on non-existent id is a no-op")
+    func testRemoveTeamMemberNoop() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Should not throw for a missing row
+        #expect(throws: Never.self) {
+            try env.jobs.removeTeamMember(id: 99999)
+        }
+    }
+
+    // MARK: - isOnSupplyRun (pure static)
+
+    @Test("isOnSupplyRun returns false for nil notes")
+    func testIsOnSupplyRunNilNotes() {
+        #expect(!JobsService.isOnSupplyRun(notes: nil))
+    }
+
+    @Test("isOnSupplyRun returns false for empty notes")
+    func testIsOnSupplyRunEmptyNotes() {
+        #expect(!JobsService.isOnSupplyRun(notes: ""))
+    }
+
+    @Test("isOnSupplyRun returns true when supply_run_start has no matching end")
+    func testIsOnSupplyRunActive() {
+        let notes = "Some notes [supply_run_start:2026-04-16T10:00:00Z]"
+        #expect(JobsService.isOnSupplyRun(notes: notes))
+    }
+
+    @Test("isOnSupplyRun returns false when supply_run_end comes after supply_run_start")
+    func testIsOnSupplyRunEnded() {
+        let notes = "[supply_run_start:2026-04-16T10:00:00Z][supply_run_end:2026-04-16T11:00:00Z]"
+        #expect(!JobsService.isOnSupplyRun(notes: notes))
+    }
+
+    @Test("isOnSupplyRun returns true when a second supply_run_start follows an end")
+    func testIsOnSupplyRunSecondRun() {
+        let notes = "[supply_run_start:09:00][supply_run_end:10:00][supply_run_start:14:00]"
+        #expect(JobsService.isOnSupplyRun(notes: notes))
+    }
+
+    @Test("isOnSupplyRun returns false when notes contain no supply run markers")
+    func testIsOnSupplyRunNoMarkers() {
+        #expect(!JobsService.isOnSupplyRun(notes: "Regular work notes, no supply run"))
+    }
+
+    // MARK: - computeStageStatuses (pure static)
+
+    @Test("computeStageStatuses returns all pending when currentStageId is nil")
+    func testComputeStageStatusesNilStage() {
+        let stages = [
+            JobsService.JobStageStatus(id: 1, name: "Rough-In", sortOrder: 1, status: "pending"),
+            JobsService.JobStageStatus(id: 2, name: "Trim", sortOrder: 2, status: "pending"),
+        ]
+        let result = JobsService.computeStageStatuses(allStages: stages, currentStageId: nil, jobStatus: "active")
+        #expect(result.allSatisfy { $0.status == "pending" })
+    }
+
+    @Test("computeStageStatuses marks all completed when jobStatus is completed")
+    func testComputeStageStatusesCompletedJob() {
+        let stages = [
+            JobsService.JobStageStatus(id: 1, name: "Rough-In", sortOrder: 1, status: "pending"),
+            JobsService.JobStageStatus(id: 2, name: "Trim", sortOrder: 2, status: "pending"),
+            JobsService.JobStageStatus(id: 3, name: "Final", sortOrder: 3, status: "pending"),
+        ]
+        let result = JobsService.computeStageStatuses(allStages: stages, currentStageId: 2, jobStatus: "completed")
+        #expect(result.allSatisfy { $0.status == "completed" })
+    }
+
+    @Test("computeStageStatuses marks current stage in_progress, earlier completed, later pending")
+    func testComputeStageStatusesMiddleStage() {
+        let stages = [
+            JobsService.JobStageStatus(id: 1, name: "Rough-In", sortOrder: 1, status: "pending"),
+            JobsService.JobStageStatus(id: 2, name: "Trim", sortOrder: 2, status: "pending"),
+            JobsService.JobStageStatus(id: 3, name: "Final", sortOrder: 3, status: "pending"),
+        ]
+        let result = JobsService.computeStageStatuses(allStages: stages, currentStageId: 2, jobStatus: "active")
+        #expect(result[0].status == "completed")
+        #expect(result[1].status == "in_progress")
+        #expect(result[2].status == "pending")
+    }
+
+    @Test("computeStageStatuses with first stage marks only first as in_progress")
+    func testComputeStageStatusesFirstStage() {
+        let stages = [
+            JobsService.JobStageStatus(id: 1, name: "Rough-In", sortOrder: 1, status: "pending"),
+            JobsService.JobStageStatus(id: 2, name: "Trim", sortOrder: 2, status: "pending"),
+        ]
+        let result = JobsService.computeStageStatuses(allStages: stages, currentStageId: 1, jobStatus: "active")
+        #expect(result[0].status == "in_progress")
+        #expect(result[1].status == "pending")
+    }
 }

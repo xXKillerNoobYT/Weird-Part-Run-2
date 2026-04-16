@@ -1217,4 +1217,43 @@ struct ToolsServiceTests {
         let score: Double = try #require(row)?["confidence_score"] ?? -1
         #expect(abs(score - 0.9) < 0.0001, "Confidence score should decay from 1.0 to 0.9 with decay_rate=0.1")
     }
+
+    // MARK: - ratingToCondition (pure static)
+
+    @Test("ratingToCondition maps 5 to Excellent")
+    func testRatingExcellent() {
+        #expect(ToolsService.ratingToCondition(5) == "Excellent")
+    }
+
+    @Test("ratingToCondition maps 4 to Good")
+    func testRatingGood() {
+        #expect(ToolsService.ratingToCondition(4) == "Good")
+    }
+
+    @Test("ratingToCondition maps 3 to Fair")
+    func testRatingFair() {
+        #expect(ToolsService.ratingToCondition(3) == "Fair")
+    }
+
+    @Test("ratingToCondition maps 2 to Poor")
+    func testRatingPoor() {
+        #expect(ToolsService.ratingToCondition(2) == "Poor")
+    }
+
+    @Test("ratingToCondition maps 1 to Damaged")
+    func testRatingDamaged() {
+        #expect(ToolsService.ratingToCondition(1) == "Damaged")
+    }
+
+    @Test("ratingToCondition maps nil to Unknown")
+    func testRatingNil() {
+        #expect(ToolsService.ratingToCondition(nil) == "Unknown")
+    }
+
+    @Test("ratingToCondition maps out-of-range values to Unknown")
+    func testRatingOutOfRange() {
+        #expect(ToolsService.ratingToCondition(0) == "Unknown")
+        #expect(ToolsService.ratingToCondition(6) == "Unknown")
+        #expect(ToolsService.ratingToCondition(-1) == "Unknown")
+    }
 }

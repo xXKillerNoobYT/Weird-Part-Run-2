@@ -34,6 +34,7 @@ struct IOSDailyReportTemplatesPage: View {
     @State private var isLoading = true
     @State private var loadError: String?
     @State private var saveError: String?
+    @State private var successMessage: String?
 
     private enum ActiveSheet: Identifiable {
         case help
@@ -102,6 +103,15 @@ struct IOSDailyReportTemplatesPage: View {
 
     private var templateEditor: some View {
         Form {
+            // Fix #244: show save success feedback (was silent before)
+            if let successMessage {
+                Section {
+                    Label(successMessage, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+                }
+            }
+
             if let saveError {
                 Section {
                     Label(saveError, systemImage: "exclamationmark.triangle.fill")
@@ -256,6 +266,7 @@ struct IOSDailyReportTemplatesPage: View {
     }
 
     private func saveSettings() {
+        successMessage = nil
         guard let service = appCore.settingsService else {
             saveError = "Settings service unavailable"
             return
@@ -267,6 +278,7 @@ struct IOSDailyReportTemplatesPage: View {
             let json = String(data: data, encoding: .utf8) ?? "{}"
             try service.upsertSetting(key: "daily_report_template", value: json, category: "templates")
             saveError = nil
+            successMessage = "Template saved."
         } catch {
             saveError = userFriendlyError(error, context: "save daily report")
         }
