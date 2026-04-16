@@ -1698,14 +1698,9 @@ public final class DashboardService: Sendable {
                     ORDER BY jpo.created_at ASC
                     """)
             }
-            let isoFormatter = ISO8601DateFormatter()
-            isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let fallbackFormatter = ISO8601DateFormatter()
-            fallbackFormatter.formatOptions = [.withInternetDateTime]
-
             for row in jpos {
                 let dateStr: String = row["created_at"] ?? ""
-                let created = isoFormatter.date(from: dateStr) ?? fallbackFormatter.date(from: dateStr) ?? Date()
+                let created = CoreFormatters.parseISO(dateStr) ?? Date()
                 let age = Date().timeIntervalSince(created)
                 items.append(AttentionItem(
                     id: row["id"] ?? 0,

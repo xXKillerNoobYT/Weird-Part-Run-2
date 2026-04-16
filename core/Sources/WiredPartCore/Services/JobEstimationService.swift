@@ -730,11 +730,7 @@ public final class JobEstimationService: Sendable {
     // MARK: - Helpers
     // =========================================================================
 
-    private static func nowString() -> String {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f.string(from: Date())
-    }
+    private static func nowString() -> String { CoreFormatters.nowISO() }
 
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)

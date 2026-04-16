@@ -8,10 +8,104 @@
 
 ## Latest Run
 
-**Date:** 2026-04-12
+**Date:** 2026-04-14
 **Agent:** usability-hunter
-**Method:** Full 6-scanner behavioral pass — all Swift files in `Weird Parts IOS/`
-**Result:** 10 fixes applied across 3 files (EstimationSettings, DashboardDailyReport, ToolDetail). 3 new GitHub issues filed. 1217/1217 tests pass.
+**Method:** Full 6-scanner behavioral pass — all Swift files in `Weird Parts IOS/` + focused audit of recently-modified files (commit range 0edfc54..HEAD: 18 iOS files)
+**Result:** 0 new fixes (no new CRITICAL/HIGH issues found). 1241/1241 tests pass. All systemic findings covered by existing issues #121–#155.
+
+---
+
+## Usability Hunter Run 3 (2026-04-14)
+
+**Scope:** All Swift files in `Weird Parts IOS/Weird Parts IOS/` — behavioral usability patterns (dismiss safety, silent failures, feedback, navigation, forms, accessibility). Focused follow-up on 18 recently-modified iOS files from git status.
+**Build:** ✅ Build complete | **Tests:** ✅ 1241/1241 pass (+24 since Run 2 — new PartsServiceInventoryTests)
+
+### Scanner Summary
+
+| Scanner | Key Findings | Action |
+|---------|-------------|--------|
+| 1 Dismiss & Sheet Safety | 37 files with dismiss()+await combo — all verified safe via detailed inspection. isSaving guards, synchronous saves, or MainActor.run wrappers account for all instances. 40 files still missing interactiveDismissDisabled. | Covered by #123/#143 — no new issues |
+| 2 Silent Failure Detection | Modified files: all `try?` are READ operations (no writes). `try? service.expireOldTrades()` in IOSToolDetailPage — background cleanup, acceptable. Systemic #121/#128 still open. | No new issues |
+| 3 Missing User Feedback | Report pages (IOSBookkeeperExportPage, IOSProfitabilityPage, IOSSpendingPage) are read-only — no mutation operations. Pricing/Jobs/Orders modified files have proper success feedback patterns. | No new issues |
+| 4 Navigation & Exit Traps | No wizard/form dirty tracking in modified files beyond #129. IOSJPOCreationPage scanner hit is false positive (nav push, not modal). | No new issues |
+| 5 Form & Input Issues | No keyboard dismiss (scrollDismissesKeyboard/FocusState) anywhere in codebase — covered by #149. Scanner 5a & 5c false positives documented. POLineEditSheet has .decimalPad but no keyboard toolbar. | Covered by #149 |
+| 6 Accessibility & Touch | No new small tap targets or color-only indicators in modified files. | No new issues |
+
+### New Findings vs Previous Runs
+
+**Parts pricing files** (PartsBrandsPage, PartsPricingPage, PricingBulkEditSheet, PricingOverrideFlow, PricingSettingsSheet): All well-implemented with `@State isSaving`, `interactiveDismissDisabled(isSaving)`, Cancel `.disabled(isSaving)`, and `defer { isSaving = false }`. ✅
+
+**Orders files** (IOSJPODetailPage, IOSPODetailPage): `AddJPOLineItemSheet` and `POLineEditSheet` use synchronous saves (no async path). Missing `interactiveDismissDisabled` is covered by #123. ✅
+
+**Reports files** (IOSBookkeeperExportPage, IOSProfitabilityPage, IOSSpendingPage): Read-only display pages — no write operations. ✅
+
+**IOSJobDetailTabView.swift** CreateSupplierChannelSheet: Has `isSaving` but save is **synchronous** — `isSaving = true` flips back to `false` in the same synchronous execution before SwiftUI can re-render. `interactiveDismissDisabled(isSaving)` is dead code. Cancel button not disabled. Low user-facing impact since save is near-instant. Covered by #143.
+
+### Fixes Applied
+_None — no new CRITICAL/HIGH issues in modified files. Existing systemic issues tracked in GitHub._
+
+### Issues Filed
+_None — all findings covered by existing #121, #123, #128, #129, #143, #149._
+
+### False Positive Calibration (Run 3)
+- Scanner 1 (dismiss+await): ~85% false positive on broad scan — MainActor.run, synchronous saves inside async funcs, and dismiss-before-callback patterns account for nearly all hits
+- Scanner 5a (save without disabled): ~90% false positive — list-add buttons matching "Button.*Create" pattern
+- Scanner 5c (numeric without keyboard type): ~80% false positive — part numbers, account numbers, PO numbers, row/unit IDs are alphanumeric, not numeric
+
+---
+
+## Usability Enforcer Run 8 (2026-04-14)
+
+**Scope:** Parts section files modified in commit `0edfc54` — PartsBrandsPage, PartsCatalogPage, PartsForecastingPage, PartsPricingPage, PartsSuppliersPage, PricingBulkEditSheet, PricingOverrideFlow, PricingSettingsSheet + PartsService.swift (core)
+**Build:** ✅ Build fixed (was broken — Severity 1 compile errors) | **Tests:** ✅ 1241/1241 pass (+24 from newly compiled tests after build fix)
+
+### Scanner Summary
+
+| Scanner | Result | Notes |
+|---------|--------|-------|
+| 1 Page Load Integrity | ✅ PASS | All Parts pages have isLoading/ProgressView/ErrorStateView/EmptyState patterns. Correct `@Sendable loadData()` chains. |
+| 2 Button & Action Verification | ✅ PASS | No empty/dead button closures found in any Parts file. All toolbar items have real actions. |
+| 3 Modal & Sheet Dismiss | ⚠️ FIXED | 5 sheets with `isSaving` but no `interactiveDismissDisabled` — fixed all 5. |
+| 4 Navigation & Exit Paths | ✅ PASS | All Parts pages reachable via PartsRouter. Detail sheets have Done/Cancel. No dead ends. |
+| 5 SQL vs Schema Audit | ✅ PASS | `part_number` on `part_colors` is correct (migration 065). `code` on `parts` is correct. `supplier_part_number` on `part_supplier_links` is correct. No mismatches. |
+| 6 Plan Alignment | ✅ PASS | All Parts pages marked DONE in ios-page-review-tracker.md match actual implementation. PE-043 still queued as NEXT Xcode AI prompt. |
+| 7 Defensive UX | ✅ PASS | `try? Task.sleep(...)` in PartsImportExportPage is acceptable (auto-clearing status display). No silent saves or delete-without-confirm. |
+| 8 Feature Completeness | ✅ PASS | Parts section: Catalog, Brands, Suppliers, Pricing, Forecasting, Import/Export all have full CRUD + search + filter + refresh + empty/error states. |
+
+### Severity 1 Fixes (Compile Errors)
+
+| # | File | Issue | Fix |
+|---|------|-------|-----|
+| 1 | `core/Sources/WiredPartCore/Services/PartsService.swift:629` | `PartStyle` memberwise init missing `isActive` — build error | Added `isActive: 1` to `createStyle()` |
+| 2 | `core/Sources/WiredPartCore/Services/PartsService.swift:742` | `PartType` memberwise init missing `isActive` — build error | Added `isActive: 1` to `createType()` |
+
+### Severity 2 Fixes (Missing Dismiss Guards — Scanner 3)
+
+| # | File | Sheet | Issue | Fix |
+|---|------|-------|-------|-----|
+| 3 | `PartsPricingPage.swift` | Edit Pricing form | `isSaving` present, no `interactiveDismissDisabled` | Added `.interactiveDismissDisabled(isSaving)` |
+| 4 | `PricingBulkEditSheet.swift` | Bulk Edit flow | `isSaving` present, no `interactiveDismissDisabled`; Cancel not disabled during save | Added `.interactiveDismissDisabled(isSaving)` + `.disabled(isSaving)` on Cancel |
+| 5 | `PartsBrandsPage.swift` | BrandFormSheet | `isSaving` present, no `interactiveDismissDisabled` | Added `.interactiveDismissDisabled(isSaving)` |
+| 6 | `PartsBrandsPage.swift` | BrandSupplierPickerSheet | `isSaving` present, no `interactiveDismissDisabled` | Added `.interactiveDismissDisabled(isSaving)` |
+| 7 | `PricingSettingsSheet.swift` | Pricing Settings | `isSaving` present, no `interactiveDismissDisabled` | Added `.interactiveDismissDisabled(isSaving)` |
+| 8 | `PricingOverrideFlow.swift` | PricingTierSetSheet | `isSaving` present, no `interactiveDismissDisabled` | Added `.interactiveDismissDisabled(isSaving)` |
+
+### Test Infrastructure Fix
+
+| # | File | Issue | Fix |
+|---|------|-------|-----|
+| 9 | `E2ETestHelpers.swift` | `seedPart` used `Int.random(in: 1000...9999)` causing intermittent UNIQUE constraint failures when 2+ parts got the same random code | Replaced with `UUID().uuidString.prefix(8)` — guaranteed unique |
+
+### Issues Filed
+_None — all issues fixed directly._
+
+### False Positive Notes
+- `PartsCatalogPage.swift:1621` uses `.sheet(isPresented: $showEditForm)` in a nested struct — only ONE sheet on that view, no conflict with the outer page's `.sheet(item: $activeSheet)`. Not an issue.
+- `PartsImportExportPage.swift:453` uses `try? Task.sleep(...)` — acceptable, just auto-clears a UI status message.
+
+---
+
+## Usability Hunter Run 2 (2026-04-12)
 
 ---
 

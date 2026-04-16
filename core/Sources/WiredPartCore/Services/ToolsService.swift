@@ -995,9 +995,7 @@ public final class ToolsService: Sendable {
             // 7-day expiry
             let calendar = Calendar.current
             let expiresDate = calendar.date(byAdding: .day, value: 7, to: Date()) ?? Date()
-            let isoFormatter = ISO8601DateFormatter()
-            isoFormatter.formatOptions = [.withInternetDateTime]
-            let expiresStr = isoFormatter.string(from: expiresDate)
+            let expiresStr = CoreFormatters.iso8601.string(from: expiresDate)
 
             try dbConn.execute(sql: """
                 INSERT INTO tool_trades

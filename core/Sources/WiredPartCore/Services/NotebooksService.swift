@@ -566,9 +566,6 @@ public final class NotebooksService: Sendable {
     public func startWarrantyTimer(entryId: Int64, warrantyDurationDays: Int) throws {
         let now = Date()
         let end = Calendar.current.date(byAdding: .day, value: warrantyDurationDays, to: now) ?? now.addingTimeInterval(Double(warrantyDurationDays) * 86400)
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime]
-
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 UPDATE notebook_entries SET
@@ -576,7 +573,7 @@ public final class NotebooksService: Sendable {
                     warranty_timer_end = ?,
                     updated_at = datetime('now')
                 WHERE id = ?
-                """, arguments: [fmt.string(from: now), fmt.string(from: end), entryId])
+                """, arguments: [CoreFormatters.iso8601.string(from: now), CoreFormatters.iso8601.string(from: end), entryId])
         }
     }
 

@@ -219,17 +219,7 @@ public final class DailyReportGenerator: Sendable {
         return f.string(from: date)
     }
 
-    private func parseDateTime(_ str: String) -> Date? {
-        let f1 = ISO8601DateFormatter()
-        f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = f1.date(from: str) { return d }
-        let f2 = ISO8601DateFormatter()
-        f2.formatOptions = [.withInternetDateTime]
-        if let d = f2.date(from: str) { return d }
-        let f3 = DateFormatter()
-        f3.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return f3.date(from: str)
-    }
+    private func parseDateTime(_ str: String) -> Date? { CoreFormatters.parseDateTime(str) }
 
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)

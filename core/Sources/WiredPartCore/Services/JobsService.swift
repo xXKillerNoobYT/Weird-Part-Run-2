@@ -713,9 +713,7 @@ public final class JobsService: Sendable {
                 SELECT warranty_end FROM jobs WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [jobId])
             guard let endStr = row?["warranty_end"] as? String else { return false }
-            let fmt = ISO8601DateFormatter()
-            fmt.formatOptions = [.withInternetDateTime]
-            guard let endDate = fmt.date(from: endStr) else { return false }
+            guard let endDate = CoreFormatters.parseISO(endStr) else { return false }
             return endDate > Date()
         }
     }
@@ -727,9 +725,7 @@ public final class JobsService: Sendable {
                 SELECT warranty_end FROM jobs WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [jobId])
             guard let endStr = row?["warranty_end"] as? String else { return nil }
-            let fmt = ISO8601DateFormatter()
-            fmt.formatOptions = [.withInternetDateTime]
-            guard let endDate = fmt.date(from: endStr) else { return nil }
+            guard let endDate = CoreFormatters.parseISO(endStr) else { return nil }
             return Calendar.current.dateComponents([.day], from: Date(), to: endDate).day
         }
     }
@@ -1199,11 +1195,6 @@ public final class JobsService: Sendable {
 
     /// Get today's clock entries for a user, grouped by job with optional to-do names.
     public func getTodaysClockEntries(userId: Int64) throws -> [JobClockGroup] {
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let isoBasic = ISO8601DateFormatter()
-        isoBasic.formatOptions = [.withInternetDateTime]
-
         do { return try db.writer.read { dbConn -> [JobClockGroup] in
             let todayPrefix = String(CoreFormatters.nowISO().prefix(10))
 
@@ -1233,16 +1224,8 @@ public final class JobsService: Sendable {
                 let todoName: String? = row["todo_name"] as String?
                 let wType: String = row["work_type"] ?? "new_work"
 
-                let startDate = isoFormatter.date(from: clockInStr)
-                    ?? isoBasic.date(from: clockInStr)
-                    ?? Date()
-                let endDate: Date?
-                if let outStr = clockOutStr {
-                    endDate = isoFormatter.date(from: outStr)
-                        ?? isoBasic.date(from: outStr)
-                } else {
-                    endDate = nil
-                }
+                let startDate = CoreFormatters.parseISO(clockInStr) ?? Date()
+                let endDate: Date? = clockOutStr.flatMap { CoreFormatters.parseISO($0) }
 
                 let summary = ClockEntrySummary(
                     id: entryId,

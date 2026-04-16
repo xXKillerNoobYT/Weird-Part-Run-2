@@ -4322,9 +4322,5 @@ public final class WarehouseService: Sendable {
 
     // MARK: - Helpers (Audit)
 
-    private static func nowString() -> String {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f.string(from: Date())
-    }
+    private static func nowString() -> String { CoreFormatters.nowISO() }
 }

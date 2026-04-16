@@ -142,10 +142,10 @@ public final class WishlistService: Sendable {
     ) throws -> WishlistItem {
         try db.writer.write { dbConn in
             let now = Date()
-            let nowString = ISO8601DateFormatter().string(from: now)
+            let nowString = CoreFormatters.iso8601.string(from: now)
             // Manual items auto-approve after 14 days if no action taken
             let autoApprove: String? = sourceType == "manual"
-                ? ISO8601DateFormatter().string(from: now.addingTimeInterval(14 * 24 * 3600))
+                ? CoreFormatters.iso8601.string(from: now.addingTimeInterval(14 * 24 * 3600))
                 : nil
             var item = WishlistItem(
                 id: nil,
@@ -367,11 +367,7 @@ public final class WishlistService: Sendable {
     // MARK: - Helpers
     // =========================================================================
 
-    private static func nowString() -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: Date())
-    }
+    private static func nowString() -> String { CoreFormatters.nowISO() }
 
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let message = String(describing: error)

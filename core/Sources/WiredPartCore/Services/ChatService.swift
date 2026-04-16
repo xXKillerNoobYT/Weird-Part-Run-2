@@ -732,18 +732,7 @@ public final class ChatService: Sendable {
     }
 
     /// Parse an ISO 8601 date string from SQLite.
-    private func parseDate(_ string: String) -> Date? {
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = fmt.date(from: string) { return d }
-        fmt.formatOptions = [.withInternetDateTime]
-        if let d = fmt.date(from: string) { return d }
-        // SQLite datetime format: "2024-01-15 10:30:00"
-        let df = DateFormatter()
-        df.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        df.locale = Locale(identifier: "en_US_POSIX")
-        return df.date(from: string)
-    }
+    private func parseDate(_ string: String) -> Date? { CoreFormatters.parseDateTime(string) }
 
     // =========================================================================
     // MARK: - Attachments

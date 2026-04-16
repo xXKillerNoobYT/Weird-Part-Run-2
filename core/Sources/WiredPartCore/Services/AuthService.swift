@@ -576,17 +576,8 @@ public final class AuthService: Sendable {
     /// Check if a last_seen timestamp is within the last 5 minutes.
     private static func isRecentlyOnline(_ lastSeen: String?) -> Bool {
         guard let lastSeen, !lastSeen.isEmpty else { return false }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: lastSeen) {
-            return Date().timeIntervalSince(date) < 300
-        }
-        let simple = DateFormatter()
-        simple.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        if let date = simple.date(from: lastSeen) {
-            return Date().timeIntervalSince(date) < 300
-        }
-        return false
+        guard let date = CoreFormatters.parseDateTime(lastSeen) else { return false }
+        return Date().timeIntervalSince(date) < 300
     }
 
     // MARK: - PIN Upgrade Tracking
