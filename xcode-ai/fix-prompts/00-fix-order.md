@@ -22,8 +22,8 @@
 
 | # | File | What It Fixes | Status |
 |---|------|---------------|--------|
-| PE-044 | `PE-044-dismiss-guard-ios-employees-page.md` | **CANONICAL TEMPLATE** for #143 Dismiss Safety campaign (Phase 1A, People/HR first). Adds per-sheet dirty tracking + discard-changes alert + `.interactiveDismissDisabled(isDirty)` to IOSEmployeesPage new/edit employee sheet. Follow-up prompts PE-045+ reference this as the pattern. Plan: `docs/plans/dismiss-safety-campaign.md`. GitHub #143 / #123. | 🔲 **QUEUED** — Xcode AI (highest priority after PE-043) |
-| PE-043 | `PE-043-message-thread-attachment-pickers.md` | IOSMessageThreadView: wire dead photo + reference picker buttons — PhotosPicker + 3 reference list sheets (usability-enforcer 2026-04-12). GitHub #152. | 🔲 **NEXT** — Xcode AI |
+| PE-044 | `PE-044-dismiss-guard-ios-employees-page.md` | **CANONICAL TEMPLATE** for #143 Dismiss Safety campaign (Phase 1A, People/HR first). Adds per-sheet dirty tracking + discard-changes alert + `.interactiveDismissDisabled(isDirty)` to IOSEmployeesPage new/edit employee sheet. Follow-up prompts PE-045+ reference this as the pattern. Plan: `docs/plans/dismiss-safety-campaign.md`. GitHub #143 / #123. | 🔲 **NEXT** — Xcode AI |
+| PE-043 | *(archived)* | IOSMessageThreadView: wire dead photo + reference picker buttons — PhotosPicker + 3 reference list sheets. GitHub #152. | ✅ **DONE 2026-04-15** — direct Swift edit (PhotosPicker + ReferencePickerSheet wired; usability-enforcer Run 9 verified) |
 | PE-042 | *(archived)* | Cart Mode UI — multi-bin tap-to-select, Place Cart sheet, area picker, async bin move (GitHub #138). WizardStepPlacement.swift fully implemented. | ✅ **DONE 2026-04-12** — direct Swift edit (commit 37ffeb7) |
 | PE-041 | `PE-041-receiving-auto-save-draft.md` | Receiving session: auto-save `receivedQtys` to DB on each qty change; remove discard confirmation (GitHub #36) | ✅ **DONE 2026-04-08** — direct Swift edit |
 | PE-040 | `PE-040-warehouse-wizard-dragdrop-placement.md` | Warehouse wizard step 4: dimensions-first input → true drag-and-drop placement replacing tap-to-place (GitHub #22) | ✅ **DONE 2026-04-08** — direct Swift edit + migration 073 |
