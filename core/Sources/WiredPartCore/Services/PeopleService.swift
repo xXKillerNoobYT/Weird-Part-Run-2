@@ -849,15 +849,10 @@ public final class PeopleService: Sendable {
                     ORDER BY u.display_name ASC
                     """, arguments: [teamId])
 
-                let isoFormatter = ISO8601DateFormatter()
-                isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                let isoBasic = ISO8601DateFormatter()
-                isoBasic.formatOptions = [.withInternetDateTime]
-
                 return rows.map { row in
                     let lastWorkStr: String? = row["last_work"] as String?
                     let lastWork: Date? = lastWorkStr.flatMap {
-                        isoFormatter.date(from: $0) ?? isoBasic.date(from: $0)
+                        CoreFormatters.parseISO($0)
                     }
                     return TeamMemberDetail(
                         id: row["user_id"] ?? 0,
@@ -1168,15 +1163,10 @@ public final class PeopleService: Sendable {
                     ORDER BY le.clock_in ASC
                     """)
 
-                let isoFull = ISO8601DateFormatter()
-                isoFull.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-                let isoBasic = ISO8601DateFormatter()
-                isoBasic.formatOptions = [.withInternetDateTime]
-
                 return rows.compactMap { row -> WorkerStatus? in
                     let userId: Int64 = row["user_id"] ?? 0
                     let clockInStr: String = row["clock_in"] ?? ""
-                    guard let clockIn = isoFull.date(from: clockInStr) ?? isoBasic.date(from: clockInStr) else {
+                    guard let clockIn = CoreFormatters.parseISO(clockInStr) else {
                         return nil
                     }
                     return WorkerStatus(

@@ -74,7 +74,7 @@ public struct AIConversationMessage: Sendable, Codable {
         conversationId: String,
         role: String,
         content: String,
-        createdAt: String = ISO8601DateFormatter().string(from: Date())
+        createdAt: String = CoreFormatters.nowISO()
     ) {
         self.id = id
         self.conversationId = conversationId

@@ -25,6 +25,9 @@ public final class SchedulingService: Sendable {
         case invalidStatus(String)
         case insertFailed(String)
         case doubleBooking(userId: Int64, date: String)
+        /// Approver attempted to approve time-off that conflicts with N existing dispatches.
+        /// Fix #207: surfaces the conflict so UI can require cancellation/resolution first.
+        case timeOffConflictsWithDispatch(conflicts: Int)
     }
 
     // =========================================================================
@@ -453,6 +456,40 @@ public final class SchedulingService: Sendable {
 
             let requestGroup: String? = row["request_group"]
             let isApproved = status == "approved" ? 1 : 0
+
+            // Fix #207: On approval, scan for overlapping dispatches and reject if any exist.
+            // This forces the approver to cancel/resolve the dispatch before PTO is granted,
+            // preventing the state where an employee has approved PTO AND an active dispatch
+            // on the same day.
+            if status == "approved" {
+                let dateRows: [Row]
+                if let group = requestGroup {
+                    dateRows = try Row.fetchAll(dbConn, sql: """
+                        SELECT user_id, exception_date FROM schedule_exceptions
+                        WHERE request_group = ? AND exception_type = 'time_off' AND deleted_at IS NULL
+                        """, arguments: [group])
+                } else {
+                    dateRows = try Row.fetchAll(dbConn, sql: """
+                        SELECT user_id, exception_date FROM schedule_exceptions
+                        WHERE id = ?
+                        """, arguments: [id])
+                }
+
+                var totalConflicts = 0
+                for dr in dateRows {
+                    let uid: Int64 = dr["user_id"]
+                    let date: String = dr["exception_date"] ?? ""
+                    guard !date.isEmpty else { continue }
+                    let count = try Int.fetchOne(dbConn, sql: """
+                        SELECT COUNT(*) FROM job_dispatch
+                        WHERE user_id = ? AND dispatch_date = ? AND deleted_at IS NULL
+                        """, arguments: [uid, date]) ?? 0
+                    totalConflicts += count
+                }
+                if totalConflicts > 0 {
+                    throw SchedulingError.timeOffConflictsWithDispatch(conflicts: totalConflicts)
+                }
+            }
 
             // Build a WHERE clause that matches all days of the same request:
             // if request_group is set, target the whole group; otherwise just this row.
@@ -1740,9 +1777,23 @@ public final class SchedulingService: Sendable {
         // Fetch flex-pool jobs visible to this user.
         do {
             return try db.writer.read { dbConn in
+                // Fix #167: Load this user's team IDs once so we can enforce
+                // flex_pool_team_filter on each row. Missing table = no teams.
+                let userTeamIds: Set<Int64>
+                do {
+                    let ids = try Int64.fetchAll(dbConn, sql: """
+                        SELECT team_id FROM employee_team_members
+                        WHERE user_id = ? AND deleted_at IS NULL
+                        """, arguments: [userId])
+                    userTeamIds = Set(ids)
+                } catch {
+                    userTeamIds = []
+                }
+
                 let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT id, job_name, job_number, address_line1,
-                           notes, estimated_hours, flex_pool_user_filter
+                           notes, estimated_hours,
+                           flex_pool_user_filter, flex_pool_team_filter
                     FROM jobs
                     WHERE is_flex_pool = 1
                       AND deleted_at IS NULL
@@ -1753,6 +1804,7 @@ public final class SchedulingService: Sendable {
                 return rows.compactMap { row -> FlexPoolJob? in
                     let id: Int64 = row["id"]
                     let userFilter: String? = row["flex_pool_user_filter"]
+                    let teamFilter: String? = row["flex_pool_team_filter"]
 
                     // User-level filter: if set, userId must appear in the JSON array.
                     if let uf = userFilter,
@@ -1760,6 +1812,17 @@ public final class SchedulingService: Sendable {
                        let ids = try? JSONDecoder().decode([Int64].self, from: data),
                        !ids.contains(userId) {
                         return nil
+                    }
+
+                    // Fix #167: Team-level filter. If the job restricts to specific teams,
+                    // the user must belong to at least one of them.
+                    if let tf = teamFilter, !tf.isEmpty,
+                       let data = tf.data(using: .utf8),
+                       let allowedTeams = try? JSONDecoder().decode([Int64].self, from: data),
+                       !allowedTeams.isEmpty {
+                        if userTeamIds.isDisjoint(with: Set(allowedTeams)) {
+                            return nil
+                        }
                     }
 
                     return FlexPoolJob(

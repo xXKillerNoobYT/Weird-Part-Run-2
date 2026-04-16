@@ -135,7 +135,7 @@ public struct PriceHistory: Codable, FetchableRecord, MutablePersistableRecord, 
 
     public mutating func willInsert(_ db: Database) throws {
         if createdAt == nil {
-            createdAt = ISO8601DateFormatter().string(from: Date())
+            createdAt = CoreFormatters.nowISO()
         }
     }
 

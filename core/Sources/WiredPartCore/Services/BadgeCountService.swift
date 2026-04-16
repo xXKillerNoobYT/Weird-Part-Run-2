@@ -78,11 +78,7 @@ public final class BadgeCountService: Sendable {
         /// True if any item has been pending for more than 7 days.
         public var hasOldItems: Bool {
             guard let dateStr = oldestPendingDate else { return false }
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            let basic = ISO8601DateFormatter()
-            basic.formatOptions = [.withInternetDateTime]
-            guard let date = formatter.date(from: dateStr) ?? basic.date(from: dateStr) else { return false }
+            guard let date = CoreFormatters.parseISO(dateStr) else { return false }
             return Date().timeIntervalSince(date) > 7 * 86400
         }
 
@@ -201,13 +197,20 @@ public final class BadgeCountService: Sendable {
         )
 
         // Notebook unread entries (per-user, using UserDefaults-based tracking on the iOS side)
-        // We count total notebook entries updated in the last 7 days as a proxy
+        // We count total notebook entries updated in the last 7 days as a proxy.
+        //
+        // Fix #166: JOIN via notebook_sections instead of directly on ne.notebook_id.
+        // Legacy entries created before #180 have ne.notebook_id = NULL and were
+        // silently excluded by the old JOIN. section_id has always been populated,
+        // so this path works for both legacy and new rows.
         if let uid = userId {
             counts.unreadNotebookEntries = try safeCount(sql: """
                 SELECT COUNT(*) FROM notebook_entries ne
-                JOIN notebooks n ON ne.notebook_id = n.id
+                JOIN notebook_sections ns ON ne.section_id = ns.id
+                JOIN notebooks n ON ns.notebook_id = n.id
                 LEFT JOIN job_team_members jtm ON n.job_id = jtm.job_id AND jtm.user_id = ?
                 WHERE ne.deleted_at IS NULL
+                  AND ns.deleted_at IS NULL
                   AND n.deleted_at IS NULL
                   AND (n.job_id IS NULL OR jtm.user_id IS NOT NULL)
                   AND date(ne.updated_at) >= date('now', '-7 days')

@@ -1944,7 +1944,7 @@ public final class PartsService: Sendable {
         return try db.writer.write { dbConn -> CostLayer in
             var layer = CostLayer(
                 partId: partId,
-                purchaseDate: ISO8601DateFormatter().string(from: Date()),
+                purchaseDate: CoreFormatters.nowISO(),
                 poLineId: poLineId,
                 originalQty: qty,
                 remainingQty: qty,
@@ -2032,7 +2032,7 @@ public final class PartsService: Sendable {
                     sellPriceCharged: sellPrice,
                     supplierId: supplierId,
                     isReturned: 0,
-                    createdAt: ISO8601DateFormatter().string(from: Date())
+                    createdAt: CoreFormatters.nowISO()
                 )
                 try consumption.insert(dbConn)
                 records.append(consumption)
@@ -2088,7 +2088,7 @@ public final class PartsService: Sendable {
 
             var remaining = qty
             var records: [CostLayerConsumption] = []
-            let now = ISO8601DateFormatter().string(from: Date())
+            let now = CoreFormatters.nowISO()
 
             for var consumption in consumptions {
                 guard remaining > 0 else { break }
@@ -2478,7 +2478,7 @@ public final class PartsService: Sendable {
                 setBy: setBy,
                 notes: notes
             )
-            let now = ISO8601DateFormatter().string(from: Date())
+            let now = CoreFormatters.nowISO()
             tier.createdAt = now
             tier.updatedAt = now
             try tier.insert(dbConn)
@@ -2904,7 +2904,7 @@ public final class PartsService: Sendable {
                 """, arguments: [partId])
 
             guard let lastUpdated: String = row?["cost_last_updated"],
-                  let date = ISO8601DateFormatter().date(from: lastUpdated) else {
+                  let date = CoreFormatters.parseISO(lastUpdated) else {
                 return true // never updated = stale
             }
 
@@ -2934,7 +2934,7 @@ public final class PartsService: Sendable {
                 let name: String = row["name"]
                 let lastUpdated: String? = row["cost_last_updated"]
                 let days: Int
-                if let lu = lastUpdated, let date = ISO8601DateFormatter().date(from: lu) {
+                if let lu = lastUpdated, let date = CoreFormatters.parseISO(lu) {
                     days = Calendar.current.dateComponents([.day], from: date, to: Date()).day ?? 999
                 } else {
                     days = 999
@@ -2946,7 +2946,7 @@ public final class PartsService: Sendable {
 
     /// Mark a part's cost as verified (update the timestamp without changing the price).
     public func markPriceVerified(partId: Int64) throws {
-        let now = ISO8601DateFormatter().string(from: Date())
+        let now = CoreFormatters.nowISO()
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 UPDATE parts SET cost_last_updated = ?, updated_at = ?
@@ -3265,7 +3265,7 @@ public final class PartsService: Sendable {
                 target.minStock = minStock
                 target.targetStock = targetStock
                 target.maxStock = maxStock
-                target.updatedAt = ISO8601DateFormatter().string(from: Date())
+                target.updatedAt = CoreFormatters.nowISO()
                 try target.update(dbConn)
             } else {
                 var target = LocationStockTarget(
@@ -3500,7 +3500,7 @@ public final class PartsService: Sendable {
     public func saveForecastSettings(_ settings: ForecastSettings) throws {
         try db.writer.write { dbConn in
             var s = settings
-            s.updatedAt = ISO8601DateFormatter().string(from: Date())
+            s.updatedAt = CoreFormatters.nowISO()
             if s.id != nil {
                 try s.update(dbConn)
             } else {
@@ -3530,7 +3530,7 @@ public final class PartsService: Sendable {
             if var fs = existing {
                 fs.freeSpaceRating = clamped
                 fs.updatedBy = userId
-                fs.updatedAt = ISO8601DateFormatter().string(from: Date())
+                fs.updatedAt = CoreFormatters.nowISO()
                 try fs.update(dbConn)
             } else {
                 var fs = LocationFreeSpace(
@@ -3629,9 +3629,7 @@ public final class PartsService: Sendable {
                         OR (to_location_type = ? AND to_location_id = ?))
                     """, arguments: [partId, locType, locId, locType, locId])
                 guard let firstDate = firstMovement else { continue }
-                let formatter = ISO8601DateFormatter()
-                formatter.formatOptions = [.withInternetDateTime]
-                guard let first = formatter.date(from: firstDate) else { continue }
+                guard let first = CoreFormatters.parseISO(firstDate) else { continue }
                 let daysSinceFirst = Int(Date().timeIntervalSince(first) / 86400)
                 guard daysSinceFirst >= s.minDataDays else { continue }
 
@@ -4248,13 +4246,13 @@ public final class PartsService: Sendable {
     /// Soft-delete a companion rule. If it has children, schedule them for auto-deletion in 30 days.
     public func deleteCompanionRuleSoft(id: Int64) throws {
         try db.writer.write { dbConn in
-            let now = ISO8601DateFormatter().string(from: Date())
+            let now = CoreFormatters.nowISO()
             try dbConn.execute(sql: """
                 UPDATE companion_rules SET deleted_at = ?, is_active = 0, updated_at = ?
                 WHERE id = ?
                 """, arguments: [now, now, id])
 
-            let deleteDate = ISO8601DateFormatter().string(from: Calendar.current.date(byAdding: .day, value: 30, to: Date()) ?? Date().addingTimeInterval(30 * 86400))
+            let deleteDate = CoreFormatters.iso8601.string(from: Calendar.current.date(byAdding: .day, value: 30, to: Date()) ?? Date().addingTimeInterval(30 * 86400))
             try dbConn.execute(sql: """
                 UPDATE companion_rules SET auto_delete_at = ?, is_active = 0, updated_at = ?
                 WHERE parent_rule_id = ? AND deleted_at IS NULL
@@ -4265,7 +4263,7 @@ public final class PartsService: Sendable {
     /// Restore a soft-deleted companion rule and cancel auto-deletion of its children.
     public func restoreCompanionRule(id: Int64) throws {
         try db.writer.write { dbConn in
-            let now = ISO8601DateFormatter().string(from: Date())
+            let now = CoreFormatters.nowISO()
             try dbConn.execute(sql: """
                 UPDATE companion_rules SET deleted_at = NULL, is_active = 1, updated_at = ?
                 WHERE id = ?
@@ -4326,7 +4324,7 @@ public final class PartsService: Sendable {
         try db.writer.write { dbConn in
             let windowMonthsClamped = max(3, min(windowMonths, 48))
             let cutoffDate = Calendar.current.date(byAdding: .month, value: -windowMonthsClamped, to: Date()) ?? Date().addingTimeInterval(-Double(windowMonthsClamped) * 30 * 86400)
-            let cutoff = ISO8601DateFormatter().string(from: cutoffDate)
+            let cutoff = CoreFormatters.iso8601.string(from: cutoffDate)
 
             let rows = try Row.fetchAll(dbConn, sql: """
                 SELECT jp.job_id, p.category_id, SUM(jp.qty_consumed) AS total_qty
@@ -4484,7 +4482,7 @@ public final class PartsService: Sendable {
         try db.writer.write { dbConn in
             let windowMonthsClamped = max(3, min(windowMonths, 48))
             let cutoffDate = Calendar.current.date(byAdding: .month, value: -windowMonthsClamped, to: Date()) ?? Date().addingTimeInterval(-Double(windowMonthsClamped) * 30 * 86400)
-            let cutoff = ISO8601DateFormatter().string(from: cutoffDate)
+            let cutoff = CoreFormatters.iso8601.string(from: cutoffDate)
 
             let rows = try Row.fetchAll(dbConn, sql: """
                 SELECT jp.job_id, p.category_id, p.style_id, SUM(jp.qty_consumed) AS total_qty
@@ -4561,7 +4559,7 @@ public final class PartsService: Sendable {
     ) throws {
         try db.writer.write { dbConn in
             let cutoffDate = Calendar.current.date(byAdding: .month, value: -max(3, min(windowMonths, 48)), to: Date()) ?? Date().addingTimeInterval(-Double(max(3, min(windowMonths, 48))) * 30 * 86400)
-            let cutoff = ISO8601DateFormatter().string(from: cutoffDate)
+            let cutoff = CoreFormatters.iso8601.string(from: cutoffDate)
 
             let rows = try Row.fetchAll(dbConn, sql: """
                 SELECT jp.job_id, p.style_id, p.type_id, SUM(jp.qty_consumed) AS total_qty
@@ -4676,7 +4674,7 @@ public final class PartsService: Sendable {
         _ = try createWeeklyPoll()
 
         // 6. Log the analysis run
-        let now = ISO8601DateFormatter().string(from: Date())
+        let now = CoreFormatters.nowISO()
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 INSERT INTO companion_auto_discovery_log
@@ -4932,9 +4930,7 @@ public final class PartsService: Sendable {
 
                 let endDateStr: String = row["end_date"]
                 // end_date is stored as YYYY-MM-DD format from date()
-                let dateFormatter = DateFormatter()
-                dateFormatter.dateFormat = "yyyy-MM-dd"
-                let endDate = dateFormatter.date(from: endDateStr) ?? Date()
+                let endDate = CoreFormatters.yearMonthDay.date(from: endDateStr) ?? Date()
                 let daysLeft = Calendar.current.dateComponents([.day], from: Date(), to: endDate).day ?? 0
 
                 return CompanionPollDisplayRow(
@@ -5041,7 +5037,7 @@ public final class PartsService: Sendable {
                 result = "tied"
                 passed = false
                 let cooldownDate = Calendar.current.date(byAdding: .month, value: 2, to: Date()) ?? Date().addingTimeInterval(60 * 86400)
-                let cooldownStr = ISO8601DateFormatter().string(from: cooldownDate)
+                let cooldownStr = CoreFormatters.iso8601.string(from: cooldownDate)
                 try dbConn.execute(sql: """
                     UPDATE co_occurrence_pairs SET tied_cooldown_until = ? WHERE id = ?
                     """, arguments: [cooldownStr, coOccurrenceId])
@@ -5544,10 +5540,10 @@ public final class PartsService: Sendable {
             """, arguments: [entityId])
 
             // Create scheduled deletion record
-            let now = ISO8601DateFormatter().string(from: Date())
+            let now = CoreFormatters.nowISO()
             let stockZeroAt: String? = currentStock == 0 ? now : nil
             let deleteAfter: String? = currentStock == 0
-                ? ISO8601DateFormatter().string(from: Calendar.current.date(byAdding: .day, value: 30, to: Date()) ?? Date().addingTimeInterval(30 * 86400))
+                ? CoreFormatters.iso8601.string(from: Calendar.current.date(byAdding: .day, value: 30, to: Date()) ?? Date().addingTimeInterval(30 * 86400))
                 : nil
 
             try db.execute(sql: """
@@ -5598,7 +5594,7 @@ public final class PartsService: Sendable {
             guard let row else { return }
             let entityType: String = row["entity_type"]
             let entityId: Int64 = row["entity_id"]
-            let now = ISO8601DateFormatter().string(from: Date())
+            let now = CoreFormatters.nowISO()
 
             // Perform the actual soft delete based on entity type
             let table: String
@@ -5628,7 +5624,7 @@ public final class PartsService: Sendable {
             guard let row else { return }
             let entityType: String = row["entity_type"]
             let entityId: Int64 = row["entity_id"]
-            let now = ISO8601DateFormatter().string(from: Date())
+            let now = CoreFormatters.nowISO()
 
             // Restore parts — remove deprecation flag
             let whereClause: String

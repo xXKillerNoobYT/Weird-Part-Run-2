@@ -1965,7 +1965,7 @@ public final class OrdersService: Sendable {
                 sql: "SELECT notes FROM purchase_orders WHERE id = ?",
                 arguments: [poId]
             ) ?? ""
-            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let timestamp = CoreFormatters.nowISO()
             let newNote = "\(timestamp) [\(author)]: \(note)"
             let combined = existing.isEmpty ? newNote : "\(existing)\n\(newNote)"
             try dbConn.execute(

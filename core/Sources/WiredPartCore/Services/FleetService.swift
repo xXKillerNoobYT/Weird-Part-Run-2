@@ -978,7 +978,7 @@ public final class FleetService: Sendable {
         notes: String?
     ) throws -> Int64 {
         try db.writer.write { dbConn in
-            let now = ISO8601DateFormatter().string(from: Date())
+            let now = CoreFormatters.nowISO()
             try dbConn.execute(
                 sql: """
                     INSERT INTO vehicles (vehicle_number, vehicle_name, vehicle_type,
@@ -1001,7 +1001,7 @@ public final class FleetService: Sendable {
         notes: String?
     ) throws -> Int64 {
         try db.writer.write { dbConn in
-            let now = ISO8601DateFormatter().string(from: Date())
+            let now = CoreFormatters.nowISO()
             try dbConn.execute(
                 sql: """
                     INSERT INTO job_trailers (trailer_code, name, status, notes, created_at, updated_at)

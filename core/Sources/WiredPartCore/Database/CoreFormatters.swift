@@ -1,0 +1,90 @@
+import Foundation
+
+// MARK: - Cached Formatters (Fix #146 — core/ services sweep)
+//
+// Replaces 88+ inline `ISO8601DateFormatter()` and `DateFormatter()` allocations
+// across the core service layer. DateFormatter / ISO8601DateFormatter are
+// expensive to instantiate (locale + calendar + parser setup); creating a new
+// one per call inside hot paths like `recalculateTargets()` wastes CPU and
+// causes measurable allocator pressure.
+//
+// Mirrors the iOS-layer `Formatters.swift` pattern but lives in core/ so the
+// service code (which has no SwiftUI dependency) can reuse them without
+// pulling in the iOS module.
+
+public enum CoreFormatters {
+
+    // SAFETY (Swift 6 strict concurrency):
+    // `ISO8601DateFormatter` and `DateFormatter` are NOT marked `Sendable` by
+    // Apple, but their `string(from:)` / `date(from:)` operations are documented
+    // as thread-safe (ISO8601: since iOS 11; DateFormatter: yes per Apple TN2154).
+    // We use `nonisolated(unsafe)` to suppress the compiler warning while
+    // preserving correctness. Do NOT mutate `formatOptions` after init.
+
+    /// Standard ISO 8601 (no fractional seconds). The most common format used
+    /// by service code for `created_at` / `updated_at` / `purchase_date` etc.
+    /// All values are produced by `string(from: Date())` and consumed by
+    /// `date(from: String)` against SQLite TEXT columns storing ISO 8601.
+    nonisolated(unsafe) public static let iso8601: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    /// ISO 8601 with fractional seconds — for parsing server timestamps that
+    /// carry millisecond precision (e.g. `2026-04-12T14:30:00.000Z`).
+    nonisolated(unsafe) public static let iso8601Fractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    /// Convenience: current time formatted as an ISO 8601 string.
+    /// Equivalent to the pattern `ISO8601DateFormatter().string(from: Date())`
+    /// that appears 60+ times across services.
+    public static func nowISO() -> String {
+        iso8601.string(from: Date())
+    }
+
+    /// Parse an ISO 8601 string. Tries fractional-seconds first (server-format),
+    /// then falls back to standard ISO 8601 (locally-generated values).
+    /// Returns nil if neither parses.
+    public static func parseISO(_ string: String) -> Date? {
+        if let date = iso8601Fractional.date(from: string) { return date }
+        return iso8601.date(from: string)
+    }
+
+    /// `yyyy-MM-dd` — for date-only columns produced by SQLite `date()` function.
+    nonisolated(unsafe) public static let yearMonthDay: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f
+    }()
+
+    /// `yyyy-MM-dd'T'HH:mm:ss` — for parsing non-ISO datetime strings (T-separator, no zone).
+    nonisolated(unsafe) public static let dateTimeT: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        return f
+    }()
+
+    /// `yyyy-MM-dd HH:mm:ss` — for parsing space-separated datetime strings.
+    nonisolated(unsafe) public static let dateTimeSpace: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return f
+    }()
+
+    /// Parse a datetime string trying multiple formats in order:
+    /// 1. ISO 8601 with fractional seconds
+    /// 2. ISO 8601 standard
+    /// 3. `yyyy-MM-dd'T'HH:mm:ss` (no zone)
+    /// 4. `yyyy-MM-dd HH:mm:ss` (no zone)
+    public static func parseDateTime(_ string: String) -> Date? {
+        if let date = iso8601Fractional.date(from: string) { return date }
+        if let date = iso8601.date(from: string) { return date }
+        if let date = dateTimeT.date(from: string) { return date }
+        return dateTimeSpace.date(from: string)
+    }
+}

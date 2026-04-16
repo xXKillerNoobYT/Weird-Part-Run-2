@@ -697,6 +697,18 @@ public final class AuthService: Sendable {
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecSuccess, let data = result as? Data, data.count == 32 {
+            // Fix #231: migrate any pre-existing key to the tightened accessibility tier.
+            // SecItemCopyMatching doesn't tell us which tier the item was stored under,
+            // so we unconditionally update — SecItemUpdate is a no-op if attributes match,
+            // and a tier upgrade if they don't. Failure is non-fatal (key still works).
+            let migrateQuery: [CFString: Any] = [
+                kSecClass: kSecClassGenericPassword,
+                kSecAttrService: service
+            ]
+            let migrateAttrs: [CFString: Any] = [
+                kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            ]
+            _ = SecItemUpdate(migrateQuery as CFDictionary, migrateAttrs as CFDictionary)
             return SymmetricKey(data: data)
         }
         // Generate a new 256-bit key and persist it.
@@ -707,7 +719,9 @@ public final class AuthService: Sendable {
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecValueData: keyData,
-            kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            // Fix #231: WhenUnlockedThisDeviceOnly narrows the window — the signing key
+            // is only readable while the screen is actively unlocked, not after first-unlock-since-boot.
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         ]
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
         if addStatus != errSecSuccess && addStatus != errSecDuplicateItem {

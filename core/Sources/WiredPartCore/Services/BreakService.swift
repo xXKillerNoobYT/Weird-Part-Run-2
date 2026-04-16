@@ -424,22 +424,20 @@ public final class BreakService: Sendable {
         let roundedMinute = (minute / roundingMinutes) * roundingMinutes
         let diff = roundedMinute - minute
         let rounded = calendar.date(byAdding: .minute, value: diff, to: date) ?? date
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f.string(from: rounded)
+        return CoreFormatters.iso8601.string(from: rounded)
     }
 
     // =========================================================================
-    // MARK: - Helpers
+    // MARK: - Helpers (use CoreFormatters singletons — fixes #146)
     // =========================================================================
 
     private static func nowString() -> String {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f.string(from: Date())
+        CoreFormatters.nowISO()
     }
 
     private static func todayString() -> String {
+        // NOTE: was using local-zone formatter — preserving that behavior with a one-off
+        // local DateFormatter rather than CoreFormatters.yearMonthDay (which is UTC).
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         return f.string(from: Date())
@@ -453,25 +451,11 @@ public final class BreakService: Sendable {
 
     /// Format a date as "yyyy-MM-dd" in UTC (matching how nowString() stores timestamps).
     private static func formatDateUTC(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        f.timeZone = TimeZone(identifier: "UTC")
-        return f.string(from: date)
+        CoreFormatters.yearMonthDay.string(from: date)
     }
 
     private static func parseDateTime(_ str: String) -> Date? {
-        let f1 = ISO8601DateFormatter()
-        f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = f1.date(from: str) { return d }
-        let f2 = ISO8601DateFormatter()
-        f2.formatOptions = [.withInternetDateTime]
-        if let d = f2.date(from: str) { return d }
-        let f3 = DateFormatter()
-        f3.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        if let d = f3.date(from: str) { return d }
-        let f4 = DateFormatter()
-        f4.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return f4.date(from: str)
+        CoreFormatters.parseDateTime(str)
     }
 
     /// Add minutes to a time string like "10:00" → "10:15".

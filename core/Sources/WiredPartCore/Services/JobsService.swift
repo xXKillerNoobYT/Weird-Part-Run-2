@@ -690,10 +690,8 @@ public final class JobsService: Sendable {
     /// Set warranty period for a job. Calculates end date from start + duration.
     public func setWarranty(jobId: Int64, startDate: Date, durationDays: Int) throws {
         let endDate = Calendar.current.date(byAdding: .day, value: durationDays, to: startDate) ?? startDate.addingTimeInterval(Double(durationDays) * 86400)
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [.withInternetDateTime]
-        let startStr = fmt.string(from: startDate)
-        let endStr = fmt.string(from: endDate)
+        let startStr = CoreFormatters.iso8601.string(from: startDate)
+        let endStr = CoreFormatters.iso8601.string(from: endDate)
 
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
@@ -1207,7 +1205,7 @@ public final class JobsService: Sendable {
         isoBasic.formatOptions = [.withInternetDateTime]
 
         do { return try db.writer.read { dbConn -> [JobClockGroup] in
-            let todayPrefix = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+            let todayPrefix = String(CoreFormatters.nowISO().prefix(10))
 
             let rows = try Row.fetchAll(dbConn, sql: """
                 SELECT le.id, le.job_id, j.job_name, le.clock_in, le.clock_out,
@@ -2019,7 +2017,7 @@ public final class JobsService: Sendable {
                 arguments: [laborEntryId]
             ) ?? ""
 
-            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let timestamp = CoreFormatters.nowISO()
             let isCurrentlyOnRun = Self.isOnSupplyRun(notes: existingNotes)
 
             let note: String
