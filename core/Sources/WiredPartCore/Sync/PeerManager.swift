@@ -97,6 +97,9 @@ public actor PeerManager {
     private var kaPrivateKeyB64: String = ""
     private var kaPublicKeyB64: String = ""
 
+    /// Company ID for this sync session. Sent as X-Company-ID on key-exchange requests (#191).
+    private var companyId: String = ""
+
     /// Cached X25519 public keys from peers. keyed by peer device ID.
     /// "" means the peer was contacted but doesn't support encryption (backward compat).
     private var peerKAPublicKeys: [String: String] = [:]
@@ -132,6 +135,7 @@ public actor PeerManager {
         let (kaPriv, kaPub) = SyncCrypto.generateKeyAgreementPair()
         kaPrivateKeyB64 = kaPriv
         kaPublicKeyB64 = kaPub
+        self.companyId = companyId          // Fix #191: stored for key-exchange requests
         peerKAPublicKeys.removeAll()
 
         // 1. Start LAN sync server
@@ -533,12 +537,17 @@ public actor PeerManager {
     /// Call GET /sync/key on the peer to get their X25519 KA public key.
     /// Returns the key if successful, nil if encryption is not supported.
     /// Fixes #197: no longer silently falls back — callers must handle nil explicitly.
+    /// Fixes #191: sends X-Company-ID header so the server can reject unknown peers.
     private func fetchPeerKAPublicKey(baseURL: String, peerDeviceId: String) async -> String? {
         guard let url = URL(string: "\(baseURL)/sync/key") else {
             return nil
         }
         var req = URLRequest(url: url)
         req.timeoutInterval = 5
+        // Fix #191: identify our company so the server can gate key exchange to known peers.
+        if !companyId.isEmpty {
+            req.setValue(companyId, forHTTPHeaderField: "X-Company-ID")
+        }
         if let (data, resp) = try? await URLSession.shared.data(for: req),
            let httpResp = resp as? HTTPURLResponse,
            httpResp.statusCode == 200,

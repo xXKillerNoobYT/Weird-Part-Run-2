@@ -263,7 +263,10 @@ public enum DeviceIdentity: Sendable {
     /// The current device's unique identifier.
     /// Reads from UserDefaults on first access; generates and persists a new UUID
     /// if none exists. This ensures the same device ID survives app restarts.
-    nonisolated(unsafe) public static var current: String = {
+    ///
+    /// Fix #225: `let` instead of `var` — nothing reassigns this, and Swift's
+    /// lazy static-let initialization is already thread-safe.
+    public static let current: String = {
         if let stored = UserDefaults.standard.string(forKey: userDefaultsKey) {
             return stored
         }

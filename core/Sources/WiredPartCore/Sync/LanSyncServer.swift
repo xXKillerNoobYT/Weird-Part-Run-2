@@ -227,13 +227,26 @@ public final class LanSyncServer: Sendable {
         let loggerRef = self.logger
 
         return try await withCheckedThrowingContinuation { continuation in
-            nonisolated(unsafe) var resumed = false
+            // Fix #190: Atomic compare-and-set for the resume guard. NWListener's
+            // stateUpdateHandler can fire concurrent .ready/.failed events on
+            // different queues — a plain Bool check-and-set allows a double-resume
+            // window (both threads see false, both set true, both resume) which
+            // crashes with a continuation-already-resumed precondition failure.
+            let resumedLock = OSAllocatedUnfairLock<Bool>(initialState: false)
+
+            // Returns true if this caller "wins" the race and should resume.
+            @Sendable func claimResume() -> Bool {
+                resumedLock.withLock { resumed in
+                    if resumed { return false }
+                    resumed = true
+                    return true
+                }
+            }
 
             listener.stateUpdateHandler = { newState in
                 switch newState {
                 case .ready:
-                    guard !resumed else { return }
-                    resumed = true
+                    guard claimResume() else { return }
                     if let port = listener.port?.rawValue {
                         let assignedPort = port
                         Task { await stateRef.setPort(assignedPort) }
@@ -242,8 +255,7 @@ public final class LanSyncServer: Sendable {
                         continuation.resume(throwing: SyncServerError.failedToBind)
                     }
                 case .failed(let error):
-                    guard !resumed else { return }
-                    resumed = true
+                    guard claimResume() else { return }
                     loggerRef.error("Listener failed: \(error.localizedDescription)")
                     continuation.resume(throwing: SyncServerError.failedToBind)
                 default:

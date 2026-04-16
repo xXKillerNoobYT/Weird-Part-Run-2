@@ -86,6 +86,18 @@ public struct ConflictStats: Sendable {
 /// 3. Every overwrite is logged to `_conflict_log` regardless of which side wins.
 public enum ConflictResolver {
 
+    // MARK: - Errors
+
+    /// Errors thrown by apply functions to distinguish skipped-but-expected
+    /// situations from real database failures.
+    public enum ApplyError: Error, Sendable {
+        /// An UPDATE arrived for a record that doesn't exist locally and the
+        /// change had no full-record payload. Caller should count as skipped
+        /// and request a full resync for this record. (Fixes #220)
+        case missingLocalRecord(table: String, recordId: String)
+    }
+
+
     // MARK: - Table Name Whitelist
 
     /// Allowed table names for sync operations. Peer-supplied table names
@@ -225,7 +237,7 @@ public enum ConflictResolver {
                 try db.writer.write { dbConn in
                     switch change.operation.uppercased() {
                     case "DELETE":
-                        try applyDelete(db: dbConn, change: change)
+                        try applyDelete(db: dbConn, change: change, localDeviceId: localDevice)
                         result.applied += 1
 
                     case "INSERT":
@@ -242,6 +254,10 @@ public enum ConflictResolver {
                         result.skipped += 1
                     }
                 }
+            } catch ApplyError.missingLocalRecord {
+                // Fix #220: UPDATE for a record we don't have yet — count as skipped,
+                // not errored. A follow-up full-record resync should re-deliver it.
+                result.skipped += 1
             } catch {
                 result.errors += 1
             }
@@ -295,9 +311,49 @@ public enum ConflictResolver {
     // MARK: - Private: Apply Operations
 
     /// Apply a DELETE change — soft delete (set deleted_at), fallback to hard delete.
-    private static func applyDelete(db: Database, change: IncomingChange) throws {
+    /// Fix #174: if the record has unsynced local UPDATEs, log an entry to `_conflict_log`
+    /// so admins can see that local edits were trumped by a remote delete (delete-always-wins
+    /// policy preserved for safety, but no longer silent).
+    private static func applyDelete(db: Database, change: IncomingChange, localDeviceId: String) throws {
         let table = change.tableName
         let recordId = change.recordId
+
+        // Fix #174: Detect delete-vs-update conflicts. If we have unsynced local
+        // changes for this record, log one ConflictLogEntry per affected field so
+        // admins can spot this (remote delete wins, but the fact that local edits
+        // were dropped is now visible).
+        let localChangedFields = (try? getLocalChangedFields(
+            db: db, tableName: table, recordId: recordId
+        )) ?? []
+
+        if !localChangedFields.isEmpty,
+           let localRow = try getLocalRecord(db: db, tableName: table, recordId: recordId) {
+            // Get local timestamp for the log entry
+            let localTimestamp: String = localRow["updated_at"]
+                ?? localRow["created_at"]
+                ?? "1970-01-01T00:00:00Z"
+
+            var entries: [ConflictLogEntry] = []
+            for field in localChangedFields {
+                let localValue = stringifyValue(localRow[field] as DatabaseValue)
+                entries.append(ConflictLogEntry(
+                    tableName: table,
+                    recordId: recordId,
+                    fieldName: field,
+                    localValue: localValue,
+                    remoteValue: "(DELETED)",
+                    winner: "remote",   // delete always wins — document the decision
+                    localDevice: localDeviceId,
+                    remoteDevice: change.deviceId,
+                    localTs: localTimestamp,
+                    remoteTs: change.timestamp,
+                    resolvedAt: currentTimestamp()
+                ))
+            }
+            if !entries.isEmpty {
+                try logConflicts(db: db, conflicts: entries)
+            }
+        }
 
         // Try soft delete first
         do {
@@ -414,8 +470,13 @@ public enum ConflictResolver {
                     sql: "INSERT OR IGNORE INTO \(quotedTable(table)) (\(columnList)) VALUES (\(placeholders))",
                     arguments: StatementArguments(values)
                 )
+                return 0
             }
-            return 0
+            // Fix #220: No local record AND no full recordData — cannot apply safely.
+            // Throw a specific error so the caller can count this as skipped (not errored)
+            // and trigger a full-record resync for this (table, id).
+            print("[Sync] Skipped UPDATE for missing record: table=\(table) id=\(recordId) from device=\(change.deviceId)")
+            throw ApplyError.missingLocalRecord(table: table, recordId: recordId)
         }
 
         // Record exists — field-level LWW merge
@@ -436,6 +497,14 @@ public enum ConflictResolver {
     /// For each incoming field, check if it conflicts with a local unsynced change.
     /// If no conflict: accept remote. If conflict: later timestamp wins.
     /// Returns conflict count.
+    ///
+    /// KNOWN TRADE-OFF (#221 — row-level timestamps for per-field conflicts):
+    /// LWW uses the row's `updated_at` as the comparison timestamp for ALL fields.
+    /// This means a later edit to an unrelated field on device B can cause field X —
+    /// where device A's change was chronologically earlier — to resolve in device B's
+    /// favor. True per-field timestamps would require extending `_change_log.changed_fields`
+    /// to `{field: {value, timestamp}}` and a schema migration. Deferred as a scope-bounded
+    /// accepted limitation; document rather than silently surprise future contributors.
     private static func fieldLevelMerge(
         db: Database,
         table: String,

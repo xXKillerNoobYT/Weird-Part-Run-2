@@ -62,10 +62,29 @@ public struct DiscoveredPeer: Sendable, Identifiable {
 ///
 /// Filtering: Only peers from the same company are reported.
 /// Self-discovery is filtered out by device_id.
+///
+/// CONCURRENCY INVARIANT (#222 — `@unchecked Sendable` contract):
+/// - `queue` is a serial DispatchQueue that serializes ALL access to the
+///   mutable stored properties (`browser`, `listener`, `peers`, `isRunning`).
+///   Do not access these from outside `queue.async` / `queue.sync`.
+/// - `onPeersChanged` is the one exception: it's a user-settable callback
+///   guarded by its own `callbackLock` (NSLock) because clients may set it
+///   from any queue. See #187 for the setter protection.
+/// - Any NEW mutable property MUST either go through `queue` or get its own
+///   lock. Adding a bare `var` is a data race that the compiler won't catch.
 public final class PeerDiscovery: @unchecked Sendable {
 
     /// Called when the peer list changes.
-    public var onPeersChanged: (([DiscoveredPeer]) -> Void)?
+    ///
+    /// Thread-safe setter (fix #187): assigning this property takes an internal
+    /// lock so it can't race with the callback-firing path. The callback itself
+    /// is always invoked on the main queue (safe for UI updates).
+    public var onPeersChanged: (([DiscoveredPeer]) -> Void)? {
+        get { callbackLock.withLock { _onPeersChanged } }
+        set { callbackLock.withLock { _onPeersChanged = newValue } }
+    }
+    private var _onPeersChanged: (([DiscoveredPeer]) -> Void)?
+    private let callbackLock = NSLock()
 
     private let deviceId: String
     private let companyId: String
@@ -237,8 +256,12 @@ public final class PeerDiscovery: @unchecked Sendable {
 
         peers = updatedPeers
         let snapshot = Array(updatedPeers.values)
-        DispatchQueue.main.async { [weak self] in
-            self?.onPeersChanged?(snapshot)
+        // Fix #187: capture the callback under the lock so it can't race with a reassignment.
+        let callback = callbackLock.withLock { _onPeersChanged }
+        if let callback {
+            DispatchQueue.main.async {
+                callback(snapshot)
+            }
         }
     }
 }

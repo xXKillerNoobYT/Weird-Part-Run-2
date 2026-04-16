@@ -8,6 +8,14 @@ import GRDB
 /// for sync logging, unless explicitly opted out via `track: false`.
 ///
 /// Ported from: `src/local/repos/base-repo.ts`
+///
+/// CONCURRENCY INVARIANT (#222 — `@unchecked Sendable` contract):
+/// This base class and all subclasses MUST NOT add mutable stored properties
+/// (`var`) — the `@unchecked Sendable` conformance disables compiler-enforced
+/// thread safety, and the only reason it's safe is that all state here is
+/// `let`-immutable. All state mutation happens through `AppDatabase`, which
+/// serializes writes via GRDB's writer queue. If you need per-instance caching
+/// or state, use an actor or an NSLock-guarded accessor (see PeerDiscovery).
 public class BaseRepository: @unchecked Sendable {
     public let tableName: String
     public let primaryKey: String
