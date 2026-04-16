@@ -34,7 +34,7 @@ struct DSSectionHeader: View {
     VStack(alignment: .leading, spacing: DS.Space.xl) {
         DSSectionHeader(title: "Recent Activity")
         DSSectionHeader(title: "Quick Actions", actionLabel: "See All") {
-            print("see all tapped")
+            // Preview-only stub
         }
     }
     .padding()

@@ -45,6 +45,7 @@ struct PricingBulkEditSheet: View {
                 inputView
             }
         }
+        .interactiveDismissDisabled(isSaving)
     }
 
     // MARK: - Input View
@@ -119,6 +120,7 @@ struct PricingBulkEditSheet: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
+                    .disabled(isSaving)
             }
         }
         .task {
@@ -139,6 +141,27 @@ struct PricingBulkEditSheet: View {
 
     @ViewBuilder
     private var previewView: some View {
+        // Fix #147: empty state when no parts match the bulk filter,
+        // so the user understands why there's nothing to preview rather than
+        // seeing only the "Apply to All" / "Review One at a Time" buttons.
+        if previewParts.isEmpty {
+            ContentUnavailableView(
+                "No Parts Match",
+                systemImage: "magnifyingglass",
+                description: Text("No parts match the current bulk-edit filter. Adjust the filter on the previous step or close this sheet.")
+            )
+            .navigationTitle("Preview")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showPreview = false } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                            Text("Back")
+                        }
+                    }
+                }
+            }
+        } else {
         List {
             Section {
                 ForEach(previewParts, id: \.partId) { part in
@@ -212,6 +235,7 @@ struct PricingBulkEditSheet: View {
                 }
             }
         }
+        }   // close `else` branch from #147 empty-state guard
     }
 
     // MARK: - Review One at a Time

@@ -232,11 +232,16 @@ struct WizardStepPlacement: View {
                 }
             }
 
+            // Fix #186: was hardcoded size: 7 (unreadable at all Dynamic Type sizes
+            // and fails accessibility audits). Use .caption2 which scales with
+            // Dynamic Type and is the smallest readable standard size.
             Text("R\(row + 1)C\(col + 1)")
-                .font(.system(size: 7))
+                .font(.caption2)
                 .foregroundStyle(placedUnit != nil ? .white.opacity(0.5) : .secondary.opacity(0.5))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 .padding(2)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
         }
         .frame(width: cellSize, height: cellSize)
         .dropDestination(for: String.self) { providers, _ in

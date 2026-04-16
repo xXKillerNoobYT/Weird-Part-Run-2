@@ -36,7 +36,8 @@ final class IOSSyncManager {
 
     private let logger = Logger(subsystem: "com.wiredpart.ios", category: "IOSSyncManager")
 
-    private var syncTimer: Timer?
+    // nonisolated(unsafe) so deinit can access without actor isolation errors.
+    nonisolated(unsafe) private var syncTimer: Timer?
     private var syncIntervalSeconds: TimeInterval = 60
 
     private var db: AppDatabase?
@@ -466,8 +467,9 @@ final class IOSSyncManager {
     // MARK: - App Lifecycle Sync
 
     /// Set up automatic sync when the app comes to the foreground.
+    /// Fix #215: store the observer token so deinit can remove it.
     func setupAppLifecycleSync() {
-        NotificationCenter.default.addObserver(
+        foregroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification,
             object: nil,
             queue: .main
@@ -476,6 +478,19 @@ final class IOSSyncManager {
                 guard let self, self.isSyncAvailable else { return }
                 await self.syncNow()
             }
+        }
+    }
+
+    /// Observer token returned by addObserver. Retained so deinit can remove it.
+    nonisolated(unsafe) private var foregroundObserver: NSObjectProtocol?
+
+    deinit {
+        // Fix #215: invalidate timer and remove notification observer so logout /
+        // sync-manager recreation doesn't leak orphan observers and timers.
+        syncTimer?.invalidate()
+        syncTimer = nil
+        if let token = foregroundObserver {
+            NotificationCenter.default.removeObserver(token)
         }
     }
 

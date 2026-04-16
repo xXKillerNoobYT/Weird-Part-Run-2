@@ -52,6 +52,6 @@ struct ErrorStateView: View {
 
 #Preview {
     ErrorStateView(message: "Failed to load parts catalog.") {
-        print("retry tapped")
+        // Preview-only stub
     }
 }

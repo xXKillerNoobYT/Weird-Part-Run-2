@@ -1289,6 +1289,7 @@ struct PricingEditSheet: View {
                     .disabled(isSaving)
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .onAppear {
                 markupText = String(format: "%.1f", row.effectiveMarkup)
                 marginText = String(format: "%.1f", row.effectiveMargin)

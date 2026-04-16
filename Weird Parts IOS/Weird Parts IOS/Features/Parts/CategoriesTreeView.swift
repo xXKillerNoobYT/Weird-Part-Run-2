@@ -346,10 +346,15 @@ struct CategoriesTreeView: View {
             }
             .accessibilityIdentifier("categoryRow_\(catId)")
             .contextMenu {
-                Button {
-                    activeSheet = .pricingOverride
-                } label: {
-                    Label("Set Pricing Override", systemImage: "dollarsign.circle")
+                // Fix #229: gate pricing override behind edit_pricing permission.
+                // Without this guard, any user with read access to the catalog tree
+                // could open PricingOverrideFlow and overwrite tiers.
+                if appCore.hasPermission("edit_pricing") {
+                    Button {
+                        activeSheet = .pricingOverride
+                    } label: {
+                        Label("Set Pricing Override", systemImage: "dollarsign.circle")
+                    }
                 }
             }
 
@@ -486,10 +491,13 @@ struct CategoriesTreeView: View {
                 }
             }
             .contextMenu {
-                Button {
-                    activeSheet = .pricingOverride
-                } label: {
-                    Label("Set Pricing Override", systemImage: "dollarsign.circle")
+                // Fix #229: gate pricing override behind edit_pricing permission (type-row variant).
+                if appCore.hasPermission("edit_pricing") {
+                    Button {
+                        activeSheet = .pricingOverride
+                    } label: {
+                        Label("Set Pricing Override", systemImage: "dollarsign.circle")
+                    }
                 }
             }
 

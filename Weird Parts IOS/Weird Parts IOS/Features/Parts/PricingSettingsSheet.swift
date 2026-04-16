@@ -89,6 +89,7 @@ struct PricingSettingsSheet: View {
                     .disabled(isSaving)
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .task { await loadSettings() }
         }
     }

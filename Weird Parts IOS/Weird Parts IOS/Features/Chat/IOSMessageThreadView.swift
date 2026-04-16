@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 import WiredPartCore
 import OSLog
 
@@ -30,21 +31,26 @@ struct IOSMessageThreadView: View {
 
     // Attachments
     @State private var pendingAttachments: [ChatService.PendingAttachment] = []
-    @State private var showPhotoPicker = false
-    @State private var showReferencePicker = false
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
     @State private var activeSheet: ActiveSheet?
 
     private enum ActiveSheet: Identifiable {
         case help
-        var id: String { "help" }
+        case referencePicker(ReferenceType)
+
+        var id: String {
+            switch self {
+            case .help: return "help"
+            case .referencePicker(let type): return "refpicker-\(type.rawValue)"
+            }
+        }
     }
 
-    private enum ReferenceType: String {
+    fileprivate enum ReferenceType: String {
         case part = "part_ref"
         case po = "po_ref"
         case job = "job_ref"
     }
-    @State private var selectedReferenceType: ReferenceType?
 
     // Toast
     @State private var showComingSoon = false
@@ -79,17 +85,28 @@ struct IOSMessageThreadView: View {
                 .accessibilityLabel("Help")
             }
         }
-        .sheet(item: $activeSheet) { _ in
-            PageHelpSheet(
-                title: "Message Thread Help",
-                sections: [
-                    ("What This Page Does", "This is a live conversation thread. You can read messages, send replies, and attach photos, files, or references to parts, POs, and jobs. The info panel at the top shows who is in the conversation and what it is linked to."),
-                    ("How to Use It", "Type your message in the text field at the bottom and tap the send button. Messages appear in bubbles -- yours on the right (blue), others on the left (gray). Scroll up to see older messages."),
-                    ("Attachments", "Use the icons below the message list to attach a photo, a file, or a reference link. Reference links can point to a specific part, purchase order, or job so everyone in the thread can jump to that item."),
-                    ("Info Panel", "Tap the channel name header at the top to expand the info panel. It shows the source context (which job, PO, or supplier the thread is linked to), the people in the conversation, and quick action buttons like Escalate or Resolve."),
-                    ("Tips", "Pending attachments show as blue chips above the composer before you send. Tap the X on any chip to remove it. Photos and file attachments are automatically saved to the linked job's notebook for future reference.")
-                ]
-            )
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .help:
+                PageHelpSheet(
+                    title: "Message Thread Help",
+                    sections: [
+                        ("What This Page Does", "This is a live conversation thread. You can read messages, send replies, and attach photos, files, or references to parts, POs, and jobs. The info panel at the top shows who is in the conversation and what it is linked to."),
+                        ("How to Use It", "Type your message in the text field at the bottom and tap the send button. Messages appear in bubbles -- yours on the right (blue), others on the left (gray). Scroll up to see older messages."),
+                        ("Attachments", "Use the icons below the message list to attach a photo, a file, or a reference link. Reference links can point to a specific part, purchase order, or job so everyone in the thread can jump to that item."),
+                        ("Info Panel", "Tap the channel name header at the top to expand the info panel. It shows the source context (which job, PO, or supplier the thread is linked to), the people in the conversation, and quick action buttons like Escalate or Resolve."),
+                        ("Tips", "Pending attachments show as blue chips above the composer before you send. Tap the X on any chip to remove it. Photos and file attachments are automatically saved to the linked job's notebook for future reference.")
+                    ]
+                )
+            case .referencePicker(let type):
+                ReferencePickerSheet(
+                    type: type,
+                    appCore: appCore,
+                    onSelect: { attachment in
+                        pendingAttachments.append(attachment)
+                    }
+                )
+            }
         }
         .task {
             loadMessages()
@@ -206,12 +223,30 @@ struct IOSMessageThreadView: View {
 
     private var attachmentBar: some View {
         HStack(spacing: 16) {
-            // Photo button
-            Button { showPhotoPicker = true } label: {
+            // Photo picker
+            PhotosPicker(selection: $selectedPhotoItems, maxSelectionCount: 5, matching: .images) {
                 Image(systemName: "photo")
                     .foregroundStyle(.blue)
             }
             .accessibilityLabel("Attach photo")
+            .onChange(of: selectedPhotoItems) {
+                Task {
+                    for item in selectedPhotoItems {
+                        if let data = try? await item.loadTransferable(type: Data.self) {
+                            let tmpURL = FileManager.default.temporaryDirectory
+                                .appendingPathComponent(UUID().uuidString + ".jpg")
+                            try? data.write(to: tmpURL)
+                            let att = ChatService.PendingAttachment(
+                                type: "photo",
+                                filePath: tmpURL.path,
+                                fileName: tmpURL.lastPathComponent
+                            )
+                            await MainActor.run { pendingAttachments.append(att) }
+                        }
+                    }
+                    await MainActor.run { selectedPhotoItems = [] }
+                }
+            }
 
             // File button
             Button { withAnimation { showComingSoon = true } } label: {
@@ -223,20 +258,17 @@ struct IOSMessageThreadView: View {
             // Reference button (part/PO/job)
             Menu {
                 Button {
-                    selectedReferenceType = .part
-                    showReferencePicker = true
+                    activeSheet = .referencePicker(.part)
                 } label: {
                     Label("Part Reference", systemImage: "shippingbox")
                 }
                 Button {
-                    selectedReferenceType = .po
-                    showReferencePicker = true
+                    activeSheet = .referencePicker(.po)
                 } label: {
                     Label("PO Reference", systemImage: "doc.text")
                 }
                 Button {
-                    selectedReferenceType = .job
-                    showReferencePicker = true
+                    activeSheet = .referencePicker(.job)
                 } label: {
                     Label("Job Reference", systemImage: "wrench.and.screwdriver")
                 }
@@ -649,6 +681,126 @@ struct ThreadInfoPanel: View {
         case .pushBack: return .orange
         case .markResolved: return .green
         case .addPeople: return .blue
+        }
+    }
+}
+
+// MARK: - Reference Picker Sheet
+
+/// Searchable picker for Part, PO, or Job references.
+private struct ReferencePickerSheet: View {
+    typealias ReferenceType = IOSMessageThreadView.ReferenceType
+
+    let type: ReferenceType
+    let appCore: AppCore
+    let onSelect: (ChatService.PendingAttachment) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+    @State private var parts: [PartsService.PartWithDetails] = []
+    @State private var pos: [OrdersService.POListItem] = []
+    @State private var jobs: [JobsService.JobListItem] = []
+
+    var body: some View {
+        NavigationStack {
+            List {
+                switch type {
+                case .part:
+                    ForEach(parts, id: \.part.id) { item in
+                        Button {
+                            onSelect(ChatService.PendingAttachment(
+                                type: "part_ref",
+                                referenceId: item.part.id,
+                                referenceLabel: item.part.name
+                            ))
+                            dismiss()
+                        } label: {
+                            VStack(alignment: .leading) {
+                                Text(item.part.name)
+                                if let cat = item.categoryName {
+                                    Text(cat).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                case .po:
+                    ForEach(pos) { po in
+                        Button {
+                            onSelect(ChatService.PendingAttachment(
+                                type: "po_ref",
+                                referenceId: po.id,
+                                referenceLabel: po.poNumber
+                            ))
+                            dismiss()
+                        } label: {
+                            VStack(alignment: .leading) {
+                                Text(po.poNumber)
+                                Text(po.supplierName).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                case .job:
+                    ForEach(jobs) { job in
+                        Button {
+                            onSelect(ChatService.PendingAttachment(
+                                type: "job_ref",
+                                referenceId: job.id,
+                                referenceLabel: job.jobName
+                            ))
+                            dismiss()
+                        } label: {
+                            VStack(alignment: .leading) {
+                                Text(job.jobName)
+                                Text(job.jobNumber).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .searchable(text: $searchText, prompt: searchPrompt)
+            .navigationTitle(sheetTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .task { loadData() }
+            .onChange(of: searchText) { loadData() }
+        }
+    }
+
+    private var sheetTitle: String {
+        switch type {
+        case .part: return "Select Part"
+        case .po: return "Select PO"
+        case .job: return "Select Job"
+        }
+    }
+
+    private var searchPrompt: String {
+        switch type {
+        case .part: return "Search parts..."
+        case .po: return "Search purchase orders..."
+        case .job: return "Search jobs..."
+        }
+    }
+
+    private func loadData() {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        let search: String? = query.isEmpty ? nil : query
+
+        switch type {
+        case .part:
+            parts = (try? appCore.partsService?.listParts(search: search, limit: 50)) ?? []
+        case .po:
+            pos = (try? appCore.ordersService?.listPurchaseOrders(limit: 50)) ?? []
+            if let search {
+                let lower = search.lowercased()
+                pos = pos.filter { $0.poNumber.lowercased().contains(lower) || $0.supplierName.lowercased().contains(lower) }
+            }
+        case .job:
+            jobs = (try? appCore.jobsService?.listJobs(search: search, limit: 50)) ?? []
         }
     }
 }

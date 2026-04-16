@@ -970,10 +970,7 @@ struct IOSJPODetailPage: View {
     }
 
     private func formatCurrency(_ value: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = "USD"
-        return formatter.string(from: NSNumber(value: value)) ?? "$0.00"
+        Formatters.formatCurrency(value)
     }
 
     private func loadData() {

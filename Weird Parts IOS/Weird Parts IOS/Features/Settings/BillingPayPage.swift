@@ -20,11 +20,26 @@ struct BillingPayPage: View {
 
     @State private var saved = false
     @State private var errorMessage: String?
+    // Fix #192: gate the form behind a loading state so the first render doesn't
+    // flash the default values before loadSettings() returns.
+    @State private var isLoading = true
 
     private let cycleTypes = ["monthly", "weekly", "biweekly"]
     private let periodTypes = ["biweekly", "weekly", "monthly", "semimonthly"]
 
+    @ViewBuilder
     var body: some View {
+        if isLoading {
+            ProgressView("Loading settings…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle("Billing & Pay")
+                .task { loadSettings() }
+        } else {
+            loadedForm
+        }
+    }
+
+    private var loadedForm: some View {
         Form {
             Section("Billing Cycle") {
                 Picker("Cycle Type", selection: $billingCycleType) {
@@ -73,7 +88,6 @@ struct BillingPayPage: View {
                 ("How to Use It", "Choose cycle and period types, set the start day of each, then tap Save. The start day determines when each period begins (1-28)."),
             ])
         }
-        .task { loadSettings() }
         .alert("Error", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
             Button("OK") { errorMessage = nil }
         } message: {
@@ -87,6 +101,7 @@ struct BillingPayPage: View {
     }
 
     private func loadSettings() {
+        defer { isLoading = false }   // Fix #192: drop the loading gate once read completes
         guard let service = appCore.settingsService else {
             errorMessage = "Settings service unavailable"
             return

@@ -272,6 +272,8 @@ private struct AddEmployeeSheet: View {
     @State private var email = ""
     @State private var phone = ""
     @State private var errorMessage: String?
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
 
     var body: some View {
         NavigationStack {
@@ -279,17 +281,21 @@ private struct AddEmployeeSheet: View {
                 Section("Required") {
                     TextField("Display Name", text: $displayName)
                         .textContentType(.name)
+                        .onChange(of: displayName) { _, _ in isDirty = true }
                     SecureField("PIN (min 4 digits)", text: $pin)
                         .keyboardType(.numberPad)
+                        .onChange(of: pin) { _, _ in isDirty = true }
                 }
                 Section("Optional") {
                     TextField("Email", text: $email)
                         .textContentType(.emailAddress)
                         .keyboardType(.emailAddress)
                         .autocapitalization(.none)
+                        .onChange(of: email) { _, _ in isDirty = true }
                     TextField("Phone", text: $phone)
                         .textContentType(.telephoneNumber)
                         .keyboardType(.phonePad)
+                        .onChange(of: phone) { _, _ in isDirty = true }
                 }
                 if let error = errorMessage {
                     Section {
@@ -303,14 +309,27 @@ private struct AddEmployeeSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty {
+                            showDiscardAlert = true
+                        } else {
+                            dismiss()
+                        }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                         .disabled(displayName.trimmingCharacters(in: .whitespaces).isEmpty || pin.count < 4)
                 }
             }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
+            }
         }
+        .interactiveDismissDisabled(isDirty)
     }
 
     private func save() {

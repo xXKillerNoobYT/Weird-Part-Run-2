@@ -1,5 +1,8 @@
 import SwiftUI
 import WiredPartCore
+import os
+
+private let auditLog = Logger(subsystem: "com.wiredpart", category: "warehouse.audit")
 
 /// Warehouse audit page — confidence-based daily audit flow.
 ///
@@ -832,8 +835,9 @@ struct IOSAuditPage: View {
                     result: auditCount.variance == 0 ? "accurate" : "inaccurate"
                 )
             } catch {
-                // Rating update failed — audit count is already saved; continue
-                print("[IOSAuditPage] updateUserRating failed (non-critical): \(error)")
+                // Rating update failed — audit count is already saved; continue.
+                // Fix #226: route through os.Logger for unified logging.
+                auditLog.error("updateUserRating failed (non-critical): \(error.localizedDescription, privacy: .public)")
             }
 
             countResult = CountResult(

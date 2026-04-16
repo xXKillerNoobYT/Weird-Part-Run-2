@@ -1,5 +1,8 @@
 import SwiftUI
 import WiredPartCore
+import os
+
+private let pipelineLog = Logger(subsystem: "com.wiredpart", category: "scheduling.pipeline")
 
 /// Short-term pipeline page showing jobs ready or near-ready for scheduling.
 ///
@@ -391,13 +394,21 @@ struct IOSShortTermPipelinePage: View {
     }
 
     private func dismissAISuggestions() {
-        // Record that the dispatcher dismissed all suggestions (rank 0 = none chosen)
+        // Record that the dispatcher dismissed all suggestions (rank 0 = none chosen).
+        // Fix #179: this is analytics — we don't want to alert the user on failure,
+        // but we DO want the failure visible in unified logging instead of silently
+        // dropped. os.Logger preserves the non-blocking behavior while surfacing the
+        // error for ops/debug.
         if let aiService = appCore.aiDispatchService {
-            try? aiService.recordDispatcherChoice(
-                date: todayString,
-                chosenRank: 0,
-                wasModified: false
-            )
+            do {
+                try aiService.recordDispatcherChoice(
+                    date: todayString,
+                    chosenRank: 0,
+                    wasModified: false
+                )
+            } catch {
+                pipelineLog.error("recordDispatcherChoice (dismiss) failed: \(error.localizedDescription, privacy: .public)")
+            }
         }
         activeSheet = nil
     }

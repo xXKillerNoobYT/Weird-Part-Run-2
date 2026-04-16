@@ -289,7 +289,11 @@ struct IOSContentRouter: View {
         case "/reports/labor-overview":
             IOSLaborOverviewPage()
         case "/reports/public":
-            IOSPublicReportView(reportToken: "")
+            // Fix #217: IOSPublicReportView is a stub that always shows an error
+            // because public-report sharing hasn't been built yet. Route to the
+            // standard PlaceholderView so users see "Coming Soon" instead of a
+            // confusing error message on a navigable route.
+            PlaceholderView(path: "/reports/public")
 
         // Tools sub-routes
         case "/tools/registry":

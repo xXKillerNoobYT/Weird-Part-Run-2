@@ -73,8 +73,18 @@ struct IOSLaborOverviewPage: View {
         }
     }
 
+    @ViewBuilder
     private var laborContent: some View {
-        List {
+        // Fix #219: when there's genuinely no labor data, show a clear empty state
+        // instead of a page full of "0.0 hrs" stat rows that implies something loaded.
+        if totalHours == 0 && timesheetRows.isEmpty {
+            ContentUnavailableView(
+                "No Labor This Week",
+                systemImage: "clock.badge.questionmark",
+                description: Text("No time was clocked this week. Labor entries will appear here once employees start clocking in.")
+            )
+        } else {
+            List {
             Section("This Week") {
                 statRow("Total Hours", String(format: "%.1f hrs", totalHours), icon: "clock.fill", color: .blue)
                 statRow("Regular", String(format: "%.1f hrs", totalRegular), icon: "clock", color: .green)
@@ -114,8 +124,9 @@ struct IOSLaborOverviewPage: View {
                     }
                 }
             }
+            }
+            .listStyle(.insetGrouped)
         }
-        .listStyle(.insetGrouped)
     }
 
     private func statRow(_ label: String, _ value: String, icon: String, color: Color) -> some View {

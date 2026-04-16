@@ -12,6 +12,9 @@ struct IOSAIConfigPage: View {
     @State private var availabilityStatus: AIAvailability?
     @State private var aiLanguage = "en"
     @State private var saveError: String?
+    // Fix #192: gate the form behind a loading state so defaults don't flash
+    // before loadSettings() populates the actual values.
+    @State private var isLoading = true
 
     private let aiService = FoundationModelsService()
 
@@ -22,7 +25,19 @@ struct IOSAIConfigPage: View {
 
     private let languageOptions = [("en", "English"), ("es", "Spanish")]
 
+    @ViewBuilder
     var body: some View {
+        if isLoading {
+            ProgressView("Loading AI settings…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .navigationTitle("AI Configuration")
+                .task { loadSettings() }
+        } else {
+            loadedForm
+        }
+    }
+
+    private var loadedForm: some View {
         Form {
             // Device info
             Section("Device Info") {
@@ -133,7 +148,6 @@ struct IOSAIConfigPage: View {
                 ("How to Use It", "Toggle AI features on or off. Select Apple Foundation Models for on-device processing. Tap 'Check Availability' to verify your device supports on-device AI. Choose a language for AI responses."),
             ])
         }
-        .task { loadSettings() }
     }
 
     private enum ActiveSheet: Identifiable {
@@ -171,6 +185,7 @@ struct IOSAIConfigPage: View {
     }
 
     private func loadSettings() {
+        defer { isLoading = false }   // Fix #192: drop the loading gate once load completes
         guard let service = appCore.settingsService else {
             saveError = "Service not available"
             return

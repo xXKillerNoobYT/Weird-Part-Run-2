@@ -191,11 +191,7 @@ struct IOSBookkeeperExportPage: View {
     // MARK: - Helpers
 
     private func formatCurrency(_ value: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.minimumFractionDigits = 2
-        formatter.maximumFractionDigits = 2
-        return formatter.string(from: NSNumber(value: value)) ?? String(format: "$%.2f", value)
+        Formatters.formatCurrencyTwoDecimal(value)
     }
 
     // MARK: - Data Loading

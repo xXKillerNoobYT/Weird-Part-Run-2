@@ -163,9 +163,20 @@ struct IOSDailyReportTemplatesPage: View {
 
     // MARK: - Preview
 
+    @ViewBuilder
     private var previewView: some View {
+        // Fix #147: empty state when the user has disabled all sections,
+        // so the preview doesn't render an empty list with no explanation.
+        let enabledSections = sections.filter(\.enabled)
+        if enabledSections.isEmpty {
+            ContentUnavailableView(
+                "No Sections Enabled",
+                systemImage: "doc.text.magnifyingglass",
+                description: Text("Enable at least one section in the template editor to preview it here.")
+            )
+        } else {
         List {
-            ForEach(sections.filter(\.enabled)) { section in
+            ForEach(enabledSections) { section in
                 Section {
                     previewContent(for: section.id)
                 } header: {
@@ -173,6 +184,7 @@ struct IOSDailyReportTemplatesPage: View {
                 }
             }
         }
+        }   // close `else` branch from #147 empty-state guard
     }
 
     @ViewBuilder

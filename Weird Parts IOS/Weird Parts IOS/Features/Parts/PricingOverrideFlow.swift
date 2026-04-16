@@ -93,6 +93,7 @@ struct PricingTierSetSheet: View {
                     loadError = userFriendlyError(error, context: "load pricing mode")
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .alert("Error", isPresented: Binding<Bool>(
                 get: { loadError != nil },
                 set: { if !$0 { loadError = nil } }

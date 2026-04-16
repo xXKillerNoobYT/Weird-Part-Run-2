@@ -131,6 +131,25 @@ enum Formatters {
         return f
     }()
 
+    /// Currency with no fractional digits (e.g. "$1,234"). For dashboard KPIs and summaries.
+    static let currencyFormatterWhole: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.maximumFractionDigits = 0
+        return f
+    }()
+
+    /// Currency forcing exactly 2 fractional digits (e.g. "$1,234.50"). For bookkeeper exports.
+    static let currencyFormatterTwoDecimal: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.minimumFractionDigits = 2
+        f.maximumFractionDigits = 2
+        return f
+    }()
+
     // MARK: - Formatting Functions
 
     /// Format a `Date` as a medium-length date string (e.g., "Mar 19, 2026").
@@ -153,6 +172,16 @@ enum Formatters {
     /// Format a `Double` as a currency string (e.g., "$1,234.56").
     static func formatCurrency(_ amount: Double) -> String {
         currencyFormatter.string(from: NSNumber(value: amount)) ?? "$0.00"
+    }
+
+    /// Format a `Double` as a whole-dollar currency string (e.g., "$1,234"). For dashboards.
+    static func formatCurrencyWhole(_ amount: Double) -> String {
+        currencyFormatterWhole.string(from: NSNumber(value: amount)) ?? "$0"
+    }
+
+    /// Format a `Double` as a currency string with exactly 2 decimals (e.g., "$1,234.50"). For bookkeeper exports.
+    static func formatCurrencyTwoDecimal(_ amount: Double) -> String {
+        currencyFormatterTwoDecimal.string(from: NSNumber(value: amount)) ?? "$0.00"
     }
 
     /// Safely count an optional array, returning 0 for nil.

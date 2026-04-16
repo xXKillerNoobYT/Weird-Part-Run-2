@@ -37,6 +37,14 @@ struct IOSClockPage: View {
     // Break/lunch tracking
     @State private var activeBreakRecord: BreakRecord?
     @State private var breakElapsedText: String = ""
+    /// Break duration timer. Fix #216: Timer is a reference type but @State
+    /// works correctly here because we never OBSERVE the timer itself — we just
+    /// hold the reference to invalidate it. All view updates come from @State
+    /// strings (breakElapsedText) written inside the timer closure, which do
+    /// trigger SwiftUI updates correctly. Every code path that dismisses or
+    /// navigates away calls `.invalidate()` and sets to nil. A future refactor
+    /// could wrap this in AnyCancellable via Timer.publish() for stylistic
+    /// consistency with DashboardView (#214), but behavior is correct today.
     @State private var breakTimer: Timer?
     @State private var breakBudgetMinutes: Int = 15
     @State private var lunchPaidMinutes: Int = 30
@@ -47,7 +55,7 @@ struct IOSClockPage: View {
     @State private var currentTodo: JobsService.ClockTodoItem?
     @State private var workType: String = "new_work"
 
-    // Live elapsed timer
+    // Live elapsed timer — see breakTimer doc above (#216) for why @State is safe here.
     @State private var elapsedTimer: Timer?
     @State private var elapsedText: String = "0h 0m"
 

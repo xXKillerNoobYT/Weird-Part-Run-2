@@ -68,6 +68,8 @@ struct PDFSettingsPage: View {
                 .buttonStyle(.borderedProminent)
             }
         }
+        // Fix #149: dismiss keyboard on scroll
+        .scrollDismissesKeyboard(.interactively)
         .navigationTitle("PDF Settings")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

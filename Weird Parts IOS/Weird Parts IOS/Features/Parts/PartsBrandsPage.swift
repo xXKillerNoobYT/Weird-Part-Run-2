@@ -380,6 +380,7 @@ private struct BrandFormSheet: View {
             } message: {
                 Text("Link suppliers that carry this brand. You can always add them later, but brands without suppliers show an orange warning.")
             }
+            .interactiveDismissDisabled(isSaving)
         }
     }
 
@@ -674,6 +675,7 @@ struct BrandSupplierPickerSheet: View {
                 }
             }
             .task { loadSuppliers() }
+            .interactiveDismissDisabled(isSaving)
         }
     }
 

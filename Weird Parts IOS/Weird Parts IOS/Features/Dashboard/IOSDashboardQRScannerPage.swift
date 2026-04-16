@@ -1,8 +1,11 @@
 import SwiftUI
 import WiredPartCore
+import os
 #if os(iOS) && !targetEnvironment(macCatalyst)
 import VisionKit
 #endif
+
+private let qrScannerLog = Logger(subsystem: "com.wiredpart", category: "dashboard.qrscanner")
 
 /// Fast continuous QR scanner — camera opens immediately, shows live item info.
 ///
@@ -599,7 +602,8 @@ struct IOSDashboardQRScannerPage: View {
                     do {
                         try service.setUserCurrentPosition(userId: userId, areaId: locationInfo.areaId)
                     } catch {
-                        print("[IOSDashboardQRScannerPage] setUserCurrentPosition failed (non-critical): \(error)")
+                        // Fix #226: route through os.Logger so it integrates with unified logging
+                        qrScannerLog.error("setUserCurrentPosition failed (non-critical): \(error.localizedDescription, privacy: .public)")
                     }
                 }
 

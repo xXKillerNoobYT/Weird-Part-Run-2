@@ -136,6 +136,8 @@ struct SyncPage: View {
                     .foregroundStyle(.secondary)
             }
         }
+        // Fix #149: dismiss keyboard on scroll
+        .scrollDismissesKeyboard(.interactively)
         .navigationTitle("LAN Sync")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

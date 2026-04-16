@@ -62,6 +62,6 @@ struct EmptyStateView: View {
         message: "There's nothing here yet. Add something to get started.",
         actionLabel: "Add Item"
     ) {
-        print("add tapped")
+        // Preview-only stub
     }
 }

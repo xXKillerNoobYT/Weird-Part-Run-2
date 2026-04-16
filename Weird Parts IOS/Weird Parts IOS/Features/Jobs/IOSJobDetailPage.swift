@@ -310,10 +310,7 @@ struct IOSJobDetailPage: View {
     }
 
     private func formatCurrency(_ value: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.maximumFractionDigits = 2
-        return formatter.string(from: NSNumber(value: value)) ?? "$\(value)"
+        Formatters.formatCurrency(value)
     }
 
     // MARK: - Data Loading

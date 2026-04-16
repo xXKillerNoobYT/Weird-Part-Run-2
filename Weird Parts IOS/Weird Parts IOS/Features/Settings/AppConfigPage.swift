@@ -20,6 +20,14 @@ struct AppConfigPage: View {
     @State private var loadError: String?
     @State private var actionError: String?
 
+    /// Fix #150: input validity gate for the Save button — all numeric text fields must be non-empty positive integers.
+    private var isFormValid: Bool {
+        Int(autoLockMinutes).map { $0 > 0 } == true &&
+        Int(staleDataHours).map { $0 > 0 } == true &&
+        Int(archiveDays).map { $0 > 0 } == true &&
+        Int(warrantyDays).map { $0 > 0 } == true
+    }
+
     var body: some View {
         Form {
             Section("Security") {
@@ -100,8 +108,11 @@ struct AppConfigPage: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .disabled(!isFormValid)   // Fix #150: prevent save with empty/invalid numeric inputs
             }
         }
+        // Fix #149: dismiss keyboard on scroll to free space when keyboard covers field
+        .scrollDismissesKeyboard(.interactively)
         .navigationTitle("App Config")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
