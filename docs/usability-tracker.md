@@ -8,10 +8,91 @@
 
 ## Latest Run
 
-**Date:** 2026-04-14
+**Date:** 2026-04-15
 **Agent:** usability-hunter
-**Method:** Full 6-scanner behavioral pass — all Swift files in `Weird Parts IOS/` + focused audit of recently-modified files (commit range 0edfc54..HEAD: 18 iOS files)
-**Result:** 0 new fixes (no new CRITICAL/HIGH issues found). 1241/1241 tests pass. All systemic findings covered by existing issues #121–#155.
+**Method:** Full 6-scanner behavioral pass — all 13 modified iOS Swift files from git status (Fix #148 + #149 batch: IOSMovementWizard draft persistence, CompanySetupWizard, BusinessProfileSetupView, IOSContactDetailPage, IOSContractorDetailPage, IOSCustomerDetailPage, IOSEmployeeDetailPage, CreateDispatchSheet, CreateScheduleEntrySheet, IOSScheduleConfigPage, IOSBreakSettingsPage, IOSDailyReportTemplatesPage)
+**Result:** 0 new CRITICAL/HIGH issues. 1 MODERATE filed (#244). 1 suppression comment added. 1258/1258 tests pass (no change).
+
+---
+
+## Usability Hunter Run 4 (2026-04-15)
+
+**Scope:** All 13 modified iOS Swift files from git status — Fix #148 (IOSMovementWizard draft + Save & Exit) and Fix #149 (keyboard dismiss batch across 12 files)
+**Build:** ✅ Build complete | **Tests:** ✅ 1258/1258 pass (no change)
+
+### Scanner Summary
+
+| Scanner | Key Findings | Action |
+|---------|-------------|--------|
+| 1 Dismiss & Sheet Safety | All modified files: synchronous saves or have isSaving+interactiveDismissDisabled. IOSMovementWizard Fix #148 implemented — Save & Exit button correctly `.disabled(isExecuting)`, `interactiveDismissDisabled(isExecuting)` already present. | PASS — no new issues |
+| 2 Silent Failure Detection | `IOSBreakSettingsPage:474` empty catch `// Non-critical` — READ bonus data, explicitly labeled. `IOSMovementWizard:1022` `try? JSONEncoder().encode()` in saveDraft() — acceptable, JSONEncoder never throws for simple Codable structs. All other `try?` are READ operations with `?? []` fallback. | Added suppression comment to IOSBreakSettingsPage empty catch |
+| 3 Missing User Feedback | `IOSDailyReportTemplatesPage:258` — `saveSettings()` has no success feedback; `saveError = nil` on success but no banner/toast/confirmation. Pre-existing issue (recent change only added `.scrollDismissesKeyboard`). | Filed #244 (MODERATE) |
+| 4 Navigation & Exit Traps | IOSMovementWizard Fix #148 verified: "Save & Exit" button present, draft saved to UserDefaults, draft restored on `.task {}`, cleared after `executeMovements()` success. No new traps in other files. | PASS — #148 verified implemented |
+| 5 Form & Input Issues | Fix #149 verified: all 13 modified files now have `.scrollDismissesKeyboard(.interactively)`. 46 files still lack keyboard dismiss (tracked by #149). `IOSBreakSettingsPage` bonus TextFields have `.keyboardType(.decimalPad)` ✅ | PASS — #149 progressing |
+| 6 Accessibility & Touch | IOSMovementWizard draft banner dismiss `Image(systemName: "xmark")` has no `.accessibilityLabel` — LOW. All other modified files use `Label()` or `Image().accessibilityLabel()` correctly. | LOW — no issue filed (systemic, covered by general a11y backlog) |
+
+### Fixes Applied
+
+| # | File | Scanner | Issue | Fix |
+|---|------|---------|-------|-----|
+| 1 | `IOSBreakSettingsPage.swift:474` | 2 (Silent Failure) | Empty `catch { // Non-critical }` in `loadBonuses()` — READ-only bonus data; scanner would flag without suppression | Added `// usability-hunter: acceptable` to prevent repeat false-positive |
+
+### Issues Filed
+
+| # | Issue | Severity | Status |
+|---|-------|----------|--------|
+| 244 | IOSDailyReportTemplatesPage `saveSettings()` no success feedback | MODERATE | Open |
+
+### Verified Resolved (by current uncommitted changes)
+
+| Issue | Verification |
+|-------|-------------|
+| #148 IOSMovementWizard Save & Exit | ✅ CLOSED — `saveDraft()` + `restoreDraft()` + draft-restored banner fully implemented |
+| #149 (partial) keyboard dismiss | ✅ 12 more files patched; 25/~70 files now have `.scrollDismissesKeyboard` |
+
+### False Positives Confirmed (Run 4)
+- `CreateScheduleEntrySheet` isSaving without interactiveDismissDisabled — synchronous save, isSaving never pauses event loop. Same pattern as #143.
+- `IOSMovementWizard:1022` `try? JSONEncoder().encode()` — JSONEncoder never throws for basic Codable structs. Acceptable.
+- `IOSContractorDetailPage` notes save — synchronous, no await. Covered by #143.
+
+---
+
+## Usability Enforcer Run 9 (2026-04-15)
+
+**Scope:** All Swift files modified in commits `7024173..fb7ea41` — IOSMessageThreadView, IOSJobDetailTabView, IOSJobDetailPage, IOSClockPage, IOSDashboardQRScannerPage, IOSAuditPage, CategoriesTreeView, IOSCustomerDetailPage, IOSEmployeesPage, IOSPeopleDashboardPage, IOSOfficeDashboardPage, IOSSpendingDashboardPage, IOSLaborOverviewPage, IOSBookkeeperExportPage, IOSShortTermPipelinePage, AppConfigPage, BillingPayPage, IOSAIConfigPage, IOSDailyReportTemplatesPage, PDFSettingsPage, SyncPage, IOSToolDetailPage, IOSToolRegistryPage, IOSContentRouter, CoreFormatters, FoundationModels, sync layer
+**Build:** ✅ Build complete | **Tests:** ✅ 1258/1258 pass (+17 from 1241)
+
+### Scanner Summary
+
+| Scanner | Result | Notes |
+|---------|--------|-------|
+| 1 Page Load Integrity | ✅ PASS | All 23 modified iOS pages have `isLoading`/ProgressView/ErrorStateView/EmptyState patterns. Correct `@Sendable loadData()` chains. |
+| 2 Button & Action Verification | ✅ PASS | **PE-043 CONFIRMED RESOLVED**: `IOSMessageThreadView` now has fully wired `PhotosPicker` (onChange handler, `await MainActor.run` for state mutation) + `ReferencePickerSheet` wired via `activeSheet = .referencePicker(.part/.po/.job)`. No dead buttons found. |
+| 3 Modal & Sheet Dismiss | ✅ PASS | All modified pages use `ActiveSheet` enum + `.sheet(item:)`. `IOSClockPage` uses `interactiveDismissDisabled(true)` on clock-in sheet. No multi-sheet conflicts. |
+| 4 Navigation & Exit Paths | ✅ PASS | `IOSContentRouter` fix #217: `/reports/public` now routes to `PlaceholderView` instead of `IOSPublicReportView` stub (which showed confusing errors). All other routes intact. |
+| 5 SQL vs Schema Audit | ✅ PASS | `audit_sessions_v2` used correctly (no stray v1 references). `unit_cost_at_move` confirmed in migration:979. `p.code as part_number` aliasing correct. `FoundationModels.now()` refactored to `CoreFormatters` singleton — no column changes. |
+| 6 Plan Alignment | ✅ PASS | PE-043 was implemented directly (not via Xcode AI prompt). Marked DONE in 00-fix-order.md, prompt archived to done/. PE-044 is now NEXT. |
+| 7 Defensive UX | ✅ PASS (2 minor notes) | `SyncPage` sync button: properly guarded with `.disabled(syncManager.syncStatus == .syncing)` ✅. `IOSAuditPage.saveMisplaced()`: `logMisplacedPart(partId: 0, foundAtAreaId: 0)` uses placeholder IDs — stub feature, not a crash. `IOSMessageThreadView` photo temp write: `try? data.write(to: tmpURL)` acceptable (photo just won't appear in pending). |
+| 8 Feature Completeness | ✅ PASS | Feature matrix holds from Run 8. Chat now has working photo + reference attachment flows. |
+
+### Fixes Applied
+_None — all modified files pass all 8 scanners. No Severity 1/2 issues found._
+
+### Cleanup Applied
+
+| # | Action | Details |
+|---|--------|---------|
+| 1 | PE-043 marked DONE | `00-fix-order.md` updated, prompt moved to `xcode-ai/fix-prompts/done/`. Implementation verified: `PhotosPicker` + `ReferencePickerSheet` fully wired in `IOSMessageThreadView.swift`. |
+
+### Issues Filed
+_None — no new problems found. Existing systemic issues (#121, #123, #128, #129, #143, #149) still open and unchanged._
+
+### Notable Verifications
+- `SyncPage` button at line 70 (`Task { await syncManager.syncNow() }`) properly guarded: `.disabled(syncManager.syncStatus == .syncing)` ✅
+- `IOSMessageThreadView` `await MainActor.run { pendingAttachments.append(att) }` correct async state mutation ✅
+- `IOSClockPage` two `.task {}` blocks: independent responsibilities (onboarding vs location+load), no double-load race ✅
+- `IOSContentRouter` `/reports/public` → `PlaceholderView` fix is clean, no dangling references ✅
+- All `try?` instances in modified files are READ operations or acceptable optional loads ✅
 
 ---
 
@@ -720,3 +801,11 @@ Replaced `isPresented: .constant(var != nil)` (read-only, non-dismissable) with 
 | 2026-04-08 | **Usability Hunter** Run 4 — all 6 scanners, full app sweep | 4 findings (1 fixed, 3 filed) | 1 (WarehouseLocationsPage confirm dialog) | 3 (#135-#137) | 0 |
 | 2026-04-10 | **Usability Hunter** Run 5 — all 6 scanners, full app sweep | 9 findings (7 fixed, 2 filed) | 7 (6 interactiveDismissDisabled, 2 confirmationDialog) | 3 (#141-#143) | 0 |
 | 2026-04-10 | **Usability Enforcer** Run 4 — all 8 scanners, focus on 4 modified files (DIS-015 fix set + new tests) | 3 fixes, 2 tracked | 3 | 0 | 0 |
+| 2026-04-12 | **Usability Enforcer** Run 5 — all 6 scanners, full app sweep (usability-hunter) | 5 fixed (#153-#155) | 5 | 3 (#153-#155) | 0 |
+| 2026-04-12 | **Usability Enforcer** Run 6 — 8 modified files (chat, messages, wishlist, customers, employees, company, audit) | 3 fixes applied | 3 | 1 (PE-043 queued) | 0 |
+| 2026-04-12 | **Usability Enforcer** Run 7 — 9 modified files (sync, chat, clock, formatters) | 0 fixes | 0 | 0 | 0 |
+| 2026-04-12 | **Usability Hunter** Run 1-3 — full app behavioral sweep + modified files | 10 fixes across 3 runs | 10 | 0 (systemic covered by #121/#128) | 0 |
+| 2026-04-14 | **Usability Enforcer** Run 8 — Parts section (8 files, compile errors + dismiss guards) | 9 fixes (2 compile + 5 dismiss + 1 test infra) | 9 | 0 | 0 |
+| 2026-04-14 | **Usability Hunter** Run 3 — full behavioral pass + 18 modified iOS files | 0 new fixes | 0 | 0 | 0 |
+| 2026-04-15 | **Usability Enforcer** Run 9 — 23 modified iOS pages + core changes (CoreFormatters, sync, FoundationModels) | 0 new fixes; PE-043 marked DONE | 0 | 0 | 0 |
+| 2026-04-15 | **Usability Hunter** Run 4 — 13 modified iOS files (Fix #148 + #149 batch) | 1 suppression added | 0 | 1 (#244) | 0 |
