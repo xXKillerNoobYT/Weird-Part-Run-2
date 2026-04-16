@@ -1169,4 +1169,52 @@ struct ToolsServiceTests {
         #expect(result != nil)
         #expect(result!.count == 10) // yyyy-MM-dd
     }
+
+    // MARK: - updateConfidenceScores
+
+    @Test("updateConfidenceScores returns 0 with no decreasing_based configs")
+    func testUpdateConfidenceScores_noConfigs() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Fresh DB — no tools, no maintenance configs
+        let updated = try env.tools.updateConfidenceScores()
+        #expect(updated == 0, "No decreasing_based configs → should update zero tools")
+    }
+
+    @Test("updateConfidenceScores applies decay rate and returns updated count")
+    func testUpdateConfidenceScores_appliesDecay() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Insert a tool with an initial confidence score of 1.0
+        let toolId = try insertTool(env, toolNumber: "T-DECAY", name: "Decay Tool")
+        // Ensure the tool has confidence_score = 1.0 (migration default)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE tools SET confidence_score = 1.0 WHERE id = ?",
+                arguments: [toolId]
+            )
+        }
+
+        // Insert a decreasing_based maintenance config with decay_rate = 0.1
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO tool_maintenance_configs
+                        (tool_id, maintenance_type, decay_rate, is_active, created_at)
+                    VALUES (?, 'decreasing_based', 0.1, 1, datetime('now'))
+                    """,
+                arguments: [toolId]
+            )
+        }
+
+        let updated = try env.tools.updateConfidenceScores()
+        #expect(updated == 1, "One decreasing_based config → should update one tool")
+
+        // Verify score: 1.0 * (1 - 0.1) = 0.9
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT confidence_score FROM tools WHERE id = ?",
+                             arguments: [toolId])
+        }
+        let score: Double = try #require(row)?["confidence_score"] ?? -1
+        #expect(abs(score - 0.9) < 0.0001, "Confidence score should decay from 1.0 to 0.9 with decay_rate=0.1")
+    }
 }

@@ -242,6 +242,96 @@ struct SyncServerTests {
 
     // MARK: - Auth
 
+    // MARK: - GET /sync/key (#191 — unauthenticated key exchange)
+
+    @Test("GET /sync/key without X-Company-ID returns 403")
+    func testKeyExchangeWithoutCompanyIdReturns403() async throws {
+        let state = makeState(companyId: "co-1")
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+        defer { Task { await server.stop() } }
+
+        let url = URL(string: "http://127.0.0.1:\(port)/sync/key")!
+        let (_, response) = try await URLSession.shared.data(from: url)
+        #expect((response as! HTTPURLResponse).statusCode == 403)
+    }
+
+    @Test("GET /sync/key with wrong X-Company-ID returns 403")
+    func testKeyExchangeWithWrongCompanyIdReturns403() async throws {
+        let state = makeState(companyId: "co-1")
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+        defer { Task { await server.stop() } }
+
+        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/key")!)
+        req.setValue("different-company", forHTTPHeaderField: "X-Company-ID")
+        let (_, response) = try await URLSession.shared.data(for: req)
+        #expect((response as! HTTPURLResponse).statusCode == 403)
+    }
+
+    @Test("GET /sync/key with correct X-Company-ID returns server public key")
+    func testKeyExchangeWithCorrectCompanyIdReturns200() async throws {
+        let state = makeState(companyId: "co-1")
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+        defer { Task { await server.stop() } }
+
+        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/key")!)
+        req.setValue("co-1", forHTTPHeaderField: "X-Company-ID")
+        let (data, response) = try await URLSession.shared.data(for: req)
+        #expect((response as! HTTPURLResponse).statusCode == 200)
+
+        let keyResponse = try JSONDecoder().decode(SyncKeyResponse.self, from: data)
+        #expect(!keyResponse.key.isEmpty)
+        // Server's public key should be valid base64
+        #expect(Data(base64Encoded: keyResponse.key) != nil)
+    }
+
+    // MARK: - Cert Rejection JSON Safety (#184 — JSON injection)
+
+    @Test("Rejected cert produces valid JSON response body")
+    func testRejectedCertProducesValidJSON() async throws {
+        // Trigger a .rejected response by supplying a server with a company key
+        // but sending a tampered certificate (bad signature).
+        let (_, publicKey) = SyncCrypto.generateKeyPair()
+
+        let state = SyncServerState(
+            deviceId: "server-dev",
+            deviceName: "Secure Server",
+            companyId: "co-1",
+            companyPublicKey: publicKey
+        )
+        let server = LanSyncServer(state: state)
+        let port = try await server.start()
+        defer { Task { await server.stop() } }
+
+        // Send a cert with invalid base64 signature — verifySyncAuth will return .rejected
+        let body: [String: Any] = [
+            "device_id": "client-dev",
+            "company_id": "co-1",
+            "changes": [] as [[String: Any]],
+            "auth": [
+                "certificate_data": "eyJkZXZpY2VfaWQiOiJ0ZXN0In0=",  // valid b64, wrong content
+                "certificate_signature": "bm90LWEtcmVhbC1zaWduYXR1cmU="   // invalid signature
+            ]
+        ]
+        let bodyData = try JSONSerialization.data(withJSONObject: body)
+        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sync/push")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = bodyData
+        req.timeoutInterval = 5
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        #expect((response as! HTTPURLResponse).statusCode == 403)
+
+        // Response must be valid JSON — not malformed by interpolated special chars in reason
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        #expect(json != nil)
+        #expect(json?["error"] as? String == "certificate_rejected")
+        #expect(json?["reason"] as? String != nil)  // reason is present and is a proper string
+    }
+
     @Test("Wrong company_id returns 403")
     func testWrongCompanyIdReturns403() async throws {
         let state = makeState(companyId: "co-1")

@@ -100,7 +100,7 @@ struct E2ETestHelpers {
         try env.parts.createPart(
             categoryId: categoryId,
             name: name,
-            code: "TW-\(Int.random(in: 1000...9999))"
+            code: "TW-\(UUID().uuidString.prefix(8))"
         )
     }
 
