@@ -28,11 +28,7 @@ public struct PeerSyncResult: Sendable {
         self.pulled = pulled
         self.success = success
         self.error = error
-        self.syncedAt = syncedAt ?? {
-            let f = ISO8601DateFormatter()
-            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return f.string(from: Date())
-        }()
+        self.syncedAt = syncedAt ?? CoreFormatters.iso8601Fractional.string(from: Date())
     }
 }
 

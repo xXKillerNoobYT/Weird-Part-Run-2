@@ -202,11 +202,7 @@ public enum SyncCrypto {
 
     /// Get current UTC timestamp as ISO 8601 string.
     /// Format: `2026-03-14T12:00:00Z`
-    public static func currentTimestamp() -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: Date())
-    }
+    public static func currentTimestamp() -> String { CoreFormatters.nowISO() }
 
     // MARK: - X25519 Key Agreement
 

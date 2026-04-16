@@ -26,11 +26,7 @@ public struct MultipeerPeerInfo: Sendable {
         self.discoveredAt = discoveredAt ?? Self.currentTimestamp()
     }
 
-    private static func currentTimestamp() -> String {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f.string(from: Date())
-    }
+    private static func currentTimestamp() -> String { CoreFormatters.iso8601Fractional.string(from: Date()) }
 }
 
 public enum MultipeerPeerState: String, Sendable {
@@ -50,11 +46,7 @@ public struct ReceivedMultipeerMessage: Sendable {
     public init(fromDeviceId: String, data: Data, receivedAt: String? = nil) {
         self.fromDeviceId = fromDeviceId
         self.data = data
-        self.receivedAt = receivedAt ?? {
-            let f = ISO8601DateFormatter()
-            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            return f.string(from: Date())
-        }()
+        self.receivedAt = receivedAt ?? CoreFormatters.iso8601Fractional.string(from: Date())
     }
 }
 

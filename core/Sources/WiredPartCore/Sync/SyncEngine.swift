@@ -492,11 +492,7 @@ public actor SyncEngine {
         }
     }
 
-    private func currentTimestamp() -> String {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f.string(from: Date())
-    }
+    private func currentTimestamp() -> String { CoreFormatters.iso8601Fractional.string(from: Date()) }
 
     /// Parse a raw JSON dictionary into an IncomingChange.
     private func parseIncomingChange(_ dict: [String: Any]) -> IncomingChange? {

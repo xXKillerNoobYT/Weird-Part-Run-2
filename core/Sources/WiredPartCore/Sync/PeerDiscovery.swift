@@ -40,11 +40,7 @@ public struct DiscoveredPeer: Sendable, Identifiable {
         self.multipeerState = multipeerState
     }
 
-    private static func currentTimestamp() -> String {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f.string(from: Date())
-    }
+    private static func currentTimestamp() -> String { CoreFormatters.iso8601Fractional.string(from: Date()) }
 }
 
 // MARK: - PeerDiscovery

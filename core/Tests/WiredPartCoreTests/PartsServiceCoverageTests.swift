@@ -470,7 +470,8 @@ struct PartsServiceCoverageTests {
         try env.parts.recalculateWeightedAvgCost(partId: partId)
 
         let part = try env.parts.getPart(id: partId)
-        #expect(abs(part.part.weightedAvgCost - 5.0) < 0.01, "WAC = (10*4 + 10*6) / 20 = $5")
+        let wac = try #require(part.part.weightedAvgCost)
+        #expect(abs(wac - 5.0) < 0.01, "WAC = (10*4 + 10*6) / 20 = $5")
     }
 
     // MARK: - setBrandSuppliers
@@ -551,19 +552,22 @@ struct PartsServiceCoverageTests {
     func testSaveForecastSettings() throws {
         let env = try E2ETestHelpers.setUp()
 
-        var settings = ForecastSettings(
-            id: nil, locationType: "warehouse", locationId: nil,
-            usageUnit: "each", aduLookbackDays: 30, windowWeeks: 4,
-            minDataDays: 7, commonMinMultiplier: 1.0, commonTargetMultiplier: 2.0,
+        // Use a locationId to create a unique per-location override that won't conflict
+        // with any default seed row (which has locationId = nil).
+        let settings = ForecastSettings(
+            id: nil, locationType: "truck", locationId: 999,
+            usageUnit: "each", aduLookbackDays: 14, windowWeeks: 2,
+            minDataDays: 3, commonMinMultiplier: 1.0, commonTargetMultiplier: 2.0,
             commonMaxMultiplier: 3.0, criticalMinMultiplier: 1.5, criticalTargetMultiplier: 2.5,
             criticalMaxMultiplier: 4.0, freeSpaceSuppressThreshold: 3
         )
         try env.parts.saveForecastSettings(settings)
 
         let all = try env.parts.listAllForecastSettings()
-        let saved = try #require(all.first(where: { $0.locationType == "warehouse" && $0.locationId == nil }))
-        #expect(saved.aduLookbackDays == 30)
-        #expect(saved.windowWeeks == 4)
+        let matchingRows = all.filter { $0.locationType == "truck" && $0.locationId == 999 }
+        let saved = try #require(matchingRows.first)
+        #expect(saved.aduLookbackDays == 14)
+        #expect(saved.windowWeeks == 2)
         #expect(abs(saved.commonTargetMultiplier - 2.0) < 0.001)
     }
 

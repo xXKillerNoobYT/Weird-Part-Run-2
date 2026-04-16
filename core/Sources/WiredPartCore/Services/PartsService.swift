@@ -2529,41 +2529,46 @@ public final class PartsService: Sendable {
 
             var conflicts: [OverrideConflict] = []
 
-            // Find all active tiers that are MORE specific than the proposed level
+            // Find all active tiers that are MORE specific than the proposed level.
+            // We track (condition, argCount) pairs so that conditions like `brand_id IS NOT NULL`
+            // that contain no `?` placeholders don't produce extra arguments.
             var sql = "SELECT * FROM pricing_tiers WHERE deleted_at IS NULL AND ("
-            var conditions: [String] = []
+            var conditions: [(String, Int)] = []  // (SQL fragment, number of ? placeholders)
             let scopeId: Int64
 
             if let id = categoryId {
                 scopeId = id
                 // Category-level change: find style, type, brand, part overrides in this category
-                conditions.append("style_id IN (SELECT id FROM part_styles WHERE category_id = ?)")
-                conditions.append("type_id IN (SELECT id FROM part_types WHERE style_id IN (SELECT id FROM part_styles WHERE category_id = ?))")
-                conditions.append("brand_id IS NOT NULL")
-                conditions.append("part_id IN (SELECT id FROM parts WHERE category_id = ?)")
+                conditions.append(("style_id IN (SELECT id FROM part_styles WHERE category_id = ?)", 1))
+                conditions.append(("type_id IN (SELECT id FROM part_types WHERE style_id IN (SELECT id FROM part_styles WHERE category_id = ?))", 1))
+                conditions.append(("brand_id IS NOT NULL", 0))
+                conditions.append(("part_id IN (SELECT id FROM parts WHERE category_id = ?)", 1))
             } else if let id = styleId {
                 scopeId = id
-                conditions.append("type_id IN (SELECT id FROM part_types WHERE style_id = ?)")
-                conditions.append("brand_id IS NOT NULL")
-                conditions.append("part_id IN (SELECT id FROM parts WHERE style_id = ?)")
+                conditions.append(("type_id IN (SELECT id FROM part_types WHERE style_id = ?)", 1))
+                conditions.append(("brand_id IS NOT NULL", 0))
+                conditions.append(("part_id IN (SELECT id FROM parts WHERE style_id = ?)", 1))
             } else if let id = typeId {
                 scopeId = id
-                conditions.append("brand_id IS NOT NULL")
-                conditions.append("part_id IN (SELECT id FROM parts WHERE type_id = ?)")
+                conditions.append(("brand_id IS NOT NULL", 0))
+                conditions.append(("part_id IN (SELECT id FROM parts WHERE type_id = ?)", 1))
             } else if let id = brandId {
                 scopeId = id
-                conditions.append("part_id IN (SELECT id FROM parts WHERE brand_id = ?)")
+                conditions.append(("part_id IN (SELECT id FROM parts WHERE brand_id = ?)", 1))
             } else {
                 return []
             }
 
             guard !conditions.isEmpty else { return [] }
 
-            sql += conditions.joined(separator: " OR ") + ")"
+            sql += conditions.map { $0.0 }.joined(separator: " OR ") + ")"
 
-            let tiers = try PricingTier.fetchAll(dbConn, sql: sql, arguments: StatementArguments(
-                conditions.map { _ -> any DatabaseValueConvertible in scopeId }
-            ))
+            // Build argument list: one scopeId per `?` placeholder across all conditions
+            let args: [any DatabaseValueConvertible] = conditions.flatMap { (_, argCount) in
+                Array(repeating: scopeId as any DatabaseValueConvertible, count: argCount)
+            }
+
+            let tiers = try PricingTier.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
 
             for tier in tiers {
                 // Get a representative cost for this tier's parts
@@ -3333,7 +3338,7 @@ public final class PartsService: Sendable {
                               AND s.location_type = lst.location_type
                               AND s.location_id = lst.location_id
                               AND s.deleted_at IS NULL), 0) AS current_stock,
-                    COALESCE(wl.name, v.name, 'Unknown') AS location_name
+                    COALESCE(wl.name, v.vehicle_name, 'Unknown') AS location_name
                 FROM location_stock_targets lst
                 LEFT JOIN warehouse_locations wl ON lst.location_type = 'warehouse'
                     AND wl.id = lst.location_id

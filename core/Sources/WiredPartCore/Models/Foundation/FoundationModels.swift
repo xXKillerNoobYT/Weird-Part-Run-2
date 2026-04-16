@@ -81,11 +81,7 @@ public struct BusinessProfile: Codable, FetchableRecord, MutablePersistableRecor
     }
 
     /// ISO-8601 timestamp for "now" matching SQLite's `datetime('now')`.
-    private static func now() -> String {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f.string(from: Date())
-    }
+    private static func now() -> String { CoreFormatters.iso8601Fractional.string(from: Date()) }
 
     public init(
         id: Int64? = nil,

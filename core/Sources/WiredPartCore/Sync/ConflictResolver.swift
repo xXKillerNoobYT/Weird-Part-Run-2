@@ -691,11 +691,7 @@ public enum ConflictResolver {
     }
 
     /// Current UTC timestamp in ISO 8601 format (consistent with SyncEngine).
-    private static func currentTimestamp() -> String {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f.string(from: Date())
-    }
+    private static func currentTimestamp() -> String { CoreFormatters.iso8601Fractional.string(from: Date()) }
 
     /// Quote a table name to prevent SQL injection.
     private static func quotedTable(_ name: String) -> String {
