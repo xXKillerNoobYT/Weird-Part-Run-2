@@ -288,4 +288,128 @@ struct PartsServiceInventoryTests {
         #expect(onTime >= 0 && onTime <= 100,   "on_time_rate must be in [0, 100]")
         #expect(reliability >= 0 && reliability <= 100, "reliability_score must be in [0, 100]")
     }
+
+    // MARK: - recalculateAllSupplierScores
+
+    @Test("recalculateAllSupplierScores completes without error on empty DB")
+    func testRecalculateAllScoresEmptyDB() throws {
+        let env = try E2ETestHelpers.setUp()
+        // No suppliers exist — should return without throwing
+        #expect(throws: Never.self) {
+            try env.parts.recalculateAllSupplierScores()
+        }
+    }
+
+    @Test("recalculateAllSupplierScores writes scores for all active suppliers")
+    func testRecalculateAllScoresUpdatesAllSuppliers() throws {
+        let env = try E2ETestHelpers.setUp()
+        let s1 = try env.parts.createSupplier(name: "Supplier Alpha")
+        let s2 = try env.parts.createSupplier(name: "Supplier Beta")
+
+        try env.parts.recalculateAllSupplierScores()
+
+        let rows = try env.db.writer.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT id, quality_score FROM suppliers
+                WHERE id IN (?, ?) AND deleted_at IS NULL
+                """, arguments: [s1, s2])
+        }
+        #expect(rows.count == 2)
+        for row in rows {
+            let score: Double = row["quality_score"] ?? -1
+            #expect(score >= 0)
+        }
+    }
+
+    // MARK: - buildSupplierAIContext
+
+    @Test("buildSupplierAIContext returns SUPPLIER DATA header on empty DB")
+    func testBuildSupplierAIContextEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let ctx = try env.parts.buildSupplierAIContext()
+        #expect(ctx.hasPrefix("SUPPLIER DATA:"))
+        #expect(ctx.contains("Total suppliers: 0"))
+    }
+
+    @Test("buildSupplierAIContext includes supplier name in output")
+    func testBuildSupplierAIContextIncludesName() throws {
+        let env = try E2ETestHelpers.setUp()
+        _ = try env.parts.createSupplier(name: "Acme Widgets")
+
+        let ctx = try env.parts.buildSupplierAIContext()
+        #expect(ctx.contains("Acme Widgets"))
+        #expect(ctx.contains("Total suppliers: 1"))
+    }
+
+    // MARK: - getActiveUsersWithVotePower
+
+    @Test("getActiveUsersWithVotePower returns seeded admin user")
+    func testGetActiveUsersWithVotePower() throws {
+        let env = try E2ETestHelpers.setUp()
+        // E2ETestHelpers.setUp seeds the admin as "TestAdmin"
+        let users = try env.parts.getActiveUsersWithVotePower()
+        #expect(!users.isEmpty)
+        let admin = users.first(where: { $0.displayName == "TestAdmin" })
+        #expect(admin != nil)
+    }
+
+    @Test("getActiveUsersWithVotePower excludes inactive users")
+    func testGetActiveUsersWithVotePowerExcludesInactive() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, is_active, pin_hash, deleted_at, created_at, updated_at)
+                VALUES ('Inactive User', 0, 'placeholder', NULL, datetime('now'), datetime('now'))
+                """)
+        }
+        let users = try env.parts.getActiveUsersWithVotePower()
+        #expect(!users.contains(where: { $0.displayName == "Inactive User" }))
+    }
+
+    // MARK: - getPollHistory
+
+    @Test("getPollHistory returns empty array when no finalized polls exist")
+    func testGetPollHistoryEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let history = try env.parts.getPollHistory()
+        #expect(history.isEmpty)
+    }
+
+    // MARK: - getCompanionRuleStats
+
+    @Test("getCompanionRuleStats returns zero counts on fresh database")
+    func testGetCompanionRuleStatsEmpty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let stats = try env.parts.getCompanionRuleStats()
+        #expect(stats.manual == 0)
+        #expect(stats.autoDiscovered == 0)
+    }
+
+    @Test("getCompanionRuleStats counts manual rules correctly")
+    func testGetCompanionRuleStatsManualRule() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Create a manual companion rule (not linked to any poll)
+        _ = try env.parts.createCompanionRule(name: "Steel + Bracket Bundle")
+
+        let stats = try env.parts.getCompanionRuleStats()
+        #expect(stats.manual >= 1)
+    }
+
+    // MARK: - getJobsWithCategoryCoOccurrence
+
+    @Test("getJobsWithCategoryCoOccurrence returns empty for empty category list")
+    func testGetJobsWithCategoryCoOccurrenceEmptyInput() throws {
+        let env = try E2ETestHelpers.setUp()
+        let result = try env.parts.getJobsWithCategoryCoOccurrence(categoryIds: [])
+        #expect(result.isEmpty)
+    }
+
+    @Test("getJobsWithCategoryCoOccurrence returns empty when no jobs have matching parts")
+    func testGetJobsWithCategoryCoOccurrenceNoMatch() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "CoOccurrenceCat")
+        let result = try env.parts.getJobsWithCategoryCoOccurrence(categoryIds: [catId])
+        #expect(result.isEmpty)
+    }
 }
