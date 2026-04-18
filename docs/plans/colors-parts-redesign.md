@@ -38,16 +38,62 @@ From `AppDatabase+Migrations.swift`:
 
 ## Design
 
-### Concept 1 — "Variants" (Q1)
+### Concept 1 — "Variants" (Q1) — EXPANDED 2026-04-18
 
-The existing `part_colors` table IS the shared pool. We keep the table name (renaming is a follow-up migration) but update the UI terminology and surface:
+The existing `part_colors` table IS the shared pool. We keep the table name short-term (renaming is a follow-up migration) but update the UI terminology and expand the schema additively to support six variant kinds PLUS a substitution cross-reference.
 
-- A **variant** can be either:
-  - **Color-based** — `name` + `hex_code` filled (e.g. "Gray", "Red", "White")
-  - **Named-only** — `name` filled, `hex_code` NULL (e.g. "Standard", "Fire-Rated", "Metal" for boxes)
-- The tree UI (`TypeBrandColorSection.swift`, `CategoriesColorPicker.swift`) renders a chip with the hex fill if present, otherwise a text-only pill.
-- The picker (`CategoriesColorPicker.swift`) presents the full `part_colors` pool, not a type-scoped subset — users pick from or extend the shared pool.
-- Adding a new variant with `hex_code=NULL` from the picker requires only a name and an optional description (box type, finish type, etc.).
+**2026-04-18 refinement (from per-POV re-ratification):** the original 2026-04-14 scope named only two kinds (color-based, named-only). Owner clarified that real variant behavior in an electrical-parts catalog requires more dimensions AND a way to express interchangeability between parts.
+
+#### The six variant kinds on each row
+
+A single `part_colors` row can carry any combination of:
+
+1. **Color-based** — `name` + `hex_code` filled (e.g. "Gray", "Red", "White" outlets / wires).
+2. **Named-only** — `name` filled, `hex_code` NULL (e.g. "Standard", "Fire-Rated", "Metal" boxes).
+3. **Named + optional color tag** — `name` + `hex_code` both filled, but `hex_code` is a UI chip for visual distinction, NOT the product's physical color (e.g. standard box shown in blue chip, fire-rated in red chip).
+4. **Size / dimension** — optional `size` column (e.g. "1/2\"", "3/4\"", "1\"" for conduit; "12 AWG", "10 AWG" for wire; "single-gang" / "double-gang" for boxes).
+5. **Rating / spec** — optional `rating` column (e.g. "15A", "20A", "30A" for outlets/breakers; "120V", "240V" for devices).
+6. **Material** — optional `material` column (e.g. "PVC" / "EMT" / "Rigid"; "Copper" / "Aluminum"; "Plastic" / "Metal").
+
+All of #4–6 start NULL; populate where meaningful for the variant.
+
+#### Schema change for the expansion
+
+```sql
+ALTER TABLE part_colors ADD COLUMN size TEXT;
+ALTER TABLE part_colors ADD COLUMN rating TEXT;
+ALTER TABLE part_colors ADD COLUMN material TEXT;
+```
+
+#### Substitute relationship (NEW)
+
+Many-to-many cross-reference so one part can flag another as a suitable substitute when more than one part serves the same function:
+
+```sql
+CREATE TABLE variant_substitutes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    a_color_id INTEGER NOT NULL REFERENCES part_colors(id) ON DELETE CASCADE,
+    b_color_id INTEGER NOT NULL REFERENCES part_colors(id) ON DELETE CASCADE,
+    bidirectional INTEGER DEFAULT 1,     -- 1 = a↔b, 0 = a→b only
+    context TEXT,                        -- e.g. "emergency only", "same function different brand"
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(a_color_id, b_color_id)
+);
+CREATE INDEX idx_variant_substitutes_a ON variant_substitutes(a_color_id);
+CREATE INDEX idx_variant_substitutes_b ON variant_substitutes(b_color_id);
+```
+
+When ordering or procurement is blocked (out of stock, backordered), the UI can surface the substitute chain so the user picks an interchangeable variant. Orthogonal to existing `companion-rules-system` (which handles "these go together" not "these can replace each other").
+
+#### UI surfacing
+
+- The tree UI (`TypeBrandColorSection.swift`, `CategoriesColorPicker.swift`) renders each variant as a chip:
+  - If `hex_code` present → colored chip with `name` inside.
+  - If `hex_code` NULL → text-only pill.
+  - Size / rating / material appear as secondary text on the row (e.g. "Gray · 3/4\" · PVC").
+- The picker presents the full `part_colors` pool, not a type-scoped subset — users pick from or extend the shared pool.
+- Variant detail sheet exposes all six fields plus the substitute picker (add/remove substitute relations).
 
 **Future migration:** Rename `part_colors` → `part_variants`, `type_color_links` → `type_variant_links`. Tracked as a separate follow-up so this plan can ship without a rename migration.
 
@@ -114,16 +160,20 @@ Existing `BrandSupplierPickerSheet.swift` already supports picking from the exis
 - New Supplier sheet → mirror flow with brands.
 - If the user needs a counterpart that doesn't exist: navigate to the other page (Brands or Suppliers), create it there, return, and pick it. Keeps the new-record sheets uncluttered.
 
-### Concept 5 — Color-level part_number replaces type-level (Q6)
+### Concept 5 — Color-level part_number SUPPLEMENTS type-level (Q6) — FLIPPED 2026-04-18
 
-Aligns with existing plan `docs/plans/ios-part-number-hierarchy.md`:
+**2026-04-18 refinement (flipped from 2026-04-14 "Replace"):** Keep type-level `part_number` as an optional group-default / fallback. Color-level overrides for display when present. Both columns are indexed for search.
 
-- Part numbers live ONLY at the color level (`part_colors.part_number`) and the SKU level (`color_brand_skus.part_number`).
-- If `color_brand_skus.part_number` is set for the chosen (type, color, brand), that wins.
-- Otherwise fall back to `part_colors.part_number`.
-- Search queries both columns via UNION in `PartsService.searchParts(query:)`.
+- Three layers of part_number resolution (most specific wins):
+  1. `color_brand_skus.part_number` (Concept 2) — the per-(color, brand, type) SKU number.
+  2. `part_colors.part_number` — the color-level part_number across all brands.
+  3. `parts_types.part_number` — the type-level group default.
+- Display: Layer 1 wins if set; else Layer 2; else Layer 3; else blank.
+- Search (`PartsService.searchParts(query:)`) queries ALL THREE via UNION so users find parts whether they search a SKU number, a color-level number, or a type-level group default.
 
-**Migration cleanup:** If `parts_types.part_number` or `parts_brands.part_number` columns still exist, drop them (after confirming no live reads via grep).
+**No column drops.** The 2026-04-14 plan called for dropping `parts_types.part_number` / `parts_brands.part_number` — the 2026-04-18 Supplement ratification preserves `parts_types.part_number` as the fallback layer. `parts_brands.part_number` (if still present) can still be dropped — it's not part of the 3-layer chain above.
+
+Search precedence is documented in `docs/plans/ios-part-number-hierarchy.md` — update that companion plan to match the 3-layer model.
 
 ---
 

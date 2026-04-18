@@ -1,9 +1,10 @@
 # Dismiss Safety Campaign — #143 (Interactive Dismiss) + #149 (Scroll Keyboard Dismiss)
 
-> **Status:** Design approved 2026-04-14. Ready to generate Xcode prompts.
+> **Status:** Design approved 2026-04-14, REFINED 2026-04-18. Method flipped from Xcode AI prompts → smart-patcher automation script after per-POV re-ratification. Pilot PE-044 shipped 2026-04-15.
 > **GitHub Issues:** #143 (also #123) + #149
 > **Pipeline item:** `PE-DISMISS` (previously "Awaiting owner answers", now unblocked)
 > **Supersedes:** `docs/dev-qa.md` Q7–Q11 (now processed).
+> **Release context:** Program in **development stage preparing for BETA** release — pattern quality matters because it's public-bound. See `.claude/projects/.../memory/feedback_release_state.md`.
 
 ---
 
@@ -24,15 +25,15 @@ This is genuinely net-new pattern territory. Whatever we ship first becomes the 
 
 ---
 
-## Owner Decisions (from dev-qa.md Q7–Q11, 2026-04-14)
+## Owner Decisions (from dev-qa.md Q7–Q11, 2026-04-14; REFINED 2026-04-18 per-POV)
 
 | # | Decision |
 |---|---|
-| Q7 | **Do NOW**, before the page-rebuild wave. New rebuilt pages would otherwise re-introduce the same bugs — setting the pattern now means the rebuild wave picks up the new pattern by reference. |
-| Q8 | **Module order: People/HR → Chat → Settings.** People/HR has the highest data-loss stakes (cert forms, wage edits, new-employee forms are long and high-value). Chat composer loss is acutely painful mid-typing. Settings is lower frequency = lower total risk. |
-| Q9 | **Per-sheet dirty tracking** (`@State var isDirty` + `.onChange` watchers + `.interactiveDismissDisabled(isDirty)`). NOT blanket unconditional block — that would add false friction to untouched sheets. |
-| Q10 | **Xcode AI prompts**, one per sheet, with rich 4-section header (Page Overview / Broken Behavior / Goal / Exact Change). NOT an automation script. Each sheet gets a laser-focused prompt that explains reason + goal. |
-| Q11 | **#149 is a separate, later campaign** (Phase 2). #143 ships alone first — it's the data-loss fix. #149 (keyboard dismiss) is UX annoyance only. |
+| Q7 | **Do NOW but PILOT FIRST** (refined 2026-04-18). Pre-release / pre-beta posture. PE-044 (IOSEmployeesPage AddEmployeeSheet, shipped 2026-04-15 via direct edit) is the canonical pilot. Let it get real-use validation during beta prep; then scale. Don't write 30 prompts upfront. Campaign slots BEFORE page-rebuild wave. |
+| Q8 | **Module order: People/HR → Chat → Orders/Fleet/Scheduling → Parts/Tools/Settings.** People/HR has the highest data-loss stakes (cert forms, wage edits, new-employee forms are long and high-value). Chat composer loss is acutely painful mid-typing. Settings rarely-entered, lowest total risk. |
+| Q9 | **Per-sheet dirty tracking** (`@State var isDirty` + `.onChange` watchers + `.interactiveDismissDisabled(isDirty)` + Discard alert on Cancel). NOT blanket unconditional block — that would add false friction to untouched sheets. Pattern proven in PE-044. |
+| Q10 | **Smart-patcher automation script** (FLIPPED 2026-04-18 from "Xcode AI prompts"). Python/Swift script in `execution/` per 3-layer architecture. Script reads each sheet file, detects bound inputs (TextField / Picker / Toggle / DatePicker / Stepper / Slider), injects the pattern, emits per-file review report. Human spot-checks before commit. **PE-044 becomes the reference output shape** — the script produces files shaped like PE-044. Runs only AFTER PE-044 pilot validates the pattern. |
+| Q11 | **#149 is a separate, later campaign** (Phase 2). #143 ships alone first — data-loss fix takes priority. #149 keyboard dismiss is UX annoyance. Kept separate to keep the #143 smart-patcher script focused on dirty-tracking. |
 
 ---
 
@@ -82,9 +83,42 @@ struct SomeFormSheet: View {
 }
 ```
 
-### The Xcode AI prompt template (mandatory sections)
+### The smart-patcher script (PRIMARY delivery — refined 2026-04-18)
 
-Every `PE-NNN-dismiss-guard-<sheet-name>.md` prompt under `xcode-ai/fix-prompts/` MUST contain:
+Lives in `execution/dismiss_guard_patcher.py` (or `.swift` if we want a SwiftPM tool for better AST support).
+
+**Inputs:** a glob of Swift sheet files (`Weird Parts IOS/**/*Sheet.swift`, `Weird Parts IOS/**/Add*.swift`, `Weird Parts IOS/**/Edit*.swift`, etc.).
+
+**For each file, the script:**
+
+1. **Detects** the sheet struct and its view body.
+2. **Scans for bound inputs** — any `TextField(.*text: $X)`, `Picker(.*selection: $X)`, `Toggle(.*isOn: $X)`, `DatePicker(.*selection: $X)`, `Stepper(.*value: $X)`, `Slider(.*value: $X)`. Collects the `$X` binding name for each.
+3. **Injects state declarations** at the top of the struct:
+   - `@State private var isDirty: Bool = false`
+   - `@State private var showDiscardAlert: Bool = false`
+   - `@Environment(\.dismiss) private var dismiss` (if not already present)
+4. **Attaches `.onChange`** to each detected bound input: `.onChange(of: <binding>) { _, _ in isDirty = true }`
+5. **Rewrites the Cancel toolbar button** (if present) to consult `isDirty`. If no Cancel button exists, adds one in `.toolbar { ToolbarItem(placement: .cancellationAction) { ... } }`.
+6. **Attaches the Discard alert** to the sheet's outermost view.
+7. **Adds `.interactiveDismissDisabled(isDirty)`** on the outermost view (NavigationStack / VStack).
+8. **Emits a review report** per file with: detected bindings, injected lines, warnings (e.g. "sheet has a custom Cancel flow that needs manual review", "no NavigationStack found — pattern not applied").
+
+**Output shape matches PE-044** — the canonical reference file is `Weird Parts IOS/Weird Parts IOS/Features/People/IOSEmployeesPage.swift` (AddEmployeeSheet). The script's patched output should be indistinguishable in shape from that hand-crafted pilot.
+
+**Safety rails:**
+- **Dry-run by default.** `python dismiss_guard_patcher.py --dry-run` prints the planned diff without writing. `--apply` commits. User reviews the dry-run before approving `--apply`.
+- **Skip files already patched.** Script detects the pattern (e.g. `@State private var isDirty`) and skips files with it present.
+- **Skip files outside scope.** Files without a sheet struct or without bound inputs are logged and skipped.
+- **Human spot-check before commit.** Even on `--apply`, the script writes changes but does NOT commit. A human reviews the diff, runs `swift build`, and commits the batch.
+- **Phase 1A first, batched small.** Even though the script is fast, don't patch all 30 files in one PR. Batch by Phase (1A People/HR, 1B Chat, 1C Orders/Fleet/Scheduling, 1D Parts/Tools/Settings) so each batch is reviewable.
+
+### Pilot status
+
+**PE-044 (IOSEmployeesPage AddEmployeeSheet)** — ✅ **SHIPPED 2026-04-15 via direct Swift edit.** This is NOT a script output — it's the hand-crafted template whose shape the script will match. Before the script runs on other sheets, PE-044 should get real-use validation (open/edit/swipe-dismiss test on device or simulator). If edge cases appear, we refine PE-044 first, then update the script's output shape to match.
+
+### The (deprecated) Xcode AI prompt template
+
+Kept here as reference in case individual sheets need manual treatment that the script can't handle cleanly. Every `PE-NNN-dismiss-guard-<sheet-name>.md` prompt under `xcode-ai/fix-prompts/` would contain:
 
 ```markdown
 # PE-NNN — Dismiss Guard: <SheetName>.swift

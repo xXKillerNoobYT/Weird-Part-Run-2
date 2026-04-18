@@ -20,143 +20,143 @@
 
 ## Pending Questions
 
-### Automation Recommendations — Parts Area (2026-04-18)
-
-**Source:** `docs/automation-recommendations.md` — "Area: parts — 2026-04-18"
-**Context:** Each automation recommendation requires Owner approval before AUTO GO will implement it. Answer each with **APPROVE** (build it now, next iteration), **DEFER** (keep in the list but don't build yet), or **REJECT** (remove from the list entirely). Optionally add reasoning.
-
-#### Questions:
-
-1. **[Hook] PartsService SQL Column Validator** — A PostToolUse hook on `PartsService.swift` edits that greps for known-bad column patterns (`first_name`, `hats.deleted_at`, etc.) and warns before the change lands. Priority: **high** (64+ historical SQL bugs). Effort: low once the bad-column list is compiled from `feedback_sql_patterns.md`. **Also tracked as open GitHub issue [#255](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/255).**
-   > Answer: _pending_
-
-2. **[Skill] parts-sql-schema-checker** — ✅ **ALREADY BUILT.** AUTO GO's first global github-issues-sync (2026-04-18 iteration 7) found that GitHub issue [#254](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/254) is CLOSED and the `parts-sql-schema-checker` skill is present in the skill list. No action needed — will wire it into hunt-fix Scanner 4 on the next iteration that runs C3.
-   > Answer: RESOLVED — already implemented (skill exists, #254 closed)
-
-3. **[Skill] parts-xcode-phase2-generator** — A skill that reads `colors-parts-redesign.md` and outputs Xcode AI prompts for the 7 pending Phase 2 files automatically. Priority: **low** — duplicates existing `xcode-planner-and-review` capability. Current recommendation: DEFER/REJECT to avoid duplication.
-   > Answer: _pending_
-
-4. **[Subagent] parts-drift-detector** — An Agent-tool subagent that reads parts plans and outputs "planned-but-not-coded" and "coded-but-not-planned" items with file:line citations, to speed up C1b checks from ~10 min to ~2 min. Priority: **medium**. Best timing: after PE-COLORS Phase 2 begins so the drift surface is active. **Also tracked as open GitHub issue [#256](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/256).**
-   > Answer: _pending_
-
-**How to answer:** Edit this file, replace `_pending_` with one of:
-- `APPROVE` (optionally: `APPROVE — build it now` or `APPROVE — wait until X`)
-- `DEFER` (optionally with a reason/timing)
-- `REJECT` (optionally with a reason)
-
-Once approved, AUTO GO will build the recommendation autonomously in a future iteration and move this cluster to the Processed/Closed log below.
+_None. All clusters have been answered — see Answered Clusters below and Processed / Closed Q&A reference log at the bottom._
 
 ---
 
-<!-- ARCHIVED CLUSTERS (answered 2026-04-14, see reference log) -->
+## Answered Clusters (awaiting pipeline-manager archival)
 
-<!-- ### Colors & Parts Redesign — Reusable Colors, Per-Color Part Numbers, General Brand Default
+> These clusters received full answers; the `dev-pipeline-manager` agent can move them to the Processed / Closed log on its next run. Per-POV answers are preserved inline so the design rationale stays grep-able against each role.
 
+### Automation Recommendations — Parts Area (2026-04-18)
+
+**Status:** ✅ ANSWERED 2026-04-18. Source: `docs/automation-recommendations.md`. Format uses APPROVE/DEFER/REJECT per item (not role-based — automation-tool recommendations don't need POV framing).
+
+1. **[Hook] PartsService SQL Column Validator** — A PostToolUse hook on `PartsService.swift` edits that greps for known-bad column patterns (`first_name`, `hats.deleted_at`, etc.) and warns before the change lands. Priority: **high** (64+ historical SQL bugs). Tracked as open GitHub issue [#255](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/255).
+   > **Answer (2026-04-18):** **APPROVE — build it now.** Matches beta-release posture: defense-in-depth against a category of bugs we've hit 64+ times. Low effort, high value. AUTO GO will build next iteration. Close #255 once the hook lands.
+
+2. **[Skill] parts-sql-schema-checker** — ✅ **ALREADY BUILT.** AUTO GO's first global github-issues-sync (2026-04-18 iteration 7) found that GitHub issue [#254](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/254) is CLOSED and the skill is present in the skill list.
+   > **Answer:** RESOLVED — already implemented (skill exists, #254 closed). Will wire into hunt-fix Scanner 4 on next iteration running C3.
+
+3. **[Skill] parts-xcode-phase2-generator** — A skill that reads `colors-parts-redesign.md` and outputs Xcode AI prompts for the 7 pending Phase 2 files automatically. Priority: **low** — duplicates existing `xcode-planner-and-review` capability.
+   > **Answer (2026-04-18):** **REJECT — remove from list.** Matches the recommendation's own suggestion. Use existing `xcode-planner-and-review` skill which already handles this. No need for a parts-specific duplicate.
+
+4. **[Subagent] parts-drift-detector** — An Agent-tool subagent that reads parts plans and outputs "planned-but-not-coded" and "coded-but-not-planned" items with file:line citations, to speed up C1b plan-vs-code drift checks from ~10 min to ~2 min. Priority: **medium**. Best timing: after PE-COLORS Phase 2 begins so the drift surface is active. Tracked as open GitHub issue [#256](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/256).
+   > **Answer (2026-04-18):** **DEFER — build when PE-COLORS Phase 2 begins.** Matches the recommendation's own timing guidance. Drift detection is only valuable once there's actively-drifting code to detect. Leave #256 open; revisit when Phase 2 code starts landing.
+
+---
+
+### Colors & Parts Redesign — Reusable Variants, Per-SKU Brand Linkage, General Mode
+
+**Status:** ✅ ANSWERED 2026-04-14 (narrative), RE-RATIFIED 2026-04-18 (per-POV via AskUserQuestion). Design plan: [`docs/plans/colors-parts-redesign.md`](plans/colors-parts-redesign.md).
 **GitHub Issues:** `#98` `#99` `#100` `#105` `#106` `#107`
-**Current State:** Colors in the parts catalog are currently nested under specific (type, brand) combinations — a color defined under "PVC Conduit → Cantex" is a separate entity from the same color under "PVC Conduit → General". There is no shared color pool. Part numbers can only be set at the type level. The "General" brand is not auto-selected when creating a new type detail. New Brand and Supplier forms have no linked counterpart picker.
-**Proposed Change:** Make colors reusable across brands and types (a shared color pool). Each (color + brand) combination becomes its own unique "part" (SKU). Color detail panels gain part number + price override fields. General brand auto-selected on new type detail. Brand removal requires confirmation. New Brand/Supplier forms gain a linked picker for the counterpart.
-**Affected Modules:** Parts → Catalog, Pricing, Brands, Suppliers
+**Current State (pre-redesign):** Colors in the catalog are currently presented as nested under specific (type, brand) combinations in the UI, even though `part_colors` is already a standalone table. There is no shared-color-pool UI surfacing. Part numbers can only be set at the type level. The "General" brand is not auto-selected when creating a new type detail. New Brand and Supplier forms have no linked counterpart picker.
+**Proposed Change:** Rebuild as a "Variants" concept — reusable pool of variant rows (color-based AND named-only AND several additional kinds). Each (variant + brand + type) becomes a distinct SKU via a new `color_brand_skus` table. "General" becomes a MODE on order line items. New Brand/Supplier forms gain simple counterpart pickers.
+**Affected Modules:** Parts → Catalog (`PartsCategoriesPage`, `CategoriesColorPicker`, `CategoriesEditorPanel`, `TypeBrandColorSection`), Brands, Suppliers, JPO/PO creation flows.
 
 #### Questions:
 
 1. **As the Owner:** Right now a "color" only exists under a specific (type, brand) pair. You want colors to be reusable — e.g., "Gray" exists once and can be linked to multiple types and brands. Does this mean we need to **migrate existing colors** into a shared pool, or start fresh (keep old data as-is, new colors use the shared pool)?
-   > Answer: _pending_
+   > **Answer (2026-04-18, per-POV):** REBUILD the concept as **"Variants"** — a broader pool than just colors. Support multiple variant kinds on every row: (a) color-based (hex + name), (b) named-only (text), (c) named + optional color tag (visual UI chip, not physical color), (d) size/dimension variants, (e) rating/spec variants, (f) material variants. PLUS a "suitable substitute" relationship (many-to-many cross-reference table) so one part can flag another as interchangeable. No data migration needed — `part_colors` is already a standalone table; the expansion is additive columns + new `variant_substitutes` relation table.
 
 2. **As the Owner:** Issue #100 says "each color under General or a Brand should be a different part." Does this mean: when you add "Gray" under type "PVC Conduit" for both General and Cantex, you get **two distinct parts** (each with their own part number, price, stock)? Or is it one part with two supplier pricing tiers?
-   > Answer: _pending_
+   > **Answer (2026-04-18, per-POV):** **Option A — Distinct SKU per (color + brand).** A red Leviton outlet and a blue Leviton outlet are different parts; a red Leviton and a red Bosch are different parts. Each combo gets its own `part_number`, `unit_cost`, `stock_qty` via new `color_brand_skus` table with `UNIQUE(color_id, brand_id, type_id)`. Matches how every real parts retailer structures their catalog.
 
 3. **As a Manager:** When creating a new part type, should selecting "General" brand be the default? And if a worker tries to remove the General brand from a type that has no other brand, should the app block it or just warn them?
-   > Answer: _pending_
+   > **Answer (2026-04-18, per-POV):** **"General" is a MODE, not a brand-row default.** "General" on a PO/JPO line item means "no brand locked — resolve brand at supplier-pick time based on which brand the chosen supplier carries." Schema: add `brand_selection_mode: 'specific' | 'general'` column to `jpo_line_items` and `po_line_items`. No auto-select on new type creation. When a worker removes the last brand from a type, show a **warning toast but allow it** (not a hard block).
 
 4. **As a Developer:** Making colors reusable would require either: **(A)** a new `shared_colors` table + migration to move existing color records there (schema change, cleaner long-term), or **(B)** a simpler approach where colors remain per-type but can be "copied/linked" to other types on demand (no schema change, no data migration needed). Option A is architecturally cleaner but riskier for existing data. Which do you prefer?
-   > Answer: _pending_
+   > **Answer (2026-04-18, per-POV):** **Additive schema only, no data migration.** Driven by Q2=A: new `color_brand_skus` join table. Driven by Q3=Mode: new `brand_selection_mode` column on `jpo_line_items` and `po_line_items`. Driven by Q1=Variants expansion: additive columns on `part_colors` for size/rating/material + new `variant_substitutes` relation table. `part_colors` remains standalone (it already is). Drop legacy `part_number` column from `parts_types` / `parts_brands` if still present.
 
 5. **As a Developer (for #105):** The "New Brand" and "New Supplier" forms currently save independently. Adding a linked picker means when you create a new brand you can immediately link a supplier (and vice versa). Should this be: **(A)** a simple optional picker that shows existing suppliers/brands (no inline creation), or **(B)** a full inline create-or-pick widget (create new supplier while creating a new brand in one flow)?
-   > Answer: _pending_
+   > **Answer (2026-04-18, per-POV):** **Option A — Simple picker of existing counterparts, no inline-create.** New-Brand form shows existing suppliers. New-Supplier form shows existing brands. If the counterpart doesn't exist yet, user navigates to the other page, creates it, comes back and picks. Uses existing `BrandSupplierPickerSheet`. Keeps new-record sheets uncluttered.
 
 6. **As a User (for #106):** On the Color detail panel, you want to be able to add a part number and override the type-level pricing. Should the color-level part number **replace** the type-level part number in searches, or **supplement** it (both are searchable, and the color-level wins for display)?
-   > Answer: _pending_
+   > **Answer (2026-04-18, per-POV, FLIPPED from 2026-04-14 "A"):** **Option B — Supplement (both searchable, color-level wins for display).** Keep type-level `part_number` as an optional fallback / group-default. If a color has its own `part_number`, that wins for display. If it doesn't, the type-level acts as fallback default. Search queries BOTH columns (UNION) so users find parts whether they search the type-level SKU or the color-level SKU. (Changed from the earlier "Replace" intent to preserve type-level as a group default for legacy and partial-configuration scenarios.)
 
-**Slots to fill:**
-- [ ] Migration strategy: move existing colors vs. new pool only vs. start fresh
-- [ ] One part per (color + brand) vs. one part with multi-tier pricing
-- [ ] General brand default behavior: block remove vs. warn only
-- [ ] Schema approach: new shared table vs. copy-on-demand
-- [ ] New Brand/Supplier form: simple counterpart picker vs. inline create-or-pick
+**Slots filled:**
+- [x] Migration strategy: **no migration** (table already standalone); expand Variants concept additively
+- [x] One part per (color + brand) vs. one part with multi-tier pricing: **distinct SKU per (color + brand)**
+- [x] General brand default behavior: **"General" is a Mode on line items**; warn-only on last-brand remove
+- [x] Schema approach: **additive only** (new `color_brand_skus`, new `brand_selection_mode` columns, new `variant_substitutes` table, additive Variant-attribute columns)
+- [x] New Brand/Supplier form: **simple counterpart picker**, no inline-create
+- [x] Color-level part_number: **Supplement** (both searchable, color wins for display)
 
 ---
 
 ### #143/#149 — Dismiss Safety & Keyboard Dismiss Systemic Audit (Settings, People, Chat, 30+ pages)
 
+**Status:** ✅ ANSWERED 2026-04-14 (narrative), RE-RATIFIED 2026-04-18 (per-POV via AskUserQuestion). Design plan: [`docs/plans/dismiss-safety-campaign.md`](plans/dismiss-safety-campaign.md).
 **GitHub Issues:** `#143` (also `#123`) + `#149`
 **Current State:**
-- **#143:** 30+ form sheets do NOT use `.interactiveDismissDisabled()` — users can swipe-down and lose all unsaved changes with no warning. 33 sheets now covered (partial); systemic remainder open.
+- **#143:** 30+ form sheets do NOT use `.interactiveDismissDisabled()` — users can swipe-down and lose all unsaved changes with no warning. PE-044 (IOSEmployeesPage AddEmployeeSheet) shipped via direct edit 2026-04-15 as canonical pattern.
 - **#149:** ~30 scrollable pages with text fields do NOT use `.scrollDismissesKeyboard(.interactively)` — the keyboard stays locked up when users scroll away from a text field, blocking content below.
 **Proposed Change:**
-- **#143:** Add `.interactiveDismissDisabled(hasUnsavedChanges)` to all form sheets. A `hasUnsavedChanges` computed var compares current form state to initial state.
-- **#149:** Add `.scrollDismissesKeyboard(.interactively)` to all `List` / `ScrollView` containers that contain text fields.
-**Affected Modules:** Settings, People, Chat, Orders, Fleet, Scheduling (30+ sheets + 30+ pages)
+- **#143:** Add per-sheet `@State var isDirty` + `.onChange` watchers + `.interactiveDismissDisabled(isDirty)` + Discard alert. PE-044 ships as pilot; smart-patcher automation script sweeps the rest once PE-044 is validated.
+- **#149:** Separate Phase 2 campaign after #143 completes. Add `.scrollDismissesKeyboard(.interactively)` to all `List` / `ScrollView` containers that contain text fields.
+**Affected Modules:** Settings, People, Chat, Orders, Fleet, Scheduling (30+ sheets + 30+ pages).
 
 #### Questions:
 
 1. **As the Owner:** Cart Mode just shipped and program-review page rebuilds (#82–#95) are the next major phase. Is protecting users from accidental sheet dismiss (#143) and fixing keyboard lock (#149) a high priority **now**, or can this campaign wait until after the first page-rebuild wave?
-   > Answer: _pending_
+   > **Answer (2026-04-18, per-POV):** **DO NOW, but pilot first.** The program is in the **development stage preparing for BETA release** — pattern quality matters because it's public-bound. Approach: PE-044 (IOSEmployeesPage, already shipped via direct edit 2026-04-15) is the pilot. Let it get real-use validation during beta prep, THEN scale. Don't write 30 prompts upfront. Campaign slots BEFORE page-rebuild wave so rebuilds inherit the validated pattern.
 
 2. **As a Manager:** For #143, which module is the highest risk for data-loss on accidental dismiss? (Settings forms, People/HR forms, or Chat/messaging forms?) This determines which of the remaining sheets to fix first.
-   > Answer: _pending_
+   > **Answer (2026-04-18, per-POV):** **People/HR → Chat → Settings (in that order).** People/HR first: cert forms, wage edits, new-employee forms are long and high-value. Chat second: composer loss mid-typing is acutely painful but shorter content. Settings last: rarely-entered config forms, lowest frequency = lowest total risk. Phase labels: 1A People/HR, 1B Chat, 1C Orders/Fleet/Scheduling, 1D Parts/Tools/Settings.
 
 3. **As a Developer:** Two approaches for #143: **(A)** `@State var isDirty: Bool` + `.onChange` tracking on each sheet individually (precise — only blocks when data was actually changed), or **(B)** `.interactiveDismissDisabled(true)` unconditionally on all form sheets (simpler, always blocks dismiss even on untouched forms). Owner preference?
-   > Answer: _pending_
+   > **Answer (2026-04-18, per-POV):** **Option A — Per-sheet dirty tracking.** `@State private var isDirty: Bool` + `.onChange(of: field) { _, _ in isDirty = true }` on every bound input + `.interactiveDismissDisabled(isDirty)` on sheet root + Discard alert on Cancel. Untouched sheets dismiss cleanly; touched sheets get the alert. Pattern proven in PE-044 (IOSEmployeesPage AddEmployeeSheet, shipped 2026-04-15).
 
 4. **As a Developer:** Should #143 be an Xcode prompt (UI-only surgery, Xcode AI does the 30+ edits) or should we write a hunt-fix automation script that scans `.sheet { }` and auto-patches the simple cases? At 30+ locations, a script would be faster.
-   > Answer: _pending_
+   > **Answer (2026-04-18, per-POV, FLIPPED from 2026-04-14 "A: Xcode prompts"):** **Smart-patcher automation script.** Python/Swift script in `execution/` per 3-layer architecture. Script reads each sheet file, detects bound inputs (TextField / Picker / Toggle / DatePicker / Stepper / Slider), injects `@State private var isDirty`, adds `.onChange(of: $binding) { _, _ in isDirty = true }` per detected binding, wires `.interactiveDismissDisabled(isDirty)` on sheet root + Discard-changes alert. Emits per-file review report. Human spot-checks before commit. PE-044 becomes the **reference output** — the script produces files shaped like PE-044. Runs only after PE-044 pilot validates the pattern.
 
 5. **As a Developer:** For #149 (keyboard dismiss): `.scrollDismissesKeyboard(.interactively)` is a straightforward one-liner on every `List`/`ScrollView` that contains a `TextField`. Should this be added in the same campaign as #143 (same Xcode prompt or script), or handled separately since it's lower risk? The fix is mechanical enough that it could be auto-scripted independently of #143.
-   > Answer: _pending_
+   > **Answer (2026-04-18, per-POV):** **Option B — Separate Phase 2 campaign**, lower priority, slots AFTER #143 completes. #143 is data-loss (critical pre-beta); #149 is UX annoyance. Kept separate to keep the #143 smart-patcher script laser-focused on dirty-tracking. #149 can be a rapid mechanical sweep (likely its own smaller script) once #143 lands.
 
-**Slots to fill:**
-- [ ] Priority: do now vs. after first page-rebuild wave
-- [ ] Module priority order (Settings vs. People vs. Chat) for #143
-- [ ] Approach: per-sheet dirty tracking vs. unconditional block
-- [ ] Method: Xcode prompt vs. automated scan-and-patch script
-- [ ] #149 keyboard dismiss: same campaign as #143, or separate?
+**Slots filled:**
+- [x] Priority: **do now, but pilot PE-044 first, then scale** (pre-release / pre-beta context)
+- [x] Module priority order: **People/HR → Chat → Orders/Fleet/Scheduling → Parts/Tools/Settings**
+- [x] Approach: **per-sheet dirty tracking** (shipped in PE-044)
+- [x] Method: **smart-patcher automation script** (not Xcode prompts); PE-044 is the reference output
+- [x] #149 keyboard dismiss: **separate Phase 2 campaign** after #143 completes
 
 ---
 
 ### April 2026 Audit — Architectural Decisions Needed
 
+**Status:** ✅ ANSWERED 2026-04-14 (narrative), RE-RATIFIED 2026-04-18 (per-POV via AskUserQuestion). Design plans: [`docs/plans/april-2026-audit-closures.md`](plans/april-2026-audit-closures.md), [`docs/plans/sync-field-timestamps-upgrade.md`](plans/sync-field-timestamps-upgrade.md), [`docs/plans/pagination-cutover.md`](plans/pagination-cutover.md).
 **GitHub Issues:** `#221` `#223` `#224` `#227`
-**Context:** The April 2026 full program audit found 4 issues that require a design decision before a fix can be coded. These are not clear-cut bugs — each has meaningful trade-offs between approaches. All other audit issues (#179–#220, #222, #225–#226, #228) are clear bugs being fixed directly by the scanner agents.
-**Affected Modules:** Sync (LWW strategy), Parts (pagination + forecasting logic)
+**Context:** The April 2026 full program audit found 4 issues that require a design decision before a fix can be coded. These are not clear-cut bugs — each has meaningful trade-offs between approaches.
+**Affected Modules:** Sync (LWW strategy), Parts (pagination + forecasting logic).
 
 #### Questions:
 
-1. **As the Owner — #224 (Forecasting ADU inflation):** The forecasting Average Daily Usage (ADU) calculation currently counts **transfer movements** between locations as demand. This inflates ADU and triggers false reorder alerts. For example, if you move 50 PVC fittings from warehouse to the van, that shows up as "50 units of demand." Should we: **(A)** Exclude transfer movements from ADU (only count sales/installations/consumption), or **(B)** Keep transfers in ADU but show them as a separate line item so managers can see both numbers?
-   > Answer: _pending_
+1. **As the Owner — #224 (Forecasting ADU inflation):** The forecasting Average Daily Usage (ADU) calculation currently counts **transfer movements** between locations as demand. This inflates ADU and triggers false reorder alerts. Should we: **(A)** Exclude transfer movements from ADU (only count sales/installations/consumption), or **(B)** Keep transfers in ADU but show them as a separate line item so managers can see both numbers?
+   > **Answer (2026-04-18, per-POV):** **Option A — Exclude transfer movements from ADU entirely.** Only `consume` and `return_to_supplier` count as real demand. Transfers are location moves, not consumption. **Already shipped** in commit `fb11761` (2026-04-14): `transfer` removed from all 6 ADU/APW movement_type filters in `PartsService.swift` (global 30d, global 90d, per-location 30d, per-location 90d, plus 2 APW queries). Issue #224 CLOSED correctly.
 
-2. **As the Owner — #221 (LWW sync conflict resolution):** When two devices edit the same record simultaneously, the system uses "Last Write Wins" — whichever device synced last wins the whole row. This means if Device A changes the part name and Device B changes the price at the same time, one change gets lost entirely. A more precise fix would track timestamps per-field (so name from Device A + price from Device B both survive). **(A)** Accept this known limitation for v1 (row-level LWW is simpler and fast), or **(B)** Upgrade to field-level conflict resolution (schema change: adds `_field_timestamps` JSON column, more complex but no data loss)?
-   > Answer: _pending_
+2. **As the Owner — #221 (LWW sync conflict resolution):** When two devices edit the same record simultaneously, the system uses "Last Write Wins" — whichever device synced last wins the whole row. **(A)** Accept this known limitation for v1, or **(B)** Upgrade to field-level conflict resolution (schema change: adds `_field_timestamps` JSON column, more complex but no data loss)?
+   > **Answer (2026-04-18, per-POV):** **Option B — Upgrade to per-field timestamps.** Ground-truth correction: `ConflictResolver.swift` line 79 is ALREADY field-level merge — the limitation is that the tiebreaker uses the row's `updated_at`. Upgrade: add `_field_timestamps TEXT` JSON column to every synced table (~35 tables), every service write stamps the touched field's timestamp via a new `FieldTimestampHelper.stamp()`, `ConflictResolver.mergeField()` consults per-field timestamp with row `updated_at` fallback for pre-migration rows. Pre-beta is the right time for this migration (cheaper now than post-beta). Plan: `docs/plans/sync-field-timestamps-upgrade.md`. Issue #221 reopened 2026-04-16 by `issue-closure-verifier` Check A — remains OPEN until Phase 2 migration lands.
 
-3. **As a Developer — #223/#227 (Pagination):** `BaseRepository.findAll()` has no row limit — calling it on large tables (parts catalog with thousands of parts) loads everything into memory. Two approaches: **(A)** Add `LIMIT 500` as a default with explicit override opt-out (quick fix, low risk), or **(B)** Full cursor-based pagination with `offset` parameter across all service methods that return lists (correct fix, more work, breaks some call sites). Which approach?
-   > Answer: _pending_
+3. **As a Developer — #223/#227 (Pagination):** `BaseRepository.findAll()` has no row limit. **(A)** Add `LIMIT 500` as a default with explicit override opt-out (quick fix), or **(B)** Full cursor-based pagination across all service methods (correct fix, more work)?
+   > **Answer (2026-04-18, per-POV):** **Option C — Phased with B-bias.** **Phase 1 (shipped in commit `fb11761` 2026-04-14):** `BaseRepository.findAll()` default changed from `limit: Int? = nil` to `limit: Int? = 1000` with `limit: nil` as explicit opt-in for truly unbounded. Note: 1000, not the 500 originally proposed. Issue #223 CLOSED correctly. **Phase 2 (in progress):** Call-site audit produces `docs/pagination-audit.md` classifying every `findAll()` caller. **Phase 3 (after audit):** One-clean-pass keyset-cursor pagination for call sites marked in Phase 2. Closes #227 fully. Plan: `docs/plans/pagination-cutover.md`.
 
-**Slots to fill:**
-- [ ] ADU calculation: exclude transfers vs. show separately
-- [ ] LWW granularity: row-level (keep) vs. field-level (upgrade)
-- [ ] Pagination: default-limit band-aid vs. full cursor pagination
--->
+**Slots filled:**
+- [x] ADU calculation: **exclude transfers entirely** (shipped `fb11761`)
+- [x] LWW granularity: **upgrade to per-field timestamps** (#221 reopened, plan active)
+- [x] Pagination: **phased — Phase 1 shipped, Phase 2 audit in progress, Phase 3 cursor cutover after audit**
+
 
 ---
 
 ## Processed / Closed Q&A (Reference Log)
 
-> These entries were fully answered, design decisions integrated into plan docs, and removed from Pending.
+> These entries were fully answered, design decisions integrated into plan docs, and removed from Pending. Some have since been refined — check the **Answered Clusters** section above for the latest per-POV specifics.
 
 - **PricingOverrideFlow** (#133) — Processed 2026-04-12. Keep + retroactive plan at `docs/plans/ios-pricing-override-flow.md`. Accessible from Pricing page + CategoriesTreeView. Tests required before CategoriesTreeView wiring. GitHub #133 CLOSED.
 - **Cart Mode** (#138) — Processed 2026-04-12. Build now. Per-bin movement records. Both wizard + standalone. Service (commit 71aa8bf) + UI (PE-042) complete. GitHub #138 CLOSED.
 - **DIS-012/013 PIN KDF** (#130/#131) — Processed 2026-04-12. Defer to v2. PBKDF2 via CommonCrypto when ready. Legacy path removal timing TBD. Issues remain open as v2 backlog.
-- **Colors & Parts Redesign** (#98, #99, #100, #105, #106, #107) — **Processed 2026-04-14**. REBUILD with concept reframe: "colors" is actually **Variants** (color-based OR named-only, e.g. standard/fire-rated/metal boxes). Each (color + brand) is a **distinct SKU** via new `color_brand_skus` table (matches how every parts retailer works). **"General" is a MODE** (brand deferred to supplier-pick time on PO/JPO) — NOT a brand row default. New Brand/Supplier forms use **simple counterpart picker** (no inline-create). Color-level `part_number` **replaces** type-level entirely. Design plan: `docs/plans/colors-parts-redesign.md`. GitHub issues remain OPEN pending implementation.
-- **Dismiss Safety Campaign** (#143) — **Processed 2026-04-14**. **DO NOW**, before page-rebuild wave (sets the pattern for rebuilds to adopt). Module order: **People/HR → Chat → Settings** (by data-loss stakes). Approach: **per-sheet dirty tracking** (`@State var isDirty` + `.onChange` watchers + `.interactiveDismissDisabled(isDirty)`). Method: **Xcode AI prompts**, one per sheet, with mandatory 4-section header (Page Overview / Broken Behavior / Goal / Exact Change). Plan: `docs/plans/dismiss-safety-campaign.md`.
+- **Colors & Parts Redesign** (#98, #99, #100, #105, #106, #107) — **Processed 2026-04-14, REFINED 2026-04-18.** REBUILD as **Variants** concept — 2026-04-18 ratification expanded variant kinds to 6 (color-based, named-only, named+color-tag, size, rating, material) PLUS a `variant_substitutes` many-to-many relation table. Each (color + brand) is a **distinct SKU** via new `color_brand_skus` table. **"General" is a MODE** on line items (brand deferred to supplier-pick time) — NOT a brand row default. New Brand/Supplier forms use **simple counterpart picker** (no inline-create). **Color-level `part_number` SUPPLEMENTS** type-level (both searchable, color wins for display) — flipped from 2026-04-14 "Replace" per 2026-04-18 per-POV ratification. Design plan: `docs/plans/colors-parts-redesign.md`.
+- **Dismiss Safety Campaign** (#143) — **Processed 2026-04-14, REFINED 2026-04-18.** **DO NOW but pilot first** — PE-044 (IOSEmployeesPage AddEmployeeSheet, shipped 2026-04-15 via direct edit) is the pilot; validation during beta prep before scaling. Module order: **People/HR → Chat → Orders/Fleet/Scheduling → Parts/Tools/Settings**. Approach: **per-sheet dirty tracking**. **Method flipped 2026-04-18 to smart-patcher automation script** (was "Xcode AI prompts" on 2026-04-14) — Python/Swift script in `execution/` per 3-layer architecture; detects bound inputs, injects pattern, emits per-file review report; PE-044 is the reference output shape. Plan: `docs/plans/dismiss-safety-campaign.md`.
 - **Keyboard Dismiss Campaign** (#149) — **Processed 2026-04-14**. **Separate, lower-priority campaign slotted after #143 completes**. One-liner pattern (`.scrollDismissesKeyboard(.interactively)`) but kept separate to keep #143 Xcode prompts laser-focused on data-loss. Plan: `docs/plans/dismiss-safety-campaign.md` (phase 2 section).
 - **April 2026 Audit Closures** (#221, #223, #224, #227) — **Processed 2026-04-14**. **#224 ADU:** exclude transfer movements entirely (two-line SQL filter change in `PartsService.swift` ~line 3099). **#221 LWW:** upgrade to **per-field timestamps** — new `_field_timestamps` JSON column on every synced table, `ConflictResolver` updated to consult it. **#223/#227 Pagination:** phased — ship `LIMIT 500` default to `BaseRepository.findAll()` NOW with `unlimited: true` override, then full audit of call sites, then cursor pagination cutover in one clean pass. Plans: `docs/plans/april-2026-audit-closures.md`, `docs/plans/sync-field-timestamps-upgrade.md`, `docs/plans/pagination-cutover.md`.
 - **IOSMovementWizard Save & Exit** (#148) — **Processed 2026-04-17 (retroactive ratification).** Code already shipped in `IOSMovementWizard.swift`: Save & Exit toolbar button (line 121–130), `saveDraft()` → UserDefaults JSON (line 1010–1026), `restoreDraft()` via `.task` on wizard open with "Draft restored — pick up where you left off" banner (line 1028–1041), `clearDraft()` called after successful execute (line 986). Retroactive design answers: Q1 **Do now** (shipped); Q2 **Per-device** (UserDefaults, single phone); Q3 **Option A: UserDefaults** keyed `"movementWizardDraft"` (no DB table, no migration); Q4 **Indefinite** (no time-bounded auto-discard — draft persists until either successfully executed or explicitly overwritten by another Save & Exit). Mirrors the PE-041 receiving-draft-persistence pattern for consistency. Issue #148 CLOSED 2026-04-16, reopened 2026-04-16 by `issue-closure-verifier` (Check A — Q&A still Pending), now re-closeable with this log entry in place.
