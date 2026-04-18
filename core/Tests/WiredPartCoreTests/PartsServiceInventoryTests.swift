@@ -249,6 +249,37 @@ struct PartsServiceInventoryTests {
 
     // MARK: - calculateSupplierScores / updateSupplierScores
 
+    @Test("calculateSupplierScores computes non-zero on-time rate for completed receiving session")
+    func testCalculateSupplierScores_onTimeRateWithCompletedSession() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "OnTimeRateSupplier")
+
+        // Insert a purchase order in received state (5 days ago → within 14-day delivery window)
+        let poId: Int64 = try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO purchase_orders
+                    (supplier_id, po_number, status, created_at, updated_at, deleted_at)
+                VALUES (?, 'PO-ONTIME-001', 'received', datetime('now', '-5 days'), datetime('now'), NULL)
+                """, arguments: [supplierId])
+            return db.lastInsertedRowID
+        }
+
+        // Insert a receiving session with status 'completed' — the correct status string.
+        // Regression: was querying 'complete' (without 'd'), which always produced 0 on-time rate.
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO receiving_sessions
+                    (po_id, started_by, status, completed_at, created_at, deleted_at)
+                VALUES (?, ?, 'completed', datetime('now'), datetime('now', '-5 days'), NULL)
+                """, arguments: [poId, env.adminUserId])
+        }
+
+        let scores = try env.parts.calculateSupplierScores(supplierId: supplierId)
+        // On-time rate must be > 0 — delivery was 5 days, within the default 14-day window
+        #expect(scores.totalOrderCount == 1, "Should count the one received PO")
+        #expect(scores.onTimeRate > 0, "On-time rate must be non-zero when a completed receiving session exists")
+    }
+
     @Test("calculateSupplierScores returns zero scores for supplier with no PO history")
     func testCalculateSupplierScores_zeroes() throws {
         let env = try E2ETestHelpers.setUp()

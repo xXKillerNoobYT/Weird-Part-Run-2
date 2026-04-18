@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import os.log
 
 // MARK: - Wire-Format Types
 
@@ -85,6 +86,8 @@ public struct ConflictStats: Sendable {
 /// 2. If both changed the same field — the device with the later timestamp wins.
 /// 3. Every overwrite is logged to `_conflict_log` regardless of which side wins.
 public enum ConflictResolver {
+
+    private static let logger = Logger(subsystem: "com.wiredpart.core", category: "ConflictResolver")
 
     // MARK: - Errors
 
@@ -260,6 +263,7 @@ public enum ConflictResolver {
                 result.skipped += 1
             } catch {
                 result.errors += 1
+                logger.error("Failed to apply incoming change: \(error.localizedDescription, privacy: .public)")
             }
         }
 

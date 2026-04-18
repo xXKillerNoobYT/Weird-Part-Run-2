@@ -356,7 +356,7 @@ public final class JobEstimationService: Sendable {
     public func getHistoricalAverage(gcId: Int64? = nil, jobType: String? = nil, area: String? = nil) throws -> HistoricalAverage? {
         do { return try db.writer.read { dbConn in
             // Build filter conditions for completed jobs with reviews
-            var conditions: [String] = ["j.status = 'complete'", "j.deleted_at IS NULL"]
+            var conditions: [String] = ["j.status = 'completed'", "j.deleted_at IS NULL"]
             var args: [DatabaseValueConvertible] = []
 
             if let gcId {
@@ -630,7 +630,7 @@ public final class JobEstimationService: Sendable {
             // Check similar past jobs
             let similarCount = try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM jobs
-                WHERE job_type = ? AND status = 'complete' AND deleted_at IS NULL
+                WHERE job_type = ? AND status = 'completed' AND deleted_at IS NULL
                 """, arguments: [jobType ?? ""]) ?? 0
 
             if similarCount >= 3 {
@@ -662,7 +662,7 @@ public final class JobEstimationService: Sendable {
             // Area-specific insight
             if let city, !city.isEmpty {
                 let areaCount = try Int.fetchOne(dbConn, sql: """
-                    SELECT COUNT(*) FROM jobs WHERE city = ? AND status = 'complete' AND deleted_at IS NULL
+                    SELECT COUNT(*) FROM jobs WHERE city = ? AND status = 'completed' AND deleted_at IS NULL
                     """, arguments: [city]) ?? 0
 
                 if areaCount >= 2 {

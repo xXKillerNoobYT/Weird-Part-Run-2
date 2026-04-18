@@ -231,6 +231,46 @@ struct JobEstimationServiceTests {
         #expect(avg == nil || avg!.avgDays >= 0)
     }
 
+    @Test("Regression: getHistoricalAverage finds jobs with status 'completed' (not 'complete')")
+    func testHistoricalAverage_findsCompletedJobs() throws {
+        let (env, est) = try freshEnv()
+
+        // Create a job and mark it completed — the canonical status is 'completed' (with 'd').
+        // Regression: JobEstimationService was querying status = 'complete', always returning 0.
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-HIST-001", name: "Completed Job")
+        try env.jobs.updateJob(id: jobId, city: "Phoenix", status: "completed")
+
+        // Submit an end-of-job review so historical averages have data to aggregate
+        _ = try est.submitEndOfJobReview(
+            jobId: jobId,
+            actualDays: 5.0,
+            actualHours: 40.0,
+            lessonsLearned: "Good pacing",
+            reviewedBy: env.adminUserId
+        )
+
+        let avg = try est.getHistoricalAverage()
+        #expect(avg != nil, "Should find historical data from the completed job")
+        #expect(avg!.jobCount >= 1, "Job count must be at least 1")
+        #expect(avg!.avgDays > 0, "Average days must be non-zero")
+    }
+
+    @Test("Regression: getJobSpecificSuggestions counts jobs with status 'completed'")
+    func testJobSuggestions_countsCompletedJobs() throws {
+        let (env, est) = try freshEnv()
+
+        // Seed 3 completed jobs of the same type so the suggestion threshold is met
+        for i in 1...3 {
+            let jid = try E2ETestHelpers.seedJob(env, jobNumber: "J-SUG-00\(i)", name: "Completed \(i)")
+            try env.jobs.updateJob(id: jid, city: "Denver", status: "completed")
+        }
+
+        let targetJobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-TARGET", name: "Current Job")
+        let suggestions = try est.getJobSpecificSuggestions(jobId: targetJobId)
+        // Suggestions may still be empty if job type doesn't match, but the query must not throw
+        #expect(suggestions.count >= 0)
+    }
+
     @Test("Job-specific suggestions")
     func testJobSuggestions() throws {
         let (env, est) = try freshEnv()

@@ -785,6 +785,14 @@ public final class ToolsService: Sendable {
         }
     }
 
+    /// Columns that may be edited via the verification workflow.
+    /// Single source of truth — used by both editToolWithVerification and approveToolEdit.
+    private static let allowedToolEditFields: Set<String> = [
+        "name", "category", "brand", "model_number", "serial_number",
+        "notes", "barcode", "location_type", "warranty_expiry",
+        "calibration_due_date", "depreciation_method"
+    ]
+
     /// Edit tool fields with optional verification requirement.
     /// If hasPermission is false, changes go to pending_verification state.
     @discardableResult
@@ -793,15 +801,8 @@ public final class ToolsService: Sendable {
     ) throws -> ToolEditResult {
         let status = hasPermission ? "approved" : "pending_verification"
         try db.writer.write { dbConn in
-            // Allowed editable fields (prevents SQL injection)
-            let allowedFields: Set<String> = [
-                "name", "category", "brand", "model_number", "serial_number",
-                "notes", "barcode", "location_type", "warranty_expiry",
-                "calibration_due_date", "depreciation_method"
-            ]
-
             for (field, value) in changes {
-                guard allowedFields.contains(field) else { continue }
+                guard Self.allowedToolEditFields.contains(field) else { continue }
 
                 // Get old value for the log
                 let oldRow = try Row.fetchOne(dbConn, sql:
@@ -842,13 +843,7 @@ public final class ToolsService: Sendable {
             let field: String = row["field_name"] ?? ""
             let value: String = row["new_value"] ?? ""
 
-            // Allowed editable fields
-            let allowedFields: Set<String> = [
-                "name", "category", "brand", "model_number", "serial_number",
-                "notes", "barcode", "location_type", "warranty_expiry",
-                "calibration_due_date", "depreciation_method"
-            ]
-            guard allowedFields.contains(field) else { return }
+            guard Self.allowedToolEditFields.contains(field) else { return }
 
             // Apply the edit
             try dbConn.execute(sql:

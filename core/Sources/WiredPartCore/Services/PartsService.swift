@@ -1082,22 +1082,28 @@ public final class PartsService: Sendable {
                 }
 
                 if colorPatterns.isEmpty {
-                    // Standard search: name, code, plus join on color part_number
+                    // Standard search: name, code, color part_number, SKU part_number (PE-COLORS #236)
                     return try Part.fetchAll(
                         dbConn,
                         sql: """
                             SELECT DISTINCT p.* FROM parts p
                             LEFT JOIN part_colors pc ON pc.id = p.color_id
                             LEFT JOIN part_supplier_links psl ON psl.part_id = p.id AND psl.deleted_at IS NULL
+                            LEFT JOIN color_brand_skus cbs
+                                ON cbs.color_id = p.color_id
+                               AND cbs.brand_id = p.brand_id
+                               AND cbs.type_id = p.type_id
+                               AND cbs.deleted_at IS NULL
                             WHERE p.deleted_at IS NULL
                               AND (p.name LIKE ? OR p.code LIKE ?
                                    OR pc.part_number LIKE ?
                                    OR pc.name LIKE ?
-                                   OR psl.supplier_part_number LIKE ?)
+                                   OR psl.supplier_part_number LIKE ?
+                                   OR cbs.part_number LIKE ?)
                             ORDER BY p.name ASC
                             LIMIT ?
                             """,
-                        arguments: [pattern, pattern, pattern, pattern, pattern, limit]
+                        arguments: [pattern, pattern, pattern, pattern, pattern, pattern, limit]
                     )
                 } else {
                     // Abbreviation match: search color names by expanded abbreviation
@@ -3089,7 +3095,10 @@ public final class PartsService: Sendable {
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
                 return rows.compactMap { row in
-                    guard let part = try? Part(row: row) else { return nil }
+                    guard let part = try? Part(row: row) else {
+                        assertionFailure("listForecastDataWithStock: failed to decode Part id=\(row["id"] as Int64? ?? -1)")
+                        return nil
+                    }
                     let stock: Int = row["current_stock"]
                     return ForecastDataRow(part: part, currentStock: stock)
                 }
@@ -5719,7 +5728,7 @@ public final class PartsService: Sendable {
                         AND julianday(rs.completed_at) - julianday(po.created_at) <= COALESCE(CAST(s.delivery_days AS INTEGER), 14)
                         THEN 1 END) AS on_time_count
                 FROM purchase_orders po
-                LEFT JOIN receiving_sessions rs ON rs.po_id = po.id AND rs.status = 'complete'
+                LEFT JOIN receiving_sessions rs ON rs.po_id = po.id AND rs.status = 'completed'
                 LEFT JOIN suppliers s ON s.id = po.supplier_id
                 WHERE po.supplier_id = ? AND po.deleted_at IS NULL
                 AND po.status IN ('received', 'completed', 'closed')
@@ -5738,7 +5747,7 @@ public final class PartsService: Sendable {
             let avgDaysRow = try Row.fetchOne(dbConn, sql: """
                 SELECT AVG(julianday(rs.completed_at) - julianday(po.created_at)) AS avg_days
                 FROM purchase_orders po
-                JOIN receiving_sessions rs ON rs.po_id = po.id AND rs.status = 'complete'
+                JOIN receiving_sessions rs ON rs.po_id = po.id AND rs.status = 'completed'
                 WHERE po.supplier_id = ? AND po.deleted_at IS NULL
                 AND rs.completed_at IS NOT NULL
                 """, arguments: [supplierId])
@@ -5780,13 +5789,28 @@ public final class PartsService: Sendable {
     }
 
     /// Recalculate scores for ALL suppliers. Use sparingly (e.g., monthly batch).
+    /// Calculates all scores first, then commits them in a single atomic write.
     public func recalculateAllSupplierScores() throws {
-        let suppliers = try db.writer.read { dbConn in
+        let supplierIds: [Int64] = try db.writer.read { dbConn in
             try Row.fetchAll(dbConn, sql: "SELECT id FROM suppliers WHERE deleted_at IS NULL")
+                .map { $0["id"] }
         }
-        for row in suppliers {
-            let id: Int64 = row["id"]
-            try updateSupplierScores(supplierId: id)
+        // Calculate all scores before writing (each is a read-only operation)
+        let allScores: [(id: Int64, scores: SupplierScores)] = try supplierIds.map { id in
+            (id: id, scores: try calculateSupplierScores(supplierId: id))
+        }
+        // Write all updates atomically so a mid-run failure leaves no partial state
+        try db.writer.write { dbConn in
+            for (id, scores) in allScores {
+                try dbConn.execute(sql: """
+                    UPDATE suppliers SET
+                        quality_score = ?,
+                        on_time_rate = ?,
+                        reliability_score = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                    """, arguments: [scores.qualityScore, scores.onTimeRate, scores.reliabilityScore, id])
+            }
         }
     }
 
@@ -6647,6 +6671,153 @@ public final class PartsService: Sendable {
             if isTableNotFoundError(error) { return CatalogSearchResult(parts: [], totalCount: 0) }
             throw error
         }
+    }
+
+    // MARK: - Color-Brand SKUs (PE-COLORS Phase 1)
+    // =========================================================================
+
+    /// One row in `color_brand_skus` — distinct SKU for a (color, brand, type) triple.
+    public struct ColorBrandSKU: Sendable {
+        public let id: Int64
+        public let colorId: Int64
+        public let brandId: Int64
+        public let typeId: Int64
+        public let partNumber: String?
+        public let unitCost: Double?
+        public let stockQty: Int
+        public let isActive: Bool
+        public let deletedAt: String?
+        public let createdAt: String
+        public let updatedAt: String
+    }
+
+    /// Fetch all active SKUs for a given (type, brand) pair.
+    public func getColorBrandSKUs(typeId: Int64, brandId: Int64) throws -> [ColorBrandSKU] {
+        do {
+            return try db.writer.read { dbConn in
+                try Row.fetchAll(dbConn, sql: """
+                    SELECT * FROM color_brand_skus
+                    WHERE type_id = ? AND brand_id = ? AND deleted_at IS NULL
+                    ORDER BY created_at ASC
+                    """, arguments: [typeId, brandId])
+                    .map(colorBrandSKUFromRow)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Fetch all active SKUs for a given color (across all types and brands).
+    public func getSKUsForColor(colorId: Int64) throws -> [ColorBrandSKU] {
+        do {
+            return try db.writer.read { dbConn in
+                try Row.fetchAll(dbConn, sql: """
+                    SELECT * FROM color_brand_skus
+                    WHERE color_id = ? AND deleted_at IS NULL
+                    ORDER BY type_id, brand_id
+                    """, arguments: [colorId])
+                    .map(colorBrandSKUFromRow)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
+    /// Create or update a SKU for a (color, brand, type) triple.
+    /// If a row already exists (even soft-deleted), reactivates and updates it.
+    @discardableResult
+    public func upsertColorBrandSKU(
+        colorId: Int64,
+        brandId: Int64,
+        typeId: Int64,
+        partNumber: String? = nil,
+        unitCost: Double? = nil
+    ) throws -> Int64 {
+        do {
+            return try db.writer.write { dbConn in
+                // Check for existing row (including soft-deleted)
+                if let existing = try Row.fetchOne(dbConn, sql: """
+                    SELECT id FROM color_brand_skus
+                    WHERE color_id = ? AND brand_id = ? AND type_id = ?
+                    """, arguments: [colorId, brandId, typeId]) {
+                    let skuId: Int64 = existing["id"]
+                    try dbConn.execute(sql: """
+                        UPDATE color_brand_skus
+                        SET part_number = ?, unit_cost = ?,
+                            is_active = 1, deleted_at = NULL,
+                            updated_at = datetime('now')
+                        WHERE id = ?
+                        """, arguments: [partNumber, unitCost, skuId])
+                    return skuId
+                }
+                // Insert new row
+                try dbConn.execute(sql: """
+                    INSERT INTO color_brand_skus
+                        (color_id, brand_id, type_id, part_number, unit_cost)
+                    VALUES (?, ?, ?, ?, ?)
+                    """, arguments: [colorId, brandId, typeId, partNumber, unitCost])
+                return dbConn.lastInsertedRowID
+            }
+        } catch {
+            if isTableNotFoundError(error) { throw error }
+            throw error
+        }
+    }
+
+    /// Update the part number or cost override for an existing SKU.
+    public func updateColorBrandSKU(
+        skuId: Int64,
+        partNumber: String? = nil,
+        unitCost: Double? = nil
+    ) throws {
+        do {
+            try db.writer.write { dbConn in
+                try dbConn.execute(sql: """
+                    UPDATE color_brand_skus
+                    SET part_number = COALESCE(?, part_number),
+                        unit_cost = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [partNumber, unitCost, skuId])
+            }
+        } catch {
+            if isTableNotFoundError(error) { return }
+            throw error
+        }
+    }
+
+    /// Soft-delete a SKU row.
+    public func deleteColorBrandSKU(skuId: Int64) throws {
+        do {
+            try db.writer.write { dbConn in
+                try dbConn.execute(sql: """
+                    UPDATE color_brand_skus
+                    SET deleted_at = datetime('now'), is_active = 0
+                    WHERE id = ?
+                    """, arguments: [skuId])
+            }
+        } catch {
+            if isTableNotFoundError(error) { return }
+            throw error
+        }
+    }
+
+    private func colorBrandSKUFromRow(_ row: Row) -> ColorBrandSKU {
+        ColorBrandSKU(
+            id: row["id"],
+            colorId: row["color_id"],
+            brandId: row["brand_id"],
+            typeId: row["type_id"],
+            partNumber: row["part_number"],
+            unitCost: row["unit_cost"],
+            stockQty: row["stock_qty"] ?? 0,
+            isActive: (row["is_active"] as? Int64 ?? 1) == 1,
+            deletedAt: row["deleted_at"],
+            createdAt: row["created_at"] ?? "",
+            updatedAt: row["updated_at"] ?? ""
+        )
     }
 
     // MARK: - Stock Entries for Part

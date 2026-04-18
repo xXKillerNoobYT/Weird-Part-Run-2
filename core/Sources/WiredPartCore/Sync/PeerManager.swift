@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import os.log
 
 // MARK: - Peer Sync Result
 
@@ -77,6 +78,7 @@ public actor PeerManager {
 
     private let db: AppDatabase
     private var state = PeerManagerState()
+    private let logger = Logger(subsystem: "com.wiredpart.core", category: "PeerManager")
 
     private var syncServer: LanSyncServer?
     private var serverState: SyncServerState?
@@ -552,8 +554,7 @@ public actor PeerManager {
             peerKAPublicKeys[peerDeviceId] = decoded.key
             return decoded.key
         }
-        // Log warning — encryption negotiation failed
-        print("[SyncSecurity] WARNING: Peer \(peerDeviceId) does not support encryption. Sync data will be sent unencrypted over LAN.")
+        logger.warning("Peer \(String(peerDeviceId.prefix(8)), privacy: .public)... does not support encryption — sync will be unencrypted over LAN")
         peerKAPublicKeys[peerDeviceId] = ""
         return nil
     }
@@ -620,11 +621,15 @@ public actor PeerManager {
         let deviceId = serverState?.deviceId ?? "unknown"
         Task {
             let did = deviceId
-            _ = try? ConflictResolver.resolveAndApplyChanges(
-                db: self.db,
-                changes: changes,
-                localDeviceId: did
-            )
+            do {
+                _ = try ConflictResolver.resolveAndApplyChanges(
+                    db: self.db,
+                    changes: changes,
+                    localDeviceId: did
+                )
+            } catch {
+                self.logger.error("ConflictResolver failed for peer \(String(did.prefix(8)), privacy: .public)...: \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
     #endif

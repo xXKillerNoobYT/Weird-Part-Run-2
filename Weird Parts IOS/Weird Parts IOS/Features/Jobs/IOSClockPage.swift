@@ -1511,7 +1511,11 @@ struct IOSClockPage: View {
             return
         }
         currentTodo = todo
-        try? service.linkClockEntryToTodo(clockEntryId: entry.id, todoId: todo.id)
+        do {
+            try service.linkClockEntryToTodo(clockEntryId: entry.id, todoId: todo.id)
+        } catch {
+            logger.warning("linkClockEntryToTodo failed (select): \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private func markTodoDoneAndPickNext(entry: JobsService.LaborEntryRow) async {
@@ -1526,8 +1530,11 @@ struct IOSClockPage: View {
             await MainActor.run {
                 activeTodos = remaining
                 currentTodo = nil
-                // Unlink the completed to-do
-                try? jobsService.linkClockEntryToTodo(clockEntryId: entry.id, todoId: nil)
+                do {
+                    try jobsService.linkClockEntryToTodo(clockEntryId: entry.id, todoId: nil)
+                } catch {
+                    self.logger.warning("linkClockEntryToTodo failed (unlink): \(error.localizedDescription, privacy: .public)")
+                }
             }
 
             if !remaining.isEmpty {

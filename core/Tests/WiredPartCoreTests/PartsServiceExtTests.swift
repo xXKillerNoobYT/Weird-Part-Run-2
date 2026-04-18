@@ -427,4 +427,110 @@ struct PartsServiceExtTests {
         let afterCancel = try env.parts.listScheduledDeletions()
         #expect(!afterCancel.contains { $0.id == deletionId })
     }
+
+    // MARK: - ColorBrandSKU CRUD (PE-COLORS Phase 1)
+
+    @Test("upsertColorBrandSKU creates a new SKU row")
+    func testUpsertColorBrandSKUCreate() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let colorId = try env.parts.createColor(name: "Gray", hexCode: "#808080")
+        let brandId = try E2ETestHelpers.seedBrand(env)
+
+        let skuId = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId,
+            partNumber: "ABC-123", unitCost: 4.99
+        )
+        #expect(skuId > 0)
+
+        let skus = try env.parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)
+        #expect(skus.count == 1)
+        #expect(skus[0].partNumber == "ABC-123")
+        #expect(skus[0].unitCost == 4.99)
+        #expect(skus[0].colorId == colorId)
+    }
+
+    @Test("upsertColorBrandSKU reactivates a soft-deleted row")
+    func testUpsertColorBrandSKUReactivate() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let colorId = try env.parts.createColor(name: "Red", hexCode: "#FF0000")
+        let brandId = try E2ETestHelpers.seedBrand(env)
+
+        let skuId = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId, partNumber: "RED-001"
+        )
+        try env.parts.deleteColorBrandSKU(skuId: skuId)
+        let afterDelete = try env.parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)
+        #expect(afterDelete.isEmpty)
+
+        // Re-upsert — should reactivate with new part number
+        let reactivatedId = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId, partNumber: "RED-002"
+        )
+        #expect(reactivatedId == skuId)
+        let reactivated = try env.parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)
+        #expect(reactivated.count == 1)
+        #expect(reactivated[0].partNumber == "RED-002")
+        #expect(reactivated[0].isActive == true)
+    }
+
+    @Test("getSKUsForColor returns all active SKUs across brands and types")
+    func testGetSKUsForColor() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let (_, _, typeId2) = try E2ETestHelpers.seedPartHierarchy(
+            env, category: "Conduit", style: "PVC", type: "1/2 inch"
+        )
+        let colorId = try env.parts.createColor(name: "White", hexCode: "#FFFFFF")
+        let brandId1 = try E2ETestHelpers.seedBrand(env, name: "Cantex")
+        let brandId2 = try E2ETestHelpers.seedBrand(env, name: "Carlon")
+
+        try env.parts.upsertColorBrandSKU(colorId: colorId, brandId: brandId1, typeId: typeId, partNumber: "CX-001")
+        try env.parts.upsertColorBrandSKU(colorId: colorId, brandId: brandId2, typeId: typeId, partNumber: "CL-001")
+        try env.parts.upsertColorBrandSKU(colorId: colorId, brandId: brandId1, typeId: typeId2, partNumber: "CX-002")
+
+        let allForColor = try env.parts.getSKUsForColor(colorId: colorId)
+        #expect(allForColor.count == 3)
+        #expect(allForColor.allSatisfy { $0.colorId == colorId })
+    }
+
+    @Test("updateColorBrandSKU patches partNumber and unitCost in place")
+    func testUpdateColorBrandSKU() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let colorId = try env.parts.createColor(name: "Black", hexCode: "#000000")
+        let brandId = try E2ETestHelpers.seedBrand(env)
+
+        let skuId = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId,
+            partNumber: "OLD-001", unitCost: 1.00
+        )
+        try env.parts.updateColorBrandSKU(skuId: skuId, partNumber: "NEW-001", unitCost: 2.50)
+
+        let skus = try env.parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)
+        #expect(skus[0].partNumber == "NEW-001")
+        #expect(skus[0].unitCost == 2.50)
+    }
+
+    @Test("deleteColorBrandSKU soft-deletes — row excluded from active listings")
+    func testDeleteColorBrandSKU() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let colorId = try env.parts.createColor(name: "Yellow", hexCode: "#FFFF00")
+        let brandId = try E2ETestHelpers.seedBrand(env)
+
+        let skuId = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId, partNumber: "YEL-001"
+        )
+        #expect(!(try env.parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)).isEmpty)
+
+        try env.parts.deleteColorBrandSKU(skuId: skuId)
+        let afterDelete = try env.parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)
+        #expect(afterDelete.isEmpty)
+
+        // Color-level query should also exclude the deleted SKU
+        let forColor = try env.parts.getSKUsForColor(colorId: colorId)
+        #expect(forColor.isEmpty)
+    }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import os.log
 
 #if canImport(FoundationModels)
 import FoundationModels
@@ -96,6 +97,8 @@ public struct AIConversationMessage: Sendable, Codable {
 /// All methods are safe to call on any platform. On platforms where
 /// Foundation Models is not available, methods return graceful fallbacks.
 public actor FoundationModelsService {
+
+    private let logger = Logger(subsystem: "com.wiredpart.core", category: "FoundationModels")
 
     /// Maximum characters of context to send to the model.
     private let maxContextChars: Int
@@ -381,9 +384,13 @@ public actor FoundationModelsService {
                 messageHistory.append(assistantMsg)
 
                 // Persist to DB (fire-and-forget — don't block the response)
-                Task.detached { [db, userMsg, assistantMsg] in
-                    try? await Self.saveMessage(userMsg, to: db)
-                    try? await Self.saveMessage(assistantMsg, to: db)
+                Task.detached { [db, userMsg, assistantMsg, logger] in
+                    do {
+                        try await Self.saveMessage(userMsg, to: db)
+                        try await Self.saveMessage(assistantMsg, to: db)
+                    } catch {
+                        logger.warning("AI conversation persist failed: \(error.localizedDescription, privacy: .public)")
+                    }
                 }
 
                 return .ok(text)

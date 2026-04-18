@@ -858,4 +858,187 @@ struct OrdersServiceTests {
         #expect(result.createdPOs.isEmpty)
         #expect(result.totalLineItems == 0)
     }
+
+    // MARK: - resolveGeneralLineItem (PE-COLORS Phase 3)
+
+    /// Helper: create a JPO line item and immediately flip it to general mode.
+    private func makeGeneralLine(
+        _ env: E2ETestHelpers.TestEnvironment,
+        jpoId: Int64,
+        partId: Int64
+    ) throws -> Int64 {
+        return try env.orders.addJPOLineItem(
+            jpoId: jpoId, partId: partId, quantity: 1, brandSelectionMode: "general"
+        )
+    }
+
+    @Test("resolveGeneralLineItem returns alreadySpecific for default specific-mode lines")
+    func testResolveGeneralLine_alreadySpecific() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 1)
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+
+        let result = try env.orders.resolveGeneralLineItem(jpoLineId: lineId, supplierId: supplierId)
+        if case .alreadySpecific = result { } else {
+            #expect(Bool(false), "Expected .alreadySpecific for default specific-mode line")
+        }
+    }
+
+    @Test("resolveGeneralLineItem returns noMatch when supplier carries no matching brand")
+    func testResolveGeneralLine_noMatch() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let catId = try E2ETestHelpers.seedCategory(env, name: "NoMatchCat")
+        let colorId = try env.parts.createColor(name: "NoMatchColor")
+        let brandId = try E2ETestHelpers.seedBrand(env, name: "UnlinkedBrand")
+        let partId = try env.parts.createPart(
+            categoryId: catId, name: "NoMatch Part",
+            typeId: typeId, colorId: colorId, brandId: brandId
+        )
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+        let lineId = try makeGeneralLine(env, jpoId: jpoId, partId: partId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "UnlinkedSupplier")
+        // No brand_supplier_links entry — supplier doesn't carry this brand
+
+        let result = try env.orders.resolveGeneralLineItem(jpoLineId: lineId, supplierId: supplierId)
+        if case .noMatch = result { } else {
+            #expect(Bool(false), "Expected .noMatch when supplier has no compatible brand")
+        }
+    }
+
+    @Test("resolveGeneralLineItem returns resolved(.exclusive) when supplier has exactly one matching brand")
+    func testResolveGeneralLine_exclusive() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env, type: "ExclType")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "ExclCat")
+        let colorId = try env.parts.createColor(name: "ExclColor", hexCode: "#AABBCC")
+        let brandId = try E2ETestHelpers.seedBrand(env, name: "ExclBrand")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "ExclSupplier")
+
+        // Link the brand to the supplier
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO brand_supplier_links (brand_id, supplier_id, is_active)
+                VALUES (?, ?, 1)
+                """, arguments: [brandId, supplierId])
+        }
+        // Register the SKU for (color, brand, type)
+        _ = try env.parts.upsertColorBrandSKU(colorId: colorId, brandId: brandId, typeId: typeId)
+
+        let partId = try env.parts.createPart(
+            categoryId: catId, name: "Excl Part",
+            typeId: typeId, colorId: colorId, brandId: brandId
+        )
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+        let lineId = try makeGeneralLine(env, jpoId: jpoId, partId: partId)
+
+        let result = try env.orders.resolveGeneralLineItem(jpoLineId: lineId, supplierId: supplierId)
+        if case .resolved(let resolvedBrandId, let confidence) = result {
+            #expect(resolvedBrandId == brandId, "Must resolve to the one matching brand")
+            if case .exclusive = confidence { } else {
+                #expect(Bool(false), "Confidence must be .exclusive when only one brand matches")
+            }
+        } else {
+            #expect(Bool(false), "Expected .resolved(.exclusive) but got \(result)")
+        }
+    }
+
+    @Test("resolveGeneralLineItem picks most-recently-ordered brand when supplier carries multiple")
+    func testResolveGeneralLine_byHistory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env, type: "MultiType")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "MultiCat")
+        let colorId = try env.parts.createColor(name: "MultiColor", hexCode: "#123456")
+        let brandA = try E2ETestHelpers.seedBrand(env, name: "AlphaBrand")  // alphabetically first
+        let brandB = try E2ETestHelpers.seedBrand(env, name: "ZetaBrand")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "MultiSupplier")
+
+        // Both brands linked to supplier, both have SKUs for (color, type)
+        try env.db.writer.write { db in
+            try db.execute(sql: "INSERT OR IGNORE INTO brand_supplier_links (brand_id, supplier_id, is_active) VALUES (?, ?, 1)", arguments: [brandA, supplierId])
+            try db.execute(sql: "INSERT OR IGNORE INTO brand_supplier_links (brand_id, supplier_id, is_active) VALUES (?, ?, 1)", arguments: [brandB, supplierId])
+        }
+        _ = try env.parts.upsertColorBrandSKU(colorId: colorId, brandId: brandA, typeId: typeId)
+        _ = try env.parts.upsertColorBrandSKU(colorId: colorId, brandId: brandB, typeId: typeId)
+
+        // Create parts with each brand
+        let partA = try env.parts.createPart(categoryId: catId, name: "Part Alpha", typeId: typeId, colorId: colorId, brandId: brandA)
+        let partB = try env.parts.createPart(categoryId: catId, name: "Part Zeta", typeId: typeId, colorId: colorId, brandId: brandB)
+
+        // Seed a historical PO where BrandB was ordered more recently
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO purchase_orders (supplier_id, po_number, status, order_date, created_at)
+                VALUES (?, 'PO-HIST-001', 'received', date('now', '-30 days'), datetime('now'))
+                """, arguments: [supplierId])
+            let oldPoId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, part_id, qty_ordered, created_at) VALUES (?, ?, 1, datetime('now'))
+                """, arguments: [oldPoId, partA])
+
+            // More recent PO — BrandB ordered last
+            try db.execute(sql: """
+                INSERT INTO purchase_orders (supplier_id, po_number, status, order_date, created_at)
+                VALUES (?, 'PO-HIST-002', 'received', date('now', '-5 days'), datetime('now'))
+                """, arguments: [supplierId])
+            let recentPoId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, part_id, qty_ordered, created_at) VALUES (?, ?, 1, datetime('now'))
+                """, arguments: [recentPoId, partB])
+        }
+
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+        let lineId = try makeGeneralLine(env, jpoId: jpoId, partId: partA)
+
+        let result = try env.orders.resolveGeneralLineItem(jpoLineId: lineId, supplierId: supplierId)
+        if case .resolved(let resolvedBrandId, let confidence) = result {
+            #expect(resolvedBrandId == brandB, "Must pick most-recently-ordered brand (ZetaBrand was on PO 5 days ago)")
+            if case .byHistory = confidence { } else {
+                #expect(Bool(false), "Confidence must be .byHistory when resolved via PO history")
+            }
+        } else {
+            #expect(Bool(false), "Expected .resolved(.byHistory) but got \(result)")
+        }
+    }
+
+    @Test("resolveGeneralLineItem picks first-alphabetically when no PO history")
+    func testResolveGeneralLine_arbitrary() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env, type: "ArbitraryType")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "ArbitraryCat")
+        let colorId = try env.parts.createColor(name: "ArbitraryColor", hexCode: "#FEDCBA")
+        let brandA = try E2ETestHelpers.seedBrand(env, name: "AaaFirst")
+        let brandZ = try E2ETestHelpers.seedBrand(env, name: "ZzzLast")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "ArbitrarySupplier")
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "INSERT OR IGNORE INTO brand_supplier_links (brand_id, supplier_id, is_active) VALUES (?, ?, 1)", arguments: [brandA, supplierId])
+            try db.execute(sql: "INSERT OR IGNORE INTO brand_supplier_links (brand_id, supplier_id, is_active) VALUES (?, ?, 1)", arguments: [brandZ, supplierId])
+        }
+        _ = try env.parts.upsertColorBrandSKU(colorId: colorId, brandId: brandA, typeId: typeId)
+        _ = try env.parts.upsertColorBrandSKU(colorId: colorId, brandId: brandZ, typeId: typeId)
+
+        let partA = try env.parts.createPart(categoryId: catId, name: "Arbitrary Part", typeId: typeId, colorId: colorId, brandId: brandA)
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+        let lineId = try makeGeneralLine(env, jpoId: jpoId, partId: partA)
+
+        // No PO history — should pick alphabetically first brand
+        let result = try env.orders.resolveGeneralLineItem(jpoLineId: lineId, supplierId: supplierId)
+        if case .resolved(let resolvedBrandId, let confidence) = result {
+            #expect(resolvedBrandId == brandA, "Must pick alphabetically-first brand when no PO history")
+            if case .arbitrary = confidence { } else {
+                #expect(Bool(false), "Confidence must be .arbitrary when no history exists")
+            }
+        } else {
+            #expect(Bool(false), "Expected .resolved(.arbitrary) but got \(result)")
+        }
+    }
 }

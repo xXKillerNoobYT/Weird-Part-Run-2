@@ -198,6 +198,26 @@ When performing bug hunts or quality sweeps, follow `docs/plans/hunt-fix-verify-
 - **Final verification gate** (ALL scanners must pass simultaneously)
 - **Tracker** at `docs/hunt-fix-tracker.md` — updated each iteration
 
+---
+
+## Trigger Phrases (AUTO GO + HUNT FIX loops) — installed 2026-04-17
+
+The 11 old scheduled tasks are consolidated into **two continuous heartbeat routines** that run the beta→production push:
+
+- **`AUTO GO`** (or `/auto-go`) — one iteration of slow-focused, one-area-at-a-time development. Chains `/hunt-fix-loop`, `/claude-automation-recommender`, `/claude-md-management:revise-claude-md`, `/claude-md-improver`. Rotates through 14 feature areas with a 12-item production-readiness checklist per area.
+- **`AUTO GO STOP`** / **`AUTO GO RESUME`** — pause/unpause both routines.
+- **`AUTO GO STATUS`** (or `/auto-go-status`) — heartbeat state, next task, pending Q&A / Xcode prompts / DevTODOs.
+- **`HUNT FIX`** (or `/hunt-fix`) — one iteration of the dedicated bug-exterminator, focused on AUTO GO's current area.
+- **`HUNT FIX STOP`** / **`HUNT FIX RESUME`** — shared with AUTO GO.
+
+Both run every 15 min from 6 AM – 10:45 PM via scheduled-task cron (`auto-go-loop` + `hunt-fix-loop-heartbeat`), stopping overnight. Trigger phrases also work typed directly — a `UserPromptSubmit` hook at `~/.claude/hooks/auto-go-trigger.sh` catches exact phrases.
+
+Escalation paths preserved: Q&A → `docs/dev-qa.md`, Xcode UI → `xcode-ai/fix-prompts/` + `00-fix-order.md`, cannot-do → `docs/DevTODO/`.
+
+See `docs/plans/auto-go-unified-loop.md` for full design.
+
+---
+
 **Current plan history:**
 
 - Phase 1: Foundation — DB, auth, nav shell, theme system (complete)

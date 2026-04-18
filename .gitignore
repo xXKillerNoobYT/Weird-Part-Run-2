@@ -45,3 +45,9 @@ token.json
 
 # Backups
 backups/
+
+# AUTO GO + HUNT FIX heartbeat state (local run state, not project history)
+docs/auto-go-heartbeat.md
+docs/hunt-fix-heartbeat.md
+docs/auto-go-heartbeat.md.bak
+docs/hunt-fix-heartbeat.md.bak

@@ -110,6 +110,7 @@ extension AppDatabase {
         registerMigration071FlexPool(&migrator)
         registerMigration072CompanySetupDraft(&migrator)
         registerMigration073FloorPlanGridDimensions(&migrator)
+        registerMigration074ColorBrandSKUs(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -536,6 +537,48 @@ extension AppDatabase {
             try db.alter(table: "warehouse_floor_plans") { t in
                 t.add(column: "grid_rows", .integer)
                 t.add(column: "grid_cols", .integer)
+            }
+        }
+    }
+
+    private static func registerMigration074ColorBrandSKUs(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("074_color_brand_skus") { db in
+            // PE-COLORS Phase 1 — distinct SKU per (color, brand, type) combination.
+            // Fills the gap described in colors-parts-redesign.md: the same physical color
+            // can appear under multiple brands (each with its own part number / cost), and the
+            // same (color, brand) pair can legitimately appear under multiple types.
+            try db.create(table: "color_brand_skus") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("color_id", .integer).notNull().references("part_colors", onDelete: .cascade)
+                t.column("brand_id", .integer).notNull().references("brands", onDelete: .cascade)
+                t.column("type_id", .integer).notNull().references("part_types", onDelete: .cascade)
+                t.column("part_number", .text)
+                t.column("unit_cost", .double)
+                t.column("stock_qty", .integer).notNull().defaults(to: 0)
+                t.column("is_active", .integer).notNull().defaults(to: 1)
+                t.column("deleted_at", .text)
+                t.column("created_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.column("updated_at", .text).notNull().defaults(sql: "(datetime('now'))")
+                t.uniqueKey(["color_id", "brand_id", "type_id"])
+            }
+            try db.create(
+                index: "idx_color_brand_skus_lookup",
+                on: "color_brand_skus",
+                columns: ["type_id", "brand_id", "color_id"]
+            )
+            try db.create(
+                index: "idx_color_brand_skus_color",
+                on: "color_brand_skus",
+                columns: ["color_id"]
+            )
+
+            // "General mode" on order line items — brand deferred to supplier selection time.
+            // CHECK constraint prevents stale values without a separate enum table.
+            try db.alter(table: "jpo_line_items") { t in
+                t.add(column: "brand_selection_mode", .text).defaults(to: "specific")
+            }
+            try db.alter(table: "po_line_items") { t in
+                t.add(column: "brand_selection_mode", .text).defaults(to: "specific")
             }
         }
     }

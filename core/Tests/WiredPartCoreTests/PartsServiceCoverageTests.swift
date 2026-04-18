@@ -721,4 +721,109 @@ struct PartsServiceCoverageTests {
         let targets = try env.parts.listLocationStockTargets(partId: partId)
         #expect(targets.isEmpty)
     }
+
+    // MARK: - ColorBrandSKU CRUD (PE-COLORS Phase 1 — migration 074)
+
+    @Test("upsertColorBrandSKU creates a new SKU row")
+    func testUpsertColorBrandSKU_creates() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let brandId = try E2ETestHelpers.seedBrand(env)
+        let colorId = try env.parts.createColor(name: "Gray", hexCode: "#808080")
+
+        let skuId = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId,
+            partNumber: "SKU-GRAY-001", unitCost: 2.50
+        )
+        #expect(skuId > 0)
+
+        let skus = try env.parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)
+        #expect(skus.count == 1)
+        #expect(skus[0].partNumber == "SKU-GRAY-001")
+        #expect(skus[0].unitCost == 2.50)
+        #expect(skus[0].isActive)
+    }
+
+    @Test("upsertColorBrandSKU is idempotent — second call updates, not duplicates")
+    func testUpsertColorBrandSKU_idempotent() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let brandId = try E2ETestHelpers.seedBrand(env)
+        let colorId = try env.parts.createColor(name: "Red", hexCode: "#FF0000")
+
+        let id1 = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId,
+            partNumber: "OLD-PN"
+        )
+        let id2 = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId,
+            partNumber: "NEW-PN"
+        )
+        #expect(id1 == id2, "Must reuse same row ID on duplicate triple")
+
+        let skus = try env.parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)
+        #expect(skus.count == 1, "Must not create duplicate rows")
+        #expect(skus[0].partNumber == "NEW-PN", "Must update part_number on upsert")
+    }
+
+    @Test("deleteColorBrandSKU soft-deletes the row")
+    func testDeleteColorBrandSKU() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let brandId = try E2ETestHelpers.seedBrand(env)
+        let colorId = try env.parts.createColor(name: "White", hexCode: "#FFFFFF")
+
+        let skuId = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId
+        )
+        try env.parts.deleteColorBrandSKU(skuId: skuId)
+
+        let skus = try env.parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)
+        #expect(skus.isEmpty, "Soft-deleted SKU must not appear in results")
+    }
+
+    @Test("getSKUsForColor returns SKUs across all brands for a color")
+    func testGetSKUsForColor() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let brand1 = try E2ETestHelpers.seedBrand(env, name: "Brand A")
+        let brand2 = try E2ETestHelpers.seedBrand(env, name: "Brand B")
+        let colorId = try env.parts.createColor(name: "Blue", hexCode: "#0000FF")
+
+        _ = try env.parts.upsertColorBrandSKU(colorId: colorId, brandId: brand1, typeId: typeId, partNumber: "A-BLUE")
+        _ = try env.parts.upsertColorBrandSKU(colorId: colorId, brandId: brand2, typeId: typeId, partNumber: "B-BLUE")
+
+        let skus = try env.parts.getSKUsForColor(colorId: colorId)
+        #expect(skus.count == 2)
+    }
+
+    // MARK: - searchParts UNION over color_brand_skus (PE-COLORS #236)
+
+    @Test("Regression: searchParts matches color_brand_skus part_number")
+    func testSearchParts_matchesSKUPartNumber() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "SKUCat")
+        let styleId = try env.parts.createStyle(categoryId: catId, name: "SKUStyle")
+        let typeId = try env.parts.createType(styleId: styleId, name: "SKUType")
+        let brandId = try E2ETestHelpers.seedBrand(env, name: "SKUBrand")
+        let colorId = try env.parts.createColor(name: "SKUGray", hexCode: "#999999")
+
+        let partId = try env.parts.createPart(
+            categoryId: catId,
+            name: "SKU Test Widget",
+            typeId: typeId,
+            colorId: colorId,
+            code: "SKU-WIDGET",
+            brandId: brandId
+        )
+        #expect(partId > 0)
+
+        _ = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId,
+            partNumber: "CBS-UNIQUE-XYZ"
+        )
+
+        let results = try env.parts.searchParts(query: "CBS-UNIQUE-XYZ")
+        #expect(results.contains { $0.id == partId }, "searchParts must match color_brand_skus part_number")
+    }
 }

@@ -43,6 +43,7 @@ struct IOSAutoFillBanner: View {
                         .font(.title3)
                         .foregroundStyle(.secondary)
                 }
+                .accessibilityLabel("Dismiss")
             }
 
             // Field list

@@ -352,6 +352,8 @@ private struct EditEmployeeContactSheet: View {
     @State var phone: String
     @State private var errorMessage: String?
     @State private var isSaving = false
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
 
     let onSave: (String, String, String) throws -> Void
 
@@ -366,28 +368,43 @@ private struct EditEmployeeContactSheet: View {
                 Section("Contact Info") {
                     TextField("Display Name", text: $displayName)
                         .textContentType(.name)
+                        .onChange(of: displayName) { _, _ in isDirty = true }
                     TextField("Email", text: $email)
                         .textContentType(.emailAddress)
                         .keyboardType(.emailAddress)
                         .autocapitalization(.none)
+                        .onChange(of: email) { _, _ in isDirty = true }
                     TextField("Phone", text: $phone)
                         .textContentType(.telephoneNumber)
                         .keyboardType(.phonePad)
+                        .onChange(of: phone) { _, _ in isDirty = true }
                 }
             }
             .navigationTitle("Edit Contact Info")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty {
+                            showDiscardAlert = true
+                        } else {
+                            dismiss()
+                        }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                         .disabled(isSaving || displayName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
+            }
         }
+        .interactiveDismissDisabled(isDirty)
     }
 
     private func save() {

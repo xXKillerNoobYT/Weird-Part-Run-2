@@ -710,20 +710,20 @@ public final class OrdersService: Sendable {
         partId: Int64,
         quantity: Int,
         notes: String? = nil,
+        brandSelectionMode: String = "specific",
         userId: Int64? = nil
     ) throws -> Int64 {
         let lineId = try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO jpo_line_items
-                    (jpo_id, part_id, qty_requested, notes, created_at)
-                    VALUES (?, ?, ?, ?, datetime('now'))
+                    (jpo_id, part_id, qty_requested, notes, brand_selection_mode, created_at)
+                    VALUES (?, ?, ?, ?, ?, datetime('now'))
                     """,
-                arguments: [jpoId, partId, quantity, notes]
+                arguments: [jpoId, partId, quantity, notes, brandSelectionMode]
             )
             return dbConn.lastInsertedRowID
         }
-        // Smart route the new line
         _ = try smartRouteJPOLine(lineId: lineId, partId: partId, userId: userId)
         return lineId
     }
@@ -2409,6 +2409,119 @@ public final class OrdersService: Sendable {
             pendingReturns: pendingReturns,
             totalSpend30Days: totalSpend30Days
         )
+    }
+
+    // =========================================================================
+    // MARK: - 5. General-Mode Brand Resolution (PE-COLORS Phase 3)
+    // =========================================================================
+
+    /// Outcome of attempting to resolve a general-mode JPO line item to a specific brand.
+    public enum BrandResolutionResult: Sendable {
+        /// Line item already has a specific brand — no resolution needed.
+        case alreadySpecific
+        /// Brand resolved successfully — the `brandId` to assign.
+        case resolved(brandId: Int64, confidence: BrandResolutionConfidence)
+        /// No brand found — supplier does not carry any brand for this (color, type).
+        case noMatch
+    }
+
+    /// Why a particular brand was chosen when multiple were eligible.
+    public enum BrandResolutionConfidence: Sendable {
+        /// Only one brand in the supplier's catalogue matched this (color, type).
+        case exclusive
+        /// Multiple brands matched; most recently ordered brand for this supplier was chosen.
+        case byHistory
+        /// Multiple brands matched; no order history exists — first alphabetically chosen.
+        case arbitrary
+    }
+
+    /// Resolve a general-mode JPO line item to the most appropriate brand for the given supplier.
+    ///
+    /// Algorithm (per `docs/plans/colors-parts-redesign.md`):
+    /// 1. If `brand_selection_mode = 'specific'` → `.alreadySpecific`.
+    /// 2. Find brands the supplier carries that have a `color_brand_skus` row for this (color, type).
+    /// 3. If 0 → `.noMatch`.
+    /// 4. If 1 → `.resolved(.exclusive)`.
+    /// 5. If >1 → pick brand most recently ordered for this supplier; if no history → first alphabetically.
+    ///
+    /// This method is intentionally read-only. Callers write the resolved `brand_id` back
+    /// to the line item or PO line when creating the PO.
+    public func resolveGeneralLineItem(jpoLineId: Int64, supplierId: Int64) throws -> BrandResolutionResult {
+        do {
+            return try db.writer.read { dbConn in
+                // 1. Load the line item and its associated part
+                guard let lineRow = try Row.fetchOne(dbConn, sql: """
+                    SELECT jli.brand_selection_mode, p.color_id, p.type_id
+                    FROM jpo_line_items jli
+                    JOIN parts p ON p.id = jli.part_id
+                    WHERE jli.id = ? AND jli.deleted_at IS NULL
+                    """, arguments: [jpoLineId])
+                else { return .noMatch }
+
+                let mode: String = lineRow["brand_selection_mode"] ?? "specific"
+                guard mode == "general" else { return .alreadySpecific }
+
+                let colorId: Int64? = lineRow["color_id"]
+                let typeId: Int64? = lineRow["type_id"]
+                guard let colorId, let typeId else { return .noMatch }
+
+                // 2. Find brands the supplier carries that have a SKU for (color, type)
+                let candidateRows = try Row.fetchAll(dbConn, sql: """
+                    SELECT b.id AS brand_id, b.name AS brand_name
+                    FROM brand_supplier_links bsl
+                    JOIN brands b ON b.id = bsl.brand_id AND b.deleted_at IS NULL
+                    JOIN color_brand_skus cbs
+                        ON cbs.brand_id = b.id
+                       AND cbs.color_id = ?
+                       AND cbs.type_id  = ?
+                       AND cbs.deleted_at IS NULL
+                       AND cbs.is_active = 1
+                    WHERE bsl.supplier_id = ?
+                      AND bsl.deleted_at IS NULL
+                      AND bsl.is_active = 1
+                    ORDER BY b.name ASC
+                    """, arguments: [colorId, typeId, supplierId])
+
+                switch candidateRows.count {
+                case 0:
+                    return .noMatch
+                case 1:
+                    let brandId: Int64 = candidateRows[0]["brand_id"]
+                    return .resolved(brandId: brandId, confidence: .exclusive)
+                default:
+                    // 3. History tiebreak — most recently received brand for this supplier
+                    let candidateBrandIds = candidateRows.map { $0["brand_id"] as Int64 }
+                    let placeholders = candidateBrandIds.map { _ in "?" }.joined(separator: ", ")
+                    var histArgs: [DatabaseValueConvertible] = [supplierId, colorId, typeId]
+                    histArgs.append(contentsOf: candidateBrandIds)
+
+                    if let histRow = try Row.fetchOne(dbConn, sql: """
+                        SELECT p.brand_id
+                        FROM po_line_items poli
+                        JOIN purchase_orders po ON po.id = poli.po_id
+                        JOIN parts p ON p.id = poli.part_id
+                        WHERE po.supplier_id = ?
+                          AND p.color_id = ?
+                          AND p.type_id  = ?
+                          AND p.brand_id IN (\(placeholders))
+                          AND po.deleted_at IS NULL
+                          AND poli.deleted_at IS NULL
+                        ORDER BY po.order_date DESC
+                        LIMIT 1
+                        """, arguments: StatementArguments(histArgs)) {
+                        let brandId: Int64 = histRow["brand_id"]
+                        return .resolved(brandId: brandId, confidence: .byHistory)
+                    }
+
+                    // No history — pick first alphabetically (already sorted)
+                    let brandId: Int64 = candidateRows[0]["brand_id"]
+                    return .resolved(brandId: brandId, confidence: .arbitrary)
+                }
+            }
+        } catch {
+            if isTableNotFoundError(error) { return .noMatch }
+            throw error
+        }
     }
 
     // =========================================================================
