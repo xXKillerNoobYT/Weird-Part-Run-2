@@ -15,6 +15,7 @@
 | 2026-04-18 | 6 | parts | C6_build_warnings_zero | done | 3 parts warnings + 4 out-of-scope (2 tools, 3 scheduling treated as 1 issue group) | 3 parts fixes (redundant #require ×2, unused seedStock result) | 0 | ~300 | none |
 | 2026-04-18 | 7 | parts | C7_ui_polish | in_progress | 1 Severity-2 finding | 1 fix (AddSupplierContactSheet dismiss safety) | 0 | ~300 | none |
 | 2026-04-18 | 8 | parts | C13_automation_opportunities (Phase 2 implement) | done | 1 APPROVED recommendation from prior Q&A | 1 hook built (parts-sql-check.sh) + #255 closed + rejected recommendation removed | 0 | ~600 | github-issues-sync (first global run) |
+| 2026-04-18 | 9 | parts | C7_ui_polish + C13 close-out | done | 1 Severity-2 finding (ForecastDetailSheet) | 1 dismiss-safety fix (commit 4759796) + C13 close-out (4 Q&As processed) | 0 | ~300 | none |
 
 ## Weekly Roll-ups (updated by loop-self-improve)
 
