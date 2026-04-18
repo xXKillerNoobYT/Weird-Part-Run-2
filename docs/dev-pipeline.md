@@ -2076,12 +2076,12 @@ _Appended by dev-pipeline-manager each run._
 - Bugs fixed: #148 (draft persistence), #149 partial (keyboard dismiss campaign)
 - Pipeline health: OK — PE-044 is NEXT Xcode AI prompt (#143 dismiss safety campaign); Q&A backlog 1 block (#148 design questions now resolved by today's implementation); issue-closure-verifier running weekly (Sundays); #146 reopen needs follow-up (close comment said reopening but gh issue reopen silently failed)
 
-### End-of-Day Sync — 2026-04-17
-- Files committed: 3 (AuthServiceTests.swift, docs/dev-pipeline.md, docs/hunt-fix-tracker.md)
-- Commits created: 2
-- Push status: ✅ success (fcf78ef..e688cb1 → origin/main)
-- Tests: 1290/1290 passing (55 suites) — no regressions
-- Agent runs today: 0/7 — no pipeline agents ran today (2026-04-17). Working tree contained uncommitted output from test-coverage-maintenance session 2 (2026-04-16): lockout state isolation fix + tracker/pipeline doc updates.
-- Issues processed: none (carry-over commits only)
-- Bugs fixed: static lockout state leak between parallel tests in AuthServiceTests (test isolation fix, not a production bug)
-- Pipeline health: OK — all 1290 tests pass, build clean. PE-044 (#143 dismiss safety) is NEXT. Open items: #121/#122/#123/#128 (usability backlog), #130/#131 (KDF v2), #143 (dismiss safety — PE-044 NEXT), #149 (keyboard dismiss — 25 files done), #150/#162/#163 (UX backlog), #221 (LWW field-level), #233 (auto-close), #234–#243 (Parts redesign).
+### End-of-Day Sync — 2026-04-17 (final)
+- Files committed: 9 (PartsServiceInventoryTests.swift, Weird-Parts-IOS-Info.plist, docs/dev-pipeline.md, docs/hunt-fix-tracker.md, + 5 plan docs)
+- Commits created: 4 (tests, iOS plist, docs, plan docs) + 2 carry-over = 6 total pushed
+- Push status: ✅ success (99d5add..beef34b → origin/main)
+- Tests: 1301/1301 passing (55 suites) — no regressions
+- Agent runs today: 2/7 — hunt-fix-verify run 11 ✅ (1 fix: AuthServiceTests .serialized), test-coverage-maintenance ✅ (1 isolation fix + 11 new tests). plan-enforcer / improvement-scanner / pipeline-manager / github-issues-sync did not run.
+- Issues processed: 0 (no github-issues-sync run today)
+- Bugs fixed: AuthServiceTests parallel race on static loginAttempts dict (test isolation, not production); iOS NSLocalNetworkUsageDescription added for LAN sync permission
+- Pipeline health: OK — 1301 tests, build clean. PE-044 (#143 dismiss safety) is NEXT. Open: #121/#122/#123/#128, #130/#131, #143, #149, #150/#162/#163, #221, #233, #234–#243.
