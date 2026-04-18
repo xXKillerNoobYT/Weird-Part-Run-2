@@ -20,34 +20,7 @@
 
 ## Pending Questions
 
-### #148 — IOSMovementWizard Save & Exit (Draft Persistence for Multi-Step Wizard)
-
-**GitHub Issue:** `#148`
-**Current State:** `IOSMovementWizard.swift` has only a "Cancel" button that discards all wizard state. A user starting a multi-step movement wizard who gets interrupted (phone call, app switch) loses all progress with no recovery path.
-**Proposed Change:** Add a "Save & Exit" toolbar button that persists the current wizard draft and allows re-entry to resume. Draft can be stored in UserDefaults (simple, per-device) or a `movement_wizard_drafts` DB table (more robust, syncs across devices).
-**Affected Modules:** Warehouse → Movement Wizard
-
-#### Questions:
-
-1. **As the Owner:** Is mid-wizard draft persistence important enough to do now, or can workers reasonably restart the wizard when interrupted? Movement wizards are short flows — is losing draft state a real pain point in daily use?
-   > Answer: _pending_
-
-2. **As a Manager:** If we add draft persistence, should it be **per device** (UserDefaults — wizard resumes only on the same phone) or **cross-device** (DB table — a manager starts a wizard on their phone, hands off to a worker who can resume on their device)?
-   > Answer: _pending_
-
-3. **As a Developer:** The wizard has 4 steps (select part → select source location → select destination → confirm). Draft state is 4–6 fields. Two approaches: **(A)** UserDefaults keyed by `"movementWizardDraft"` — simple, no schema change, per-device only, or **(B)** New `movement_wizard_drafts` table — syncs, multi-device resume, requires migration. Which fits current architecture better?
-   > Answer: _pending_
-
-4. **As a Developer:** Should "Save & Exit" preserve the draft **indefinitely** (shown on next wizard open as "Resume draft?") or for a **time window** (e.g., 24 hours, then auto-discard)? Indefinite drafts risk stale data if parts move while the draft sits.
-   > Answer: _pending_
-
-**Slots to fill:**
-- [ ] Priority: do now vs. defer
-- [ ] Persistence scope: per-device vs. cross-device
-- [ ] Storage: UserDefaults vs. DB table
-- [ ] Draft lifetime: indefinite vs. time-bounded
-
----
+_None. All pending clusters have been processed — see Processed / Closed Q&A (Reference Log) below._
 
 <!-- ARCHIVED CLUSTERS (answered 2026-04-14, see reference log) -->
 
@@ -160,6 +133,7 @@
 - **Dismiss Safety Campaign** (#143) — **Processed 2026-04-14**. **DO NOW**, before page-rebuild wave (sets the pattern for rebuilds to adopt). Module order: **People/HR → Chat → Settings** (by data-loss stakes). Approach: **per-sheet dirty tracking** (`@State var isDirty` + `.onChange` watchers + `.interactiveDismissDisabled(isDirty)`). Method: **Xcode AI prompts**, one per sheet, with mandatory 4-section header (Page Overview / Broken Behavior / Goal / Exact Change). Plan: `docs/plans/dismiss-safety-campaign.md`.
 - **Keyboard Dismiss Campaign** (#149) — **Processed 2026-04-14**. **Separate, lower-priority campaign slotted after #143 completes**. One-liner pattern (`.scrollDismissesKeyboard(.interactively)`) but kept separate to keep #143 Xcode prompts laser-focused on data-loss. Plan: `docs/plans/dismiss-safety-campaign.md` (phase 2 section).
 - **April 2026 Audit Closures** (#221, #223, #224, #227) — **Processed 2026-04-14**. **#224 ADU:** exclude transfer movements entirely (two-line SQL filter change in `PartsService.swift` ~line 3099). **#221 LWW:** upgrade to **per-field timestamps** — new `_field_timestamps` JSON column on every synced table, `ConflictResolver` updated to consult it. **#223/#227 Pagination:** phased — ship `LIMIT 500` default to `BaseRepository.findAll()` NOW with `unlimited: true` override, then full audit of call sites, then cursor pagination cutover in one clean pass. Plans: `docs/plans/april-2026-audit-closures.md`, `docs/plans/sync-field-timestamps-upgrade.md`, `docs/plans/pagination-cutover.md`.
+- **IOSMovementWizard Save & Exit** (#148) — **Processed 2026-04-17 (retroactive ratification).** Code already shipped in `IOSMovementWizard.swift`: Save & Exit toolbar button (line 121–130), `saveDraft()` → UserDefaults JSON (line 1010–1026), `restoreDraft()` via `.task` on wizard open with "Draft restored — pick up where you left off" banner (line 1028–1041), `clearDraft()` called after successful execute (line 986). Retroactive design answers: Q1 **Do now** (shipped); Q2 **Per-device** (UserDefaults, single phone); Q3 **Option A: UserDefaults** keyed `"movementWizardDraft"` (no DB table, no migration); Q4 **Indefinite** (no time-bounded auto-discard — draft persists until either successfully executed or explicitly overwritten by another Save & Exit). Mirrors the PE-041 receiving-draft-persistence pattern for consistency. Issue #148 CLOSED 2026-04-16, reopened 2026-04-16 by `issue-closure-verifier` (Check A — Q&A still Pending), now re-closeable with this log entry in place.
 
 ---
 
