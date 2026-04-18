@@ -20,7 +20,33 @@
 
 ## Pending Questions
 
-_None. All pending clusters have been processed — see Processed / Closed Q&A (Reference Log) below._
+### Automation Recommendations — Parts Area (2026-04-18)
+
+**Source:** `docs/automation-recommendations.md` — "Area: parts — 2026-04-18"
+**Context:** Each automation recommendation requires Owner approval before AUTO GO will implement it. Answer each with **APPROVE** (build it now, next iteration), **DEFER** (keep in the list but don't build yet), or **REJECT** (remove from the list entirely). Optionally add reasoning.
+
+#### Questions:
+
+1. **[Hook] PartsService SQL Column Validator** — A PostToolUse hook on `PartsService.swift` edits that greps for known-bad column patterns (`first_name`, `hats.deleted_at`, etc.) and warns before the change lands. Priority: **high** (64+ historical SQL bugs). Effort: low once the bad-column list is compiled from `feedback_sql_patterns.md`.
+   > Answer: _pending_
+
+2. **[Skill] parts-sql-schema-checker** — A Claude-invokable skill that parses `AppDatabase+Migrations.swift` into a table→column map, then cross-references every SQL string in `PartsService.swift` to flag any `table.column` reference that doesn't exist. Priority: **high** (the highest-ROI automation for Parts given the 64+ bug history). Effort: moderate — ~200-line Swift/regex script.
+   > Answer: _pending_
+
+3. **[Skill] parts-xcode-phase2-generator** — A skill that reads `colors-parts-redesign.md` and outputs Xcode AI prompts for the 7 pending Phase 2 files automatically. Priority: **low** — duplicates existing `xcode-planner-and-review` capability. Current recommendation: DEFER/REJECT to avoid duplication.
+   > Answer: _pending_
+
+4. **[Subagent] parts-drift-detector** — An Agent-tool subagent that reads parts plans and outputs "planned-but-not-coded" and "coded-but-not-planned" items with file:line citations, to speed up C1b checks from ~10 min to ~2 min. Priority: **medium**. Best timing: after PE-COLORS Phase 2 begins so the drift surface is active.
+   > Answer: _pending_
+
+**How to answer:** Edit this file, replace `_pending_` with one of:
+- `APPROVE` (optionally: `APPROVE — build it now` or `APPROVE — wait until X`)
+- `DEFER` (optionally with a reason/timing)
+- `REJECT` (optionally with a reason)
+
+Once approved, AUTO GO will build the recommendation autonomously in a future iteration and move this cluster to the Processed/Closed log below.
+
+---
 
 <!-- ARCHIVED CLUSTERS (answered 2026-04-14, see reference log) -->
 
