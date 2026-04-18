@@ -17,6 +17,7 @@
 | 2026-04-18 | 8 | parts | C13_automation_opportunities (Phase 2 implement) | done | 1 APPROVED recommendation from prior Q&A | 1 hook built (parts-sql-check.sh) + #255 closed + rejected recommendation removed | 0 | ~600 | github-issues-sync (first global run) |
 | 2026-04-18 | 9 | parts | C7_ui_polish + C13 close-out | done | 1 Severity-2 finding (ForecastDetailSheet) | 1 dismiss-safety fix (commit 4759796) + C13 close-out (4 Q&As processed) | 0 | ~300 | none |
 | 2026-04-18 | 10 | parts | C7b_dev_improvement_polish | done | 3 HIG/a11y findings (12 sheets w/o detents, 37 TextFields w/o kbd dismiss, 1 icon button w/o label) | 1 inline fix (accessibility label commit 3ac4c00) + #248 comment with parts-scoped audit | 0 | ~300 | none |
+| 2026-04-18 | 11 | parts | C8_security_reviewed | done | 0 security findings (10 SQL interpolations verified safe) | security-review-tracker.md created | 0 | ~300 | none |
 
 ## Weekly Roll-ups (updated by loop-self-improve)
 
