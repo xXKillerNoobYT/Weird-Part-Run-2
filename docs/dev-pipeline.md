@@ -1,6 +1,6 @@
 # WiredPart Development Pipeline
 
-> **Last updated:** 2026-04-17 (github-sync-and-review — 2 commits pushed: lockout state isolation fix in AuthServiceTests, tracker/pipeline docs updated for test-coverage-maintenance session 2. 1290/1290 passing.)
+> **Last updated:** 2026-04-17 (hunt-fix-verify run 11 — 1 fix: AuthServiceTests `.serialized` trait for lockout race isolation. All 10 scanners PASS. 1290/1290 passing. 0 new issues.)
 > **Auto-maintained by:** dev-pipeline-manager (orchestrator)
 
 ---
@@ -38,8 +38,8 @@ Every feature, bug, or improvement follows this cycle:
 | Xcode Prompts | **1 active: PE-044 (NEXT).** CANONICAL dismiss-safety template for #143 campaign — IOSEmployeesPage per-sheet dirty tracking + discard-changes alert. Plan: `docs/plans/dismiss-safety-campaign.md`. PE-043 ✅ DONE (archived to `done/`, direct edit verified by enforcer Run 9). | 2026-04-16 |
 | GitHub Issues | **30 open** (github-issues-sync run 9 — 2026-04-15: no closures this run; 5 status comments posted (#121/#123/#221/#229/#233). Q&A added for #148. Guard logic documented for #233. Previously 47 open — page-rebuild-enforcer CLOSED #184/#191; run 8 CLOSED #232/#228/#183/#212/#209/#176/#220.) | 2026-04-15 |
 | Q&A Backlog | **1 pending block — #148** (IOSMovementWizard draft persistence: 4 questions on priority/storage scope/approach/lifetime added 2026-04-15 by github-issues-sync run 9). All 3 April 2026 clusters processed 2026-04-14. Design decisions in: `docs/plans/colors-parts-redesign.md`, `docs/plans/dismiss-safety-campaign.md`, `docs/plans/april-2026-audit-closures.md`, `docs/plans/sync-field-timestamps-upgrade.md`, `docs/plans/pagination-cutover.md`. Canonical dismiss Xcode prompt: `PE-044-dismiss-guard-ios-employees-page.md`. | 2026-04-15 |
-| Working Tree | ✅ **Clean** — all changes committed and pushed 2026-04-17. 2 commits: lockout state isolation fix (AuthServiceTests), tracker + pipeline docs updated for test-coverage-maintenance session 2. Branch `main` is up-to-date with `origin/main`. | 2026-04-17 |
-| Agent Health | **All agents active.** github-issues-sync run 9 ✅ (2026-04-15): 3 tests landed (#229), Q&A for #148, 5 issue comments, guard logic documented. hunt-fix-verify run 9 ✅ (CoreFormatters sweep, fixes #146 complete). test-coverage-maintenance ✅ (14 new tests). **`issue-closure-verifier` run 2026-04-16** ✅: 160 scanned, 2 reopened (#148 Check A — Q&A pending; #146 Check D — close comment said "Reopening" but issue stayed closed), 8 deep-verified, ~150 pattern-scanned. Tracker: `docs/issue-closure-audit-tracker.md`. | 2026-04-16 |
+| Working Tree | ⏳ **1 commit ahead of remote** — `eca541b` (hunt-fix-verify run 11: AuthServiceTests `.serialized` trait). Docs updated. Push pending github-sync-and-review. | 2026-04-17 |
+| Agent Health | **All agents active.** hunt-fix-verify run 11 ✅ (2026-04-17): all 10 scanners PASS, 1 fix committed (AuthServiceTests `.serialized`). github-issues-sync run 9 ✅ (2026-04-15): 3 tests landed, 5 issue comments. test-coverage-maintenance ✅ session 2 (2026-04-16): +32 tests, 1290/1290. **`issue-closure-verifier` run 2026-04-16** ✅: 160 scanned, 2 reopened. Tracker: `docs/issue-closure-audit-tracker.md`. | 2026-04-17 |
 
 ---
 
