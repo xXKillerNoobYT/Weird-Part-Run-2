@@ -859,6 +859,28 @@ struct OrdersServiceTests {
         #expect(result.totalLineItems == 0)
     }
 
+    // MARK: - addJPOLineItem General Mode (PE-COLORS Plan Test 5)
+
+    @Test("PE-COLORS Plan Test 5: addJPOLineItem persists brand_selection_mode='general'")
+    func testAddJPOLineItemGeneralModePersists() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+
+        let lineId = try env.orders.addJPOLineItem(
+            jpoId: jpoId, partId: partId, quantity: 2, brandSelectionMode: "general"
+        )
+        #expect(lineId > 0)
+
+        let storedMode: String? = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT brand_selection_mode FROM jpo_line_items WHERE id = ?", arguments: [lineId])
+        }
+        #expect(storedMode == "general",
+                "brand_selection_mode must be stored as 'general' — required by resolveGeneralLineItem for General Mode workflow")
+    }
+
     // MARK: - resolveGeneralLineItem (PE-COLORS Phase 3)
 
     /// Helper: create a JPO line item and immediately flip it to general mode.

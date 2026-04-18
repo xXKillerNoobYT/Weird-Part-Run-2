@@ -154,6 +154,7 @@ struct CategoriesColorPicker: View {
             )
         }
         .buttonStyle(.plain)
+        .contentShape(Rectangle())
         .disabled(isLinked)
     }
 

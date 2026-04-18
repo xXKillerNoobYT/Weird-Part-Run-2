@@ -154,6 +154,47 @@ struct PartsServiceExtTests {
         #expect(rules.count >= 1)
     }
 
+    @Test("listCompanionRules excludes soft-deleted rules")
+    func testListCompanionRulesExcludesSoftDeleted() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let ruleId = try env.parts.createCompanionRule(name: "To Be Deleted")
+        let before = try env.parts.listCompanionRules()
+        let countBefore = before.filter { $0.id == ruleId }.count
+        #expect(countBefore == 1)
+
+        try env.parts.deleteCompanionRule(id: ruleId)
+
+        let after = try env.parts.listCompanionRules()
+        let countAfter = after.filter { $0.id == ruleId }.count
+        #expect(countAfter == 0, "Soft-deleted rule must not appear in listCompanionRules")
+    }
+
+    @Test("listCompanionRulesHierarchy childCount excludes soft-deleted children")
+    func testHierarchyChildCountExcludesSoftDeleted() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let parentId = try env.parts.createCompanionRule(name: "Parent Rule")
+        let childId = try env.parts.createCompanionRuleAtLevel(
+            name: "Child Rule", parentRuleId: parentId, sources: [], targets: []
+        )
+        #expect(childId > 0)
+
+        // Before deletion: parent should show 1 child
+        let hierarchyBefore = try env.parts.listCompanionRulesHierarchy()
+        let parentBefore = hierarchyBefore.first { $0.id == parentId }
+        #expect(parentBefore?.childCount == 1)
+
+        // Soft-delete the child
+        try env.parts.deleteCompanionRuleSoft(id: childId)
+
+        // After deletion: parent must show 0 active children
+        let hierarchyAfter = try env.parts.listCompanionRulesHierarchy()
+        let parentAfter = hierarchyAfter.first { $0.id == parentId }
+        #expect(parentAfter?.childCount == 0,
+                "childCount must exclude soft-deleted children — UI uses this to hide expand buttons")
+    }
+
     // MARK: - Hierarchy Tree
 
     @Test("Get full hierarchy tree")
@@ -532,5 +573,166 @@ struct PartsServiceExtTests {
         // Color-level query should also exclude the deleted SKU
         let forColor = try env.parts.getSKUsForColor(colorId: colorId)
         #expect(forColor.isEmpty)
+    }
+
+    // MARK: - PE-COLORS Plan Tests (colors-parts-redesign.md)
+
+    @Test("PE-COLORS Plan Test 2: named-only variant (hex_code=NULL) creates and lists correctly")
+    func testNamedOnlyVariant() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Named-only variant: finish type with no color chip
+        let variantId = try env.parts.createColor(name: "Fire-Rated", hexCode: nil)
+        #expect(variantId > 0)
+
+        let colors = try env.parts.listColors()
+        let match = colors.first { $0.id == variantId }
+        #expect(match != nil)
+        #expect(match?.name == "Fire-Rated")
+        #expect(match?.hexCode == nil, "Named-only variant must have nil hex_code")
+    }
+
+    @Test("PE-COLORS Plan Test 4: searchParts finds a part by its SKU-level part_number")
+    func testSearchBySkuPartNumber() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (catId, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let colorId = try env.parts.createColor(name: "Orange", hexCode: "#FFA500")
+        let brandId = try E2ETestHelpers.seedBrand(env)
+
+        let partId = try env.parts.createPart(
+            categoryId: catId,
+            name: "PVC Conduit Orange",
+            typeId: typeId,
+            colorId: colorId,
+            code: "PCO-ORANGE",
+            brandId: brandId
+        )
+        #expect(partId > 0)
+
+        // Create a SKU row with a brand-specific part number
+        _ = try env.parts.upsertColorBrandSKU(
+            colorId: colorId,
+            brandId: brandId,
+            typeId: typeId,
+            partNumber: "CBS-CANTEX-ORANGE-001"
+        )
+
+        // Search by the SKU-level part number — must find the parent part
+        let results = try env.parts.searchParts(query: "CANTEX-ORANGE-001")
+        #expect(results.contains { $0.id == partId },
+                "searchParts must return the part when the SKU-level part_number matches")
+    }
+
+    // MARK: - Fix Regression Tests (Iteration 5)
+
+    @Test("listCompanionRulesHierarchy excludes soft-deleted parent rules")
+    func testListCompanionRulesHierarchyExcludesSoftDeleted() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let ruleId = try env.parts.createCompanionRule(name: "To Be Hierarchy Deleted")
+        let before = try env.parts.listCompanionRulesHierarchy()
+        #expect(before.contains { $0.id == ruleId })
+
+        try env.parts.deleteCompanionRuleSoft(id: ruleId)
+
+        let after = try env.parts.listCompanionRulesHierarchy()
+        #expect(!after.contains { $0.id == ruleId },
+                "Soft-deleted rule must not appear in listCompanionRulesHierarchy")
+    }
+
+    @Test("updateColorBrandSKU: updating only partNumber preserves existing unitCost")
+    func testUpdateColorBrandSKU_partNumberOnly_preservesUnitCost() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let colorId = try env.parts.createColor(name: "Blue", hexCode: "#0000FF")
+        let brandId = try E2ETestHelpers.seedBrand(env)
+
+        let skuId = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId,
+            partNumber: "BLUE-001", unitCost: 3.75
+        )
+        // Update only partNumber — unitCost must survive
+        try env.parts.updateColorBrandSKU(skuId: skuId, partNumber: "BLUE-002", unitCost: nil)
+
+        let skus = try env.parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)
+        #expect(skus[0].partNumber == "BLUE-002")
+        #expect(skus[0].unitCost == 3.75,
+                "unitCost must be preserved when updateColorBrandSKU is called with nil unitCost")
+    }
+
+    @Test("upsertColorBrandSKU reactivation preserves existing data when nil passed")
+    func testUpsertColorBrandSKUReactivate_preservesDataWhenNilPassed() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let colorId = try env.parts.createColor(name: "Yellow", hexCode: "#FFFF00")
+        let brandId = try E2ETestHelpers.seedBrand(env)
+
+        let skuId = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId,
+            partNumber: "YEL-001", unitCost: 2.50
+        )
+        try env.parts.deleteColorBrandSKU(skuId: skuId)
+
+        // Reactivate without passing partNumber or unitCost — both must survive
+        let reactivatedId = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId
+        )
+        #expect(reactivatedId == skuId)
+        let skus = try env.parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)
+        #expect(skus[0].partNumber == "YEL-001",
+                "partNumber must be preserved on reactivation with nil partNumber")
+        #expect(skus[0].unitCost == 2.50,
+                "unitCost must be preserved on reactivation with nil unitCost")
+    }
+
+    @Test("getJobsWithCategoryCoOccurrence excludes soft-deleted jobs")
+    func testGetJobsWithCategoryCoOccurrence_excludesDeletedJobs() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Two categories so a single job meets the HAVING COUNT(DISTINCT category) >= 2 threshold
+        let cat1 = try env.parts.createCategory(name: "Conduit")
+        let cat2 = try env.parts.createCategory(name: "Fittings")
+        let part1 = try E2ETestHelpers.seedPart(env, name: "Conduit Part", categoryId: cat1)
+        let part2 = try E2ETestHelpers.seedPart(env, name: "Fitting Part", categoryId: cat2)
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-CO-001")
+
+        try env.jobs.addJobPart(jobId: jobId, partId: part1, qty: 1, performedBy: env.adminUserId)
+        try env.jobs.addJobPart(jobId: jobId, partId: part2, qty: 1, performedBy: env.adminUserId)
+
+        // Before deletion: job appears in suggestions
+        let before = try env.parts.getJobsWithCategoryCoOccurrence(categoryIds: [cat1, cat2])
+        #expect(before.contains { $0.jobId == jobId })
+
+        // Soft-delete the job
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [jobId])
+        }
+
+        // After deletion: job must not appear in companion suggestions
+        let after = try env.parts.getJobsWithCategoryCoOccurrence(categoryIds: [cat1, cat2])
+        #expect(!after.contains { $0.jobId == jobId },
+                "Soft-deleted jobs must not appear in getJobsWithCategoryCoOccurrence results")
+    }
+
+    @Test("PE-COLORS Plan Test 1: upsert returns same id for duplicate (color, brand, type) triple")
+    func testColorBrandSKUUniqueConstraintReturnsSameId() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        let colorId = try env.parts.createColor(name: "Gray", hexCode: "#808080")
+        let brandId = try E2ETestHelpers.seedBrand(env)
+
+        let id1 = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId, partNumber: "GR-001"
+        )
+        // Second upsert with the same triple — must return the same row id
+        let id2 = try env.parts.upsertColorBrandSKU(
+            colorId: colorId, brandId: brandId, typeId: typeId, partNumber: "GR-002"
+        )
+        #expect(id1 == id2, "Duplicate (color, brand, type) triple must reuse the existing row")
+
+        let skus = try env.parts.getColorBrandSKUs(typeId: typeId, brandId: brandId)
+        #expect(skus.count == 1, "Only one SKU row should exist for the triple")
+        #expect(skus[0].partNumber == "GR-002", "partNumber should be updated to the latest value")
     }
 }

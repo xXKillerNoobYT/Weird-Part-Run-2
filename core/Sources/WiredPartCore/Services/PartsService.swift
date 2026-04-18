@@ -3902,7 +3902,7 @@ public final class PartsService: Sendable {
             return try db.writer.read { dbConn in
                 let rules = try Row.fetchAll(
                     dbConn,
-                    sql: "SELECT * FROM companion_rules ORDER BY name ASC"
+                    sql: "SELECT * FROM companion_rules WHERE deleted_at IS NULL AND is_active = 1 ORDER BY name ASC"
                 )
 
                 return try rules.map { ruleRow in
@@ -4131,7 +4131,8 @@ public final class PartsService: Sendable {
             // Get all rules (excluding expired auto-deletes)
             let ruleRows = try Row.fetchAll(dbConn, sql: """
                 SELECT * FROM companion_rules
-                WHERE auto_delete_at IS NULL OR auto_delete_at >= datetime('now')
+                WHERE deleted_at IS NULL
+                  AND (auto_delete_at IS NULL OR auto_delete_at >= datetime('now'))
                 ORDER BY parent_rule_id IS NOT NULL, parent_rule_id, name ASC
                 """)
 
@@ -4167,7 +4168,7 @@ public final class PartsService: Sendable {
                 }
 
                 let childCount: Int = try Int.fetchOne(dbConn, sql: """
-                    SELECT COUNT(*) FROM companion_rules WHERE parent_rule_id = ?
+                    SELECT COUNT(*) FROM companion_rules WHERE parent_rule_id = ? AND deleted_at IS NULL
                     """, arguments: [ruleId]) ?? 0
 
                 // Determine match level from source entries
@@ -6413,6 +6414,7 @@ public final class PartsService: Sendable {
                     JOIN job_parts jp ON jp.job_id = j.id
                     JOIN parts p ON p.id = jp.part_id
                     WHERE p.category_id IN (\(placeholders))
+                      AND j.deleted_at IS NULL
                       AND jp.deleted_at IS NULL AND p.deleted_at IS NULL
                     GROUP BY j.id
                     HAVING COUNT(DISTINCT p.category_id) >= 2
@@ -6745,7 +6747,8 @@ public final class PartsService: Sendable {
                     let skuId: Int64 = existing["id"]
                     try dbConn.execute(sql: """
                         UPDATE color_brand_skus
-                        SET part_number = ?, unit_cost = ?,
+                        SET part_number = COALESCE(?, part_number),
+                            unit_cost = COALESCE(?, unit_cost),
                             is_active = 1, deleted_at = NULL,
                             updated_at = datetime('now')
                         WHERE id = ?
@@ -6777,7 +6780,7 @@ public final class PartsService: Sendable {
                 try dbConn.execute(sql: """
                     UPDATE color_brand_skus
                     SET part_number = COALESCE(?, part_number),
-                        unit_cost = ?,
+                        unit_cost = COALESCE(?, unit_cost),
                         updated_at = datetime('now')
                     WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [partNumber, unitCost, skuId])
