@@ -42,7 +42,8 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 
 ## Decisions I've made (and why)
 
-*(Empty — will accumulate as the loop runs and makes autonomous judgment calls.)*
+- [2026-04-18] **Automation-recommendations approval workflow (user-directed).** Every recommendation in `docs/automation-recommendations.md` must be filed as a Q&A in `docs/dev-qa.md` with APPROVE/DEFER/REJECT options. Once the user answers APPROVE, the next AUTO GO iteration builds it autonomously. If an attempt fails (skill won't compile, hook breaks something, etc.), file another Q&A documenting the failure and asking what to do instead — don't silently give up. [→ soul candidate] The guiding principle: recommendations are not silent to-dos; they are proposals that need a green light.
+- [2026-04-18] **Treated C1b drift as bi-directional** — checked both "code ahead of issues" (ForecastSettingsSheet built, #162/#163 still open) AND "plan ahead of code" (PE-COLORS Phase 2 unimplemented). Both directions matter; catching only one misses half the value. Closing stale issues clears noise from the open-issue list; flagging plan gaps prevents them from being forgotten.
 
 ## Things I tried that didn't work
 
@@ -57,7 +58,12 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 *(Each area gets a section as I work it. Initial stubs below.)*
 
 ### parts
-*(notes accumulate here when the loop works on this area)*
+- [2026-04-18] **`suggestion_id: 0` FK bug in `recordCompanionFeedback`** — the function was hardcoding `suggestion_id: 0` in the `companion_feedback` INSERT, but `companion_suggestions` has no row with id=0. Fix: made `suggestionId` an optional parameter (default nil) and skip the INSERT when nil. Filed #250. When writing tests for functions that INSERT into tables with FK constraints, check the referenced table exists in the test DB and the seed value is valid.
+- [2026-04-18] **`createPart` auto-logs a "created" audit entry** — `getPartChangeLog` for a freshly seeded part returns 1 entry. Tests for `logPartFieldChanges` must filter by `action == "updated"` rather than asserting `isEmpty` or exact count.
+- [2026-04-18] **`#expect` macro can't type-check complex closures with 3+ `&&` conditions** — Swift compiler times out. Break into local variables (e.g., `let entry = log.first(where:...)` then `#expect(entry?.field == value)`) for multi-condition assertions in `#expect`.
+- [2026-04-18] **PE-COLORS Phase 1 is silently complete** — migration 074 (`color_brand_skus`), `ColorBrandSKU` struct + CRUD in PartsService, and `searchParts` union update (tagged "PE-COLORS #236") were all done but not explicitly noted in the plan's progress log. Phase 2 (UI) pending via #237-#240. Phase 3 (orders) pending via #242-#243.
+- [2026-04-18] **ForecastSettingsSheet covers both issues #162 AND #163** — the free-space rating (issue #163 "per-location 1-10 scale editor") is implemented as a Stepper inside the ForecastSettingsSheet, not as a separate sheet. When verifying issues, check the actual implementation before assuming separate files are needed.
+- [2026-04-18] **"Subsumes: #X" in issue body = close #X immediately during C2b** — When a well-written parent issue lists "Subsumes: #X, #Y" in its body, those subordinate issues can be closed during C2b ingestion without any code check needed. The parent carries all context. In the PE-COLORS family this collapsed 5 redundant issues (#144, #100, #106, #99, #105) into their parent issues (#237, #238, #240).
 
 ### jobs
 *(notes accumulate here)*
