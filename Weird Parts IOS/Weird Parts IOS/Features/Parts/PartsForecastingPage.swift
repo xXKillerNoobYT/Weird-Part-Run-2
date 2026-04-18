@@ -822,8 +822,10 @@ private struct ForecastDetailSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
+                        .disabled(isSaving)
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .alert("Error", isPresented: Binding(
                 get: { editError != nil },
                 set: { if !$0 { editError = nil } }
