@@ -81,7 +81,7 @@ struct PartsServiceInventoryTests {
             try Row.fetchOne(db, sql: "SELECT is_returned FROM cost_layer_consumptions WHERE id = ?",
                              arguments: [consumptionId])
         }
-        let isReturned: Int = try #require(consumption)?["is_returned"] ?? 0
+        let isReturned: Int = try #require(consumption)["is_returned"]
         #expect(isReturned == 1, "Consumption should be marked is_returned = 1 after full return")
 
         // Verify cost layer remaining qty was restored
@@ -89,7 +89,7 @@ struct PartsServiceInventoryTests {
             try Row.fetchOne(db, sql: "SELECT remaining_qty FROM cost_layers WHERE id = ?",
                              arguments: [layerId])
         }
-        let remaining: Int = try #require(layer)?["remaining_qty"] ?? -1
+        let remaining: Int = try #require(layer)["remaining_qty"]
         #expect(remaining == 5, "Cost layer remaining_qty should be restored to 5")
     }
 
@@ -125,7 +125,7 @@ struct PartsServiceInventoryTests {
         let partId = try E2ETestHelpers.seedPart(env, name: "CheckInvPart", categoryId: catId)
 
         // Add 7 units of stock to a warehouse location
-        try E2ETestHelpers.seedStock(env, partId: partId, qty: 7)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 7)
 
         let result = try env.parts.checkInventoryForDeletion(entityType: "category", entityId: catId)
         #expect(result.totalStock == 7, "Total stock should equal the 7 units seeded")
