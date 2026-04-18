@@ -4418,8 +4418,8 @@ public final class PartsService: Sendable {
                        cop.points, cop.confidence, cop.co_occurrence_count,
                        ca.name AS cat_a_name, cb.name AS cat_b_name
                 FROM co_occurrence_pairs cop
-                JOIN part_categories ca ON ca.id = cop.category_a_id
-                JOIN part_categories cb ON cb.id = cop.category_b_id
+                JOIN part_categories ca ON ca.id = cop.category_a_id AND ca.deleted_at IS NULL
+                JOIN part_categories cb ON cb.id = cop.category_b_id AND cb.deleted_at IS NULL
                 WHERE cop.match_level = ?
                   AND cop.points >= ?
                   AND cop.confidence >= ?
@@ -4775,7 +4775,8 @@ public final class PartsService: Sendable {
         suggestedQty: Int,
         acceptedQty: Int,
         source: String,
-        userId: Int64?
+        userId: Int64?,
+        suggestionId: Int64? = nil
     ) throws {
         try db.writer.write { dbConn in
             // Get hierarchy IDs for both parts
@@ -4810,21 +4811,26 @@ public final class PartsService: Sendable {
                     """, arguments: [srcCat, tgtCat])
             }
 
-            // 2. Log to companion_feedback table
-            try dbConn.execute(sql: """
-                INSERT INTO companion_feedback
-                    (suggestion_id, action, suggested_qty, final_qty,
-                     source_categories, target_category_id, target_style_id, user_id, created_at)
-                VALUES (0, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                """, arguments: [
-                    source == "companion" ? "accepted_companion" : "accepted_ai",
-                    suggestedQty,
-                    acceptedQty,
-                    String(srcCat),
-                    tgtCat,
-                    tgtStyle,
-                    userId
-                ])
+            // 2. Log to companion_feedback table only when a real suggestion ID is available.
+            // suggestion_id has a NOT NULL FK to companion_suggestions — skip the log entry
+            // when no upstream suggestion record exists (e.g., direct AI-generated suggestion).
+            if let sid = suggestionId {
+                try dbConn.execute(sql: """
+                    INSERT INTO companion_feedback
+                        (suggestion_id, action, suggested_qty, final_qty,
+                         source_categories, target_category_id, target_style_id, user_id, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                    """, arguments: [
+                        sid,
+                        source == "companion" ? "accepted_companion" : "accepted_ai",
+                        suggestedQty,
+                        acceptedQty,
+                        String(srcCat),
+                        tgtCat,
+                        tgtStyle,
+                        userId
+                    ])
+            }
         }
     }
 
@@ -4892,7 +4898,7 @@ public final class PartsService: Sendable {
 
             // Notify all active users
             let activeUsers = try Int64.fetchAll(dbConn, sql: """
-                SELECT id FROM users WHERE is_active = 1
+                SELECT id FROM users WHERE is_active = 1 AND deleted_at IS NULL
                 """)
             for userId in activeUsers {
                 try dbConn.execute(sql: """
