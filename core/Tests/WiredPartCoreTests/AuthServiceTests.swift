@@ -159,6 +159,7 @@ struct AuthServiceTests {
 
     @Test("authenticateByPin succeeds with correct PIN")
     func testAuthSuccess() throws {
+        AuthService.resetAllLoginAttempts()
         let db = try freshDB()
         let auth = AuthService(db: db)
         let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
@@ -172,6 +173,7 @@ struct AuthServiceTests {
 
     @Test("authenticateByPin rejects wrong PIN")
     func testAuthWrongPin() throws {
+        AuthService.resetAllLoginAttempts()
         let db = try freshDB()
         let auth = AuthService(db: db)
         let seed = try auth.seedFirstAdmin(displayName: "Admin", pin: "1234")
