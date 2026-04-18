@@ -4,7 +4,7 @@ import GRDB
 import CryptoKit
 @testable import WiredPartCore
 
-@Suite("AuthService Tests")
+@Suite("AuthService Tests", .serialized)
 struct AuthServiceTests {
 
     private func freshDB() throws -> AppDatabase {
