@@ -1270,6 +1270,7 @@ private struct AddSupplierContactSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button {
@@ -1282,6 +1283,7 @@ private struct AddSupplierContactSheet: View {
                               || isSaving)
                 }
             }
+            .interactiveDismissDisabled(isSaving)
         }
     }
 
