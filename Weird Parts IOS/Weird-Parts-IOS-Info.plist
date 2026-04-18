@@ -2,8 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>WiredPart uses the camera to scan QR codes and barcodes for parts, tools, and device pairing.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>WiredPart connects to the shop computer and nearby devices on your local network to sync data.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>WiredPart records your location when you clock in/out and for mileage tracking on job sites.</string>
 </dict>
