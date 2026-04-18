@@ -8,6 +8,13 @@
 
 | date | iteration | area | check | status | findings | fixes_applied | tests_added | duration_sec | meta_checks_fired |
 |------|-----------|------|-------|--------|----------|---------------|-------------|--------------|-------------------|
+| 2026-04-18 | 2 | parts | C1b_plan_vs_code_drift_clean | done | 2 (stale issues #162 #163 open but fixed) | 2 (closed #162 #163) | 0 | ~600 | morning-recommender |
+| 2026-04-18 | 3 | parts | C2b_github_issues_ingested | done | 5 (subsumed issues), 4 (prompts unqueued) | 5 (closed: #144 #100 #106 #99 #105), 4 (queued PE-046–049) | 0 | ~1080 | sunday-claude-md-improver |
+| 2026-04-18 | 4 | parts | C3_hunt_fix_clean | done | 4 SQL bugs + 1 HIG issue | 5 (companion_rules deleted_at x3, COALESCE x2 SKU, j.deleted_at, .contentShape #246) | 10 (2 companion-rule, 4 PE-COLORS plan, 2 resolveGeneralLine, 2 addJPOLineItem) | ~900 | none |
+| 2026-04-18 | 5 | parts | C4_tests_present + C5_tests_pass | done | 13 untested methods found | 1 service fix (recordCompanionFeedback FK bug, issue #250) | 18 (companion intelligence suite: applySkipPenalty×2, resetBlockedPair, getCompanionSuggestions×2, recordCompanionFeedback×2, getNextPollPreview×2, getTrainingQuestion, tracePartFromSupplier, logPartFieldChanges×2, calculateStyle/TypeCoOccurrence, runAutoDiscoveryCycle, getJobPartsForSandbox, getNextLevelCoOccurrences) | ~1200 | none |
+| 2026-04-18 | 6 | parts | C6_build_warnings_zero | done | 3 parts warnings + 4 out-of-scope (2 tools, 3 scheduling treated as 1 issue group) | 3 parts fixes (redundant #require ×2, unused seedStock result) | 0 | ~300 | none |
+| 2026-04-18 | 7 | parts | C7_ui_polish | in_progress | 1 Severity-2 finding | 1 fix (AddSupplierContactSheet dismiss safety) | 0 | ~300 | none |
+| 2026-04-18 | 8 | parts | C13_automation_opportunities (Phase 2 implement) | done | 1 APPROVED recommendation from prior Q&A | 1 hook built (parts-sql-check.sh) + #255 closed + rejected recommendation removed | 0 | ~600 | github-issues-sync (first global run) |
 
 ## Weekly Roll-ups (updated by loop-self-improve)
 

@@ -34,6 +34,7 @@ _None. All clusters have been answered — see Answered Clusters below and Proce
 
 1. **[Hook] PartsService SQL Column Validator** — A PostToolUse hook on `PartsService.swift` edits that greps for known-bad column patterns (`first_name`, `hats.deleted_at`, etc.) and warns before the change lands. Priority: **high** (64+ historical SQL bugs). Tracked as open GitHub issue [#255](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/255).
    > **Answer (2026-04-18):** **APPROVE — build it now.** Matches beta-release posture: defense-in-depth against a category of bugs we've hit 64+ times. Low effort, high value. AUTO GO will build next iteration. Close #255 once the hook lands.
+   > **✅ BUILT 2026-04-18 iter 8.** Hook at `.claude/hooks/parts-sql-check.sh` wired into `.claude/settings.local.json` as PostToolUse on Edit|Write. Tests 10 known-bad patterns, zero false positives after word-boundary fix. Issue #255 CLOSED.
 
 2. **[Skill] parts-sql-schema-checker** — ✅ **ALREADY BUILT.** AUTO GO's first global github-issues-sync (2026-04-18 iteration 7) found that GitHub issue [#254](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/254) is CLOSED and the skill is present in the skill list.
    > **Answer:** RESOLVED — already implemented (skill exists, #254 closed). Will wire into hunt-fix Scanner 4 on next iteration running C3.
