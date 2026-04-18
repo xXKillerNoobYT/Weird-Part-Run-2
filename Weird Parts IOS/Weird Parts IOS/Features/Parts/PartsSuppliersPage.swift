@@ -990,6 +990,7 @@ private struct SupplierDetailSheet: View {
                     Image(systemName: "plus.circle.fill")
                         .font(.title3)
                 }
+                .accessibilityLabel("Add contact")
             }
         }
     }
