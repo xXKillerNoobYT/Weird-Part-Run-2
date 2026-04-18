@@ -27,16 +27,16 @@
 
 #### Questions:
 
-1. **[Hook] PartsService SQL Column Validator** — A PostToolUse hook on `PartsService.swift` edits that greps for known-bad column patterns (`first_name`, `hats.deleted_at`, etc.) and warns before the change lands. Priority: **high** (64+ historical SQL bugs). Effort: low once the bad-column list is compiled from `feedback_sql_patterns.md`.
+1. **[Hook] PartsService SQL Column Validator** — A PostToolUse hook on `PartsService.swift` edits that greps for known-bad column patterns (`first_name`, `hats.deleted_at`, etc.) and warns before the change lands. Priority: **high** (64+ historical SQL bugs). Effort: low once the bad-column list is compiled from `feedback_sql_patterns.md`. **Also tracked as open GitHub issue [#255](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/255).**
    > Answer: _pending_
 
-2. **[Skill] parts-sql-schema-checker** — A Claude-invokable skill that parses `AppDatabase+Migrations.swift` into a table→column map, then cross-references every SQL string in `PartsService.swift` to flag any `table.column` reference that doesn't exist. Priority: **high** (the highest-ROI automation for Parts given the 64+ bug history). Effort: moderate — ~200-line Swift/regex script.
-   > Answer: _pending_
+2. **[Skill] parts-sql-schema-checker** — ✅ **ALREADY BUILT.** AUTO GO's first global github-issues-sync (2026-04-18 iteration 7) found that GitHub issue [#254](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/254) is CLOSED and the `parts-sql-schema-checker` skill is present in the skill list. No action needed — will wire it into hunt-fix Scanner 4 on the next iteration that runs C3.
+   > Answer: RESOLVED — already implemented (skill exists, #254 closed)
 
 3. **[Skill] parts-xcode-phase2-generator** — A skill that reads `colors-parts-redesign.md` and outputs Xcode AI prompts for the 7 pending Phase 2 files automatically. Priority: **low** — duplicates existing `xcode-planner-and-review` capability. Current recommendation: DEFER/REJECT to avoid duplication.
    > Answer: _pending_
 
-4. **[Subagent] parts-drift-detector** — An Agent-tool subagent that reads parts plans and outputs "planned-but-not-coded" and "coded-but-not-planned" items with file:line citations, to speed up C1b checks from ~10 min to ~2 min. Priority: **medium**. Best timing: after PE-COLORS Phase 2 begins so the drift surface is active.
+4. **[Subagent] parts-drift-detector** — An Agent-tool subagent that reads parts plans and outputs "planned-but-not-coded" and "coded-but-not-planned" items with file:line citations, to speed up C1b checks from ~10 min to ~2 min. Priority: **medium**. Best timing: after PE-COLORS Phase 2 begins so the drift surface is active. **Also tracked as open GitHub issue [#256](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/256).**
    > Answer: _pending_
 
 **How to answer:** Edit this file, replace `_pending_` with one of:
