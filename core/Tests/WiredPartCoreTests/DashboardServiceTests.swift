@@ -562,4 +562,39 @@ struct DashboardServiceTests {
         #expect(status.isClockedIn == true)
         #expect(status.jobName == nil)
     }
+
+    @Test("getExpectedDeliveries shows Unknown for soft-deleted supplier")
+    func testGetExpectedDeliveriesHidesDeletedSupplierName() throws {
+        let (env, dash) = try freshEnv()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "DelSupplierDash")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO purchase_orders (po_number, supplier_id, status, expected_delivery)
+                VALUES ('PO-DASH-DEL-01', ?, 'submitted', date('now', '+2 days'))
+                """, arguments: [supplierId])
+            try db.execute(sql: "UPDATE suppliers SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [supplierId])
+        }
+        let deliveries = try dash.getExpectedDeliveries()
+        let row = deliveries.first(where: { $0.poNumber == "PO-DASH-DEL-01" })
+        #expect(row != nil)
+        #expect(row?.supplierName == "Unknown")
+    }
+
+    @Test("getTodaySchedule shows Unknown for soft-deleted job and user")
+    func testGetTodayScheduleHidesDeletedJobAndUserNames() throws {
+        let (env, dash) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let today = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+        _ = try env.scheduling.createDispatch(jobId: jobId, userId: env.adminUserId, date: today)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?", arguments: [jobId])
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        let schedule = try dash.getTodaySchedule()
+        #expect(schedule.isEmpty == false)
+        #expect(schedule.first?.jobName == "Unassigned")
+        #expect(schedule.first?.employeeName == "Unknown")
+    }
 }

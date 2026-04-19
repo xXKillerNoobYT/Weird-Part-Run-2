@@ -136,7 +136,7 @@ public final class ToolsService: Sendable {
                            t.status, t.serial_number, t.purchase_cost AS current_value,
                            COALESCE(u.display_name, u.email) AS assigned_to_name
                     FROM tools t
-                    LEFT JOIN users u ON u.id = t.assigned_to
+                    LEFT JOIN users u ON u.id = t.assigned_to AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY t.created_at DESC
                     """
@@ -293,8 +293,8 @@ public final class ToolsService: Sendable {
                            t.name AS tool_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS checked_out_by_name
                     FROM tool_movements tm
-                    LEFT JOIN tools t ON t.id = tm.tool_id
-                    LEFT JOIN users u ON u.id = tm.performed_by
+                    LEFT JOIN tools t ON t.id = tm.tool_id AND t.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = tm.performed_by AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY tm.created_at DESC
                     """
@@ -492,7 +492,7 @@ public final class ToolsService: Sendable {
                             WHERE tool_id = t.id AND deleted_at IS NULL
                             ORDER BY created_at DESC LIMIT 1) AS last_known_condition
                     FROM tools t
-                    LEFT JOIN users u ON u.id = t.assigned_to
+                    LEFT JOIN users u ON u.id = t.assigned_to AND u.deleted_at IS NULL
                     WHERE t.id = ? AND t.deleted_at IS NULL
                     """
                 guard let row = try Row.fetchOne(dbConn, sql: sql, arguments: [toolId]) else {
@@ -648,7 +648,7 @@ public final class ToolsService: Sendable {
                            tcl.changed_at, tcl.change_type, tcl.verification_status,
                            COALESCE(u.display_name, u.email, 'Unknown') AS changed_by_name
                     FROM tool_change_log tcl
-                    LEFT JOIN users u ON tcl.changed_by = u.id
+                    LEFT JOIN users u ON tcl.changed_by = u.id AND u.deleted_at IS NULL
                     WHERE tcl.tool_id = ? AND tcl.deleted_at IS NULL
                     AND tcl.changed_at >= date('now', '-' || ? || ' months')
                     ORDER BY tcl.changed_at DESC
@@ -683,7 +683,7 @@ public final class ToolsService: Sendable {
                            tcl.changed_at, tcl.change_type, tcl.verification_status,
                            COALESCE(u.display_name, u.email, 'Unknown') AS changed_by_name
                     FROM tool_change_log tcl
-                    LEFT JOIN users u ON tcl.changed_by = u.id
+                    LEFT JOIN users u ON tcl.changed_by = u.id AND u.deleted_at IS NULL
                     WHERE tcl.tool_id = ? AND tcl.verification_status = 'pending_verification'
                     AND tcl.deleted_at IS NULL
                     ORDER BY tcl.changed_at DESC
@@ -888,8 +888,8 @@ public final class ToolsService: Sendable {
                            COALESCE(t.name, 'Unknown Tool') AS tool_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS changed_by_name
                     FROM tool_change_log tcl
-                    LEFT JOIN tools t ON t.id = tcl.tool_id
-                    LEFT JOIN users u ON u.id = tcl.changed_by
+                    LEFT JOIN tools t ON t.id = tcl.tool_id AND t.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = tcl.changed_by AND u.deleted_at IS NULL
                     WHERE tcl.verification_status = 'pending_verification'
                       AND tcl.deleted_at IS NULL
                     ORDER BY tcl.changed_at ASC
@@ -1440,7 +1440,7 @@ public final class ToolsService: Sendable {
                            tmr.notes, tmr.created_at,
                            COALESCE(u.display_name, u.email, 'Unknown') AS performed_by_name
                     FROM tool_maintenance_records tmr
-                    LEFT JOIN users u ON tmr.performed_by = u.id
+                    LEFT JOIN users u ON tmr.performed_by = u.id AND u.deleted_at IS NULL
                     WHERE tmr.tool_id = ? AND tmr.deleted_at IS NULL
                     ORDER BY tmr.service_date DESC
                     """, arguments: [toolId])

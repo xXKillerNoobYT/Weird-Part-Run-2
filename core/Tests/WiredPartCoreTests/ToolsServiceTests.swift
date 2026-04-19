@@ -1297,4 +1297,24 @@ struct ToolsServiceTests {
         #expect(ToolsService.ratingToCondition(6) == "Unknown")
         #expect(ToolsService.ratingToCondition(-1) == "Unknown")
     }
+
+    @Test("listCheckouts shows empty toolName and Unknown user for soft-deleted tool and user")
+    func testListCheckoutsHidesDeletedToolAndUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let tools = ToolsService(db: env.db)
+        let toolId = try insertTool(env, toolNumber: "T-DEL-99", name: "DelTool")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO tool_movements (tool_id, movement_type, performed_by)
+                VALUES (?, 'checkout', ?)
+                """, arguments: [toolId, env.adminUserId])
+            try db.execute(sql: "UPDATE tools SET deleted_at = datetime('now') WHERE id = ?", arguments: [toolId])
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        let checkouts = try tools.listCheckouts(toolId: toolId)
+        #expect(checkouts.isEmpty == false)
+        #expect(checkouts.first?.toolName == "")
+        #expect(checkouts.first?.checkedOutByName == "Unknown")
+    }
 }
