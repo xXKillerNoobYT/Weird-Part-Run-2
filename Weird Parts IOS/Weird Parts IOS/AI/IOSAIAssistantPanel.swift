@@ -273,6 +273,7 @@ struct IOSAIAssistantPanel: View {
         HStack(spacing: 8) {
             Image(systemName: icon)
                 .foregroundStyle(color)
+                .accessibilityHidden(true)
             Text(message)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -357,6 +358,7 @@ struct IOSAIAssistantPanel: View {
                     .font(.title2)
                     .foregroundStyle(Color.accentColor)
             }
+            .accessibilityLabel("Send message")
             .disabled(query.trimmingCharacters(in: .whitespaces).isEmpty || isProcessing)
         }
         .padding(.horizontal)

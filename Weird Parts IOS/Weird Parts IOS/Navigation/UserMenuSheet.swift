@@ -239,10 +239,12 @@ struct UserMenuSheet: View {
                                     Image(systemName: "checkmark")
                                         .foregroundStyle(.tint)
                                         .fontWeight(.semibold)
+                                        .accessibilityHidden(true)
                                 }
                             }
                         }
                         .buttonStyle(.plain)
+                        .accessibilityAddTraits(tabPrefs.navigationStyle == style ? .isSelected : [])
                     }
                 } header: {
                     Label("Page Layout", systemImage: "rectangle.3.group")

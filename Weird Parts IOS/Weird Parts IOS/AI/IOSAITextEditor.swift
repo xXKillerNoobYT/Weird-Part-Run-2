@@ -82,6 +82,7 @@ struct IOSAITextEditor: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "sparkles")
+                            .accessibilityHidden(true)
                         Text("Accept suggestion")
                             .font(.caption)
                     }

@@ -15,6 +15,7 @@ struct IOSAIAvailabilityBanner: View {
                 .font(.title3)
                 .foregroundStyle(statusColor)
                 .frame(width: 32)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(statusTitle)
