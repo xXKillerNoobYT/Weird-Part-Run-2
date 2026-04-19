@@ -1317,4 +1317,248 @@ struct ToolsServiceTests {
         #expect(checkouts.first?.toolName == "")
         #expect(checkouts.first?.checkedOutByName == "Unknown")
     }
+
+    @Test("editToolWithVerification is a no-op on soft-deleted tool")
+    func testEditToolWithVerification_noOpOnSoftDeletedTool() throws {
+        let env = try E2ETestHelpers.setUp()
+        let tools = ToolsService(db: env.db)
+        let toolId = try insertTool(env, toolNumber: "T-SOFTDEL-01", name: "Original Name")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE tools SET deleted_at = datetime('now') WHERE id = ?", arguments: [toolId])
+        }
+        _ = try tools.editToolWithVerification(
+            toolId: toolId,
+            userId: env.adminUserId,
+            changes: ["name": "MUTATED NAME"],
+            hasPermission: true
+        )
+        let name = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT name FROM tools WHERE id = ?", arguments: [toolId])
+        }
+        // Write must not have mutated the tombstoned row
+        #expect(name != "MUTATED NAME")
+        // No change log entry should have been created for the tombstoned tool
+        let logCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tool_change_log WHERE tool_id = ?", arguments: [toolId]) ?? 0
+        }
+        #expect(logCount == 0)
+    }
+
+    @Test("recordMaintenance is a no-op on a soft-deleted tool")
+    func testRecordMaintenance_noOpOnSoftDeletedTool() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId: Int64 = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO tools (tool_number, name, category, status, confidence_score,
+                                   last_maintenance_date, has_kit, created_at, updated_at)
+                VALUES ('T-MAINT-SOFT', 'Tombstoned Drill', 'power_tools', 'available',
+                        0.5, NULL, 0, datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+        // Soft-delete the tool BEFORE logging maintenance. Regression: the maintenance
+        // UPDATEs at ToolsService:1300 + 1307 had no `AND deleted_at IS NULL`, so
+        // confidence_score + last_maintenance_date would be rewritten on a tombstoned tool.
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE tools SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [toolId])
+        }
+        _ = try? env.tools.recordMaintenance(
+            toolId: toolId, configId: nil, maintenanceType: "decreasing_based",
+            performedBy: env.adminUserId, conditionBefore: nil, conditionAfter: nil,
+            notes: nil, cost: nil
+        )
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT confidence_score, last_maintenance_date FROM tools WHERE id = ?",
+                             arguments: [toolId])
+        }
+        let confidence: Double = row?["confidence_score"] ?? -1
+        let lastMaintenance: String? = row?["last_maintenance_date"]
+        #expect(confidence == 0.5,
+                "Soft-deleted tool confidence_score must not be reset to 1.0 — UPDATE must guard AND deleted_at IS NULL")
+        #expect(lastMaintenance == nil,
+                "Soft-deleted tool last_maintenance_date must not change — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    @Test("checkoutTool creates no orphan tool_checkouts row for a soft-deleted tool")
+    func testCheckoutTool_noOrphanRowForSoftDeletedTool() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId: Int64 = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO tools (tool_number, name, category, status, has_kit, created_at, updated_at)
+                VALUES ('T-CO-SOFT', 'TombstonedWrench', 'hand_tools', 'available', 0, datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE tools SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [toolId])
+        }
+        // Regression: the UPDATE path was already guarded, but the INSERT INTO tool_checkouts
+        // had no FK-level guard against tombstoned parents, leaving orphan checkout history.
+        try env.tools.checkoutTool(toolId: toolId, userId: env.adminUserId, notes: nil)
+
+        let checkouts = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tool_checkouts WHERE tool_id = ?",
+                             arguments: [toolId]) ?? 0
+        }
+        #expect(checkouts == 0,
+            "Soft-deleted tool must not produce an orphan tool_checkouts row — INSERT must be guarded by a pre-check on tools.deleted_at IS NULL")
+    }
+
+    @Test("checkoutToolWithCondition creates no orphan rows for a soft-deleted tool")
+    func testCheckoutToolWithCondition_noOrphanRowsForSoftDeletedTool() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId: Int64 = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO tools (tool_number, name, category, status, has_kit, created_at, updated_at)
+                VALUES ('T-CO-CND-SOFT', 'TombstonedDrill', 'power_tools', 'available', 0, datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE tools SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [toolId])
+        }
+        try env.tools.checkoutToolWithCondition(
+            toolId: toolId, userId: env.adminUserId, condition: "Good", notes: nil
+        )
+        let checkouts = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tool_checkouts WHERE tool_id = ?",
+                             arguments: [toolId]) ?? 0
+        }
+        let changeLog = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tool_change_log WHERE tool_id = ?",
+                             arguments: [toolId]) ?? 0
+        }
+        #expect(checkouts == 0,
+            "Soft-deleted tool must not produce orphan tool_checkouts row")
+        #expect(changeLog == 0,
+            "Soft-deleted tool must not produce orphan tool_change_log row")
+    }
+
+    @Test("reportToolLostOrStolen creates no orphan change_log for a soft-deleted tool")
+    func testReportToolLostOrStolen_noOrphanForSoftDeletedTool() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId: Int64 = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO tools (tool_number, name, category, status, has_kit, created_at, updated_at)
+                VALUES ('T-RPT-SOFT', 'TombstonedHammer', 'hand_tools', 'available', 0, datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE tools SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [toolId])
+        }
+        try env.tools.reportToolLostOrStolen(
+            toolId: toolId, reportedBy: env.adminUserId, reportType: "lost",
+            description: "test", lastKnownLocation: nil
+        )
+        let changeLogCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tool_change_log WHERE tool_id = ?",
+                             arguments: [toolId]) ?? 0
+        }
+        #expect(changeLogCount == 0,
+            "Soft-deleted tool must not produce orphan tool_change_log row for lost/stolen report")
+    }
+
+    @Test("recordMaintenance creates no orphan record for a soft-deleted tool")
+    func testRecordMaintenance_noOrphanForSoftDeletedTool() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId: Int64 = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO tools (tool_number, name, category, status, has_kit, created_at, updated_at)
+                VALUES ('T-MNT-SOFT', 'TombstonedSaw', 'power_tools', 'available', 0, datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE tools SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [toolId])
+        }
+        let recordId = try env.tools.recordMaintenance(
+            toolId: toolId, configId: nil, maintenanceType: "general",
+            performedBy: env.adminUserId, conditionBefore: "Good", conditionAfter: "Good",
+            notes: "test", cost: 0
+        )
+        #expect(recordId == 0,
+            "recordMaintenance must return 0 (no-op) for a tombstoned tool")
+        let recordCount = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tool_maintenance_records WHERE tool_id = ?",
+                             arguments: [toolId]) ?? 0
+        }
+        #expect(recordCount == 0,
+            "Soft-deleted tool must not produce orphan tool_maintenance_records row")
+    }
+
+    // MARK: - Validation Guards (iter 91)
+
+    @Test func testCheckoutTool_rejectsTombstonedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-CHKOUT-USR")
+        #expect(throws: ToolsService.ToolsError.userNotFound(9999)) {
+            try env.tools.checkoutTool(toolId: toolId, userId: 9999)
+        }
+    }
+
+    @Test func testReturnTool_rejectsTombstonedTool() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: ToolsService.ToolsError.toolNotFound(9999)) {
+            try env.tools.returnTool(toolId: 9999, userId: env.adminUserId)
+        }
+    }
+
+    @Test func testReturnTool_rejectsTombstonedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-RET-USR")
+        #expect(throws: ToolsService.ToolsError.userNotFound(9999)) {
+            try env.tools.returnTool(toolId: toolId, userId: 9999)
+        }
+    }
+
+    @Test func testCheckoutToolWithCondition_rejectsBlankCondition() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-COND-01")
+        #expect(throws: ToolsService.ToolsError.requiredFieldEmpty("condition")) {
+            try env.tools.checkoutToolWithCondition(toolId: toolId, userId: env.adminUserId, condition: "")
+        }
+        #expect(throws: ToolsService.ToolsError.requiredFieldEmpty("condition")) {
+            try env.tools.checkoutToolWithCondition(toolId: toolId, userId: env.adminUserId, condition: "   ")
+        }
+    }
+
+    @Test func testReturnToolWithCondition_rejectsBlankCondition() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-COND-02")
+        #expect(throws: ToolsService.ToolsError.requiredFieldEmpty("condition")) {
+            try env.tools.returnToolWithCondition(toolId: toolId, userId: env.adminUserId, condition: "")
+        }
+    }
+
+    @Test func testReturnToolWithCondition_rejectsTombstonedTool() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: ToolsService.ToolsError.toolNotFound(9999)) {
+            try env.tools.returnToolWithCondition(toolId: 9999, userId: env.adminUserId, condition: "Good")
+        }
+    }
+
+    @Test func testCreateMaintenanceConfig_rejectsBlankType() throws {
+        let env = try E2ETestHelpers.setUp()
+        let toolId = try insertTool(env, toolNumber: "T-MAINT-01")
+        #expect(throws: ToolsService.ToolsError.requiredFieldEmpty("type")) {
+            try env.tools.createMaintenanceConfig(toolId: toolId, type: "")
+        }
+        #expect(throws: ToolsService.ToolsError.requiredFieldEmpty("type")) {
+            try env.tools.createMaintenanceConfig(toolId: toolId, type: "  ")
+        }
+    }
+
+    @Test func testCreateMaintenanceConfig_rejectsTombstonedTool() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: ToolsService.ToolsError.toolNotFound(9999)) {
+            try env.tools.createMaintenanceConfig(toolId: 9999, type: "time_based")
+        }
+    }
 }

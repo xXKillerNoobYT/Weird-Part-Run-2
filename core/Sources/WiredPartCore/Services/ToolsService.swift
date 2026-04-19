@@ -101,6 +101,16 @@ public final class ToolsService: Sendable {
     }
 
     // =========================================================================
+    // MARK: - Errors
+    // =========================================================================
+
+    public enum ToolsError: Error, Sendable, Equatable {
+        case toolNotFound(Int64)
+        case userNotFound(Int64)
+        case requiredFieldEmpty(String)
+    }
+
+    // =========================================================================
     // MARK: - 1. Tools List
     // =========================================================================
 
@@ -324,13 +334,15 @@ public final class ToolsService: Sendable {
     /// Check out a tool to a user. No-op if the tool has been soft-deleted.
     public func checkoutTool(toolId: Int64, userId: Int64, notes: String? = nil) throws {
         try db.writer.write { dbConn in
-            // Guard: tool must exist and not be tombstoned — prevents orphan tool_checkouts
-            // rows pointing at a soft-deleted tool (the UPDATE below is already guarded
-            // but the INSERT has no FK-level defense against tombstoned parents).
-            let exists = (try Int.fetchOne(dbConn, sql: """
+            let toolExists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [toolId]) ?? 0) > 0
-            guard exists else { return }
+            guard toolExists else { return }
+
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [userId]) ?? 0) > 0
+            guard userExists else { throw ToolsError.userNotFound(userId) }
 
             // Update tool status
             try dbConn.execute(
@@ -354,6 +366,16 @@ public final class ToolsService: Sendable {
     /// Return a checked-out tool.
     public func returnTool(toolId: Int64, userId: Int64, notes: String? = nil) throws {
         try db.writer.write { dbConn in
+            let toolExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [toolId]) ?? 0) > 0
+            guard toolExists else { throw ToolsError.toolNotFound(toolId) }
+
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [userId]) ?? 0) > 0
+            guard userExists else { throw ToolsError.userNotFound(userId) }
+
             // Update tool status
             try dbConn.execute(
                 sql: """
@@ -725,9 +747,10 @@ public final class ToolsService: Sendable {
     public func checkoutToolWithCondition(
         toolId: Int64, userId: Int64, condition: String, notes: String? = nil
     ) throws {
+        guard !condition.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw ToolsError.requiredFieldEmpty("condition")
+        }
         try db.writer.write { dbConn in
-            // Guard: tool must exist and not be tombstoned — otherwise the two INSERTs below
-            // would create orphan tool_checkouts + tool_change_log rows against a soft-deleted tool.
             let exists = (try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [toolId]) ?? 0) > 0
@@ -761,7 +784,15 @@ public final class ToolsService: Sendable {
     public func returnToolWithCondition(
         toolId: Int64, userId: Int64, condition: String, notes: String? = nil
     ) throws {
+        guard !condition.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw ToolsError.requiredFieldEmpty("condition")
+        }
         try db.writer.write { dbConn in
+            let toolExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [toolId]) ?? 0) > 0
+            guard toolExists else { throw ToolsError.toolNotFound(toolId) }
+
             let conditionRating = Self.conditionToRating(condition)
             try dbConn.execute(sql: """
                 UPDATE tools SET status = 'available', assigned_to = NULL,
@@ -1230,11 +1261,19 @@ public final class ToolsService: Sendable {
         decayFloor: Double? = nil, conditionTriggers: [String]? = nil,
         description: String? = nil
     ) throws -> Int64 {
+        guard !type.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw ToolsError.requiredFieldEmpty("type")
+        }
         let triggersJSON = conditionTriggers.map { triggers -> String in
             let items = triggers.map { "\"\($0)\"" }.joined(separator: ",")
             return "[\(items)]"
         }
         return try db.writer.write { dbConn in
+            let toolExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [toolId]) ?? 0) > 0
+            guard toolExists else { throw ToolsError.toolNotFound(toolId) }
+
             try dbConn.execute(sql: """
                 INSERT INTO tool_maintenance_configs
                 (tool_id, maintenance_type, interval_days, usage_threshold,
