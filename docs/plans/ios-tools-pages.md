@@ -60,3 +60,46 @@ Tools: Dashboard, All Tools (renamed from Registry), Checkouts, Kits, Maintenanc
 - Company tool policies (max checkout duration, overdue notification, auto-maintenance thresholds)
 - Location assignment (home location for tools/kits)
 - Records & history (full audit trail, filterable, exportable)
+
+---
+
+## Current State (as of 2026-04-19 — AUTO GO C1 audit)
+
+### iOS Files (8)
+| File | Purpose |
+|---|---|
+| `IOSToolsDashboardPage.swift` | Dashboard with smart cards, quick-action QR buttons |
+| `IOSToolRegistryPage.swift` | All tools list with search/filter |
+| `IOSToolDetailPage.swift` | Full tool detail: parts, checkout history, maintenance log, version history |
+| `IOSToolCheckoutsPage.swift` | Active + history checkouts list |
+| `IOSToolKitsPage.swift` | Kit list with contents and inspection |
+| `IOSToolMaintenancePage.swift` | Maintenance configs, schedules, history |
+| `IOSToolAdminPage.swift` | Bulk management, categories, policies |
+| `IOSToolsRouter.swift` | NavigationStack routing |
+
+### ToolsService API Surface (31 public methods)
+
+| Section | Methods |
+|---|---|
+| 1. Tools List | `listTools(search:status:)` |
+| 2. Kits | `listKits()`, `listToolKits()` |
+| 3. Checkouts | `listCheckouts(toolId:active:)`, `checkoutTool(toolId:userId:notes:)`, `returnTool(toolId:userId:notes:)`, `markToolMaintenance(toolId:)` |
+| 4. Stats | `getToolsStats()` |
+| 5. Detail | `getToolDetail(toolId:)` |
+| 6. Kit Contents | `getKitContents(toolId:)` |
+| 7. Version History | `getToolVersionHistory(toolId:months:)`, `getPendingEdits(toolId:)` |
+| 8. Condition Checkout | `checkoutToolWithCondition(...)`, `returnToolWithCondition(...)` |
+| 9. Edit w/ Verification | `editToolWithVerification(...)`, `approveToolEdit(...)`, `listPendingToolEdits()`, `rejectToolEdit(...)` |
+| 10. Trades | `initiateTrade(...)`, `respondToTrade(...)`, `expireOldTrades()`, `getPendingTradesForUser(userId:)` |
+| 11. Lost/Stolen | `reportToolLostOrStolen(...)` |
+| 12. Maintenance | `createMaintenanceConfig(...)`, `getMaintenanceConfigs(toolId:)`, `toggleMaintenanceConfig(...)`, `recordMaintenance(...)`, `calculateNextMaintenanceDate(toolId:)`, `updateConfidenceScores()`, `getMaintenanceHistory(toolId:)` |
+
+### Database Foundation
+- Migration `006_fleet_tools_scheduling` — core tools + checkouts tables
+- Migration `013_tools_supplier_extras` — tool extras
+- Migration `048_tool_detail_tables` — detail, version history, pending edits
+- Migration `049_tool_trades` — tool trade workflow
+- Migration `050_tool_maintenance_configs` — maintenance config + scheduling + confidence
+
+### Implementation Status
+Phase 9 (Tools & Kits) is complete per CLAUDE.md. All 8 iOS pages are present and ToolsService has 31 public methods across all 12 feature areas. The edit-verification flow, trade workflow, and maintenance confidence decay are all implemented.
