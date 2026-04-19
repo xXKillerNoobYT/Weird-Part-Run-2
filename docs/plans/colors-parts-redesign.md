@@ -1,6 +1,6 @@
 # Colors & Parts Redesign — Variants, Per-SKU Brand Linkage, General Mode
 
-> **Status:** Design approved 2026-04-14. Implementation pending.
+> **Status:** Phase 1 (schema + CRUD) ✅ DONE (migration 074 + PartsService CRUD, commit 13cd7b2). Phase 2 (Categories UI) pending — PE-046–049 queued in `00-fix-order.md`. Phase 3 (General Mode orders UI) pending — tracked as GitHub #242, #243.
 > **Supersedes:** Ad-hoc Q&A discussions in `docs/dev-qa.md` (now processed).
 > **GitHub Issues:** #98, #99, #100, #105, #106, #107
 > **Pipeline item:** `PE-COLORS`
