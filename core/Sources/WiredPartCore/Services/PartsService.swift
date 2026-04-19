@@ -556,7 +556,7 @@ public final class PartsService: Sendable {
             setClauses.append("updated_at = datetime('now')")
             args.append(id)
 
-            let sql = "UPDATE part_categories SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
+            let sql = "UPDATE part_categories SET \(setClauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL"
             try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
@@ -634,6 +634,15 @@ public final class PartsService: Sendable {
         try Validators.requireName(name, field: "Style name")
         try Validators.requireText(description, field: "Style description", limit: Validators.Limits.description)
 
+        // Guard: parent category must exist and not be tombstoned — otherwise the
+        // INSERT would create an orphan style under a soft-deleted category.
+        try db.writer.read { dbConn in
+            let exists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM part_categories WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [categoryId]) ?? 0) > 0
+            guard exists else { throw PartsError.categoryNotFound(categoryId) }
+        }
+
         var record = PartStyle(
             categoryId: categoryId,
             name: name,
@@ -671,7 +680,7 @@ public final class PartsService: Sendable {
             setClauses.append("updated_at = datetime('now')")
             args.append(id)
 
-            let sql = "UPDATE part_styles SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
+            let sql = "UPDATE part_styles SET \(setClauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL"
             try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
@@ -752,6 +761,14 @@ public final class PartsService: Sendable {
         try Validators.requireName(name, field: "Type name")
         try Validators.requireText(description, field: "Type description", limit: Validators.Limits.description)
 
+        // Guard: parent style must exist and not be tombstoned.
+        try db.writer.read { dbConn in
+            let exists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM part_styles WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [styleId]) ?? 0) > 0
+            guard exists else { throw PartsError.styleNotFound(styleId) }
+        }
+
         var record = PartType(
             styleId: styleId,
             name: name,
@@ -789,7 +806,7 @@ public final class PartsService: Sendable {
             setClauses.append("updated_at = datetime('now')")
             args.append(id)
 
-            let sql = "UPDATE part_types SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
+            let sql = "UPDATE part_types SET \(setClauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL"
             try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
@@ -866,7 +883,7 @@ public final class PartsService: Sendable {
             guard !setClauses.isEmpty else { return }
             args.append(id)
 
-            let sql = "UPDATE part_colors SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
+            let sql = "UPDATE part_colors SET \(setClauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL"
             try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
@@ -1211,6 +1228,32 @@ public final class PartsService: Sendable {
         if let t = targetStockLevel { try Validators.requireNonNegative(t, field: "Target stock") }
         if let r = reorderPoint { try Validators.requireNonNegative(r, field: "Reorder point") }
 
+        // Guard: all referenced FK parents must exist and not be tombstoned.
+        // categoryId is required; the rest are optional but when provided must be valid.
+        try db.writer.read { dbConn in
+            func exists(_ sql: String, _ id: Int64) throws -> Bool {
+                (try Int.fetchOne(dbConn, sql: sql, arguments: [id]) ?? 0) > 0
+            }
+            guard try exists("SELECT COUNT(*) FROM part_categories WHERE id = ? AND deleted_at IS NULL", categoryId)
+            else { throw PartsError.categoryNotFound(categoryId) }
+            if let sid = styleId {
+                guard try exists("SELECT COUNT(*) FROM part_styles WHERE id = ? AND deleted_at IS NULL", sid)
+                else { throw PartsError.styleNotFound(sid) }
+            }
+            if let tid = typeId {
+                guard try exists("SELECT COUNT(*) FROM part_types WHERE id = ? AND deleted_at IS NULL", tid)
+                else { throw PartsError.typeNotFound(tid) }
+            }
+            if let cid = colorId {
+                guard try exists("SELECT COUNT(*) FROM part_colors WHERE id = ? AND deleted_at IS NULL", cid)
+                else { throw PartsError.colorNotFound(cid) }
+            }
+            if let bid = brandId {
+                guard try exists("SELECT COUNT(*) FROM brands WHERE id = ? AND deleted_at IS NULL", bid)
+                else { throw PartsError.brandNotFound(bid) }
+            }
+        }
+
         var record = Part(
             categoryId: categoryId,
             styleId: styleId,
@@ -1235,6 +1278,7 @@ public final class PartsService: Sendable {
             shelfLocation: shelfLocation,
             binLocation: binLocation
         )
+        record.isActive = 1
         try db.writer.write { dbConn in
             try record.insert(dbConn)
         }
@@ -1312,7 +1356,7 @@ public final class PartsService: Sendable {
             setClauses.append("updated_at = datetime('now')")
             args.append(id)
 
-            let sql = "UPDATE parts SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
+            let sql = "UPDATE parts SET \(setClauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL"
             try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
 
@@ -1475,7 +1519,7 @@ public final class PartsService: Sendable {
             setClauses.append("updated_at = datetime('now')")
             args.append(id)
 
-            let sql = "UPDATE brands SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
+            let sql = "UPDATE brands SET \(setClauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL"
             try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
@@ -1630,7 +1674,7 @@ public final class PartsService: Sendable {
             setClauses.append("updated_at = datetime('now')")
             args.append(id)
 
-            let sql = "UPDATE suppliers SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
+            let sql = "UPDATE suppliers SET \(setClauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL"
             try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
@@ -1694,6 +1738,18 @@ public final class PartsService: Sendable {
         isPreferred: Bool = false
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            // Guard: both part and supplier must exist and not be tombstoned.
+            // Without these the FK constraint accepts tombstoned parents, leaving
+            // orphan part_supplier_links invisible to getPartSuppliers.
+            let partExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [partId]) ?? 0) > 0
+            guard partExists else { throw PartsError.partNotFound(partId) }
+            let supplierExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM suppliers WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [supplierId]) ?? 0) > 0
+            guard supplierExists else { throw PartsError.supplierNotFound(supplierId) }
+
             try dbConn.execute(
                 sql: """
                     INSERT OR IGNORE INTO part_supplier_links
@@ -1816,6 +1872,16 @@ public final class PartsService: Sendable {
     @discardableResult
     public func linkBrandToSupplier(brandId: Int64, supplierId: Int64) throws -> Int64 {
         try db.writer.write { dbConn in
+            // Guard: both brand and supplier must exist and not be tombstoned.
+            let brandExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM brands WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [brandId]) ?? 0) > 0
+            guard brandExists else { throw PartsError.brandNotFound(brandId) }
+            let supplierExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM suppliers WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [supplierId]) ?? 0) > 0
+            guard supplierExists else { throw PartsError.supplierNotFound(supplierId) }
+
             // Check if a soft-deleted link exists — reactivate it
             if let existing = try Row.fetchOne(
                 dbConn,
@@ -3064,7 +3130,7 @@ public final class PartsService: Sendable {
     public func listForecastDataWithStock(search: String? = nil, locationType: String? = nil, locationId: Int64? = nil) throws -> [ForecastDataRow] {
         do {
             return try db.writer.read { dbConn in
-                var whereClauses = ["p.deleted_at IS NULL"]
+                var whereClauses = ["p.deleted_at IS NULL", "p.is_active = 1"]
                 var args: [DatabaseValueConvertible?] = []
                 var stockJoin = "LEFT JOIN stock s ON s.part_id = p.id AND s.deleted_at IS NULL"
 
@@ -3113,7 +3179,7 @@ public final class PartsService: Sendable {
     public func listForecastData(search: String? = nil, limit: Int = 50, offset: Int = 0) throws -> [Part] {
         do {
             return try db.writer.read { dbConn in
-                var whereClauses = ["deleted_at IS NULL"]
+                var whereClauses = ["deleted_at IS NULL", "is_active = 1"]
                 var args: [DatabaseValueConvertible?] = []
 
                 if let search, !search.isEmpty {
@@ -3177,7 +3243,7 @@ public final class PartsService: Sendable {
                         FROM stock WHERE deleted_at IS NULL
                         GROUP BY part_id
                     ) s ON s.part_id = p.id
-                    WHERE p.deleted_at IS NULL
+                    WHERE p.deleted_at IS NULL AND p.is_active = 1
                     """)
 
                 // Compute derived values and bulk-update
@@ -3374,6 +3440,21 @@ public final class PartsService: Sendable {
         }
     }
 
+    /// List all per-location forecast targets (non-deleted, active parts only).
+    public func listPerLocationForecastData() throws -> [LocationStockTarget] {
+        do {
+            return try db.writer.read { dbConn in
+                try LocationStockTarget
+                    .filter(Column("deleted_at") == nil)
+                    .order(Column("part_id").asc, Column("location_type").asc)
+                    .fetchAll(dbConn)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return [] }
+            throw error
+        }
+    }
+
     /// Recalculate forecasts per-location based on stock movements.
     /// Uses aggregate queries instead of per-combo queries (fixes #194 N+1).
     public func recalculateForecastsPerLocation() throws {
@@ -3397,7 +3478,7 @@ public final class PartsService: Sendable {
                         SELECT DISTINCT part_id, from_location_type AS lt, from_location_id AS lid
                         FROM stock_movements WHERE deleted_at IS NULL AND from_location_type IS NOT NULL
                     ) combos
-                    LEFT JOIN parts p ON p.id = combos.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN parts p ON p.id = combos.part_id AND p.deleted_at IS NULL AND p.is_active = 1
                     LEFT JOIN (
                         SELECT part_id, from_location_type AS lt, from_location_id AS lid, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
@@ -3428,7 +3509,7 @@ public final class PartsService: Sendable {
                     LEFT JOIN location_stock_targets lst
                         ON lst.part_id = combos.part_id AND lst.location_type = combos.lt
                         AND lst.location_id = combos.lid AND lst.deleted_at IS NULL
-                    WHERE p.deleted_at IS NULL
+                    WHERE p.id IS NOT NULL
                     """)
 
                 // Compute derived values and upsert
@@ -4733,7 +4814,7 @@ public final class PartsService: Sendable {
                        COALESCE(cop.points, 0) AS points,
                        COALESCE(cop.confidence, 0) AS confidence
                 FROM companion_rule_sources rs
-                JOIN companion_rules cr ON cr.id = rs.rule_id AND cr.is_active = 1
+                JOIN companion_rules cr ON cr.id = rs.rule_id AND cr.is_active = 1 AND cr.deleted_at IS NULL
                 JOIN companion_rule_targets rt ON rt.rule_id = cr.id
                 JOIN parts p ON p.category_id = rt.category_id
                     AND (rt.style_id IS NULL OR p.style_id = rt.style_id)
@@ -5734,7 +5815,7 @@ public final class PartsService: Sendable {
                         AND julianday(rs.completed_at) - julianday(po.created_at) <= COALESCE(CAST(s.delivery_days AS INTEGER), 14)
                         THEN 1 END) AS on_time_count
                 FROM purchase_orders po
-                LEFT JOIN receiving_sessions rs ON rs.po_id = po.id AND rs.status = 'completed'
+                LEFT JOIN receiving_sessions rs ON rs.po_id = po.id AND rs.status = 'completed' AND rs.deleted_at IS NULL
                 LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
                 WHERE po.supplier_id = ? AND po.deleted_at IS NULL
                 AND po.status IN ('received', 'completed', 'closed')
@@ -5753,7 +5834,7 @@ public final class PartsService: Sendable {
             let avgDaysRow = try Row.fetchOne(dbConn, sql: """
                 SELECT AVG(julianday(rs.completed_at) - julianday(po.created_at)) AS avg_days
                 FROM purchase_orders po
-                JOIN receiving_sessions rs ON rs.po_id = po.id AND rs.status = 'completed'
+                JOIN receiving_sessions rs ON rs.po_id = po.id AND rs.status = 'completed' AND rs.deleted_at IS NULL
                 WHERE po.supplier_id = ? AND po.deleted_at IS NULL
                 AND rs.completed_at IS NOT NULL
                 """, arguments: [supplierId])

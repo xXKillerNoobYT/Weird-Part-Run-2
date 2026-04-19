@@ -293,6 +293,40 @@ struct PartsServiceInventoryTests {
         #expect(scores.avgDeliveryDays == nil, "No completed deliveries → avgDeliveryDays should be nil")
     }
 
+    @Test("calculateSupplierScores excludes soft-deleted receiving_sessions from on-time and avg-days")
+    func testCalculateSupplierScores_ignoresSoftDeletedReceivingSessions() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "SoftDeletedRSSupplier")
+
+        // PO in received state — 5 days old, within default 14-day window
+        let poId: Int64 = try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO purchase_orders
+                    (supplier_id, po_number, status, created_at, updated_at, deleted_at)
+                VALUES (?, 'PO-SOFT-RS-001', 'received', datetime('now', '-5 days'), datetime('now'), NULL)
+                """, arguments: [supplierId])
+            return db.lastInsertedRowID
+        }
+
+        // Completed receiving session — but soft-deleted.
+        // Regression: the JOIN was `rs.status = 'completed'` with no guard on rs.deleted_at,
+        // so a tombstoned session still contributed to the on-time numerator and avg-days.
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO receiving_sessions
+                    (po_id, started_by, status, completed_at, created_at, deleted_at)
+                VALUES (?, ?, 'completed', datetime('now'), datetime('now', '-5 days'), datetime('now'))
+                """, arguments: [poId, env.adminUserId])
+        }
+
+        let scores = try env.parts.calculateSupplierScores(supplierId: supplierId)
+        #expect(scores.totalOrderCount == 1, "PO itself is still active")
+        #expect(scores.onTimeRate == 0,
+                "Soft-deleted receiving session must not count toward on-time rate — JOIN must guard rs.deleted_at IS NULL")
+        #expect(scores.avgDeliveryDays == nil,
+                "avgDeliveryDays should be nil when every receiving session is tombstoned")
+    }
+
     @Test("updateSupplierScores persists calculated scores to suppliers table")
     func testUpdateSupplierScores_persisted() throws {
         let env = try E2ETestHelpers.setUp()
@@ -492,5 +526,78 @@ struct PartsServiceInventoryTests {
             try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM companion_feedback WHERE suggestion_id IS NULL") ?? 0
         }
         #expect(count == 1)
+    }
+
+    // MARK: - is_active defense: forecasting methods
+
+    @Test("listForecastData excludes inactive parts")
+    func testListForecastDataExcludesInactiveParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "ForecastDataCat")
+        let activeId = try E2ETestHelpers.seedPart(env, name: "ActiveForecastPart", categoryId: catId)
+        let inactiveId = try E2ETestHelpers.seedPart(env, name: "InactiveForecastPart", categoryId: catId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET is_active = 0 WHERE id = ?", arguments: [inactiveId])
+        }
+
+        let results = try env.parts.listForecastData()
+        #expect(results.contains { $0.id == activeId })
+        #expect(!results.contains { $0.id == inactiveId })
+    }
+
+    @Test("listForecastDataWithStock excludes inactive parts")
+    func testListForecastDataWithStockExcludesInactiveParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "ForecastStockCat")
+        let activeId = try E2ETestHelpers.seedPart(env, name: "ActiveStockForecast", categoryId: catId)
+        let inactiveId = try E2ETestHelpers.seedPart(env, name: "InactiveStockForecast", categoryId: catId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET is_active = 0 WHERE id = ?", arguments: [inactiveId])
+        }
+
+        let rows = try env.parts.listForecastDataWithStock()
+        #expect(rows.contains { $0.part.id == activeId })
+        #expect(!rows.contains { $0.part.id == inactiveId })
+    }
+
+    @Test("recalculateForecasts skips inactive parts")
+    func testRecalculateForecastsSkipsInactiveParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "RecalcForecastCat")
+        let inactiveId = try E2ETestHelpers.seedPart(env, name: "InactiveRecalcPart", categoryId: catId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET is_active = 0, forecast_adu_30 = 99.0 WHERE id = ?", arguments: [inactiveId])
+        }
+
+        try env.parts.recalculateForecasts()
+
+        let adu: Double? = try env.db.writer.read { db in
+            try Double.fetchOne(db, sql: "SELECT forecast_adu_30 FROM parts WHERE id = ?", arguments: [inactiveId])
+        }
+        #expect(adu == 99.0)
+    }
+
+    @Test("recalculateForecastsPerLocation skips inactive parts")
+    func testRecalculateForecastsPerLocationSkipsInactiveParts() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "PerLocForecastCat")
+        let inactiveId = try E2ETestHelpers.seedPart(env, name: "InactivePerLocPart", categoryId: catId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET is_active = 0 WHERE id = ?", arguments: [inactiveId])
+            try db.execute(sql: """
+                INSERT INTO stock_movements
+                    (part_id, from_location_type, from_location_id, to_location_type, to_location_id,
+                     qty, movement_type, performed_by, created_at, deleted_at)
+                VALUES (?, 'truck', 1, NULL, NULL, -5, 'consume', 1, datetime('now'), NULL)
+                """, arguments: [inactiveId])
+        }
+
+        try env.parts.recalculateForecastsPerLocation()
+
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM location_stock_targets WHERE part_id = ?",
+                             arguments: [inactiveId]) ?? 0
+        }
+        #expect(count == 0)
     }
 }
