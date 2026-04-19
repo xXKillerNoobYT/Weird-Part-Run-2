@@ -49,6 +49,7 @@
 | 2026-04-19 | 4 | jobs | C10_cross_platform_parity | done (N/A) | 0 findings (repo is iOS-only; #257 tracks CLAUDE.md drift) | tracker entry for jobs | 0 | ~60 | none |
 | 2026-04-19 | 5 | jobs | C11_github_issues_resolved | done | 5 open (all tracked: #45 T1-08/09, #53 parent, #69/70/71 program-review), 0 closable, 0 orphan | Verified each has plan/tracker reference | 0 | ~120 | none |
 | 2026-04-19 | 6 | jobs | C11b_process_gaps_clean | done | 0 gaps (0 pending Q&A, 0 active Xcode prompts, 0 DevTODOs for jobs) | — | 0 | ~90 | none |
+| 2026-04-19 | 7 | jobs | C12_claude_md_reflects_area | done | 0 CLAUDE.md drift; 3 memory entries added (baseline profile, GRDB safe idiom, no-labels convention) | auto-go-memory.md jobs section populated | 0 | ~120 | none |
 
 ## Weekly Roll-ups (updated by loop-self-improve)
 

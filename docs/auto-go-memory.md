@@ -69,7 +69,9 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 - [2026-04-18] **"Subsumes: #X" in issue body = close #X immediately during C2b** — When a well-written parent issue lists "Subsumes: #X, #Y" in its body, those subordinate issues can be closed during C2b ingestion without any code check needed. The parent carries all context. In the PE-COLORS family this collapsed 5 redundant issues (#144, #100, #106, #99, #105) into their parent issues (#237, #238, #240).
 
 ### jobs
-*(notes accumulate here)*
+- [2026-04-19] **Jobs area is a graduated-baseline reference.** 16 iterations to graduate (iter 17 yesterday through iter 7 today). Only 1 functional fix during the run (CreateJobSupplierChannelSheet dismiss-safety, commit b102dfa). 0 hunt-fix findings, 0 security findings, 0 perf findings, 0 test-coverage gaps (204 tests / 67 funcs = 3x), 0 build warnings, 0 pending Q&A. When an area shows this "all green on first sweep" profile, keep iterations short (single-check each) and don't fabricate findings.
+- [2026-04-19] **JobsService.swift line 628 uses a safe GRDB partial-UPDATE idiom** — `setClauses.joined(",")` with whitelisted column names + parameterized `StatementArguments`. Looks like SQL concat (M4 flag) but is not. Future security/hunt-fix scans should recognize this pattern and not flag it. Same pattern appears in other services — confirm column-name whitelisting before flagging.
+- [2026-04-19] **Repo has no per-area GitHub labels** (`jobs`, `parts`, `warehouse` etc. are not labels). Issues are filtered by title prefix `[Jobs]`/`[Parts]`/etc. C2b/C11 must use title-keyword search via `gh issue list --json title | python3 -c ...`, not `--label`. [→ soul candidate if repo never adds labels]
 
 ### warehouse
 *(notes accumulate here)*
