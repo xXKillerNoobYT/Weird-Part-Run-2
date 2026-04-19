@@ -28,6 +28,10 @@ public final class SchedulingService: Sendable {
         /// Approver attempted to approve time-off that conflicts with N existing dispatches.
         /// Fix #207: surfaces the conflict so UI can require cancellation/resolution first.
         case timeOffConflictsWithDispatch(conflicts: Int)
+        case invalidDateRange(start: String, end: String)
+        case requiredFieldEmpty
+        case jobNotFound(Int64)
+        case userNotFound(Int64)
     }
 
     // =========================================================================
@@ -363,7 +367,7 @@ public final class SchedulingService: Sendable {
         }
     }
 
-    /// Create a new time-off request. Returns the inserted row ID.
+    /// Create a new time-off request. Returns the inserted row ID, or 0 if the user is tombstoned.
     @discardableResult
     public func createTimeOffRequest(
         userId: Int64,
@@ -371,6 +375,28 @@ public final class SchedulingService: Sendable {
         endDate: String,
         reason: String? = nil
     ) throws -> Int64 {
+        // Guard: user must exist and not be tombstoned — otherwise the INSERT INTO
+        // schedule_exceptions below would create orphan time-off rows against a
+        // soft-deleted user (the FK constraint allows the write; deleted_at doesn't).
+        let userExists = try db.writer.read { dbConn -> Bool in
+            (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [userId]) ?? 0) > 0
+        }
+        guard userExists else { return 0 }
+
+        // Validate date ordering: end must be on or after start.
+        // datesInRange silently returns [] for reversed ranges, which would fall
+        // back to just the start date — a confusing silent degradation.
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        fmt.timeZone = TimeZone(identifier: "UTC")
+        if let s = fmt.date(from: String(startDate.prefix(10))),
+           let e = fmt.date(from: String(endDate.prefix(10))),
+           e < s {
+            throw SchedulingError.invalidDateRange(start: startDate, end: endDate)
+        }
+
         // Generate all dates in the range [startDate, endDate]
         let dates = Self.datesInRange(from: startDate, to: endDate)
         // A shared UUID links all per-day rows back to one logical request so
@@ -471,7 +497,7 @@ public final class SchedulingService: Sendable {
                 } else {
                     dateRows = try Row.fetchAll(dbConn, sql: """
                         SELECT user_id, exception_date FROM schedule_exceptions
-                        WHERE id = ?
+                        WHERE id = ? AND deleted_at IS NULL
                         """, arguments: [id])
                 }
 
@@ -508,7 +534,7 @@ public final class SchedulingService: Sendable {
                         sql: """
                             UPDATE schedule_exceptions
                             SET is_approved = ?, approved_by = ?, approved_at = datetime('now')
-                            WHERE id = ?
+                            WHERE id = ? AND deleted_at IS NULL
                             """,
                         arguments: [isApproved, approvedBy, id]
                     )
@@ -528,7 +554,7 @@ public final class SchedulingService: Sendable {
                         sql: """
                             UPDATE schedule_exceptions
                             SET is_approved = ?
-                            WHERE id = ?
+                            WHERE id = ? AND deleted_at IS NULL
                             """,
                         arguments: [isApproved, id]
                     )
@@ -625,7 +651,7 @@ public final class SchedulingService: Sendable {
 
         do {
             return try db.writer.read { dbConn -> [WeeklyAvailabilityRow] in
-                let empSql = "SELECT id, COALESCE(display_name, email) AS name FROM users WHERE deleted_at IS NULL ORDER BY name"
+                let empSql = "SELECT id, COALESCE(display_name, email) AS name FROM users WHERE deleted_at IS NULL AND is_active = 1 ORDER BY name"
                 let employees = try Row.fetchAll(dbConn, sql: empSql)
 
                 return try employees.map { emp -> WeeklyAvailabilityRow in
@@ -661,7 +687,23 @@ public final class SchedulingService: Sendable {
         date: String,
         notes: String? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !date.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw SchedulingError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn -> Int64 in
+            // Guard: job + user must exist and not be tombstoned — otherwise the
+            // INSERT creates an orphan job_dispatch row pointing at a deleted job/user,
+            // invisible to listDispatches' deleted_at filter but blocking future
+            // createDispatch calls via the double-booking check.
+            let jobExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobId]) ?? 0) > 0
+            guard jobExists else { throw SchedulingError.jobNotFound(jobId) }
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [userId]) ?? 0) > 0
+            guard userExists else { throw SchedulingError.userNotFound(userId) }
+
             // Check for existing dispatch on this date for this user
             let existingCount = try Int.fetchOne(
                 dbConn,
@@ -899,7 +941,20 @@ public final class SchedulingService: Sendable {
         notes: String? = nil,
         timeSlot: String = "full"
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !date.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw SchedulingError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn -> Int64 in
+            // Guard: job + user must exist and not be tombstoned.
+            let jobExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobId]) ?? 0) > 0
+            guard jobExists else { throw SchedulingError.jobNotFound(jobId) }
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [userId]) ?? 0) > 0
+            guard userExists else { throw SchedulingError.userNotFound(userId) }
+
             try dbConn.execute(
                 sql: """
                     INSERT INTO job_dispatch
@@ -1203,7 +1258,7 @@ public final class SchedulingService: Sendable {
     public func snoozeCallback(jobId: Int64, until: String) throws {
         try db.writer.write { dbConn in
             try dbConn.execute(
-                sql: "UPDATE jobs SET due_date = ?, updated_at = datetime('now') WHERE id = ?",
+                sql: "UPDATE jobs SET due_date = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
                 arguments: [until, jobId]
             )
         }
@@ -1214,12 +1269,12 @@ public final class SchedulingService: Sendable {
         try db.writer.write { dbConn in
             if let notes, !notes.isEmpty {
                 try dbConn.execute(
-                    sql: "UPDATE jobs SET due_date = NULL, notes = COALESCE(notes || '\n', '') || ?, updated_at = datetime('now') WHERE id = ?",
+                    sql: "UPDATE jobs SET due_date = NULL, notes = COALESCE(notes || '\n', '') || ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
                     arguments: [notes, jobId]
                 )
             } else {
                 try dbConn.execute(
-                    sql: "UPDATE jobs SET due_date = NULL, updated_at = datetime('now') WHERE id = ?",
+                    sql: "UPDATE jobs SET due_date = NULL, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
                     arguments: [jobId]
                 )
             }
@@ -1637,13 +1692,16 @@ public final class SchedulingService: Sendable {
         breakMinutes: Int = 30, breakPaid: Bool = false,
         overtimeRule: String = "company_default"
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw SchedulingError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn in
             if let existingId = id {
                 try dbConn.execute(sql: """
                     UPDATE shift_templates
                     SET name = ?, hat_id = ?, work_days = ?, start_time = ?, end_time = ?,
                         break_minutes = ?, break_paid = ?, overtime_rule = ?
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [name, hatId, workDays, startTime, endTime,
                                      breakMinutes, breakPaid ? 1 : 0, overtimeRule, existingId])
                 return existingId
@@ -1720,12 +1778,15 @@ public final class SchedulingService: Sendable {
         id: Int64? = nil, name: String, date: String,
         isPaid: Bool = true, isRecurring: Bool = false
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw SchedulingError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn in
             if let existingId = id {
                 try dbConn.execute(sql: """
                     UPDATE company_holidays
                     SET name = ?, date = ?, is_paid = ?, is_recurring = ?
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [name, date, isPaid ? 1 : 0, isRecurring ? 1 : 0, existingId])
                 return existingId
             } else {
@@ -1775,7 +1836,8 @@ public final class SchedulingService: Sendable {
             }
             isApprovalRequired = (val == "1")
         } catch {
-            isApprovalRequired = false
+            if isTableNotFoundError(error) { isApprovalRequired = false }
+            else { throw error }
         }
 
         // Fetch flex-pool jobs visible to this user.
@@ -1791,7 +1853,8 @@ public final class SchedulingService: Sendable {
                         """, arguments: [userId])
                     userTeamIds = Set(ids)
                 } catch {
-                    userTeamIds = []
+                    if isTableNotFoundError(error) { userTeamIds = [] }
+                    else { throw error }
                 }
 
                 let rows = try Row.fetchAll(dbConn, sql: """
@@ -1861,16 +1924,29 @@ public final class SchedulingService: Sendable {
             }
             requiresApproval = (val == "1")
         } catch {
-            requiresApproval = false
+            if isTableNotFoundError(error) { requiresApproval = false }
+            else { throw error }
         }
 
         try db.writer.write { dbConn in
+            // Guard: job + user must exist and not be tombstoned — flex-pool
+            // pickup from a stale UI should not create orphan dispatches against
+            // deleted jobs or promote a tombstoned user to lead.
+            let jobExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobId]) ?? 0) > 0
+            guard jobExists else { throw SchedulingError.jobNotFound(jobId) }
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [userId]) ?? 0) > 0
+            guard userExists else { throw SchedulingError.userNotFound(userId) }
+
             let dispatchStatus = requiresApproval ? "pending_approval" : "scheduled"
 
             if !requiresApproval {
                 // Set worker as lead and remove from pool immediately.
                 try dbConn.execute(
-                    sql: "UPDATE jobs SET is_flex_pool = 0, lead_user_id = ? WHERE id = ?",
+                    sql: "UPDATE jobs SET is_flex_pool = 0, lead_user_id = ? WHERE id = ? AND deleted_at IS NULL",
                     arguments: [userId, jobId]
                 )
             }
@@ -1917,7 +1993,7 @@ public final class SchedulingService: Sendable {
                         flex_pool_team_filter = ?,
                         flex_pool_user_filter = ?,
                         updated_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [isFlexPool ? 1 : 0, teamJSON, userJSON, jobId]
             )
