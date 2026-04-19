@@ -26,6 +26,7 @@ struct IOSTemplateBuilderSheet: View {
                 daysSection
                 crewSection
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("New Template")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

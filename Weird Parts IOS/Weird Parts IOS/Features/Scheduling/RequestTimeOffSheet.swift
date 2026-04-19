@@ -35,17 +35,22 @@ struct RequestTimeOffSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Request Time Off")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Submit") { submitRequest() }
-                        .disabled(isSaving)
-                        .fontWeight(.semibold)
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Submit") { submitRequest() }
+                            .fontWeight(.semibold)
+                    }
                 }
             }
         }
