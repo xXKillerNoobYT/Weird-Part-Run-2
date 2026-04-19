@@ -22,6 +22,13 @@
 | 2026-04-18 | 13 | parts | C10_cross_platform_parity | done (N/A) | 1 structural finding — no Tauri/React side in repo | #257 filed for CLAUDE.md drift; tracker created | 0 | ~200 | none |
 | 2026-04-18 | 14 | parts | C11_github_issues_resolved | done | 0 closable, 0 orphan (14 parts issues all tracked) | Verified each has plan/prompt/parent tracker reference | 0 | ~200 | none |
 | 2026-04-18 | 15 | parts | C11b_process_gaps_clean | done | 1 throughput signal (4 Xcode prompts stalled ~12h, already tracked) | Memory noted for Sunday loop-self-improve watch | 0 | ~200 | none |
+| 2026-04-18 | 16 | parts | C12_claude_md_reflects_area | done | 0 parts-specific drift (arch section drift in #257) | parts area GRADUATED — 17/17 checks green across 16 iterations | 0 | ~200 | github-issues-sync (4h pulse) |
+
+## Area Graduation Log
+
+| Area | Graduated | Iterations | Notable |
+|---|---|---|---|
+| parts | 2026-04-18 | 16 (iter 1–16) | First area through the full 17-check gauntlet. 3 CLAUDE.md improver sub-runs, 1 approved automation built (parts-sql-check hook), 4 dismiss-safety fixes, 1 FK bug fixed + test, 18+18 new tests, 4 GitHub issues filed. Bundled trackers: security-review, performance-review, cross-platform-qa now exist. |
 
 ## Weekly Roll-ups (updated by loop-self-improve)
 
