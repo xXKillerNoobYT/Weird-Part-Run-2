@@ -31,13 +31,19 @@ struct IOSTemplateBuilderSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { saveTemplate() }
-                        .disabled(isSaving || templateName.isEmpty)
-                        .fontWeight(.semibold)
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Save") { saveTemplate() }
+                            .disabled(templateName.isEmpty)
+                            .fontWeight(.semibold)
+                    }
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .alert("Save Failed", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
                 Button("OK") { actionError = nil }
             } message: {

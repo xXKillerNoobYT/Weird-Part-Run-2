@@ -74,13 +74,19 @@ struct CreateScheduleEntrySheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") { saveEntry() }
-                        .disabled(selectedJobId == nil || isSaving)
-                        .fontWeight(.semibold)
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Create") { saveEntry() }
+                            .disabled(selectedJobId == nil)
+                            .fontWeight(.semibold)
+                    }
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .task { loadJobs() }
         }
     }
