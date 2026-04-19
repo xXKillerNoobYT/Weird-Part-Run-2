@@ -361,31 +361,31 @@ public final class PartsService: Sendable {
                 // Fetch all active categories (alphabetical)
                 let categories = try PartCategory.fetchAll(
                     dbConn,
-                    sql: "SELECT * FROM part_categories WHERE deleted_at IS NULL ORDER BY name ASC"
+                    sql: "SELECT * FROM part_categories WHERE deleted_at IS NULL AND is_active = 1 ORDER BY name ASC"
                 )
 
                 // Fetch all active styles (alphabetical)
                 let styles = try PartStyle.fetchAll(
                     dbConn,
-                    sql: "SELECT * FROM part_styles WHERE deleted_at IS NULL ORDER BY name ASC"
+                    sql: "SELECT * FROM part_styles WHERE deleted_at IS NULL AND is_active = 1 ORDER BY name ASC"
                 )
 
                 // Fetch all active types (alphabetical)
                 let types = try PartType.fetchAll(
                     dbConn,
-                    sql: "SELECT * FROM part_types WHERE deleted_at IS NULL ORDER BY name ASC"
+                    sql: "SELECT * FROM part_types WHERE deleted_at IS NULL AND is_active = 1 ORDER BY name ASC"
                 )
 
                 // Fetch all active colors (alphabetical)
                 let colors = try PartColor.fetchAll(
                     dbConn,
-                    sql: "SELECT * FROM part_colors WHERE deleted_at IS NULL ORDER BY name ASC"
+                    sql: "SELECT * FROM part_colors WHERE deleted_at IS NULL AND is_active = 1 ORDER BY name ASC"
                 )
 
                 // Fetch all brands
                 let brands = try Brand.fetchAll(
                     dbConn,
-                    sql: "SELECT * FROM brands WHERE deleted_at IS NULL ORDER BY name"
+                    sql: "SELECT * FROM brands WHERE deleted_at IS NULL AND is_active = 1 ORDER BY name"
                 )
 
                 // Fetch type-brand links
@@ -505,7 +505,7 @@ public final class PartsService: Sendable {
             return try db.writer.read { dbConn in
                 try PartCategory.fetchAll(
                     dbConn,
-                    sql: "SELECT * FROM part_categories WHERE deleted_at IS NULL ORDER BY sort_order, name"
+                    sql: "SELECT * FROM part_categories WHERE deleted_at IS NULL AND is_active = 1 ORDER BY sort_order, name"
                 )
             }
         } catch {
@@ -829,7 +829,7 @@ public final class PartsService: Sendable {
             return try db.writer.read { dbConn in
                 try PartColor.fetchAll(
                     dbConn,
-                    sql: "SELECT * FROM part_colors WHERE deleted_at IS NULL ORDER BY sort_order, name"
+                    sql: "SELECT * FROM part_colors WHERE deleted_at IS NULL AND is_active = 1 ORDER BY sort_order, name"
                 )
             }
         } catch {
@@ -974,7 +974,7 @@ public final class PartsService: Sendable {
     ) throws -> [PartWithDetails] {
         do {
             return try db.writer.read { dbConn in
-                var whereClauses = ["p.deleted_at IS NULL"]
+                var whereClauses = ["p.deleted_at IS NULL", "p.is_active = 1"]
                 var args: [DatabaseValueConvertible?] = []
 
                 if let search, !search.isEmpty {
