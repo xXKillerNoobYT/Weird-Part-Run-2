@@ -84,3 +84,5 @@ Self-improvements are applied autonomously for safe changes (reordering, enablin
 | 2026-04-19 | 18 | warehouse | C9 | done | 2 findings (batch atomicity bug #259, 11-query N+1 #260) | 0 (filed as issues) | 0 | ~380 | none |
 | 2026-04-19 | 19 | warehouse | C10+C11+C11b+C12 | done | 0 findings (all checks clean) | 0 | 0 | ~320 | none |
 | 2026-04-19 | 24 | scheduling | C3_hunt_fix_clean | done | 0 findings (SchedulingService + AIDispatchService clean; 70 deleted_at filters, 2 legit JSON try?; iOS scheduling files clean) | — | 0 | ~180 | none |
+| 2026-04-19 | 41 | tools | C7b_dev_improvement_polish | done | 1 finding (IOSToolDetailPage missing scrollDismissesKeyboard) | 1 fix | 0 | ~150 | stale-lock-recovery |
+| 2026-04-19 | 50 | inventory | C1_plan_complete | done | 0 gaps — 4 plans totaling 1,213 lines cover forecasting/wishlist/procurement/MIN-TARGET-MAX | — | 0 | ~120 | github-sync |
