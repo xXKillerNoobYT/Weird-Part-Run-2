@@ -579,7 +579,7 @@ public final class OrdersService: Sendable {
                 SELECT jl.*,
                        p.name AS part_name
                 FROM jpo_line_items jl
-                LEFT JOIN parts p ON p.id = jl.part_id
+                LEFT JOIN parts p ON p.id = jl.part_id AND p.deleted_at IS NULL
                 WHERE jl.jpo_id = ? AND jl.deleted_at IS NULL
                 ORDER BY jl.created_at ASC
                 """
@@ -1063,8 +1063,8 @@ public final class OrdersService: Sendable {
                     FROM jpo_line_items jl
                     JOIN job_parts_orders jpo ON jpo.id = jl.jpo_id
                     LEFT JOIN jobs j ON j.id = jpo.job_id AND j.deleted_at IS NULL
-                    LEFT JOIN parts p ON p.id = jl.part_id
-                    LEFT JOIN brands b ON b.id = p.brand_id
+                    LEFT JOIN parts p ON p.id = jl.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
                     WHERE jl.line_status = 'approved'
                       AND jl.deleted_at IS NULL
                       AND jpo.deleted_at IS NULL
@@ -1502,7 +1502,7 @@ public final class OrdersService: Sendable {
                        jpo.id AS jpo_id
                 FROM jpo_line_items jl
                 JOIN job_parts_orders jpo ON jpo.id = jl.jpo_id
-                LEFT JOIN parts p ON p.id = jl.part_id
+                LEFT JOIN parts p ON p.id = jl.part_id AND p.deleted_at IS NULL
                 LEFT JOIN job_stage_category_map jscm ON jscm.category_id = p.category_id
                 LEFT JOIN job_stages js ON js.id = COALESCE(jl.stage_id, jscm.stage_id)
                 WHERE jpo.job_id = ?
@@ -1800,7 +1800,7 @@ public final class OrdersService: Sendable {
                             ELSE 'general'
                        END AS source
                 FROM po_line_items pl
-                LEFT JOIN parts p ON p.id = pl.part_id
+                LEFT JOIN parts p ON p.id = pl.part_id AND p.deleted_at IS NULL
                 LEFT JOIN jpo_line_items jli ON jli.id = pl.jpo_line_id
                 LEFT JOIN job_parts_orders jpo ON jpo.id = jli.jpo_id
                 LEFT JOIN jobs j ON j.id = jpo.job_id AND j.deleted_at IS NULL
@@ -2170,7 +2170,7 @@ public final class OrdersService: Sendable {
                        rsi.notes
                 FROM receiving_session_items rsi
                 LEFT JOIN po_line_items pli ON pli.id = rsi.po_line_id
-                LEFT JOIN parts p ON p.id = pli.part_id
+                LEFT JOIN parts p ON p.id = pli.part_id AND p.deleted_at IS NULL
                 WHERE rsi.session_id = ? AND rsi.deleted_at IS NULL
                 ORDER BY p.name
                 """, arguments: [sessionId])

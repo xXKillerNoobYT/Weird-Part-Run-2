@@ -1166,4 +1166,80 @@ struct OrdersServiceTests {
         #expect(detail.supplierName == "Unknown Supplier",
                 "getPODetail LEFT JOIN suppliers needs deleted_at guard so deleted supplier name doesn't persist on PO detail card")
     }
+
+    @Test("getJPODetail shows nil partName for soft-deleted part in line items")
+    func testGetJPODetailHidesDeletedPartName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-JPO-DEL", name: "JPODelJob")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "JPODelCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "JPODelPart", categoryId: catId)
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO jpo_line_items (jpo_id, part_id, qty_requested, brand_selection_mode, created_at)
+                VALUES (?, ?, 2, 'specific', datetime('now'))
+                """, arguments: [jpoId, partId])
+            try db.execute(sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [partId])
+        }
+        let detail = try env.orders.getJPODetail(id: jpoId)
+        let line = detail.lines.first(where: { $0.partId == partId })
+        #expect(line != nil)
+        #expect(line?.partName == nil,
+                "Soft-deleted part must produce nil partName in getJPODetail line items")
+    }
+
+    @Test("getPODetail shows nil partName for soft-deleted part in PO line items")
+    func testGetPODetailHidesDeletedPartInLines() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "POLinesSupplier")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "POLinesCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "POLinesPart", categoryId: catId)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-LINES-DEL", supplierId: supplierId)
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, part_id, qty_ordered, qty_received, unit_cost)
+                VALUES (?, ?, 3, 0, 12.50)
+                """, arguments: [poId, partId])
+            try db.execute(sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [partId])
+        }
+        let detail = try env.orders.getPODetail(id: poId)
+        let line = detail.lines.first(where: { $0.partId == partId })
+        #expect(line != nil)
+        #expect(line?.partName == nil,
+                "Soft-deleted part must produce nil partName in getPODetail line items")
+    }
+
+    @Test("getReceiptHistoryItems shows Unknown Part for soft-deleted part")
+    func testGetReceiptHistoryItemsHidesDeletedPartName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "RHISupplier")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "RHICat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "RHIPart", categoryId: catId)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-RHI-DEL", supplierId: supplierId)
+        var sessionId: Int64 = 0
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, part_id, qty_ordered, qty_received, unit_cost)
+                VALUES (?, ?, 2, 0, 8.00)
+                """, arguments: [poId, partId])
+            let lineId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO receiving_sessions (po_id, started_by, mode, status, created_at)
+                VALUES (?, ?, 'packing_slip', 'completed', datetime('now'))
+                """, arguments: [poId, env.adminUserId])
+            sessionId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO receiving_session_items (session_id, po_line_id, expected_qty, created_at)
+                VALUES (?, ?, 2, datetime('now'))
+                """, arguments: [sessionId, lineId])
+            try db.execute(sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [partId])
+        }
+        let items = try env.orders.getReceiptHistoryItems(sessionId: sessionId)
+        #expect(items.isEmpty == false)
+        #expect(items.first?.partName == "Unknown Part",
+                "Soft-deleted part must degrade to 'Unknown Part' in getReceiptHistoryItems")
+    }
 }

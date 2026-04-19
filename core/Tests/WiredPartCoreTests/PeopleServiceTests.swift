@@ -167,6 +167,34 @@ struct PeopleServiceTests {
         #expect(available.count >= 1)
     }
 
+    @Test("getTeamMembers excludes soft-deleted users via JOIN-condition guard")
+    func testGetTeamMembers_excludesDeletedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Create a team with the admin user as a member
+        let teamId = try env.people.createTeam(name: "Tombstone Team", description: nil)
+        try env.people.addTeamMember(teamId: teamId, userId: env.adminUserId, role: "lead")
+
+        // Baseline: the member appears
+        let before = try env.people.getTeamMembers(teamId: teamId)
+        #expect(before.contains { $0.id == env.adminUserId })
+
+        // Soft-delete the user. The employee_team_members row stays active — this is
+        // the LEFT-JOIN-COALESCE trap applied to an INNER JOIN: the tombstoned user
+        // row still matches the JOIN and their display name leaks through. After the
+        // fix, JOIN-condition `AND u.deleted_at IS NULL` drops the row entirely.
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [env.adminUserId]
+            )
+        }
+
+        let after = try env.people.getTeamMembers(teamId: teamId)
+        #expect(!after.contains { $0.id == env.adminUserId },
+                "getTeamMembers must exclude soft-deleted users via JOIN-condition guard on users.deleted_at")
+    }
+
     // MARK: - Hats
 
     @Test("Hat lifecycle: create, list, toggle, delete")
