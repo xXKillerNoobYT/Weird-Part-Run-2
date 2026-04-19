@@ -4,6 +4,40 @@
 
 ---
 
+## Area: notebooks — 2026-04-19
+
+**Analyzed:** `NotebooksService.swift` (35+ public methods, 56 tests), `PanelScheduleBuilder.swift`, and 8 iOS notebooks pages. Fixed 2 atomicity bugs (C3) + 3 UI improvements (C7/C7b) + 3 coverage tests (C4).
+
+### New Pattern Candidate: Multi-Step DB Write Atomicity Scanner
+
+**What it would catch:** Service functions that call other service methods (each with their own `db.writer.write`) inside a loop or sequential block — meaning the outer function is NOT atomic.
+
+**How to detect:**
+- For each `public func` in any service file, check if it calls another function on `self` that opens `db.writer.write` (direct method call) inside its body.
+- Functions calling `db.writer.write` directly themselves are fine.
+- Functions that call `createX()` → `createY(id)` → `insertZ(id)` each as separate calls are the anti-pattern.
+
+**Priority:** High — a failure mid-way leaves orphaned partial records. Found in `applyJobTemplate` (multiple groups/sections) and `applyPageTemplate` (multiple entries). Fixed by inlining SQL into single `db.writer.write`.
+
+**Pattern marker:** The fixable pattern is well-defined: inline the child SQL calls inside one parent `db.writer.write { dbConn in ... }` block.
+
+### Dismiss-Safety Scanner Refinement (from C7)
+
+**Existing scanner:** Detects missing `interactiveDismissDisabled`.
+**Refinement discovered:** The `isSaving` guard alone is insufficient — users can lose typed content during save. The `AddNotebookEntrySheet` pattern uses `hasUnsavedContent` (title/content/checklistItems non-empty) as the dismiss gate. The scanner should also flag sheets that only protect during saving, not during editing.
+
+### Summary Table After Notebooks (11/14 areas complete)
+
+| Recommendation | Areas Hit | Gaps Found | Priority | Status |
+|---|---|---|---|---|
+| is_active defense auditor hook | 6/14 | 35 | 🔴 Critical | ⏳ Q&A pending (ReportsService exempt) |
+| Dismiss-safety struct-aware scanner | 8/14 | 28+ | 🔴 High | ⏳ Q&A pending |
+| Multi-step DB write atomicity scanner (new) | 1/14 | 2 | 🟠 High | New — no Q&A yet |
+| GRDB Int? flag default scanner | 1/14 | 1 | 🟠 High | No Q&A yet |
+| accessibilityAddTraits(.isSelected) scanner | 4/14 | 4 | 🟢 Low | ⏳ Q&A pending |
+
+---
+
 ## Area: reports — 2026-04-19
 
 **Analyzed:** `ReportsService.swift` (13 public methods, 31 tests), `ReportExportUtilities.swift`, `ReportDateRange.swift`, `IOSReportsRouter.swift`, and 18 report-specific iOS pages. This is the first area with zero is_active defense gaps by design (historical reports must retain inactive-entity records). 4 behavioral tests added (C4), 1 UX fix (C7b), 0 security findings (C8), 0 perf findings (C9).
