@@ -290,6 +290,7 @@ private struct RatingRow: View {
                 Image(systemName: star <= Int(value.rounded()) ? "star.fill" : "star")
                     .foregroundStyle(star <= Int(value.rounded()) ? .yellow : .gray)
                     .font(.caption)
+                    .accessibilityHidden(true)
             }
             Text(String(format: "%.1f", value))
                 .font(.caption).foregroundStyle(.secondary)
@@ -308,6 +309,8 @@ private struct AddContractorNoteSheet: View {
 
     @State private var content = ""
     @State private var errorMessage: String?
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
 
     var body: some View {
         NavigationStack {
@@ -315,6 +318,7 @@ private struct AddContractorNoteSheet: View {
                 Section("Note") {
                     TextField("Enter note...", text: $content, axis: .vertical)
                         .lineLimit(3...8)
+                        .onChange(of: content) { _, _ in isDirty = true }
                 }
                 if let error = errorMessage {
                     Section {
@@ -322,18 +326,28 @@ private struct AddContractorNoteSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add Note")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showDiscardAlert = true } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                         .disabled(content.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
+            }
         }
+        .interactiveDismissDisabled(isDirty)
     }
 
     private func save() {

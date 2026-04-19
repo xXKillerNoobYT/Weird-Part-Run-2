@@ -157,6 +157,7 @@ struct IOSPermissionsPage: View {
                             .foregroundStyle(selectedHat?.id == hat.id ? .white : .primary)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityAddTraits(selectedHat?.id == hat.id ? .isSelected : [])
                 }
             }
             .padding(.horizontal)

@@ -178,6 +178,7 @@ struct IOSHatsPage: View {
         return HStack(spacing: 4) {
             Image(systemName: "person.2.fill")
                 .font(.caption2)
+                .accessibilityHidden(true)
             Text("\(count)")
                 .font(.system(.caption2, weight: .semibold))
         }
@@ -230,16 +231,20 @@ private struct AddHatSheet: View {
     @State private var hatName = ""
     @State private var hatDescription = ""
     @State private var errorMessage: String?
+    @State private var isDirty = false
+    @State private var showDiscardAlert = false
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Required") {
                     TextField("Hat Name", text: $hatName)
+                        .onChange(of: hatName) { _, _ in isDirty = true }
                 }
                 Section("Optional") {
                     TextField("Description", text: $hatDescription, axis: .vertical)
                         .lineLimit(3...6)
+                        .onChange(of: hatDescription) { _, _ in isDirty = true }
                 }
                 if let error = errorMessage {
                     Section {
@@ -247,18 +252,28 @@ private struct AddHatSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add Hat")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { showDiscardAlert = true } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                         .disabled(hatName.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
+            .alert("Discard changes?", isPresented: $showDiscardAlert) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Editing", role: .cancel) {}
+            } message: {
+                Text("Your unsaved changes will be lost.")
+            }
         }
+        .interactiveDismissDisabled(isDirty)
     }
 
     private func save() {

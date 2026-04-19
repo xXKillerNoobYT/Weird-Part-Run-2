@@ -200,6 +200,7 @@ struct IOSEmployeeDetailPage: View {
                             } else if item.isAssigned {
                                 Image(systemName: "checkmark")
                                     .foregroundStyle(.green)
+                                    .accessibilityHidden(true)
                             }
                         }
                     }
