@@ -23,6 +23,7 @@ public final class ChatService: Sendable {
         case channelNotFound(Int64)
         case messageNotFound(Int64)
         case threadNotFound(Int64)
+        case requiredFieldEmpty
     }
 
     // =========================================================================
@@ -313,7 +314,10 @@ public final class ChatService: Sendable {
     /// Send a message to a channel. Returns the inserted message row ID.
     @discardableResult
     public func sendMessage(channelId: Int64, senderId: Int64, content: String) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !content.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw ChatError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO chat_messages
@@ -326,6 +330,21 @@ public final class ChatService: Sendable {
         }
     }
 
+    /// Mark all messages up to `messageId` as read for `userId` in `channelId`.
+    /// Safe to call on every thread-view appearance — idempotent and monotonic
+    /// (will not move the read pointer backwards if `messageId` is older).
+    public func markRead(channelId: Int64, userId: Int64, messageId: Int64) throws {
+        try db.writer.write { dbConn in
+            try dbConn.execute(sql: """
+                INSERT INTO chat_read_receipts (channel_id, user_id, last_read_message_id, read_at)
+                VALUES (?, ?, ?, datetime('now'))
+                ON CONFLICT(channel_id, user_id) DO UPDATE
+                SET last_read_message_id = MAX(last_read_message_id, excluded.last_read_message_id),
+                    read_at = datetime('now')
+                """, arguments: [channelId, userId, messageId])
+        }
+    }
+
     /// Creates a new chat channel.
     @discardableResult
     public func createChannel(
@@ -334,7 +353,10 @@ public final class ChatService: Sendable {
         jobId: Int64? = nil,
         createdBy: Int64
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw ChatError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO chat_channels
@@ -459,7 +481,10 @@ public final class ChatService: Sendable {
         subject: String,
         priority: String = "normal"
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !subject.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw ChatError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO qa_threads
@@ -882,7 +907,9 @@ public final class ChatService: Sendable {
 
     /// Auto-save photo/file attachments from a job-linked channel to the job's notebook.
     /// Best-effort — failures are silently ignored to not block message sending.
-    public func autoSaveToJobNotebook(channelId: Int64, attachment: MessageAttachment, userId: Int64 = 1) throws {
+    /// `userId` must flow from the session; no default to prevent hardcoded user 1
+    /// attribution on auto-created notebooks (documented in memory/feedback_hardcoded_user_ids.md).
+    public func autoSaveToJobNotebook(channelId: Int64, attachment: MessageAttachment, userId: Int64) throws {
         try db.writer.write { dbConn in
             // Get job ID from channel
             guard let row = try Row.fetchOne(dbConn, sql: """
@@ -1200,7 +1227,7 @@ public final class ChatService: Sendable {
             // Update thread
             try dbConn.execute(sql: """
                 UPDATE qa_threads SET current_level = ?, status = 'escalated', updated_at = datetime('now')
-                WHERE id = ?
+                WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [nextLevel, threadId])
 
             // Insert escalation record
@@ -1227,7 +1254,7 @@ public final class ChatService: Sendable {
             // Update thread
             try dbConn.execute(sql: """
                 UPDATE qa_threads SET current_level = ?, status = 'open', updated_at = datetime('now')
-                WHERE id = ?
+                WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [prevLevel, threadId])
 
             // Insert escalation record (direction is indicated by from > to)

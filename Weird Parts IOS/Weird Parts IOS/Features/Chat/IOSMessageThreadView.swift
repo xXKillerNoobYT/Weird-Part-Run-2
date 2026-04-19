@@ -362,6 +362,11 @@ struct IOSMessageThreadView: View {
             // Batch-load attachments for all messages
             let ids = messages.map(\.id)
             messageAttachments = try service.getAttachmentsForMessages(messageIds: ids)
+
+            // Mark up to the last message as read.
+            if let userId = appCore.currentUser?.id, let lastId = messages.last?.id {
+                try? service.markRead(channelId: channelId, userId: userId, messageId: lastId)
+            }
         } catch {
             loadError = userFriendlyError(error, context: "load messages")
         }
