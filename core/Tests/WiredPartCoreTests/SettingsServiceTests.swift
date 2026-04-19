@@ -279,6 +279,35 @@ struct SettingsServiceTests {
         #expect(try svc.hasBusinessProfile() == true)
     }
 
+    @Test("listCompanyProfiles returns only non-deleted profiles")
+    func testListCompanyProfiles_excludesDeleted() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        let a = CompanyProfile(companyName: "Alpha Corp", isPrimary: 1, createdAt: "2026-01-01 00:00:00", updatedAt: "2026-01-01 00:00:00")
+        let b = CompanyProfile(companyName: "Beta Inc", isPrimary: 0, createdAt: "2026-01-01 00:00:00", updatedAt: "2026-01-01 00:00:00")
+        let idA = try svc.createCompanyProfile(a)
+        let idB = try svc.createCompanyProfile(b)
+        try svc.deleteCompanyProfile(idB)
+
+        let visible = try svc.listCompanyProfiles()
+        #expect(visible.count == 1)
+        #expect(visible.first?.id == idA)
+    }
+
+    @Test("hasBusinessProfile returns false on empty DB and true after create")
+    func testHasBusinessProfile() throws {
+        let db = try freshDB()
+        let svc = SettingsService(db: db)
+
+        #expect(try svc.hasBusinessProfile() == false)
+
+        let profile = BusinessProfile(companyName: "Acme LLC", isActive: 1)
+        _ = try svc.createBusinessProfile(profile)
+
+        #expect(try svc.hasBusinessProfile() == true)
+    }
+
     @Test("updateBusinessProfile persists changes")
     func testBusinessProfileUpdate() throws {
         let db = try freshDB()
@@ -748,5 +777,31 @@ struct SettingsServiceTests {
         let updated = try svc.getCompanyProfile(newId)
         #expect(updated.companyName == "NewName LLC")
         #expect(updated.phone == "555-1234")
+    }
+
+    // MARK: - Input validation (iter 74)
+
+    @Test("updateWarrantyLengthDays rejects zero and negative values")
+    func testUpdateWarrantyLengthDays_rejectsInvalidValues() throws {
+        let env = try E2ETestHelpers.setUp()
+        let svc = SettingsService(db: env.db)
+        #expect(throws: SettingsService.SettingsError.self) {
+            try svc.updateWarrantyLengthDays(0)
+        }
+        #expect(throws: SettingsService.SettingsError.self) {
+            try svc.updateWarrantyLengthDays(-5)
+        }
+    }
+
+    @Test("addClockOutQuestion rejects blank text and blank type")
+    func testAddClockOutQuestion_rejectsBlankInputs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let svc = SettingsService(db: env.db)
+        #expect(throws: SettingsService.SettingsError.self) {
+            _ = try svc.addClockOutQuestion(text: "   ", type: "text", isRequired: true, sortOrder: 0)
+        }
+        #expect(throws: SettingsService.SettingsError.self) {
+            _ = try svc.addClockOutQuestion(text: "Clean up?", type: "", isRequired: true, sortOrder: 0)
+        }
     }
 }
