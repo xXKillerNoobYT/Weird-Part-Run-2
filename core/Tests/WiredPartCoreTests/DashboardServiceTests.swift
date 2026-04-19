@@ -549,4 +549,17 @@ struct DashboardServiceTests {
         // No matching part in DB → not found
         #expect(!result.isFound)
     }
+
+    @Test("getClockStatus returns nil jobName for soft-deleted job")
+    func testGetClockStatusHidesDeletedJobName() throws {
+        let (env, dash) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        _ = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?", arguments: [jobId])
+        }
+        let status = try dash.getClockStatus(userId: env.adminUserId)
+        #expect(status.isClockedIn == true)
+        #expect(status.jobName == nil)
+    }
 }

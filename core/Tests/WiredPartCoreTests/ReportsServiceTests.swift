@@ -345,4 +345,40 @@ struct ReportsServiceTests {
             #expect(first[4] == "50000.00")
         }
     }
+
+    @Test("getTimesheetData shows Unknown for soft-deleted user")
+    func testGetTimesheetDataHidesDeletedUserName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let laborId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.jobs.clockOut(laborEntryId: laborId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?", arguments: [env.adminUserId])
+        }
+        let rows = try env.reports.getTimesheetData(startDate: "2000-01-01", endDate: "2099-12-31")
+        #expect(rows.isEmpty == false)
+        #expect(rows.first?.userName == "Unknown")
+    }
+
+    @Test("generateDetailedReport hides job and user name for soft-deleted entities")
+    func testGenerateDetailedReportHidesDeletedJobAndUserName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let laborId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.jobs.clockOut(laborEntryId: laborId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?", arguments: [jobId])
+        }
+        let columns = ["employee_name", "date", "hours", "job_name", "activity_type", "clock_in", "clock_out", "notes"]
+        let rows = try env.reports.generateCustomReport(
+            type: "labor_hours",
+            columns: columns,
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date.distantFuture,
+            filters: [:]
+        )
+        #expect(rows.isEmpty == false)
+        let jobNameIdx = columns.firstIndex(of: "job_name")!
+        #expect(rows.first![jobNameIdx] == "")
+    }
 }

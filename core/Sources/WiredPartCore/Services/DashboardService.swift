@@ -598,7 +598,7 @@ public final class DashboardService: Sendable {
                 if let activeRow = try Row.fetchOne(conn, sql: """
                     SELECT le.clock_in, COALESCE(j.job_name, 'Shop / Warehouse') AS job_name
                     FROM labor_entries le
-                    LEFT JOIN jobs j ON j.id = le.job_id
+                    LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
                     WHERE le.user_id = ? AND le.clock_out IS NULL AND le.deleted_at IS NULL
                     ORDER BY le.clock_in DESC LIMIT 1
                     """, arguments: [userId]) {
@@ -629,7 +629,7 @@ public final class DashboardService: Sendable {
                              END
                            ) AS total_hours
                     FROM labor_entries le
-                    LEFT JOIN jobs j ON j.id = le.job_id
+                    LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
                     WHERE le.user_id = ? AND date(le.clock_in) = date('now') AND le.deleted_at IS NULL
                     GROUP BY le.job_id
                     ORDER BY total_hours DESC
@@ -709,8 +709,8 @@ public final class DashboardService: Sendable {
                            COALESCE(j.job_name, 'Shop / Warehouse') AS job_name,
                            le.clock_in
                     FROM labor_entries le
-                    JOIN users u ON u.id = le.user_id
-                    LEFT JOIN jobs j ON j.id = le.job_id
+                    JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
+                    LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
                     WHERE le.clock_out IS NULL AND le.deleted_at IS NULL AND u.deleted_at IS NULL
                     ORDER BY le.clock_in ASC
                     """)
@@ -758,7 +758,7 @@ public final class DashboardService: Sendable {
                 if let clockRow = try Row.fetchOne(conn, sql: """
                     SELECT le.clock_in, j.job_name, j.job_number
                     FROM labor_entries le
-                    LEFT JOIN jobs j ON j.id = le.job_id
+                    LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
                     WHERE le.user_id = ? AND le.clock_out IS NULL AND le.deleted_at IS NULL
                     ORDER BY le.clock_in DESC LIMIT 1
                     """, arguments: [userId]) {
@@ -888,7 +888,7 @@ public final class DashboardService: Sendable {
                 let laborSpend = try Double.fetchOne(conn, sql: """
                     SELECT COALESCE(SUM(le.regular_hours * COALESCE(u.pay_rate, 0)), 0)
                     FROM labor_entries le
-                    LEFT JOIN users u ON u.id = le.user_id
+                    LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
                     WHERE le.deleted_at IS NULL
                     """) ?? 0
                 let partsSpend = try Double.fetchOne(conn, sql: """

@@ -143,7 +143,7 @@ public final class ReportsService: Sendable {
                            COALESCE(SUM(le.regular_hours), 0) + COALESCE(SUM(le.overtime_hours), 0) AS total_hours,
                            COUNT(DISTINCT date(le.clock_in)) AS days_worked
                     FROM labor_entries le
-                    LEFT JOIN users u ON u.id = le.user_id
+                    LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
                     WHERE le.deleted_at IS NULL
                       AND date(le.clock_in) >= date(?)
                       AND date(le.clock_in) <= date(?)
@@ -700,8 +700,8 @@ public final class ReportsService: Sendable {
                            COALESCE(le.clock_out, '') AS clock_out,
                            COALESCE(le.notes, '') AS notes
                     FROM labor_entries le
-                    LEFT JOIN users u ON u.id = le.user_id
-                    LEFT JOIN jobs j ON j.id = le.job_id
+                    LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
+                    LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
                     WHERE le.deleted_at IS NULL
                       AND date(le.clock_in) >= ? AND date(le.clock_in) <= ?
                     ORDER BY le.clock_in DESC, employee_name
@@ -742,7 +742,7 @@ public final class ReportsService: Sendable {
                     FROM stock_movements sm
                     LEFT JOIN parts p ON p.id = sm.part_id
                     LEFT JOIN part_categories pc ON pc.id = p.category_id
-                    LEFT JOIN jobs j ON j.id = sm.job_id
+                    LEFT JOIN jobs j ON j.id = sm.job_id AND j.deleted_at IS NULL
                     WHERE sm.deleted_at IS NULL AND sm.movement_type IN ('pull', 'usage', 'job_pull')
                       AND date(sm.created_at) >= ? AND date(sm.created_at) <= ?
                     ORDER BY sm.created_at DESC
@@ -826,7 +826,7 @@ public final class ReportsService: Sendable {
                            COALESCE(tc.return_condition, '') AS condition_in
                     FROM tool_checkouts tc
                     LEFT JOIN tools t ON t.id = tc.tool_id
-                    LEFT JOIN users u ON u.id = tc.checked_out_by
+                    LEFT JOIN users u ON u.id = tc.checked_out_by AND u.deleted_at IS NULL
                     WHERE tc.deleted_at IS NULL
                       AND date(tc.checked_out_at) >= ? AND date(tc.checked_out_at) <= ?
                     ORDER BY tc.checked_out_at DESC
