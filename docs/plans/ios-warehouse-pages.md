@@ -323,3 +323,18 @@ Unplanned enhancement added in commit 4b0c71a. Extends the floor plan grid with:
 - Copy-to-clipboard button with 1.5s checkmark feedback (`copiedPath` state)
 
 **Note:** These are quality-of-life improvements to the floor plan interaction. No service changes needed — `updateStorageUnit(id:gridX:gridY:)` already existed. Fully consistent with the plan's vision of an interactive floor plan editor.
+
+### `WarehouseRouter` + `ReceivingRoutingFlow` (AUTO GO C1b 2026-04-19)
+
+Infrastructure files that exist in code but were never in the design plan:
+
+- **`WarehouseRouter.swift`** — SwiftUI nav router that coordinates routes between warehouse sub-pages (Dashboard → Movements → Locations, etc.). Equivalent to other area routers (PartsRouter, JobsRouter). Not a design decision — implementation plumbing.
+- **`ReceivingRoutingFlow.swift`** — Orchestrator for the receiving → returns-sorting → cart placement multi-screen flow. Appears alongside `IOSReceivingPage` and coordinates its transitions. Supports PE-041 (receiving auto-save draft) and the Returns routing logic.
+
+**Note:** Both are implementation-layer helpers, not user-facing pages. Documenting here rather than in design decisions because the design intent is implicit in the sub-pages they orchestrate.
+
+### `WizardStepZones` / `WizardStepAreas` / `WizardStepShelves` / `WizardStepBins` (AUTO GO C1b 2026-04-19)
+
+The location-hierarchy wizard drill-down views (`Zones → Areas → Shelves → Bins`) referenced by `WarehouseLocationsPage`. Each file is a focused SwiftUI sub-view for entering one level of the 5-tier hierarchy defined in the plan's "Locations — Physical Storage Hierarchy" section (Unit → Row → Shelf → Area → Bin). `WizardStepPlacement.swift` (the 5th) IS documented separately as the PE-040 drag-and-drop placement screen.
+
+**Note:** These are the natural decomposition of the hierarchy the plan already describes — no new design surface, just separate files per level so each can be reviewed/tested independently. Consistent with plan intent.
