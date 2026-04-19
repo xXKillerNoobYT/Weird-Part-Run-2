@@ -119,7 +119,13 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 - [2026-04-19] **C9 perf fix**: IOSToolMaintenancePage was calling `listTools()` (all tools) then filtering `.filter { $0.status == "maintenance" }` in Swift. Changed to `listTools(status: "maintenance")` to push filter to SQL. The `status:` parameter existed — page just wasn't using it.
 
 ### vehicles
-*(notes accumulate here)*
+- [2026-04-19] **Service profile**: FleetService 33 public methods, 43 tests (2.3× ratio, including 3 new is_active defense tests). 19 logical sections covering vehicles, trailers, assignments, maintenance, mileage, fuel, inspections, stock, transfers, telematics, driver stats. Largest service is_active gap count of any area so far.
+- [2026-04-19] **is_active defense gaps (13)**: listVehicles, listTrailers, getFleetStats (×5 counts + 1 JOIN), listMaintenanceRecords JOIN, listMileageLogs JOIN, listFuelLogs JOIN, listInspections JOIN, listTelematicsData JOIN, 2 vehicle existence guards, getTrailerDetail, getMyVehicleStats (×2 JOINs). Mostly in reporting JOIN clauses. Running systemic total: 31 gaps across 5 services (Scheduling ×4, Orders ×3, People ×5, Tools ×6, Fleet ×13). Pattern: reporting queries that JOIN to vehicles/trailers without `AND v.is_active = 1` in the ON clause.
+- [2026-04-19] **Default limits built into all list methods**: `listMaintenanceRecords(limit: Int = 50)`, `listMileageLogs(limit: Int = 50)`, `listFuelLogs(limit: Int = 50)`, `listInspections(limit: Int = 100)`. List pages use default args → safely bounded. No unbounded fetches.
+- [2026-04-19] **Two fleet permissions**: `manage_fleet` gates vehicle/trailer/driver CRUD and inspection writes. `view_fleet_financials` gates cost cards (fuel cost MTD, maintenance cost MTD, miles MTD) on dashboard. These are enforced at the UI layer via `.requiresPermission(...)`.
+- [2026-04-19] **Dismiss-safety: 4 gaps fixed** — LogFuelSheet + AddTransferItemSheet (both nested structs in IOSMyTruckPage), IOSAssignDriverSheet, PreTripInspectionView. Running dismiss-safety total: 26+ gaps across 7 areas.
+- [2026-04-19] **C7b a11y gaps (2)**: IOSAssignDriverSheet selection `checkmark.circle.fill` icon (decorative — font-weight cues selection) + IOSMyTruckPage `QuickActionBtn` Image children (VoiceOver would read icon name + label text).
+- [2026-04-19] **No N+1 issues found**: Fleet dashboard loads in 4 sequential service calls (stats, vehicles, upcoming maintenance, recent maintenance) — all batch. No per-row loops calling DB.
 
 ### inventory
 *(notes accumulate here)*

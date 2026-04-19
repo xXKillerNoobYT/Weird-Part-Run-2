@@ -4,6 +4,55 @@
 
 ---
 
+## Area: vehicles — 2026-04-19
+
+**Analyzed:** `FleetService.swift` (33 public methods, 43 tests), 18 iOS Fleet pages (dashboard, vehicles, vehicle detail, my truck, fuel, mileage, inspections, maintenance, trailers, trailer detail/locations/storage, telematics, assign driver, pre-trip inspection, create vehicle/trailer sheets, fleet router). 8 iterations produced: 13 is_active defense fixes (C3 — highest single-area count), 3 new tests (C4), 4 dismiss-safety fixes (C7), 2 a11y fixes (C7b), 0 security findings (C8), 0 performance findings (C9).
+
+### Codebase Profile (Vehicles Area)
+
+- **Backend service:** `FleetService.swift` — 33 public methods, 43 tests (2.3× / 100% breadth)
+- **is_active gaps:** 13 — highest single-service count. Most were in reporting JOIN clauses: `JOIN vehicles v ON v.id = ... AND v.deleted_at IS NULL` missing `AND v.is_active = 1` in the ON condition.
+- **Dismiss-safety gaps:** 4 (LogFuelSheet, AddTransferItemSheet, IOSAssignDriverSheet, PreTripInspectionView)
+- **A11y gaps:** 2 (IOSAssignDriverSheet selection checkmark, IOSMyTruckPage QuickActionBtn icon)
+- **Perf:** Clean — all list methods have default limits (50–100 records); no unbounded queries
+- **Security:** Clean — `manage_fleet` and `view_fleet_financials` permissions well-enforced; input validation on all create methods
+
+---
+
+### ⚡ Pattern Reinforcement: is_active Defense Hook (now 5 areas, 31 total — escalate to CRITICAL)
+
+**Why:** 31 is_active gaps now confirmed across 5 areas (Scheduling ×4, Orders ×3, People ×5, Tools ×6, Fleet ×13 = 31). Fleet had the most gaps of any area because its reporting queries JOIN to the vehicles table in many places without including `AND v.is_active = 1` in the ON clause.
+
+**Key insight from vehicles**: The hook description in scheduling C13 focused on WHERE clause user-existence checks. Vehicles reveals a **second failure mode**: JOIN ON clause filtering. The hook needs to also scan:
+```
+JOIN vehicles v ON v.id = X AND v.deleted_at IS NULL
+```
+and flag when `AND v.is_active = 1` is missing. Same pattern applies to all `JOIN job_trailers`, `JOIN tools`, `JOIN users` ON clauses.
+
+**Escalation:** Priority escalates to **Critical**. 31 gaps / 5 areas, with 9 areas remaining — projecting ~56+ total gaps by the time all areas are swept.
+
+**No new Q&A needed** — escalation note only.
+
+---
+
+### ⚡ Pattern Reinforcement: Dismiss-Safety Scanner (7 areas, 26+ gaps)
+
+**Running totals:** Parts ×2, Jobs ×1, Warehouse ×5, Scheduling ×2, Orders ×3, People ×9, Fleet ×4 = 26+ gaps across 7 areas. No area has been gap-free since tools (which was pre-built correctly).
+
+**No new Q&A needed** — data reinforcement only.
+
+---
+
+### Summary: Running Totals After Vehicles
+
+| Recommendation | Areas Hit | Gaps Found | Priority | Status |
+|---|---|---|---|---|
+| is_active defense auditor hook (incl. JOIN ON clauses) | 5/14 | 31 | 🔴 Critical | ⏳ Q&A pending |
+| Dismiss-safety struct-aware scanner | 7/14 | 26+ | 🔴 High | ⏳ Q&A pending |
+| accessibilityAddTraits(.isSelected) scanner | 4/14 | 4 | 🟢 Low | ⏳ Q&A pending |
+
+---
+
 ## Area: tools — 2026-04-19
 
 **Analyzed:** `ToolsService.swift` (31 public methods, ~1600 lines), 8 iOS Tools pages (dashboard, registry, detail, checkouts, kits, maintenance, admin, router). This area had the cleanest baseline of any area so far: 0 dismiss-safety gaps, 1 a11y gap, 6 is_active gaps, 1 performance fix.

@@ -112,6 +112,7 @@ struct IOSAssignDriverSheet: View {
                 if selectedEmployeeId == employee.id {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
                 }
             }
         }
