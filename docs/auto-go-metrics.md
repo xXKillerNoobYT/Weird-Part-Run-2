@@ -81,3 +81,6 @@ Self-improvements are applied autonomously for safe changes (reordering, enablin
 | 2026-04-19 | 15 | warehouse | C5+C6+C7 | done | 2 findings (dismiss-safety gaps) | 2 applied (IOSAuditSetupView + WizardAddStorageUnitSheet) | 0 | ~450 | none |
 | 2026-04-19 | 16 | warehouse | C7b | done | 4 findings (1 missing accessibilityLabel, 3 missing accessibilityHidden, 1 missing scrollDismissesKeyboard) | 5 applied | 0 | ~420 | none |
 | 2026-04-19 | 17 | warehouse | C8_security_reviewed | done | 0 findings (M1/M3/M4/M10 clean; 1 setClauses.joined at :1702 = safe GRDB idiom per memory) | — | 0 | ~180 | none |
+| 2026-04-19 | 18 | warehouse | C9 | done | 2 findings (batch atomicity bug #259, 11-query N+1 #260) | 0 (filed as issues) | 0 | ~380 | none |
+| 2026-04-19 | 19 | warehouse | C10+C11+C11b+C12 | done | 0 findings (all checks clean) | 0 | 0 | ~320 | none |
+| 2026-04-19 | 24 | scheduling | C3_hunt_fix_clean | done | 0 findings (SchedulingService + AIDispatchService clean; 70 deleted_at filters, 2 legit JSON try?; iOS scheduling files clean) | — | 0 | ~180 | none |
