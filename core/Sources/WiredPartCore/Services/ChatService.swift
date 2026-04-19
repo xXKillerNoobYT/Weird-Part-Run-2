@@ -90,14 +90,14 @@ public final class ChatService: Sendable {
                         AND my_mem.user_id = ?
                         AND my_mem.left_at IS NULL
                         AND my_mem.deleted_at IS NULL
-                    LEFT JOIN jobs j ON j.id = cc.job_id
+                    LEFT JOIN jobs j ON j.id = cc.job_id AND j.deleted_at IS NULL
                     LEFT JOIN (
                         SELECT cm.channel_id, cm.content, cm.created_at, cm.sender_id,
                                ROW_NUMBER() OVER (PARTITION BY cm.channel_id ORDER BY cm.created_at DESC) AS rn
                         FROM chat_messages cm
                         WHERE cm.deleted_at IS NULL
                     ) last_msg ON last_msg.channel_id = cc.id AND last_msg.rn = 1
-                    LEFT JOIN users last_msg_user ON last_msg_user.id = last_msg.sender_id
+                    LEFT JOIN users last_msg_user ON last_msg_user.id = last_msg.sender_id AND last_msg_user.deleted_at IS NULL
                     LEFT JOIN (
                         SELECT cm.channel_id, COUNT(*) AS cnt
                         FROM chat_messages cm
@@ -251,7 +251,7 @@ public final class ChatService: Sendable {
                     FROM chat_channels cc
                     INNER JOIN chat_channel_members mem
                         ON mem.channel_id = cc.id AND mem.user_id = ? AND mem.left_at IS NULL AND mem.deleted_at IS NULL
-                    LEFT JOIN jobs j ON j.id = cc.job_id
+                    LEFT JOIN jobs j ON j.id = cc.job_id AND j.deleted_at IS NULL
                     WHERE cc.is_active = 1 AND cc.deleted_at IS NULL
                     ORDER BY last_message_at DESC NULLS LAST, cc.created_at DESC
                     """
@@ -286,7 +286,7 @@ public final class ChatService: Sendable {
                     SELECT cm.id, cm.sender_id, cm.content, cm.message_type, cm.created_at,
                            COALESCE(u.display_name, u.email, 'Unknown') AS sender_name
                     FROM chat_messages cm
-                    LEFT JOIN users u ON u.id = cm.sender_id
+                    LEFT JOIN users u ON u.id = cm.sender_id AND u.deleted_at IS NULL
                     WHERE cm.channel_id = ? AND cm.deleted_at IS NULL
                     ORDER BY cm.created_at DESC
                     LIMIT ?
@@ -379,8 +379,8 @@ public final class ChatService: Sendable {
                            COALESCE(ua.display_name, ua.email, 'Unknown') AS asked_by_name,
                            COALESCE(ub.display_name, ub.email) AS answered_by_name
                     FROM qa_threads qa
-                    LEFT JOIN users ua ON ua.id = qa.asked_by
-                    LEFT JOIN users ub ON ub.id = qa.answered_by
+                    LEFT JOIN users ua ON ua.id = qa.asked_by AND ua.deleted_at IS NULL
+                    LEFT JOIN users ub ON ub.id = qa.answered_by AND ub.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY qa.created_at DESC
                     """
@@ -424,8 +424,8 @@ public final class ChatService: Sendable {
                            COALESCE(ua.display_name, ua.email, 'Unknown') AS asked_by_name,
                            COALESCE(ub.display_name, ub.email) AS answered_by_name
                     FROM qa_threads qa
-                    LEFT JOIN users ua ON ua.id = qa.asked_by
-                    LEFT JOIN users ub ON ub.id = qa.answered_by
+                    LEFT JOIN users ua ON ua.id = qa.asked_by AND ua.deleted_at IS NULL
+                    LEFT JOIN users ub ON ub.id = qa.answered_by AND ub.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY qa.created_at DESC
                     """
@@ -986,7 +986,7 @@ public final class ChatService: Sendable {
                     SELECT cc.id, cc.name, cc.channel_type, cc.job_id,
                            j.job_name, j.job_number
                     FROM chat_channels cc
-                    LEFT JOIN jobs j ON j.id = cc.job_id
+                    LEFT JOIN jobs j ON j.id = cc.job_id AND j.deleted_at IS NULL
                     WHERE cc.id = ? AND cc.deleted_at IS NULL
                     """, arguments: [channelId]) else {
                     return nil
@@ -1047,7 +1047,7 @@ public final class ChatService: Sendable {
                     SELECT ccm.id, ccm.user_id, ccm.role,
                            COALESCE(u.display_name, u.email, 'Unknown') AS name
                     FROM chat_channel_members ccm
-                    LEFT JOIN users u ON u.id = ccm.user_id
+                    LEFT JOIN users u ON u.id = ccm.user_id AND u.deleted_at IS NULL
                     WHERE ccm.channel_id = ? AND ccm.left_at IS NULL AND ccm.deleted_at IS NULL
                     ORDER BY ccm.role DESC, name ASC
                     """, arguments: [channelId])
@@ -1131,7 +1131,7 @@ public final class ChatService: Sendable {
                     SELECT qe.id, qe.from_level, qe.to_level, qe.reason, qe.created_at,
                            COALESCE(u.display_name, u.email, 'Unknown') AS escalated_by_name
                     FROM qa_escalations qe
-                    LEFT JOIN users u ON u.id = qe.escalated_by
+                    LEFT JOIN users u ON u.id = qe.escalated_by AND u.deleted_at IS NULL
                     WHERE qe.thread_id = ?
                     ORDER BY qe.created_at ASC
                     """, arguments: [threadId])
@@ -1490,8 +1490,8 @@ public final class ChatService: Sendable {
                     JOIN chat_channels cc ON cc.id = qa.channel_id
                     JOIN supplier_channel_bridges scb ON scb.channel_id = cc.id AND scb.deleted_at IS NULL
                     JOIN suppliers s ON s.id = scb.supplier_id AND s.deleted_at IS NULL
-                    LEFT JOIN users ua ON ua.id = qa.asked_by
-                    LEFT JOIN jobs j ON j.id = qa.job_id
+                    LEFT JOIN users ua ON ua.id = qa.asked_by AND ua.deleted_at IS NULL
+                    LEFT JOIN jobs j ON j.id = qa.job_id AND j.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY qa.created_at DESC
                     """

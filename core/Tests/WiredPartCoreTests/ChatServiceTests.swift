@@ -765,4 +765,30 @@ struct ChatServiceTests {
         #expect(t2?.status == "open", "Thread 2 must not be affected by resolving thread 1")
         _ = row2 // suppress unused warning
     }
+
+    @Test("getMessages hides sender name for soft-deleted user")
+    func testGetMessagesHidesSenderNameForDeletedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let channelId = try env.chat.createChannel(name: "Test Channel", createdBy: env.adminUserId)
+        _ = try env.chat.sendMessage(channelId: channelId, senderId: env.adminUserId, content: "Hello")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?", arguments: [env.adminUserId])
+        }
+        let messages = try env.chat.getMessages(channelId: channelId)
+        #expect(messages.isEmpty == false)
+        #expect(messages.first?.senderName == "Unknown")
+    }
+
+    @Test("listQAThreads hides asked_by name for soft-deleted user")
+    func testListQAThreadsHidesDeletedAskedByName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-QA-DEL-01")
+        _ = try env.chat.createQAThread(jobId: jobId, askedBy: env.adminUserId, subject: "Will I be hidden?")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?", arguments: [env.adminUserId])
+        }
+        let threads = try env.chat.listQAThreads(jobId: jobId)
+        #expect(threads.isEmpty == false)
+        #expect(threads.first?.askedByName == "Unknown")
+    }
 }

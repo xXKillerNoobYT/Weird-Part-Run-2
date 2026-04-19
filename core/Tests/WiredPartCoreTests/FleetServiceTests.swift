@@ -406,4 +406,21 @@ struct FleetServiceTests {
         #expect(entry?.daysActive == 0)
         #expect(entry?.utilization == 0.0)
     }
+
+    @Test("listVehicles hides assigned user name for soft-deleted user")
+    func testListVehiclesHidesDeletedAssignedUserName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-DEL-01", vehicleName: "Delete Test", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        try env.fleet.assignDriver(vehicleId: vehicleId, userId: env.adminUserId, assignmentType: "primary", isTakeHome: false)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?", arguments: [env.adminUserId])
+        }
+        let vehicles = try env.fleet.listVehicles()
+        let v = vehicles.first(where: { $0.id == vehicleId })
+        #expect(v != nil)
+        #expect(v?.assignedUserName == nil)
+    }
 }

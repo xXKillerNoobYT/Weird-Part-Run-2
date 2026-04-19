@@ -272,7 +272,7 @@ public final class FleetService: Sendable {
                     FROM vehicles v
                     LEFT JOIN vehicle_assignments va
                         ON va.vehicle_id = v.id AND va.is_active = 1 AND va.deleted_at IS NULL
-                    LEFT JOIN users u ON u.id = va.user_id
+                    LEFT JOIN users u ON u.id = va.user_id AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     GROUP BY v.id
                     ORDER BY v.vehicle_number ASC
@@ -323,7 +323,7 @@ public final class FleetService: Sendable {
                                va.start_date, va.end_date, va.is_active,
                                COALESCE(u.display_name, u.email, 'Unknown') AS user_name
                         FROM vehicle_assignments va
-                        LEFT JOIN users u ON u.id = va.user_id
+                        LEFT JOIN users u ON u.id = va.user_id AND u.deleted_at IS NULL
                         WHERE va.vehicle_id = ? AND va.deleted_at IS NULL
                         ORDER BY va.is_active DESC, va.start_date DESC
                         """,
@@ -399,9 +399,9 @@ public final class FleetService: Sendable {
                            mt.name AS maintenance_type_name,
                            COALESCE(u.display_name, u.email) AS performed_by_name
                     FROM maintenance_records mr
-                    LEFT JOIN vehicles v ON v.id = mr.vehicle_id
+                    LEFT JOIN vehicles v ON v.id = mr.vehicle_id AND v.deleted_at IS NULL
                     LEFT JOIN maintenance_types mt ON mt.id = mr.maintenance_type_id
-                    LEFT JOIN users u ON u.id = mr.performed_by
+                    LEFT JOIN users u ON u.id = mr.performed_by AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY mr.performed_at DESC
                     LIMIT ?
@@ -453,8 +453,8 @@ public final class FleetService: Sendable {
                            v.vehicle_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS user_name
                     FROM mileage_logs ml
-                    LEFT JOIN vehicles v ON v.id = ml.vehicle_id
-                    LEFT JOIN users u ON u.id = ml.user_id
+                    LEFT JOIN vehicles v ON v.id = ml.vehicle_id AND v.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = ml.user_id AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY ml.log_date DESC
                     LIMIT ?
@@ -501,8 +501,8 @@ public final class FleetService: Sendable {
                            v.vehicle_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS user_name
                     FROM fuel_logs fl
-                    LEFT JOIN vehicles v ON v.id = fl.vehicle_id
-                    LEFT JOIN users u ON u.id = fl.user_id
+                    LEFT JOIN vehicles v ON v.id = fl.vehicle_id AND v.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = fl.user_id AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY fl.log_date DESC
                     LIMIT ?
@@ -548,8 +548,8 @@ public final class FleetService: Sendable {
                            j.job_name AS current_job_name,
                            u.display_name AS assigned_driver_name
                     FROM job_trailers jt
-                    LEFT JOIN jobs j ON j.id = jt.current_job_id
-                    LEFT JOIN users u ON u.id = jt.assigned_driver_user_id
+                    LEFT JOIN jobs j ON j.id = jt.current_job_id AND j.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = jt.assigned_driver_user_id AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY jt.trailer_code ASC
                     """
@@ -772,7 +772,7 @@ public final class FleetService: Sendable {
                             WHERE ir.vehicle_id = v.id AND ir.deleted_at IS NULL) AS last_inspection_date
                     FROM vehicles v
                     LEFT JOIN vehicle_assignments va ON v.id = va.vehicle_id AND va.is_active = 1 AND va.deleted_at IS NULL
-                    LEFT JOIN users u ON va.user_id = u.id
+                    LEFT JOIN users u ON va.user_id = u.id AND u.deleted_at IS NULL
                     WHERE v.status != 'retired' AND v.deleted_at IS NULL
                     ORDER BY v.vehicle_name
                     """)
@@ -863,8 +863,8 @@ public final class FleetService: Sendable {
                            COALESCE(v.vehicle_name, v.vehicle_number, 'Unknown') AS vehicle_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS inspector_name
                     FROM inspection_records ir
-                    LEFT JOIN vehicles v ON v.id = ir.vehicle_id
-                    LEFT JOIN users u ON u.id = ir.inspector_id
+                    LEFT JOIN vehicles v ON v.id = ir.vehicle_id AND v.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = ir.inspector_id AND u.deleted_at IS NULL
                     WHERE ir.deleted_at IS NULL
                     ORDER BY ir.performed_at DESC
                     LIMIT ?
@@ -930,8 +930,8 @@ public final class FleetService: Sendable {
                            COALESCE(v.vehicle_name, v.vehicle_number, 'Unknown') AS vehicle_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS driver_name
                     FROM vehicle_location_logs vll
-                    LEFT JOIN vehicles v ON v.id = vll.vehicle_id
-                    LEFT JOIN users u ON u.id = vll.user_id
+                    LEFT JOIN vehicles v ON v.id = vll.vehicle_id AND v.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = vll.user_id AND u.deleted_at IS NULL
                     WHERE vll.id IN (
                         SELECT MAX(id) FROM vehicle_location_logs
                         WHERE deleted_at IS NULL
@@ -1245,7 +1245,7 @@ public final class FleetService: Sendable {
                            tc.checked_out_at
                     FROM tool_checkouts tc
                     JOIN tools t ON tc.tool_id = t.id
-                    JOIN users u ON tc.checked_out_by = u.id
+                    LEFT JOIN users u ON tc.checked_out_by = u.id AND u.deleted_at IS NULL
                     WHERE tc.checked_in_at IS NULL
                     AND tc.checked_out_by IN (
                         SELECT user_id FROM vehicle_assignments
@@ -1357,8 +1357,8 @@ public final class FleetService: Sendable {
                     SELECT jt.*, j.job_name AS current_job_name,
                            COALESCE(u.display_name, u.email) AS assigned_driver_name
                     FROM job_trailers jt
-                    LEFT JOIN jobs j ON j.id = jt.current_job_id
-                    LEFT JOIN users u ON u.id = jt.assigned_driver_user_id
+                    LEFT JOIN jobs j ON j.id = jt.current_job_id AND j.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = jt.assigned_driver_user_id AND u.deleted_at IS NULL
                     WHERE jt.id = ? AND jt.deleted_at IS NULL
                     """, arguments: [trailerId]) else {
                     return nil
@@ -1528,7 +1528,7 @@ public final class FleetService: Sendable {
                            tlh.arrived_at, tlh.departed_at,
                            COALESCE(u.display_name, u.email) AS recorded_by_name
                     FROM trailer_location_history tlh
-                    LEFT JOIN users u ON u.id = tlh.recorded_by
+                    LEFT JOIN users u ON u.id = tlh.recorded_by AND u.deleted_at IS NULL
                     WHERE tlh.trailer_id = ? AND tlh.deleted_at IS NULL
                     ORDER BY tlh.arrived_at DESC
                     LIMIT ?
@@ -1792,8 +1792,8 @@ public final class FleetService: Sendable {
                            COALESCE(v.vehicle_name, v.vehicle_number, 'Unknown') AS vehicle_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS inspector_name
                     FROM inspection_records ir
-                    LEFT JOIN vehicles v ON v.id = ir.vehicle_id
-                    LEFT JOIN users u ON u.id = ir.inspector_id
+                    LEFT JOIN vehicles v ON v.id = ir.vehicle_id AND v.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = ir.inspector_id AND u.deleted_at IS NULL
                     WHERE ir.vehicle_id = ? AND ir.deleted_at IS NULL
                     ORDER BY ir.performed_at DESC
                     LIMIT ?
