@@ -4,6 +4,47 @@
 
 ---
 
+## Area: inventory — 2026-04-19
+
+**Analyzed:** `PartsService.swift` (forecasting/inventory methods), `WishlistService.swift`, 5 iOS inventory pages (`PartsForecastingPage`, `ForecastSettingsSheet`, `IOSWishlistPage`, `IOSInventoryGridPage`, `IOSForecastSettingsPage`). This iteration discovered a new class of bug: GRDB optional-field insert bypassing SQL DEFAULT.
+
+### Key New Finding: GRDB Int? Insert vs SQL DEFAULT Trap
+
+**Pattern:** Model structs with `Int?` fields (e.g. `Part.isActive: Int?`) where the Swift default is `nil`. When GRDB `insert()` encodes `nil`, it writes `NULL` explicitly — SQL column `DEFAULT 1` does not fire. Result: rows inserted with `is_active = NULL` fail `WHERE is_active = 1` filters silently.
+
+**Also discovered:** `LEFT JOIN t ON t.id = x AND t.deleted_at IS NULL` followed by `WHERE t.deleted_at IS NULL` passes for JOIN misses because `NULL IS NULL = TRUE`. Must use `WHERE t.id IS NOT NULL`.
+
+**Running is_active total:** 35 gaps / 6 services (added 4 forecasting method gaps in PartsService).
+
+### ⚡ New Pattern Candidate: GRDB-Nil-Default Scanner
+
+**What it would catch:** Service `create*` methods that `insert()` a model struct without explicitly setting fields that are typed `Int?` but should always default to 1 (like `isActive`).
+
+**How to detect:** Scan `create*` functions in all service files. For each, find the model's struct definition. Flag any `Int?` field where: (a) the schema has `DEFAULT 1` or the column is a boolean-style flag, and (b) the struct init doesn't set it.
+
+**Priority:** High — this class of bug is silent (no error, just wrong data). Current fix required explicit `record.isActive = 1` in `createPart`.
+
+**No Q&A needed yet** — but worth noting as a candidate for the next `loop-self-improve` pass.
+
+---
+
+### ⚡ Pattern Reinforcement: is_active Defense Hook (now 6 areas, 35 total)
+
+**Running totals after inventory:** Scheduling ×4, Orders ×3, People ×5, Tools ×6, Fleet ×13, Parts-forecasting ×4 = 35 gaps / 6 areas. 8 areas remaining — projection ~54+ total.
+
+---
+
+### Summary: Running Totals After Inventory
+
+| Recommendation | Areas Hit | Gaps Found | Priority | Status |
+|---|---|---|---|---|
+| is_active defense auditor hook (incl. JOIN ON clauses) | 6/14 | 35 | 🔴 Critical | ⏳ Q&A pending |
+| Dismiss-safety struct-aware scanner | 7/14 | 26+ | 🔴 High | ⏳ Q&A pending |
+| GRDB Int? flag default scanner (new) | 1/14 | 1 | 🟠 High | New — no Q&A yet |
+| accessibilityAddTraits(.isSelected) scanner | 4/14 | 4 | 🟢 Low | ⏳ Q&A pending |
+
+---
+
 ## Area: vehicles — 2026-04-19
 
 **Analyzed:** `FleetService.swift` (33 public methods, 43 tests), 18 iOS Fleet pages (dashboard, vehicles, vehicle detail, my truck, fuel, mileage, inspections, maintenance, trailers, trailer detail/locations/storage, telematics, assign driver, pre-trip inspection, create vehicle/trailer sheets, fleet router). 8 iterations produced: 13 is_active defense fixes (C3 — highest single-area count), 3 new tests (C4), 4 dismiss-safety fixes (C7), 2 a11y fixes (C7b), 0 security findings (C8), 0 performance findings (C9).
