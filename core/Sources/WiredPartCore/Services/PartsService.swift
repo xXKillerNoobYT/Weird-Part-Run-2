@@ -3127,7 +3127,7 @@ public final class PartsService: Sendable {
 
     /// List parts with forecast data and current stock for the forecasting dashboard.
     /// Joins on the stock table to include aggregated current quantity.
-    public func listForecastDataWithStock(search: String? = nil, locationType: String? = nil, locationId: Int64? = nil) throws -> [ForecastDataRow] {
+    public func listForecastDataWithStock(search: String? = nil, locationType: String? = nil, locationId: Int64? = nil, limit: Int = 200, offset: Int = 0) throws -> [ForecastDataRow] {
         do {
             return try db.writer.read { dbConn in
                 var whereClauses = ["p.deleted_at IS NULL", "p.is_active = 1"]
@@ -3150,6 +3150,9 @@ public final class PartsService: Sendable {
                     }
                 }
 
+                args.append(limit)
+                args.append(offset)
+
                 let sql = """
                     SELECT p.*, COALESCE(SUM(s.qty), 0) AS current_stock
                     FROM parts p
@@ -3157,6 +3160,7 @@ public final class PartsService: Sendable {
                     WHERE \(whereClauses.joined(separator: " AND "))
                     GROUP BY p.id
                     ORDER BY COALESCE(p.forecast_days_until_low, 9999) ASC
+                    LIMIT ? OFFSET ?
                     """
 
                 let rows = try Row.fetchAll(dbConn, sql: sql, arguments: StatementArguments(args))
