@@ -35,6 +35,26 @@
 ### Noted (not findings)
 - Framework-level pagination cutover at [#227](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/227) still pending Phase 2/3. When that lands, re-scan parts to verify call-site classifications.
 
+---
+
+## 2026-04-19 — Jobs area (AUTO GO day 2 iter 3)
+
+**Files scanned (6 files):**
+- `core/Sources/WiredPartCore/Services/JobsService.swift`
+- `core/Sources/WiredPartCore/Services/JobEstimationService.swift`
+- `Weird Parts IOS/.../Features/Jobs/` — IOSClockPage, IOSJobDetailTabView, JobsListPage, IOSEstimationQuestionnairePage
+
+### Phase results
+
+- **Phase B — SELECT * / unbounded:** ✅ CLEAN — 0 `SELECT *`; all 8 SELECTs on `jobs` table bounded by `WHERE id=?`, `LIMIT`, or `COUNT`.
+- **Phase C — N+1 queries:** ✅ CLEAN — The 1 loop-regex hit was a doc-comment false positive.
+- **Phase D — Heavy `.onAppear`:** ✅ CLEAN — 2 `.onAppear` (IOSClockPage:172, JobsListPage:136) — both are pure NotificationCenter posts. Actual data loads via `.task { loadJobs() }` or explicit `loadData()` in `.onChange` handlers.
+- **Phase E — Main-thread blocks:** ✅ CLEAN — 28 MainActor/DispatchQueue.main matches in IOSClockPage (timer-driven UI updates, expected) + 1 in IOSJobDetailTabView (single post).
+- **Phase H — `@escaping` without `[weak self]`:** ✅ CLEAN — 1 hit (IOSJobDetailTabView:1234 `quickAction`) — SwiftUI view-builder parameter, not retained.
+
+### Findings
+**0 critical, 0 high, 0 medium, 0 low** — jobs area passes performance review.
+
 ## Findings Log
 
 *(Empty — no findings to log this run.)*
