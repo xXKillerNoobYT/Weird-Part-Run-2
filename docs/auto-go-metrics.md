@@ -40,6 +40,7 @@
 | 2026-04-19 | 11 | warehouse | C2_qa_resolved | done | 0 warehouse-pending Q&A; meta github-sync noted #258 (settings/sync future work) | — | 0 | ~90 | github-sync |
 | 2026-04-19 | 12 | warehouse | C2b_github_issues_ingested | done | 5 program-review trackers (#56, #74, #75, #88, #91); 0 new; #74 critical GRDB refactor verified complete | — | 0 | ~120 | none |
 | 2026-04-19 | 13 | warehouse | C3_hunt_fix_clean | done | 0 findings (HUNT FIX iter 70 already converged today — 3 bugs fixed, `try?` remainders are legit display fallbacks) | — | 0 | ~120 | none |
+| 2026-04-19 | 14 | warehouse | C4_tests_present | done | 0 untested (137 funcs / 195 tests = 1.4× coverage, 100% breadth) | — | 0 | ~120 | none |
 
 ## Area: jobs (graduated)
 
