@@ -38,6 +38,7 @@
 | 2026-04-18 | 18 | jobs | C1b_plan_vs_code_drift_clean | done | 0 drift — all 10 planned pages present, plan concepts implemented (43 grep hits) | — | 0 | ~120 | none |
 | 2026-04-18 | 19 | jobs | C2_qa_resolved | done | 0 pending Q&A for jobs | — | 0 | ~60 | none |
 | 2026-04-18 | 20 | jobs | C2b_github_issues_ingested | done | 3 jobs issues (all program-review parents) | — | 0 | ~60 | none |
+| 2026-04-18 | 21 | jobs | C3_hunt_fix_clean | done | 0 bugs (jc.customer_id verified valid junction-table ref) | — | 0 | ~120 | none |
 
 ## Weekly Roll-ups (updated by loop-self-improve)
 
