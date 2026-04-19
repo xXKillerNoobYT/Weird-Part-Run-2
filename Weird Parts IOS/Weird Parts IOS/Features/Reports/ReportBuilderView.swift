@@ -144,6 +144,7 @@ struct ReportBuilderView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollDismissesKeyboard(.immediately)
         }
         .navigationTitle("Report Builder")
         .toolbar {
