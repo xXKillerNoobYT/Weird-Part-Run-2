@@ -183,12 +183,18 @@ struct WizardAddStorageUnitSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { saveUnit() }
-                        .disabled(unitName.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Save") { saveUnit() }
+                            .disabled(unitName.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
                 }
             }
+            .interactiveDismissDisabled(isSaving)
         }
     }
 

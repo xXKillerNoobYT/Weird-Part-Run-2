@@ -74,6 +74,7 @@ struct IOSAuditSetupView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
@@ -87,6 +88,7 @@ struct IOSAuditSetupView: View {
                     }
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .task { loadSummary() }
         }
     }
