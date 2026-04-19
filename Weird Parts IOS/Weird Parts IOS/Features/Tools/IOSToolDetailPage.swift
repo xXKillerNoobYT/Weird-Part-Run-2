@@ -110,6 +110,7 @@ struct IOSToolDetailPage: View {
         }
         .refreshable { loadAllData() }
         .task { loadAllData() }
+        .scrollDismissesKeyboard(.interactively)
     }
 
     // MARK: - Main Content
