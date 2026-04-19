@@ -184,7 +184,10 @@ Plans are living documents that build our project's institutional memory. Treat 
 
 **Key active plan documents:**
 
-- `docs/plans/hunt-fix-verify-loop.md` — **Hunt-Fix-Verify Loop** — autonomous bug-hunting process with 7 scanners, priority-based fixing, and final verification gate. Tracker at `docs/hunt-fix-tracker.md`
+- `docs/plans/hunt-fix-verify-loop.md` — **Hunt-Fix-Verify Loop** — autonomous bug-hunting process with 8 scanners, priority-based fixing, and final verification gate. Tracker at `docs/hunt-fix-tracker.md`
+- `docs/plans/auto-go-unified-loop.md` — **AUTO GO + HUNT FIX unified loop** — two-routine 15-min heartbeat design. Soul at `docs/auto-go-soul.md`, memory at `docs/auto-go-memory.md`
+- `docs/plans/colors-parts-redesign.md` — **PE-COLORS** — Variants/SKU redesign. Phase 1 complete (migration 074 + CRUD). Phase 2 UI tracked via #237–#240 (PE-046–049 queued)
+- `docs/plans/dismiss-safety-campaign.md` — **Dismiss Safety campaign** — per-sheet isDirty + interactiveDismissDisabled. Phase 1A people/HR in progress (PE-045 NEXT)
 - `docs/plans/ios-page-review-tracker.md` — master tracking of all iOS page reviews, decisions, and remaining work
 - `docs/plans/inventory-intelligence-system.md` — forecasting, wishlist, procurement redesign, movements, MIN/TARGET/MAX rules
 - `docs/plans/forecasting-page-redesign.md` — focused design spec for forecasting prompts 23A-23H
@@ -192,7 +195,7 @@ Plans are living documents that build our project's institutional memory. Treat 
 **Hunt-Fix-Verify Loop (Bug Hunting Protocol):**
 
 When performing bug hunts or quality sweeps, follow `docs/plans/hunt-fix-verify-loop.md`. This defines:
-- **7 scanners** (compile, tests, code patterns, SQL integrity, problems folder, master issues, plan alignment)
+- **8 scanners** (compile, tests, code patterns, SQL integrity, problems folder, master issues, plan alignment, usability patterns)
 - **Priority order** for fixes (compile > tests > SQL > user-reported > T1 > silent errors > T2 > patterns > T3 > plans)
 - **Fix protocol** (read → understand root cause → fix → test → build → verify → mark fixed)
 - **Final verification gate** (ALL scanners must pass simultaneously)
@@ -204,17 +207,37 @@ When performing bug hunts or quality sweeps, follow `docs/plans/hunt-fix-verify-
 
 The 11 old scheduled tasks are consolidated into **two continuous heartbeat routines** that run the beta→production push:
 
-- **`AUTO GO`** (or `/auto-go`) — one iteration of slow-focused, one-area-at-a-time development. Chains `/hunt-fix-loop`, `/claude-automation-recommender`, `/claude-md-management:revise-claude-md`, `/claude-md-improver`. Rotates through 14 feature areas with a 12-item production-readiness checklist per area.
+- **`AUTO GO`** (or `/auto-go`) — one iteration of slow-focused, one-area-at-a-time development. Chains `/hunt-fix-loop`, `/claude-automation-recommender`, `/claude-md-management:revise-claude-md`, `/claude-md-improver`. Rotates through 14 feature areas with a 17-check production-readiness checklist per area (C1–C13 including b-variants).
 - **`AUTO GO STOP`** / **`AUTO GO RESUME`** — pause/unpause both routines.
 - **`AUTO GO STATUS`** (or `/auto-go-status`) — heartbeat state, next task, pending Q&A / Xcode prompts / DevTODOs.
 - **`HUNT FIX`** (or `/hunt-fix`) — one iteration of the dedicated bug-exterminator, focused on AUTO GO's current area.
 - **`HUNT FIX STOP`** / **`HUNT FIX RESUME`** — shared with AUTO GO.
 
-Both run every 15 min from 6 AM – 10:45 PM via scheduled-task cron (`auto-go-loop` + `hunt-fix-loop-heartbeat`), stopping overnight. Trigger phrases also work typed directly — a `UserPromptSubmit` hook at `~/.claude/hooks/auto-go-trigger.sh` catches exact phrases.
+**Cadence:** 30-min cadence with a 15-min offset. AUTO GO fires at `:00,:30` (cron `0,30 6-22 * * *`); HUNT FIX fires at `:15,:45` (cron `15,45 6-22 * * *`). Each routine has a full 15-minute clear window before the other starts, so they never collide. Both stop overnight (22:xx is the last firing). Trigger phrases also work typed directly — a `UserPromptSubmit` hook at `~/.claude/hooks/auto-go-trigger.sh` catches exact phrases.
 
 Escalation paths preserved: Q&A → `docs/dev-qa.md`, Xcode UI → `xcode-ai/fix-prompts/` + `00-fix-order.md`, cannot-do → `docs/DevTODO/`.
 
 See `docs/plans/auto-go-unified-loop.md` for full design.
+
+---
+
+## Third Routine: GITHUB FLOW (installed 2026-04-18)
+
+Separate from AUTO GO. Cloud-scheduled **portfolio overseer** that watches all enabled GitHub projects — not just WiredPart.
+
+- **`GITHUB FLOW`** / **`/github-flow`** / **`GIT FLOW`** — one iteration. Triages activity in the next project in rotation.
+- **`GITHUB FLOW STOP`** / **`GITHUB FLOW RESUME`** — pause/unpause this routine only.
+- **`AUTO GO STOP`** also stops GITHUB FLOW (shared kill switch).
+
+Runs **once per evening at 9:22 PM local** (timed for the user's evening review — they work a day job and read things in the evening). Each firing sweeps all enabled projects in sequence and posts a daily-report issue at the end. Target 15 min per sweep, 60 min hard cap.
+
+**State repo:** `https://github.com/xXKillerNoobYT/ai-agent-Overall-manger` (private). Everything the agent knows — soul, memory, patterns, per-project notes, weekly reflections — lives there and is committed per-iteration.
+
+**Comms = GitHub Issues** in the state repo (the agent runs in the cloud with no chat window). User opens `observation` issues to instruct the agent. Agent opens `qa` / `copilot-trigger` / `soul-edit` / `security` / `budget` / `daily-report` issues. **Daily report** posted ~8 PM — portfolio-wide summary.
+
+**@copilot policy: conservative.** Auto-fires only to restate a user-authored `@copilot` instruction Copilot didn't respond to (max 3/day portfolio-wide). Everything else files a `qa,copilot-trigger` issue in the state repo for user approval.
+
+See `docs/plans/github-flow.md` for full design.
 
 ---
 
@@ -265,7 +288,7 @@ Every device runs the same React frontend (`src/`) with its own local SQLite dat
 
 - **Shop computer (Tauri desktop — macOS or Windows):** React frontend + full 35-service TS data layer + local SQLite. Also runs Python FastAPI as a sync anchor + serves desktop browsers over LAN.
 - **Windows devices (Tauri desktop):** Same React frontend via WebView2. On-device AI via **llama.cpp sidecar** (localhost:8086, GGUF models). Same sync infrastructure as other devices.
-- **Mobile devices (Tauri iOS):** Same React frontend + same TS data layer — works fully offline. Single-user sandbox storage. On-device AI via Apple Foundation Models (macOS 26+).
+- **Mobile devices (Tauri iOS):** Same React frontend + same TS data layer — works fully offline. Single-user sandbox storage. On-device AI via Apple Foundation Models (iOS 26+).
 - **Desktop browsers:** Hit shop server directly over LAN HTTP (always at the shop).
 - **Sync:** Device ↔ Shop over LAN HTTP + Apple Multipeer Connectivity (BT/Wi-Fi P2P). Change tracking via `_change_log` table. LWW + field-level merge conflict resolution.
 - **API adapter pattern:** Frontend detects environment — `isTauri()` → local TS services, `isBrowser()` → HTTP API. Same React UI everywhere.
@@ -283,7 +306,7 @@ Every device runs the same React frontend (`src/`) with its own local SQLite dat
 - Phase 16: UX Polish & Admin Hub — nav restructure, warehouse enhancements, report filters, teams, device mgmt (see `docs/plans/phase-16-ux-polish-and-admin-hub.md`)
 - Bootstrap App — App Store shell that downloads real program from shop (see `docs/plans/Mobile device bootstrap.md`)
 
-**Codebase stats (as of 2026-03-07):**
+**Codebase stats (as of 2026-04-18):**
 
 | Metric | Count |
 |--------|-------|
@@ -291,9 +314,10 @@ Every device runs the same React frontend (`src/`) with its own local SQLite dat
 | API endpoints | ~480 |
 | Backend services | 28 |
 | Repositories | 19 + base |
-| Migrations | 35 |
+| Migrations | 74 |
 | Frontend feature files | ~180 |
 | Frontend routes | 100 |
 | Functional pages | 87 |
 | Stub pages | 1 (DeviceManagementPage — v2.0+) |
 | API client functions | ~300 |
+| Tests (Swift core) | 1312 (passing) |
