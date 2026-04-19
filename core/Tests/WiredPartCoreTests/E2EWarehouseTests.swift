@@ -570,4 +570,66 @@ struct E2EWarehouseTests {
         #expect(entry?.partName == "Unknown Part",
                 "Soft-deleted part must degrade to 'Unknown Part' in getAuditDiscrepancies")
     }
+
+    @Test("listTrailers and getTrailer show nil driver for soft-deleted user")
+    func testTrailersHideDeletedDriverName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let trailerId = try env.warehouse.createTrailer(trailerCode: "TR-DEL", name: "Del Trailer")
+        try env.warehouse.updateTrailer(id: trailerId, assignedDriverUserId: env.adminUserId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        let list = try env.warehouse.listTrailers()
+        let listed = list.first(where: { $0.id == trailerId })
+        #expect(listed != nil)
+        #expect(listed?.assignedDriverName == nil,
+                "Soft-deleted driver must produce nil assignedDriverName in listTrailers")
+
+        let detail = try env.warehouse.getTrailer(id: trailerId)
+        #expect(detail?.assignedDriverName == nil,
+                "Soft-deleted driver must produce nil assignedDriverName in getTrailer")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = NULL WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+    }
+
+    @Test("getTrailerLocationHistory shows Unknown for soft-deleted recorder")
+    func testTrailerLocationHistoryHidesDeletedRecorder() throws {
+        let env = try E2ETestHelpers.setUp()
+        let trailerId = try env.warehouse.createTrailer(trailerCode: "TR-LOC", name: "Loc Trailer")
+        _ = try env.warehouse.recordTrailerLocation(
+            trailerId: trailerId, recordedBy: env.adminUserId
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        let history = try env.warehouse.getTrailerLocationHistory(trailerId: trailerId)
+        #expect(history.isEmpty == false)
+        let recorderName = history.first?["recorder_name"] as String?
+        #expect(recorderName == "Unknown",
+                "Soft-deleted recorder must degrade to 'Unknown' in getTrailerLocationHistory")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = NULL WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+    }
+
+    @Test("listStagingBoxes shows nil jobName for soft-deleted job")
+    func testListStagingBoxesHidesDeletedJobName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-STG-DEL", name: "StagingDelJob")
+        _ = try env.warehouse.createStagingBox(jobId: jobId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [jobId])
+        }
+        let boxes = try env.warehouse.listStagingBoxes()
+        let box = boxes.first(where: { $0.jobId == jobId })
+        #expect(box != nil)
+        #expect(box?.jobName == nil,
+                "Soft-deleted job must produce nil jobName in listStagingBoxes")
+    }
 }

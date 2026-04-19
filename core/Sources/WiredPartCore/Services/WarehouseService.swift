@@ -1489,7 +1489,7 @@ public final class WarehouseService: Sendable {
                         SELECT jt.*,
                                COALESCE(u.display_name, u.email) AS driver_name
                         FROM job_trailers jt
-                        LEFT JOIN users u ON u.id = jt.assigned_driver_user_id
+                        LEFT JOIN users u ON u.id = jt.assigned_driver_user_id AND u.deleted_at IS NULL
                         WHERE jt.deleted_at IS NULL
                         ORDER BY jt.name
                         """
@@ -1523,7 +1523,7 @@ public final class WarehouseService: Sendable {
                         SELECT jt.*,
                                COALESCE(u.display_name, u.email) AS driver_name
                         FROM job_trailers jt
-                        LEFT JOIN users u ON u.id = jt.assigned_driver_user_id
+                        LEFT JOIN users u ON u.id = jt.assigned_driver_user_id AND u.deleted_at IS NULL
                         WHERE jt.id = ? AND jt.deleted_at IS NULL
                         """,
                     arguments: [id]
@@ -1627,7 +1627,7 @@ public final class WarehouseService: Sendable {
                         SELECT tle.*,
                                COALESCE(u.display_name, u.email, 'Unknown') AS recorder_name
                         FROM trailer_location_events tle
-                        LEFT JOIN users u ON u.id = tle.recorded_by
+                        LEFT JOIN users u ON u.id = tle.recorded_by AND u.deleted_at IS NULL
                         WHERE tle.trailer_id = ?
                         ORDER BY tle.recorded_at DESC
                         LIMIT ?
@@ -1744,7 +1744,7 @@ public final class WarehouseService: Sendable {
                     SELECT sb.*,
                            j.job_name, j.job_number
                     FROM staging_boxes sb
-                    LEFT JOIN jobs j ON j.id = sb.job_id
+                    LEFT JOIN jobs j ON j.id = sb.job_id AND j.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY j.job_number, sb.box_number
                     """
@@ -2016,7 +2016,7 @@ public final class WarehouseService: Sendable {
                            COALESCE(j.job_name, 'Unknown Job') AS job_name
                     FROM jpo_line_items jl
                     JOIN job_parts_orders jpo ON jpo.id = jl.jpo_id
-                    LEFT JOIN jobs j ON j.id = jpo.job_id
+                    LEFT JOIN jobs j ON j.id = jpo.job_id AND j.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY jpo.priority DESC, jpo.created_at ASC
                     """
