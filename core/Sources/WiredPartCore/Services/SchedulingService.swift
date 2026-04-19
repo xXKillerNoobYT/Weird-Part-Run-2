@@ -20,7 +20,7 @@ public final class SchedulingService: Sendable {
     // MARK: - Error Types
     // =========================================================================
 
-    public enum SchedulingError: Error, Sendable {
+    public enum SchedulingError: Error, Sendable, Equatable {
         case timeOffRequestNotFound(Int64)
         case invalidStatus(String)
         case insertFailed(String)
@@ -375,6 +375,12 @@ public final class SchedulingService: Sendable {
         endDate: String,
         reason: String? = nil
     ) throws -> Int64 {
+        guard !startDate.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw SchedulingError.requiredFieldEmpty
+        }
+        guard !endDate.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw SchedulingError.requiredFieldEmpty
+        }
         // Guard: user must exist and not be tombstoned — otherwise the INSERT INTO
         // schedule_exceptions below would create orphan time-off rows against a
         // soft-deleted user (the FK constraint allows the write; deleted_at doesn't).
@@ -1256,6 +1262,9 @@ public final class SchedulingService: Sendable {
 
     /// Snooze a callback to a future date (updates the job's due_date).
     public func snoozeCallback(jobId: Int64, until: String) throws {
+        guard !until.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw SchedulingError.requiredFieldEmpty
+        }
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: "UPDATE jobs SET due_date = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
@@ -1343,52 +1352,68 @@ public final class SchedulingService: Sendable {
         }
     }
 
+    /// Intermediate job row used for in-memory month overlap filtering.
+    private struct JobTimelineRow {
+        let id: Int64
+        let name: String
+        let estimatedDays: Int?
+        let status: String
+        let startDate: String
+        let dueDate: String?
+    }
+
     /// Get a 36-month timeline of capacity data.
+    /// Uses 2 batch queries (one for jobs, one for bid counts) instead of 72 per-month
+    /// queries, reducing SQLite round-trips from O(months×2) to O(1).
     public func getLongTermTimeline(months: Int = 36) throws -> [MonthCapacity] {
         let cal = Calendar.current
         let today = Date()
         let crewSize = try getActiveCrewSize()
         let avgWorkDaysPerMonth = 22
+        let availableDays = avgWorkDaysPerMonth * max(crewSize, 1)
 
-        var result: [MonthCapacity] = []
-
+        // Build month ranges up front
+        let f = DateFormatter()
+        f.dateFormat = "MMMM yyyy"
+        struct MonthRange {
+            let id: String; let label: String; let start: String; let end: String
+        }
+        var monthRanges: [MonthRange] = []
         for offset in 0..<months {
             guard let monthDate = cal.date(byAdding: .month, value: offset, to: today) else { continue }
             let year = cal.component(.year, from: monthDate)
             let month = cal.component(.month, from: monthDate)
-            let monthId = String(format: "%04d-%02d", year, month)
-
-            let f = DateFormatter()
-            f.dateFormat = "MMMM yyyy"
-            let monthLabel = f.string(from: monthDate)
-
-            let availableDays = avgWorkDaysPerMonth * max(crewSize, 1)
-
-            // Get jobs that overlap this month
-            let startDate = String(format: "%04d-%02d-01", year, month)
-            var comps = DateComponents()
-            comps.year = year
-            comps.month = month + 1
-            comps.day = 0
+            let start = String(format: "%04d-%02d-01", year, month)
+            var comps = DateComponents(); comps.year = year; comps.month = month + 1; comps.day = 0
             let lastDay = cal.date(from: comps).map { cal.component(.day, from: $0) } ?? 28
-            let endDate = String(format: "%04d-%02d-%02d", year, month, lastDay)
-
-            let jobs = try getJobsForMonth(startDate: startDate, endDate: endDate)
-            let scheduledDays = jobs.reduce(0) { $0 + ($1.estimatedDays ?? 0) }
-            let pendingBids = try getPendingBidCountForMonth(startDate: startDate, endDate: endDate)
-
-            result.append(MonthCapacity(
-                id: monthId,
-                monthLabel: monthLabel,
-                availableDays: availableDays,
-                scheduledDays: scheduledDays,
-                jobCount: jobs.count,
-                pendingBidCount: pendingBids,
-                jobs: jobs
-            ))
+            let end = String(format: "%04d-%02d-%02d", year, month, lastDay)
+            monthRanges.append(MonthRange(id: String(format: "%04d-%02d", year, month),
+                                          label: f.string(from: monthDate),
+                                          start: start, end: end))
         }
+        guard !monthRanges.isEmpty else { return [] }
 
-        return result
+        // Batch query 1: all relevant jobs for the entire range (2 queries total)
+        let allJobs = try batchFetchJobsInRange(from: monthRanges.first!.start, to: monthRanges.last!.end)
+
+        // Batch query 2: bid counts per month + null-start bids (counted in every month)
+        let (bidsByMonth, nullBidCount) = try batchFetchBidCounts(from: monthRanges.first!.start, to: monthRanges.last!.end)
+
+        // Distribute results to months in memory
+        return monthRanges.map { range in
+            let monthJobs = allJobs.filter { job in
+                let jobEnd = job.dueDate ?? "9999-12-31"
+                return job.startDate <= range.end && jobEnd >= range.start
+            }
+            let scheduledDays = monthJobs.reduce(0) { $0 + ($1.estimatedDays ?? 0) }
+            let pendingBids = (bidsByMonth[range.id] ?? 0) + nullBidCount
+            return MonthCapacity(
+                id: range.id, monthLabel: range.label, availableDays: availableDays,
+                scheduledDays: scheduledDays, jobCount: monthJobs.count,
+                pendingBidCount: pendingBids,
+                jobs: monthJobs.map { JobSummary(id: $0.id, name: $0.name, estimatedDays: $0.estimatedDays, status: $0.status) }
+            )
+        }
     }
 
     /// Get active crew member count.
@@ -1396,14 +1421,14 @@ public final class SchedulingService: Sendable {
         try safeCount(sql: "SELECT COUNT(*) FROM users WHERE is_active = 1 AND deleted_at IS NULL")
     }
 
-    /// Get jobs that are scheduled within a month range.
-    private func getJobsForMonth(startDate: String, endDate: String) throws -> [JobSummary] {
+    /// Batch-fetch all jobs overlapping [from, to] for the timeline.
+    private func batchFetchJobsInRange(from firstStart: String, to lastEnd: String) throws -> [JobTimelineRow] {
         do {
-            return try db.writer.read { dbConn -> [JobSummary] in
-                let sql = """
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
                     SELECT DISTINCT j.id, j.job_name,
                            CAST(COALESCE(j.estimated_hours, 0) / 8 AS INTEGER) AS estimated_days,
-                           j.status
+                           j.status, j.start_date, j.due_date
                     FROM jobs j
                     WHERE j.deleted_at IS NULL
                       AND j.status IN ('active', 'scheduled', 'pending')
@@ -1412,14 +1437,15 @@ public final class SchedulingService: Sendable {
                           OR j.start_date BETWEEN ? AND ?
                       )
                     ORDER BY j.job_name
-                    """
-                let rows = try Row.fetchAll(dbConn, sql: sql, arguments: [endDate, startDate, startDate, endDate])
+                    """, arguments: [lastEnd, firstStart, firstStart, lastEnd])
                 return rows.map { row in
-                    JobSummary(
+                    JobTimelineRow(
                         id: row["id"] ?? 0,
                         name: row["job_name"] ?? "",
                         estimatedDays: row["estimated_days"] as Int?,
-                        status: row["status"] ?? ""
+                        status: row["status"] ?? "",
+                        startDate: row["start_date"] as String? ?? "",
+                        dueDate: row["due_date"] as String?
                     )
                 }
             }
@@ -1429,16 +1455,34 @@ public final class SchedulingService: Sendable {
         }
     }
 
-    /// Count pending bids for a month.
-    private func getPendingBidCountForMonth(startDate: String, endDate: String) throws -> Int {
-        try safeCount(
-            sql: """
-                SELECT COUNT(*) FROM jobs
-                WHERE status = 'bid' AND deleted_at IS NULL
-                  AND (start_date BETWEEN ? AND ? OR start_date IS NULL)
-                """,
-            arguments: StatementArguments([startDate, endDate])
-        )
+    /// Batch-fetch bid counts grouped by month + count of bids with null start_date.
+    private func batchFetchBidCounts(from firstStart: String, to lastEnd: String) throws -> ([String: Int], Int) {
+        do {
+            return try db.writer.read { dbConn in
+                let rows = try Row.fetchAll(dbConn, sql: """
+                    SELECT STRFTIME('%Y-%m', start_date) AS month_key, COUNT(*) AS cnt
+                    FROM jobs
+                    WHERE status = 'bid' AND deleted_at IS NULL
+                      AND start_date IS NOT NULL
+                      AND start_date BETWEEN ? AND ?
+                    GROUP BY STRFTIME('%Y-%m', start_date)
+                    """, arguments: [firstStart, lastEnd])
+                var byMonth: [String: Int] = [:]
+                for row in rows {
+                    if let key = row["month_key"] as String?, let cnt = row["cnt"] as Int? {
+                        byMonth[key] = cnt
+                    }
+                }
+                let nullCount = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM jobs
+                    WHERE status = 'bid' AND deleted_at IS NULL AND start_date IS NULL
+                    """) ?? 0)
+                return (byMonth, nullCount)
+            }
+        } catch {
+            if isTableNotFoundError(error) { return ([:], 0) }
+            throw error
+        }
     }
 
     /// Generate capacity warnings from timeline data.
@@ -1695,6 +1739,15 @@ public final class SchedulingService: Sendable {
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw SchedulingError.requiredFieldEmpty
         }
+        guard !workDays.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw SchedulingError.requiredFieldEmpty
+        }
+        guard !startTime.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw SchedulingError.requiredFieldEmpty
+        }
+        guard !endTime.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw SchedulingError.requiredFieldEmpty
+        }
         return try db.writer.write { dbConn in
             if let existingId = id {
                 try dbConn.execute(sql: """
@@ -1779,6 +1832,9 @@ public final class SchedulingService: Sendable {
         isPaid: Bool = true, isRecurring: Bool = false
     ) throws -> Int64 {
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw SchedulingError.requiredFieldEmpty
+        }
+        guard !date.trimmingCharacters(in: .whitespaces).isEmpty else {
             throw SchedulingError.requiredFieldEmpty
         }
         return try db.writer.write { dbConn in

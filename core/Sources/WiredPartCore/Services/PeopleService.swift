@@ -1887,6 +1887,8 @@ public final class PeopleService: Sendable {
 
     /// Update payment tracking settings.
     public func updatePaymentSettings(termsDays: Int, warningDays: Int, autoHold: Bool) throws {
+        guard termsDays > 0 else { throw PeopleError.invalidAmount(Double(termsDays)) }
+        guard warningDays >= 0 else { throw PeopleError.invalidAmount(Double(warningDays)) }
         try db.writer.write { dbConn in
             try dbConn.execute(sql: "UPDATE settings SET value = ? WHERE key = 'default_payment_terms_days'", arguments: [String(termsDays)])
             try dbConn.execute(sql: "UPDATE settings SET value = ? WHERE key = 'overdue_warning_days'", arguments: [String(warningDays)])

@@ -2790,4 +2790,410 @@ struct SchedulingServiceTests {
         #expect(entries.isEmpty == false)
         #expect(entries.first?.employeeName == "Unknown")
     }
+
+    @Test("snoozeCallback is a no-op on a soft-deleted job")
+    func testSnoozeCallback_noOpOnSoftDeletedJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-SNOOZE-DEL",
+            jobName: "TombstonedCallback",
+            customerName: "Cust",
+            status: "active",
+            createdBy: env.adminUserId
+        )
+        // Capture original due_date (nil) and soft-delete
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [jobId])
+        }
+        // Regression: UPDATE jobs SET due_date = ? WHERE id = ? had no deleted_at guard.
+        try env.scheduling.snoozeCallback(jobId: jobId, until: "2099-12-31")
+
+        let dueDate = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT due_date FROM jobs WHERE id = ?", arguments: [jobId])
+        }
+        #expect(dueDate == nil,
+                "Soft-deleted job due_date must not be rewritten — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    // MARK: - Soft-Delete Guard: markJobFlexPool
+
+    @Test("markJobFlexPool is a no-op on a soft-deleted job")
+    func testMarkJobFlexPool_noOpOnSoftDeletedJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        try env.scheduling.markJobFlexPool(jobId: jobId, isFlexPool: true)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [jobId])
+        }
+
+        try env.scheduling.markJobFlexPool(jobId: jobId, isFlexPool: false)
+
+        let isFlexPool = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT is_flex_pool FROM jobs WHERE id = ?",
+                             arguments: [jobId]) ?? 0
+        }
+        #expect(isFlexPool == 1,
+                "Soft-deleted job is_flex_pool must not be rewritten — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    // MARK: - Soft-Delete Guard: saveShiftTemplate
+
+    @Test("saveShiftTemplate update is a no-op on a soft-deleted template")
+    func testSaveShiftTemplate_noOpOnSoftDeletedTemplate() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let templateId = try env.scheduling.saveShiftTemplate(
+            name: "Morning Shift",
+            hatId: nil,
+            workDays: "1,2,3,4,5",
+            startTime: "07:00",
+            endTime: "15:00"
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE shift_templates SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [templateId])
+        }
+
+        _ = try env.scheduling.saveShiftTemplate(
+            id: templateId,
+            name: "GHOST RENAME",
+            hatId: nil,
+            workDays: "1,2,3,4,5",
+            startTime: "07:00",
+            endTime: "15:00"
+        )
+
+        let name = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT name FROM shift_templates WHERE id = ?",
+                                arguments: [templateId])
+        }
+        #expect(name == "Morning Shift",
+                "Soft-deleted shift template must not be renamed — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    // MARK: - Soft-Delete Guard: saveHoliday
+
+    @Test("saveHoliday update is a no-op on a soft-deleted holiday")
+    func testSaveHoliday_noOpOnSoftDeletedHoliday() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let holidayId = try env.scheduling.saveHoliday(
+            name: "Independence Day",
+            date: "2026-07-04"
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE company_holidays SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [holidayId])
+        }
+
+        _ = try env.scheduling.saveHoliday(
+            id: holidayId,
+            name: "GHOST HOLIDAY",
+            date: "2026-07-04"
+        )
+
+        let name = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT name FROM company_holidays WHERE id = ?",
+                                arguments: [holidayId])
+        }
+        #expect(name == "Independence Day",
+                "Soft-deleted holiday must not be renamed — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    // MARK: - Soft-Delete Guard: updateTimeOffStatus
+
+    @Test("updateTimeOffStatus throws timeOffRequestNotFound for soft-deleted request")
+    func testUpdateTimeOffStatus_throwsForSoftDeletedRequest() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let requestId = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2026-09-01",
+            endDate: "2026-09-01",
+            reason: "Personal day"
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE schedule_exceptions SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [requestId]
+            )
+        }
+
+        var threw = false
+        do {
+            try env.scheduling.updateTimeOffStatus(id: requestId, status: "approved", approvedBy: env.adminUserId)
+        } catch {
+            threw = true
+        }
+        #expect(threw, "updateTimeOffStatus must throw when the time-off request is soft-deleted")
+    }
+
+    @Test("createTimeOffRequest creates no orphan schedule_exceptions row for a soft-deleted user")
+    func testCreateTimeOffRequest_noOrphanForSoftDeletedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Soft-delete the admin user first, then attempt to create a request for them.
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        // Regression: INSERT INTO schedule_exceptions had no guard on users.deleted_at.
+        let id = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2099-08-01",
+            endDate: "2099-08-03",
+            reason: "test"
+        )
+        #expect(id == 0,
+            "createTimeOffRequest must return 0 (no-op) for a tombstoned user")
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM schedule_exceptions WHERE user_id = ?",
+                             arguments: [env.adminUserId]) ?? 0
+        }
+        #expect(count == 0,
+            "Soft-deleted user must not produce schedule_exceptions rows — INSERT must be pre-checked")
+    }
+
+    @Test("fetchFlexPool returns empty when no flex-pool jobs exist")
+    func testFetchFlexPool_returnsEmptyWhenNoJobs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let result = try env.scheduling.fetchFlexPool(userId: env.adminUserId)
+        #expect(result.isEmpty, "fetchFlexPool must return [] when no flex-pool jobs exist")
+    }
+
+    @Test("fetchFlexPool returns unfiltered flex-pool job visible to all users")
+    func testFetchFlexPool_returnsUnfilteredJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-FP-01", name: "Flex Pool Job")
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE jobs SET is_flex_pool = 1, status = 'active' WHERE id = ?",
+                arguments: [jobId])
+        }
+        let result = try env.scheduling.fetchFlexPool(userId: env.adminUserId)
+        #expect(result.count == 1, "fetchFlexPool must return the unfiltered flex-pool job")
+        #expect(result[0].id == jobId)
+    }
+
+    @Test("createTimeOffRequest throws invalidDateRange when endDate is before startDate")
+    func testCreateTimeOffRequest_throwsForReversedDateRange() throws {
+        let env = try E2ETestHelpers.setUp()
+        var threw = false
+        do {
+            _ = try env.scheduling.createTimeOffRequest(
+                userId: env.adminUserId,
+                startDate: "2026-10-10",
+                endDate: "2026-10-01",
+                reason: "Vacation"
+            )
+        } catch SchedulingService.SchedulingError.invalidDateRange {
+            threw = true
+        } catch {}
+        #expect(threw, "createTimeOffRequest must throw invalidDateRange when endDate is before startDate")
+    }
+
+    @Test("createTimeOffRequest succeeds when startDate equals endDate")
+    func testCreateTimeOffRequest_succeedsForSingleDay() throws {
+        let env = try E2ETestHelpers.setUp()
+        let id = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2099-11-01",
+            endDate: "2099-11-01",
+            reason: "Personal day"
+        )
+        #expect(id > 0, "createTimeOffRequest must succeed for a single-day request (start == end)")
+    }
+
+    @Test("saveShiftTemplate throws requiredFieldEmpty when name is blank")
+    func testSaveShiftTemplate_throwsForBlankName() throws {
+        let env = try E2ETestHelpers.setUp()
+        var threw = false
+        do {
+            _ = try env.scheduling.saveShiftTemplate(
+                name: "   ", hatId: nil,
+                workDays: "Mon,Tue,Wed,Thu,Fri",
+                startTime: "07:00", endTime: "15:30"
+            )
+        } catch SchedulingService.SchedulingError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "saveShiftTemplate must throw requiredFieldEmpty when name is whitespace-only")
+    }
+
+    @Test("saveHoliday throws requiredFieldEmpty when name is blank")
+    func testSaveHoliday_throwsForBlankName() throws {
+        let env = try E2ETestHelpers.setUp()
+        var threw = false
+        do {
+            _ = try env.scheduling.saveHoliday(name: "", date: "2099-12-25")
+        } catch SchedulingService.SchedulingError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "saveHoliday must throw requiredFieldEmpty when name is empty")
+    }
+
+    // MARK: - FK soft-delete guards on create paths (iter 78)
+
+    @Test("createDispatch rejects tombstoned job")
+    func testCreateDispatch_rejectsTombstonedJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [jobId])
+        }
+        var threw = false
+        do {
+            _ = try env.scheduling.createDispatch(
+                jobId: jobId, userId: env.adminUserId, date: "2099-09-15"
+            )
+        } catch SchedulingService.SchedulingError.jobNotFound { threw = true
+        } catch {}
+        #expect(threw, "createDispatch must throw jobNotFound for a tombstoned job")
+    }
+
+    @Test("createDispatch rejects blank date")
+    func testCreateDispatch_rejectsBlankDate() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        var threw = false
+        do {
+            _ = try env.scheduling.createDispatch(
+                jobId: jobId, userId: env.adminUserId, date: "   "
+            )
+        } catch SchedulingService.SchedulingError.requiredFieldEmpty { threw = true
+        } catch {}
+        #expect(threw, "createDispatch must throw requiredFieldEmpty for a blank date")
+    }
+
+    @Test("createScheduleEntry rejects tombstoned user")
+    func testCreateScheduleEntry_rejectsTombstonedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        var threw = false
+        do {
+            _ = try env.scheduling.createScheduleEntry(
+                userId: env.adminUserId, jobId: jobId, date: "2099-09-16"
+            )
+        } catch SchedulingService.SchedulingError.userNotFound { threw = true
+        } catch {}
+        #expect(threw, "createScheduleEntry must throw userNotFound for a tombstoned user")
+    }
+
+    @Test("claimFlexJob rejects tombstoned job")
+    func testClaimFlexJob_rejectsTombstonedJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [jobId])
+        }
+        var threw = false
+        do {
+            try env.scheduling.claimFlexJob(jobId: jobId, userId: env.adminUserId)
+        } catch SchedulingService.SchedulingError.jobNotFound { threw = true
+        } catch {}
+        #expect(threw, "claimFlexJob must throw jobNotFound for a tombstoned job")
+    }
+
+    // MARK: - Scheduling validation (iter 85)
+
+    @Test("snoozeCallback rejects blank until date")
+    func testSnoozeCallback_rejectsBlankDate() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: SchedulingService.SchedulingError.requiredFieldEmpty) {
+            try env.scheduling.snoozeCallback(jobId: 999, until: "   ")
+        }
+    }
+
+    @Test("saveHoliday rejects blank date")
+    func testSaveHoliday_rejectsBlankDate() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: SchedulingService.SchedulingError.requiredFieldEmpty) {
+            try env.scheduling.saveHoliday(name: "Labor Day", date: "")
+        }
+    }
+
+    @Test("saveShiftTemplate rejects blank time and workDays fields")
+    func testSaveShiftTemplate_rejectsBlankTimeFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: SchedulingService.SchedulingError.requiredFieldEmpty) {
+            try env.scheduling.saveShiftTemplate(name: "Day", hatId: nil,
+                                                  workDays: "Mon-Fri", startTime: "   ", endTime: "17:00")
+        }
+        #expect(throws: SchedulingService.SchedulingError.requiredFieldEmpty) {
+            try env.scheduling.saveShiftTemplate(name: "Day", hatId: nil,
+                                                  workDays: "Mon-Fri", startTime: "07:00", endTime: "")
+        }
+        #expect(throws: SchedulingService.SchedulingError.requiredFieldEmpty) {
+            try env.scheduling.saveShiftTemplate(name: "Day", hatId: nil,
+                                                  workDays: "", startTime: "07:00", endTime: "17:00")
+        }
+    }
+
+    @Test("createTimeOffRequest rejects blank startDate or endDate")
+    func testCreateTimeOffRequest_rejectsBlankDates() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Blank startDate — without this guard a row with exception_date='' would be inserted
+        #expect(throws: SchedulingService.SchedulingError.requiredFieldEmpty) {
+            try env.scheduling.createTimeOffRequest(userId: env.adminUserId,
+                                                    startDate: "", endDate: "2026-05-01")
+        }
+        #expect(throws: SchedulingService.SchedulingError.requiredFieldEmpty) {
+            try env.scheduling.createTimeOffRequest(userId: env.adminUserId,
+                                                    startDate: "2026-05-01", endDate: "   ")
+        }
+        // Verify no blank-date rows leaked into schedule_exceptions
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM schedule_exceptions WHERE exception_date = ''") ?? 0
+        }
+        #expect(count == 0)
+    }
+
+    @Test("getLongTermTimeline batch rewrite: job appears in correct month via overlap logic")
+    func testLongTermTimeline_batchJobOverlap() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Insert a job that spans multiple months using raw DB insert so we can control dates
+        let cal = Calendar.current
+        let today = Date()
+        let year = cal.component(.year, from: today)
+        let month = cal.component(.month, from: today)
+        let startDate = String(format: "%04d-%02d-15", year, month)
+        // Due date in next month
+        var comps = DateComponents(); comps.year = year; comps.month = month + 1; comps.day = 15
+        let nextMonth = cal.date(from: comps)!
+        let nextYear = cal.component(.year, from: nextMonth)
+        let nextMonthNum = cal.component(.month, from: nextMonth)
+        let dueDate = String(format: "%04d-%02d-15", nextYear, nextMonthNum)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO jobs (job_number, job_name, status, start_date, due_date, estimated_hours)
+                VALUES ('TL-OVERLAP-001', 'MultiMonth Job', 'active', ?, ?, 80)
+                """, arguments: [startDate, dueDate])
+        }
+
+        let timeline = try env.scheduling.getLongTermTimeline(months: 6)
+        let thisMonthId = String(format: "%04d-%02d", year, month)
+        let nextMonthId = String(format: "%04d-%02d", nextYear, nextMonthNum)
+
+        let thisMonth = timeline.first { $0.id == thisMonthId }
+        let nextMonthEntry = timeline.first { $0.id == nextMonthId }
+
+        // Job should appear in both months (overlap)
+        #expect(thisMonth?.jobs.contains(where: { $0.name == "MultiMonth Job" }) == true,
+                "Job must appear in the month it starts in")
+        #expect(nextMonthEntry?.jobs.contains(where: { $0.name == "MultiMonth Job" }) == true,
+                "Job must appear in the month it ends in (overlap)")
+    }
 }

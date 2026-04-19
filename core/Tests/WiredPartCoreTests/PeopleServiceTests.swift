@@ -1032,4 +1032,25 @@ struct PeopleServiceTests {
             try env.people.recordPayment(recordId: recordId, amount: 50.0, paidDate: "")
         }
     }
+
+    @Test("updatePaymentSettings rejects non-positive termsDays and negative warningDays")
+    func testUpdatePaymentSettings_rejectsInvalidDays() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Zero termsDays — payment terms of 0 days means due immediately on creation
+        #expect(throws: PeopleService.PeopleError.invalidAmount(0.0)) {
+            try env.people.updatePaymentSettings(termsDays: 0, warningDays: 7, autoHold: false)
+        }
+        // Negative termsDays — makes new invoices immediately overdue
+        #expect(throws: PeopleService.PeopleError.invalidAmount(-30.0)) {
+            try env.people.updatePaymentSettings(termsDays: -30, warningDays: 7, autoHold: false)
+        }
+        // Negative warningDays — nonsensical warning threshold
+        #expect(throws: PeopleService.PeopleError.invalidAmount(-1.0)) {
+            try env.people.updatePaymentSettings(termsDays: 30, warningDays: -1, autoHold: false)
+        }
+        // warningDays = 0 is valid (warn on the due date itself)
+        #expect(throws: Never.self) {
+            try env.people.updatePaymentSettings(termsDays: 30, warningDays: 0, autoHold: false)
+        }
+    }
 }
