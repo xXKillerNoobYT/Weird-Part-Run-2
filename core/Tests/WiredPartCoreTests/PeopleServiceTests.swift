@@ -975,4 +975,61 @@ struct PeopleServiceTests {
             try env.people.addContractorRating(contractorId: contractorId, quality: 4.0, onTime: 4.0, reliability: 4.0, ratedBy: env.adminUserId, jobId: nil)
         }
     }
+
+    @Test("createContact rejects blank entityType and firstName")
+    func testCreateContact_rejectsBlankFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        let customerId = try env.people.createCustomer(name: "Contact Parent Corp")
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("entityType")) {
+            try env.people.createContact(entityType: "  ", entityId: customerId, firstName: "Jane", lastName: "Doe", role: "Manager", phone: "555-0001")
+        }
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("firstName")) {
+            try env.people.createContact(entityType: "customer", entityId: customerId, firstName: "", lastName: "Doe", role: "Manager", phone: "555-0001")
+        }
+    }
+
+    @Test("updateContact rejects blank firstName")
+    func testUpdateContact_rejectsBlankFirstName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let customerId = try env.people.createCustomer(name: "Update Contact Corp")
+        let contactId = try env.people.createContact(entityType: "customer", entityId: customerId, firstName: "Alice", lastName: "Smith", role: "Lead", phone: "555-0002")
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("firstName")) {
+            try env.people.updateContact(id: contactId, firstName: "   ", lastName: "Smith", phone: "555-0002")
+        }
+    }
+
+    @Test("updateTeam rejects blank name")
+    func testUpdateTeam_rejectsBlankName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let teamId = try env.people.createTeam(name: "Original Name")
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("name")) {
+            try env.people.updateTeam(teamId: teamId, name: "  ", description: nil)
+        }
+    }
+
+    @Test("createPaymentRecord and recordPayment reject invalid amount and blank date")
+    func testPaymentRecord_rejectsInvalidInputs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let customerId = try env.people.createCustomer(name: "Payment Test Corp")
+        // Zero/negative amount
+        #expect(throws: PeopleService.PeopleError.invalidAmount(0.0)) {
+            try env.people.createPaymentRecord(customerId: customerId, jobId: nil, amount: 0.0, dueDate: "2026-05-01", invoiceNumber: nil, createdBy: env.adminUserId)
+        }
+        #expect(throws: PeopleService.PeopleError.invalidAmount(-50.0)) {
+            try env.people.createPaymentRecord(customerId: customerId, jobId: nil, amount: -50.0, dueDate: "2026-05-01", invoiceNumber: nil, createdBy: env.adminUserId)
+        }
+        // Blank due date
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("dueDate")) {
+            try env.people.createPaymentRecord(customerId: customerId, jobId: nil, amount: 100.0, dueDate: "  ", invoiceNumber: nil, createdBy: env.adminUserId)
+        }
+        // recordPayment — bad amount
+        let recordId = try env.people.createPaymentRecord(customerId: customerId, jobId: nil, amount: 200.0, dueDate: "2026-05-01", invoiceNumber: "INV-001", createdBy: env.adminUserId)
+        #expect(throws: PeopleService.PeopleError.invalidAmount(0.0)) {
+            try env.people.recordPayment(recordId: recordId, amount: 0.0, paidDate: "2026-05-10")
+        }
+        // recordPayment — blank paid date
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("paidDate")) {
+            try env.people.recordPayment(recordId: recordId, amount: 50.0, paidDate: "")
+        }
+    }
 }

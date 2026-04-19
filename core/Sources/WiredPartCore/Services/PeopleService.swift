@@ -30,6 +30,7 @@ public final class PeopleService: Sendable {
         case requiredFieldEmpty(String)
         case hatNotFound(Int64)
         case invalidScore(Double)
+        case invalidAmount(Double)
     }
 
     // =========================================================================
@@ -719,7 +720,13 @@ public final class PeopleService: Sendable {
         isPrimary: Bool = false,
         notes: String? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !entityType.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("entityType")
+        }
+        guard !firstName.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("firstName")
+        }
+        return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO entity_contacts (entity_type, entity_id, first_name, last_name, role, phone, email, is_primary, notes)
@@ -740,6 +747,9 @@ public final class PeopleService: Sendable {
         email: String? = nil,
         role: String? = nil
     ) throws {
+        guard !firstName.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("firstName")
+        }
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -954,6 +964,9 @@ public final class PeopleService: Sendable {
 
     /// Update team name and description.
     public func updateTeam(teamId: Int64, name: String, description: String?) throws {
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("name")
+        }
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
@@ -1951,7 +1964,11 @@ public final class PeopleService: Sendable {
         customerId: Int64, jobId: Int64?, amount: Double, dueDate: String,
         invoiceNumber: String?, createdBy: Int64
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard amount > 0 else { throw PeopleError.invalidAmount(amount) }
+        guard !dueDate.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("dueDate")
+        }
+        return try db.writer.write { dbConn in
             // Guard: customer must exist and not be tombstoned — otherwise the
             // INSERT INTO payment_records would create an orphan invoice against a
             // soft-deleted customer.
@@ -1978,6 +1995,10 @@ public final class PeopleService: Sendable {
 
     /// Record a payment against an existing invoice.
     public func recordPayment(recordId: Int64, amount: Double, paidDate: String) throws {
+        guard amount > 0 else { throw PeopleError.invalidAmount(amount) }
+        guard !paidDate.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("paidDate")
+        }
         try db.writer.write { dbConn in
             guard let row = try Row.fetchOne(dbConn, sql: "SELECT amount, COALESCE(paid_amount, 0) as paid FROM payment_records WHERE id = ? AND deleted_at IS NULL", arguments: [recordId]) else { return }
             let invoiceAmount = row["amount"] as Double? ?? 0
