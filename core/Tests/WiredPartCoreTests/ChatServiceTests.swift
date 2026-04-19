@@ -813,4 +813,102 @@ struct ChatServiceTests {
         #expect(threads.isEmpty == false)
         #expect(threads.first?.askedByName == "Unknown")
     }
+
+    @Test("sendMessage throws requiredFieldEmpty when content is blank")
+    func testSendMessage_throwsForBlankContent() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-MSG-BLANK")
+        let channelId = try env.chat.createChannel(name: "Test Channel", jobId: jobId, createdBy: env.adminUserId)
+        var threw = false
+        do {
+            _ = try env.chat.sendMessage(channelId: channelId, senderId: env.adminUserId, content: "   ")
+        } catch ChatService.ChatError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "sendMessage must throw requiredFieldEmpty when content is whitespace-only")
+    }
+
+    @Test("createChannel throws requiredFieldEmpty when name is blank")
+    func testCreateChannel_throwsForBlankName() throws {
+        let env = try E2ETestHelpers.setUp()
+        var threw = false
+        do {
+            _ = try env.chat.createChannel(name: "", createdBy: env.adminUserId)
+        } catch ChatService.ChatError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "createChannel must throw requiredFieldEmpty when name is empty")
+    }
+
+    @Test("createQAThread throws requiredFieldEmpty when subject is blank")
+    func testCreateQAThread_throwsForBlankSubject() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-QA-BLANK")
+        var threw = false
+        do {
+            _ = try env.chat.createQAThread(jobId: jobId, askedBy: env.adminUserId, subject: "   ")
+        } catch ChatService.ChatError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "createQAThread must throw requiredFieldEmpty when subject is whitespace-only")
+    }
+
+    // MARK: - markRead tests
+
+    @Test("markRead reduces unread count after messages are sent")
+    func testMarkRead_reducesUnreadCount() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Create two users: sender and reader
+        let senderId = try env.auth.createUser(displayName: "Sender", pin: "1234", email: "sender@test.com")
+        let readerId = try env.auth.createUser(displayName: "Reader", pin: "5678", email: "reader@test.com")
+
+        let channelId = try env.chat.createChannel(name: "Read Test Channel", channelType: "group", createdBy: senderId)
+
+        // Reader joins the channel — add them as a member
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO chat_channel_members (channel_id, user_id, role, joined_at)
+                VALUES (?, ?, 'member', datetime('now'))
+                """, arguments: [channelId, readerId])
+        }
+
+        // Sender sends 2 messages
+        let msg1 = try env.chat.sendMessage(channelId: channelId, senderId: senderId, content: "Hello")
+        let msg2 = try env.chat.sendMessage(channelId: channelId, senderId: senderId, content: "World")
+
+        // Reader marks both as read
+        try env.chat.markRead(channelId: channelId, userId: readerId, messageId: msg2)
+
+        // Unread count for reader should now be 0
+        let unread = try env.chat.getTotalUnreadCount(userId: readerId)
+        _ = msg1 // suppress unused warning
+        #expect(unread == 0, "unread count should be 0 after markRead covers the last message")
+    }
+
+    @Test("markRead is monotonic — older messageId does not reset read pointer")
+    func testMarkRead_monotonic() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let userId = try env.auth.createUser(displayName: "Mono", pin: "1111", email: "mono@test.com")
+        let channelId = try env.chat.createChannel(name: "Mono Channel", channelType: "group", createdBy: userId)
+
+        let msg1 = try env.chat.sendMessage(channelId: channelId, senderId: userId, content: "First")
+        let msg2 = try env.chat.sendMessage(channelId: channelId, senderId: userId, content: "Second")
+
+        // Mark up to msg2
+        try env.chat.markRead(channelId: channelId, userId: userId, messageId: msg2)
+
+        // Now try to "move back" to msg1 — the read pointer must not decrease
+        try env.chat.markRead(channelId: channelId, userId: userId, messageId: msg1)
+
+        // Verify the stored last_read_message_id is still msg2 (the higher value)
+        let stored = try env.db.writer.read { db in
+            try Int64.fetchOne(db, sql: """
+                SELECT last_read_message_id FROM chat_read_receipts
+                WHERE channel_id = ? AND user_id = ?
+                """, arguments: [channelId, userId])
+        }
+        #expect(stored == msg2, "markRead must not move the read pointer backwards")
+    }
 }
