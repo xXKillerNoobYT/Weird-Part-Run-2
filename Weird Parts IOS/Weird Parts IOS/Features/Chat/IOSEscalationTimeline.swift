@@ -316,7 +316,8 @@ private struct PushBackSheet: View {
             }
             .navigationTitle("Push Back")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(isSubmitting)
+            .interactiveDismissDisabled(!reason.trimmingCharacters(in: .whitespaces).isEmpty || isSubmitting)
+            .scrollDismissesKeyboard(.immediately)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

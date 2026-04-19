@@ -171,6 +171,7 @@ struct IOSChannelsPage: View {
             .foregroundStyle(isActive ? color : .primary)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
     private func countForFilter(_ filter: ChannelTypeFilter) -> Int {

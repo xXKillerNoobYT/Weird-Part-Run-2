@@ -153,6 +153,7 @@ struct IOSRFIListPage: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
     // MARK: - Thread List

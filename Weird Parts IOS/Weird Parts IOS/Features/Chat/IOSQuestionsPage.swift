@@ -70,7 +70,6 @@ struct IOSQuestionsPage: View {
                 )
             }
         }
-        .onChange(of: searchText) { loadData() }
         .refreshable { loadData() }
         .task { loadData() }
     }
@@ -151,6 +150,7 @@ struct IOSQuestionsPage: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
     // MARK: - Questions List
