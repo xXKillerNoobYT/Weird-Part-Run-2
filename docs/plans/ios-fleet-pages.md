@@ -42,3 +42,62 @@ Total fuel cost by vehicle, maintenance cost trends, vehicle utilization, cost p
 
 ### Code Quality
 Fleet is the CLEANEST section — zero GRDB imports, zero raw SQL, zero platform guards, zero empty catches. All 17 files use service layer properly. Work here is design enhancement only.
+
+---
+
+## Current State (as of 2026-04-19 — AUTO GO C1 audit)
+
+### iOS Files (18)
+| File | Purpose |
+|---|---|
+| `IOSFleetDashboardPage.swift` | Fleet dashboard KPIs: vehicles, active, maintenance due, overdue inspections, trailers, fuel/miles/cost |
+| `IOSMyTruckPage.swift` | My Vehicle: assigned vehicle workspace with smart cards (tools on board, parts, tank, maintenance) |
+| `IOSTruckToolsPage.swift` | Tools currently on the truck |
+| `IOSVehiclesPage.swift` | All vehicles list with status filter |
+| `IOSVehicleDetailPage.swift` | 7-tab vehicle detail: Overview, Parts, Tools, Assignments, Maintenance, Usage, Inspections |
+| `IOSTrailersPage.swift` | Trailers list |
+| `IOSTrailerDetailPage.swift` | Trailer detail: stock, storage units |
+| `IOSTrailerLocationsPage.swift` | Trailer location history |
+| `IOSFuelPage.swift` | Fuel log entries |
+| `IOSMileagePage.swift` | Mileage/usage log |
+| `IOSInspectionsPage.swift` | Inspection records list |
+| `IOSMaintenancePage.swift` | Maintenance records list |
+| `IOSTelematicsPage.swift` | GPS/telematics tracking view |
+| `PreTripInspectionView.swift` | Pre-trip inspection checklist flow |
+| `IOSCreateVehicleSheet.swift` | Add vehicle sheet |
+| `IOSCreateTrailerSheet.swift` | Add trailer sheet |
+| `IOSAssignDriverSheet.swift` | Assign driver to vehicle sheet |
+| `FleetRouter.swift` | NavigationStack routing |
+
+### FleetService API Surface (33 public methods)
+
+| Section | Methods |
+|---|---|
+| 1. Vehicles | `listVehicles(status:)`, `getVehicleDetail(id:)` |
+| 2. Maintenance Records | `listMaintenanceRecords(vehicleId:limit:)` |
+| 3. Mileage Logs | `listMileageLogs(vehicleId:userId:limit:)` |
+| 4. Fuel Logs | `listFuelLogs(vehicleId:limit:)` |
+| 5. Trailers | `listTrailers(status:)` |
+| 6. Fleet Stats | `getFleetStats()` |
+| 6b. Fleet Dashboard | `getFleetDashboardStats()`, `getVehicleStatusList()`, `getUpcomingFleetMaintenance(limit:)` |
+| 7. Inspections | `listInspections(limit:)` |
+| 8. Telematics | `listTelematicsData()` |
+| 9. Create/Mutate | `createVehicle(...)`, `createTrailer(...)`, `assignDriver(...)` |
+| 10. My Vehicle | `getMyVehicleStats(userId:)` |
+| 11. Vehicle Stock | `getVehicleStock(vehicleId:stockType:)` |
+| 12. Vehicle Tools | `getVehicleTools(vehicleId:)` |
+| 13. Stock Mutations | `addVehicleStockItem(...)`, `logFuelLevel(...)` |
+| 14. Trailer Detail | `getTrailerDetail(trailerId:)` |
+| 15. Trailer Stock | `getTrailerStock(trailerId:)` |
+| 16. Trailer Storage | `getTrailerStorageUnits(trailerId:)` |
+| 17. Trailer Location | `getTrailerLocationHistory(...)`, `updateTrailerLocation(...)` |
+| 18. Pre-Trip Inspection | `getInspectionChecklist(...)`, `saveInspection(...)`, `checkInspectionRequired(...)`, `getInspectionRecords(...)` |
+| 19. Reports | `getFuelCostReport(...)`, `getMaintenanceTrendsReport(...)`, `getMileageSummaryReport(...)`, `getVehicleUtilizationReport(...)` |
+
+### Database Foundation
+- Migration `006_fleet_tools_scheduling` — vehicles + vehicle_assignments + tools core tables
+- Migration `013_tools_supplier_extras` — additional vehicle/fleet extras
+- Additional migrations for inspection templates, telematics, trailer stock
+
+### Implementation Status
+Phase 6 (Fleet & Vehicle Management) is complete per CLAUDE.md. All 18 iOS files are present and FleetService has 33 public methods across 19 feature sections. Pre-trip inspection checklist, trailer mini-warehouse, telematics/GPS tracking, and fleet reports are all implemented.
