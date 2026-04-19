@@ -17,7 +17,7 @@ Cross-platform QA is **structurally N/A** until a second platform is added back.
 | Area | Last checked | Gaps | Notes |
 |---|---|---|---|
 | parts | 2026-04-18 | N/A | Single-platform; C10 marked done vacuously |
-| jobs | — | — | — |
+| jobs | 2026-04-19 | N/A | Single-platform; C10 marked done vacuously |
 | warehouse | — | — | — |
 | scheduling | — | — | — |
 | orders | — | — | — |
@@ -37,3 +37,8 @@ Cross-platform QA is **structurally N/A** until a second platform is added back.
 - Gaps found: N/A (no second platform)
 - Matches confirmed: N/A
 - Action: marked C10 done; filed #257 for CLAUDE.md drift.
+
+**jobs — 2026-04-19 (AUTO GO day 2 iter 4):**
+- Gaps found: N/A (no second platform — same structural situation as parts).
+- Matches confirmed: N/A
+- Action: marked C10 done. #257 still open tracking CLAUDE.md drift.
