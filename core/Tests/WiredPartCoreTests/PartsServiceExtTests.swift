@@ -1118,4 +1118,51 @@ struct PartsServiceExtTests {
             _ = try env.parts.linkBrandToSupplier(brandId: brandId, supplierId: supId)
         }
     }
+
+    // MARK: - is_active defense: hierarchy list functions
+
+    @Test("listCategories excludes is_active=0 categories")
+    func testListCategories_excludesInactiveCategory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "InactiveCat_isActive")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE part_categories SET is_active = 0 WHERE id = ?", arguments: [catId])
+        }
+        let categories = try env.parts.listCategories()
+        #expect(!categories.contains(where: { $0.id == catId }))
+    }
+
+    @Test("listColors excludes is_active=0 colors")
+    func testListColors_excludesInactiveColor() throws {
+        let env = try E2ETestHelpers.setUp()
+        let colorId = try env.parts.createColor(name: "InactiveColor_isActive", hexCode: "#AABBCC")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE part_colors SET is_active = 0 WHERE id = ?", arguments: [colorId])
+        }
+        let colors = try env.parts.listColors()
+        #expect(!colors.contains(where: { $0.id == colorId }))
+    }
+
+    @Test("getHierarchy excludes is_active=0 categories from tree")
+    func testGetHierarchy_excludesInactiveCategory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "InactiveCatHierarchy_isActive")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE part_categories SET is_active = 0 WHERE id = ?", arguments: [catId])
+        }
+        let tree = try env.parts.getHierarchy()
+        #expect(!tree.categories.contains(where: { $0.id == catId }))
+    }
+
+    @Test("listParts excludes is_active=0 parts")
+    func testListParts_excludesInactivePart() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "CatForInactivePart")
+        let partId = try env.parts.createPart(categoryId: catId, name: "InactivePart_isActive", code: "INACT-001")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET is_active = 0 WHERE id = ?", arguments: [partId])
+        }
+        let parts = try env.parts.listParts()
+        #expect(!parts.contains(where: { $0.part.id == partId }))
+    }
 }
