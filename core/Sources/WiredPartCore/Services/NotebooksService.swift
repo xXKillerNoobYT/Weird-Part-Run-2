@@ -23,6 +23,8 @@ public final class NotebooksService: Sendable {
     public enum NotebooksError: Error, Sendable {
         case notebookNotFound(Int64)
         case entryNotFound(Int64)
+        case requiredFieldEmpty
+        case invalidDuration(Int64)
     }
 
     // =========================================================================
@@ -314,7 +316,10 @@ public final class NotebooksService: Sendable {
         jobId: Int64? = nil,
         createdBy: Int64
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !title.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw NotebooksError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO notebooks
@@ -341,7 +346,10 @@ public final class NotebooksService: Sendable {
         entryType: String = "note",
         createdBy: Int64
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !title.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw NotebooksError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn in
             // Get or create a default section
             var sectionId: Int64
             if let existing = try Int64.fetchOne(
@@ -387,7 +395,7 @@ public final class NotebooksService: Sendable {
                 sql: """
                     UPDATE notebook_entries
                     SET task_status = 'complete', updated_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [entryId]
             )
@@ -461,7 +469,7 @@ public final class NotebooksService: Sendable {
                     classification_reviewed_by = NULL,
                     classification_reviewed_at = NULL,
                     updated_at = datetime('now')
-                WHERE id = ?
+                WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [classification, entryId])
 
             // Log in classification_history
@@ -484,7 +492,7 @@ public final class NotebooksService: Sendable {
                         classification_reviewed_by = ?,
                         classification_reviewed_at = datetime('now'),
                         updated_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [reviewedBy, entryId])
             } else if let newClass = newClassification {
                 // Reclassify and approve in one step
@@ -499,7 +507,7 @@ public final class NotebooksService: Sendable {
                         classification_reviewed_by = ?,
                         classification_reviewed_at = datetime('now'),
                         updated_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [newClass, reviewedBy, entryId])
 
                 try dbConn.execute(sql: """
@@ -533,7 +541,7 @@ public final class NotebooksService: Sendable {
                     classification_reviewed_by = NULL,
                     classification_reviewed_at = NULL,
                     updated_at = datetime('now')
-                WHERE id = ?
+                WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [newClassification, entryId])
         }
     }
@@ -564,6 +572,9 @@ public final class NotebooksService: Sendable {
 
     /// Start warranty timer when a to-do is completed. Sets timer_start = now, timer_end = now + job warranty days.
     public func startWarrantyTimer(entryId: Int64, warrantyDurationDays: Int) throws {
+        guard warrantyDurationDays > 0 else {
+            throw NotebooksError.invalidDuration(entryId)
+        }
         let now = Date()
         let end = Calendar.current.date(byAdding: .day, value: warrantyDurationDays, to: now) ?? now.addingTimeInterval(Double(warrantyDurationDays) * 86400)
         try db.writer.write { dbConn in
@@ -572,7 +583,7 @@ public final class NotebooksService: Sendable {
                     warranty_timer_start = ?,
                     warranty_timer_end = ?,
                     updated_at = datetime('now')
-                WHERE id = ?
+                WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [CoreFormatters.iso8601.string(from: now), CoreFormatters.iso8601.string(from: end), entryId])
         }
     }
@@ -661,7 +672,10 @@ public final class NotebooksService: Sendable {
     /// Create a new section group in a notebook.
     @discardableResult
     public func createSectionGroup(notebookId: Int64, name: String) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw NotebooksError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn in
             let maxOrder = try Int.fetchOne(dbConn, sql: """
                 SELECT COALESCE(MAX(sort_order), -1) FROM notebook_section_groups
                 WHERE notebook_id = ? AND deleted_at IS NULL
@@ -677,10 +691,13 @@ public final class NotebooksService: Sendable {
 
     /// Update a section group's name.
     public func updateSectionGroup(groupId: Int64, name: String) throws {
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw NotebooksError.requiredFieldEmpty
+        }
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 UPDATE notebook_section_groups SET name = ?, updated_at = datetime('now')
-                WHERE id = ?
+                WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [name, groupId])
         }
     }
@@ -706,7 +723,7 @@ public final class NotebooksService: Sendable {
             for (index, groupId) in orderedIds.enumerated() {
                 try dbConn.execute(sql: """
                     UPDATE notebook_section_groups SET sort_order = ?, updated_at = datetime('now')
-                    WHERE id = ? AND notebook_id = ?
+                    WHERE id = ? AND notebook_id = ? AND deleted_at IS NULL
                     """, arguments: [index, groupId, notebookId])
             }
         }
@@ -719,7 +736,10 @@ public final class NotebooksService: Sendable {
     /// Create a new section in a notebook, optionally within a group.
     @discardableResult
     public func createSection(notebookId: Int64, groupId: Int64?, name: String) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw NotebooksError.requiredFieldEmpty
+        }
+        return try db.writer.write { dbConn in
             let maxOrder = try Int.fetchOne(dbConn, sql: """
                 SELECT COALESCE(MAX(sort_order), -1) FROM notebook_sections
                 WHERE notebook_id = ? AND deleted_at IS NULL
@@ -735,10 +755,13 @@ public final class NotebooksService: Sendable {
 
     /// Update a section's name.
     public func updateSection(sectionId: Int64, name: String) throws {
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw NotebooksError.requiredFieldEmpty
+        }
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 UPDATE notebook_sections SET name = ?, updated_at = datetime('now')
-                WHERE id = ?
+                WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [name, sectionId])
         }
     }
@@ -758,7 +781,7 @@ public final class NotebooksService: Sendable {
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 UPDATE notebook_sections SET group_id = ?, sort_order = ?, updated_at = datetime('now')
-                WHERE id = ?
+                WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [toGroupId, sortOrder, sectionId])
         }
     }
@@ -820,7 +843,7 @@ public final class NotebooksService: Sendable {
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 UPDATE notebook_entries SET content = ?, block_data = ?, updated_at = datetime('now')
-                WHERE id = ?
+                WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [content, blockData, entryId])
         }
     }
@@ -841,7 +864,7 @@ public final class NotebooksService: Sendable {
             for (index, entryId) in orderedIds.enumerated() {
                 try dbConn.execute(sql: """
                     UPDATE notebook_entries SET sort_order = ?, updated_at = datetime('now')
-                    WHERE id = ? AND section_id = ?
+                    WHERE id = ? AND section_id = ? AND deleted_at IS NULL
                     """, arguments: [index, entryId, sectionId])
             }
         }
@@ -1084,6 +1107,9 @@ public final class NotebooksService: Sendable {
         templateData: NotebookTemplateData,
         createdBy: Int64
     ) throws -> Int64 {
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw NotebooksError.requiredFieldEmpty
+        }
         let jsonData = try JSONEncoder().encode(templateData)
         let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
         return try db.writer.write { dbConn in
@@ -1105,18 +1131,35 @@ public final class NotebooksService: Sendable {
 
         let template = try JSONDecoder().decode(NotebookTemplateData.self, from: jsonData)
 
-        for (_, group) in template.groups.enumerated() {
-            let groupId = try createSectionGroup(notebookId: notebookId, name: group.name)
+        // Single transaction — partial template application is worse than no application.
+        try db.writer.write { dbConn in
+            for group in template.groups {
+                let groupMaxOrder = try Int.fetchOne(dbConn, sql: """
+                    SELECT COALESCE(MAX(sort_order), -1) FROM notebook_section_groups
+                    WHERE notebook_id = ? AND deleted_at IS NULL
+                    """, arguments: [notebookId]) ?? -1
+                try dbConn.execute(sql: """
+                    INSERT INTO notebook_section_groups (notebook_id, name, sort_order, created_at, updated_at)
+                    VALUES (?, ?, ?, datetime('now'), datetime('now'))
+                    """, arguments: [notebookId, group.name, groupMaxOrder + 1])
+                let groupId = dbConn.lastInsertedRowID
 
-            for (_, section) in group.sections.enumerated() {
-                let sectionId = try createSection(notebookId: notebookId, groupId: groupId, name: section.name)
+                for section in group.sections {
+                    let sectionMaxOrder = try Int.fetchOne(dbConn, sql: """
+                        SELECT COALESCE(MAX(sort_order), -1) FROM notebook_sections
+                        WHERE notebook_id = ? AND deleted_at IS NULL
+                        """, arguments: [notebookId]) ?? -1
+                    try dbConn.execute(sql: """
+                        INSERT INTO notebook_sections (notebook_id, group_id, name, section_type, sort_order, is_locked, is_collapsed, created_at, updated_at)
+                        VALUES (?, ?, ?, 'standard', ?, 0, 0, datetime('now'), datetime('now'))
+                        """, arguments: [notebookId, groupId, section.name, sectionMaxOrder + 1])
+                    let sectionId = dbConn.lastInsertedRowID
 
-                for (entryIndex, entry) in section.entries.enumerated() {
-                    var checklistJson: String? = nil
-                    if let items = entry.checklistItems, let data = try? JSONSerialization.data(withJSONObject: items) {
-                        checklistJson = String(data: data, encoding: .utf8)
-                    }
-                    try db.writer.write { dbConn in
+                    for (entryIndex, entry) in section.entries.enumerated() {
+                        var checklistJson: String? = nil
+                        if let items = entry.checklistItems, let data = try? JSONSerialization.data(withJSONObject: items) {
+                            checklistJson = String(data: data, encoding: .utf8)
+                        }
                         try dbConn.execute(sql: """
                             INSERT INTO notebook_entries (notebook_id, section_id, entry_type, block_type, title, content,
                                 heading_level, checklist_items, sort_order, created_by, created_at)
@@ -1147,15 +1190,22 @@ public final class NotebooksService: Sendable {
         guard let firstGroup = template.groups.first,
               let firstSection = firstGroup.sections.first else { return }
 
-        for (idx, entry) in firstSection.entries.enumerated() {
-            _ = try createBlockEntry(
-                sectionId: sectionId,
-                blockType: entry.blockType,
-                title: entry.title,
-                content: entry.content,
-                createdBy: createdBy,
-                sortOrder: idx
-            )
+        // Single transaction — partial template application is worse than no application.
+        try db.writer.write { dbConn in
+            let notebookId = try Int64.fetchOne(dbConn, sql: """
+                SELECT notebook_id FROM notebook_sections WHERE id = ?
+                """, arguments: [sectionId])
+            for (idx, entry) in firstSection.entries.enumerated() {
+                let checklistJson: String? = entry.checklistItems.flatMap { items in
+                    (try? JSONSerialization.data(withJSONObject: items)).flatMap { String(data: $0, encoding: .utf8) }
+                }
+                try dbConn.execute(sql: """
+                    INSERT INTO notebook_entries
+                    (section_id, notebook_id, title, content, entry_type, block_type, checklist_items,
+                     field_required, is_deleted, is_completed, sort_order, created_by, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, 'note', ?, ?, 0, 0, 0, ?, ?, datetime('now'), datetime('now'))
+                    """, arguments: [sectionId, notebookId, entry.title ?? "", entry.content, entry.blockType, checklistJson, idx, createdBy])
+            }
         }
     }
 
