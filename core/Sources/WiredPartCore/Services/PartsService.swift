@@ -3593,6 +3593,24 @@ public final class PartsService: Sendable {
     /// If locationId is nil, updates the default for that location type.
     /// If locationId is set, creates/updates override for that specific location.
     public func saveForecastSettings(_ settings: ForecastSettings) throws {
+        guard settings.aduLookbackDays > 0 else { throw PartsError.invalidInput("ADU lookback days must be > 0") }
+        guard settings.windowWeeks > 0 else { throw PartsError.invalidInput("Window weeks must be > 0") }
+        guard settings.minDataDays >= 0 else { throw PartsError.invalidInput("Min data days must be >= 0") }
+        let multipliers = [
+            settings.commonMinMultiplier, settings.commonTargetMultiplier, settings.commonMaxMultiplier,
+            settings.criticalMinMultiplier, settings.criticalTargetMultiplier, settings.criticalMaxMultiplier
+        ]
+        guard multipliers.allSatisfy({ $0 >= 0.1 && $0 <= 100 }) else {
+            throw PartsError.invalidInput("Forecast multipliers must be between 0.1 and 100")
+        }
+        guard settings.commonMinMultiplier <= settings.commonTargetMultiplier,
+              settings.commonTargetMultiplier <= settings.commonMaxMultiplier else {
+            throw PartsError.invalidInput("Common multipliers must be in order: min ≤ target ≤ max")
+        }
+        guard settings.criticalMinMultiplier <= settings.criticalTargetMultiplier,
+              settings.criticalTargetMultiplier <= settings.criticalMaxMultiplier else {
+            throw PartsError.invalidInput("Critical multipliers must be in order: min ≤ target ≤ max")
+        }
         try db.writer.write { dbConn in
             var s = settings
             s.updatedAt = CoreFormatters.nowISO()
