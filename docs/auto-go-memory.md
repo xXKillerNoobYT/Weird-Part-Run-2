@@ -100,7 +100,14 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 - [2026-04-19] **DIS-006 DevTODO already CLOSED**: wishlist auto-approval main-thread DevTODO was already fixed 2026-04-07 — file is stale. IOSWishlistPage comment at line 477 documents the fix (processAutoApprovals moved out of getSectionedItems task scope).
 
 ### people
-*(notes accumulate here)*
+
+- [2026-04-19] **PeopleService is_active defense gaps (5)**: addTeamMember, toggleHatAssignment, addCommunicationEntry, addContractorNote, addContractorRating — all checked `deleted_at IS NULL` without `AND is_active = 1`. Running systemic total: 12 gaps across 3 services (Scheduling ×4, Orders ×3, People ×5). The pattern is: forward-creating functions that validate user existence before inserting a record. Always check both flags.
+- [2026-04-19] **loadContact() isDirty reset pattern**: Edit sheets that pre-populate via `.task { loadContact() }` need `isDirty = false` reset at the END of `loadContact()` after all field assignments. Without this, `.onChange(of:)` fires when fields are set during load, falsely marking form dirty before user touches anything. This is a subtle bug in any pre-populated form sheet.
+- [2026-04-19] **C1b drift — EmployeeDetail certs/skills**: IOSEmployeeDetailPage has 3 tabs (Profile, Hats, Teams). Plan + #77 call for Certifications and Skills tabs. `EmployeeDetail` struct and PeopleService have no cert/skill per-employee methods. Acceptable future-work drift — tracked in #77, not blocking.
+- [2026-04-19] **Dismiss-safety people sweep (9 sheets)**: AddCustomerSheet, AddContractorSheet, AddContactSheet, AddHatSheet, AddTeamSheet, EditTeamSheet, AddContractorNoteSheet, EditContactSheet, 3 IOSCustomerDetailPage sheets. All used PE-044 pattern. Running dismiss-safety total: 22+ gaps across 6 areas.
+- [2026-04-19] **C7b a11y gaps (4 fixed)**: RatingRow star images in ForEach (all 5 stars needed `.accessibilityHidden(true)` — numeric score Text adjacent makes them redundant); EmployeeDetailPage read-only checkmark status icon; HatsPage person.2.fill badge icon; PermissionsPage hat selector needed `.accessibilityAddTraits(.isSelected)` for VoiceOver to announce current selection.
+- [2026-04-19] **getContactsSorted safe SQL interpolation**: PeopleService:1731 `sql += " ORDER BY \(orderClause)"` — orderClause is switch-derived with 3 hardcoded string values only. Same safe ORDER BY pattern as jobs/warehouse setClauses. Not a security finding.
+- [2026-04-19] **PeopleService baseline**: 50 public funcs / 62 PeopleServiceTests = 1.24× coverage / 100% breadth. All methods tested. 0 SELECT*, 63 total SELECTs, no N+1 loops.
 
 ### tools
 *(notes accumulate here)*

@@ -4,6 +4,48 @@
 
 ---
 
+## Area: people — 2026-04-19
+
+**Analyzed:** `PeopleService.swift` (50 public methods, ~1900 lines), 14 iOS People pages (employees, customers, contractors, contacts, teams, hats, permissions, dashboard, router). 7 iterations produced: 9 dismiss-safety fixes (C7), 4 a11y fixes (C7b), 5 is_active defense fixes (C3), 0 test gaps (62 tests / 100% breadth).
+
+### Codebase Profile (People Area)
+
+- **Backend service:** `PeopleService.swift` — 50 public methods, 62 tests (1.24× / 100% breadth)
+- **is_active gaps:** 5 (addTeamMember, toggleHatAssignment, addCommunicationEntry, addContractorNote, addContractorRating) — systematic running total now 12 across 3 services
+- **Dismiss-safety gaps:** 9 sheets fixed — the highest count of any single area
+- **A11y gaps:** 4 fixes including star-images in ForEach and custom segmented control `.isSelected` trait
+- **C1b drift:** EmployeeDetail certs/skills tabs (future work, tracked #77)
+
+---
+
+### ⚡ Pattern Reinforcement: is_active Defense Hook (now confirmed in 3 areas)
+
+**Why:** is_active gaps now confirmed in 3 areas — Scheduling ×4, Orders ×3, People ×5 = 12 total. The is_active defense auditor hook (already proposed in scheduling C13, Q&A pending) is now validated as a high-yield automation. **No new Q&A needed** — data reinforcement only.
+
+---
+
+### ⚡ New Pattern: accessibilityAddTraits(.isSelected) for Custom Segmented Controls
+
+**Why:** Custom `Button`-based pickers in horizontal `ScrollView` (pattern used in IOSPermissionsPage hat selector, IOSTeamsPage smart cards, scheduling pages) visually indicate selection via color/weight but don't announce selection state to VoiceOver. Found and fixed inline in people C7b.
+
+**Proposal:** Extend the `dev-improvement-scanner` SKILL.md Phase C4 (Accessibility) check to look for `Button { ... } label: { Text(...).fontWeight(isActive ? .bold : .regular) }` inside `ScrollView(.horizontal)` and flag any missing `.accessibilityAddTraits(... .isSelected)`.
+
+**Effort:** Low — add one rule to the existing scanner. No new skill needed.
+
+**Priority:** Low — affects VoiceOver users only; visual UX is fine. But it's a consistent pattern across at least 3 areas.
+
+---
+
+### Summary & Prioritization
+
+| Recommendation | Type | Priority | Decision | Status |
+|---|---|---|---|---|
+| Dismiss-safety struct-aware scanner | Scanner | High | _pending_ (filed in warehouse C13) | ⏳ Q&A pending |
+| is_active defense auditor hook | Hook | Medium-High | _pending_ (filed in scheduling C13) | ⏳ Q&A pending |
+| accessibilityAddTraits(.isSelected) scanner rule | Scanner rule | Low | _pending_ | New — add to dev-qa if desired |
+
+---
+
 ## Area: scheduling — 2026-04-19
 
 **Analyzed:** `SchedulingService.swift` (36 public methods, ~2000 lines), 15 iOS Scheduling pages (calendar, dispatch, pipelines, flex pool, time-off, config, template builder, etc.). 7 iterations produced: 2 dismiss-safety fixes (C7), 2 scrollDismissesKeyboard additions (C7b), 1 RequestTimeOffSheet dismiss polish, 4 is_active guard fixes (C3), 1 performance issue filed (#261).
