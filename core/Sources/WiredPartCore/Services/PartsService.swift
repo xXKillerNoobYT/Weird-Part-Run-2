@@ -5225,8 +5225,8 @@ public final class PartsService: Sendable {
                 SELECT cop.points,
                        ca.name AS cat_a_name, cb.name AS cat_b_name
                 FROM co_occurrence_pairs cop
-                JOIN part_categories ca ON ca.id = cop.category_a_id
-                JOIN part_categories cb ON cb.id = cop.category_b_id
+                JOIN part_categories ca ON ca.id = cop.category_a_id AND ca.deleted_at IS NULL
+                JOIN part_categories cb ON cb.id = cop.category_b_id AND cb.deleted_at IS NULL
                 WHERE cop.match_level = 'category'
                   AND cop.is_blocked = 0
                   AND cop.points > 0 AND cop.points < 100
@@ -6479,8 +6479,8 @@ public final class PartsService: Sendable {
                            cop.match_level, cop.confidence,
                            ca.name AS cat_a_name, cb.name AS cat_b_name
                     FROM co_occurrence_pairs cop
-                    LEFT JOIN part_categories ca ON ca.id = cop.category_a_id
-                    LEFT JOIN part_categories cb ON cb.id = cop.category_b_id
+                    LEFT JOIN part_categories ca ON ca.id = cop.category_a_id AND ca.deleted_at IS NULL
+                    LEFT JOIN part_categories cb ON cb.id = cop.category_b_id AND cb.deleted_at IS NULL
                     WHERE (cop.category_a_id IN (\(placeholders)) OR cop.category_b_id IN (\(placeholders)))
                       AND cop.match_level IN ('style', 'type')
                       AND cop.is_blocked = 0
@@ -6630,7 +6630,7 @@ public final class PartsService: Sendable {
             let countArgs = StatementArguments(args)
             let countSQL = """
                 SELECT COUNT(*) FROM parts p
-                LEFT JOIN brands b ON b.id = p.brand_id
+                LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
                 WHERE \(whereSQL)
                 """
             let count = try Int.fetchOne(dbConn, sql: countSQL, arguments: countArgs) ?? 0

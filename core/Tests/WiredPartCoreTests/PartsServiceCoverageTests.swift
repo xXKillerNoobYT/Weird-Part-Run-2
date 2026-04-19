@@ -378,6 +378,38 @@ struct PartsServiceCoverageTests {
         #expect(result.parts.allSatisfy { $0.part.name.contains("UniqueSearchName") })
     }
 
+    @Test("listCatalogParts search + count excludes parts whose brand was soft-deleted")
+    func testListCatalogParts_hidesDeletedBrandFromSearchAndCount() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "BrandSearchCat")
+        let brandId = try E2ETestHelpers.seedBrand(env, name: "UniqueZephyrBrand")
+        let partId = try env.parts.createPart(
+            categoryId: catId, name: "Part With Deleted Brand", code: "DBP-001", brandId: brandId
+        )
+
+        // Baseline: searching by the brand's name finds the part and count = 1
+        let before = try env.parts.listCatalogParts(search: "UniqueZephyr")
+        #expect(before.parts.contains { $0.part.id == partId })
+
+        // Soft-delete the brand. The search by brand-name must no longer match via the
+        // count's LEFT JOIN — the pagination count would otherwise be inflated and the
+        // fetch would also surface the deleted brand's name via the display LEFT JOIN.
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE brands SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [brandId]
+            )
+        }
+
+        let after = try env.parts.listCatalogParts(search: "UniqueZephyr")
+        let match = after.parts.first { $0.part.id == partId }
+        // The part itself is still active; COALESCE-on-search includes `(p.name LIKE ? OR p.code LIKE ? OR COALESCE(b.name, '') LIKE ?)`.
+        // With the deleted_at JOIN guard, b.name is now NULL for this row so "UniqueZephyr" no longer matches
+        // the search — part is expected to not appear when the match was ONLY via brand name.
+        #expect(match == nil,
+                "Deleted brand's name must not keep a part visible via brand-name search — LEFT JOIN guard + NULL fallback should drop the row from search matches")
+    }
+
     @Test("listCatalogParts respects pagination")
     func testListCatalogPartsPagination() throws {
         let env = try E2ETestHelpers.setUp()

@@ -248,7 +248,7 @@ public final class ReportsService: Sendable {
                     SELECT s.name AS supplier_name,
                            COALESCE(SUM(po.total_cost), 0) AS supplier_total
                     FROM purchase_orders po
-                    LEFT JOIN suppliers s ON s.id = po.supplier_id
+                    LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
                     WHERE po.deleted_at IS NULL
                       AND po.status NOT IN ('cancelled', 'draft')
                       AND date(po.created_at) >= date('now', '-' || ? || ' days')
@@ -484,7 +484,7 @@ public final class ReportsService: Sendable {
                     SELECT po.id, po.po_number, COALESCE(s.name, 'Unknown') AS supplier_name,
                            COALESCE(po.total_cost, 0) AS total_amount
                     FROM purchase_orders po
-                    LEFT JOIN suppliers s ON s.id = po.supplier_id
+                    LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
                     WHERE date(po.created_at) >= ? AND date(po.created_at) <= ?
                     ORDER BY po.po_number
                     """
@@ -861,7 +861,7 @@ public final class ReportsService: Sendable {
                            COALESCE(f.total_cost, 0) AS cost,
                            COALESCE(f.odometer_reading, 0) AS odometer
                     FROM fuel_logs f
-                    LEFT JOIN vehicles v ON v.id = f.vehicle_id
+                    LEFT JOIN vehicles v ON v.id = f.vehicle_id AND v.deleted_at IS NULL
                     WHERE f.deleted_at IS NULL
                       AND f.log_date >= ? AND f.log_date <= ?
                     ORDER BY f.log_date DESC
@@ -895,7 +895,7 @@ public final class ReportsService: Sendable {
                            COALESCE(po.status, '') AS status,
                            (SELECT COUNT(*) FROM po_line_items pol WHERE pol.po_id = po.id AND pol.deleted_at IS NULL) AS items_count
                     FROM purchase_orders po
-                    LEFT JOIN suppliers s ON s.id = po.supplier_id
+                    LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
                     WHERE po.deleted_at IS NULL
                       AND COALESCE(po.order_date, date(po.created_at)) >= ?
                       AND COALESCE(po.order_date, date(po.created_at)) <= ?

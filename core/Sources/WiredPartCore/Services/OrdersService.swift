@@ -1742,7 +1742,7 @@ public final class OrdersService: Sendable {
                            COALESCE((SELECT COUNT(*) FROM po_line_items pl
                                      WHERE pl.po_id = po.id AND pl.deleted_at IS NULL), 0) AS line_count
                     FROM purchase_orders po
-                    LEFT JOIN suppliers s ON s.id = po.supplier_id
+                    LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY po.created_at DESC
                     LIMIT ?
@@ -1775,7 +1775,7 @@ public final class OrdersService: Sendable {
                        COALESCE(s.name, 'Unknown Supplier') AS supplier_name,
                        COALESCE(u.display_name, u.email) AS submitted_by_name
                 FROM purchase_orders po
-                LEFT JOIN suppliers s ON s.id = po.supplier_id
+                LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
                 LEFT JOIN users u ON u.id = po.submitted_by AND u.deleted_at IS NULL
                 WHERE po.id = ?
                 """
@@ -2306,7 +2306,7 @@ public final class OrdersService: Sendable {
                            COALESCE((SELECT COUNT(*) FROM return_line_items rli
                                      WHERE rli.return_id = r.id AND rli.deleted_at IS NULL), 0) AS line_count
                     FROM returns r
-                    LEFT JOIN suppliers s ON s.id = r.supplier_id
+                    LEFT JOIN suppliers s ON s.id = r.supplier_id AND s.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY r.created_at DESC
                     LIMIT ?

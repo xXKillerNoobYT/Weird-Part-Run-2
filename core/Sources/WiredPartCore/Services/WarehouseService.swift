@@ -938,7 +938,7 @@ public final class WarehouseService: Sendable {
                                (SELECT COUNT(*) FROM receiving_session_items
                                 WHERE session_id = rs.id AND deleted_at IS NULL) AS item_count
                         FROM receiving_sessions rs
-                        LEFT JOIN users u ON u.id = rs.started_by
+                        LEFT JOIN users u ON u.id = rs.started_by AND u.deleted_at IS NULL
                         WHERE rs.id = ? AND rs.deleted_at IS NULL
                         """,
                     arguments: [sessionId]
@@ -974,7 +974,7 @@ public final class WarehouseService: Sendable {
                                (SELECT COUNT(*) FROM receiving_session_items
                                 WHERE session_id = rs.id AND deleted_at IS NULL) AS item_count
                         FROM receiving_sessions rs
-                        LEFT JOIN users u ON u.id = rs.started_by
+                        LEFT JOIN users u ON u.id = rs.started_by AND u.deleted_at IS NULL
                         WHERE rs.status = 'in_progress' AND rs.deleted_at IS NULL
                         ORDER BY rs.created_at DESC
                         """
@@ -1013,7 +1013,7 @@ public final class WarehouseService: Sendable {
                                p.code AS part_code
                         FROM receiving_session_items rsi
                         LEFT JOIN po_line_items pli ON pli.id = rsi.po_line_id
-                        LEFT JOIN parts p ON p.id = pli.part_id
+                        LEFT JOIN parts p ON p.id = pli.part_id AND p.deleted_at IS NULL
                         WHERE rsi.session_id = ? AND rsi.deleted_at IS NULL
                         ORDER BY p.name
                         """,
@@ -1176,8 +1176,8 @@ public final class WarehouseService: Sendable {
                                p.name AS part_name,
                                COALESCE(u.display_name, u.email, 'Unknown') AS performed_by_name
                         FROM stock_movements sm
-                        LEFT JOIN parts p ON p.id = sm.part_id
-                        LEFT JOIN users u ON u.id = sm.performed_by
+                        LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
+                        LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
                         WHERE sm.movement_type = 'return' AND sm.deleted_at IS NULL
                         ORDER BY sm.created_at DESC
                         LIMIT ?
@@ -1339,7 +1339,7 @@ public final class WarehouseService: Sendable {
                                s.qty, s.counted_qty, s.last_counted,
                                p.name AS part_name, p.code AS part_code
                         FROM stock s
-                        LEFT JOIN parts p ON p.id = s.part_id
+                        LEFT JOIN parts p ON p.id = s.part_id AND p.deleted_at IS NULL
                         WHERE s.location_type = 'warehouse'
                           AND s.deleted_at IS NULL
                           AND s.last_counted IS NOT NULL

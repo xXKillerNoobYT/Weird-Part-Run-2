@@ -1127,4 +1127,43 @@ struct OrdersServiceTests {
         let detail = try env.orders.getPODetail(id: poId)
         #expect(detail.submittedByName == nil)
     }
+
+    @Test("listPurchaseOrders degrades soft-deleted supplier name to 'Unknown Supplier'")
+    func testListPurchaseOrders_hidesDeletedSupplierName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "OrderListSupplierToDelete")
+        _ = try env.orders.createPurchaseOrder(poNumber: "PO-SUP-DEL", supplierId: supplierId)
+
+        // Soft-delete the supplier. The PO remains active and must still appear,
+        // but with supplier_name degraded via the LEFT JOIN + COALESCE fallback.
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE suppliers SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [supplierId]
+            )
+        }
+
+        let pos = try env.orders.listPurchaseOrders()
+        let match = try #require(pos.first { $0.poNumber == "PO-SUP-DEL" })
+        #expect(match.supplierName == "Unknown Supplier",
+                "listPurchaseOrders LEFT JOIN suppliers needs deleted_at guard for COALESCE to trigger")
+    }
+
+    @Test("getPODetail degrades soft-deleted supplier name to 'Unknown Supplier'")
+    func testGetPODetail_hidesDeletedSupplierName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "DetailSupplierToDelete")
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-DET-DEL", supplierId: supplierId)
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE suppliers SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [supplierId]
+            )
+        }
+
+        let detail = try env.orders.getPODetail(id: poId)
+        #expect(detail.supplierName == "Unknown Supplier",
+                "getPODetail LEFT JOIN suppliers needs deleted_at guard so deleted supplier name doesn't persist on PO detail card")
+    }
 }

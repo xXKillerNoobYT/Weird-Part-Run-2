@@ -462,4 +462,112 @@ struct E2EWarehouseTests {
         // getOnboardingProgress filters for completed_at == nil, so it should be nil
         #expect(afterComplete == nil)
     }
+
+    @Test("getReceivingSession and getActiveSessions show Unknown for soft-deleted starter")
+    func testReceivingSessionHidesDeletedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "RecvSupplier")
+        var sessionId: Int64 = 0
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO purchase_orders (po_number, supplier_id, status)
+                VALUES ('PO-RECV-DEL', ?, 'submitted')
+                """, arguments: [supplierId])
+            let poId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO receiving_sessions (po_id, started_by, mode, status, created_at)
+                VALUES (?, ?, 'packing_slip', 'in_progress', datetime('now'))
+                """, arguments: [poId, env.adminUserId])
+            sessionId = db.lastInsertedRowID
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        let session = try env.warehouse.getReceivingSession(sessionId: sessionId)
+        #expect(session != nil)
+        #expect(session?.startedByName == "Unknown",
+                "Soft-deleted starter must degrade to 'Unknown' in getReceivingSession")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = NULL WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+    }
+
+    @Test("getSessionItems shows Unknown Part for soft-deleted part")
+    func testGetSessionItemsHidesDeletedPart() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "RecvCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "RecvPart", categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "RecvSupplier2")
+        var sessionId: Int64 = 0
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO purchase_orders (po_number, supplier_id, status)
+                VALUES ('PO-SI-DEL', ?, 'submitted')
+                """, arguments: [supplierId])
+            let poId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, part_id, qty_ordered, qty_received, unit_cost)
+                VALUES (?, ?, 3, 0, 9.99)
+                """, arguments: [poId, partId])
+            let lineId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO receiving_sessions (po_id, started_by, mode, status, created_at)
+                VALUES (?, ?, 'packing_slip', 'in_progress', datetime('now'))
+                """, arguments: [poId, env.adminUserId])
+            sessionId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO receiving_session_items (session_id, po_line_id, expected_qty, created_at)
+                VALUES (?, ?, 3, datetime('now'))
+                """, arguments: [sessionId, lineId])
+            try db.execute(sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [partId])
+        }
+        let items = try env.warehouse.getSessionItems(sessionId: sessionId)
+        #expect(items.isEmpty == false)
+        #expect(items.first?.partName == "Unknown Part",
+                "Soft-deleted part must degrade to 'Unknown Part' in getSessionItems")
+    }
+
+    @Test("getReturnItems shows Unknown Part and Unknown for soft-deleted part and user")
+    func testGetReturnItemsHidesDeletedPartAndUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "RetCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "RetPart", categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 5)
+        _ = try env.warehouse.processReturn(
+            partId: partId, qty: 1,
+            fromLocationType: "warehouse", fromLocationId: 1,
+            performedBy: env.adminUserId
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [partId])
+        }
+        let returns = try env.warehouse.getReturnItems(limit: 10)
+        let entry = returns.first(where: { $0.partId == partId })
+        #expect(entry != nil)
+        #expect(entry?.partName == "Unknown Part",
+                "Soft-deleted part must degrade to 'Unknown Part' in getReturnItems")
+    }
+
+    @Test("getAuditDiscrepancies shows Unknown Part for soft-deleted part")
+    func testGetAuditDiscrepanciesHidesDeletedPart() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "AudCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "AudPart", categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE stock SET counted_qty = 8, last_counted = datetime('now')
+                WHERE part_id = ? AND location_type = 'warehouse'
+                """, arguments: [partId])
+            try db.execute(sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [partId])
+        }
+        let discrepancies = try env.warehouse.getAuditDiscrepancies()
+        let entry = discrepancies.first(where: { $0.partId == partId })
+        #expect(entry != nil)
+        #expect(entry?.partName == "Unknown Part",
+                "Soft-deleted part must degrade to 'Unknown Part' in getAuditDiscrepancies")
+    }
 }

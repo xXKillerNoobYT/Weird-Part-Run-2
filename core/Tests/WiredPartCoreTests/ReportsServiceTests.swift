@@ -91,6 +91,42 @@ struct ReportsServiceTests {
         #expect(data.isEmpty)
     }
 
+    @Test("Bookkeeper material POs degrade soft-deleted supplier name to 'Unknown'")
+    func testBookkeeperMaterialPOs_hidesDeletedSupplierName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "TombstonedMaterialVendor")
+
+        // Create a PO from the supplier; report should list it
+        let poId = try env.orders.createPurchaseOrder(
+            poNumber: "PO-BK-SOFT", supplierId: supplierId, notes: nil
+        )
+        // Move PO into a date window the report will include
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE purchase_orders SET total_cost = 100.0, created_at = datetime('now') WHERE id = ?",
+                arguments: [poId]
+            )
+        }
+
+        // Soft-delete the supplier. The report must degrade supplier_name to 'Unknown' —
+        // previously the LEFT JOIN still matched the tombstoned row and leaked the real name.
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE suppliers SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [supplierId]
+            )
+        }
+
+        let today = ISO8601DateFormatter().string(from: Date()).prefix(10)
+        let data = try env.reports.getBookkeeperMaterialPOs(
+            startDate: String(today), endDate: String(today)
+        )
+        let match = data.first { $0.poNumber == "PO-BK-SOFT" }
+        #expect(match != nil)
+        #expect(match?.supplierName == "Unknown",
+                "Soft-deleted supplier's name must not leak into bookkeeper material report — LEFT JOIN guard should make COALESCE degrade to 'Unknown'")
+    }
+
     // MARK: - Stats
 
     @Test("Reports stats aggregates correctly")
