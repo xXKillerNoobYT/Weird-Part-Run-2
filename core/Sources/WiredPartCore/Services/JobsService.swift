@@ -1729,7 +1729,7 @@ public final class JobsService: Sendable {
                                jp.unit_cost_at_consume, jp.unit_sell_at_consume,
                                p.name AS part_name, p.code AS part_code
                         FROM job_parts jp
-                        LEFT JOIN parts p ON p.id = jp.part_id
+                        LEFT JOIN parts p ON p.id = jp.part_id AND p.deleted_at IS NULL
                         WHERE jp.job_id = ? AND jp.deleted_at IS NULL
                         ORDER BY jp.consumed_at DESC
                         """,

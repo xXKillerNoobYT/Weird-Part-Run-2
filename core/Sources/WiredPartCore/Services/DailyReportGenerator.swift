@@ -192,7 +192,7 @@ public final class DailyReportGenerator: Sendable {
                                (julianday(COALESCE(le.clock_out, datetime('now'))) - julianday(le.clock_in)) * 24
                            ) as total_hours
                     FROM labor_entries le
-                    LEFT JOIN jobs j ON j.id = le.job_id
+                    LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
                     WHERE le.user_id = ? AND date(le.clock_in) = ?
                       AND le.deleted_at IS NULL
                     GROUP BY le.job_id

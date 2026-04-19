@@ -792,8 +792,8 @@ public final class WarehouseService: Sendable {
                                pst.tagged_at
                         FROM pulled_staging_tags pst
                         JOIN stock s ON s.id = pst.stock_id
-                        LEFT JOIN parts p ON p.id = s.part_id
-                        LEFT JOIN users u ON u.id = pst.tagged_by
+                        LEFT JOIN parts p ON p.id = s.part_id AND p.deleted_at IS NULL
+                        LEFT JOIN users u ON u.id = pst.tagged_by AND u.deleted_at IS NULL
                         WHERE pst.deleted_at IS NULL
                         ORDER BY pst.tagged_at DESC
                         """

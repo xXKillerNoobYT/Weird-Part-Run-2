@@ -510,7 +510,7 @@ public final class DashboardService: Sendable {
                                COALESCE(
                                  (SELECT SUM(le.regular_hours * COALESCE(u.pay_rate, 0))
                                   FROM labor_entries le
-                                  LEFT JOIN users u ON u.id = le.user_id
+                                  LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
                                   WHERE le.job_id = j.id AND le.deleted_at IS NULL), 0
                                ) +
                                COALESCE(
@@ -1164,7 +1164,7 @@ public final class DashboardService: Sendable {
                                      WHERE le.job_id = j.id AND le.deleted_at IS NULL), 0) AS labor_hours,
                            COALESCE(
                              (SELECT SUM(le.regular_hours * COALESCE(u.pay_rate, 0))
-                              FROM labor_entries le LEFT JOIN users u ON u.id = le.user_id
+                              FROM labor_entries le LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
                               WHERE le.job_id = j.id AND le.deleted_at IS NULL), 0
                            ) +
                            COALESCE(

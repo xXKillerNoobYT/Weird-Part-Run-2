@@ -92,4 +92,25 @@ struct DailyReportGeneratorTests {
         #expect(!names.contains("Deleted Todo"),
                 "Soft-deleted todo must not appear in daily report query result")
     }
+
+    @Test("getTodaysJobs shows Unknown for soft-deleted job")
+    func testGetTodaysJobsHidesDeletedJobName() throws {
+        let (env, gen) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DEL-DRG", name: "DelDRGJob")
+        let fixedDate = "2099-06-15"
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries (user_id, job_id, clock_in, deleted_at)
+                VALUES (?, ?, '\(fixedDate) 08:00:00', NULL)
+                """, arguments: [env.adminUserId, jobId])
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?", arguments: [jobId])
+        }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let date = formatter.date(from: fixedDate)!
+        let todaysJobs = try gen.getTodaysJobs(userId: env.adminUserId, date: date)
+        let entry = todaysJobs.first(where: { $0.jobId == jobId })
+        #expect(entry != nil)
+        #expect(entry?.jobName == "Unknown")
+    }
 }

@@ -1046,4 +1046,19 @@ struct JobsServiceTests {
         #expect(reports.isEmpty == false)
         #expect(reports.first?.jobName == "")
     }
+
+    @Test("getJobParts shows Unknown Part for soft-deleted part")
+    func testGetJobPartsHidesDeletedPartName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let catId = try E2ETestHelpers.seedCategory(env, name: "JP_Cat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "JP_Part", categoryId: catId)
+        _ = try env.jobs.addJobPart(jobId: jobId, partId: partId, qty: 2, performedBy: env.adminUserId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?", arguments: [partId])
+        }
+        let parts = try env.jobs.getJobParts(jobId: jobId)
+        #expect(parts.isEmpty == false)
+        #expect(parts.first?.partName == "Unknown Part")
+    }
 }
