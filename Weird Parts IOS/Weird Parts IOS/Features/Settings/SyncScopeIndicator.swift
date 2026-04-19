@@ -102,10 +102,12 @@ struct SyncScopeIndicator: View {
             Image(systemName: scope.icon)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
         } else {
             HStack(spacing: 6) {
                 Image(systemName: scope.icon)
                     .font(.caption2)
+                    .accessibilityHidden(true)
                 Text(scope.label)
                     .font(.caption)
             }
