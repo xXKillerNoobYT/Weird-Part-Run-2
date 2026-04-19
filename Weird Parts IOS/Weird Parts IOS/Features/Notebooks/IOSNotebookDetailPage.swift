@@ -1114,6 +1114,7 @@ private struct NotebookConflictResolutionSheet: View {
                         HStack(spacing: 8) {
                             Image(systemName: blockTypeIcon(conflict.blockType ?? "text"))
                                 .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(conflict.entryTitle ?? "Entry #\(conflict.entryId)")
                                     .font(.subheadline)
@@ -1140,6 +1141,7 @@ private struct NotebookConflictResolutionSheet: View {
                                 HStack {
                                     Image(systemName: "iphone")
                                         .font(.caption)
+                                        .accessibilityHidden(true)
                                     Text("Local (This Device)")
                                         .font(.caption)
                                         .fontWeight(.semibold)
@@ -1165,6 +1167,7 @@ private struct NotebookConflictResolutionSheet: View {
                                 HStack {
                                     Image(systemName: "antenna.radiowaves.left.and.right")
                                         .font(.caption)
+                                        .accessibilityHidden(true)
                                     Text("Remote (Other Device)")
                                         .font(.caption)
                                         .fontWeight(.semibold)
