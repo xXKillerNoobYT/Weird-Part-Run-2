@@ -4,6 +4,58 @@
 
 ---
 
+## Area: scheduling — 2026-04-19
+
+**Analyzed:** `SchedulingService.swift` (36 public methods, ~2000 lines), 15 iOS Scheduling pages (calendar, dispatch, pipelines, flex pool, time-off, config, template builder, etc.). 7 iterations produced: 2 dismiss-safety fixes (C7), 2 scrollDismissesKeyboard additions (C7b), 1 RequestTimeOffSheet dismiss polish, 4 is_active guard fixes (C3), 1 performance issue filed (#261).
+
+### Codebase Profile (Scheduling Area)
+
+- **Language:** Swift/SwiftUI (iOS native)
+- **Backend service:** `SchedulingService.swift` — 36 public methods, 149 tests (4.1× coverage)
+- **Key patterns found:** is_active + deleted_at dual-filter inconsistency (4 forward-scheduling queries missing is_active = 1). Fixed in commit 9ee3fe46.
+- **Dismiss-safety gaps:** 2 (CreateScheduleEntrySheet + IOSTemplateBuilderSheet) — consistent with pattern seen across all areas so far
+- **N+1 pattern:** `getLongTermTimeline` 36 × 2 = 72 queries (filed #261)
+- **Test coverage:** 149 tests / 36 funcs = 4.1× (100% breadth, best ratio so far)
+
+---
+
+### ⚡ Pattern Reinforcement: Dismiss-Safety Scanner (now 4th area; priority escalates)
+
+**Why:** Dismiss-safety gaps (isSaving without interactiveDismissDisabled) now found in **4 of 4 areas** examined:
+- parts: 2 gaps (iter 7+9)
+- jobs: 1 gap (iter 25 day 1)
+- warehouse: 5 gaps (iter 15+20)
+- scheduling: 2 gaps (iter 25 day 2)
+
+**Total across 4 areas: 10 gaps.** Projected across all 14 areas: ~35 gaps. This is the single most recurring finding in the entire AUTO GO loop. The warehouse C13 already filed this as a HIGH priority recommendation. Now that it's confirmed in scheduling too, **this scanner should be the next automation built** (once user approves via dev-qa.md Q&A filed in warehouse C13).
+
+**No new Q&A needed** — already filed in warehouse C13 cluster. This entry is data reinforcement only.
+
+---
+
+### ⚡ Hook: is_active Defense Auditor
+
+**Why:** The `is_active + deleted_at` dual-filter rule (per `feedback_deleted_at_defense_in_depth.md`) was violated in 4 scheduling queries, all in the same pattern: forward-scheduling data creation validated `deleted_at IS NULL` but not `is_active = 1`. The same pattern likely exists in other areas (orders, people, tools, vehicles). A systematic audit hook would catch these.
+
+**Proposal:** A pre-commit or PostToolUse scanner that checks every `SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL` pattern and flags any that are missing `AND is_active = 1` on forward-facing operations (createX, updateX, insertX functions).
+
+**Where:** Extend `parts-sql-check.sh` hook or create a new `is-active-defense-check.sh` that runs on any Service file edit.
+
+**Effort:** Very low — the pattern is a simple grep for `WHERE id = ? AND deleted_at IS NULL` in `create*` / `update*` functions that don't also have `is_active = 1`.
+
+**Priority:** Medium-high. The bug was already introduced in 4 places in just 1 service. Across 22 services it likely exists many more times. The HUNT FIX loop catches these, but a hook would prevent them at write time.
+
+---
+
+### Summary & Prioritization
+
+| Recommendation | Type | Priority | Decision | Status |
+|---|---|---|---|---|
+| Dismiss-safety struct-aware scanner | Scanner | High | _pending_ (filed in warehouse C13) | ⏳ Q&A pending user answer |
+| is_active defense auditor hook | Hook | Medium-High | _pending_ | ⏳ Q&A filed (see below) |
+
+---
+
 ## Area: warehouse — 2026-04-19
 
 **Analyzed:** `WarehouseService.swift` (137 public methods, ~2500 lines), 31 iOS Warehouse pages (`IOSMovementWizard`, `IOSAuditSetupView`, `IOSOrganizationAuditPage`, `WarehouseOnboardingWizard`, and 27 others). 5 iterations of checks produced: 2 dismiss-safety fixes (C7), 4 accessibility fixes (C7b), 3 additional dismiss-safety fixes discovered during C13 (IOSOrganizationAuditPage nested sheets), 2 performance issues filed (#259 batch atomicity, #260 N+1 audit queries), 1 SQL idiom confirmed safe (WarehouseService:1702).
