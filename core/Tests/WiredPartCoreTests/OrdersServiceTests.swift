@@ -508,6 +508,25 @@ struct OrdersServiceTests {
         #expect(parts[0].quantityOrdered == 100)
     }
 
+    @Test("getPartsForSupplier falls back to 'Item' name when part is soft-deleted")
+    func testGetPartsForSupplierHidesDeletedPartName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "SupplierSoftDel")
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-PDEL", supplierId: supplierId, notes: nil)
+        let catId = try E2ETestHelpers.seedCategory(env, name: "SoftDelCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Deleted Part", categoryId: catId)
+        _ = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 5, unitPrice: 1.0)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?", arguments: [partId])
+        }
+
+        let parts = try env.orders.getPartsForSupplier(supplierId: supplierId)
+        #expect(parts.count >= 1)
+        #expect(!parts.contains(where: { $0.partName == "Deleted Part" }))
+        #expect(parts.first?.partName == "Item")
+    }
+
     // MARK: - listJPOs with job filter
 
     @Test("listJPOs with jobId filter returns only JPOs for that job")

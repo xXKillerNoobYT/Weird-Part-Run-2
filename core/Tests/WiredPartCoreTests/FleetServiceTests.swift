@@ -407,6 +407,33 @@ struct FleetServiceTests {
         #expect(entry?.utilization == 0.0)
     }
 
+    @Test("getMaintenanceTrendsReport falls back to 'Unknown' when vehicle is soft-deleted")
+    func testMaintenanceTrendHidesDeletedVehicleName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-MT-DEL", vehicleName: "Trend Truck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        // Insert a maintenance record directly (no public service API for this)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO maintenance_records (vehicle_id, performed_at, cost)
+                    VALUES (?, date('now'), 150.0)
+                    """,
+                arguments: [vehicleId]
+            )
+            try db.execute(sql: "UPDATE vehicles SET deleted_at = datetime('now') WHERE id = ?", arguments: [vehicleId])
+        }
+
+        let start = Date(timeIntervalSinceNow: -86400)
+        let end = Date(timeIntervalSinceNow: 86400)
+        let report = try env.fleet.getMaintenanceTrendsReport(startDate: start, endDate: end)
+        let row = report.first(where: { $0.vehicleName == "Unknown" })
+        #expect(row != nil)
+        #expect(row?.cost == 150.0)
+    }
+
     @Test("listVehicles hides assigned user name for soft-deleted user")
     func testListVehiclesHidesDeletedAssignedUserName() throws {
         let env = try E2ETestHelpers.setUp()

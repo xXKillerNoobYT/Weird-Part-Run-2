@@ -3748,8 +3748,8 @@ public final class WarehouseService: Sendable {
                            sup.name AS supplier_name
                     FROM po_line_items pol
                     JOIN purchase_orders po ON po.id = pol.po_id
-                    LEFT JOIN parts p ON p.id = pol.part_id
-                    LEFT JOIN suppliers sup ON sup.id = po.supplier_id
+                    LEFT JOIN parts p ON p.id = pol.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN suppliers sup ON sup.id = po.supplier_id AND sup.deleted_at IS NULL
                     WHERE pol.deleted_at IS NULL AND po.deleted_at IS NULL
                       AND pol.qty_received < pol.qty_ordered
                       AND po.status IN ('sent', 'partial')

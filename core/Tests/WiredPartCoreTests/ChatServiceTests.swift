@@ -416,6 +416,28 @@ struct ChatServiceTests {
         #expect(bridges.contains(where: { $0.supplierName == "ListBridgeSupplier" }))
     }
 
+    @Test("listSupplierBridges falls back to 'Unknown Supplier' when supplier is soft-deleted")
+    func testListSupplierBridgesHidesDeletedSupplierName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "DeletedBridgeSupplier")
+        _ = try env.chat.createSupplierChannel(
+            name: "Hidden Bridge Channel",
+            supplierId: supplierId,
+            supplierDisplayName: "DeletedBridgeSupplier",
+            contactId: nil,
+            role: nil,
+            createdBy: env.adminUserId
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE suppliers SET deleted_at = datetime('now') WHERE id = ?", arguments: [supplierId])
+        }
+
+        let bridges = try env.chat.listSupplierBridges()
+        let bridge = bridges.first(where: { $0.supplierName == "Unknown Supplier" })
+        #expect(bridge != nil)
+        #expect(!bridges.contains(where: { $0.supplierName == "DeletedBridgeSupplier" }))
+    }
+
     // MARK: - Message Attachments
 
     @Test("sendMessageWithAttachments stores message and attachments")

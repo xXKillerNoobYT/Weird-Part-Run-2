@@ -399,6 +399,34 @@ struct WarehouseAuditTests {
         #expect(report.count >= 0)
     }
 
+    @Test("getBackorderReport falls back when part and supplier are soft-deleted")
+    func testGetBackorderReportHidesDeletedPartAndSupplierNames() throws {
+        let env = try freshEnv()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "BackorderSupplier")
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-BO-DEL", supplierId: supplierId, notes: nil)
+        let catId = try E2ETestHelpers.seedCategory(env, name: "BackorderCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "BackorderPart", categoryId: catId)
+        let lineId = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 10, unitPrice: 2.0)
+
+        // Put PO in 'sent' status so it shows up in backorder report
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE purchase_orders SET status = 'sent' WHERE id = ?", arguments: [poId])
+            // Leave qty_received = 0 (default) so it appears as backordered
+        }
+
+        // Soft-delete the part and supplier
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?", arguments: [partId])
+            try db.execute(sql: "UPDATE suppliers SET deleted_at = datetime('now') WHERE id = ?", arguments: [supplierId])
+        }
+
+        let report = try env.warehouse.getBackorderReport()
+        let row = report.first(where: { $0.id == lineId })
+        #expect(row != nil)
+        #expect(row?.partName == "Unknown Part")
+        #expect(row?.supplierName == nil)
+    }
+
     @Test("Turnover report runs without error")
     func testTurnoverReport() throws {
         let env = try freshEnv()

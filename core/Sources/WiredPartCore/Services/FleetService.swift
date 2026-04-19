@@ -1907,7 +1907,7 @@ public final class FleetService: Sendable {
                            COALESCE(mr.cost, 0) AS cost,
                            COALESCE(mr.performed_at, mr.created_at, '') AS performed_at
                     FROM maintenance_records mr
-                    LEFT JOIN vehicles v ON v.id = mr.vehicle_id
+                    LEFT JOIN vehicles v ON v.id = mr.vehicle_id AND v.deleted_at IS NULL
                     LEFT JOIN maintenance_types mt ON mt.id = mr.maintenance_type_id
                     WHERE mr.deleted_at IS NULL
                       AND mr.performed_at >= ? AND mr.performed_at <= ?

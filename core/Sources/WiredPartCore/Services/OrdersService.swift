@@ -2233,7 +2233,7 @@ public final class OrdersService: Sendable {
                        jpo.job_id, j.job_name AS job_name
                 FROM po_line_items li
                 JOIN purchase_orders po ON po.id = li.po_id
-                LEFT JOIN parts p ON p.id = li.part_id
+                LEFT JOIN parts p ON p.id = li.part_id AND p.deleted_at IS NULL
                 LEFT JOIN jpo_line_items jli ON jli.id = li.jpo_line_id
                 LEFT JOIN job_parts_orders jpo ON jpo.id = jli.jpo_id
                 LEFT JOIN jobs j ON j.id = jpo.job_id AND j.deleted_at IS NULL

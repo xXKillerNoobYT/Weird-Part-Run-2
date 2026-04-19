@@ -1544,7 +1544,7 @@ public final class ChatService: Sendable {
                     SELECT sb.id, sb.is_active, sb.last_seen_at,
                            COALESCE(s.name, 'Unknown Supplier') AS supplier_name
                     FROM supplier_channel_bridges sb
-                    LEFT JOIN suppliers s ON s.id = sb.supplier_id
+                    LEFT JOIN suppliers s ON s.id = sb.supplier_id AND s.deleted_at IS NULL
                     ORDER BY s.name ASC
                 """)
                 return rows.map { row -> SupplierBridgeRow in
