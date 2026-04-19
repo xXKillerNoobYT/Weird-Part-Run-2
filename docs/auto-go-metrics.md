@@ -37,6 +37,7 @@
 |------|-----------|------|-------|--------|----------|---------------|-------------|--------------|-------------------|
 | 2026-04-19 | 9 | warehouse | C1_plan_complete | done | 0 gaps — 3 plans totaling 793 lines cover all sub-pages | — | 0 | ~90 | none |
 | 2026-04-19 | 10 | warehouse | C1b_plan_vs_code_drift_clean | done | 6 code-but-not-planned files (WarehouseRouter, ReceivingRoutingFlow, 4 WizardStep levels) | Added "Unplanned Files" plan entries — 0 unresolved drift | 0 | ~180 | none |
+| 2026-04-19 | 11 | warehouse | C2_qa_resolved | done | 0 warehouse-pending Q&A; meta github-sync noted #258 (settings/sync future work) | — | 0 | ~90 | github-sync |
 
 ## Area: jobs (graduated)
 
