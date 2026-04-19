@@ -69,6 +69,7 @@ struct IOSAuditSetupView: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Setup Audit")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

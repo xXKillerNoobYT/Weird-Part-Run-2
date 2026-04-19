@@ -81,6 +81,7 @@ struct IOSMovementWizard: View {
                     HStack(spacing: 8) {
                         Image(systemName: "clock.arrow.circlepath")
                             .foregroundStyle(.blue)
+                            .accessibilityHidden(true)
                         Text("Draft restored — pick up where you left off.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -93,6 +94,7 @@ struct IOSMovementWizard: View {
                                 .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Dismiss draft banner")
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
@@ -239,6 +241,7 @@ struct IOSMovementWizard: View {
                     Image(systemName: "arrow.right")
                         .font(.title3)
                         .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
                     flowBadge(toLocationType, color: .green)
                     Spacer()
                 }
@@ -390,6 +393,7 @@ struct IOSMovementWizard: View {
         HStack {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             TextField("Search by name or code…", text: $partSearchText)
                 .textInputAutocapitalization(.never)
                 .onChange(of: partSearchText) {
