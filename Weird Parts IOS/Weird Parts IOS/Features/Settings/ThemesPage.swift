@@ -55,6 +55,7 @@ struct ThemesPage: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        .accessibilityAddTraits(primaryColor == hex ? .isSelected : [])
                     }
                 }
                 .padding(.vertical, 4)

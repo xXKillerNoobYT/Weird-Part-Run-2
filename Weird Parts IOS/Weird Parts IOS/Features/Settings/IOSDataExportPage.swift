@@ -139,6 +139,7 @@ struct IOSDataExportPage: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .accessibilityAddTraits(selectedTables.contains(table) ? .isSelected : [])
                 }
             }
         }

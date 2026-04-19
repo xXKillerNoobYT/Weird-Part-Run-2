@@ -74,10 +74,11 @@ struct IOSAIConfigPage: View {
                                 if selectedModel == option.0 {
                                     Image(systemName: "checkmark.circle.fill")
                                         .foregroundStyle(Color.accentColor)
-                                        .accessibilityLabel("Status: Selected")
+                                        .accessibilityHidden(true)
                                 }
                             }
                         }
+                        .accessibilityAddTraits(selectedModel == option.0 ? .isSelected : [])
                     }
                 }
 
