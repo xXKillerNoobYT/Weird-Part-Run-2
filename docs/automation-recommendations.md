@@ -4,6 +4,46 @@
 
 ---
 
+## Area: tools — 2026-04-19
+
+**Analyzed:** `ToolsService.swift` (31 public methods, ~1600 lines), 8 iOS Tools pages (dashboard, registry, detail, checkouts, kits, maintenance, admin, router). This area had the cleanest baseline of any area so far: 0 dismiss-safety gaps, 1 a11y gap, 6 is_active gaps, 1 performance fix.
+
+### Codebase Profile (Tools Area)
+
+- **Backend service:** `ToolsService.swift` — 31 public methods, 71 tests (2.3× / 100% breadth)
+- **is_active gaps:** 6 — listTools, listKits, getToolsStats×2, initiateTrade, updateConfidenceScores (JOIN clauses are a new failure mode: JOIN without `t.deleted_at IS NULL AND t.is_active = 1`)
+- **Dismiss-safety gaps:** 0 — first clean area; IOSToolDetailPage was built with all 9 sheet structs correct from the start
+- **A11y gaps:** 1 — IOSToolCheckoutsPage Active/All filterToggle (same `.isSelected` pattern)
+- **Perf fix:** 1 — IOSToolMaintenancePage fetching all tools and filtering in Swift; pushed to SQL
+
+---
+
+### ⚡ Pattern Reinforcement: is_active Defense Hook (now confirmed in 4 areas, 18 total)
+
+**Why:** 18 is_active gaps now confirmed across 4 areas (Tools ×6, People ×5, Orders ×3, Scheduling ×4). JOIN clauses are the newest failure mode — foreign-key JOINs to the tools table were unfiltered even when the primary query had `deleted_at IS NULL`. **The Q&A for this hook (filed in scheduling C13) is now critical-path** — at 18 gaps, the pattern will appear in every remaining area.
+
+**Escalation:** Priority elevates from Medium-High → **High**. No new Q&A needed — escalation note only.
+
+---
+
+### ⚡ Pattern Reinforcement: accessibilityAddTraits(.isSelected) Scanner Rule (3rd occurrence)
+
+**Why:** IOSToolCheckoutsPage Active/All filterToggle is the 3rd occurrence of this pattern (after IOSPermissionsPage hat selector, scheduling filter pills). The pattern consistently appears in horizontal `ScrollView` custom-capsule pickers. The dev-improvement-scanner Phase C4 extension proposed in people C13 is now confirmed necessary.
+
+**No new Q&A needed** — data reinforcement of existing recommendation.
+
+---
+
+### Summary: Running Totals After Tools
+
+| Recommendation | Areas Hit | Gaps Found | Priority | Status |
+|---|---|---|---|---|
+| is_active defense auditor hook | 4/14 | 18 | 🔴 High | ⏳ Q&A pending |
+| Dismiss-safety struct-aware scanner | 5/14 | 22+ | 🟡 Medium-High | ⏳ Q&A pending |
+| accessibilityAddTraits(.isSelected) scanner | 3/14 | 3 | 🟢 Low | ⏳ Q&A pending |
+
+---
+
 ## Area: people — 2026-04-19
 
 **Analyzed:** `PeopleService.swift` (50 public methods, ~1900 lines), 14 iOS People pages (employees, customers, contractors, contacts, teams, hats, permissions, dashboard, router). 7 iterations produced: 9 dismiss-safety fixes (C7), 4 a11y fixes (C7b), 5 is_active defense fixes (C3), 0 test gaps (62 tests / 100% breadth).

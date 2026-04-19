@@ -110,7 +110,13 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 - [2026-04-19] **PeopleService baseline**: 50 public funcs / 62 PeopleServiceTests = 1.24× coverage / 100% breadth. All methods tested. 0 SELECT*, 63 total SELECTs, no N+1 loops.
 
 ### tools
-*(notes accumulate here)*
+- [2026-04-19] **Service profile**: ToolsService 31 public methods, 71 tests (2.3× ratio, 100% breadth). 12 sections: tools list, kits, checkouts, stats, detail, kit contents, version history, condition checkout, edit-with-verification, trades, lost/stolen, maintenance. 5 migrations (006/013/048/049/050).
+- [2026-04-19] **is_active defense gaps (6)**: listTools, listKits, getToolsStats (×2), initiateTrade, getPendingTradesForUser, updateConfidenceScores — all filtered by `deleted_at IS NULL` but not `is_active = 1`. Fixed in commit e4316add. Running systemic total: 18 gaps across 4 services (Scheduling ×4, Orders ×3, People ×5, Tools ×6). Pattern is especially common in JOIN clauses where the tools table is joined but not filtered.
+- [2026-04-19] **allowedToolEditFields allowlist for SQL field interpolation**: `editToolWithVerification` and `approveToolEdit` use `guard Self.allowedToolEditFields.contains(field) else { continue }` before `"UPDATE tools SET \(field) = ..."`. This is the safe pattern for field-level SQL updates. Same whitelisted-setClauses idiom seen in Jobs/Warehouse/Orders. Not a security finding when present.
+- [2026-04-19] **ToolsService trusts auth session**: No `SELECT COUNT(*) FROM users WHERE id = ? AND ...` pre-flight checks before writes. Calls take userId as a parameter and trust the caller. Different from PeopleService/SchedulingService which validate user existence first. Both patterns are intentional by area.
+- [2026-04-19] **First area with 0 dismiss-safety gaps**: All 9 nested sheet structs in IOSToolDetailPage were built with `@State private var isSaving` + `.interactiveDismissDisabled(isSaving)` from the start. Running dismiss-safety total: 22+ gaps across 6 areas (tools=0).
+- [2026-04-19] **1 a11y gap**: IOSToolCheckoutsPage `filterToggle` Active/All buttons missing `.accessibilityAddTraits(.isSelected)`. Same pattern as IOSPermissionsPage hat selector (fixed in people). Fixed in commit e4316add.
+- [2026-04-19] **C9 perf fix**: IOSToolMaintenancePage was calling `listTools()` (all tools) then filtering `.filter { $0.status == "maintenance" }` in Swift. Changed to `listTools(status: "maintenance")` to push filter to SQL. The `status:` parameter existed — page just wasn't using it.
 
 ### vehicles
 *(notes accumulate here)*
