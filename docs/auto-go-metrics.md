@@ -37,6 +37,7 @@
 | 2026-04-18 | 17 | jobs | C1_plan_complete | done | 0 gaps — 3 plans + 1 archived | — | 0 | ~180 | none |
 | 2026-04-18 | 18 | jobs | C1b_plan_vs_code_drift_clean | done | 0 drift — all 10 planned pages present, plan concepts implemented (43 grep hits) | — | 0 | ~120 | none |
 | 2026-04-18 | 19 | jobs | C2_qa_resolved | done | 0 pending Q&A for jobs | — | 0 | ~60 | none |
+| 2026-04-18 | 20 | jobs | C2b_github_issues_ingested | done | 3 jobs issues (all program-review parents) | — | 0 | ~60 | none |
 
 ## Weekly Roll-ups (updated by loop-self-improve)
 
