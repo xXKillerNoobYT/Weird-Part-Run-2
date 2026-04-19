@@ -17,6 +17,19 @@ public final class FleetService: Sendable {
     }
 
     // =========================================================================
+    // MARK: - Error Types
+    // =========================================================================
+
+    public enum FleetError: Error, Sendable, Equatable {
+        case vehicleNotFound(Int64)
+        case userNotFound(Int64)
+        case trailerNotFound(Int64)
+        case invalidQuantity(Int)
+        case invalidFuelLevel(Double)
+        case requiredFieldEmpty(String)
+    }
+
+    // =========================================================================
     // MARK: - Result Types
     // =========================================================================
 
@@ -256,7 +269,7 @@ public final class FleetService: Sendable {
     public func listVehicles(status: String? = nil) throws -> [VehicleListItem] {
         do {
             return try db.writer.read { dbConn -> [VehicleListItem] in
-                var whereClauses = ["v.deleted_at IS NULL"]
+                var whereClauses = ["v.deleted_at IS NULL", "v.is_active = 1"]
                 var args: [(any DatabaseValueConvertible)?] = []
 
                 if let status, !status.isEmpty {
@@ -399,7 +412,7 @@ public final class FleetService: Sendable {
                            mt.name AS maintenance_type_name,
                            COALESCE(u.display_name, u.email) AS performed_by_name
                     FROM maintenance_records mr
-                    LEFT JOIN vehicles v ON v.id = mr.vehicle_id AND v.deleted_at IS NULL
+                    LEFT JOIN vehicles v ON v.id = mr.vehicle_id AND v.deleted_at IS NULL AND v.is_active = 1
                     LEFT JOIN maintenance_types mt ON mt.id = mr.maintenance_type_id
                     LEFT JOIN users u ON u.id = mr.performed_by AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
@@ -453,7 +466,7 @@ public final class FleetService: Sendable {
                            v.vehicle_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS user_name
                     FROM mileage_logs ml
-                    LEFT JOIN vehicles v ON v.id = ml.vehicle_id AND v.deleted_at IS NULL
+                    LEFT JOIN vehicles v ON v.id = ml.vehicle_id AND v.deleted_at IS NULL AND v.is_active = 1
                     LEFT JOIN users u ON u.id = ml.user_id AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY ml.log_date DESC
@@ -501,7 +514,7 @@ public final class FleetService: Sendable {
                            v.vehicle_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS user_name
                     FROM fuel_logs fl
-                    LEFT JOIN vehicles v ON v.id = fl.vehicle_id AND v.deleted_at IS NULL
+                    LEFT JOIN vehicles v ON v.id = fl.vehicle_id AND v.deleted_at IS NULL AND v.is_active = 1
                     LEFT JOIN users u ON u.id = fl.user_id AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY fl.log_date DESC
@@ -535,7 +548,7 @@ public final class FleetService: Sendable {
     public func listTrailers(status: String? = nil) throws -> [TrailerListItem] {
         do {
             return try db.writer.read { dbConn -> [TrailerListItem] in
-                var whereClauses = ["jt.deleted_at IS NULL"]
+                var whereClauses = ["jt.deleted_at IS NULL", "jt.is_active = 1"]
                 var args: [(any DatabaseValueConvertible)?] = []
 
                 if let status, !status.isEmpty {
@@ -579,18 +592,18 @@ public final class FleetService: Sendable {
     /// Get fleet-wide dashboard statistics.
     public func getFleetStats() throws -> FleetStats {
         let totalVehicles = try safeCount(
-            sql: "SELECT COUNT(*) FROM vehicles WHERE deleted_at IS NULL"
+            sql: "SELECT COUNT(*) FROM vehicles WHERE deleted_at IS NULL AND is_active = 1"
         )
 
         let activeVehicles = try safeCount(
-            sql: "SELECT COUNT(*) FROM vehicles WHERE status = 'active' AND deleted_at IS NULL"
+            sql: "SELECT COUNT(*) FROM vehicles WHERE status = 'active' AND deleted_at IS NULL AND is_active = 1"
         )
 
         // Maintenance due: schedules where next_due_date <= today or next_due_miles <= current odometer
         let maintenanceDue = try safeCount(
             sql: """
                 SELECT COUNT(*) FROM maintenance_schedules ms
-                JOIN vehicles v ON v.id = ms.vehicle_id AND v.deleted_at IS NULL
+                JOIN vehicles v ON v.id = ms.vehicle_id AND v.deleted_at IS NULL AND v.is_active = 1
                 WHERE ms.deleted_at IS NULL
                   AND (
                     (ms.next_due_date IS NOT NULL AND date(ms.next_due_date) <= date('now'))
@@ -601,7 +614,7 @@ public final class FleetService: Sendable {
         )
 
         let totalTrailers = try safeCount(
-            sql: "SELECT COUNT(*) FROM job_trailers WHERE deleted_at IS NULL"
+            sql: "SELECT COUNT(*) FROM job_trailers WHERE deleted_at IS NULL AND is_active = 1"
         )
 
         return FleetStats(
@@ -863,7 +876,7 @@ public final class FleetService: Sendable {
                            COALESCE(v.vehicle_name, v.vehicle_number, 'Unknown') AS vehicle_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS inspector_name
                     FROM inspection_records ir
-                    LEFT JOIN vehicles v ON v.id = ir.vehicle_id AND v.deleted_at IS NULL
+                    LEFT JOIN vehicles v ON v.id = ir.vehicle_id AND v.deleted_at IS NULL AND v.is_active = 1
                     LEFT JOIN users u ON u.id = ir.inspector_id AND u.deleted_at IS NULL
                     WHERE ir.deleted_at IS NULL
                     ORDER BY ir.performed_at DESC
@@ -930,7 +943,7 @@ public final class FleetService: Sendable {
                            COALESCE(v.vehicle_name, v.vehicle_number, 'Unknown') AS vehicle_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS driver_name
                     FROM vehicle_location_logs vll
-                    LEFT JOIN vehicles v ON v.id = vll.vehicle_id AND v.deleted_at IS NULL
+                    LEFT JOIN vehicles v ON v.id = vll.vehicle_id AND v.deleted_at IS NULL AND v.is_active = 1
                     LEFT JOIN users u ON u.id = vll.user_id AND u.deleted_at IS NULL
                     WHERE vll.id IN (
                         SELECT MAX(id) FROM vehicle_location_logs
@@ -977,7 +990,13 @@ public final class FleetService: Sendable {
         licensePlate: String?,
         notes: String?
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !vehicleNumber.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw FleetError.requiredFieldEmpty("vehicleNumber")
+        }
+        guard !vehicleName.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw FleetError.requiredFieldEmpty("vehicleName")
+        }
+        return try db.writer.write { dbConn in
             let now = CoreFormatters.nowISO()
             try dbConn.execute(
                 sql: """
@@ -1000,7 +1019,13 @@ public final class FleetService: Sendable {
         trailerType: String,
         notes: String?
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !trailerNumber.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw FleetError.requiredFieldEmpty("trailerNumber")
+        }
+        guard !trailerType.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw FleetError.requiredFieldEmpty("trailerType")
+        }
+        return try db.writer.write { dbConn in
             let now = CoreFormatters.nowISO()
             try dbConn.execute(
                 sql: """
@@ -1021,6 +1046,18 @@ public final class FleetService: Sendable {
         isTakeHome: Bool
     ) throws {
         try db.writer.write { dbConn in
+            // Guard: both vehicle and user must exist and not be tombstoned —
+            // otherwise the INSERT INTO vehicle_assignments would orphan-link
+            // to a soft-deleted parent (the FK constraint allows the write).
+            let vehicleExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM vehicles WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [vehicleId]) ?? 0) > 0
+            guard vehicleExists else { return }
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [userId]) ?? 0) > 0
+            guard userExists else { return }
+
             try dbConn.execute(
                 sql: """
                     INSERT INTO vehicle_assignments
@@ -1073,7 +1110,7 @@ public final class FleetService: Sendable {
                 guard let assignment = try Row.fetchOne(dbConn, sql: """
                     SELECT va.vehicle_id, v.vehicle_name, v.fuel_level
                     FROM vehicle_assignments va
-                    JOIN vehicles v ON va.vehicle_id = v.id AND v.deleted_at IS NULL
+                    JOIN vehicles v ON va.vehicle_id = v.id AND v.deleted_at IS NULL AND v.is_active = 1
                     WHERE va.user_id = ? AND va.is_active = 1 AND va.deleted_at IS NULL
                     ORDER BY va.start_date DESC LIMIT 1
                     """, arguments: [userId]) else {
@@ -1114,7 +1151,7 @@ public final class FleetService: Sendable {
                 let trailer = try Row.fetchOne(dbConn, sql: """
                     SELECT ta.trailer_id, jt.name
                     FROM trailer_attachments ta
-                    JOIN job_trailers jt ON ta.trailer_id = jt.id
+                    JOIN job_trailers jt ON ta.trailer_id = jt.id AND jt.deleted_at IS NULL AND jt.is_active = 1
                     WHERE ta.vehicle_id = ? AND ta.detached_at IS NULL AND ta.deleted_at IS NULL
                     """, arguments: [vehicleId])
 
@@ -1289,7 +1326,19 @@ public final class FleetService: Sendable {
         destinationLocation: String? = nil,
         transferReason: String? = nil
     ) throws {
+        guard !partName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw FleetError.requiredFieldEmpty("partName")
+        }
+        guard quantity > 0 else { throw FleetError.invalidQuantity(quantity) }
+
         try db.writer.write { dbConn in
+            // Guard: vehicle must exist and not be tombstoned — otherwise the INSERT
+            // would create an orphan vehicle_stock row against a decommissioned truck.
+            let vehicleExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM vehicles WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [vehicleId]) ?? 0) > 0
+            guard vehicleExists else { throw FleetError.vehicleNotFound(vehicleId) }
+
             try dbConn.execute(
                 sql: """
                     INSERT INTO vehicle_stock
@@ -1306,12 +1355,16 @@ public final class FleetService: Sendable {
     }
 
     /// Log a fuel fill-up and update the vehicle's fuel_level.
+    /// fuelLevel must be in [0.0, 1.0] — a fraction of a full tank.
     public func logFuelLevel(vehicleId: Int64, fuelLevel: Double) throws {
+        guard fuelLevel >= 0.0 && fuelLevel <= 1.0 else {
+            throw FleetError.invalidFuelLevel(fuelLevel)
+        }
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     UPDATE vehicles SET fuel_level = ?, updated_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [fuelLevel, vehicleId]
             )
@@ -1359,7 +1412,7 @@ public final class FleetService: Sendable {
                     FROM job_trailers jt
                     LEFT JOIN jobs j ON j.id = jt.current_job_id AND j.deleted_at IS NULL
                     LEFT JOIN users u ON u.id = jt.assigned_driver_user_id AND u.deleted_at IS NULL
-                    WHERE jt.id = ? AND jt.deleted_at IS NULL
+                    WHERE jt.id = ? AND jt.deleted_at IS NULL AND jt.is_active = 1
                     """, arguments: [trailerId]) else {
                     return nil
                 }
@@ -1574,7 +1627,7 @@ public final class FleetService: Sendable {
             let isAtShop = locationType == "shop" ? 1 : 0
             try dbConn.execute(sql: """
                 UPDATE job_trailers SET is_at_shop = ?, updated_at = datetime('now')
-                WHERE id = ?
+                WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [isAtShop, trailerId])
         }
     }
@@ -1704,7 +1757,29 @@ public final class FleetService: Sendable {
         result: String, items: [InspectionItemResult],
         notes: String?, odometerReading: Int?, fuelLevel: Double?
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        // Validate fuel level bounds when supplied.
+        if let fl = fuelLevel, fl < 0.0 || fl > 1.0 {
+            throw FleetError.invalidFuelLevel(fl)
+        }
+        return try db.writer.write { dbConn -> Int64 in
+            // Guard: vehicle + inspector must exist and not be tombstoned.
+            // The inspection is an audit-grade record — orphan FK parents here
+            // would corrupt the pre-trip compliance audit trail.
+            let vehicleExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM vehicles WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [vehicleId]) ?? 0) > 0
+            guard vehicleExists else { throw FleetError.vehicleNotFound(vehicleId) }
+            let inspectorExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [inspectorId]) ?? 0) > 0
+            guard inspectorExists else { throw FleetError.userNotFound(inspectorId) }
+            if let tid = trailerId {
+                let trailerExists = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM job_trailers WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [tid]) ?? 0) > 0
+                guard trailerExists else { throw FleetError.trailerNotFound(tid) }
+            }
+
             // Insert the inspection record
             try dbConn.execute(sql: """
                 INSERT INTO inspection_records
@@ -1728,13 +1803,13 @@ public final class FleetService: Sendable {
             if let odometer = odometerReading {
                 try dbConn.execute(sql: """
                     UPDATE vehicles SET current_odometer = ?, updated_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [odometer, vehicleId])
             }
             if let fuel = fuelLevel {
                 try dbConn.execute(sql: """
                     UPDATE vehicles SET fuel_level = ?, updated_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [fuel, vehicleId])
             }
 
