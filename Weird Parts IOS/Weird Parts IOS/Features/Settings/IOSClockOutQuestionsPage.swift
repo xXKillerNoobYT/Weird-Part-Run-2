@@ -184,8 +184,10 @@ struct IOSClockOutQuestionsPage: View {
                     Toggle("Required", isOn: $newQuestionRequired)
                 }
             }
+            .scrollDismissesKeyboard(.immediately)
             .navigationTitle("Add Question")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(!newQuestionText.trimmingCharacters(in: .whitespaces).isEmpty)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { activeSheet = nil }
@@ -220,8 +222,10 @@ struct IOSClockOutQuestionsPage: View {
                     Toggle("Required", isOn: $newQuestionRequired)
                 }
             }
+            .scrollDismissesKeyboard(.immediately)
             .navigationTitle("Edit Question")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(!newQuestionText.trimmingCharacters(in: .whitespaces).isEmpty)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { activeSheet = nil }

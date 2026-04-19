@@ -221,7 +221,10 @@ struct IOSReportTemplatesPage: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .scrollDismissesKeyboard(.immediately)
             .navigationTitle("New Template")
+            .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(!newName.trimmingCharacters(in: .whitespaces).isEmpty)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { activeSheet = nil }

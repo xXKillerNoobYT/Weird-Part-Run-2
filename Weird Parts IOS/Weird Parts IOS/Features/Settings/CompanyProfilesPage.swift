@@ -229,9 +229,10 @@ private struct CompanyProfileEditor: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.immediately)
             .navigationTitle(profile == nil ? "New Profile" : "Edit Profile")
             .navigationBarTitleDisplayMode(.inline)
-            .interactiveDismissDisabled(isSaving)
+            .interactiveDismissDisabled(!companyName.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
