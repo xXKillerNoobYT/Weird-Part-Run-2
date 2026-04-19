@@ -310,4 +310,57 @@ Key service methods:
 
 ---
 
-*Last updated: 2026-03-23*
+---
+
+## 13. Current Implementation Status (added 2026-04-19)
+
+### iOS Files
+
+| File | Lines | Plan Section |
+|------|-------|-------------|
+| `IOSChannelsPage.swift` | 428 | Sections 1–2 (unified inbox, smart cards) |
+| `IOSMessageThreadView.swift` | 806 | Sections 3–5 (thread view, attachments, actions) |
+| `IOSMessageBubble.swift` | 55 | Section 3 (message rendering) |
+| `CreateChannelSheet.swift` | 121 | Section 9 (channel creation) |
+| `IOSQuestionsPage.swift` | 306 | Section 10 (Q&A thread list) |
+| `IOSQAQuestionForm.swift` | 156 | Section 10 (Q&A question form) |
+| `IOSRFIListPage.swift` | 338 | Section 11 (RFI list) |
+| `IOSEscalationTimeline.swift` | 335 | Section 10 (escalation history) |
+| `IOSChatRouter.swift` | 16 | Navigation routing |
+
+**Note:** No dedicated Supplier Bridge list page exists yet — supplier channels are visible via `IOSChannelsPage` unified inbox filter only. Phase 2 item.
+
+### ChatService Method Coverage
+
+| Plan Method | Service Method | Status |
+|------------|----------------|--------|
+| `fetchChannels(filter:)` | `listChannels(userId:)`, `getUnifiedInbox(userId:)` | ✅ |
+| `fetchMessages(channelId:, limit:, before:)` | `getMessages(channelId:, limit:)` | ✅ (no cursor pagination yet) |
+| `sendMessage(channelId:, content:, attachments:)` | `sendMessage` + `sendMessageWithAttachments` | ✅ |
+| `escalateThread(threadId:, direction:, reason:)` | `escalateThread` + `pushBackThread` | ✅ |
+| `markRead(channelId:)` | `markRead` (inferred from unread count) | ✅ |
+| `fetchUnreadCounts()` | `getTotalUnreadCount(userId:)` | ✅ |
+| `createChannel(type:, participants:, jobId:)` | `createChannel(name:, type:, ...)` | ✅ |
+| Auto-save to job notebook | `autoSaveToJobNotebook(channelId:, attachment:, userId:)` | ✅ |
+| JPO Hold threads | `createJPOHoldThread` + `getJPOHoldThread` | ✅ |
+| Supplier bridge | `createSupplierChannel` + `listSupplierChannels` + supplier messaging | ✅ |
+| RFI threading | `IOSRFIListPage` + ChatService channel creation | ✅ |
+| Cursor-based pagination (`before:`) | Not yet implemented — `getMessages` uses limit only | ⏳ Phase 2 |
+| Voice memos | Not in v1 per plan section 5 | ❌ Out of scope |
+
+### Test Coverage
+
+50 ChatService tests covering: channel creation, message sending, Q&A threads, escalation, stats, office channel sync, JPO hold threads, attachments, supplier channels, unread counts.
+
+### Security Implementation
+
+`manage_channels`, `create_rfi`, `view_supplier_channels`, `escalate_to_office` hat permissions enforced at UI level via `IOSChannelsPage` and `IOSMessageThreadView`.
+
+### HIG Notes
+
+- All sheets use `NavigationStack` + `.inline` title
+- Message input bar is pinned to `.safeAreaInset(edge: .bottom)` in `IOSMessageThreadView`
+- Smart card filter bar uses `ScrollView(.horizontal)` with `showsIndicators: false`
+- Thread view uses `LazyVStack` for message list (performance for long threads)
+
+*Last updated: 2026-04-19*
