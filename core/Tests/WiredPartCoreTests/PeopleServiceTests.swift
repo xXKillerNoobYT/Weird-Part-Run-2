@@ -910,4 +910,69 @@ struct PeopleServiceTests {
             try env.people.addContractorRating(contractorId: contractorId, quality: 4.0, onTime: 4.0, reliability: 4.0, ratedBy: env.adminUserId, jobId: nil)
         }
     }
+
+    @Test("addTeamMember rejects inactive user (is_active = 0)")
+    func testAddTeamMember_rejectsInactiveUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let teamId = try env.people.createTeam(name: "Active Guard Team")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        #expect(throws: PeopleService.PeopleError.self) {
+            try env.people.addTeamMember(teamId: teamId, userId: env.adminUserId, role: "member")
+        }
+    }
+
+    @Test("toggleHatAssignment rejects inactive user (is_active = 0)")
+    func testToggleHatAssignment_rejectsInactiveUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let hatId = try env.people.createHat(name: "Active Guard Hat")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        #expect(throws: PeopleService.PeopleError.self) {
+            try env.people.toggleHatAssignment(employeeId: env.adminUserId, hatId: hatId, assign: true)
+        }
+    }
+
+    @Test("addCommunicationEntry rejects inactive createdBy user (is_active = 0)")
+    func testAddCommunicationEntry_rejectsInactiveCreatedByUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let customerId = try env.people.createCustomer(name: "Inactive Guard Corp")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        #expect(throws: PeopleService.PeopleError.self) {
+            try env.people.addCommunicationEntry(customerId: customerId, commType: "call", content: "Test", createdBy: env.adminUserId)
+        }
+    }
+
+    @Test("addContractorNote rejects inactive createdBy user (is_active = 0)")
+    func testAddContractorNote_rejectsInactiveCreatedByUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let contractorId = try env.people.createContractor(companyName: "Inactive Guard Subs")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        #expect(throws: PeopleService.PeopleError.self) {
+            try env.people.addContractorNote(contractorId: contractorId, content: "Test note", createdBy: env.adminUserId)
+        }
+    }
+
+    @Test("addContractorRating rejects inactive ratedBy user (is_active = 0)")
+    func testAddContractorRating_rejectsInactiveRatedByUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let contractorId = try env.people.createContractor(companyName: "Rating Guard Subs")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET is_active = 0 WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        #expect(throws: PeopleService.PeopleError.self) {
+            try env.people.addContractorRating(contractorId: contractorId, quality: 4.0, onTime: 4.0, reliability: 4.0, ratedBy: env.adminUserId, jobId: nil)
+        }
+    }
 }
