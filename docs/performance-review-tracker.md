@@ -8,9 +8,28 @@
 
 ## Latest Run
 
-**Date:** 2026-04-18
-**Area:** parts
-**Iteration:** AUTO GO iter 12
+**Date:** 2026-04-19
+**Area:** chat
+**Iteration:** AUTO GO day 2 iter 7 (C9)
+
+### Files scanned (9 changed chat files, last 7 days)
+
+### Phase results
+- **B SQL patterns:** ✅ CLEAN — `getMessages` has `LIMIT ?` (default 50); `SELECT *` only in `getSupplierBridge` which is a single-row `fetchOne` with `WHERE channel_id = ?`
+- **C N+1 patterns:** ✅ CLEAN — `getAttachmentsForMessages` takes `[Int64]` and uses `IN (?)` batch query; no per-message loops
+- **D Heavy `.onAppear`:** ✅ CLEAN — all loads via `.task` modifier
+- **E Main thread blocks:** ✅ CLEAN — no `DispatchQueue.main.sync` or synchronous FileManager in UI paths
+- **H Memory leaks:** ✅ CLEAN — SwiftUI structs, no `@escaping` closures needing `[weak self]`
+
+### Findings
+**0 findings** — chat area passes performance review.
+
+### Noted
+- `IOSMessageThreadView` attachment picker uses `.onChange(of: searchText) { loadData() }` — intentional (search fires DB query for parts/POs/jobs by name). No change needed.
+
+---
+
+## Run: 2026-04-18 — parts area
 
 ### Files scanned (15 changed parts files, last 7 days)
 - `core/Sources/WiredPartCore/Services/PartsService.swift`

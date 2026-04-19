@@ -292,6 +292,7 @@ The project pivoted to a **native iOS-first** architecture. The earlier Tauri 2.
 - **Sync** — Apple Multipeer Connectivity (BT/Wi-Fi P2P) for device ↔ device. No Tauri LAN HTTP server, no React remote shop server. Change tracking via `_change_log` table. LWW + field-level merge conflict resolution (Q&A #221 pending).
 - **Database path** — iOS Data Protection enforced by default; public directory / shared DB is desktop-only and is not part of the current iOS build.
 - **Cross-platform C10 check:** N/A for the current architecture. AUTO GO's C10 should be marked N/A for all areas until a second platform is reintroduced.
+- **ChatService patterns:** `getMessages()` returns DESC (newest first) — always call `.reversed()` before rendering in a `ForEach`/`List`. Call `markRead(channelId:userId:messageId:)` when a thread is opened, passing the last message ID after reversal (so newest, not oldest). `IOSQAQuestionForm` has no separate `subject` field — `question` is passed as the `subject:` parameter to `createQAThread`.
 
 **Future phases (planned — all have plan files):**
 

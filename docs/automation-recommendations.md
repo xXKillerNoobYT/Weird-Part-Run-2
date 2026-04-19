@@ -4,6 +4,47 @@
 
 ---
 
+## Area: chat — 2026-04-19
+
+**Analyzed:** `ChatService.swift` (38+ public methods, 52 tests), 9 iOS Chat pages (Channels, MessageThread, QAQuestionForm, QuestionsPage, RFIListPage, EscalationTimeline, CreateChannelSheet, ChatRouter, MessageBubble). C3–C11b: 1 critical compile fix, 4 dismiss-safety fixes, 3 accessibilityAddTraits fixes, 1 perf fix (onChange reload), 1 security pass (clean), 1 performance pass (clean).
+
+### Key Findings (for automation targeting)
+
+**1. Compile error: undeclared variable in interactiveDismissDisabled**
+`IOSQAQuestionForm` referenced `subject` (undeclared) in its dismiss guard. Root cause: the `interactiveDismissDisabled` was added in a prior iteration that also added C7 guards, but the variable name was copy-pasted from a form that had both `subject` + `body` fields. Chat's form has only `question`. **Pattern:** Forms with `createQAThread(subject:)` where there's only one text field — the text field IS the subject, don't reference a separate variable.
+
+**2. per-keystroke DB reload anti-pattern**
+`IOSQuestionsPage` had `.onChange(of: searchText) { loadData() }` which fires a DB call on every keystroke. Client-side `filteredThreads` computed property already does the search. Removed the `onChange` — zero regression. **Pattern:** Any `List` view with a `searchText` state + client-side computed filter var should NOT also have `onChange(of: searchText) { loadData() }`.
+
+### No New Scanner Candidates
+
+The chat area was relatively clean (12 areas in rotation now — patterns already well-catalogued). Key pattern reinforcements:
+
+### ⚡ Pattern Reinforcement: accessibilityAddTraits(.isSelected) (12th area, +3 gaps)
+
+Smart filter cards in Channels, Questions, and RFI pages all had the same missing `.accessibilityAddTraits(isActive ? .isSelected : [])` pattern. **Running total: 3 new → all 3 are custom horizontal ScrollView filter cards (same pattern as scheduling pills, tools filterToggle, permissions hat selector).**
+
+**Updated scanner priority: HIGH** — this is the 4th area with this exact pattern. The scanner should target `Button` inside `HStack` inside horizontal `ScrollView` that uses an `isActive: Bool` parameter.
+
+### ⚡ Pattern Reinforcement: Dismiss-Safety (12 areas, 30+ gaps)
+
+Chat added 3 gaps (CreateChannelSheet, IOSQAQuestionForm, PushBackSheet). Running total across all areas: 30+.
+
+**No new Q&A needed** — data reinforcement of Q&A already filed.
+
+### Summary: Running Totals After Chat (12/14 areas)
+
+| Recommendation | Areas Hit | Gaps Found | Priority | Status |
+|---|---|---|---|---|
+| is_active defense auditor hook | 6/14 | 35 | 🔴 Critical | ⏳ Q&A pending |
+| Dismiss-safety struct-aware scanner | 9/14 | 30+ | 🔴 High | ⏳ Q&A pending |
+| Multi-step DB write atomicity scanner | 1/14 | 2 | 🟠 High | ⏳ Q&A pending |
+| GRDB Int? flag default scanner | 1/14 | 1 | 🟠 High | No Q&A yet |
+| accessibilityAddTraits(.isSelected) scanner | 5/14 | 7 | 🟡 Medium | ⏳ Q&A pending |
+| per-keystroke DB reload anti-pattern | 1/14 | 1 | 🟢 Low | Fixed (closed #265) |
+
+---
+
 ## Area: notebooks — 2026-04-19
 
 **Analyzed:** `NotebooksService.swift` (35+ public methods, 56 tests), `PanelScheduleBuilder.swift`, and 8 iOS notebooks pages. Fixed 2 atomicity bugs (C3) + 3 UI improvements (C7/C7b) + 3 coverage tests (C4).
