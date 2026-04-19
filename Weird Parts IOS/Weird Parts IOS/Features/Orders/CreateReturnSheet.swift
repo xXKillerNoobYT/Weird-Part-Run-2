@@ -68,11 +68,16 @@ struct CreateReturnSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") { saveReturn() }
-                        .disabled(reason.isEmpty || isSaving)
-                        .fontWeight(.semibold)
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Create") { saveReturn() }
+                            .disabled(reason.isEmpty)
+                            .fontWeight(.semibold)
+                    }
                 }
             }
             .task { loadSuppliers() }

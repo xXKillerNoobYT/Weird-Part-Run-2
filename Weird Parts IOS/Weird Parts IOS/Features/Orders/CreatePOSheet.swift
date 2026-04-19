@@ -89,11 +89,16 @@ struct CreatePOSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") { savePO() }
-                        .disabled(poNumber.isEmpty || selectedSupplierId == nil || isSaving)
-                        .fontWeight(.semibold)
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Create") { savePO() }
+                            .disabled(poNumber.isEmpty || selectedSupplierId == nil)
+                            .fontWeight(.semibold)
+                    }
                 }
             }
             .task {

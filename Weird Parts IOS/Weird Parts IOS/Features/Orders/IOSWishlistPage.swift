@@ -658,9 +658,13 @@ private struct AddWishlistItemSheet: View {
                         .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") { saveItem() }
-                        .disabled(partName.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
-                        .fontWeight(.semibold)
+                    if isSaving {
+                        ProgressView()
+                    } else {
+                        Button("Add") { saveItem() }
+                            .disabled(partName.trimmingCharacters(in: .whitespaces).isEmpty)
+                            .fontWeight(.semibold)
+                    }
                 }
             }
         }
