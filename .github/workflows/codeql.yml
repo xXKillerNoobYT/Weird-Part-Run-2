@@ -1,0 +1,58 @@
+name: "CodeQL Security Scan"
+
+# Auto-scans all Swift code for security issues and code-quality problems.
+# Free for public repos. Results appear in the repo's Security tab and as
+# PR review comments when a PR is opened against main.
+#
+# Runs on:
+# - Every push to main
+# - Every PR targeting main
+# - Weekly schedule (Monday 2:33 AM UTC) — catches regressions in dependencies
+#
+# Companion to GITHUB FLOW's code-review sub-task (which posts commit
+# comments for direct-to-main commits). CodeQL handles security;
+# GITHUB FLOW handles general code quality.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "33 2 * * 1"
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: macos-latest  # Swift CodeQL requires macOS runners
+    timeout-minutes: 60
+
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ["swift"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # security-and-quality is the broader query pack — catches
+          # both vulnerabilities and code-smell patterns.
+          queries: security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
