@@ -252,9 +252,9 @@ Functional but minimal. Shows status badge, supplier name, tracking, line items 
 
 | Prompt | What | Status |
 |--------|------|--------|
-| 26A | PO list cleanup: platform guard, count badges, date formatting, loadError guard | Queued |
-| 26B | PO list: swipe cancel with AI summary, sort options, awaiting delivery KPI | Queued |
-| 26C | PO detail lifecycle: status-based actions (7 states), Drafting status, confirmations | Written |
-| 26D | PO detail supplier CRM: contact info, score bars, tabbed notes (PO + Supplier) | Written |
-| 26E | Parts Order Management page (NEW): supplier-centric cross-PO view, dual filters, multi-select | Written |
-| 26F | PO detail: job grouping, delivery timeline bars, inline draft editing, receipt history | Written |
+| 26A | PO list cleanup: platform guard, count badges, date formatting, loadError guard | Done |
+| 26B | PO list: swipe cancel with AI summary, sort options, awaiting delivery KPI | Done |
+| 26C | PO detail lifecycle: status-based actions (7 states), Drafting status, confirmations | Done |
+| 26D | PO detail supplier CRM: contact info, score bars, tabbed notes (PO + Supplier) | Done |
+| 26E | Parts Order Management page (NEW): supplier-centric cross-PO view, dual filters, multi-select | Done |
+| 26F | PO detail: job grouping, delivery timeline bars, inline draft editing, receipt history | Done |

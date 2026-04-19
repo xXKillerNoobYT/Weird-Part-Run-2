@@ -159,8 +159,8 @@ Orders
 
 | Prompt | What | Status |
 |--------|------|--------|
-| 27A | JPO list cleanup: ActiveSheet, QR scan, count badges, platform guards, Create JPO button, loadError guard | Queued |
-| 27B | JPO per-part status model: migration for line-item statuses, smart routing (stock check → transfer vs approval) | Queued |
-| 27C | JPO detail redesign: per-part approve/hold/reject, bulk actions, delivery options, PO linkage display | Queued |
-| 27D | JPO Hold + Chat: per-part chat thread, question/answer flow, archive on resolution | Queued |
-| 27E | JPO full audit trail: part change history logging, who-did-what display in part detail | Queued |
+| 27A | JPO list cleanup: ActiveSheet, QR scan, count badges, platform guards, Create JPO button, loadError guard | Done |
+| 27B | JPO per-part status model: migration for line-item statuses, smart routing (stock check → transfer vs approval) | Done |
+| 27C | JPO detail redesign: per-part approve/hold/reject, bulk actions, delivery options, PO linkage display | Done |
+| 27D | JPO Hold + Chat: per-part chat thread, question/answer flow, archive on resolution | Done |
+| 27E | JPO full audit trail: part change history logging, who-did-what display in part detail | Done |

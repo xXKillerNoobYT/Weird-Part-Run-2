@@ -1,6 +1,6 @@
 # iOS Wishlist Enhancements — Design Plan
 
-> **Status:** Design confirmed (from GitHub issue #93 spec)
+> **Status:** ✅ COMPLETE (2026-04-19) — 3-section layout, dismiss reason, auto-approve countdown, certainty scores all implemented. Migration 057b (dismiss_reason, auto_approve_at, certainty_score) added. See `IOSWishlistPage.swift` (711 lines).
 > **Prompt:** `xcode-ai/fix-prompts/PE-033-wishlist-section-layout.md`
 > **GitHub Issue:** #93
 > **Last updated:** 2026-04-04

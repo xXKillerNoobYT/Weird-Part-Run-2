@@ -112,8 +112,8 @@ let appModules: [AppModule] = [
     // 6. Orders — JPOs, POs, procurement
     AppModule(id: "orders", label: "Orders", icon: "cart.fill", tabs: [
         AppTab(id: "orders-jpos", label: "Job Orders", icon: "doc.badge.plus", path: "/orders/jpos"),
-        AppTab(id: "orders-pos", label: "Purchase Orders", icon: "doc.text.fill", path: "/orders/purchase-orders"),
         AppTab(id: "orders-procurement", label: "Procurement", icon: "cart.badge.plus", path: "/orders/procurement"),
+        AppTab(id: "orders-pos", label: "Purchase Orders", icon: "doc.text.fill", path: "/orders/purchase-orders"),
         AppTab(id: "orders-parts", label: "Parts Mgmt", icon: "list.bullet.rectangle.portrait", path: "/orders/parts"),
         AppTab(id: "orders-staging", label: "Stage Planner", icon: "list.clipboard.fill", path: "/orders/staging"),
         AppTab(id: "orders-approvals", label: "Approvals", icon: "checkmark.circle.fill", path: "/orders/approvals"),

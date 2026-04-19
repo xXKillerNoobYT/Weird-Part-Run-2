@@ -184,8 +184,8 @@ Over time, popular AI picks earn enough points to become full companion rules �
 
 | Prompt | What | Status |
 |--------|------|--------|
-| 30A | JPO Creation: 3-panel layout, job auto-fill, delivery options, cart with stock indicators | Queued |
-| 30B | JPO Creation: Smart search with AI context (cart + last 5 searches), QR scan, ⚡ best match | Queued |
-| 30C | JPO Creation: Suggestions panel — companion rules (5) + AI picks (3), context switching on selection | Queued |
-| 30D | JPO Creation: Feedback loop — qty confirm dialog, companion points, ratio learning, AI→rule promotion | Queued |
-| 30E | JPO Creation: Submit flow — create JPO + line items, smart routing, replace IOSUnifiedOrderPage | Queued |
+| 30A | JPO Creation: 3-panel layout, job auto-fill, delivery options, cart with stock indicators | Done |
+| 30B | JPO Creation: Smart search with AI context (cart + last 5 searches), QR scan, ⚡ best match | Done |
+| 30C | JPO Creation: Suggestions panel — companion rules (5) + AI picks (3), context switching on selection | Done |
+| 30D | JPO Creation: Feedback loop — qty confirm dialog, companion points, ratio learning, AI→rule promotion | Done |
+| 30E | JPO Creation: Submit flow — create JPO + line items, smart routing, replace IOSUnifiedOrderPage | Done |

@@ -316,11 +316,11 @@ Orders (workflow order):
 
 | Prompt | What | Status |
 |--------|------|--------|
-| 28A | Procurement redesign: demand consolidation, stock level logic, pull options, smart cards | Queued |
-| 28B | Procurement supplier selection: per-part picking, highlight cheapest/rated/fastest, 2PM cutoff | Queued |
-| 28C | Procurement PO preview + generation: supplier-grouped preview, partial generation, "save for later" | Queued |
-| 28D | Job Stage Planner: stage model, category mapping, held/released parts, auto-release on stage complete | Queued |
-| 29A | Receiving fix: hardcoded user ID, ActiveSheet, platform guard | Queued |
-| 29B | Returns fix: ErrorStateView, console print→UI, platform guard, smart cards | Queued |
-| 29C | Approvals quick dashboard: smart cards, reject reason, fix actionError display, multi-type approvals | Queued |
-| 29D | Orders cleanup: remove UnifiedOrderPage, update router for new tab order, consolidate SupplierPickerSheet | Queued |
+| 28A | Procurement redesign: demand consolidation, stock level logic, pull options, smart cards | Done |
+| 28B | Procurement supplier selection: per-part picking, highlight cheapest/rated/fastest, 2PM cutoff | Done |
+| 28C | Procurement PO preview + generation: supplier-grouped preview, partial generation, "save for later" | Done |
+| 28D | Job Stage Planner: stage model, category mapping, held/released parts, auto-release on stage complete | Done |
+| 29A | Receiving fix: hardcoded user ID, ActiveSheet, platform guard | Done |
+| 29B | Returns fix: ErrorStateView, console print→UI, platform guard, smart cards | Done |
+| 29C | Approvals quick dashboard: smart cards, reject reason, fix actionError display, multi-type approvals | Done (IOSUnifiedApprovalsPage in Office/) |
+| 29D | Orders cleanup: remove UnifiedOrderPage, update router for new tab order, consolidate SupplierPickerSheet | Done (UnifiedOrderPage→stub, router updated) |
