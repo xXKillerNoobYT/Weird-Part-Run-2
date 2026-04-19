@@ -20,11 +20,16 @@ public final class PeopleService: Sendable {
     // MARK: - Error Types
     // =========================================================================
 
-    public enum PeopleError: Error, Sendable {
+    public enum PeopleError: Error, Sendable, Equatable {
         case employeeNotFound(Int64)
         case customerNotFound(Int64)
         case contactNotFound(Int64)
+        case contractorNotFound(Int64)
+        case userNotFound(Int64)
         case cannotDeleteBuiltinHat
+        case requiredFieldEmpty(String)
+        case hatNotFound(Int64)
+        case invalidScore(Double)
     }
 
     // =========================================================================
@@ -685,7 +690,10 @@ public final class PeopleService: Sendable {
         zip: String? = nil,
         notes: String? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("name")
+        }
+        return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO customers (name, company_name, email, phone, address, city, state, zip, notes)
@@ -755,7 +763,10 @@ public final class PeopleService: Sendable {
         trade: String? = nil,
         notes: String? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !companyName.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("companyName")
+        }
+        return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO general_contractors (company_name, contact_name, email, phone, notes)
@@ -770,7 +781,10 @@ public final class PeopleService: Sendable {
     /// Create a new team. Returns the new team's ID.
     @discardableResult
     public func createTeam(name: String, description: String? = nil) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("name")
+        }
+        return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO employee_teams (name, description)
@@ -844,7 +858,7 @@ public final class PeopleService: Sendable {
                            (SELECT MAX(le.clock_in) FROM labor_entries le
                             WHERE le.user_id = u.id AND le.deleted_at IS NULL) AS last_work
                     FROM employee_team_members tm
-                    JOIN users u ON u.id = tm.user_id
+                    JOIN users u ON u.id = tm.user_id AND u.deleted_at IS NULL
                     WHERE tm.team_id = ? AND tm.deleted_at IS NULL
                     ORDER BY u.display_name ASC
                     """, arguments: [teamId])
@@ -902,6 +916,19 @@ public final class PeopleService: Sendable {
     /// Add a user to a team.
     public func addTeamMember(teamId: Int64, userId: Int64, role: String = "member") throws {
         try db.writer.write { dbConn in
+            // Guard: team + user must exist and not be tombstoned — a stale UI could
+            // otherwise create orphan employee_team_members rows against deleted teams
+            // or deleted users, which would be invisible to getTeamMembers (deleted_at
+            // guard on JOIN users) but still polluting the INSERT OR IGNORE dedupe.
+            let teamExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM employee_teams WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [teamId]) ?? 0) > 0
+            guard teamExists else { return }
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [userId]) ?? 0) > 0
+            guard userExists else { throw PeopleError.employeeNotFound(userId) }
+
             try dbConn.execute(
                 sql: """
                     INSERT OR IGNORE INTO employee_team_members (team_id, user_id, role)
@@ -931,7 +958,7 @@ public final class PeopleService: Sendable {
             try dbConn.execute(
                 sql: """
                     UPDATE employee_teams SET name = ?, description = ?, updated_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [name, description, teamId]
             )
@@ -989,7 +1016,10 @@ public final class PeopleService: Sendable {
     /// Create a new hat (role). Returns the new hat's ID.
     @discardableResult
     public func createHat(name: String, description: String? = nil, level: Int = 0) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("name")
+        }
+        return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO hats (name, description, level, is_builtin)
@@ -1034,7 +1064,7 @@ public final class PeopleService: Sendable {
             try dbConn.execute(
                 sql: """
                     UPDATE users SET display_name = ?, email = ?, phone = ?, updated_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [displayName, email, phone, employeeId]
             )
@@ -1064,9 +1094,24 @@ public final class PeopleService: Sendable {
         }
     }
 
-    /// Toggle a hat assignment for an employee.
+    /// Toggle a hat assignment for an employee. Guards FK existence on both user + hat.
     public func toggleHatAssignment(employeeId: Int64, hatId: Int64, assign: Bool) throws {
         try db.writer.write { dbConn in
+            // Guard: employee + hat must exist. Without this pre-check a stale People
+            // UI with a tombstoned user id could mint orphan user_hats rows; the
+            // permission engine would then refuse every action from that user because
+            // the hat lookup via `user_hats JOIN users ON users.deleted_at IS NULL`
+            // would return no rows, leaving the UI puzzled about "assigned but inactive".
+            let employeeExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [employeeId]) ?? 0) > 0
+            guard employeeExists else { throw PeopleError.employeeNotFound(employeeId) }
+            // `hats` is hard-delete only (no deleted_at), so existence is sufficient.
+            let hatExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM hats WHERE id = ?
+                """, arguments: [hatId]) ?? 0) > 0
+            guard hatExists else { throw PeopleError.hatNotFound(hatId) }
+
             if assign {
                 // Check if exists (including soft-deleted)
                 let existing = try Int.fetchOne(dbConn, sql: """
@@ -1460,7 +1505,21 @@ public final class PeopleService: Sendable {
     /// Add a communication entry for a customer.
     @discardableResult
     public func addCommunicationEntry(customerId: Int64, commType: String, content: String, createdBy: Int64) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !commType.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("commType")
+        }
+        guard !content.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("content")
+        }
+        return try db.writer.write { dbConn in
+            let customerExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM customers WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [customerId]) ?? 0) > 0
+            guard customerExists else { throw PeopleError.customerNotFound(customerId) }
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [createdBy]) ?? 0) > 0
+            guard userExists else { throw PeopleError.userNotFound(createdBy) }
             try dbConn.execute(sql: """
                 INSERT INTO customer_communications (customer_id, comm_type, content, created_by)
                 VALUES (?, ?, ?, ?)
@@ -1573,7 +1632,18 @@ public final class PeopleService: Sendable {
     /// Add a note to a contractor.
     @discardableResult
     public func addContractorNote(contractorId: Int64, content: String, createdBy: Int64) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !content.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw PeopleError.requiredFieldEmpty("content")
+        }
+        return try db.writer.write { dbConn in
+            let contractorExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM general_contractors WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [contractorId]) ?? 0) > 0
+            guard contractorExists else { throw PeopleError.contractorNotFound(contractorId) }
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [createdBy]) ?? 0) > 0
+            guard userExists else { throw PeopleError.userNotFound(createdBy) }
             try dbConn.execute(sql: """
                 INSERT INTO contractor_notes (contractor_id, content, created_by)
                 VALUES (?, ?, ?)
@@ -1588,7 +1658,18 @@ public final class PeopleService: Sendable {
         contractorId: Int64, quality: Double, onTime: Double, reliability: Double,
         ratedBy: Int64, jobId: Int64?
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        for score in [quality, onTime, reliability] {
+            guard score >= 0.0 && score <= 5.0 else { throw PeopleError.invalidScore(score) }
+        }
+        return try db.writer.write { dbConn in
+            let contractorExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM general_contractors WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [contractorId]) ?? 0) > 0
+            guard contractorExists else { throw PeopleError.contractorNotFound(contractorId) }
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [ratedBy]) ?? 0) > 0
+            guard userExists else { throw PeopleError.userNotFound(ratedBy) }
             try dbConn.execute(sql: """
                 INSERT INTO contractor_ratings (contractor_id, quality_score, on_time_score, reliability_score, rated_by, job_id)
                 VALUES (?, ?, ?, ?, ?, ?)
@@ -1863,13 +1944,30 @@ public final class PeopleService: Sendable {
         }
     }
 
-    /// Create a payment record (invoice).
+    /// Create a payment record (invoice). Returns 0 if the customer is tombstoned
+    /// (or if jobId is non-nil but references a tombstoned job).
     @discardableResult
     public func createPaymentRecord(
         customerId: Int64, jobId: Int64?, amount: Double, dueDate: String,
         invoiceNumber: String?, createdBy: Int64
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            // Guard: customer must exist and not be tombstoned — otherwise the
+            // INSERT INTO payment_records would create an orphan invoice against a
+            // soft-deleted customer.
+            let customerExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM customers WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [customerId]) ?? 0) > 0
+            guard customerExists else { return 0 }
+
+            // If jobId is provided, it must also not be tombstoned (optional FK).
+            if let jid = jobId {
+                let jobExists = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [jid]) ?? 0) > 0
+                guard jobExists else { return 0 }
+            }
+
             try dbConn.execute(sql: """
                 INSERT INTO payment_records (customer_id, job_id, amount, due_date, invoice_number, created_by)
                 VALUES (?, ?, ?, ?, ?, ?)
@@ -1881,16 +1979,15 @@ public final class PeopleService: Sendable {
     /// Record a payment against an existing invoice.
     public func recordPayment(recordId: Int64, amount: Double, paidDate: String) throws {
         try db.writer.write { dbConn in
-            // Get current record
-            let row = try Row.fetchOne(dbConn, sql: "SELECT amount, COALESCE(paid_amount, 0) as paid FROM payment_records WHERE id = ?", arguments: [recordId])
-            let invoiceAmount = row?["amount"] as Double? ?? 0
-            let currentPaid = row?["paid"] as Double? ?? 0
+            guard let row = try Row.fetchOne(dbConn, sql: "SELECT amount, COALESCE(paid_amount, 0) as paid FROM payment_records WHERE id = ? AND deleted_at IS NULL", arguments: [recordId]) else { return }
+            let invoiceAmount = row["amount"] as Double? ?? 0
+            let currentPaid = row["paid"] as Double? ?? 0
             let newPaid = currentPaid + amount
             let status = newPaid >= invoiceAmount ? "paid" : "partial"
 
             try dbConn.execute(sql: """
                 UPDATE payment_records SET paid_amount = ?, paid_date = ?, status = ?, updated_at = datetime('now')
-                WHERE id = ?
+                WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [newPaid, paidDate, status, recordId])
         }
     }

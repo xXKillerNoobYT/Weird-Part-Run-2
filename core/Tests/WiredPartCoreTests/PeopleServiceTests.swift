@@ -618,4 +618,296 @@ struct PeopleServiceTests {
         #expect(certs.isEmpty == false)
         #expect(certs.first?.employeeName == "Unknown")
     }
+
+    @Test("updateTeam is a no-op on a soft-deleted team")
+    func testUpdateTeam_noOpOnSoftDeletedTeam() throws {
+        let env = try E2ETestHelpers.setUp()
+        let teamId = try env.people.createTeam(name: "OriginalTeam", description: "desc")
+        try env.people.deleteTeam(teamId: teamId)
+        // Regression: UPDATE employee_teams ... WHERE id = ? had no deleted_at guard.
+        try env.people.updateTeam(teamId: teamId, name: "ShouldNotStick", description: nil)
+
+        let name = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT name FROM employee_teams WHERE id = ?", arguments: [teamId])
+        }
+        #expect(name == "OriginalTeam",
+                "Soft-deleted team name must not change — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    @Test("recordPayment is a no-op on a soft-deleted payment record")
+    func testRecordPayment_noOpOnSoftDeletedRecord() throws {
+        let env = try E2ETestHelpers.setUp()
+        let customerId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO customers (name, created_at, updated_at)
+                VALUES ('TestCustomer', datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+        let recordId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO payment_records (customer_id, amount, paid_amount, status, due_date, created_at, updated_at)
+                VALUES (?, 100.0, 0.0, 'unpaid', '2026-01-01', datetime('now'), datetime('now'))
+                """, arguments: [customerId])
+            return db.lastInsertedRowID
+        }
+        // Soft-delete the record
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE payment_records SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [recordId])
+        }
+        // Stale billing UI records a payment — must not mutate a tombstoned invoice
+        try env.people.recordPayment(recordId: recordId, amount: 50.0, paidDate: "2026-04-19")
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT paid_amount, status FROM payment_records WHERE id = ?", arguments: [recordId])
+        }
+        let paid: Double = row?["paid_amount"] ?? -1
+        let status: String = row?["status"] ?? "MUTATED"
+        #expect(paid == 0.0,
+            "Soft-deleted payment_record paid_amount must not change — both SELECT and UPDATE must guard AND deleted_at IS NULL")
+        #expect(status == "unpaid",
+            "Soft-deleted payment_record status must not change — guard must prevent the write entirely")
+    }
+
+    @Test("updateEmployeeContact is a no-op on a soft-deleted user")
+    func testUpdateEmployeeContact_noOpOnSoftDeletedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Capture the original display_name before soft-deleting
+        let originalName = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT display_name FROM users WHERE id = ?", arguments: [env.adminUserId])
+        }
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        // Regression: UPDATE users ... WHERE id = ? had no deleted_at guard,
+        // so a stale HR edit could silently mutate a tombstoned user's contact info.
+        try env.people.updateEmployeeContact(
+            employeeId: env.adminUserId,
+            displayName: "ShouldNotStick",
+            phone: "555-9999",
+            email: "stale@example.com"
+        )
+        let name = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT display_name FROM users WHERE id = ?", arguments: [env.adminUserId])
+        }
+        #expect(name == originalName,
+                "Soft-deleted user display_name must not change — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    @Test("createPaymentRecord creates no orphan row for a soft-deleted customer")
+    func testCreatePaymentRecord_noOrphanForSoftDeletedCustomer() throws {
+        let env = try E2ETestHelpers.setUp()
+        let customerId = try env.people.createCustomer(
+            name: "TombstonedCustomer", companyName: nil, email: nil, phone: nil
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE customers SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [customerId])
+        }
+        // Regression: INSERT INTO payment_records had no pre-check on customers.deleted_at.
+        let id = try env.people.createPaymentRecord(
+            customerId: customerId, jobId: nil, amount: 100.0,
+            dueDate: "2099-12-31", invoiceNumber: "INV-SOFT-1", createdBy: env.adminUserId
+        )
+        #expect(id == 0,
+            "createPaymentRecord must return 0 (no-op) for a tombstoned customer")
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM payment_records WHERE customer_id = ?",
+                             arguments: [customerId]) ?? 0
+        }
+        #expect(count == 0,
+            "Soft-deleted customer must not produce payment_records rows — INSERT must be pre-checked")
+    }
+
+    // MARK: - Input validation — create paths (iter 68)
+
+    @Test("createCustomer rejects blank name")
+    func testCreateCustomer_rejectsBlankName() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("name")) {
+            try env.people.createCustomer(name: "   ", companyName: nil, email: nil, phone: nil)
+        }
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM customers WHERE name = '   '") ?? 0
+        }
+        #expect(count == 0, "Blank-name customer must produce zero rows in the DB")
+    }
+
+    @Test("createTeam rejects blank name")
+    func testCreateTeam_rejectsBlankName() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("name")) {
+            try env.people.createTeam(name: "", description: nil)
+        }
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("name")) {
+            try env.people.createTeam(name: "   ", description: "someDesc")
+        }
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM employee_teams WHERE name = '' OR name = '   '") ?? 0
+        }
+        #expect(count == 0, "Blank-name teams must produce zero rows in the DB")
+    }
+
+    @Test("createContractor rejects blank companyName")
+    func testCreateContractor_rejectsBlankCompanyName() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("companyName")) {
+            try env.people.createContractor(companyName: "  ", contactName: nil, email: nil)
+        }
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM general_contractors WHERE company_name = '  '") ?? 0
+        }
+        #expect(count == 0, "Blank companyName contractor must produce zero rows in the DB")
+    }
+
+    @Test("createHat rejects blank name")
+    func testCreateHat_rejectsBlankName() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("name")) {
+            try env.people.createHat(name: "", description: nil, level: 0)
+        }
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("name")) {
+            try env.people.createHat(name: "   ", description: nil, level: 1)
+        }
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM hats WHERE name = '' OR name = '   '") ?? 0
+        }
+        #expect(count == 0, "Blank-name hats must produce zero rows in the DB")
+    }
+
+    @Test("toggleHatAssignment rejects tombstoned user and non-existent hat")
+    func testToggleHatAssignment_rejectsTombstonedUserOrMissingHat() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Tombstone the admin user
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        #expect(throws: PeopleService.PeopleError.self) {
+            try env.people.toggleHatAssignment(employeeId: env.adminUserId, hatId: 1, assign: true)
+        }
+        // Also reject non-existent hat
+        let env2 = try E2ETestHelpers.setUp()
+        #expect(throws: PeopleService.PeopleError.self) {
+            try env2.people.toggleHatAssignment(employeeId: env2.adminUserId, hatId: 99999, assign: true)
+        }
+    }
+
+    @Test("addTeamMember rejects tombstoned user and silently skips tombstoned team")
+    func testAddTeamMember_guardsTombstonedParents() throws {
+        let env = try E2ETestHelpers.setUp()
+        let teamId = try env.people.createTeam(name: "Guard Team", description: nil)
+        // Tombstone the user
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        #expect(throws: PeopleService.PeopleError.self) {
+            try env.people.addTeamMember(teamId: teamId, userId: env.adminUserId, role: "lead")
+        }
+        // Now tombstone team — should silently return (preserving existing caller
+        // semantic of INSERT OR IGNORE being a safe no-op).
+        let env2 = try E2ETestHelpers.setUp()
+        let teamId2 = try env2.people.createTeam(name: "Tombed Team", description: nil)
+        try env2.db.writer.write { db in
+            try db.execute(sql: "UPDATE employee_teams SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [teamId2])
+        }
+        try env2.people.addTeamMember(teamId: teamId2, userId: env2.adminUserId, role: "member")
+        let count = try env2.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM employee_team_members WHERE team_id = ?
+                """, arguments: [teamId2]) ?? 0
+        }
+        #expect(count == 0,
+            "Tombstoned team must not accumulate phantom member rows")
+    }
+
+    @Test("addCommunicationEntry rejects blank fields")
+    func testAddCommunicationEntry_rejectsBlankFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        let customerId = try env.people.createCustomer(name: "Blank Test Corp")
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("commType")) {
+            try env.people.addCommunicationEntry(customerId: customerId, commType: "  ", content: "hello", createdBy: env.adminUserId)
+        }
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("content")) {
+            try env.people.addCommunicationEntry(customerId: customerId, commType: "email", content: "", createdBy: env.adminUserId)
+        }
+    }
+
+    @Test("addCommunicationEntry rejects tombstoned customer and user")
+    func testAddCommunicationEntry_rejectsTombstonedParents() throws {
+        let env = try E2ETestHelpers.setUp()
+        let customerId = try env.people.createCustomer(name: "Tombstone Corp")
+        // Tombstone customer
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE customers SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [customerId])
+        }
+        #expect(throws: PeopleService.PeopleError.customerNotFound(customerId)) {
+            try env.people.addCommunicationEntry(customerId: customerId, commType: "call", content: "Checked in", createdBy: env.adminUserId)
+        }
+        // Tombstone user
+        let env2 = try E2ETestHelpers.setUp()
+        let customerId2 = try env2.people.createCustomer(name: "Active Corp")
+        try env2.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env2.adminUserId])
+        }
+        #expect(throws: PeopleService.PeopleError.userNotFound(env2.adminUserId)) {
+            try env2.people.addCommunicationEntry(customerId: customerId2, commType: "note", content: "Follow up", createdBy: env2.adminUserId)
+        }
+    }
+
+    @Test("addContractorNote rejects blank content and tombstoned parents")
+    func testAddContractorNote_guardsBlanksAndTombstones() throws {
+        let env = try E2ETestHelpers.setUp()
+        let contractorId = try env.people.createContractor(companyName: "ABC Subs")
+        // Blank content
+        #expect(throws: PeopleService.PeopleError.requiredFieldEmpty("content")) {
+            try env.people.addContractorNote(contractorId: contractorId, content: "   ", createdBy: env.adminUserId)
+        }
+        // Tombstone contractor
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE general_contractors SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [contractorId])
+        }
+        #expect(throws: PeopleService.PeopleError.contractorNotFound(contractorId)) {
+            try env.people.addContractorNote(contractorId: contractorId, content: "Great work", createdBy: env.adminUserId)
+        }
+        // Tombstone user
+        let env2 = try E2ETestHelpers.setUp()
+        let contractorId2 = try env2.people.createContractor(companyName: "XYZ Subs")
+        try env2.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env2.adminUserId])
+        }
+        #expect(throws: PeopleService.PeopleError.userNotFound(env2.adminUserId)) {
+            try env2.people.addContractorNote(contractorId: contractorId2, content: "Reliable", createdBy: env2.adminUserId)
+        }
+    }
+
+    @Test("addContractorRating rejects out-of-range scores and tombstoned parents")
+    func testAddContractorRating_guardsScoresAndTombstones() throws {
+        let env = try E2ETestHelpers.setUp()
+        let contractorId = try env.people.createContractor(companyName: "Score Test Subs")
+        // Score below 0
+        #expect(throws: PeopleService.PeopleError.invalidScore(-1.0)) {
+            try env.people.addContractorRating(contractorId: contractorId, quality: -1.0, onTime: 4.0, reliability: 4.0, ratedBy: env.adminUserId, jobId: nil)
+        }
+        // Score above 5
+        #expect(throws: PeopleService.PeopleError.invalidScore(5.1)) {
+            try env.people.addContractorRating(contractorId: contractorId, quality: 4.0, onTime: 4.0, reliability: 5.1, ratedBy: env.adminUserId, jobId: nil)
+        }
+        // Tombstone contractor
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE general_contractors SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [contractorId])
+        }
+        #expect(throws: PeopleService.PeopleError.contractorNotFound(contractorId)) {
+            try env.people.addContractorRating(contractorId: contractorId, quality: 4.0, onTime: 4.0, reliability: 4.0, ratedBy: env.adminUserId, jobId: nil)
+        }
+    }
 }
