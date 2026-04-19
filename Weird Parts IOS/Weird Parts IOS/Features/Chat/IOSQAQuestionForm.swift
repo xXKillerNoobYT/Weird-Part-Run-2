@@ -75,6 +75,8 @@ struct IOSQAQuestionForm: View {
             }
             .navigationTitle("Ask a Question")
             .navigationBarTitleDisplayMode(.inline)
+            .scrollDismissesKeyboard(.immediately)
+            .interactiveDismissDisabled(!subject.trimmingCharacters(in: .whitespaces).isEmpty || !question.trimmingCharacters(in: .whitespaces).isEmpty)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

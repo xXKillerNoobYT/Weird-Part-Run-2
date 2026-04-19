@@ -205,6 +205,7 @@ struct IOSMessageThreadView: View {
                     .padding(.horizontal)
                     .padding(.vertical, 8)
                 }
+                .scrollDismissesKeyboard(.immediately)
                 .refreshable {
                     loadMessages()
                 }
