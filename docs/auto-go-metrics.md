@@ -77,3 +77,7 @@ _(empty — first roll-up on first Sunday after install)_
 - **Automation-recommendation uptake** — adopted / deferred / ignored ratios per category
 
 Self-improvements are applied autonomously for safe changes (reordering, enabling/disabling checks, adding chained skills) and filed as Q&A for the user when larger (new areas, new routines, architecture).
+
+| 2026-04-19 | 15 | warehouse | C5+C6+C7 | done | 2 findings (dismiss-safety gaps) | 2 applied (IOSAuditSetupView + WizardAddStorageUnitSheet) | 0 | ~450 | none |
+| 2026-04-19 | 16 | warehouse | C7b | done | 4 findings (1 missing accessibilityLabel, 3 missing accessibilityHidden, 1 missing scrollDismissesKeyboard) | 5 applied | 0 | ~420 | none |
+| 2026-04-19 | 17 | warehouse | C8_security_reviewed | done | 0 findings (M1/M3/M4/M10 clean; 1 setClauses.joined at :1702 = safe GRDB idiom per memory) | — | 0 | ~180 | none |
