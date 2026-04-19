@@ -164,7 +164,22 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 *(notes accumulate here)*
 
 ### settings
-*(notes accumulate here)*
+
+**Service profile:** SettingsService is a broad catch-all service — covers theme, company profiles, business profiles, break policies, tool policies, pre-trip checklists, dispatch preferences, forecast settings, clock-out questions, saved reports, daily report templates, audit settings, org thresholds, device keys, app config, and setup wizard draft (22+ logical subsystems). 53 tests.
+
+**`company_profiles` soft-delete pattern:** Uses only `deleted_at` (no `is_active` column). `WHERE deleted_at IS NULL` is the correct filter — do NOT flag this as an `is_active` gap.
+
+**`exportTable()` SQL table-name pattern:** Validates caller-supplied table name via parameterized `sqlite_master` lookup, then uses the DB-returned value in the query string. This is safe — same category as the GRDB partial-UPDATE allowlist idiom. Do not flag as injection risk.
+
+**Permission gates:** `manage_settings` gates export/backup operations (IOSDataExportPage, IOSBackupsPage). `manage_devices` gates force-logout (SecurityAdminPage) and DB reset approval (IOSDatabaseResetPage). Full-view gating pattern used (not just button-disabled).
+
+**Settings pages use explicit Save buttons** (not auto-save toggles). Dirty-tracking for navigated pages (#129) is lower priority because users must intentionally press Save — accidental data loss is not a concern the way it is for sheet dismissal.
+
+**35 iOS settings files** — more than any other area. Covers company setup, integrations, sync/bluetooth, AI config, key management, data export, device management, billing, audit, report templates, clock-out questions, pre-trip checklists, break settings, dispatch preferences, org thresholds, theme, notifications, security admin, DB reset, backups, shared channels, bootstrap admin, update protocol, supplier bridge.
+
+**Accessibility wins (iter 56):** ThemesPage color pickers + IOSAIConfigPage model selector + IOSDataExportPage table checkboxes all needed `.accessibilityAddTraits(.isSelected)`. SyncScopeIndicator compact and full icons both needed `.accessibilityHidden(true)`.
+
+**HIG tap target (iter 56):** ThemesPage 36×36 color buttons fixed with `.frame(minWidth:44, minHeight:44).contentShape(Rectangle())`. DIS-017 partially done.
 
 ### cross-cutting
 *(notes accumulate here)*

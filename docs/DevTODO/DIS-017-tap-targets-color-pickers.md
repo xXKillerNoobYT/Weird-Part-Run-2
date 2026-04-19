@@ -2,7 +2,7 @@
 source: dev-improvement-scanner (2026-04-17 run 15)
 severity: High
 category: Apple HIG — Tap Target Accessibility
-status: OPEN
+status: PARTIALLY_DONE — ThemesPage.swift fixed directly (AUTO GO iter 56, commit 3f16166a). CategoriesColorPicker + IOSScheduleConfigPage remain.
 github_issue: #246
 ---
 

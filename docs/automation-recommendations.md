@@ -4,6 +4,33 @@
 
 ---
 
+## Area: settings — 2026-04-20
+
+**Analyzed:** `SettingsService.swift` (22+ subsystems, 53 tests), 35 iOS Settings pages. C7b: 4 accessibility fixes; C8: clean; C9: clean; ThemesPage HIG fix; 5 GitHub issues tracked.
+
+### Key Findings
+
+**1. `.isSelected` trait extends to selection GRIDS, not just filter pills**
+Prior areas found `.isSelected` gaps on filter pill cards and hat-selector rows. Settings adds a new shape: color picker grids (`LazyVGrid` with `ForEach` Buttons). ThemesPage color swatches, IOSAIConfigPage model rows, and IOSDataExportPage table checkboxes all had the same gap. **Scanner rule update:** Any `Button` in a `ForEach` loop that sets a selection variable (color, model, Set membership) should have `.accessibilityAddTraits(isSelected ? .isSelected : [])`.
+
+**Updated scanner priority: HIGH** — running total now 13 gaps / 7 areas across filter pills, hat selectors, and selection grids.
+
+**2. Full-view permission gating (confirmed pattern)**
+IOSDataExportPage and IOSBackupsPage gate the entire form content via `if canExport { exportForm } else { ContentUnavailableView(...) }`. This is stronger than `button.disabled(...)` and is the correct pattern for destructive data operations. No automation opportunity here — pattern is being followed correctly. Scanner should recognize this as a positive pattern.
+
+**3. sqlite_master table-name validation (safe SQL pattern, 2nd confirmation)**
+`exportTable()` validates caller-supplied table name against `sqlite_master` before interpolating into SQL. First seen in WarehouseService; now confirmed in SettingsService. The is-safe pattern: parameterized `WHERE name = ?` lookup on `sqlite_master`, then use the DB-returned name (not the original string). **Scanner rule update:** The SQL interpolation scanner must add this as a known-safe exemption (alongside the GRDB partial-UPDATE allowlist idiom).
+
+### ⚡ Pattern Reinforcement: accessibilityAddTraits(.isSelected)
+
+Running total: **13 gaps / 7 areas** (parts, jobs, tools, people, chat, settings + scheduling pills). Pattern now confirmed across 3 structural types: horizontal filter ScrollViews, multi-option picker rows (ForEach in Form), and LazyVGrid color/option selectors.
+
+### ⚡ Pattern Reinforcement: Dismiss-Safety
+
+Running total: **33+ gaps / 10 areas**. Settings contributed 3 (IOSClockOutQuestionsPage ×2, CompanyProfilesPage, IOSReportTemplatesPage). Dismiss-safety Q&A automation proposal still pending user approval (see dev-qa.md).
+
+---
+
 ## Area: chat — 2026-04-19
 
 **Analyzed:** `ChatService.swift` (38+ public methods, 52 tests), 9 iOS Chat pages (Channels, MessageThread, QAQuestionForm, QuestionsPage, RFIListPage, EscalationTimeline, CreateChannelSheet, ChatRouter, MessageBubble). C3–C11b: 1 critical compile fix, 4 dismiss-safety fixes, 3 accessibilityAddTraits fixes, 1 perf fix (onChange reload), 1 security pass (clean), 1 performance pass (clean).
