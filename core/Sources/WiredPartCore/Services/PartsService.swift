@@ -1138,7 +1138,7 @@ public final class PartsService: Sendable {
                     sql: """
                         SELECT psl.supplier_id, s.name AS supplier_name, psl.supplier_part_number
                         FROM part_supplier_links psl
-                        JOIN suppliers s ON s.id = psl.supplier_id
+                        JOIN suppliers s ON s.id = psl.supplier_id AND s.deleted_at IS NULL
                         JOIN parts p ON p.id = psl.part_id
                         WHERE p.color_id = ? AND psl.deleted_at IS NULL AND p.deleted_at IS NULL
                         GROUP BY psl.supplier_id
@@ -1654,7 +1654,7 @@ public final class PartsService: Sendable {
                     sql: """
                         SELECT psl.*, s.name AS supplier_name
                         FROM part_supplier_links psl
-                        JOIN suppliers s ON s.id = psl.supplier_id
+                        JOIN suppliers s ON s.id = psl.supplier_id AND s.deleted_at IS NULL
                         WHERE psl.part_id = ? AND psl.deleted_at IS NULL
                         ORDER BY psl.is_preferred DESC, s.name ASC
                         """,
@@ -4811,26 +4811,24 @@ public final class PartsService: Sendable {
                     """, arguments: [srcCat, tgtCat])
             }
 
-            // 2. Log to companion_feedback table only when a real suggestion ID is available.
-            // suggestion_id has a NOT NULL FK to companion_suggestions — skip the log entry
-            // when no upstream suggestion record exists (e.g., direct AI-generated suggestion).
-            if let sid = suggestionId {
-                try dbConn.execute(sql: """
-                    INSERT INTO companion_feedback
-                        (suggestion_id, action, suggested_qty, final_qty,
-                         source_categories, target_category_id, target_style_id, user_id, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-                    """, arguments: [
-                        sid,
-                        source == "companion" ? "accepted_companion" : "accepted_ai",
-                        suggestedQty,
-                        acceptedQty,
-                        String(srcCat),
-                        tgtCat,
-                        tgtStyle,
-                        userId
-                    ])
-            }
+            // 2. Log to companion_feedback — suggestion_id is now nullable (migration 075)
+            // so every acceptance is recorded even for direct AI suggestions without a prior
+            // companion_suggestions row.
+            try dbConn.execute(sql: """
+                INSERT INTO companion_feedback
+                    (suggestion_id, action, suggested_qty, final_qty,
+                     source_categories, target_category_id, target_style_id, user_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                """, arguments: [
+                    suggestionId,
+                    source == "companion" ? "accepted_companion" : "accepted_ai",
+                    suggestedQty,
+                    acceptedQty,
+                    String(srcCat),
+                    tgtCat,
+                    tgtStyle,
+                    userId
+                ])
         }
     }
 
@@ -5000,7 +4998,8 @@ public final class PartsService: Sendable {
             let hasPower = try Int.fetchOne(dbConn, sql: """
                 SELECT COUNT(*) FROM user_hats uh
                 JOIN hat_permissions hp ON hp.hat_id = uh.hat_id
-                WHERE uh.user_id = ? AND uh.is_active = 1 AND hp.permission_key = 'companion_vote_power'
+                WHERE uh.user_id = ? AND uh.is_active = 1 AND uh.deleted_at IS NULL
+                  AND hp.permission_key = 'companion_vote_power'
                 """, arguments: [userId]) ?? 0
 
             try dbConn.execute(sql: """
@@ -6310,6 +6309,7 @@ public final class PartsService: Sendable {
                            EXISTS(SELECT 1 FROM user_hats uh
                                   JOIN hat_permissions hp ON hp.hat_id = uh.hat_id
                                   WHERE uh.user_id = u.id AND uh.is_active = 1
+                                  AND uh.deleted_at IS NULL
                                   AND hp.permission_key = 'companion_vote_power') AS has_power
                     FROM users u WHERE u.is_active = 1 AND u.deleted_at IS NULL
                     ORDER BY u.display_name ASC

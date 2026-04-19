@@ -397,6 +397,34 @@ struct PartsServiceInventoryTests {
         #expect(!users.contains(where: { $0.displayName == "Inactive User" }))
     }
 
+    @Test("getActiveUsersWithVotePower reports has_power=false when user_hats row was revoked")
+    func testGetActiveUsersWithVotePower_revokedHatLosesPower() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Baseline: admin user has voting power via seeded Admin hat.
+        let before = try env.parts.getActiveUsersWithVotePower()
+        let adminBefore = try #require(before.first { $0.id == env.adminUserId })
+        #expect(adminBefore.hasPower,
+                "Seeded admin must start with companion_vote_power from their Admin hat")
+
+        // Revoke the Admin hat assignment (soft-delete user_hats row).
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE user_hats SET deleted_at = datetime('now')
+                    WHERE user_id = ? AND hat_id = (SELECT id FROM hats WHERE name = 'Admin')
+                    """,
+                arguments: [env.adminUserId]
+            )
+        }
+
+        // After revocation: user still exists, but hasPower must be false.
+        let after = try env.parts.getActiveUsersWithVotePower()
+        let adminAfter = try #require(after.first { $0.id == env.adminUserId })
+        #expect(!adminAfter.hasPower,
+                "Revoked hat assignments (user_hats.deleted_at set) must not grant vote power")
+    }
+
     // MARK: - getPollHistory
 
     @Test("getPollHistory returns empty array when no finalized polls exist")
@@ -442,5 +470,27 @@ struct PartsServiceInventoryTests {
         let catId = try E2ETestHelpers.seedCategory(env, name: "CoOccurrenceCat")
         let result = try env.parts.getJobsWithCategoryCoOccurrence(categoryIds: [catId])
         #expect(result.isEmpty)
+    }
+
+    @Test("recordCompanionFeedback logs entry even without a suggestionId")
+    func testRecordCompanionFeedback_logsWithoutSuggestionId() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catA = try E2ETestHelpers.seedCategory(env, name: "FBCatA")
+        let catB = try E2ETestHelpers.seedCategory(env, name: "FBCatB")
+        let partA = try env.parts.createPart(categoryId: catA, name: "FBPartA", typeId: nil, colorId: nil, brandId: nil)
+        let partB = try env.parts.createPart(categoryId: catB, name: "FBPartB", typeId: nil, colorId: nil, brandId: nil)
+
+        // Call with no suggestionId — previously silently skipped the log entry
+        try env.parts.recordCompanionFeedback(
+            sourcePartId: partA, targetPartId: partB,
+            suggestedQty: 2, acceptedQty: 1,
+            source: "ai", userId: env.adminUserId,
+            suggestionId: nil
+        )
+
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM companion_feedback WHERE suggestion_id IS NULL") ?? 0
+        }
+        #expect(count == 1)
     }
 }

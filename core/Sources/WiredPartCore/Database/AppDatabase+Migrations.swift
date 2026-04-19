@@ -111,6 +111,7 @@ extension AppDatabase {
         registerMigration072CompanySetupDraft(&migrator)
         registerMigration073FloorPlanGridDimensions(&migrator)
         registerMigration074ColorBrandSKUs(&migrator)
+        registerMigration075CompanionFeedbackNullableSuggestionId(&migrator)
     }
 
     // MARK: - Migration 039: Notebook Templates
@@ -4927,6 +4928,38 @@ extension AppDatabase {
                         """, arguments: [perm.key, hatName])
                 }
             }
+        }
+    }
+
+    // MARK: - Migration 075: companion_feedback — make suggestion_id nullable
+
+    private static func registerMigration075CompanionFeedbackNullableSuggestionId(_ migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("075_companion_feedback_nullable_suggestion_id") { db in
+            try db.execute(sql: """
+                CREATE TABLE companion_feedback_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    suggestion_id INTEGER REFERENCES companion_suggestions,
+                    rule_id INTEGER REFERENCES companion_rules,
+                    action TEXT NOT NULL,
+                    suggested_qty INTEGER NOT NULL,
+                    final_qty INTEGER,
+                    source_categories TEXT,
+                    target_category_id INTEGER,
+                    target_style_id INTEGER,
+                    user_id INTEGER REFERENCES users,
+                    created_at TEXT DEFAULT (datetime('now'))
+                )
+                """)
+            try db.execute(sql: """
+                INSERT INTO companion_feedback_new
+                    (id, suggestion_id, rule_id, action, suggested_qty, final_qty,
+                     source_categories, target_category_id, target_style_id, user_id, created_at)
+                SELECT id, suggestion_id, rule_id, action, suggested_qty, final_qty,
+                       source_categories, target_category_id, target_style_id, user_id, created_at
+                FROM companion_feedback
+                """)
+            try db.execute(sql: "DROP TABLE companion_feedback")
+            try db.execute(sql: "ALTER TABLE companion_feedback_new RENAME TO companion_feedback")
         }
     }
 }
