@@ -44,6 +44,7 @@ struct CategoryFormSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .accessibilityIdentifier("categoryFormSheet")
             .navigationTitle(category == nil ? "New Category" : "Edit Category")
             .navigationBarTitleDisplayMode(.inline)
@@ -143,6 +144,7 @@ struct StyleFormSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .accessibilityIdentifier("styleFormSheet")
             .navigationTitle(style == nil ? "New Style" : "Edit Style")
             .navigationBarTitleDisplayMode(.inline)
@@ -242,6 +244,7 @@ struct TypeFormSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .accessibilityIdentifier("typeFormSheet")
             .navigationTitle(type == nil ? "New Type" : "Edit Type")
             .navigationBarTitleDisplayMode(.inline)
@@ -444,6 +447,7 @@ struct ColorFormSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .accessibilityIdentifier("colorFormSheet")
             .navigationTitle(color == nil ? "New Color" : "Edit Color")
             .navigationBarTitleDisplayMode(.inline)

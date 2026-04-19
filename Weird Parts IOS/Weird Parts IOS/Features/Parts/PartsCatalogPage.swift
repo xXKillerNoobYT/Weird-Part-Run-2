@@ -1252,6 +1252,15 @@ private struct QuickEditSheet: View {
     @State private var markupPercent: String = ""
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var originalName: String = ""
+    @State private var originalCode: String = ""
+    @State private var originalCostPrice: String = ""
+    @State private var originalMarkup: String = ""
+
+    private var isDirty: Bool {
+        name != originalName || code != originalCode ||
+        costPrice != originalCostPrice || markupPercent != originalMarkup
+    }
 
     private var sellPrice: Double {
         let cost = Double(costPrice) ?? 0
@@ -1311,6 +1320,7 @@ private struct QuickEditSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
@@ -1319,11 +1329,16 @@ private struct QuickEditSheet: View {
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isSaving)
                 }
             }
+            .interactiveDismissDisabled(isDirty || isSaving)
             .onAppear {
                 name = part.name
                 code = part.code ?? ""
                 costPrice = String(format: "%.2f", part.companyCostPrice)
                 markupPercent = String(format: "%.1f", part.companyMarkupPercent)
+                originalName = part.name
+                originalCode = part.code ?? ""
+                originalCostPrice = costPrice
+                originalMarkup = markupPercent
             }
             .alert("Error", isPresented: Binding(
                 get: { saveError != nil },
