@@ -35,6 +35,7 @@
 | date | iteration | area | check | status | findings | fixes_applied | tests_added | duration_sec | meta_checks_fired |
 |------|-----------|------|-------|--------|----------|---------------|-------------|--------------|-------------------|
 | 2026-04-18 | 17 | jobs | C1_plan_complete | done | 0 gaps — 3 plans + 1 archived | — | 0 | ~180 | none |
+| 2026-04-18 | 18 | jobs | C1b_plan_vs_code_drift_clean | done | 0 drift — all 10 planned pages present, plan concepts implemented (43 grep hits) | — | 0 | ~120 | none |
 
 ## Weekly Roll-ups (updated by loop-self-improve)
 
