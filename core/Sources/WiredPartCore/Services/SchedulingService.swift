@@ -227,8 +227,8 @@ public final class SchedulingService: Sendable {
                            COALESCE(j.job_name, 'Unassigned') AS job_name,
                            COALESCE(u.display_name, u.email) AS user_name
                     FROM job_dispatch jd
-                    LEFT JOIN jobs j ON j.id = jd.job_id
-                    LEFT JOIN users u ON u.id = jd.user_id
+                    LEFT JOIN jobs j ON j.id = jd.job_id AND j.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = jd.user_id AND u.deleted_at IS NULL
                     WHERE jd.user_id = ?
                       AND jd.dispatch_date >= ?
                       AND jd.dispatch_date <= ?
@@ -272,8 +272,8 @@ public final class SchedulingService: Sendable {
                            COALESCE(j.job_name, 'Unassigned') AS job_name,
                            NULL AS vehicle_name
                     FROM job_dispatch jd
-                    LEFT JOIN users u ON u.id = jd.user_id
-                    LEFT JOIN jobs j ON j.id = jd.job_id
+                    LEFT JOIN users u ON u.id = jd.user_id AND u.deleted_at IS NULL
+                    LEFT JOIN jobs j ON j.id = jd.job_id AND j.deleted_at IS NULL
                     WHERE jd.dispatch_date = ?
                       AND jd.deleted_at IS NULL
                     ORDER BY u.display_name ASC
@@ -585,7 +585,7 @@ public final class SchedulingService: Sendable {
                            COALESCE(ss.status, 'scheduled') AS status
                     FROM subcontractor_schedules ss
                     LEFT JOIN general_contractors gc ON gc.id = ss.gc_id
-                    LEFT JOIN jobs j ON j.id = ss.job_id
+                    LEFT JOIN jobs j ON j.id = ss.job_id AND j.deleted_at IS NULL
                     WHERE ss.scheduled_date = ?
                     ORDER BY sub_name
                     """
@@ -745,8 +745,8 @@ public final class SchedulingService: Sendable {
                            COALESCE(j.job_name, 'Unassigned') AS job_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS employee_name
                     FROM job_dispatch jd
-                    LEFT JOIN jobs j ON j.id = jd.job_id
-                    LEFT JOIN users u ON u.id = jd.user_id
+                    LEFT JOIN jobs j ON j.id = jd.job_id AND j.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = jd.user_id AND u.deleted_at IS NULL
                     WHERE jd.dispatch_date >= ?
                       AND jd.dispatch_date <= ?
                       AND jd.deleted_at IS NULL
@@ -1016,8 +1016,8 @@ public final class SchedulingService: Sendable {
                            COALESCE(j.job_name, 'Unassigned') AS job_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS user_name
                     FROM job_dispatch jd
-                    LEFT JOIN jobs j ON j.id = jd.job_id
-                    LEFT JOIN users u ON u.id = jd.user_id
+                    LEFT JOIN jobs j ON j.id = jd.job_id AND j.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = jd.user_id AND u.deleted_at IS NULL
                     WHERE jd.dispatch_date = ?
                       AND jd.deleted_at IS NULL
                     ORDER BY COALESCE(jd.time_slot, 'full'), u.display_name ASC
@@ -1467,7 +1467,11 @@ public final class SchedulingService: Sendable {
                         AND jd.deleted_at IS NULL
                         AND jd.dispatch_date >= ? AND jd.dispatch_date <= ?
                     WHERE u.deleted_at IS NULL AND u.is_active = 1
-                      AND u.id NOT IN (SELECT uh.user_id FROM user_hats uh JOIN hats h ON h.id = uh.hat_id WHERE h.name = 'Admin')
+                      AND u.id NOT IN (
+                          SELECT uh.user_id FROM user_hats uh
+                          JOIN hats h ON h.id = uh.hat_id
+                          WHERE h.name = 'Admin' AND uh.deleted_at IS NULL
+                      )
                     GROUP BY u.id
                     HAVING dispatch_count > 0
                     ORDER BY scheduled_hours DESC

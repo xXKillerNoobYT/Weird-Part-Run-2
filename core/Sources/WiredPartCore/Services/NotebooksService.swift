@@ -187,8 +187,8 @@ public final class NotebooksService: Sendable {
                            COALESCE((SELECT COUNT(*) FROM notebook_entries ne
                                      WHERE ne.notebook_id = n.id AND ne.deleted_at IS NULL), 0) AS entry_count
                     FROM notebooks n
-                    LEFT JOIN jobs j ON j.id = n.job_id
-                    LEFT JOIN users u ON u.id = n.created_by
+                    LEFT JOIN jobs j ON j.id = n.job_id AND j.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = n.created_by AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY n.updated_at DESC
                     """
@@ -227,8 +227,8 @@ public final class NotebooksService: Sendable {
                        j.job_name,
                        COALESCE(u.display_name, u.email, 'Unknown') AS created_by_name
                 FROM notebooks n
-                LEFT JOIN jobs j ON j.id = n.job_id
-                LEFT JOIN users u ON u.id = n.created_by
+                LEFT JOIN jobs j ON j.id = n.job_id AND j.deleted_at IS NULL
+                LEFT JOIN users u ON u.id = n.created_by AND u.deleted_at IS NULL
                 WHERE n.id = ? AND n.deleted_at IS NULL
                 """
             guard let headerRow = try Row.fetchOne(dbConn, sql: headerSQL, arguments: [id]) else {
@@ -245,7 +245,7 @@ public final class NotebooksService: Sendable {
                        ne.warranty_timer_end, COALESCE(ne.is_question, 0) as is_question,
                        COALESCE(u.display_name, u.email, 'Unknown') AS created_by_name
                 FROM notebook_entries ne
-                LEFT JOIN users u ON u.id = ne.created_by
+                LEFT JOIN users u ON u.id = ne.created_by AND u.deleted_at IS NULL
                 WHERE ne.notebook_id = ? AND ne.deleted_at IS NULL
                 ORDER BY ne.sort_order ASC, ne.created_at ASC
                 """
@@ -590,7 +590,7 @@ public final class NotebooksService: Sendable {
                            ne.warranty_timer_end, COALESCE(ne.is_question, 0) as is_question,
                            COALESCE(u.display_name, u.email, 'Unknown') AS created_by_name
                     FROM notebook_entries ne
-                    LEFT JOIN users u ON u.id = ne.created_by
+                    LEFT JOIN users u ON u.id = ne.created_by AND u.deleted_at IS NULL
                     INNER JOIN notebooks n ON n.id = ne.notebook_id
                     WHERE n.job_id = ? AND n.deleted_at IS NULL
                           AND ne.deleted_at IS NULL
@@ -906,7 +906,7 @@ public final class NotebooksService: Sendable {
                            ne.warranty_timer_end, COALESCE(ne.is_question, 0) as is_question,
                            COALESCE(u.display_name, u.email, 'Unknown') AS created_by_name
                     FROM notebook_entries ne
-                    LEFT JOIN users u ON u.id = ne.created_by
+                    LEFT JOIN users u ON u.id = ne.created_by AND u.deleted_at IS NULL
                     WHERE ne.section_id IN (SELECT id FROM notebook_sections WHERE notebook_id = ? AND deleted_at IS NULL)
                       AND ne.deleted_at IS NULL AND ne.is_deleted = 0
                     ORDER BY ne.sort_order ASC, ne.created_at ASC

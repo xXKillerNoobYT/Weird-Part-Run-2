@@ -1352,4 +1352,18 @@ struct NotebooksServiceTests {
         }
         #expect(notebookId == nbId)
     }
+
+    @Test("listNotebooks hides job name for soft-deleted job")
+    func testListNotebooksHidesDeletedJobName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        _ = try env.notebooks.createNotebook(title: "Job NB", notebookType: "job", jobId: jobId, createdBy: env.adminUserId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?", arguments: [jobId])
+        }
+        let notebooks = try env.notebooks.listNotebooks()
+        #expect(notebooks.isEmpty == false)
+        // jobName is nil when the job is soft-deleted (LEFT JOIN returns NULL)
+        #expect(notebooks.first?.jobName == nil)
+    }
 }

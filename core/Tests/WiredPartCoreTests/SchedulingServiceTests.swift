@@ -2485,11 +2485,6 @@ struct SchedulingServiceTests {
         let err2 = SchedulingService.SchedulingError.invalidStatus("bad")
         let err3 = SchedulingService.SchedulingError.insertFailed("fail")
 
-        // Verify they're Error types
-        #expect(err1 is Error)
-        #expect(err2 is Error)
-        #expect(err3 is Error)
-
         // Verify string descriptions are meaningful
         let desc1 = String(describing: err1)
         #expect(desc1.contains("42"))
@@ -2690,5 +2685,73 @@ struct SchedulingServiceTests {
         #expect(!jobs.contains(where: { $0.jobName == "Completed Flex" }))
         #expect(!jobs.contains(where: { $0.jobName == "Cancelled Flex" }))
         #expect(!jobs.contains(where: { $0.jobName == "OnHold Flex" }))
+    }
+
+    // MARK: - Crew Utilization admin-exclusion correctness (iteration 8)
+
+    @Test("getCrewUtilizationReport includes former admins whose Admin hat was revoked")
+    func testCrewUtilization_includesRevokedAdmins() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        // adminUserId has the Admin hat by default (seedFirstAdmin in E2ETestHelpers).
+        // Revoke the admin hat (soft-delete the user_hats row) so they are now a regular crew.
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    UPDATE user_hats SET deleted_at = datetime('now')
+                    WHERE user_id = ? AND hat_id = (SELECT id FROM hats WHERE name = 'Admin')
+                    """,
+                arguments: [env.adminUserId]
+            )
+        }
+
+        // Give the (now former) admin a job dispatch so they have a non-zero dispatch_count.
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO job_dispatch
+                        (job_id, user_id, dispatch_date, shift_start, shift_end, created_at, updated_at)
+                    VALUES (?, ?, '2026-06-10', '2026-06-10T08:00:00', '2026-06-10T16:00:00',
+                            datetime('now'), datetime('now'))
+                    """,
+                arguments: [jobId, env.adminUserId]
+            )
+        }
+
+        let start = ISO8601DateFormatter().date(from: "2026-06-01T00:00:00Z")!
+        let end = ISO8601DateFormatter().date(from: "2026-06-30T00:00:00Z")!
+        let report = try env.scheduling.getCrewUtilizationReport(startDate: start, endDate: end)
+
+        #expect(report.contains { $0.id == env.adminUserId },
+                "A user whose Admin hat was revoked must appear in crew utilization — they're no longer admin")
+    }
+
+    @Test("getDispatchBoard hides job name for soft-deleted job")
+    func testGetDispatchBoardHidesDeletedJobName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let today = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+        _ = try env.scheduling.createDispatch(jobId: jobId, userId: env.adminUserId, date: today)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?", arguments: [jobId])
+        }
+        let board = try env.scheduling.getDispatchBoard(date: today)
+        #expect(board.isEmpty == false)
+        #expect(board.first?.jobName != "Test Job")
+    }
+
+    @Test("getMySchedule hides job name for soft-deleted job")
+    func testGetMyScheduleHidesDeletedJobName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let today = String(ISO8601DateFormatter().string(from: Date()).prefix(10))
+        _ = try env.scheduling.createDispatch(jobId: jobId, userId: env.adminUserId, date: today)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?", arguments: [jobId])
+        }
+        let schedule = try env.scheduling.getMySchedule(userId: env.adminUserId, startDate: today, endDate: today)
+        #expect(schedule.isEmpty == false)
+        #expect(schedule.first?.jobName != "Test Job")
     }
 }
