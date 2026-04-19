@@ -363,4 +363,20 @@ Key service methods:
 - Smart card filter bar uses `ScrollView(.horizontal)` with `showsIndicators: false`
 - Thread view uses `LazyVStack` for message list (performance for long threads)
 
+---
+
+## 14. Plan-vs-Code Drift (C1b — 2026-04-19)
+
+### Plan-ahead-of-code (acceptable future work)
+
+- **Cursor-based pagination** (`before:` parameter for `getMessages`): Current implementation uses `limit: Int = 50` only. No cursor/offset pagination. Plan section 12 calls for `fetchMessages(channelId:, limit:, before:)`. Phase 2 item — not blocking.
+- **Dedicated Supplier Bridge list page**: Plan implies a standalone page; current implementation surfaces supplier channels through the unified inbox filter only. Phase 2 item.
+- **`@part:`, `@po:`, `@job:` inline picker** (plan section 5): Reference cards exist as attachment types but the `@`-trigger picker in the message input is not implemented. Phase 2 item.
+
+### Code-ahead-of-plan (plan should acknowledge)
+
+- **`markRead(channelId:userId:messageId:)`** was missing entirely (C1b fix, 2026-04-19). `chat_read_receipts` table had unread-count read queries but no write path. Fixed: `INSERT OR REPLACE` with monotonic `MAX()` guard. Wired into `IOSMessageThreadView.loadMessages()`.
+- **`listSupplierBridges()`, `deactivateSupplierBridge()`, `createSupplierQuestion()`, `listSupplierQuestions()`** — supplier bridge admin methods not explicitly mentioned in plan section 9/12. These extend the supplier bridge design beyond what's documented.
+- **`syncOfficeChannelMembers()`** — auto-syncs active employees into the office channel. Not in plan but implements the "all active users in office channel" implicit requirement.
+
 *Last updated: 2026-04-19*
