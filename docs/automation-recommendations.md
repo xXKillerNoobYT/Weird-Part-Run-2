@@ -4,6 +4,48 @@
 
 ---
 
+## Area: jobs — 2026-04-19
+
+**Analyzed:** `JobsService.swift` (~2150 lines), `JobEstimationService.swift`, 4 iOS Jobs pages (IOSClockPage, IOSJobDetailTabView, JobsListPage, IOSEstimationQuestionnairePage). Prior 8 iterations (day 1 #17–25 + day 2 #1–7) produced zero bug findings across hunt-fix / security / performance — jobs is a clean baseline.
+
+### Codebase Profile (Jobs Area)
+
+- **Language:** Swift/SwiftUI (iOS native)
+- **Backend service:** `JobsService.swift` — ~2150 lines, uses safe GRDB partial-UPDATE idiom (`setClauses.joined(",")` with whitelisted column names + parameterized StatementArguments).
+- **Risk pattern observed:** M4 security scanners flag `setClauses.joined(",")` as SQL-concat even when it is safe. Cost: manual verification every scan.
+- **Test coverage:** 204 tests / 67 service funcs = 3× coverage (excellent).
+- **Lifecycle maturity:** Phase 4 complete; 0 pending Q&A; 0 active Xcode prompts; 0 DevTODOs.
+
+---
+
+### ⚡ Hook / Annotation: Safe-GRDB-Partial-UPDATE Allowlist
+
+**Why:** The GRDB partial-UPDATE idiom `UPDATE x SET \(setClauses.joined(", ")) WHERE id = ?` appears in multiple services (JobsService, PartsService, JobEstimationService, others). Every security scan (M4 phase) flags it as a string-concat vulnerability, and every time the human verifies it's safe because the `setClauses` source is a hard-coded whitelist of allowed column names. This is recurring toil.
+
+**Proposal:** Introduce a small source-comment marker the scanner recognizes, e.g. `// grdb-safe-partial-update: columns=[name,status,...]`, and extend `security-review` SKILL.md to skip flagging when the marker is present AND the scanner verifies the listed columns appear in an enclosing whitelist literal nearby. Reduces scan time + false-positive churn without weakening the scanner.
+
+**Alternative:** Add an allowlist of `(file:line, pattern)` pairs to `docs/security-review-tracker.md` that the scanner reads before flagging — simpler, no source changes, but drifts easier.
+
+**Where:** Update `~/.claude/scheduled-tasks/security-review/SKILL.md` (M4 phase) + add marker comments in services where the idiom is used.
+
+**Effort:** Low. Estimated 1–2 iterations total (skill edit + marker rollout).
+
+---
+
+### ⚡ GitHub Action: Area-Label Auto-Tagger from Title Prefix
+
+**Why:** Repo has NO per-area GitHub labels (`jobs`, `parts`, `warehouse` do not exist as labels). Convention is title prefix `[Jobs] ...`, `[Parts] ...`. C2b and C11 checks currently filter issues by piping `gh issue list --json title` through `python3 -c` for keyword matching. This is slower than `gh issue list --label` and brittle (misses issues that forgot the prefix).
+
+**Proposal:** Add a small GitHub Action (or a pre-commit hook for issue-creation via CLI) that reads the issue title prefix `[Area]` and applies matching labels from a fixed map: `[Parts]→parts`, `[Jobs]→jobs`, `[Scheduling]→scheduling`, etc. Retroactively apply to existing open issues in a one-time pass.
+
+**Where:** `.github/workflows/auto-label.yml` + first-run script `execution/backfill_area_labels.py`.
+
+**Effort:** Low-medium. One-time backfill = ~30 min; recurring Action = ~30 min. Unlocks `gh issue list --label jobs` everywhere in AUTO GO loop, making future C2b/C11 checks ~3× faster.
+
+**Decision:** Opinionated — `jobs` was the second area through the loop and it's already clear this pattern will repeat for 12 more areas. The manual filter python one-liner will accumulate drift.
+
+---
+
 ## Area: parts — 2026-04-18
 
 **Analyzed:** iOS Parts Features directory (24 files), `PartsService.swift` (6,834 lines, 594 SQL statements), `parts-section-audit-fix-plan.md`, `colors-parts-redesign.md`

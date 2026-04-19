@@ -29,8 +29,14 @@
 | Area | Graduated | Iterations | Notable |
 |---|---|---|---|
 | parts | 2026-04-18 | 16 (iter 1–16) | First area through the full 17-check gauntlet. 3 CLAUDE.md improver sub-runs, 1 approved automation built (parts-sql-check hook), 4 dismiss-safety fixes, 1 FK bug fixed + test, 18+18 new tests, 4 GitHub issues filed. Bundled trackers: security-review, performance-review, cross-platform-qa now exist. |
+| jobs | 2026-04-19 | 17 (iter 17 day 1 → iter 8 day 2) | Baseline-clean area: 1 dismiss-safety fix (CreateJobSupplierChannelSheet), 0 hunt-fix findings, 0 security findings, 0 perf findings, 0 test gaps (204/67 = 3× coverage). Demonstrates the "graduated-baseline" profile — short iterations, heavy use of memory writes, 2 automation recs filed (GRDB allowlist, label auto-tagger). 5 open GitHub issues (#45, #53, #69–71) all tracked, 0 closable. |
 
-## Area: jobs (in progress)
+## Area: warehouse (in progress)
+
+| date | iteration | area | check | status | findings | fixes_applied | tests_added | duration_sec | meta_checks_fired |
+|------|-----------|------|-------|--------|----------|---------------|-------------|--------------|-------------------|
+
+## Area: jobs (graduated)
 
 | date | iteration | area | check | status | findings | fixes_applied | tests_added | duration_sec | meta_checks_fired |
 |------|-----------|------|-------|--------|----------|---------------|-------------|--------------|-------------------|
@@ -50,6 +56,7 @@
 | 2026-04-19 | 5 | jobs | C11_github_issues_resolved | done | 5 open (all tracked: #45 T1-08/09, #53 parent, #69/70/71 program-review), 0 closable, 0 orphan | Verified each has plan/tracker reference | 0 | ~120 | none |
 | 2026-04-19 | 6 | jobs | C11b_process_gaps_clean | done | 0 gaps (0 pending Q&A, 0 active Xcode prompts, 0 DevTODOs for jobs) | — | 0 | ~90 | none |
 | 2026-04-19 | 7 | jobs | C12_claude_md_reflects_area | done | 0 CLAUDE.md drift; 3 memory entries added (baseline profile, GRDB safe idiom, no-labels convention) | auto-go-memory.md jobs section populated | 0 | ~120 | none |
+| 2026-04-19 | 8 | jobs → **GRADUATED** → warehouse | C13_automation_opportunities_reviewed | done | 2 new recs filed (GRDB allowlist, area-label auto-tagger) | 2 Q&A pending + 2 appendix entries | 0 | ~300 | none |
 
 ## Weekly Roll-ups (updated by loop-self-improve)
 
