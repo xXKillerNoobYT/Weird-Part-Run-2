@@ -107,11 +107,12 @@ public final class DailyReportGenerator: Sendable {
             let todoRows = (try? Row.fetchAll(dbConn, sql: """
                 SELECT ne.title AS name, COALESCE(ne.task_status, 'in_progress') AS current_stage
                 FROM notebook_entries ne
-                JOIN notebook_sections ns ON ns.id = ne.section_id
-                JOIN notebooks nb ON nb.id = ns.notebook_id
+                JOIN notebook_sections ns ON ns.id = ne.section_id AND ns.deleted_at IS NULL
+                JOIN notebooks nb ON nb.id = ns.notebook_id AND nb.deleted_at IS NULL
                 WHERE nb.job_id = ? AND date(ne.updated_at) = ?
                   AND ne.entry_type = 'todo'
                   AND ne.task_status IN ('complete', 'punch_list', 'in_progress')
+                  AND ne.deleted_at IS NULL
                 ORDER BY ne.updated_at DESC
                 LIMIT 50
                 """, arguments: [jobId, dateStr])) ?? []

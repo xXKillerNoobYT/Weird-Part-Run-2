@@ -108,32 +108,25 @@ Every feature, bug, or improvement follows this cycle:
 
 ## Next Up (Priority Order)
 
-> **Phase 3 active.** Q&A: **4 pending** (Colors/Brands redesign #98-#107, #143 dismiss safety, April architectural decisions #221/#223/#224/#227). Tests: **1255/1255**. **1 active Xcode prompt: PE-043.** **1 unpatched security bug: #231 (medium).** #184/#191/#230 FIXED. Working tree uncommitted since 2026-04-12. test-coverage-maintenance run 2026-04-15.
+> **Phase 3 active.** Q&A: **0 pending** (all design decisions processed — first time fully clear). Tests: **1302/1302** (55 suites). **Next Xcode prompt: PE-045** (dismiss safety Phase 1A — remaining People/HR sheets). Working tree: **11 files uncommitted** (plan-aligned). **Colors Phase 1 (#234) dispatched.** Updated 2026-04-17 by dev-pipeline-manager run 19.
 
-1. ✅ ~~**[SECURITY] Fix #191**~~ — **FIXED (2026-04-14)** — `GET /sync/key` now requires `X-Company-ID` header. Server rejects unknown peers with 403. `PeerManager` updated to send company ID.
-2. ✅ ~~**[SECURITY] Fix #184**~~ — **FIXED (2026-04-14)** — `certificate_rejected` response now uses `JSONEncoder` + `Codable` struct. Injection via cert reason string eliminated.
-3. ✅ ~~**[SECURITY] Fix #230**~~ — **FIXED (in working tree)** — `encryptIfNeeded` split into two guards: no-key → plaintext OK; key+failure → 500 fail-closed.
+1. ✅ ~~**[SECURITY] Fix #191**~~ — **FIXED (2026-04-14)** — `GET /sync/key` now requires `X-Company-ID` header. Server rejects unknown peers with 403.
+2. ✅ ~~**[SECURITY] Fix #184**~~ — **FIXED (2026-04-14)** — `certificate_rejected` response now uses `JSONEncoder` + `Codable` struct.
+3. ✅ ~~**[SECURITY] Fix #230**~~ — **FIXED (committed)** — `encryptIfNeeded` split: no-key → plaintext OK; key+failure → 500 fail-closed.
 4. 🔴 **[DATA] Fix #180** — `NotebooksService.swift` — `addEntry()` does not set `notebook_id` on the inserted row — breaks direct lookups and badge counts. **Core Swift — fix directly.**
-5. 🔴 **[DATA] Fix #181** — `DeviceResetService.swift` — writes text UUID string into `record_id` (INTEGER column) in change log. Will cause GRDB type mismatch on sync. Use `0` or remove that log entry. **Core Swift — fix directly.**
-6. 🔴 **[DATA] Fix #220** — `ConflictResolver.swift` or sync apply path — sync silently drops UPDATE operations when the record doesn't exist locally (should upsert instead). **Core Swift — fix directly.**
-7. 🔴 **[MEMORY] Fix #215** — `IOSSyncManager.swift` — missing `deinit` — NotificationCenter observer and heartbeat timer leak on logout. Add `deinit { }` that calls `NotificationCenter.default.removeObserver(self)` and invalidates timer. **Direct Swift edit.**
-8. 🔴 **[MEMORY] Fix #216** — `IOSClockPage.swift` — `@State` holding `Timer` reference — Timer won't be invalidated on view disappear. Move to `@StateObject` or use `.onDisappear { timer?.invalidate() }`. **Direct Swift edit.**
-9. ✅ ~~**[CONCURRENCY] Fix #185**~~ — **FIXED (in working tree)** — `CartManager.swift` now has `@MainActor`.
-10. 🟡 **[SECURITY] Fix #231** — `AuthService.swift` — Keychain signing key uses `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` instead of `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. Signing key should only be accessible while device is unlocked. **Direct Swift edit (1 line).**
-4. 🔴 **[DATA] Fix #180** — `NotebooksService.swift` — `addEntry()` does not set `notebook_id` on the inserted row — breaks direct lookups and badge counts. **Core Swift — fix directly.**
-5. 🔴 **[DATA] Fix #181** — `DeviceResetService.swift` — writes text UUID string into `record_id` (INTEGER column) in change log. Will cause GRDB type mismatch on sync. Use `0` or remove that log entry. **Core Swift — fix directly.**
-6. 🔴 **[DATA] Fix #220** — `ConflictResolver.swift` or sync apply path — sync silently drops UPDATE operations when the record doesn't exist locally (should upsert instead). **Core Swift — fix directly.**
-7. 🔴 **[MEMORY] Fix #215** — `IOSSyncManager.swift` — missing `deinit` — NotificationCenter observer and heartbeat timer leak on logout. Add `deinit { }` that calls `NotificationCenter.default.removeObserver(self)` and invalidates timer. **Direct Swift edit.**
-8. 🔴 **[MEMORY] Fix #216** — `IOSClockPage.swift` — `@State` holding `Timer` reference — Timer won't be invalidated on view disappear. Move to `@StateObject` or use `.onDisappear { timer?.invalidate() }`. **Direct Swift edit.**
-9. 🔴 **[CONCURRENCY] Fix #185** — `CartManager.swift` — missing `@MainActor` — the only `ObservableObject` in the codebase without it, causing potential UI update races. **Direct Swift edit.**
-10. 🟡 **[SECURITY] Fix #231** — `AuthService.swift` — Keychain signing key uses `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` instead of `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. Signing key should only be accessible while device is unlocked. **Direct Swift edit (1 line).**
-11. **Answer Colors & Parts Redesign Q&A** — `docs/dev-qa.md` — 6 questions about schema approach (shared color pool vs. per-type), data migration strategy, and part identity model (#98-#107). Potential schema change — Q&A must come before any plan or code.
-12. **Answer #143 Q&A (interactiveDismissDisabled)** — `docs/dev-qa.md` — 4 questions: priority vs. page-rebuild wave, module order (Settings/People/Chat), dirty-tracking vs. unconditional, Xcode prompt vs. automation script.
-13. **Commit working tree** ⚠️ OVERDUE — uncommitted since 2026-04-12. Parts iOS pages, core service fixes, migrations, docs. All 1217 tests passing. Assign to `github-sync-and-review`.
+5. 🔴 **[DATA] Fix #181** — `DeviceResetService.swift` — writes text UUID string into `record_id` (INTEGER column) in change log. Will cause GRDB type mismatch on sync. **Core Swift — fix directly.**
+6. 🔴 **[DATA] Fix #220** — `ConflictResolver.swift` — sync silently drops UPDATE operations when the record doesn't exist locally (should upsert instead). **Core Swift — fix directly.**
+7. 🔴 **[MEMORY] Fix #215** — `IOSSyncManager.swift` — missing `deinit` — NotificationCenter observer and heartbeat timer leak on logout. **Direct Swift edit.**
+8. 🔴 **[MEMORY] Fix #216** — `IOSClockPage.swift` — `@State` holding `Timer` reference — not invalidated on view disappear. Use `.onDisappear { timer?.invalidate() }`. **Direct Swift edit.**
+9. ✅ ~~**[CONCURRENCY] Fix #185**~~ — **FIXED (2026-04-14)** — `CartManager.swift` now has `@MainActor`.
+10. 🟡 **[SECURITY] Fix #231** — `AuthService.swift` — Keychain key uses `AfterFirstUnlockThisDeviceOnly` → should be `WhenUnlockedThisDeviceOnly`. **Direct Swift edit (1 line).**
+11. 🆕 **[FEATURE] Code Colors Phase 1 (#234)** — Migration SQL fully specified in issue body: `color_brand_skus` table + `brand_selection_mode` on JPO/PO line items. Files: `AppDatabase+Migrations.swift` + `PartsModels.swift`. Q&A answered (plan: `docs/plans/colors-parts-redesign.md`). **Core Swift — no Xcode AI needed. hunt-fix or test-coverage agent can dispatch.**
+12. 🖊️ **Write PE-045** — Dismiss safety Phase 1A remaining People/HR sheets: `EditEmployeeContactSheet` (upgrade `isSaving` → `isDirty` predicate), `AddCustomerSheet`, `AddContractorSheet`. Pattern: PE-044. Plan: `docs/plans/dismiss-safety-campaign.md`.
+13. **Commit working tree** ⚠️ OVERDUE — 11 files (PartsService SQL bug × 2, ToolsService DRY, ConflictResolver + PeerManager logging, IOSClockPage error handling, IOSAutoFillBanner, FoundationModelsService, PartsServiceInventoryTests + 1 regression test). All plan-aligned, 1302/1302 passing. Assign to `github-sync-and-review`.
 14. **PricingOverrideFlow — resolveConflicts test coverage** — `ios-pricing-override-flow.md` — 6 scenarios required + `edit_pricing` permission guard in `CategoriesTreeView`. Required before CategoriesTreeView wiring is safe (see #229). Assign to test-coverage-maintenance.
-15. **Improve test coverage** — PeopleService (~22/47), ChatService (~14/33), SettingsService (~17/40).
-16. **Program-review issues #82–#95** — 14 open page rebuild specs. Next major wave once Colors/Brands Q&A is answered.
-17. **Systemic silent failures** — #121 (198 `try?`), #122 (426 guard-let bails), #128 (0 truly empty catches), #129 (dirty tracking — Q&A pending via #143). Need owner prioritization.
+15. **Improve test coverage** — PeopleService, ChatService, SettingsService (each ~40-50% covered).
+16. **Program-review issues #82–#95** — 14 open page rebuild specs. Q&A unblocked — can start now.
+17. **Systemic silent failures** — #121 (198 `try?`), #122 (426 guard-let bails), #128 (empty catches), #129 (dirty tracking — plan written). Dispatch to hunt-fix next iteration.
 
 ---
 
@@ -2091,3 +2084,20 @@ _Appended by dev-pipeline-manager each run._
 - Issues processed: 0 (no github-issues-sync run today)
 - Bugs fixed: AuthServiceTests parallel race on static loginAttempts dict (test isolation, not production); iOS NSLocalNetworkUsageDescription added for LAN sync permission
 - Pipeline health: OK — 1301 tests, build clean. PE-044 (#143 dismiss safety) is NEXT. Open: #121/#122/#123/#128, #130/#131, #143, #149, #150/#162/#163, #221, #233, #234–#243.
+
+### Pipeline Update — 2026-04-17 (dev-pipeline-manager run 19)
+**Input:** 0 new items (no new GitHub issues; plan-enforcer run 15 + dev-improvement-scanner run 15 already processed today's findings). 34 open issues total.
+**Plans created:** 0 (all active items already have plans).
+**Q&A generated:** 0 new questions — **Q&A backlog is 0 for the first time.** All 4 design clusters fully processed. The #148 MovementWizard block was retroactively closed (code already shipped).
+**Q&A answered:** N/A — 0 pending.
+**Coded:** 0 new code (orchestration run only). Working tree has 11 files of plan-aligned changes from other agents.
+**Xcode prompts:** PE-044 ✅ DONE (plan-enforcer run 15 confirmed commit 7024173). PE-045 stub created (remaining Phase 1A People/HR dismiss sheets). Colors Phase 1 (#234) dispatched — core Swift, migration SQL fully specified in GitHub issue.
+**Bugs fixed:** 0 this run (PartsService SQL + ToolsService DRY + ConflictResolver/PeerManager logging improvements are in working tree, committed by other runs).
+**Tests added:** 0 this run (1 regression test for `calculateSupplierScores_onTimeRateWithCompletedSession` added by dev-improvement-scanner run 15 today — total 1302/1302).
+**Agent health:** All agents ✅ active. plan-enforcer run 15 ✅ (verified PE-044 DONE, filed EditEmployeeContactSheet wrong-predicate issue). dev-improvement-scanner run 15 ✅ (1 regression test, 4 new issues filed: #246/#247/#248/#249). github-sync-and-review ⚠️ working tree OVERDUE (11 files).
+**Gaps found (3):**
+  1. **Next Up section was stale** — duplicate items (4-10 appeared twice), stale Q&A counts, stale test count, stale Xcode prompt name. **Fixed this run.**
+  2. **Colors Phase 1 had no agent assigned** — Q&A answered 2026-04-14 but nobody started the schema. **Dispatched to hunt-fix / test-coverage.**
+  3. **PE-045 stub missing** — PE-044 DONE but no follow-on prompt written yet. Noted in Next Up.
+**Backlog size:** 34 open issues (0 critical security, 5 high data/memory). **0 Q&A pending (milestone).**
+**Next priority:** (1) Commit working tree (github-sync-and-review), (2) Fix data bugs #180/#181/#220 (hunt-fix), (3) Code Colors Phase 1 #234 (any agent), (4) Write PE-045 (pipeline-manager or plan-enforcer).

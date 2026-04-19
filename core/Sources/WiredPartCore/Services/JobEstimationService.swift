@@ -618,7 +618,7 @@ public final class JobEstimationService: Sendable {
                 SELECT j.job_type, j.city, jgc.gc_id
                 FROM jobs j
                 LEFT JOIN job_general_contractors jgc ON jgc.job_id = j.id
-                WHERE j.id = ?
+                WHERE j.id = ? AND j.deleted_at IS NULL
                 """, arguments: [jobId]) else { return [] }
 
             let jobType: String? = job["job_type"]
@@ -636,7 +636,7 @@ public final class JobEstimationService: Sendable {
             if similarCount >= 3 {
                 let avgHours = try Double.fetchOne(dbConn, sql: """
                     SELECT AVG(er.actual_hours) FROM estimation_reviews er
-                    JOIN jobs j ON j.id = er.job_id
+                    JOIN jobs j ON j.id = er.job_id AND j.deleted_at IS NULL
                     WHERE j.job_type = ? AND er.review_type = 'end_of_job'
                     """, arguments: [jobType ?? ""]) ?? 0
 

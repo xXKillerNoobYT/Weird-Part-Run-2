@@ -987,11 +987,11 @@ public final class PartsService: Sendable {
                            b.name AS brand_name,
                            COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) AS total_stock
                     FROM parts p
-                    LEFT JOIN part_categories pc ON pc.id = p.category_id
-                    LEFT JOIN part_styles ps ON ps.id = p.style_id
-                    LEFT JOIN part_types pt ON pt.id = p.type_id
-                    LEFT JOIN part_colors pcol ON pcol.id = p.color_id
-                    LEFT JOIN brands b ON b.id = p.brand_id
+                    LEFT JOIN part_categories pc ON pc.id = p.category_id AND pc.deleted_at IS NULL
+                    LEFT JOIN part_styles ps ON ps.id = p.style_id AND ps.deleted_at IS NULL
+                    LEFT JOIN part_types pt ON pt.id = p.type_id AND pt.deleted_at IS NULL
+                    LEFT JOIN part_colors pcol ON pcol.id = p.color_id AND pcol.deleted_at IS NULL
+                    LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY p.name ASC
                     LIMIT ? OFFSET ?
@@ -1029,12 +1029,12 @@ public final class PartsService: Sendable {
                        b.name AS brand_name,
                        COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) AS total_stock
                 FROM parts p
-                LEFT JOIN part_categories pc ON pc.id = p.category_id
-                LEFT JOIN part_styles ps ON ps.id = p.style_id
-                LEFT JOIN part_types pt ON pt.id = p.type_id
-                LEFT JOIN part_colors pcol ON pcol.id = p.color_id
-                LEFT JOIN brands b ON b.id = p.brand_id
-                WHERE p.id = ?
+                LEFT JOIN part_categories pc ON pc.id = p.category_id AND pc.deleted_at IS NULL
+                LEFT JOIN part_styles ps ON ps.id = p.style_id AND ps.deleted_at IS NULL
+                LEFT JOIN part_types pt ON pt.id = p.type_id AND pt.deleted_at IS NULL
+                LEFT JOIN part_colors pcol ON pcol.id = p.color_id AND pcol.deleted_at IS NULL
+                LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
+                WHERE p.id = ? AND p.deleted_at IS NULL
                 """
             guard let row = try Row.fetchOne(dbConn, sql: sql, arguments: [id]) else {
                 return nil
@@ -4928,12 +4928,12 @@ public final class PartsService: Sendable {
                        COALESCE(ct_tgt.name, '') AS target_type_name
                 FROM companion_polls cp
                 LEFT JOIN companion_votes cv ON cv.poll_id = cp.id AND cv.user_id = ?
-                LEFT JOIN part_categories ca_src ON ca_src.id = cp.source_category_id
-                LEFT JOIN part_styles cs_src ON cs_src.id = cp.source_style_id
-                LEFT JOIN part_types ct_src ON ct_src.id = cp.source_type_id
-                LEFT JOIN part_categories ca_tgt ON ca_tgt.id = cp.target_category_id
-                LEFT JOIN part_styles cs_tgt ON cs_tgt.id = cp.target_style_id
-                LEFT JOIN part_types ct_tgt ON ct_tgt.id = cp.target_type_id
+                LEFT JOIN part_categories ca_src ON ca_src.id = cp.source_category_id AND ca_src.deleted_at IS NULL
+                LEFT JOIN part_styles cs_src ON cs_src.id = cp.source_style_id AND cs_src.deleted_at IS NULL
+                LEFT JOIN part_types ct_src ON ct_src.id = cp.source_type_id AND ct_src.deleted_at IS NULL
+                LEFT JOIN part_categories ca_tgt ON ca_tgt.id = cp.target_category_id AND ca_tgt.deleted_at IS NULL
+                LEFT JOIN part_styles cs_tgt ON cs_tgt.id = cp.target_style_id AND cs_tgt.deleted_at IS NULL
+                LEFT JOIN part_types ct_tgt ON ct_tgt.id = cp.target_type_id AND ct_tgt.deleted_at IS NULL
                 WHERE cp.status IN ('active', 'locked')
                 ORDER BY cp.start_date DESC
                 """, arguments: [userId])
@@ -5341,11 +5341,11 @@ public final class PartsService: Sendable {
             let sql = """
                 SELECT \(columns.joined(separator: ", "))
                 FROM parts p
-                LEFT JOIN part_categories pc ON pc.id = p.category_id
-                LEFT JOIN part_styles ps ON ps.id = p.style_id
-                LEFT JOIN part_types pt ON pt.id = p.type_id
-                LEFT JOIN brands b ON b.id = p.brand_id
-                LEFT JOIN part_colors pco ON pco.id = p.color_id
+                LEFT JOIN part_categories pc ON pc.id = p.category_id AND pc.deleted_at IS NULL
+                LEFT JOIN part_styles ps ON ps.id = p.style_id AND ps.deleted_at IS NULL
+                LEFT JOIN part_types pt ON pt.id = p.type_id AND pt.deleted_at IS NULL
+                LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
+                LEFT JOIN part_colors pco ON pco.id = p.color_id AND pco.deleted_at IS NULL
                 WHERE p.deleted_at IS NULL
                 ORDER BY p.name ASC
                 """
@@ -6650,11 +6650,11 @@ public final class PartsService: Sendable {
                        pcol.name AS color_name,
                        COALESCE((SELECT SUM(s.qty) FROM stock s WHERE s.part_id = p.id AND s.deleted_at IS NULL), 0) AS total_stock
                 FROM parts p
-                LEFT JOIN part_categories pc ON pc.id = p.category_id
-                LEFT JOIN brands b ON b.id = p.brand_id
-                LEFT JOIN part_styles ps ON ps.id = p.style_id
-                LEFT JOIN part_types pt ON pt.id = p.type_id
-                LEFT JOIN part_colors pcol ON pcol.id = p.color_id
+                LEFT JOIN part_categories pc ON pc.id = p.category_id AND pc.deleted_at IS NULL
+                LEFT JOIN brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
+                LEFT JOIN part_styles ps ON ps.id = p.style_id AND ps.deleted_at IS NULL
+                LEFT JOIN part_types pt ON pt.id = p.type_id AND pt.deleted_at IS NULL
+                LEFT JOIN part_colors pcol ON pcol.id = p.color_id AND pcol.deleted_at IS NULL
                 WHERE \(whereSQL)
                 ORDER BY \(orderSQL) \(dir)
                 LIMIT ? OFFSET ?

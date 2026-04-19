@@ -270,4 +270,59 @@ struct DeviceResetServiceTests {
         let notified = await service.pushDeactivationToPeers(peerManager: peerManager)
         #expect(notified == 0)
     }
+
+    // MARK: - getAdminUsers
+
+    @Test("getAdminUsers returns admin users with manage_devices permission")
+    func testGetAdminUsers_includesAdmin() throws {
+        let db = try freshDB()
+        let adminId = try seedAdmin(db: db)
+        let service = DeviceResetService(db: db)
+
+        let admins = try service.getAdminUsers()
+        #expect(admins.contains { $0.id == adminId },
+                "Seeded admin with manage_devices permission must appear in admin user list")
+    }
+
+    @Test("getAdminUsers excludes soft-deleted users")
+    func testGetAdminUsers_excludesDeletedUsers() throws {
+        let db = try freshDB()
+        let adminId = try seedAdmin(db: db)
+        let service = DeviceResetService(db: db)
+
+        // Before deletion: admin is in list
+        let before = try service.getAdminUsers()
+        #expect(before.contains { $0.id == adminId })
+
+        // Soft-delete the admin — leaves is_active=1 to simulate drift
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [adminId]
+            )
+        }
+
+        let after = try service.getAdminUsers()
+        #expect(!after.contains { $0.id == adminId },
+                "Soft-deleted admins must not appear in device-approval picker — security boundary")
+    }
+
+    @Test("getAdminUsers excludes users whose user_hats row was soft-deleted")
+    func testGetAdminUsers_excludesRevokedHat() throws {
+        let db = try freshDB()
+        let adminId = try seedAdmin(db: db)
+        let service = DeviceResetService(db: db)
+
+        // Soft-delete the user_hats row (hat revoked) — user still active but no more permissions
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE user_hats SET deleted_at = datetime('now') WHERE user_id = ?",
+                arguments: [adminId]
+            )
+        }
+
+        let result = try service.getAdminUsers()
+        #expect(!result.contains { $0.id == adminId },
+                "User whose hat assignment was soft-deleted must lose manage_devices permission")
+    }
 }

@@ -382,6 +382,48 @@ struct WarehouseServiceExtTests {
         #expect(stock.first(where: { $0.partId == partId })?.qty == 30)
     }
 
+    @Test("getStockAtLocation degrades deleted part name to 'Unknown Part'")
+    func testGetStockAtLocation_hidesDeletedPartName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Secret Widget", categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 5, locationType: "warehouse", locationId: 2)
+
+        // Soft-delete the part while stock rows still exist. Active stock listings
+        // must not leak the deleted part's real name — they should degrade to 'Unknown'.
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [partId]
+            )
+        }
+
+        let stock = try env.warehouse.getStockAtLocation(locationType: "warehouse", locationId: 2)
+        let row = stock.first(where: { $0.partId == partId })
+        #expect(row?.partName == "Unknown Part",
+                "Soft-deleted part must NOT surface its real name via the stock listing")
+    }
+
+    @Test("getLocationStock degrades deleted part name to 'Unknown Part'")
+    func testGetLocationStock_hidesDeletedPartName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, name: "Should Stay Hidden", categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 7, locationType: "warehouse", locationId: 3)
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [partId]
+            )
+        }
+
+        let stock = try env.warehouse.getLocationStock()
+        let row = stock.first(where: { $0.partId == partId })
+        #expect(row?.partName == "Unknown Part",
+                "Soft-deleted part must NOT surface its real name via the cross-location stock listing")
+    }
+
     // MARK: - clearStagingTag / clearAllStagingTags
 
     @Test("clearStagingTag soft-deletes a staging tag")

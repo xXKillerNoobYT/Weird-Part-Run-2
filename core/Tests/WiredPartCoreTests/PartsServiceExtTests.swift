@@ -62,6 +62,56 @@ struct PartsServiceExtTests {
         try env.parts.deletePart(id: partId)
     }
 
+    @Test("getPart throws partNotFound for soft-deleted parts")
+    func testGetPart_throwsForDeletedPart() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "DelPartCat")
+        let partId = try env.parts.createPart(categoryId: catId, name: "Doomed Part", code: "DOOM-001")
+
+        // Soft-delete the part
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [partId]
+            )
+        }
+
+        #expect(throws: (any Error).self) {
+            _ = try env.parts.getPart(id: partId)
+        }
+    }
+
+    @Test("searchParts hides dimension names when category/brand is soft-deleted")
+    func testSearchParts_hidesDeletedDimensionNames() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try env.parts.createCategory(name: "Deletable Cat")
+        let brandId = try E2ETestHelpers.seedBrand(env, name: "Deletable Brand")
+        let partId = try env.parts.createPart(
+            categoryId: catId, name: "Dim Hidden Part", code: "DIM-001", brandId: brandId
+        )
+
+        // Soft-delete the category AND brand but leave the part itself active
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE part_categories SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [catId])
+            try db.execute(sql: "UPDATE brands SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [brandId])
+        }
+
+        let results = try env.parts.searchParts(query: "DIM-001")
+        let match = results.first { $0.id == partId }
+        #expect(match != nil, "Part itself is active — search should still find it")
+        // The LEFT JOIN guards should have stripped the deleted category/brand names.
+        // (searchParts returns [Part] which doesn't expose categoryName — ensure the
+        //  listCatalogParts companion path would degrade via LEFT JOIN → NULL.)
+        let listed = try env.parts.listCatalogParts(search: "DIM-001")
+        let listedMatch = listed.parts.first { $0.part.id == partId }
+        #expect(listedMatch?.categoryName == nil,
+                "Soft-deleted category must not leak its name via listCatalogParts LEFT JOIN")
+        #expect(listedMatch?.brandName == nil,
+                "Soft-deleted brand must not leak its name via listCatalogParts LEFT JOIN")
+    }
+
     @Test("Catalog stats")
     func testCatalogStats() throws {
         let env = try E2ETestHelpers.setUp()
@@ -102,6 +152,66 @@ struct PartsServiceExtTests {
         _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: supplierId, supplierPartNumber: "SP-001", costPrice: 2.50)
         let links = try env.parts.getPartSuppliers(partId: partId)
         #expect(links.count >= 1)
+    }
+
+    @Test("getPartSuppliers excludes soft-deleted suppliers even with active part_supplier_links")
+    func testGetPartSuppliers_excludesDeletedSupplier() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "TombstonedSupplier")
+
+        _ = try env.parts.addPartSupplierLink(
+            partId: partId, supplierId: supplierId,
+            supplierPartNumber: "PRE-DEL-001", costPrice: 3.00
+        )
+
+        // Before: link visible
+        let before = try env.parts.getPartSuppliers(partId: partId)
+        #expect(before.contains { $0.supplierId == supplierId })
+
+        // Soft-delete the supplier but leave the part_supplier_links row active
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE suppliers SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [supplierId]
+            )
+        }
+
+        // After: link must not be returned since the supplier is tombstoned
+        let after = try env.parts.getPartSuppliers(partId: partId)
+        #expect(!after.contains { $0.supplierId == supplierId },
+                "getPartSuppliers must not return links to soft-deleted suppliers even if psl.deleted_at is still NULL")
+    }
+
+    @Test("getColorSupplierPartNumbers excludes soft-deleted suppliers")
+    func testGetColorSupplierPartNumbers_excludesDeletedSupplier() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let colorId = try env.parts.createColor(name: "ForDeletedSupplier", hexCode: "#123456")
+        let partId = try env.parts.createPart(
+            categoryId: catId, name: "ColorPart", colorId: colorId, code: "CP-001"
+        )
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "WillBeDeleted")
+
+        _ = try env.parts.addPartSupplierLink(
+            partId: partId, supplierId: supplierId,
+            supplierPartNumber: "SUP-CDEL-001", costPrice: 1.75
+        )
+
+        let before = try env.parts.getColorSupplierPartNumbers(colorId: colorId)
+        #expect(before.contains { $0.supplierId == supplierId })
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE suppliers SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [supplierId]
+            )
+        }
+
+        let after = try env.parts.getColorSupplierPartNumbers(colorId: colorId)
+        #expect(!after.contains { $0.supplierId == supplierId },
+                "getColorSupplierPartNumbers must not return soft-deleted suppliers")
     }
 
     // MARK: - Pricing
@@ -713,6 +823,64 @@ struct PartsServiceExtTests {
         let after = try env.parts.getJobsWithCategoryCoOccurrence(categoryIds: [cat1, cat2])
         #expect(!after.contains { $0.jobId == jobId },
                 "Soft-deleted jobs must not appear in getJobsWithCategoryCoOccurrence results")
+    }
+
+    @Test("PE-COLORS Plan Test 3: color pool is global — same color accessible across all type+brand contexts")
+    func testColorPoolIsGlobal() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        // Two different type contexts
+        let (_, _, typeId1) = try E2ETestHelpers.seedPartHierarchy(
+            env, category: "Conduit", style: "PVC", type: "1/2 Inch"
+        )
+        let (_, _, typeId2) = try E2ETestHelpers.seedPartHierarchy(
+            env, category: "Fittings", style: "PVC", type: "Coupling 1/2"
+        )
+        let brandId1 = try E2ETestHelpers.seedBrand(env, name: "Cantex")
+        let brandId2 = try E2ETestHelpers.seedBrand(env, name: "Carlon")
+
+        // One shared color "Gray" — belongs to no specific type
+        let grayId = try env.parts.createColor(name: "GlobalGray", hexCode: "#808080")
+
+        // Create distinct SKUs for different (color, brand, type) triples
+        let sku1Id = try env.parts.upsertColorBrandSKU(
+            colorId: grayId, brandId: brandId1, typeId: typeId1, partNumber: "CX-GRAY-PVC-001"
+        )
+        let sku2Id = try env.parts.upsertColorBrandSKU(
+            colorId: grayId, brandId: brandId2, typeId: typeId1, partNumber: "CA-GRAY-PVC-001"
+        )
+        let sku3Id = try env.parts.upsertColorBrandSKU(
+            colorId: grayId, brandId: brandId1, typeId: typeId2, partNumber: "CX-GRAY-FIT-001"
+        )
+
+        // 1. Color pool is global — listColors returns Gray exactly once, not per-type
+        let allColors = try env.parts.listColors()
+        let grayOccurrences = allColors.filter { $0.id == grayId }
+        #expect(grayOccurrences.count == 1,
+                "part_colors pool is global — a color must appear exactly once regardless of how many (type, brand) SKUs reference it")
+
+        // 2. getSKUsForColor returns all 3 SKUs across type+brand contexts
+        let skusForGray = try env.parts.getSKUsForColor(colorId: grayId)
+        #expect(skusForGray.count == 3,
+                "getSKUsForColor must return all active SKUs for the color across all (type, brand) contexts")
+        let skuIds = skusForGray.map(\.id)
+        #expect(skuIds.contains(sku1Id))
+        #expect(skuIds.contains(sku2Id))
+        #expect(skuIds.contains(sku3Id))
+
+        // 3. getColorBrandSKUs is correctly scoped — each (type, brand) combo is distinct
+        let cantexConduit = try env.parts.getColorBrandSKUs(typeId: typeId1, brandId: brandId1)
+        #expect(cantexConduit.count == 1)
+        #expect(cantexConduit[0].partNumber == "CX-GRAY-PVC-001",
+                "Cantex+Conduit SKU must be distinct from Carlon+Conduit SKU")
+
+        let carlonConduit = try env.parts.getColorBrandSKUs(typeId: typeId1, brandId: brandId2)
+        #expect(carlonConduit.count == 1)
+        #expect(carlonConduit[0].partNumber == "CA-GRAY-PVC-001")
+
+        let cantexFitting = try env.parts.getColorBrandSKUs(typeId: typeId2, brandId: brandId1)
+        #expect(cantexFitting.count == 1)
+        #expect(cantexFitting[0].partNumber == "CX-GRAY-FIT-001")
     }
 
     @Test("PE-COLORS Plan Test 1: upsert returns same id for duplicate (color, brand, type) triple")

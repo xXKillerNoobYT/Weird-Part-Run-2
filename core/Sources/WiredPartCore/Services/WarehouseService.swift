@@ -689,7 +689,7 @@ public final class WarehouseService: Sendable {
                     SELECT s.location_type, s.location_id, s.part_id, s.qty,
                            p.name AS part_name, p.code AS part_code
                     FROM stock s
-                    LEFT JOIN parts p ON p.id = s.part_id
+                    LEFT JOIN parts p ON p.id = s.part_id AND p.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY s.location_type, s.location_id, p.name
                     """
@@ -734,7 +734,7 @@ public final class WarehouseService: Sendable {
                         SELECT s.location_type, s.location_id, s.part_id, s.qty,
                                p.name AS part_name, p.code AS part_code
                         FROM stock s
-                        LEFT JOIN parts p ON p.id = s.part_id
+                        LEFT JOIN parts p ON p.id = s.part_id AND p.deleted_at IS NULL
                         WHERE s.location_type = ? AND s.location_id = ?
                           AND s.qty > 0 AND s.deleted_at IS NULL
                         ORDER BY p.name

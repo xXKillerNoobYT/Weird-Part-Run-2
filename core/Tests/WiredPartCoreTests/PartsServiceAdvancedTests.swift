@@ -291,6 +291,29 @@ struct PartsServiceAdvancedTests {
         #expect(polls.contains(where: { $0.pollId == unwrapped }))
     }
 
+    @Test("getActivePolls hides category name when source category was soft-deleted")
+    func testGetActivePolls_hidesDeletedCategoryName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catAId = try E2ETestHelpers.seedCategory(env, name: "HiddenSourceCat")
+        let catBId = try E2ETestHelpers.seedCategory(env, name: "VisibleTargetCat")
+        _ = try seedCoOccurrencePair(env, catAId: catAId, catBId: catBId)
+        let pollId = try #require(try env.parts.createWeeklyPoll())
+
+        // Soft-delete the source category AFTER the poll is created, while the poll
+        // is still active. getActivePolls must not leak the deleted category's name.
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE part_categories SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [catAId]
+            )
+        }
+
+        let polls = try env.parts.getActivePolls(userId: env.adminUserId)
+        let poll = try #require(polls.first { $0.pollId == pollId })
+        #expect(!poll.sourceName.contains("HiddenSourceCat"),
+                "getActivePolls must not leak soft-deleted source category name; LEFT JOIN deleted_at guard should make COALESCE fall back to empty string")
+    }
+
     @Test("createWeeklyPoll is idempotent within the same week")
     func testCreateWeeklyPollIdempotent() throws {
         let env = try E2ETestHelpers.setUp()
@@ -720,5 +743,38 @@ struct PartsServiceAdvancedTests {
                              arguments: [activePollId])
         }
         #expect((try #require(row)["status"] as String) == "active")
+    }
+
+    @Test("getQualifiedPairs excludes pairs where either category is soft-deleted")
+    func testGetQualifiedPairs_excludesDeletedCategories() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catAId = try E2ETestHelpers.seedCategory(env, name: "ActiveCat")
+        let catBId = try E2ETestHelpers.seedCategory(env, name: "ToDeleteCat")
+
+        // Seed a pair with enough points/confidence/count to clear all thresholds
+        _ = try seedCoOccurrencePair(env, catAId: catAId, catBId: catBId,
+                                     points: 200, confidence: 0.5, coOccurrenceCount: 20)
+
+        // Before deletion: pair should be returned
+        let beforeDelete = try env.parts.getQualifiedPairs(
+            minPoints: 100, minConfidence: 0.15, minJobs: 15, level: "category"
+        )
+        #expect(beforeDelete.contains { $0.catAId == catAId && $0.catBId == catBId },
+                "Pair must appear in qualified list while both categories are active")
+
+        // Soft-delete category B
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE part_categories SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [catBId]
+            )
+        }
+
+        // After deletion: pair must not appear — deleted category should be excluded via JOIN filter
+        let afterDelete = try env.parts.getQualifiedPairs(
+            minPoints: 100, minConfidence: 0.15, minJobs: 15, level: "category"
+        )
+        #expect(!afterDelete.contains { $0.catAId == catAId && $0.catBId == catBId },
+                "getQualifiedPairs must not return pairs whose category was soft-deleted")
     }
 }

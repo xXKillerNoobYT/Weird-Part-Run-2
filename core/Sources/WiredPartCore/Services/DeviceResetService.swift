@@ -161,9 +161,10 @@ public final class DeviceResetService: Sendable {
                     dbConnection,
                     sql: """
                         SELECT DISTINCT u.* FROM users u
-                        JOIN user_hats uh ON uh.user_id = u.id
+                        JOIN user_hats uh ON uh.user_id = u.id AND uh.deleted_at IS NULL
                         JOIN hat_permissions hp ON hp.hat_id = uh.hat_id
                         WHERE u.is_active = 1
+                          AND u.deleted_at IS NULL
                           AND uh.is_active = 1
                           AND hp.permission_key = 'manage_devices'
                         ORDER BY u.display_name ASC

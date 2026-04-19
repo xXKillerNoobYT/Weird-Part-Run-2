@@ -63,8 +63,10 @@ Via `mcp__scheduled-tasks__create_scheduled_task`:
 
 | taskId | cronExpression | prompt |
 |---|---|---|
-| `auto-go-loop` | `*/15 6-22 * * *` | "Run one iteration of `/auto-go`." |
-| `hunt-fix-loop-heartbeat` | `7,22,37,52 6-22 * * *` | "Run one iteration of `/hunt-fix`." |
+| `auto-go-loop` | `0,30 6-22 * * *` | "Run one iteration of `/auto-go`." |
+| `hunt-fix-loop-heartbeat` | `15,45 6-22 * * *` | "Run one iteration of `/hunt-fix`." |
+
+**Cadence design:** 30-min cadence with a 15-min offset between routines. AUTO GO always fires at the top and bottom of each hour; HUNT FIX always fires at quarter-past and quarter-to. Each routine has a full 15-minute window before the other one starts, so the in-progress/lock gate collisions that the 7-minute-offset design produced are eliminated.
 
 ### Existing Scheduled Tasks — Disabled (Not Deleted)
 
