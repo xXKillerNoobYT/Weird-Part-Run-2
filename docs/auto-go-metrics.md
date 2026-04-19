@@ -47,6 +47,7 @@
 | 2026-04-19 | 2 | jobs | C8_security_reviewed | done | 0 security findings (SQL concat verified safe GRDB idiom) | — | 0 | ~120 | none |
 | 2026-04-19 | 3 | jobs | C9_performance_reviewed | done | 0 perf findings (all 5 phases clean — 8 bounded SELECTs, no N+1, lightweight .onAppear, no retention risks) | — | 0 | ~120 | none |
 | 2026-04-19 | 4 | jobs | C10_cross_platform_parity | done (N/A) | 0 findings (repo is iOS-only; #257 tracks CLAUDE.md drift) | tracker entry for jobs | 0 | ~60 | none |
+| 2026-04-19 | 5 | jobs | C11_github_issues_resolved | done | 5 open (all tracked: #45 T1-08/09, #53 parent, #69/70/71 program-review), 0 closable, 0 orphan | Verified each has plan/tracker reference | 0 | ~120 | none |
 
 ## Weekly Roll-ups (updated by loop-self-improve)
 
