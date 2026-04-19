@@ -30,6 +30,12 @@
 |---|---|---|---|
 | parts | 2026-04-18 | 16 (iter 1–16) | First area through the full 17-check gauntlet. 3 CLAUDE.md improver sub-runs, 1 approved automation built (parts-sql-check hook), 4 dismiss-safety fixes, 1 FK bug fixed + test, 18+18 new tests, 4 GitHub issues filed. Bundled trackers: security-review, performance-review, cross-platform-qa now exist. |
 
+## Area: jobs (in progress)
+
+| date | iteration | area | check | status | findings | fixes_applied | tests_added | duration_sec | meta_checks_fired |
+|------|-----------|------|-------|--------|----------|---------------|-------------|--------------|-------------------|
+| 2026-04-18 | 17 | jobs | C1_plan_complete | done | 0 gaps — 3 plans + 1 archived | — | 0 | ~180 | none |
+
 ## Weekly Roll-ups (updated by loop-self-improve)
 
 _(empty — first roll-up on first Sunday after install)_
