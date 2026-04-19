@@ -487,6 +487,7 @@ private struct OrgChecklistSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
@@ -497,6 +498,7 @@ private struct OrgChecklistSheet: View {
                     }
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .task { loadExisting() }
         }
     }
@@ -616,6 +618,7 @@ private struct ConsolidationDetailSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
@@ -627,6 +630,7 @@ private struct ConsolidationDetailSheet: View {
                     }
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .task { parseAreas() }
         }
     }
@@ -712,6 +716,7 @@ private struct ManagerOverrideSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     if isSaving {
@@ -723,6 +728,7 @@ private struct ManagerOverrideSheet: View {
                     }
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .task { parseAreas() }
         }
     }

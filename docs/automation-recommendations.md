@@ -4,6 +4,92 @@
 
 ---
 
+## Area: warehouse — 2026-04-19
+
+**Analyzed:** `WarehouseService.swift` (137 public methods, ~2500 lines), 31 iOS Warehouse pages (`IOSMovementWizard`, `IOSAuditSetupView`, `IOSOrganizationAuditPage`, `WarehouseOnboardingWizard`, and 27 others). 5 iterations of checks produced: 2 dismiss-safety fixes (C7), 4 accessibility fixes (C7b), 3 additional dismiss-safety fixes discovered during C13 (IOSOrganizationAuditPage nested sheets), 2 performance issues filed (#259 batch atomicity, #260 N+1 audit queries), 1 SQL idiom confirmed safe (WarehouseService:1702).
+
+### Codebase Profile (Warehouse Area)
+
+- **Language:** Swift/SwiftUI (iOS native)
+- **Backend service:** `WarehouseService.swift` — 137 public methods, 195 tests (100% breadth coverage)
+- **Risk pattern observed:** Dismiss-safety gaps in nested `private struct` sheets — file-level grep passes because the outer page struct has `interactiveDismissDisabled`, but inner sheet structs don't. 3 gaps in this file alone (OrgChecklistSheet, ConsolidationDetailSheet, ManagerOverrideSheet).
+- **Second risk pattern:** Batch operations (N individual service calls in a loop) without a shared GRDB transaction — silent partial-write risk on interruption. Found in `IOSMovementWizard`.
+- **Test coverage:** 195 tests / 137 funcs = 1.4× (100% breadth, best of any area so far)
+- **Lifecycle maturity:** Phase 3 complete; all checks C1–C12 done; graduating this iteration.
+
+---
+
+### ⚡ Scanner: Dismiss-Safety Struct-Aware Scanner
+
+**Why:** This is the highest-yield automation opportunity identified across 3 areas so far. Dismiss-safety gaps (a sheet struct has `@State var isSaving` but no `.interactiveDismissDisabled(isSaving)`) have appeared in:
+- parts: 2 gaps (WizardAddPartSheet, EditPartSheet)
+- jobs: 1 gap (CreateJobSupplierChannelSheet)
+- warehouse: 5 gaps (IOSAuditSetupView, WizardAddStorageUnitSheet, OrgChecklistSheet, ConsolidationDetailSheet, ManagerOverrideSheet)
+
+**Total: 8 gaps in 3 areas.** Projected across 14 areas: ~37 gaps. The manual C7 sweep finds them but requires reading every file. A scanner would find them in seconds.
+
+**The file-level grep approach fails:** `IOSOrganizationAuditPage.swift` passed the file-level grep (because the outer struct HAS `interactiveDismissDisabled`) but three nested `private struct` views inside it did NOT. A correct scanner must check per-struct-scope, not per-file.
+
+**Proposal:** A new scanner `~/.claude/scheduled-tasks/dismiss-safety-scanner/SKILL.md` that:
+1. Greps all `*.swift` files for `@State private var isSaving`
+2. For each match, identifies the enclosing `struct ... : View` scope (by scanning backwards for `struct`)
+3. Checks if the same scope contains `.interactiveDismissDisabled`
+4. Reports mismatches with `file:line` and the struct name
+
+**Where:** New file `~/.claude/scheduled-tasks/dismiss-safety-scanner/SKILL.md`. Wire into C7 (UI Polish check) for every area as a mandatory sub-scanner.
+
+**Effort:** Low–medium. Struct-scope parsing is the tricky part; can use a Python script that tokenizes Swift by brace depth to avoid false positives. Estimated 1 iteration to build + test.
+
+**Priority:** High. 8 gaps found across 3 areas = signal this is systemic. Building the scanner now will prevent these from persisting in the 11 remaining areas.
+
+---
+
+### ⚡ Hook: WarehouseService SQL Column Validator
+
+**Why:** `WarehouseService.swift` at 137 public methods is the second-largest service after `PartsService.swift` (594 SQL statements). The same SQL column mismatch bugs that produced 64+ historical errors in parts exist as a latent risk in warehouse. The successful `parts-sql-check.sh` PostToolUse hook (APPROVED + BUILT 2026-04-18) should be extended to cover warehouse.
+
+**Proposal:** Extend `.claude/hooks/parts-sql-check.sh` (or create `warehouse-sql-check.sh`) to trigger on edits to `WarehouseService.swift` and check for warehouse-specific known-bad patterns. Pattern candidates include:
+- `stock_entries.qty` (correct column is `quantity`)
+- `users.first_name` (correct column is `display_name`)  
+- `hats.deleted_at` (hats table has no deleted_at column per `feedback_sql_patterns.md`)
+- `warehouse_areas.zone_id` (verify against migrations)
+
+**Where:** Extend `.claude/hooks/parts-sql-check.sh` OR create `.claude/hooks/warehouse-sql-check.sh`. Wire into `.claude/settings.local.json` PostToolUse on `WarehouseService.swift`.
+
+**Effort:** Very low — extend an existing working hook. 30 minutes.
+
+**Priority:** Medium. Warehouse has 100% test coverage, so SQL bugs would be caught by tests. But the hook prevents them from reaching tests at all.
+
+---
+
+### ⚡ Skill: Batch-Operation Transaction Auditor
+
+**Why:** `IOSMovementWizard.moveSelectedParts()` calls `createMovement()` N times in a loop with no shared GRDB transaction. Filed as bug [#259](https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/259). This pattern (loop of service calls, no transaction wrapper) is a silent data-integrity risk that is easy to miss in code review. It likely exists in other areas too (e.g., bulk part updates, batch order line items).
+
+**Proposal:** A scanner that finds loops in Swift UI files that call service methods and checks if they're wrapped in a GRDB transaction. Logic:
+1. Find all `for ... in ...` loops in `*.swift` files under `Weird Parts IOS/`
+2. Inside each loop body, look for calls to methods like `create*`, `update*`, `move*`, `save*`, `delete*`
+3. Check if the loop is inside a `try service.db.write { db in ... }` transaction wrapper
+4. Report mismatches
+
+**Where:** `~/.claude/scheduled-tasks/batch-transaction-scanner/SKILL.md`. Wire into C9 (Performance review) for every area.
+
+**Effort:** Medium. Requires Swift scope analysis. Could use a simplified heuristic (grep for `for .*in.*\n.*try.*service\.\(create\|update\|move\)`) rather than full AST parsing. Estimated 1–2 iterations.
+
+**Priority:** Medium. The bug is filed and will be fixed, but the scanner would prevent recurrence.
+
+---
+
+### Summary & Prioritization
+
+| Recommendation | Type | Priority | Decision | Status |
+|---|---|---|---|---|
+| Dismiss-safety struct-aware scanner | Scanner/Skill | High | _pending_ | ⏳ Q&A filed |
+| WarehouseService SQL column validator hook | Hook | Medium | _pending_ | ⏳ Q&A filed |
+| Batch-operation transaction auditor | Scanner/Skill | Medium | _pending_ | ⏳ Q&A filed |
+
+---
+
 ## Area: jobs — 2026-04-19
 
 **Analyzed:** `JobsService.swift` (~2150 lines), `JobEstimationService.swift`, 4 iOS Jobs pages (IOSClockPage, IOSJobDetailTabView, JobsListPage, IOSEstimationQuestionnairePage). Prior 8 iterations (day 1 #17–25 + day 2 #1–7) produced zero bug findings across hunt-fix / security / performance — jobs is a clean baseline.
