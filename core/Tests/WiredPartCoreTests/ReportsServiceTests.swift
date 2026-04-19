@@ -292,9 +292,10 @@ struct ReportsServiceTests {
         let partId = try E2ETestHelpers.seedPart(env, name: "Usage Part", categoryId: catId)
         _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
 
-        // Create a pull movement so the part appears in the usage report
+        // Create a pull movement so the part appears in the usage report.
+        // qty must be positive; "pull" semantics come from fromLocationType="warehouse" + nil destination.
         _ = try env.warehouse.createMovement(
-            partId: partId, qty: -3,
+            partId: partId, qty: 3,
             fromLocationType: "warehouse", fromLocationId: 1,
             toLocationType: nil, toLocationId: nil,
             movementType: "pull",
@@ -428,6 +429,86 @@ struct ReportsServiceTests {
         let rows = try env.reports.getTimesheetData(startDate: "2000-01-01", endDate: "2099-12-31")
         #expect(rows.isEmpty == false)
         #expect(rows.first?.userName == "Unknown")
+    }
+
+    // MARK: - Behavioral coverage for plan test plan
+
+    @Test("getSpendingSummary totals seeded PO spend")
+    func testSpendingSummaryWithSeededPO() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-SPEND-001", supplierId: supplierId)
+        // Draft POs are excluded; set to received + total_cost
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                UPDATE purchase_orders
+                SET status = 'received', total_cost = 250.0
+                WHERE id = ?
+                """, arguments: [poId])
+        }
+        let summary = try env.reports.getSpendingSummary(days: 365)
+        #expect(summary.totalSpend >= 250.0)
+        #expect(summary.poCount >= 1)
+    }
+
+    @Test("getProfitabilitySummary computes margin from estimated hours and pay rate")
+    func testProfitabilityMarginCalculation() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        // revenue = 10h × $100 = $1000; labor = 10h × $20 = $200; profit = $800; margin = 80%
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET estimated_hours = 10.0, billing_rate = 100.0 WHERE id = ?", arguments: [jobId])
+            try db.execute(sql: "UPDATE users SET pay_rate = 20.0 WHERE id = ?", arguments: [env.adminUserId])
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-01-10 07:00:00', '2026-01-10 17:00:00', 10.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+        }
+        let rows = try env.reports.getProfitabilitySummary()
+        let row = rows.first(where: { $0.id == jobId })
+        #expect(row != nil)
+        if let row {
+            #expect(abs(row.revenue - 1000.0) < 0.01)
+            #expect(abs(row.laborCost - 200.0) < 0.01)
+            #expect(abs(row.profit - 800.0) < 0.01)
+            #expect(abs(row.margin - 80.0) < 0.1)
+        }
+    }
+
+    @Test("getPreBillingData returns job with labor hours in date range")
+    func testPreBillingDataWithLaborEntries() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-PB-001", name: "Pre-Billing Job")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-02-01 07:00:00', '2026-02-01 11:00:00', 4.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+        }
+        let rows = try env.reports.getPreBillingData(startDate: "2026-02-01", endDate: "2026-02-01")
+        let row = rows.first(where: { $0.id == jobId })
+        #expect(row != nil)
+        #expect(row?.regularHours ?? 0.0 >= 4.0)
+    }
+
+    @Test("getDailyReportSummary aggregates labor entries for a specific date")
+    func testDailyReportSummaryAggregation() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DR-001", name: "Daily Report Job")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO labor_entries
+                (user_id, job_id, clock_in, clock_out, regular_hours, overtime_hours, status, created_at)
+                VALUES (?, ?, '2026-03-05 07:00:00', '2026-03-05 15:00:00', 8.0, 0.0, 'completed', datetime('now'))
+                """, arguments: [env.adminUserId, jobId])
+        }
+        let rows = try env.reports.getDailyReportSummary(date: "2026-03-05")
+        let row = rows.first(where: { $0.id == jobId })
+        #expect(row != nil)
+        #expect(row?.workerCount ?? 0 >= 1)
+        #expect(row?.totalHours ?? 0.0 >= 8.0)
     }
 
     @Test("generateDetailedReport hides job and user name for soft-deleted entities")

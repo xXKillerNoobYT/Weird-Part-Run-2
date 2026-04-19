@@ -46,7 +46,7 @@ Not a full BI tool — configurable views of existing data.
 - Pipeline status
 
 ### Code Quality
-Reports is architecturally clean — zero GRDB imports, all using ReportsService. Design enhancement only.
+Reports is architecturally clean — zero GRDB imports in any UI file. Labor/Financial/Custom/Shared report pages use ReportsService. Fleet/Warehouse/Scheduling report pages use their domain services (FleetService, WarehouseService, SchedulingService) directly — by design, as those reports aggregate data best served by the owning service. Design enhancement only.
 
 ---
 
