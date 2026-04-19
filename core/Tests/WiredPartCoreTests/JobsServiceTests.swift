@@ -980,4 +980,70 @@ struct JobsServiceTests {
         #expect(member != nil)
         #expect(member?.userName == "Unknown")
     }
+
+    @Test("listLaborEntries hides job name for soft-deleted job")
+    func testListLaborEntriesHidesDeletedJobName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        _ = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?", arguments: [jobId])
+        }
+        let entries = try env.jobs.listLaborEntries(jobId: jobId)
+        #expect(entries.isEmpty == false)
+        #expect(entries.first?.jobName == "")
+    }
+
+    @Test("getActiveClockEntry hides job name for soft-deleted job")
+    func testGetActiveClockEntryHidesDeletedJobName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        _ = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?", arguments: [jobId])
+        }
+        let entry = try env.jobs.getActiveClockEntry(userId: env.adminUserId)
+        #expect(entry != nil)
+        #expect(entry?.jobName == "")
+    }
+
+    @Test("getTodaysClockEntries hides job name for soft-deleted job")
+    func testGetTodaysClockEntriesHidesDeletedJobName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        _ = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?", arguments: [jobId])
+        }
+        let groups = try env.jobs.getTodaysClockEntries(userId: env.adminUserId)
+        // Group still exists keyed by deleted job ID; real job name hidden — shows "Unknown"
+        #expect(groups.isEmpty == false)
+        #expect(groups.first?.jobName != "Test Job")
+    }
+
+    @Test("getQuestionsForJob hides deleted creator name")
+    func testGetQuestionsForJobHidesDeletedCreatedByName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        _ = try env.jobs.createOneTimeQuestion(jobId: jobId, text: "Test?", createdBy: env.adminUserId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?", arguments: [env.adminUserId])
+        }
+        let questions = try env.jobs.getQuestionsForJob(jobId: jobId)
+        #expect(questions.isEmpty == false)
+        #expect(questions.first?.createdByName == "Unknown")
+    }
+
+    @Test("listReports hides job name for soft-deleted job")
+    func testListReportsHidesDeletedJobName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        _ = try env.jobs.generateDailyReport(jobId: jobId, reportDate: "2026-01-01", reportJson: "{}", generatedBy: env.adminUserId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?", arguments: [jobId])
+        }
+        let reports = try env.jobs.listReports(jobId: jobId)
+        #expect(reports.isEmpty == false)
+        #expect(reports.first?.jobName == "")
+    }
 }

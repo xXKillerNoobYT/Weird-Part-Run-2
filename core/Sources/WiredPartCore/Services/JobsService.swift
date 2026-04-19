@@ -965,8 +965,8 @@ public final class JobsService: Sendable {
                                COALESCE(u.display_name, u.email, 'Unknown') AS user_name,
                                j.job_name
                         FROM labor_entries le
-                        LEFT JOIN users u ON u.id = le.user_id
-                        LEFT JOIN jobs j ON j.id = le.job_id
+                        LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
+                        LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
                         WHERE le.user_id = ? AND le.status = 'clocked_in' AND le.deleted_at IS NULL
                         LIMIT 1
                         """,
@@ -1025,8 +1025,8 @@ public final class JobsService: Sendable {
                            COALESCE(u.display_name, u.email, 'Unknown') AS user_name,
                            j.job_name
                     FROM labor_entries le
-                    LEFT JOIN users u ON u.id = le.user_id
-                    LEFT JOIN jobs j ON j.id = le.job_id
+                    LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
+                    LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY le.clock_in DESC
                     LIMIT ?
@@ -1213,8 +1213,8 @@ public final class JobsService: Sendable {
                        le.linked_todo_id, le.work_type,
                        ne.title AS todo_name
                 FROM labor_entries le
-                LEFT JOIN jobs j ON j.id = le.job_id
-                LEFT JOIN notebook_entries ne ON ne.id = le.linked_todo_id
+                LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
+                LEFT JOIN notebook_entries ne ON ne.id = le.linked_todo_id AND ne.deleted_at IS NULL
                 WHERE le.user_id = ?
                   AND le.clock_in LIKE ?
                   AND le.deleted_at IS NULL
@@ -1402,9 +1402,9 @@ public final class JobsService: Sendable {
                                COALESCE(uc.display_name, uc.email, 'Unknown') AS created_by_name,
                                COALESCE(ua.display_name, ua.email) AS answered_by_name
                         FROM one_time_questions otq
-                        LEFT JOIN jobs j ON j.id = otq.job_id
-                        LEFT JOIN users uc ON uc.id = otq.created_by
-                        LEFT JOIN users ua ON ua.id = otq.answered_by
+                        LEFT JOIN jobs j ON j.id = otq.job_id AND j.deleted_at IS NULL
+                        LEFT JOIN users uc ON uc.id = otq.created_by AND uc.deleted_at IS NULL
+                        LEFT JOIN users ua ON ua.id = otq.answered_by AND ua.deleted_at IS NULL
                         WHERE otq.job_id = ? AND otq.deleted_at IS NULL
                         ORDER BY otq.created_at DESC
                         """,
@@ -1499,9 +1499,9 @@ public final class JobsService: Sendable {
                            COALESCE(uc.display_name, uc.email, 'Unknown') AS created_by_name,
                            COALESCE(ua.display_name, ua.email) AS answered_by_name
                     FROM one_time_questions otq
-                    LEFT JOIN jobs j ON j.id = otq.job_id
-                    LEFT JOIN users uc ON uc.id = otq.created_by
-                    LEFT JOIN users ua ON ua.id = otq.answered_by
+                    LEFT JOIN jobs j ON j.id = otq.job_id AND j.deleted_at IS NULL
+                    LEFT JOIN users uc ON uc.id = otq.created_by AND uc.deleted_at IS NULL
+                    LEFT JOIN users ua ON ua.id = otq.answered_by AND ua.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY otq.created_at DESC
                     """
@@ -1550,8 +1550,8 @@ public final class JobsService: Sendable {
                            j.job_name,
                            COALESCE(u.display_name, u.email) AS reviewed_by_name
                     FROM daily_reports dr
-                    LEFT JOIN jobs j ON j.id = dr.job_id
-                    LEFT JOIN users u ON u.id = dr.reviewed_by
+                    LEFT JOIN jobs j ON j.id = dr.job_id AND j.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = dr.reviewed_by AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY dr.report_date DESC
                     LIMIT ?
@@ -1586,8 +1586,8 @@ public final class JobsService: Sendable {
                                j.job_name,
                                COALESCE(u.display_name, u.email) AS reviewed_by_name
                         FROM daily_reports dr
-                        LEFT JOIN jobs j ON j.id = dr.job_id
-                        LEFT JOIN users u ON u.id = dr.reviewed_by
+                        LEFT JOIN jobs j ON j.id = dr.job_id AND j.deleted_at IS NULL
+                        LEFT JOIN users u ON u.id = dr.reviewed_by AND u.deleted_at IS NULL
                         WHERE dr.id = ? AND dr.deleted_at IS NULL
                         """,
                     arguments: [id]
