@@ -59,10 +59,9 @@ struct IOSToolMaintenancePage: View {
     }
 
     private var maintenanceTools: [ToolsService.ToolListItem] {
-        let filtered = tools.filter { $0.status == "maintenance" }
-        guard !searchText.isEmpty else { return filtered }
+        guard !searchText.isEmpty else { return tools }
         let query = searchText.lowercased()
-        return filtered.filter {
+        return tools.filter {
             $0.name.lowercased().contains(query) ||
             ($0.serialNumber?.lowercased().contains(query) ?? false)
         }
@@ -101,7 +100,7 @@ struct IOSToolMaintenancePage: View {
         isLoading = tools.isEmpty
         loadError = nil
         do {
-            tools = try service.listTools()
+            tools = try service.listTools(status: "maintenance")
         } catch {
             loadError = userFriendlyError(error, context: "load maintenance records")
         }

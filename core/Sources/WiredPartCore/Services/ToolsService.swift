@@ -116,7 +116,7 @@ public final class ToolsService: Sendable {
     public func listTools(search: String? = nil, status: String? = nil) throws -> [ToolListItem] {
         do {
             return try db.writer.read { dbConn -> [ToolListItem] in
-                var whereClauses = ["t.deleted_at IS NULL"]
+                var whereClauses = ["t.deleted_at IS NULL", "t.is_active = 1"]
                 var args: [DatabaseValueConvertible?] = []
 
                 if let search, !search.isEmpty {
@@ -179,7 +179,7 @@ public final class ToolsService: Sendable {
                            COUNT(kt.id) AS item_count
                     FROM tools t
                     INNER JOIN kit_templates kt ON kt.tool_id = t.id AND kt.deleted_at IS NULL
-                    WHERE t.deleted_at IS NULL
+                    WHERE t.deleted_at IS NULL AND t.is_active = 1
                     GROUP BY t.id
                     ORDER BY t.name ASC
                     """
@@ -321,9 +321,17 @@ public final class ToolsService: Sendable {
     // MARK: - 3b. Tool Actions
     // =========================================================================
 
-    /// Check out a tool to a user.
+    /// Check out a tool to a user. No-op if the tool has been soft-deleted.
     public func checkoutTool(toolId: Int64, userId: Int64, notes: String? = nil) throws {
         try db.writer.write { dbConn in
+            // Guard: tool must exist and not be tombstoned — prevents orphan tool_checkouts
+            // rows pointing at a soft-deleted tool (the UPDATE below is already guarded
+            // but the INSERT has no FK-level defense against tombstoned parents).
+            let exists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [toolId]) ?? 0) > 0
+            guard exists else { return }
+
             // Update tool status
             try dbConn.execute(
                 sql: """
@@ -385,7 +393,7 @@ public final class ToolsService: Sendable {
     /// Get aggregate tools statistics: total tools, checked out, in maintenance, total kits.
     public func getToolsStats() throws -> ToolsStats {
         let totalTools = try safeCount(
-            sql: "SELECT COUNT(*) FROM tools WHERE deleted_at IS NULL"
+            sql: "SELECT COUNT(*) FROM tools WHERE deleted_at IS NULL AND is_active = 1"
         )
 
         let checkedOut = try safeCount(
@@ -403,7 +411,7 @@ public final class ToolsService: Sendable {
         )
 
         let inMaintenance = try safeCount(
-            sql: "SELECT COUNT(*) FROM tools WHERE status = 'maintenance' AND deleted_at IS NULL"
+            sql: "SELECT COUNT(*) FROM tools WHERE status = 'maintenance' AND deleted_at IS NULL AND is_active = 1"
         )
 
         let totalKits = try safeCount(
@@ -713,11 +721,18 @@ public final class ToolsService: Sendable {
     // MARK: - 8. Checkout/Return with Condition
     // =========================================================================
 
-    /// Checkout a tool with REQUIRED condition check.
+    /// Checkout a tool with REQUIRED condition check. No-op if the tool has been soft-deleted.
     public func checkoutToolWithCondition(
         toolId: Int64, userId: Int64, condition: String, notes: String? = nil
     ) throws {
         try db.writer.write { dbConn in
+            // Guard: tool must exist and not be tombstoned — otherwise the two INSERTs below
+            // would create orphan tool_checkouts + tool_change_log rows against a soft-deleted tool.
+            let exists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [toolId]) ?? 0) > 0
+            guard exists else { return }
+
             // Update tool status + condition rating
             let conditionRating = Self.conditionToRating(condition)
             try dbConn.execute(sql: """
@@ -804,10 +819,11 @@ public final class ToolsService: Sendable {
             for (field, value) in changes {
                 guard Self.allowedToolEditFields.contains(field) else { continue }
 
-                // Get old value for the log
+                // Get old value for the log (skip tombstoned tools)
                 let oldRow = try Row.fetchOne(dbConn, sql:
-                    "SELECT \(field) FROM tools WHERE id = ?", arguments: [toolId])
+                    "SELECT \(field) FROM tools WHERE id = ? AND deleted_at IS NULL", arguments: [toolId])
                 let oldValue = oldRow?[field] as String?
+                guard oldRow != nil else { continue }
 
                 // Log the change
                 try dbConn.execute(sql: """
@@ -820,7 +836,7 @@ public final class ToolsService: Sendable {
                 if hasPermission {
                     // Direct update
                     try dbConn.execute(sql:
-                        "UPDATE tools SET \(field) = ?, updated_at = datetime('now') WHERE id = ?",
+                        "UPDATE tools SET \(field) = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
                         arguments: [value, toolId])
                 }
             }
@@ -845,9 +861,9 @@ public final class ToolsService: Sendable {
 
             guard Self.allowedToolEditFields.contains(field) else { return }
 
-            // Apply the edit
+            // Apply the edit (no-op if tool was soft-deleted between submission and approval)
             try dbConn.execute(sql:
-                "UPDATE tools SET \(field) = ?, updated_at = datetime('now') WHERE id = ?",
+                "UPDATE tools SET \(field) = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
                 arguments: [value, toolId])
 
             // Mark as approved
@@ -970,7 +986,7 @@ public final class ToolsService: Sendable {
             // Verify tool is currently assigned to sender
             let assigned = try Row.fetchOne(dbConn, sql: """
                 SELECT id FROM tools
-                WHERE id = ? AND assigned_to = ? AND status = 'checked_out' AND deleted_at IS NULL
+                WHERE id = ? AND assigned_to = ? AND status = 'checked_out' AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [toolId, fromUserId])
 
             guard assigned != nil else {
@@ -1025,6 +1041,17 @@ public final class ToolsService: Sendable {
                 """, arguments: [newStatus, condition, notes, tradeId])
 
             if accepted {
+                // Guard: target tool must exist and not be tombstoned — the INSERT below
+                // would otherwise create an orphan checkout row pointing at a deleted tool.
+                let toolExists = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [toolId]) ?? 0) > 0
+                guard toolExists else {
+                    // Trade status already flipped to 'accepted' above, but the sender's checkout
+                    // is kept closed and no new orphan checkout is created.
+                    return
+                }
+
                 // Close sender's checkout
                 try dbConn.execute(sql: """
                     UPDATE tool_checkouts SET checked_in_at = datetime('now'),
@@ -1090,7 +1117,7 @@ public final class ToolsService: Sendable {
                            COALESCE(fu.display_name, fu.email) AS from_name,
                            COALESCE(tu.display_name, tu.email) AS to_name
                     FROM tool_trades tt
-                    JOIN tools t ON tt.tool_id = t.id
+                    JOIN tools t ON tt.tool_id = t.id AND t.deleted_at IS NULL AND t.is_active = 1
                     JOIN users fu ON tt.from_user_id = fu.id
                     JOIN users tu ON tt.to_user_id = tu.id
                     WHERE (tt.to_user_id = ? OR tt.from_user_id = ?)
@@ -1128,12 +1155,19 @@ public final class ToolsService: Sendable {
     // MARK: - 11. Lost/Stolen Reporting
     // =========================================================================
 
-    /// Report a tool as lost or stolen.
+    /// Report a tool as lost or stolen. No-op if the tool has been soft-deleted.
     public func reportToolLostOrStolen(
         toolId: Int64, reportedBy: Int64, reportType: String,
         description: String, lastKnownLocation: String? = nil
     ) throws {
         try db.writer.write { dbConn in
+            // Guard: tool must exist and not be tombstoned — otherwise the
+            // INSERT INTO tool_change_log below would create an orphan audit entry.
+            let exists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [toolId]) ?? 0) > 0
+            guard exists else { return }
+
             // Update tool status
             try dbConn.execute(sql: """
                 UPDATE tools SET status = ?, updated_at = datetime('now')
@@ -1253,7 +1287,7 @@ public final class ToolsService: Sendable {
         }
     }
 
-    /// Record maintenance performed on a tool.
+    /// Record maintenance performed on a tool. Returns 0 if the tool has been soft-deleted.
     @discardableResult
     public func recordMaintenance(
         toolId: Int64, configId: Int64?, maintenanceType: String,
@@ -1261,6 +1295,13 @@ public final class ToolsService: Sendable {
         notes: String?, cost: Double?
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            // Guard: tool must exist and not be tombstoned — otherwise the
+            // INSERT INTO tool_maintenance_records below would create an orphan record.
+            let exists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM tools WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [toolId]) ?? 0) > 0
+            guard exists else { return 0 }
+
             // Ensure a default maintenance type exists for the FK constraint
             let typeCount = try Int.fetchOne(dbConn, sql: "SELECT COUNT(*) FROM tool_maintenance_types") ?? 0
             if typeCount == 0 {
@@ -1299,13 +1340,13 @@ public final class ToolsService: Sendable {
                     UPDATE tools SET confidence_score = 1.0,
                     last_maintenance_date = date('now'),
                     updated_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [toolId])
             } else {
                 try dbConn.execute(sql: """
                     UPDATE tools SET last_maintenance_date = date('now'),
                     updated_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """, arguments: [toolId])
             }
 
@@ -1404,7 +1445,7 @@ public final class ToolsService: Sendable {
                 let configs = try Row.fetchAll(dbConn, sql: """
                     SELECT tmc.tool_id, tmc.decay_rate, t.confidence_score
                     FROM tool_maintenance_configs tmc
-                    JOIN tools t ON tmc.tool_id = t.id
+                    JOIN tools t ON tmc.tool_id = t.id AND t.deleted_at IS NULL AND t.is_active = 1
                     WHERE tmc.maintenance_type = 'decreasing_based'
                     AND tmc.is_active = 1 AND tmc.deleted_at IS NULL
                     """)
@@ -1419,7 +1460,7 @@ public final class ToolsService: Sendable {
                     try dbConn.execute(sql: """
                         UPDATE tools SET confidence_score = ?,
                         updated_at = datetime('now')
-                        WHERE id = ?
+                        WHERE id = ? AND deleted_at IS NULL
                         """, arguments: [newScore, toolId])
                     updated += 1
                 }

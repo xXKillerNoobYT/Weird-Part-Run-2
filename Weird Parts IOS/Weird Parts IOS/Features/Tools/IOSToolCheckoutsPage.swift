@@ -111,6 +111,7 @@ struct IOSToolCheckoutsPage: View {
                     .foregroundStyle(showActiveOnly ? .white : .primary)
             }
             .buttonStyle(.plain)
+            .accessibilityAddTraits(showActiveOnly ? .isSelected : [])
 
             Button {
                 showActiveOnly = false
@@ -127,6 +128,7 @@ struct IOSToolCheckoutsPage: View {
                     .foregroundStyle(!showActiveOnly ? .white : .primary)
             }
             .buttonStyle(.plain)
+            .accessibilityAddTraits(!showActiveOnly ? .isSelected : [])
 
             Spacer()
         }
