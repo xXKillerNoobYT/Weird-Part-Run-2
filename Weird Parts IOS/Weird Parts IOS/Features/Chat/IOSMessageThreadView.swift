@@ -357,13 +357,15 @@ struct IOSMessageThreadView: View {
         isLoading = messages.isEmpty
         loadError = nil
         do {
-            messages = try service.getMessages(channelId: channelId)
+            // Service returns DESC (newest first) — reverse to chronological for rendering.
+            // oldest → [top of list] … newest → [bottom] is the standard chat convention.
+            messages = try service.getMessages(channelId: channelId).reversed()
 
             // Batch-load attachments for all messages
             let ids = messages.map(\.id)
             messageAttachments = try service.getAttachmentsForMessages(messageIds: ids)
 
-            // Mark up to the last message as read.
+            // Mark up to the newest (last after reversal) message as read.
             if let userId = appCore.currentUser?.id, let lastId = messages.last?.id {
                 try? service.markRead(channelId: channelId, userId: userId, messageId: lastId)
             }
