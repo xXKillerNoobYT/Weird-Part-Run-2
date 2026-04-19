@@ -39,6 +39,7 @@
 | 2026-04-18 | 19 | jobs | C2_qa_resolved | done | 0 pending Q&A for jobs | — | 0 | ~60 | none |
 | 2026-04-18 | 20 | jobs | C2b_github_issues_ingested | done | 3 jobs issues (all program-review parents) | — | 0 | ~60 | none |
 | 2026-04-18 | 21 | jobs | C3_hunt_fix_clean | done | 0 bugs (jc.customer_id verified valid junction-table ref) | — | 0 | ~120 | none |
+| 2026-04-18 | 22 | jobs | C4_tests_present | done | 0 untested methods (204 tests / 67 funcs = 3x coverage) | — | 0 | ~120 | end-of-day revise-claude-md |
 
 ## Weekly Roll-ups (updated by loop-self-improve)
 
