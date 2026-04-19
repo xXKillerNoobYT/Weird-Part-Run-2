@@ -1441,12 +1441,14 @@ private struct CreateJobSupplierChannelSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Create") { save() }
                         .disabled(selectedSupplierId == 0 || isSaving)
                 }
             }
+            .interactiveDismissDisabled(isSaving)
             .task { loadSuppliers() }
         }
     }
