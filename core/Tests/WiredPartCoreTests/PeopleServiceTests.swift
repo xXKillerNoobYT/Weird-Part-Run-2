@@ -559,4 +559,35 @@ struct PeopleServiceTests {
         #expect(updated.lastName == "Jones")
         #expect(updated.phone == "555-9999")
     }
+
+    @Test("getWorkersCurrentlyClocked shows Unknown for soft-deleted user")
+    func testGetWorkersCurrentlyClockedHidesDeletedUserName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        _ = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        let workers = try env.people.getWorkersCurrentlyClocked()
+        #expect(workers.isEmpty == false)
+        #expect(workers.first?.name == "Unknown")
+    }
+
+    @Test("getExpiringCertifications shows Unknown for soft-deleted user")
+    func testGetExpiringCertificationsHidesDeletedUserName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let expiryDate = "2099-12-31"
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO certifications (user_id, cert_type, cert_name, expiry_date)
+                VALUES (?, 'license', 'CDL', ?)
+                """, arguments: [env.adminUserId, expiryDate])
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        let certs = try env.people.getExpiringCertifications(withinDays: 36500)
+        #expect(certs.isEmpty == false)
+        #expect(certs.first?.employeeName == "Unknown")
+    }
 }

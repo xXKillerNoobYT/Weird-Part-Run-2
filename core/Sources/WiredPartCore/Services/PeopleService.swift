@@ -555,7 +555,7 @@ public final class PeopleService: Sendable {
                            COALESCE((SELECT COUNT(*) FROM employee_team_members tm
                                      WHERE tm.team_id = t.id AND tm.deleted_at IS NULL), 0) AS member_count
                     FROM employee_teams t
-                    LEFT JOIN users u ON u.id = t.lead_user_id
+                    LEFT JOIN users u ON u.id = t.lead_user_id AND u.deleted_at IS NULL
                     WHERE t.deleted_at IS NULL
                     ORDER BY t.name ASC
                     """
@@ -818,7 +818,7 @@ public final class PeopleService: Sendable {
                 SELECT t.id, t.name, t.description, t.is_active, t.created_at,
                        COALESCE(u.display_name, u.email) AS leader_name
                 FROM employee_teams t
-                LEFT JOIN users u ON u.id = t.lead_user_id
+                LEFT JOIN users u ON u.id = t.lead_user_id AND u.deleted_at IS NULL
                 WHERE t.id = ? AND t.deleted_at IS NULL
                 """, arguments: [teamId]) else { return nil }
 
@@ -1155,9 +1155,9 @@ public final class PeopleService: Sendable {
                            le.clock_in,
                            ne.title as current_todo
                     FROM labor_entries le
-                    LEFT JOIN users u ON u.id = le.user_id
-                    LEFT JOIN jobs j ON j.id = le.job_id
-                    LEFT JOIN notebook_entries ne ON ne.id = le.linked_todo_id
+                    LEFT JOIN users u ON u.id = le.user_id AND u.deleted_at IS NULL
+                    LEFT JOIN jobs j ON j.id = le.job_id AND j.deleted_at IS NULL
+                    LEFT JOIN notebook_entries ne ON ne.id = le.linked_todo_id AND ne.deleted_at IS NULL
                     WHERE le.clock_out IS NULL
                       AND le.deleted_at IS NULL
                     ORDER BY le.clock_in ASC
@@ -1166,7 +1166,7 @@ public final class PeopleService: Sendable {
                 return rows.compactMap { row -> WorkerStatus? in
                     let userId: Int64 = row["user_id"] ?? 0
                     let clockInStr: String = row["clock_in"] ?? ""
-                    guard let clockIn = CoreFormatters.parseISO(clockInStr) else {
+                    guard let clockIn = CoreFormatters.parseDateTime(clockInStr) else {
                         return nil
                     }
                     return WorkerStatus(
@@ -1194,7 +1194,7 @@ public final class PeopleService: Sendable {
                            COALESCE(u.display_name, u.email, 'Unknown') as name,
                            se.exception_type as off_reason
                     FROM schedule_exceptions se
-                    LEFT JOIN users u ON u.id = se.user_id
+                    LEFT JOIN users u ON u.id = se.user_id AND u.deleted_at IS NULL
                     WHERE se.is_approved = 1
                       AND se.exception_date = ?
                       AND se.exception_type = 'time_off'
@@ -1231,7 +1231,7 @@ public final class PeopleService: Sendable {
                            ec.cert_name,
                            ec.expiry_date
                     FROM certifications ec
-                    LEFT JOIN users u ON u.id = ec.user_id
+                    LEFT JOIN users u ON u.id = ec.user_id AND u.deleted_at IS NULL
                     WHERE ec.expiry_date >= ? AND ec.expiry_date <= ?
                       AND ec.deleted_at IS NULL
                     ORDER BY ec.expiry_date ASC
@@ -1268,7 +1268,7 @@ public final class PeopleService: Sendable {
                            (SELECT COUNT(*) FROM employee_team_members etm WHERE etm.team_id = et.id AND etm.deleted_at IS NULL) as member_count
                     FROM employee_teams et
                     LEFT JOIN job_dispatch jd ON jd.dispatch_date = ? AND jd.deleted_at IS NULL
-                    LEFT JOIN jobs j ON j.id = jd.job_id
+                    LEFT JOIN jobs j ON j.id = jd.job_id AND j.deleted_at IS NULL
                     WHERE et.is_active = 1 AND et.deleted_at IS NULL
                     GROUP BY et.id
                     ORDER BY et.name ASC
@@ -1427,7 +1427,7 @@ public final class PeopleService: Sendable {
                        COALESCE(u.display_name, 'System') as created_by,
                        cc.created_at
                 FROM customer_communications cc
-                LEFT JOIN users u ON u.id = cc.created_by
+                LEFT JOIN users u ON u.id = cc.created_by AND u.deleted_at IS NULL
                 WHERE cc.customer_id = ? AND cc.deleted_at IS NULL
                 ORDER BY cc.created_at DESC
                 LIMIT 50
@@ -1554,7 +1554,7 @@ public final class PeopleService: Sendable {
                        COALESCE(u.display_name, 'System') as created_by,
                        cn.created_at
                 FROM contractor_notes cn
-                LEFT JOIN users u ON u.id = cn.created_by
+                LEFT JOIN users u ON u.id = cn.created_by AND u.deleted_at IS NULL
                 WHERE cn.contractor_id = ? AND cn.deleted_at IS NULL
                 ORDER BY cn.created_at DESC
                 """, arguments: [contractorId])
