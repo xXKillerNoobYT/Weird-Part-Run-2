@@ -1063,4 +1063,68 @@ struct OrdersServiceTests {
             #expect(Bool(false), "Expected .resolved(.arbitrary) but got \(result)")
         }
     }
+
+    @Test("resolveGeneralLineItem returns .noMatch when the referenced part was soft-deleted")
+    func testResolveGeneralLine_softDeletedPartReturnsNoMatch() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let (_, _, typeId) = try E2ETestHelpers.seedPartHierarchy(env, type: "DelType")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "DelCat")
+        let colorId = try env.parts.createColor(name: "DelColor", hexCode: "#112233")
+        let brandId = try E2ETestHelpers.seedBrand(env, name: "DelBrand")
+        let partId = try env.parts.createPart(
+            categoryId: catId, name: "To Be Deleted Part",
+            typeId: typeId, colorId: colorId, brandId: brandId
+        )
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+        let lineId = try makeGeneralLine(env, jpoId: jpoId, partId: partId)
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "DelSupplier")
+
+        // Soft-delete the part while leaving the JPO line active.
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [partId]
+            )
+        }
+
+        let result = try env.orders.resolveGeneralLineItem(jpoLineId: lineId, supplierId: supplierId)
+        if case .noMatch = result { } else {
+            #expect(Bool(false),
+                    "Expected .noMatch — soft-deleted part must not yield a resolvable brand even with an active line")
+        }
+    }
+
+    @Test("listJPOs shows Unknown for soft-deleted job and user")
+    func testListJPOsHidesDeletedJobAndUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [jobId])
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        let jpos = try env.orders.listJPOs()
+        let jpo = jpos.first(where: { $0.id == jpoId })
+        #expect(jpo != nil)
+        #expect(jpo?.jobName == "Unknown Job")
+        #expect(jpo?.requestedByName == "Unknown")
+    }
+
+    @Test("getPODetail hides submitted_by name for soft-deleted user")
+    func testGetPODetailHidesDeletedSubmittedByName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "TestSupplierPO")
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-DEL-TEST-01", supplierId: supplierId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE purchase_orders SET submitted_by = ? WHERE id = ?",
+                           arguments: [env.adminUserId, poId])
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        let detail = try env.orders.getPODetail(id: poId)
+        #expect(detail.submittedByName == nil)
+    }
 }

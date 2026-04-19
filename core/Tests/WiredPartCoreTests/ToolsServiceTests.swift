@@ -245,6 +245,47 @@ struct ToolsServiceTests {
         #expect(tools[0].assignedToName == "TestAdmin")
     }
 
+    @Test("listTools hides assignee name once the user is soft-deleted")
+    func testListTools_hidesDeletedAssigneeName() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        try insertTool(env, toolNumber: "T-200", name: "Deleted Assignee Drill",
+                       status: "checked_out", assignedTo: env.adminUserId)
+
+        // Soft-delete the assignee while the tool is still assigned to them
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [env.adminUserId]
+            )
+        }
+
+        let tools = try env.tools.listTools()
+        #expect(tools.count == 1)
+        #expect(tools[0].assignedToName == nil,
+                "Soft-deleted assignee name must not leak via listTools; LEFT JOIN should yield NULL so COALESCE returns nil")
+    }
+
+    @Test("getToolDetail hides assignee name once the user is soft-deleted")
+    func testGetToolDetail_hidesDeletedAssigneeName() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let toolId = try insertTool(env, toolNumber: "T-300", name: "Detail Test Tool",
+                                     status: "checked_out", assignedTo: env.adminUserId)
+
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [env.adminUserId]
+            )
+        }
+
+        let detail = try env.tools.getToolDetail(toolId: toolId)
+        #expect(detail != nil)
+        #expect(detail?.assignedToName == nil,
+                "Soft-deleted assignee name must not leak via getToolDetail")
+    }
+
     @Test("listTools excludes soft-deleted tools")
     func testListToolsExcludesDeleted() throws {
         let env = try E2ETestHelpers.setUp()
@@ -1214,7 +1255,7 @@ struct ToolsServiceTests {
             try Row.fetchOne(db, sql: "SELECT confidence_score FROM tools WHERE id = ?",
                              arguments: [toolId])
         }
-        let score: Double = try #require(row)?["confidence_score"] ?? -1
+        let score: Double = (try #require(row))["confidence_score"] ?? -1
         #expect(abs(score - 0.9) < 0.0001, "Confidence score should decay from 1.0 to 0.9 with decay_rate=0.1")
     }
 

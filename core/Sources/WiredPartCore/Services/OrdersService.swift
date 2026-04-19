@@ -472,8 +472,8 @@ public final class OrdersService: Sendable {
                                      WHERE jl2.jpo_id = jp.id AND jl2.line_status = 'on_hold'
                                      AND jl2.deleted_at IS NULL), 0) AS hold_count
                     FROM job_parts_orders jp
-                    LEFT JOIN jobs j ON j.id = jp.job_id
-                    LEFT JOIN users u ON u.id = jp.requested_by
+                    LEFT JOIN jobs j ON j.id = jp.job_id AND j.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = jp.requested_by AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY jp.created_at DESC
                     LIMIT ?
@@ -528,8 +528,8 @@ public final class OrdersService: Sendable {
                                      WHERE jl2.jpo_id = jp.id AND jl2.line_status = 'on_hold'
                                      AND jl2.deleted_at IS NULL), 0) AS hold_count
                     FROM job_parts_orders jp
-                    LEFT JOIN jobs j ON j.id = jp.job_id
-                    LEFT JOIN users u ON u.id = jp.requested_by
+                    LEFT JOIN jobs j ON j.id = jp.job_id AND j.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = jp.requested_by AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY jp.created_at DESC
                     LIMIT ?
@@ -565,9 +565,9 @@ public final class OrdersService: Sendable {
                        COALESCE(u_req.display_name, u_req.email, 'Unknown') AS requested_by_name,
                        COALESCE(u_app.display_name, u_app.email) AS approved_by_name
                 FROM job_parts_orders jp
-                LEFT JOIN jobs j ON j.id = jp.job_id
-                LEFT JOIN users u_req ON u_req.id = jp.requested_by
-                LEFT JOIN users u_app ON u_app.id = jp.approved_by
+                LEFT JOIN jobs j ON j.id = jp.job_id AND j.deleted_at IS NULL
+                LEFT JOIN users u_req ON u_req.id = jp.requested_by AND u_req.deleted_at IS NULL
+                LEFT JOIN users u_app ON u_app.id = jp.approved_by AND u_app.deleted_at IS NULL
                 WHERE jp.id = ?
                 """
             guard let row = try Row.fetchOne(dbConn, sql: sql, arguments: [id]) else {
@@ -1062,7 +1062,7 @@ public final class OrdersService: Sendable {
                            jpo.id AS jpo_id, j.job_name
                     FROM jpo_line_items jl
                     JOIN job_parts_orders jpo ON jpo.id = jl.jpo_id
-                    LEFT JOIN jobs j ON j.id = jpo.job_id
+                    LEFT JOIN jobs j ON j.id = jpo.job_id AND j.deleted_at IS NULL
                     LEFT JOIN parts p ON p.id = jl.part_id
                     LEFT JOIN brands b ON b.id = p.brand_id
                     WHERE jl.line_status = 'approved'
@@ -1776,7 +1776,7 @@ public final class OrdersService: Sendable {
                        COALESCE(u.display_name, u.email) AS submitted_by_name
                 FROM purchase_orders po
                 LEFT JOIN suppliers s ON s.id = po.supplier_id
-                LEFT JOIN users u ON u.id = po.submitted_by
+                LEFT JOIN users u ON u.id = po.submitted_by AND u.deleted_at IS NULL
                 WHERE po.id = ?
                 """
             guard let row = try Row.fetchOne(dbConn, sql: sql, arguments: [id]) else {
@@ -1803,7 +1803,7 @@ public final class OrdersService: Sendable {
                 LEFT JOIN parts p ON p.id = pl.part_id
                 LEFT JOIN jpo_line_items jli ON jli.id = pl.jpo_line_id
                 LEFT JOIN job_parts_orders jpo ON jpo.id = jli.jpo_id
-                LEFT JOIN jobs j ON j.id = jpo.job_id
+                LEFT JOIN jobs j ON j.id = jpo.job_id AND j.deleted_at IS NULL
                 WHERE pl.po_id = ? AND pl.deleted_at IS NULL
                 ORDER BY job_name ASC, pl.id ASC
                 """
@@ -2045,7 +2045,7 @@ public final class OrdersService: Sendable {
                        (SELECT COALESCE(SUM(li.qty_received), 0) FROM po_line_items li
                         WHERE li.po_id = ? AND li.deleted_at IS NULL) AS total_received
                 FROM order_status_history osh
-                LEFT JOIN users u ON u.id = osh.changed_by
+                LEFT JOIN users u ON u.id = osh.changed_by AND u.deleted_at IS NULL
                 WHERE osh.entity_type = 'purchase_order'
                   AND osh.entity_id = ?
                   AND osh.new_status IN ('partial', 'received')
@@ -2138,7 +2138,7 @@ public final class OrdersService: Sendable {
                               AND rsi.received_qty != rsi.expected_qty), 0
                        ) AS discrepancy_count
                 FROM receiving_sessions rs
-                LEFT JOIN users u ON u.id = rs.started_by
+                LEFT JOIN users u ON u.id = rs.started_by AND u.deleted_at IS NULL
                 WHERE rs.po_id = ?
                   AND rs.deleted_at IS NULL
                   AND rs.status = 'completed'
@@ -2236,7 +2236,7 @@ public final class OrdersService: Sendable {
                 LEFT JOIN parts p ON p.id = li.part_id
                 LEFT JOIN jpo_line_items jli ON jli.id = li.jpo_line_id
                 LEFT JOIN job_parts_orders jpo ON jpo.id = jli.jpo_id
-                LEFT JOIN jobs j ON j.id = jpo.job_id
+                LEFT JOIN jobs j ON j.id = jpo.job_id AND j.deleted_at IS NULL
                 WHERE \(whereClauses.joined(separator: " AND "))
                 ORDER BY po.po_number ASC, li.id ASC
                 """
@@ -2453,7 +2453,7 @@ public final class OrdersService: Sendable {
                 guard let lineRow = try Row.fetchOne(dbConn, sql: """
                     SELECT jli.brand_selection_mode, p.color_id, p.type_id
                     FROM jpo_line_items jli
-                    JOIN parts p ON p.id = jli.part_id
+                    JOIN parts p ON p.id = jli.part_id AND p.deleted_at IS NULL
                     WHERE jli.id = ? AND jli.deleted_at IS NULL
                     """, arguments: [jpoLineId])
                 else { return .noMatch }
@@ -2499,7 +2499,7 @@ public final class OrdersService: Sendable {
                         SELECT p.brand_id
                         FROM po_line_items poli
                         JOIN purchase_orders po ON po.id = poli.po_id
-                        JOIN parts p ON p.id = poli.part_id
+                        JOIN parts p ON p.id = poli.part_id AND p.deleted_at IS NULL
                         WHERE po.supplier_id = ?
                           AND p.color_id = ?
                           AND p.type_id  = ?
