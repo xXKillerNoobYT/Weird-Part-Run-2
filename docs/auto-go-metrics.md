@@ -42,6 +42,7 @@
 | 2026-04-18 | 22 | jobs | C4_tests_present | done | 0 untested methods (204 tests / 67 funcs = 3x coverage) | — | 0 | ~120 | end-of-day revise-claude-md |
 | 2026-04-18 | 23 | jobs | C5_tests_pass | done | 1383/1383 passing (+34 from iter 5) | — | 0 | ~120 | none |
 | 2026-04-18 | 24 | jobs | C6_build_warnings_zero | done | 0 jobs warnings (scheduling #251 + tools #252 out-of-scope) | — | 0 | ~60 | none |
+| 2026-04-18 | 25 | jobs | C7_ui_polish | done | 1 real dismiss-safety fix + 1 false positive | 1 fix (CreateJobSupplierChannelSheet commit b102dfa) | 0 | ~120 | none |
 
 ## Weekly Roll-ups (updated by loop-self-improve)
 
