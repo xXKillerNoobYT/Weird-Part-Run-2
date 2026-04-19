@@ -450,4 +450,210 @@ struct FleetServiceTests {
         #expect(v != nil)
         #expect(v?.assignedUserName == nil)
     }
+
+    @Test("updateTrailerLocation is a no-op on a soft-deleted trailer")
+    func testUpdateTrailerLocation_noOpOnSoftDeletedTrailer() throws {
+        let env = try E2ETestHelpers.setUp()
+        let trailerId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO job_trailers (trailer_code, name, created_at, updated_at)
+                VALUES ('TR-SOFTDEL', 'TombstonedTrailer', datetime('now'), datetime('now'))
+                """)
+            return db.lastInsertedRowID
+        }
+        // Set a known is_at_shop state then soft-delete the trailer
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE job_trailers SET is_at_shop = 0, deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [trailerId])
+        }
+        // Stale dispatcher marks trailer as at-shop — must not mutate a tombstoned row
+        try env.fleet.updateTrailerLocation(trailerId: trailerId, locationType: "shop", locationLabel: "Yard", jobId: nil, recordedBy: env.adminUserId)
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT is_at_shop FROM job_trailers WHERE id = ?", arguments: [trailerId])
+        }
+        let isAtShop: Int = row?["is_at_shop"] ?? -1
+        #expect(isAtShop == 0,
+            "Soft-deleted trailer is_at_shop must not change — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    @Test("logFuelLevel is a no-op on a soft-deleted vehicle")
+    func testLogFuelLevel_noOpOnSoftDeletedVehicle() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-SOFT-DEL",
+            vehicleName: "TombstonedTruck",
+            vehicleType: "company_truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        // Seed a known fuel reading, then soft-delete the vehicle
+        try env.fleet.logFuelLevel(vehicleId: vehicleId, fuelLevel: 0.25)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE vehicles SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [vehicleId])
+        }
+        // Stale UI writes a new reading. Regression: UPDATE vehicles ... WHERE id = ?
+        // had no deleted_at guard, so the write would persist on the tombstone.
+        try env.fleet.logFuelLevel(vehicleId: vehicleId, fuelLevel: 0.99)
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT fuel_level FROM vehicles WHERE id = ?", arguments: [vehicleId])
+        }
+        let fuel: Double = row?["fuel_level"] ?? -1
+        #expect(fuel == 0.25,
+            "Soft-deleted vehicle fuel_level must not change — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    @Test("assignDriver creates no orphan vehicle_assignments row for a soft-deleted vehicle")
+    func testAssignDriver_noOrphanForSoftDeletedVehicle() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-ASGN-SOFT", vehicleName: "TombstonedTruck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE vehicles SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [vehicleId])
+        }
+        // Regression: INSERT INTO vehicle_assignments had no pre-check that the
+        // target vehicle exists and isn't tombstoned — the FK constraint allows
+        // the write against a soft-deleted parent.
+        try env.fleet.assignDriver(
+            vehicleId: vehicleId, userId: env.adminUserId,
+            assignmentType: "primary", isTakeHome: false
+        )
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM vehicle_assignments WHERE vehicle_id = ?
+                """, arguments: [vehicleId]) ?? 0
+        }
+        #expect(count == 0,
+            "Soft-deleted vehicle must not receive a new driver assignment — INSERT must be pre-checked")
+    }
+
+    // MARK: - Input validation (iter 73)
+
+    @Test("logFuelLevel rejects fuel level outside [0.0, 1.0]")
+    func testLogFuelLevel_rejectsOutOfRange() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-FL-RANGE", vehicleName: "RangeTruck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        #expect(throws: FleetService.FleetError.invalidFuelLevel(-0.1)) {
+            try env.fleet.logFuelLevel(vehicleId: vehicleId, fuelLevel: -0.1)
+        }
+        #expect(throws: FleetService.FleetError.invalidFuelLevel(1.5)) {
+            try env.fleet.logFuelLevel(vehicleId: vehicleId, fuelLevel: 1.5)
+        }
+    }
+
+    @Test("addVehicleStockItem rejects blank partName, zero quantity, and tombstoned vehicle")
+    func testAddVehicleStockItem_rejectsInvalidInputs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-STK-VAL", vehicleName: "ValTruck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        #expect(throws: FleetService.FleetError.self) {
+            try env.fleet.addVehicleStockItem(
+                vehicleId: vehicleId, partName: "   ", quantity: 5, stockType: "standard"
+            )
+        }
+        #expect(throws: FleetService.FleetError.self) {
+            try env.fleet.addVehicleStockItem(
+                vehicleId: vehicleId, partName: "WireNut", quantity: 0, stockType: "standard"
+            )
+        }
+        // Tombstone vehicle, then retry with valid inputs
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE vehicles SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [vehicleId])
+        }
+        #expect(throws: FleetService.FleetError.self) {
+            try env.fleet.addVehicleStockItem(
+                vehicleId: vehicleId, partName: "WireNut", quantity: 5, stockType: "standard"
+            )
+        }
+    }
+
+    // MARK: - Input validation — create paths (iter 68)
+
+    @Test("createVehicle rejects blank vehicleNumber and vehicleName")
+    func testCreateVehicle_rejectsBlankIdentifiers() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: FleetService.FleetError.requiredFieldEmpty("vehicleNumber")) {
+            try env.fleet.createVehicle(
+                vehicleNumber: "   ", vehicleName: "ValidName", vehicleType: "truck",
+                make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+            )
+        }
+        #expect(throws: FleetService.FleetError.requiredFieldEmpty("vehicleName")) {
+            try env.fleet.createVehicle(
+                vehicleNumber: "V-BLANK-NAME", vehicleName: "", vehicleType: "truck",
+                make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+            )
+        }
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM vehicles WHERE vehicle_number LIKE 'V-BLANK%'") ?? 0
+        }
+        #expect(count == 0, "Blank-identifier vehicles must produce zero rows in the DB")
+    }
+
+    @Test("createTrailer rejects blank trailerNumber and trailerType")
+    func testCreateTrailer_rejectsBlankIdentifiers() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: FleetService.FleetError.requiredFieldEmpty("trailerNumber")) {
+            try env.fleet.createTrailer(trailerNumber: "", trailerType: "flatbed", notes: nil)
+        }
+        #expect(throws: FleetService.FleetError.requiredFieldEmpty("trailerType")) {
+            try env.fleet.createTrailer(trailerNumber: "TR-BLANK", trailerType: "   ", notes: nil)
+        }
+        let count = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM job_trailers WHERE trailer_code LIKE 'TR-BLANK%'") ?? 0
+        }
+        #expect(count == 0, "Blank-identifier trailers must produce zero rows in the DB")
+    }
+
+    // MARK: - is_active Defense
+
+    @Test("listVehicles excludes is_active = 0 vehicles")
+    func testListVehiclesExcludesInactive() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-INACTIVE", vehicleName: "Inactive Truck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE vehicles SET is_active = 0 WHERE id = ?", arguments: [vehicleId])
+        }
+        let vehicles = try env.fleet.listVehicles()
+        #expect(!vehicles.contains(where: { $0.id == vehicleId }), "is_active=0 vehicle must not appear in listVehicles")
+    }
+
+    @Test("listTrailers excludes is_active = 0 trailers")
+    func testListTrailersExcludesInactive() throws {
+        let env = try E2ETestHelpers.setUp()
+        let trailerId = try env.fleet.createTrailer(trailerNumber: "TR-INACTIVE", trailerType: "flatbed", notes: nil)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE job_trailers SET is_active = 0 WHERE id = ?", arguments: [trailerId])
+        }
+        let trailers = try env.fleet.listTrailers()
+        #expect(!trailers.contains(where: { $0.id == trailerId }), "is_active=0 trailer must not appear in listTrailers")
+    }
+
+    @Test("getFleetStats excludes is_active = 0 vehicles from counts")
+    func testFleetStatsExcludesInactive() throws {
+        let env = try E2ETestHelpers.setUp()
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-STATS-INACTIVE", vehicleName: "Stats Inactive", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        let before = try env.fleet.getFleetStats()
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE vehicles SET is_active = 0 WHERE id = ?", arguments: [vehicleId])
+        }
+        let after = try env.fleet.getFleetStats()
+        #expect(after.totalVehicles == before.totalVehicles - 1, "is_active=0 vehicle must reduce totalVehicles count")
+    }
 }
