@@ -928,4 +928,56 @@ struct JobsServiceTests {
         #expect(result[0].status == "in_progress")
         #expect(result[1].status == "pending")
     }
+
+    // MARK: - Soft-Delete Guard Regression Tests
+
+    @Test("getJob throws jobNotFound for soft-deleted job")
+    func testGetJobHidesDeletedJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        // Soft-delete the job directly
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?", arguments: [jobId])
+        }
+
+        #expect(throws: JobsService.JobsError.jobNotFound(jobId)) {
+            _ = try env.jobs.getJob(id: jobId)
+        }
+    }
+
+    @Test("clockIn throws jobNotFound when clocking into deleted job")
+    func testClockInBlockedForDeletedJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        // Soft-delete the job
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?", arguments: [jobId])
+        }
+
+        #expect(throws: JobsService.JobsError.jobNotFound(jobId)) {
+            _ = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        }
+    }
+
+    @Test("getTeamMembers shows Unknown for soft-deleted team member user")
+    func testGetTeamMembersExcludesDeletedUsers() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+
+        // Add admin as a team member
+        try env.jobs.addTeamMember(jobId: jobId, userId: env.adminUserId, role: "member")
+
+        // Soft-delete the admin user
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?", arguments: [env.adminUserId])
+        }
+
+        let members = try env.jobs.getTeamMembers(jobId: jobId)
+        // The team slot still exists but the deleted user's identity is hidden
+        let member = members.first(where: { $0.userId == env.adminUserId })
+        #expect(member != nil)
+        #expect(member?.userName == "Unknown")
+    }
 }

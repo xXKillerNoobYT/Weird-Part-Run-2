@@ -450,8 +450,8 @@ public final class JobsService: Sendable {
                                  FROM labor_entries le
                                  WHERE le.job_id = j.id AND le.deleted_at IS NULL), 0) AS labor_hours
                 FROM jobs j
-                LEFT JOIN users u ON u.id = j.lead_user_id
-                WHERE j.id = ?
+                LEFT JOIN users u ON u.id = j.lead_user_id AND u.deleted_at IS NULL
+                WHERE j.id = ? AND j.deleted_at IS NULL
                 """
             guard let row = try Row.fetchOne(dbConn, sql: sql, arguments: [id]) else {
                 return nil
@@ -864,6 +864,16 @@ public final class JobsService: Sendable {
         gpsLng: Double? = nil
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            // Verify the target job exists and is not deleted
+            let jobExists = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL",
+                arguments: [jobId]
+            ) ?? 0
+            guard jobExists > 0 else {
+                throw JobsError.jobNotFound(jobId)
+            }
+
             // Check for existing open clock entry
             let existing = try Int.fetchOne(
                 dbConn,
@@ -1650,7 +1660,7 @@ public final class JobsService: Sendable {
                         SELECT jtm.id, jtm.user_id, jtm.role, jtm.assigned_at,
                                COALESCE(u.display_name, u.email, 'Unknown') AS user_name
                         FROM job_team_members jtm
-                        LEFT JOIN users u ON u.id = jtm.user_id
+                        LEFT JOIN users u ON u.id = jtm.user_id AND u.deleted_at IS NULL
                         WHERE jtm.job_id = ? AND jtm.deleted_at IS NULL
                         ORDER BY jtm.assigned_at ASC
                         """,
