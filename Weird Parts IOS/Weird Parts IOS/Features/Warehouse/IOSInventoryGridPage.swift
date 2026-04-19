@@ -207,6 +207,7 @@ struct IOSInventoryGridPage: View {
                 HStack(spacing: 4) {
                     Image(systemName: filterIcon(filter))
                         .font(.caption)
+                        .accessibilityHidden(true)
                     Text("\(count)")
                         .font(.title3)
                         .fontWeight(.bold)
@@ -214,8 +215,9 @@ struct IOSInventoryGridPage: View {
                 Text(filter.rawValue)
                     .font(.caption2)
                     .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            .frame(minWidth: 85)
+            .frame(minWidth: 85, minHeight: 44)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(

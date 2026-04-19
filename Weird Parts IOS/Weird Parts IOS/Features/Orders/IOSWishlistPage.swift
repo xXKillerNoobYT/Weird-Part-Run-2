@@ -285,6 +285,7 @@ struct IOSWishlistPage: View {
                     Text(item.partName)
                         .fontWeight(.medium)
                         .lineLimit(1)
+                        .truncationMode(.tail)
                     priorityBadge(item.priority)
                 }
 
@@ -292,6 +293,7 @@ struct IOSWishlistPage: View {
                     Label("\(item.qtySuggested)", systemImage: "number")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .accessibilityLabel("Suggested quantity: \(item.qtySuggested)")
 
                     sourceTypeBadge(item.sourceType)
 
@@ -397,6 +399,7 @@ struct IOSWishlistPage: View {
         return HStack(spacing: 4) {
             Image(systemName: isHigh ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                 .font(.caption2)
+                .accessibilityHidden(true)
             Text(label)
                 .font(.caption2)
                 .fontWeight(.medium)

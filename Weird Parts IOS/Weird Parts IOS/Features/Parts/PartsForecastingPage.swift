@@ -99,6 +99,7 @@ struct PartsForecastingPage: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "lightbulb")
+                            .accessibilityHidden(true)
                         if recommendationCount > 0 {
                             Text("\(recommendationCount)")
                                 .font(.caption2)
@@ -680,6 +681,7 @@ struct PartsForecastingPage: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.green)
+                .accessibilityLabel("Approve recommendation")
 
                 Button {
                     dismissingRecommendation = rec
@@ -689,6 +691,7 @@ struct PartsForecastingPage: View {
                         .font(.caption)
                         .fontWeight(.medium)
                 }
+                .accessibilityLabel("Dismiss recommendation")
                 .buttonStyle(.bordered)
                 .tint(.red)
             }
@@ -704,6 +707,7 @@ struct PartsForecastingPage: View {
             HStack(spacing: 4) {
                 Image(systemName: icon)
                     .font(.caption2)
+                    .accessibilityHidden(true)
                 Text(name)
                     .font(.caption)
                     .lineLimit(1)
