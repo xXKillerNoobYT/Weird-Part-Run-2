@@ -152,8 +152,8 @@ public final class WarehouseService: Sendable {
                                sm.created_at,
                                sm.from_location_type, sm.to_location_type
                         FROM stock_movements sm
-                        LEFT JOIN parts p ON p.id = sm.part_id
-                        LEFT JOIN users u ON u.id = sm.performed_by
+                        LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
+                        LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
                         WHERE sm.deleted_at IS NULL
                         ORDER BY sm.created_at DESC
                         LIMIT ?
@@ -227,7 +227,7 @@ public final class WarehouseService: Sendable {
                            COALESCE(sq.total_qty, 0) AS total_qty,
                            COALESCE(sq.loc_count, 0) AS loc_count
                     FROM parts p
-                    LEFT JOIN part_categories pc ON pc.id = p.category_id
+                    LEFT JOIN part_categories pc ON pc.id = p.category_id AND pc.deleted_at IS NULL
                     LEFT JOIN (
                         SELECT part_id,
                                SUM(qty) AS total_qty,
@@ -469,8 +469,8 @@ public final class WarehouseService: Sendable {
                            p.name AS part_name,
                            COALESCE(u.display_name, u.email, 'Unknown') AS performed_by_name
                     FROM stock_movements sm
-                    LEFT JOIN parts p ON p.id = sm.part_id
-                    LEFT JOIN users u ON u.id = sm.performed_by
+                    LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
                     WHERE \(whereClauses.joined(separator: " AND "))
                     ORDER BY sm.created_at DESC
                     LIMIT ? OFFSET ?
@@ -510,8 +510,8 @@ public final class WarehouseService: Sendable {
                        p.name AS part_name,
                        COALESCE(u.display_name, u.email, 'Unknown') AS performed_by_name
                 FROM stock_movements sm
-                LEFT JOIN parts p ON p.id = sm.part_id
-                LEFT JOIN users u ON u.id = sm.performed_by
+                LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
+                LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
                 WHERE sm.id = ? AND sm.deleted_at IS NULL
                 """
             guard let row = try Row.fetchOne(dbConn, sql: sql, arguments: [id]) else {

@@ -1243,7 +1243,7 @@ public final class DashboardService: Sendable {
                            COALESCE(s.name, 'Unknown') AS supplier_name,
                            s.email AS supplier_email, s.phone AS supplier_phone
                     FROM purchase_orders po
-                    LEFT JOIN suppliers s ON s.id = po.supplier_id
+                    LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
                     WHERE po.id = ?
                     """, arguments: [poId])
 
@@ -1263,7 +1263,7 @@ public final class DashboardService: Sendable {
                 let lineRows = try Row.fetchAll(conn, sql: """
                     SELECT pl.qty_ordered, p.name AS part_name, p.code AS part_code
                     FROM po_line_items pl
-                    LEFT JOIN parts p ON p.id = pl.part_id
+                    LEFT JOIN parts p ON p.id = pl.part_id AND p.deleted_at IS NULL
                     WHERE pl.po_id = ? AND pl.deleted_at IS NULL
                     ORDER BY p.name
                     """, arguments: [poId])

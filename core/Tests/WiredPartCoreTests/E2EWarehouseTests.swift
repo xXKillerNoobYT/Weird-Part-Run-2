@@ -196,6 +196,40 @@ struct E2EWarehouseTests {
         #expect(!activity.isEmpty)
     }
 
+    @Test("getRecentActivity shows Unknown Part and Unknown for soft-deleted part and user")
+    func testGetRecentActivityHidesDeletedPartAndUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "RA_Cat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "RA_Part", categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 5)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?", arguments: [partId])
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        let activity = try env.warehouse.getRecentActivity()
+        let entry = activity.first(where: { $0.description.contains("RA_Part") == false })
+        let anyEntry = activity.first
+        #expect(anyEntry != nil)
+        #expect(anyEntry?.performedByName == "Unknown")
+        #expect(anyEntry?.description.contains("Unknown Part") == true || anyEntry?.description.contains("RA_Part") == false)
+    }
+
+    @Test("getInventoryGrid shows nil categoryName for soft-deleted category")
+    func testGetInventoryGridHidesDeletedCategoryName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "DelCat_IG")
+        let partId = try E2ETestHelpers.seedPart(env, name: "IG_Part", categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 3)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE part_categories SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [catId])
+        }
+        let grid = try env.warehouse.getInventoryGrid(search: "IG_Part")
+        #expect(grid.isEmpty == false)
+        #expect(grid.first?.categoryName == nil)
+    }
+
     // MARK: - Trailers
 
     @Test("Trailer lifecycle: create and update")

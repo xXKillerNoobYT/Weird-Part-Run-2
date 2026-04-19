@@ -597,4 +597,48 @@ struct DashboardServiceTests {
         #expect(schedule.first?.jobName == "Unassigned")
         #expect(schedule.first?.employeeName == "Unknown")
     }
+
+    @Test("getPOKPIDetail shows Unknown for soft-deleted supplier")
+    func testGetPOKPIDetailHidesDeletedSupplierName() throws {
+        let (env, dash) = try freshEnv()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "DelPOSupplier")
+        var poId: Int64 = 0
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO purchase_orders (po_number, supplier_id, status)
+                VALUES ('PO-KPI-DEL-01', ?, 'submitted')
+                """, arguments: [supplierId])
+            poId = db.lastInsertedRowID
+            try db.execute(sql: "UPDATE suppliers SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [supplierId])
+        }
+        let (detail, _) = try dash.getPOKPIDetail(poId: poId)
+        #expect(detail != nil)
+        #expect(detail?.supplierName == "Unknown")
+    }
+
+    @Test("getPOKPIDetail shows Unknown for soft-deleted part in line items")
+    func testGetPOKPIDetailHidesDeletedPartInLineItems() throws {
+        let (env, dash) = try freshEnv()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "ActivePOSupplier")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "KPICat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "DelPOPart", categoryId: catId)
+        var poId: Int64 = 0
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO purchase_orders (po_number, supplier_id, status)
+                VALUES ('PO-KPI-PART-01', ?, 'submitted')
+                """, arguments: [supplierId])
+            poId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, part_id, qty_ordered, qty_received, unit_cost)
+                VALUES (?, ?, 5, 0, 10.00)
+                """, arguments: [poId, partId])
+            try db.execute(sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [partId])
+        }
+        let (_, lines) = try dash.getPOKPIDetail(poId: poId)
+        #expect(lines.isEmpty == false)
+        #expect(lines.first?.partName == "Unknown")
+    }
 }
