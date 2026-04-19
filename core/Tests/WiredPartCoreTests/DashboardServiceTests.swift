@@ -273,6 +273,21 @@ struct DashboardServiceTests {
         #expect(detail != nil)
     }
 
+    @Test("getJobKPIDetail returns nil for a soft-deleted job")
+    func testGetJobKPIDetail_nilForSoftDeletedJob() throws {
+        let (env, dash) = try freshEnv()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [jobId])
+        }
+        // Regression: WHERE j.id = ? had no deleted_at guard, so dashboard KPI
+        // would happily render tombstoned jobs with stale spend/labor numbers.
+        let detail = try dash.getJobKPIDetail(jobId: jobId)
+        #expect(detail == nil,
+            "Soft-deleted jobs must not surface on dashboard KPI detail")
+    }
+
     // MARK: - Daily Report Submission
 
     @Test("Submit daily report")
@@ -371,6 +386,26 @@ struct DashboardServiceTests {
         let (detail, lines) = try dash.getPOKPIDetail(poId: 99999)
         #expect(detail == nil)
         #expect(lines.isEmpty)
+    }
+
+    @Test("getPOKPIDetail returns nil for a soft-deleted PO")
+    func testGetPOKPIDetail_nilForSoftDeletedPO() throws {
+        let (env, dash) = try freshEnv()
+        let suppId = try E2ETestHelpers.seedSupplier(env)
+        let poId = try env.orders.createPurchaseOrder(
+            poNumber: "PO-DASH-DEL",
+            supplierId: suppId,
+            notes: nil
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE purchase_orders SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [poId])
+        }
+        // Regression: WHERE po.id = ? had no deleted_at guard, so dashboard KPI
+        // PO detail still showed tombstoned POs in the "recent orders" deep-link.
+        let (detail, _) = try dash.getPOKPIDetail(poId: poId)
+        #expect(detail == nil,
+            "Soft-deleted POs must not surface on dashboard KPI detail")
     }
 
     @Test("getPOKPIDetail returns detail for existing PO")

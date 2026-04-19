@@ -947,4 +947,175 @@ struct PartsServiceExtTests {
         #expect(skus.count == 1, "Only one SKU row should exist for the triple")
         #expect(skus[0].partNumber == "GR-002", "partNumber should be updated to the latest value")
     }
+
+    // MARK: - CRUD write-path soft-delete guards
+
+    @Test("updatePart is a no-op on a soft-deleted part")
+    func testUpdatePart_noOpOnSoftDeletedPart() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "UpdateDeletedCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "OriginalName", categoryId: catId)
+        try env.parts.deletePart(id: partId)
+
+        // Soft-deleted: update call must not revive field values.
+        // Regression: UPDATE parts SET ... WHERE id = ? had no deleted_at guard,
+        // so a stale edit form could silently mutate a tombstoned part.
+        try env.parts.updatePart(id: partId, name: "ShouldNotStick")
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT name, deleted_at FROM parts WHERE id = ?", arguments: [partId])
+        }
+        let r = try #require(row)
+        let name: String = r["name"] ?? ""
+        let deletedAt: String? = r["deleted_at"]
+        #expect(name == "OriginalName",
+                "Soft-deleted part name must not change — UPDATE must guard AND deleted_at IS NULL")
+        #expect(deletedAt != nil, "Part must still be tombstoned")
+    }
+
+    @Test("updateCategory is a no-op on a soft-deleted category")
+    func testUpdateCategory_noOpOnSoftDeletedCategory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try env.parts.createCategory(name: "OriginalCat")
+        try env.parts.deleteCategory(id: catId)
+        try env.parts.updateCategory(id: catId, name: "ShouldNotStick")
+
+        let name = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT name FROM part_categories WHERE id = ?", arguments: [catId])
+        }
+        #expect(name == "OriginalCat",
+                "Soft-deleted category name must not change — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    @Test("updateStyle/updateType/updateColor are no-ops on soft-deleted rows")
+    func testUpdateStyleTypeColor_noOpOnSoftDeleted() throws {
+        let env = try E2ETestHelpers.setUp()
+        let (catId, styleId, typeId) = try E2ETestHelpers.seedPartHierarchy(env)
+        _ = catId
+        let colorId = try env.parts.createColor(name: "OriginalColor", hexCode: "#112233")
+
+        // Soft-delete each entity, then attempt to rename them
+        try env.parts.deleteStyle(id: styleId)
+        try env.parts.deleteType(id: typeId)
+        try env.parts.deleteColor(id: colorId)
+
+        try env.parts.updateStyle(id: styleId, name: "StyleShouldNotStick")
+        try env.parts.updateType(id: typeId, name: "TypeShouldNotStick")
+        try env.parts.updateColor(id: colorId, name: "ColorShouldNotStick")
+
+        let styleName = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT name FROM part_styles WHERE id = ?", arguments: [styleId])
+        }
+        let typeName = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT name FROM part_types WHERE id = ?", arguments: [typeId])
+        }
+        let colorName = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT name FROM part_colors WHERE id = ?", arguments: [colorId])
+        }
+
+        #expect(styleName != "StyleShouldNotStick",
+                "Soft-deleted style name must not change — UPDATE must guard AND deleted_at IS NULL")
+        #expect(typeName != "TypeShouldNotStick",
+                "Soft-deleted type name must not change — UPDATE must guard AND deleted_at IS NULL")
+        #expect(colorName != "ColorShouldNotStick",
+                "Soft-deleted color name must not change — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    @Test("updateBrand is a no-op on a soft-deleted brand")
+    func testUpdateBrand_noOpOnSoftDeletedBrand() throws {
+        let env = try E2ETestHelpers.setUp()
+        let brandId = try env.parts.createBrand(name: "OriginalBrand")
+        try env.parts.deleteBrand(id: brandId)
+        try env.parts.updateBrand(id: brandId, name: "ShouldNotStick")
+
+        let name = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT name FROM brands WHERE id = ?", arguments: [brandId])
+        }
+        #expect(name == "OriginalBrand",
+                "Soft-deleted brand name must not change — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    @Test("updateSupplier is a no-op on a soft-deleted supplier")
+    func testUpdateSupplier_noOpOnSoftDeletedSupplier() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supId = try env.parts.createSupplier(name: "OriginalSupplier")
+        try env.parts.deleteSupplier(id: supId)
+        try env.parts.updateSupplier(id: supId, name: "ShouldNotStick")
+
+        let name = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT name FROM suppliers WHERE id = ?", arguments: [supId])
+        }
+        #expect(name == "OriginalSupplier",
+                "Soft-deleted supplier name must not change — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    // MARK: - FK deleted_at guards on create paths (iter 64)
+
+    @Test("createStyle rejects a tombstoned parent category")
+    func testCreateStyle_rejectsTombstonedCategory() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try env.parts.createCategory(name: "TombCat")
+        try env.parts.deleteCategory(id: catId)
+        #expect(throws: PartsService.PartsError.self) {
+            _ = try env.parts.createStyle(categoryId: catId, name: "ShouldNotStick")
+        }
+    }
+
+    @Test("createType rejects a tombstoned parent style")
+    func testCreateType_rejectsTombstonedStyle() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try env.parts.createCategory(name: "TombStyleCat")
+        let styleId = try env.parts.createStyle(categoryId: catId, name: "TombStyle")
+        try env.parts.deleteStyle(id: styleId)
+        #expect(throws: PartsService.PartsError.self) {
+            _ = try env.parts.createType(styleId: styleId, name: "ShouldNotStick")
+        }
+    }
+
+    @Test("createPart rejects a tombstoned category or brand FK")
+    func testCreatePart_rejectsTombstonedFK() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try env.parts.createCategory(name: "PartFKCat")
+        let brandId = try env.parts.createBrand(name: "TombstoneBrand")
+        try env.parts.deleteBrand(id: brandId)
+        // brand FK is tombstoned → throws brandNotFound
+        #expect(throws: PartsService.PartsError.self) {
+            _ = try env.parts.createPart(categoryId: catId, name: "NoBrand", brandId: brandId)
+        }
+        // now tombstone category and retry with a valid brand
+        try env.parts.deleteCategory(id: catId)
+        let brand2 = try env.parts.createBrand(name: "LiveBrand")
+        #expect(throws: PartsService.PartsError.self) {
+            _ = try env.parts.createPart(categoryId: catId, name: "NoCat", brandId: brand2)
+        }
+    }
+
+    @Test("addPartSupplierLink rejects tombstoned part or supplier")
+    func testAddPartSupplierLink_rejectsTombstonedFK() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try env.parts.createCategory(name: "LinkCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "LinkPart", categoryId: catId)
+        let supId = try env.parts.createSupplier(name: "LinkSupp")
+        try env.parts.deleteSupplier(id: supId)
+        #expect(throws: PartsService.PartsError.self) {
+            _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: supId)
+        }
+        // now tombstone part and retry with a fresh supplier
+        try env.parts.deletePart(id: partId)
+        let sup2 = try env.parts.createSupplier(name: "LiveSupp")
+        #expect(throws: PartsService.PartsError.self) {
+            _ = try env.parts.addPartSupplierLink(partId: partId, supplierId: sup2)
+        }
+    }
+
+    @Test("linkBrandToSupplier rejects tombstoned brand or supplier")
+    func testLinkBrandToSupplier_rejectsTombstonedFK() throws {
+        let env = try E2ETestHelpers.setUp()
+        let brandId = try env.parts.createBrand(name: "B2SBrand")
+        let supId = try env.parts.createSupplier(name: "B2SSup")
+        try env.parts.deleteBrand(id: brandId)
+        #expect(throws: PartsService.PartsError.self) {
+            _ = try env.parts.linkBrandToSupplier(brandId: brandId, supplierId: supId)
+        }
+    }
 }

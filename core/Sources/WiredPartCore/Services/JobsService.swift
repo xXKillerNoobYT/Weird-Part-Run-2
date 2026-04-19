@@ -22,10 +22,17 @@ public final class JobsService: Sendable {
 
     public enum JobsError: Error, Sendable, Equatable {
         case jobNotFound(Int64)
+        case jobNotClockable(Int64)
+        case partNotFound(Int64)
         case laborEntryNotFound(Int64)
         case alreadyClockedIn(userId: Int64, jobId: Int64)
         case notClockedIn(userId: Int64)
         case questionNotFound(Int64)
+        case requiredQuestionNotAnswered(Int64)
+        case invalidReturnQuantity(Int64)
+        case invalidAmount(Int64)
+        case invalidDuration(Int64)
+        case requiredFieldEmpty
     }
 
     // =========================================================================
@@ -530,7 +537,9 @@ public final class JobsService: Sendable {
         createdBy: Int64? = nil,
         jobClassification: String = "standard"
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !jobName.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        guard !jobNumber.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO jobs
@@ -591,6 +600,12 @@ public final class JobsService: Sendable {
         budgetLimit: Double? = nil,
         budgetAlertPercent: Double? = nil
     ) throws {
+        if let jobName, jobName.trimmingCharacters(in: .whitespaces).isEmpty {
+            throw JobsError.requiredFieldEmpty
+        }
+        if let status, status.trimmingCharacters(in: .whitespaces).isEmpty {
+            throw JobsError.requiredFieldEmpty
+        }
         try db.writer.write { dbConn in
             var setClauses: [String] = []
             var args: [DatabaseValueConvertible?] = []
@@ -625,7 +640,7 @@ public final class JobsService: Sendable {
             setClauses.append("updated_at = datetime('now')")
             args.append(id)
 
-            let sql = "UPDATE jobs SET \(setClauses.joined(separator: ", ")) WHERE id = ?"
+            let sql = "UPDATE jobs SET \(setClauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL"
             try dbConn.execute(sql: sql, arguments: StatementArguments(args))
         }
     }
@@ -689,6 +704,7 @@ public final class JobsService: Sendable {
 
     /// Set warranty period for a job. Calculates end date from start + duration.
     public func setWarranty(jobId: Int64, startDate: Date, durationDays: Int) throws {
+        guard durationDays > 0 else { throw JobsError.invalidDuration(jobId) }
         let endDate = Calendar.current.date(byAdding: .day, value: durationDays, to: startDate) ?? startDate.addingTimeInterval(Double(durationDays) * 86400)
         let startStr = CoreFormatters.iso8601.string(from: startDate)
         let endStr = CoreFormatters.iso8601.string(from: endDate)
@@ -736,6 +752,7 @@ public final class JobsService: Sendable {
 
     /// Put a job on payment hold. Blocks clock-in for all workers.
     public func setPaymentHold(jobId: Int64, amount: Double, reason: String?) throws {
+        guard amount > 0 else { throw JobsError.invalidAmount(jobId) }
         try db.writer.write { dbConn in
             try dbConn.execute(sql: """
                 UPDATE jobs SET
@@ -864,14 +881,17 @@ public final class JobsService: Sendable {
         gpsLng: Double? = nil
     ) throws -> Int64 {
         try db.writer.write { dbConn in
-            // Verify the target job exists and is not deleted
-            let jobExists = try Int.fetchOne(
+            // Verify the target job exists, is not deleted, and is in a clockable state
+            guard let jobRow = try Row.fetchOne(
                 dbConn,
-                sql: "SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL",
+                sql: "SELECT status FROM jobs WHERE id = ? AND deleted_at IS NULL",
                 arguments: [jobId]
-            ) ?? 0
-            guard jobExists > 0 else {
+            ) else {
                 throw JobsError.jobNotFound(jobId)
+            }
+            let jobStatus: String = jobRow["status"] ?? ""
+            guard ["active", "in_progress"].contains(jobStatus) else {
+                throw JobsError.jobNotClockable(jobId)
             }
 
             // Check for existing open clock entry
@@ -1091,6 +1111,8 @@ public final class JobsService: Sendable {
                       AND COALESCE(ne.task_status, 'pending') != 'complete'
                       AND ne.deleted_at IS NULL
                       AND ne.is_deleted = 0
+                      AND ns.deleted_at IS NULL
+                      AND n.deleted_at IS NULL
                     ORDER BY ne.sort_order ASC
                     """, arguments: [jobId])
                 return rows.map { row in
@@ -1134,6 +1156,8 @@ public final class JobsService: Sendable {
                       AND ne.entry_type = 'todo'
                       AND ne.deleted_at IS NULL
                       AND ne.is_deleted = 0
+                      AND ns.deleted_at IS NULL
+                      AND n.deleted_at IS NULL
                     """, arguments: [jobId])
                 return JobTodoSummary(
                     totalTodos: row?["total"] ?? 0,
@@ -1154,7 +1178,7 @@ public final class JobsService: Sendable {
             try dbConn.execute(
                 sql: """
                     UPDATE labor_entries SET linked_todo_id = ?
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [todoId, clockEntryId]
             )
@@ -1163,11 +1187,14 @@ public final class JobsService: Sendable {
 
     /// Set work type for a clock entry ("new_work" or "warranty").
     public func setClockEntryWorkType(clockEntryId: Int64, workType: String) throws {
+        guard !workType.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw JobsError.requiredFieldEmpty
+        }
         try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     UPDATE labor_entries SET work_type = ?
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [workType, clockEntryId]
             )
@@ -1341,6 +1368,20 @@ public final class JobsService: Sendable {
         responses: [(questionId: Int64, answer: String)]
     ) throws {
         try db.writer.write { dbConn in
+            let requiredIds = try Row.fetchAll(
+                dbConn,
+                sql: "SELECT id FROM clock_out_questions WHERE is_required = 1 AND is_active = 1"
+            ).map { (row: Row) -> Int64 in row["id"] as Int64 }
+            let answeredSet = Set(
+                responses
+                    .filter { !$0.answer.trimmingCharacters(in: .whitespaces).isEmpty }
+                    .map { $0.questionId }
+            )
+            for reqId in requiredIds {
+                guard answeredSet.contains(reqId) else {
+                    throw JobsError.requiredQuestionNotAnswered(reqId)
+                }
+            }
             for response in responses {
                 try dbConn.execute(
                     sql: """
@@ -1440,7 +1481,8 @@ public final class JobsService: Sendable {
         createdBy: Int64,
         targetUserId: Int64? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
+        return try db.writer.write { dbConn in
             try dbConn.execute(
                 sql: """
                     INSERT INTO one_time_questions
@@ -1459,6 +1501,7 @@ public final class JobsService: Sendable {
         answerText: String,
         answeredBy: Int64
     ) throws {
+        guard !answerText.trimmingCharacters(in: .whitespaces).isEmpty else { throw JobsError.requiredFieldEmpty }
         try db.writer.write { dbConn in
             let count = try Int.fetchOne(
                 dbConn,
@@ -1474,7 +1517,7 @@ public final class JobsService: Sendable {
                 sql: """
                     UPDATE one_time_questions
                     SET answer_text = ?, answered_by = ?, status = 'answered', answered_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [answerText, answeredBy, questionId]
             )
@@ -1692,6 +1735,10 @@ public final class JobsService: Sendable {
         role: String = "member"
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            let jobExists = try Int.fetchOne(dbConn,
+                sql: "SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL",
+                arguments: [jobId]) ?? 0
+            guard jobExists > 0 else { throw JobsError.jobNotFound(jobId) }
             try dbConn.execute(
                 sql: """
                     INSERT OR IGNORE INTO job_team_members
@@ -1765,7 +1812,14 @@ public final class JobsService: Sendable {
         costAtConsume: Double? = nil,
         performedBy: Int64
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard qty > 0 else { throw JobsError.invalidReturnQuantity(partId) }
+        return try db.writer.write { dbConn in
+            let partExists = try Int.fetchOne(
+                dbConn,
+                sql: "SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL",
+                arguments: [partId]
+            ) ?? 0
+            guard partExists > 0 else { throw JobsError.partNotFound(partId) }
             try dbConn.execute(
                 sql: """
                     INSERT INTO job_parts
@@ -1780,7 +1834,18 @@ public final class JobsService: Sendable {
 
     /// Record a return of parts from a job.
     public func returnJobPart(jobPartId: Int64, returnQty: Int) throws {
+        guard returnQty > 0 else { throw JobsError.invalidReturnQuantity(jobPartId) }
         try db.writer.write { dbConn in
+            guard let row = try Row.fetchOne(
+                dbConn,
+                sql: "SELECT qty_consumed, qty_returned FROM job_parts WHERE id = ? AND deleted_at IS NULL",
+                arguments: [jobPartId]
+            ) else { throw JobsError.laborEntryNotFound(jobPartId) }
+            let consumed: Int = row["qty_consumed"] ?? 0
+            let alreadyReturned: Int = row["qty_returned"] ?? 0
+            guard alreadyReturned + returnQty <= consumed else {
+                throw JobsError.invalidReturnQuantity(jobPartId)
+            }
             try dbConn.execute(
                 sql: """
                     UPDATE job_parts
@@ -2004,12 +2069,13 @@ public final class JobsService: Sendable {
     @discardableResult
     public func toggleSupplyRun(laborEntryId: Int64) throws -> String {
         try db.writer.write { conn in
-            let existingNotes = try String.fetchOne(
+            guard let row = try Row.fetchOne(
                 conn,
-                sql: "SELECT notes FROM labor_entries WHERE id = ?",
+                sql: "SELECT notes FROM labor_entries WHERE id = ? AND deleted_at IS NULL",
                 arguments: [laborEntryId]
-            ) ?? ""
+            ) else { return "working" }
 
+            let existingNotes: String = row["notes"] ?? ""
             let timestamp = CoreFormatters.nowISO()
             let isCurrentlyOnRun = Self.isOnSupplyRun(notes: existingNotes)
 
@@ -2023,7 +2089,7 @@ public final class JobsService: Sendable {
             }
 
             try conn.execute(
-                sql: "UPDATE labor_entries SET notes = ? WHERE id = ?",
+                sql: "UPDATE labor_entries SET notes = ? WHERE id = ? AND deleted_at IS NULL",
                 arguments: [note, laborEntryId]
             )
 
@@ -2036,7 +2102,7 @@ public final class JobsService: Sendable {
         try db.writer.read { conn in
             try String.fetchOne(
                 conn,
-                sql: "SELECT notes FROM labor_entries WHERE id = ?",
+                sql: "SELECT notes FROM labor_entries WHERE id = ? AND deleted_at IS NULL",
                 arguments: [laborEntryId]
             )
         }

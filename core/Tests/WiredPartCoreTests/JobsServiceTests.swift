@@ -1061,4 +1061,576 @@ struct JobsServiceTests {
         #expect(parts.isEmpty == false)
         #expect(parts.first?.partName == "Unknown Part")
     }
+
+    @Test("getActiveJobTodos excludes todos from soft-deleted notebook section")
+    func testGetActiveJobTodos_excludesTodosInDeletedSection() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let nbId = try env.notebooks.createNotebook(
+            title: "Deleted Section NB",
+            notebookType: "job",
+            jobId: jobId,
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(notebookId: nbId, groupId: nil, name: "Gone Section")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO notebook_entries
+                    (section_id, notebook_id, entry_type, block_type, title, sort_order,
+                     created_by, created_at, updated_at, is_deleted)
+                VALUES (?, ?, 'todo', 'text', 'Ghost Todo', 0, ?, datetime('now'), datetime('now'), 0)
+                """, arguments: [sectionId, nbId, env.adminUserId])
+            try db.execute(sql: "UPDATE notebook_sections SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [sectionId])
+        }
+        let todos = try env.jobs.getActiveJobTodos(jobId: jobId)
+        #expect(!todos.contains(where: { $0.title == "Ghost Todo" }))
+    }
+
+    @Test("getActiveJobTodos excludes todos from soft-deleted notebook")
+    func testGetActiveJobTodos_excludesTodosInDeletedNotebook() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let nbId = try env.notebooks.createNotebook(
+            title: "Deleted NB",
+            notebookType: "job",
+            jobId: jobId,
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(notebookId: nbId, groupId: nil, name: "Active Section")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO notebook_entries
+                    (section_id, notebook_id, entry_type, block_type, title, sort_order,
+                     created_by, created_at, updated_at, is_deleted)
+                VALUES (?, ?, 'todo', 'text', 'Orphan Todo', 0, ?, datetime('now'), datetime('now'), 0)
+                """, arguments: [sectionId, nbId, env.adminUserId])
+            try db.execute(sql: "UPDATE notebooks SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [nbId])
+        }
+        let todos = try env.jobs.getActiveJobTodos(jobId: jobId)
+        #expect(!todos.contains(where: { $0.title == "Orphan Todo" }))
+    }
+
+    @Test("getJobTodoSummary excludes todos from soft-deleted notebook section")
+    func testGetJobTodoSummary_excludesTodosInDeletedSection() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let nbId = try env.notebooks.createNotebook(
+            title: "Summary NB",
+            notebookType: "job",
+            jobId: jobId,
+            createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(notebookId: nbId, groupId: nil, name: "Del Section")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO notebook_entries
+                    (section_id, notebook_id, entry_type, block_type, title, sort_order,
+                     created_by, created_at, updated_at, is_deleted)
+                VALUES (?, ?, 'todo', 'text', 'Phantom Todo', 0, ?, datetime('now'), datetime('now'), 0)
+                """, arguments: [sectionId, nbId, env.adminUserId])
+            try db.execute(sql: "UPDATE notebook_sections SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [sectionId])
+        }
+        let summary = try env.jobs.getJobTodoSummary(jobId: jobId)
+        #expect(summary.totalTodos == 0)
+    }
+
+    @Test("linkClockEntryToTodo is a no-op on a soft-deleted labor entry")
+    func testLinkClockEntryToTodo_noOpOnSoftDeletedEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        // Clock in to create a real labor entry, then soft-delete it
+        let entryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE labor_entries SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [entryId])
+        }
+        // Stale UI tries to link the clock entry to a todo — must not mutate tombstoned row
+        try env.jobs.linkClockEntryToTodo(clockEntryId: entryId, todoId: 999)
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT linked_todo_id FROM labor_entries WHERE id = ?", arguments: [entryId])
+        }
+        let linkedId: Int64? = row?["linked_todo_id"]
+        #expect(linkedId == nil,
+            "Soft-deleted labor entry linked_todo_id must not change — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    @Test("setClockEntryWorkType is a no-op on a soft-deleted labor entry")
+    func testSetClockEntryWorkType_noOpOnSoftDeletedEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let entryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE labor_entries SET work_type = 'new_work', deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [entryId])
+        }
+        // Stale warranty-flow tries to mark tombstoned labor entry as warranty work
+        try env.jobs.setClockEntryWorkType(clockEntryId: entryId, workType: "warranty")
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT work_type FROM labor_entries WHERE id = ?", arguments: [entryId])
+        }
+        let workType: String? = row?["work_type"]
+        #expect(workType == "new_work",
+            "Soft-deleted labor entry work_type must not change — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    @Test("toggleSupplyRun is a no-op on a soft-deleted labor entry")
+    func testToggleSupplyRun_noOpOnSoftDeletedEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let entryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE labor_entries SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [entryId])
+        }
+        // Stale supply-run toggle on a tombstoned entry should be a no-op
+        let result = try env.jobs.toggleSupplyRun(laborEntryId: entryId)
+        #expect(result == "working",
+            "toggleSupplyRun on soft-deleted entry must return 'working' (no-op early exit)")
+
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT notes FROM labor_entries WHERE id = ?", arguments: [entryId])
+        }
+        let notes: String? = row?["notes"]
+        #expect(notes == nil || (notes?.contains("supply_run_start") == false),
+            "Soft-deleted labor entry notes must not gain supply_run markers")
+    }
+
+    @Test("answerOneTimeQuestion is a no-op on a soft-deleted question")
+    func testAnswerOneTimeQuestion_noOpOnSoftDeletedQuestion() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let questionId = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO one_time_questions
+                    (job_id, question_text, answer_type, status, created_by, created_at)
+                VALUES (?, 'What color?', 'text', 'pending', ?, datetime('now'))
+                """, arguments: [jobId, env.adminUserId])
+            return db.lastInsertedRowID
+        }
+        // Soft-delete the question
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE one_time_questions SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [questionId])
+        }
+        // Stale UI tries to answer a tombstoned question — must throw questionNotFound (guard catches it)
+        do {
+            try env.jobs.answerOneTimeQuestion(questionId: questionId, answerText: "RED", answeredBy: env.adminUserId)
+            Issue.record("Expected answerOneTimeQuestion to throw for deleted question")
+        } catch {
+            // Expected — SELECT guard throws questionNotFound
+        }
+        let row = try env.db.writer.read { db in
+            try Row.fetchOne(db, sql: "SELECT answer_text, status FROM one_time_questions WHERE id = ?",
+                             arguments: [questionId])
+        }
+        let answer: String? = row?["answer_text"]
+        let status: String? = row?["status"]
+        #expect(answer == nil, "Soft-deleted question answer_text must remain nil")
+        #expect(status == "pending", "Soft-deleted question status must remain pending")
+    }
+
+    @Test("getLaborEntryNotes returns nil for soft-deleted labor entry")
+    func testGetLaborEntryNotes_nilForSoftDeletedEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let entryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        // Write notes, then soft-delete
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE labor_entries SET notes = 'test notes', deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [entryId])
+        }
+        // getLaborEntryNotes must return nil for a tombstoned entry
+        let notes = try env.jobs.getLaborEntryNotes(laborEntryId: entryId)
+        #expect(notes == nil,
+            "getLaborEntryNotes must return nil for soft-deleted labor entry — SELECT must guard AND deleted_at IS NULL")
+    }
+
+    @Test("updateJob is a no-op on a soft-deleted job")
+    func testUpdateJob_noOpOnSoftDeletedJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-SOFT-DEL",
+            jobName: "OriginalJobName",
+            customerName: "Cust",
+            status: "active",
+            createdBy: env.adminUserId
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [jobId])
+        }
+        // Stale edit form tries to rename a tombstoned job. Regression: UPDATE jobs
+        // SET ... WHERE id = ? had no deleted_at guard, so the rename would stick.
+        try env.jobs.updateJob(id: jobId, jobName: "ShouldNotStick")
+
+        let name = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT job_name FROM jobs WHERE id = ?", arguments: [jobId])
+        }
+        #expect(name == "OriginalJobName",
+                "Soft-deleted job name must not change — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    @Test("clockIn throws jobNotClockable for completed job")
+    func testClockIn_throwsForCompletedJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET status = 'completed' WHERE id = ?", arguments: [jobId])
+        }
+        var threw = false
+        do {
+            _ = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        } catch JobsService.JobsError.jobNotClockable {
+            threw = true
+        } catch {}
+        #expect(threw, "clockIn must throw jobNotClockable when the job status is 'completed'")
+    }
+
+    @Test("clockIn throws jobNotClockable for cancelled job")
+    func testClockIn_throwsForCancelledJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET status = 'cancelled' WHERE id = ?", arguments: [jobId])
+        }
+        var threw = false
+        do {
+            _ = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        } catch JobsService.JobsError.jobNotClockable {
+            threw = true
+        } catch {}
+        #expect(threw, "clockIn must throw jobNotClockable when the job status is 'cancelled'")
+    }
+
+    @Test("clockIn succeeds for in_progress job")
+    func testClockIn_succeedsForInProgressJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET status = 'in_progress' WHERE id = ?", arguments: [jobId])
+        }
+        let entryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        #expect(entryId > 0, "clockIn must succeed for in_progress jobs")
+    }
+
+    @Test("addJobPart throws invalidReturnQuantity when qty is zero")
+    func testAddJobPart_throwsForZeroQty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let (catId, _, _) = try E2ETestHelpers.seedPartHierarchy(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        var threw = false
+        do {
+            _ = try env.jobs.addJobPart(jobId: jobId, partId: partId, qty: 0, performedBy: env.adminUserId)
+        } catch JobsService.JobsError.invalidReturnQuantity {
+            threw = true
+        } catch {}
+        #expect(threw, "addJobPart must throw invalidReturnQuantity when qty is 0")
+    }
+
+    @Test("addJobPart throws partNotFound for soft-deleted part")
+    func testAddJobPart_throwsForSoftDeletedPart() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let (catId, _, _) = try E2ETestHelpers.seedPartHierarchy(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?", arguments: [partId])
+        }
+        var threw = false
+        do {
+            _ = try env.jobs.addJobPart(jobId: jobId, partId: partId, qty: 1, performedBy: env.adminUserId)
+        } catch JobsService.JobsError.partNotFound {
+            threw = true
+        } catch {}
+        #expect(threw, "addJobPart must throw partNotFound when the part is soft-deleted")
+    }
+
+    @Test("returnJobPart throws invalidReturnQuantity when returnQty is zero")
+    func testReturnJobPart_throwsForZeroQty() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let (catId, _, _) = try E2ETestHelpers.seedPartHierarchy(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let jobPartId = try env.jobs.addJobPart(jobId: jobId, partId: partId, qty: 3, performedBy: env.adminUserId)
+        var threw = false
+        do {
+            try env.jobs.returnJobPart(jobPartId: jobPartId, returnQty: 0)
+        } catch JobsService.JobsError.invalidReturnQuantity {
+            threw = true
+        } catch {}
+        #expect(threw, "returnJobPart must throw invalidReturnQuantity when returnQty is 0")
+    }
+
+    @Test("returnJobPart throws invalidReturnQuantity when over-returning")
+    func testReturnJobPart_throwsForOverReturn() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let (catId, _, _) = try E2ETestHelpers.seedPartHierarchy(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let jobPartId = try env.jobs.addJobPart(jobId: jobId, partId: partId, qty: 2, performedBy: env.adminUserId)
+        var threw = false
+        do {
+            try env.jobs.returnJobPart(jobPartId: jobPartId, returnQty: 3)
+        } catch JobsService.JobsError.invalidReturnQuantity {
+            threw = true
+        } catch {}
+        #expect(threw, "returnJobPart must throw invalidReturnQuantity when returnQty exceeds qty_consumed")
+    }
+
+    @Test("returnJobPart succeeds and updates qty_returned for valid return")
+    func testReturnJobPart_succeedsForValidReturn() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let (catId, _, _) = try E2ETestHelpers.seedPartHierarchy(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let jobPartId = try env.jobs.addJobPart(jobId: jobId, partId: partId, qty: 5, performedBy: env.adminUserId)
+        try env.jobs.returnJobPart(jobPartId: jobPartId, returnQty: 2)
+        let qtyReturned = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT qty_returned FROM job_parts WHERE id = ?", arguments: [jobPartId]) ?? 0
+        }
+        #expect(qtyReturned == 2, "qty_returned must reflect the partial return")
+    }
+
+    @Test("saveClockOutResponses throws requiredQuestionNotAnswered when required question is skipped")
+    func testSaveClockOutResponses_throwsForSkippedRequiredQuestion() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        _ = try env.settings.addClockOutQuestion(
+            text: "Safety check required",
+            type: "text",
+            isRequired: true,
+            sortOrder: 0
+        )
+        var threw = false
+        do {
+            try env.jobs.saveClockOutResponses(laborEntryId: laborEntryId, responses: [])
+        } catch JobsService.JobsError.requiredQuestionNotAnswered {
+            threw = true
+        } catch {}
+        #expect(threw, "saveClockOutResponses must throw requiredQuestionNotAnswered when a required active question has no answer")
+    }
+
+    @Test("saveClockOutResponses throws for whitespace-only answer on required question")
+    func testSaveClockOutResponses_throwsForBlankRequiredAnswer() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        let qId = try env.settings.addClockOutQuestion(
+            text: "Any hazards?",
+            type: "text",
+            isRequired: true,
+            sortOrder: 0
+        )
+        var threw = false
+        do {
+            try env.jobs.saveClockOutResponses(laborEntryId: laborEntryId, responses: [(questionId: qId, answer: "   ")])
+        } catch JobsService.JobsError.requiredQuestionNotAnswered {
+            threw = true
+        } catch {}
+        #expect(threw, "Whitespace-only answer must not satisfy a required question — trimmingCharacters check must fire")
+    }
+
+    @Test("saveClockOutResponses succeeds and skips validation for inactive required question")
+    func testSaveClockOutResponses_inactiveRequiredQuestionIsNotEnforced() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let laborEntryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        let qId = try env.settings.addClockOutQuestion(
+            text: "Deactivated question",
+            type: "text",
+            isRequired: true,
+            sortOrder: 0
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE clock_out_questions SET is_active = 0 WHERE id = ?", arguments: [qId])
+        }
+        // Should succeed because inactive questions are not enforced
+        try env.jobs.saveClockOutResponses(laborEntryId: laborEntryId, responses: [])
+    }
+
+    @Test("setPaymentHold throws invalidAmount for zero amount")
+    func testSetPaymentHold_throwsForZeroAmount() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        var threw = false
+        do {
+            try env.jobs.setPaymentHold(jobId: jobId, amount: 0, reason: nil)
+        } catch JobsService.JobsError.invalidAmount {
+            threw = true
+        } catch {}
+        #expect(threw, "setPaymentHold must throw invalidAmount when amount is zero")
+    }
+
+    @Test("setPaymentHold throws invalidAmount for negative amount")
+    func testSetPaymentHold_throwsForNegativeAmount() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        var threw = false
+        do {
+            try env.jobs.setPaymentHold(jobId: jobId, amount: -500, reason: "test")
+        } catch JobsService.JobsError.invalidAmount {
+            threw = true
+        } catch {}
+        #expect(threw, "setPaymentHold must throw invalidAmount when amount is negative")
+    }
+
+    @Test("setPaymentHold succeeds for positive amount")
+    func testSetPaymentHold_succeedsForPositiveAmount() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        try env.jobs.setPaymentHold(jobId: jobId, amount: 1500.00, reason: "Unpaid invoice")
+        let onHold = try env.jobs.isJobOnPaymentHold(jobId: jobId)
+        #expect(onHold, "setPaymentHold must place the job on hold")
+    }
+
+    @Test("addTeamMember throws jobNotFound for soft-deleted job")
+    func testAddTeamMember_throwsForSoftDeletedJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [jobId])
+        }
+        var threw = false
+        do {
+            _ = try env.jobs.addTeamMember(jobId: jobId, userId: env.adminUserId)
+        } catch JobsService.JobsError.jobNotFound {
+            threw = true
+        } catch {}
+        #expect(threw, "addTeamMember must throw jobNotFound when the job is soft-deleted")
+    }
+
+    @Test("setWarranty throws invalidDuration for zero duration")
+    func testSetWarranty_throwsForZeroDuration() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        var threw = false
+        do {
+            try env.jobs.setWarranty(jobId: jobId, startDate: Date(), durationDays: 0)
+        } catch JobsService.JobsError.invalidDuration {
+            threw = true
+        } catch {}
+        #expect(threw, "setWarranty must throw invalidDuration when durationDays is zero")
+    }
+
+    @Test("setWarranty throws invalidDuration for negative duration")
+    func testSetWarranty_throwsForNegativeDuration() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        var threw = false
+        do {
+            try env.jobs.setWarranty(jobId: jobId, startDate: Date(), durationDays: -30)
+        } catch JobsService.JobsError.invalidDuration {
+            threw = true
+        } catch {}
+        #expect(threw, "setWarranty must throw invalidDuration when durationDays is negative")
+    }
+
+    @Test("setWarranty succeeds for positive duration")
+    func testSetWarranty_succeedsForPositiveDuration() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        try env.jobs.setWarranty(jobId: jobId, startDate: Date(), durationDays: 365)
+        let active = try env.jobs.isWarrantyActive(jobId: jobId)
+        #expect(active, "setWarranty must create an active warranty for a future end date")
+    }
+
+    @Test("createJob throws requiredFieldEmpty for blank jobName")
+    func testCreateJob_throwsForBlankJobName() throws {
+        let env = try E2ETestHelpers.setUp()
+        var threw = false
+        do {
+            _ = try env.jobs.createJob(jobNumber: "J-001", jobName: "   ")
+        } catch JobsService.JobsError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "createJob must throw requiredFieldEmpty when jobName is blank")
+    }
+
+    @Test("createJob throws requiredFieldEmpty for blank jobNumber")
+    func testCreateJob_throwsForBlankJobNumber() throws {
+        let env = try E2ETestHelpers.setUp()
+        var threw = false
+        do {
+            _ = try env.jobs.createJob(jobNumber: "", jobName: "Valid Name")
+        } catch JobsService.JobsError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "createJob must throw requiredFieldEmpty when jobNumber is blank")
+    }
+
+    @Test("createOneTimeQuestion throws requiredFieldEmpty for blank text")
+    func testCreateOneTimeQuestion_throwsForBlankText() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        var threw = false
+        do {
+            _ = try env.jobs.createOneTimeQuestion(jobId: jobId, text: "  ", createdBy: env.adminUserId)
+        } catch JobsService.JobsError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "createOneTimeQuestion must throw requiredFieldEmpty when text is blank")
+    }
+
+    @Test("answerOneTimeQuestion throws requiredFieldEmpty for blank answer")
+    func testAnswerOneTimeQuestion_throwsForBlankAnswer() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let qId = try env.jobs.createOneTimeQuestion(jobId: jobId, text: "How was the job?", createdBy: env.adminUserId)
+        var threw = false
+        do {
+            try env.jobs.answerOneTimeQuestion(questionId: qId, answerText: "   ", answeredBy: env.adminUserId)
+        } catch JobsService.JobsError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "answerOneTimeQuestion must throw requiredFieldEmpty when answerText is blank")
+    }
+
+    @Test("updateJob throws requiredFieldEmpty when jobName is blank")
+    func testUpdateJob_throwsForBlankJobName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        var threw = false
+        do {
+            try env.jobs.updateJob(id: jobId, jobName: "   ")
+        } catch JobsService.JobsError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "updateJob must throw requiredFieldEmpty when jobName is whitespace-only")
+    }
+
+    @Test("updateJob throws requiredFieldEmpty when status is blank")
+    func testUpdateJob_throwsForBlankStatus() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        var threw = false
+        do {
+            try env.jobs.updateJob(id: jobId, status: "")
+        } catch JobsService.JobsError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "updateJob must throw requiredFieldEmpty when status is empty")
+    }
+
+    @Test("setClockEntryWorkType throws requiredFieldEmpty when workType is blank")
+    func testSetClockEntryWorkType_throwsForBlankWorkType() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env)
+        let entryId = try env.jobs.clockIn(userId: env.adminUserId, jobId: jobId)
+        var threw = false
+        do {
+            try env.jobs.setClockEntryWorkType(clockEntryId: entryId, workType: "   ")
+        } catch JobsService.JobsError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "setClockEntryWorkType must throw requiredFieldEmpty when workType is whitespace-only")
+    }
 }

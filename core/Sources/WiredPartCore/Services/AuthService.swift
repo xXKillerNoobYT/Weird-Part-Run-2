@@ -2,6 +2,7 @@ import Foundation
 import CryptoKit
 import GRDB
 import Security
+import os.log
 
 /// Local Auth Service — PIN authentication + first-run bootstrap.
 ///
@@ -16,6 +17,11 @@ import Security
 /// Ported from: `src/local/services/auth-service.ts`
 public final class AuthService: Sendable {
     private let db: AppDatabase
+
+    /// Structured logger for Keychain / token / auth warnings. Unified log replaces
+    /// `print(...)` calls so warnings surface via Console.app/os_log with proper
+    /// subsystem filtering and privacy redaction.
+    fileprivate static let logger = Logger(subsystem: "com.wiredpart.core", category: "AuthService")
 
     public init(db: AppDatabase) {
         self.db = db
@@ -378,7 +384,19 @@ public final class AuthService: Sendable {
 
     /// Add a permission key to a hat.
     public func addHatPermission(hatId: Int64, permissionKey: String) throws {
+        guard !permissionKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AuthError.requiredFieldEmpty("permissionKey")
+        }
         try db.writer.write { dbConnection in
+            // Guard: the hat must exist — `hats` is not soft-deletable (hard-delete only
+            // via SettingsService), but the FK constraint still requires existence check
+            // to avoid silently INSERTing orphan permissions the permission engine
+            // would then refuse to apply.
+            let hatExists = (try Int.fetchOne(dbConnection, sql: """
+                SELECT COUNT(*) FROM hats WHERE id = ?
+                """, arguments: [hatId]) ?? 0) > 0
+            guard hatExists else { throw AuthError.hatNotFound(hatId) }
+
             try dbConnection.execute(
                 sql: "INSERT OR IGNORE INTO hat_permissions (hat_id, permission_key) VALUES (?, ?)",
                 arguments: [hatId, permissionKey]
@@ -481,10 +499,13 @@ public final class AuthService: Sendable {
         return message.contains("no such table") || message.contains("no such column")
     }
 
-    public enum AuthError: Error, Sendable {
+    public enum AuthError: Error, Sendable, Equatable {
         case invalidToken
         case tokenExpired
         case userNotFound
+        case requiredFieldEmpty(String)
+        case invalidPin(String)
+        case hatNotFound(Int64)
     }
 
     // MARK: - Security & Device Administration
@@ -603,6 +624,27 @@ public final class AuthService: Sendable {
         }
     }
 
+    /// Active users still on the legacy fixed-salt PIN hash, returned as (id, displayName) pairs.
+    /// Admins can surface these in the People → Permissions area to prompt affected users to log in
+    /// and trigger the automatic per-user migration.
+    public func getLegacyHashedUsers() throws -> [(id: Int64, displayName: String)] {
+        try db.writer.read { dbConn in
+            let rows = try Row.fetchAll(
+                dbConn,
+                sql: """
+                    SELECT id, display_name FROM users
+                    WHERE is_active = 1
+                      AND deleted_at IS NULL
+                      AND pin_salt IS NULL
+                      AND pin_hash NOT LIKE '$2b$%'
+                      AND pin_hash != '__PLACEHOLDER_HASH__'
+                    ORDER BY display_name
+                    """
+            )
+            return rows.map { (id: $0["id"], displayName: $0["display_name"]) }
+        }
+    }
+
     // MARK: - User Management
 
     /// Create a new user (employee). Returns the new user's ID.
@@ -613,6 +655,18 @@ public final class AuthService: Sendable {
         email: String? = nil,
         phone: String? = nil
     ) throws -> Int64 {
+        // Validate inputs: display name must be non-blank; PIN must be 4–8 digits.
+        // Previously a blank displayName would create a login-screen entry the user
+        // couldn't select, and a too-short PIN bypassed lockout timing.
+        guard !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AuthError.requiredFieldEmpty("displayName")
+        }
+        let trimmedPin = pin.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedPin.count >= 4 && trimmedPin.count <= 8,
+              trimmedPin.allSatisfy({ $0.isNumber }) else {
+            throw AuthError.invalidPin("PIN must be 4–8 digits")
+        }
+
         let salt = Self.generateSalt()
         let pinHash = Self.hashPin(pin, salt: salt)
         let now = Self.currentTimestamp()
@@ -661,7 +715,7 @@ public final class AuthService: Sendable {
 
     /// Legacy fixed-salt hash for backward compatibility during migration.
     /// Used only to verify old PINs before re-hashing with a per-user salt.
-    private static func legacyHashPin(_ pin: String) -> String {
+    static func legacyHashPin(_ pin: String) -> String {
         let data = Data((pin + ":wiredpart").utf8)
         let digest = SHA256.hash(data: data)
         return digest.map { String(format: "%02x", $0) }.joined()
@@ -719,7 +773,7 @@ public final class AuthService: Sendable {
         if addStatus != errSecSuccess && addStatus != errSecDuplicateItem {
             // Key generated but not persisted — tokens will invalidate on next app launch.
             // errSecDuplicateItem is benign (item was added between our read and write).
-            print("[AuthService] WARNING: SecItemAdd failed (OSStatus \(addStatus)) — signing key in memory only. Tokens will not survive app restart.")
+            AuthService.logger.warning("SecItemAdd failed (OSStatus \(addStatus)) — signing key in memory only. Tokens will not survive app restart.")
         }
         return SymmetricKey(data: keyData)
     }()

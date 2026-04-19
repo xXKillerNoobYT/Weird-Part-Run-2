@@ -1174,7 +1174,7 @@ public final class DashboardService: Sendable {
                               WHERE jpo.job_id = j.id AND po.status NOT IN ('cancelled') AND po.deleted_at IS NULL), 0
                            ) AS current_spend
                     FROM jobs j
-                    WHERE j.id = ?
+                    WHERE j.id = ? AND j.deleted_at IS NULL
                     """, arguments: [jobId]) else { return nil }
                 return JobKPIDetail(
                     jobName: row["job_name"] ?? "",
@@ -1244,7 +1244,7 @@ public final class DashboardService: Sendable {
                            s.email AS supplier_email, s.phone AS supplier_phone
                     FROM purchase_orders po
                     LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
-                    WHERE po.id = ?
+                    WHERE po.id = ? AND po.deleted_at IS NULL
                     """, arguments: [poId])
 
                 let detail = row.map { r in

@@ -31,6 +31,33 @@ Running total: **33+ gaps / 10 areas**. Settings contributed 3 (IOSClockOutQuest
 
 ---
 
+## Area: cross-cutting — 2026-04-20
+
+**Analyzed:** 5 core services (Auth, FoundationModels, BackgroundTask, BadgeCount, AIDispatch), ~65 iOS files across App/, Auth/, Navigation/, AI/, Scanning/, Shared/, DesignSystem/, Sync/. C4–C13 sweep. 23 new tests for FoundationModelsService (was 0). 4 a11y fixes in AI panel + nav sheet.
+
+### Key Findings (for automation targeting)
+
+**1. FoundationModelsService actor: tests need `async`, guard paths return `.fail()` before FM API**
+On machines with Foundation Models available (macOS 26+), AI generation tests that expected `.fail()` actually succeed. Tests must be written to accept success OR failure for non-guard paths. Guard paths (empty text, too-short text, empty context) are deterministic and always return `.fail()`. **Scanner rule:** Tests asserting `result.success == false` for AI generation paths need `|| result.error != nil` to handle FM-available environments.
+
+**2. `statusBanner()` icon-only pattern in chat-style views**
+AI assistant panel's status indicator uses `Image(systemName:)` alongside `Text(message)`. The image is always decorative (text carries full meaning) but had no `.accessibilityHidden(true)`. This pattern likely appears in other informational banner views across the app. **Scanner rule:** Any `HStack { Image(...) Text(...) }` where the text is a full sentence/message should have the Image annotated `.accessibilityHidden(true)`.
+
+**3. Navigation-style picker `.accessibilityAddTraits(.isSelected)` gap**
+UserMenuSheet had a `ForEach(NavigationStyle.allCases)` picker with a `Button` showing a checkmark icon for the selected style. Pattern is identical to the hat-selector and model-picker found in earlier areas. **Running total: 14 gaps / 8 areas.** The `accessibilityAddTraits(.isSelected)` scanner must include `ForEach(SomeCasesEnum.allCases)` + `Button` patterns, not just filter pill ScrollViews.
+
+### ⚡ Pattern Reinforcement: accessibilityAddTraits(.isSelected)
+
+Running total: **14+ gaps / 8 areas** — now confirmed across: horizontal filter ScrollViews, hat-selector rows, AI model pickers, color picker grids, AND `allCases` navigation style pickers.
+
+### ⚡ Cross-Cutting Architecture Confirms
+
+- Auth views are fullscreen navigation — `interactiveDismissDisabled` does NOT apply (no sheet dismiss available).
+- `FormSheet` wrapper (in Shared/) enforces dismiss-safety for all creation/edit sheets that use it. This is a positive pattern — areas using FormSheet get dismiss-safety for free.
+- Cross-cutting area has 0 dismiss-safety gaps — FormSheet wrapper coverage + auth-views-are-fullscreen pattern.
+
+---
+
 ## Area: chat — 2026-04-19
 
 **Analyzed:** `ChatService.swift` (38+ public methods, 52 tests), 9 iOS Chat pages (Channels, MessageThread, QAQuestionForm, QuestionsPage, RFIListPage, EscalationTimeline, CreateChannelSheet, ChatRouter, MessageBubble). C3–C11b: 1 critical compile fix, 4 dismiss-safety fixes, 3 accessibilityAddTraits fixes, 1 perf fix (onChange reload), 1 security pass (clean), 1 performance pass (clean).

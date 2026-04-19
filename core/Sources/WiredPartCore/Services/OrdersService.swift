@@ -822,7 +822,19 @@ public final class OrdersService: Sendable {
         partName: String,
         jpoId: Int64
     ) throws -> Int64 {
+        guard !holdReason.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw OrdersError.requiredFieldEmpty("holdReason")
+        }
+
         return try db.writer.write { dbConn -> Int64 in
+            // Guard: holding manager must not be tombstoned — they become created_by on
+            // the chat channel and sender_id on the first message; tombstoned user would
+            // orphan-FK both rows while also being invisible in the member list.
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [userId]) ?? 0) > 0
+            guard userExists else { throw OrdersError.userNotFound(userId) }
+
             // Create a chat channel for this Q&A
             let channelName = "JPO #\(jpoId) — \(partName)"
             try dbConn.execute(
@@ -1410,6 +1422,12 @@ public final class OrdersService: Sendable {
             var totalLines = 0
 
             for (supplierId, supplierItems) in bySupplier {
+                // Guard: supplier must not be tombstoned before creating a PO for them.
+                let supplierExists = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM suppliers WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [supplierId]) ?? 0) > 0
+                guard supplierExists else { throw OrdersError.supplierNotFound(supplierId) }
+
                 // Generate PO number (MAX-based to prevent duplicates after deletions)
                 let maxNum = try Int.fetchOne(
                     dbConn,
@@ -1714,6 +1732,13 @@ public final class OrdersService: Sendable {
             guard status == "approved" else {
                 throw OrdersError.invalidStatus("JPO must be approved to generate a PO")
             }
+
+            // Guard: supplier must exist and not be tombstoned — a PO against a deleted
+            // supplier won't surface in supplier-filtered list views.
+            let supplierExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM suppliers WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [supplierId]) ?? 0) > 0
+            guard supplierExists else { throw OrdersError.supplierNotFound(supplierId) }
 
             // Generate PO number (MAX-based to prevent duplicates after deletions)
             let maxNum = try Int.fetchOne(
@@ -2480,11 +2505,21 @@ public final class OrdersService: Sendable {
 
     /// Update the status of a return.
     public func updateReturnStatus(returnId: Int64, status: String) throws {
+        guard !status.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw OrdersError.requiredFieldEmpty("status")
+        }
+
         try db.writer.write { dbConn in
+            // Verify the return exists and is not soft-deleted.
+            let exists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM returns WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [returnId]) ?? 0) > 0
+            guard exists else { throw OrdersError.returnNotFound(returnId) }
+
             try dbConn.execute(
                 sql: """
                     UPDATE returns SET status = ?, updated_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [status, returnId]
             )

@@ -637,4 +637,85 @@ struct AuthServiceTests {
         #expect(device != nil)
         #expect(device?.assignedUser == "Unassigned")
     }
+
+    @Test("getLegacyHashedUsers returns users with pin_salt IS NULL")
+    func testGetLegacyHashedUsers_returnsUnmigratedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Insert a user with legacy hash format (no pin_salt, no bcrypt prefix)
+        let legacyHash = AuthService.legacyHashPin("4321")
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, pin_salt, is_active, created_at, updated_at)
+                VALUES ('Legacy User', ?, NULL, 1, datetime('now'), datetime('now'))
+                """, arguments: [legacyHash])
+        }
+        let users = try env.auth.getLegacyHashedUsers()
+        #expect(users.contains(where: { $0.displayName == "Legacy User" }))
+    }
+
+    @Test("getLegacyHashedUsers excludes migrated users")
+    func testGetLegacyHashedUsers_excludesMigratedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        // adminUserId was created with modern hash (has pin_salt) — should not appear
+        let users = try env.auth.getLegacyHashedUsers()
+        let adminId = env.adminUserId
+        #expect(!users.contains(where: { $0.id == adminId }))
+    }
+
+    @Test("getLegacyHashedUsers excludes soft-deleted users")
+    func testGetLegacyHashedUsers_excludesDeletedLegacyUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let legacyHash = AuthService.legacyHashPin("1111")
+        var insertedId: Int64 = 0
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO users (display_name, pin_hash, pin_salt, is_active, created_at, updated_at)
+                VALUES ('Deleted Legacy', ?, NULL, 1, datetime('now'), datetime('now'))
+                """, arguments: [legacyHash])
+            insertedId = db.lastInsertedRowID
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [insertedId])
+        }
+        let users = try env.auth.getLegacyHashedUsers()
+        #expect(!users.contains(where: { $0.id == insertedId }))
+    }
+
+    // MARK: - Input validation (iter 74)
+
+    @Test("createUser rejects blank displayName")
+    func testCreateUser_rejectsBlankDisplayName() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: AuthService.AuthError.self) {
+            _ = try env.auth.createUser(displayName: "   ", pin: "1234")
+        }
+    }
+
+    @Test("createUser rejects invalid PIN formats")
+    func testCreateUser_rejectsInvalidPin() throws {
+        let env = try E2ETestHelpers.setUp()
+        // Too short
+        #expect(throws: AuthService.AuthError.self) {
+            _ = try env.auth.createUser(displayName: "Alice", pin: "12")
+        }
+        // Non-numeric
+        #expect(throws: AuthService.AuthError.self) {
+            _ = try env.auth.createUser(displayName: "Bob", pin: "abcd")
+        }
+        // Too long
+        #expect(throws: AuthService.AuthError.self) {
+            _ = try env.auth.createUser(displayName: "Cory", pin: "123456789")
+        }
+    }
+
+    @Test("addHatPermission rejects blank key and non-existent hat")
+    func testAddHatPermission_rejectsInvalidInputs() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: AuthService.AuthError.self) {
+            try env.auth.addHatPermission(hatId: 1, permissionKey: "   ")
+        }
+        // Non-existent hat
+        #expect(throws: AuthService.AuthError.self) {
+            try env.auth.addHatPermission(hatId: 99999, permissionKey: "manage_devices")
+        }
+    }
 }

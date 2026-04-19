@@ -305,6 +305,53 @@ struct BadgeCountServiceTests {
         #expect(try service.overdueOrderCount() == 1)
     }
 
+    @Test("unreadNotebookEntries excludes job notebooks whose team membership was soft-deleted")
+    func testUnreadNotebookEntries_ignoresSoftDeletedTeamMembership() throws {
+        let env = try E2ETestHelpers.setUp()
+        let service = BadgeCountService(db: env.db)
+
+        let jobId = try env.jobs.createJob(
+            jobNumber: "J-BADGE-TM",
+            jobName: "Tombstoned Team Member Job",
+            customerName: "Test Customer",
+            status: "active",
+            createdBy: env.adminUserId
+        )
+
+        // Tombstone the admin's team membership on this job. The JOIN-via-jtm on
+        // BadgeCountService line 211 previously had no `jtm.deleted_at IS NULL` guard,
+        // so a removed team member would keep seeing unread counts for the job's notebooks.
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO job_team_members (job_id, user_id, role, deleted_at)
+                VALUES (?, ?, 'member', datetime('now'))
+                """, arguments: [jobId, env.adminUserId])
+        }
+
+        // Create a job-scoped notebook + section + recently-updated entry
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO notebooks (title, notebook_type, job_id, created_by)
+                VALUES ('Team-Only Book', 'job', ?, ?)
+                """, arguments: [jobId, env.adminUserId])
+            let nbId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO notebook_sections (notebook_id, name, sort_order)
+                VALUES (?, 'Main', 0)
+                """, arguments: [nbId])
+            let secId = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO notebook_entries
+                    (notebook_id, section_id, title, content, entry_type, created_by, updated_at)
+                VALUES (?, ?, 'Entry', 'body', 'note', ?, datetime('now'))
+                """, arguments: [nbId, secId, env.adminUserId])
+        }
+
+        let counts = try service.getAllBadgeCounts(userId: env.adminUserId)
+        #expect(counts.unreadNotebookEntries == 0,
+            "Soft-deleted team membership must not grant visibility — JOIN must guard jtm.deleted_at IS NULL")
+    }
+
     @Test("expiringCertCount(withinDays:) counts certs expiring within window")
     func testExpiringCertCountIndividual() throws {
         let env = try E2ETestHelpers.setUp()

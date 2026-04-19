@@ -208,7 +208,7 @@ public final class BadgeCountService: Sendable {
                 SELECT COUNT(*) FROM notebook_entries ne
                 JOIN notebook_sections ns ON ne.section_id = ns.id
                 JOIN notebooks n ON ns.notebook_id = n.id
-                LEFT JOIN job_team_members jtm ON n.job_id = jtm.job_id AND jtm.user_id = ?
+                LEFT JOIN job_team_members jtm ON n.job_id = jtm.job_id AND jtm.user_id = ? AND jtm.deleted_at IS NULL
                 WHERE ne.deleted_at IS NULL
                   AND ns.deleted_at IS NULL
                   AND n.deleted_at IS NULL

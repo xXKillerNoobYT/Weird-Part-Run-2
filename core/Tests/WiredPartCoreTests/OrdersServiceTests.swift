@@ -112,7 +112,7 @@ struct OrdersServiceTests {
         let supplierId = try E2ETestHelpers.seedSupplier(env)
         let poId = try env.orders.createPurchaseOrder(poNumber: "PO-STS", supplierId: supplierId, notes: nil)
         // draft → ordered is the valid first PO transition (fixes #205 validation; "sent" removed)
-        try env.orders.updatePOStatus(id: poId, status: "ordered")
+        try env.orders.updatePOStatus(id: poId, status: "ordered", userId: env.adminUserId)
     }
 
     @Test("Delete PO")
@@ -152,7 +152,8 @@ struct OrdersServiceTests {
             returnType: "supplier",
             reason: "Defective parts",
             supplierId: supplierId,
-            poId: poId
+            poId: poId,
+            initiatedBy: env.adminUserId
         )
         #expect(returnId > 0)
     }
@@ -218,7 +219,8 @@ struct OrdersServiceTests {
             returnType: "supplier",
             reason: "Wrong parts",
             supplierId: supplierId,
-            poId: poId
+            poId: poId,
+            initiatedBy: env.adminUserId
         )
 
         try env.orders.updateReturnStatus(returnId: returnId, status: "completed")
@@ -370,7 +372,7 @@ struct OrdersServiceTests {
         let lineId = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 5, unitPrice: 1.00)
 
         // Move PO out of draft (draft → ordered is valid; "sent" removed in #205)
-        try env.orders.updatePOStatus(id: poId, status: "ordered")
+        try env.orders.updatePOStatus(id: poId, status: "ordered", userId: env.adminUserId)
 
         #expect(throws: (any Error).self) {
             try env.orders.updatePOLineItem(lineId: lineId, quantity: 10, unitPrice: 2.00)
@@ -690,7 +692,7 @@ struct OrdersServiceTests {
         let partId = try E2ETestHelpers.seedPart(env, name: "Cancel Transfer Part", categoryId: catId)
 
         let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
-        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 0, notes: nil)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 1, notes: nil)
 
         // Set a transfer_id and keep qty_requested = 0 so the reverse-movement
         // path inside cancelJPOLineTransfer is skipped (qty > 0 guard). This
@@ -1230,6 +1232,62 @@ struct OrdersServiceTests {
                 "Soft-deleted part must produce nil partName in getPODetail line items")
     }
 
+    @Test("getJPODetail throws jpoNotFound for a soft-deleted JPO")
+    func testGetJPODetail_throwsForSoftDeletedJPO() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-JPO-TOMB", name: "TombstonedJPOJob")
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE job_parts_orders SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [jpoId])
+        }
+        // A soft-deleted JPO must be invisible to the detail view — same semantic as "doesn't exist".
+        // Regression: WHERE jp.id = ? had no deleted_at guard, so tombstoned JPOs were still loadable.
+        #expect(throws: OrdersService.OrdersError.self) {
+            _ = try env.orders.getJPODetail(id: jpoId)
+        }
+    }
+
+    @Test("getPODetail throws purchaseOrderNotFound for a soft-deleted PO")
+    func testGetPODetail_throwsForSoftDeletedPO() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "TombstonedPOSupplier")
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-TOMB-001", supplierId: supplierId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE purchase_orders SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [poId])
+        }
+        #expect(throws: OrdersService.OrdersError.self) {
+            _ = try env.orders.getPODetail(id: poId)
+        }
+    }
+
+    @Test("updatePOLineItem rejects edits when parent PO is soft-deleted")
+    func testUpdatePOLineItem_rejectsSoftDeletedPO() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "SoftDelPOSupplier")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "SoftDelPOCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "SoftDelPOPart", categoryId: catId)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-SOFT-001", supplierId: supplierId)
+        let lineId: Int64 = try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO po_line_items (po_id, part_id, qty_ordered, qty_received, unit_cost)
+                VALUES (?, ?, 5, 0, 10.00)
+                """, arguments: [poId, partId])
+            return db.lastInsertedRowID
+        }
+        // PO is still in draft — but we soft-delete it. Edit must be rejected.
+        // Regression: the status check joined po_line_items to purchase_orders without
+        // `po.deleted_at IS NULL`, so edits could still be applied to tombstoned draft POs.
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE purchase_orders SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [poId])
+        }
+        #expect(throws: OrdersService.OrdersError.self) {
+            try env.orders.updatePOLineItem(lineId: lineId, quantity: 99, unitPrice: 1.00)
+        }
+    }
+
     @Test("getReceiptHistoryItems shows Unknown Part for soft-deleted part")
     func testGetReceiptHistoryItemsHidesDeletedPartName() throws {
         let env = try E2ETestHelpers.setUp()
@@ -1260,5 +1318,380 @@ struct OrdersServiceTests {
         #expect(items.isEmpty == false)
         #expect(items.first?.partName == "Unknown Part",
                 "Soft-deleted part must degrade to 'Unknown Part' in getReceiptHistoryItems")
+    }
+
+    @Test("updateJPOStatus is a no-op on a soft-deleted JPO")
+    func testUpdateJPOStatus_noOpOnSoftDeletedJPO() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-JPO-STATE", name: "TombstonedJPOStateJob")
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+
+        // Capture original status (draft) then soft-delete the JPO
+        let originalStatus = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT status FROM job_parts_orders WHERE id = ?",
+                                arguments: [jpoId])
+        }
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE job_parts_orders SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [jpoId])
+        }
+
+        // Regression: UPDATE job_parts_orders SET status = ? WHERE id = ? had no deleted_at
+        // guard. In iter 45 the read-path (getJPODetail) gained a guard that throws jpoNotFound
+        // for tombstoned JPOs, so updateJPOStatus is now fail-fast — but we also add the
+        // write-path guard as defense-in-depth in case a caller bypasses the read check.
+        #expect(throws: OrdersService.OrdersError.self) {
+            try env.orders.updateJPOStatus(id: jpoId, status: "pending")
+        }
+
+        let afterStatus = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT status FROM job_parts_orders WHERE id = ?",
+                                arguments: [jpoId])
+        }
+        #expect(afterStatus == originalStatus,
+                "Soft-deleted JPO status must not change — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    @Test("updatePOLineItem actual field UPDATE guards against soft-deleted line")
+    func testUpdatePOLineItem_writeGuardsDeletedLine() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "LineWriteSupplier")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "LineWriteCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "LineWritePart", categoryId: catId)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-LINE-W-001", supplierId: supplierId)
+        let lineId = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 5, unitPrice: 1.00)
+
+        // Capture original qty
+        let originalQty = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT qty_ordered FROM po_line_items WHERE id = ?", arguments: [lineId])
+        }
+
+        // Soft-delete the line item (NOT the PO, which the status guard checks).
+        // Regression: the actual UPDATE po_line_items SET qty_ordered = ? WHERE id = ?
+        // had no `AND deleted_at IS NULL` guard (iter 45 added the status-check guard
+        // via the pre-update SELECT join, but the UPDATE itself would still stick).
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE po_line_items SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [lineId])
+        }
+        // The status check (iter 45) now fails fast because `po_line_items li` is guarded
+        // on the SELECT join, so the caller throws. This is the expected no-op path.
+        #expect(throws: OrdersService.OrdersError.self) {
+            try env.orders.updatePOLineItem(lineId: lineId, quantity: 99, unitPrice: 9.99)
+        }
+        let afterQty = try env.db.writer.read { db in
+            try Int.fetchOne(db, sql: "SELECT qty_ordered FROM po_line_items WHERE id = ?", arguments: [lineId])
+        }
+        #expect(afterQty == originalQty,
+                "Soft-deleted PO line qty_ordered must not change — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    @Test("holdJPOLineWithChat write-path is a no-op on a soft-deleted JPO line")
+    func testHoldJPOLineWithChat_noOpOnSoftDeletedLine() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-HOLD-W", name: "HoldWriteJob")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "HoldWriteCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "HoldWritePart", categoryId: catId)
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+
+        // Seed a JPO line directly via SQL (simpler than the full create path)
+        let lineId: Int64 = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO jpo_line_items (jpo_id, part_id, qty_requested, line_status,
+                                             brand_selection_mode, created_at)
+                VALUES (?, ?, 3, 'pending', 'specific', datetime('now'))
+                """, arguments: [jpoId, partId])
+            return db.lastInsertedRowID
+        }
+
+        // Soft-delete the line. Regression: holdJPOLineWithChat UPDATE jpo_line_items
+        // SET line_status = 'on_hold' WHERE id = ? had no `AND deleted_at IS NULL`.
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jpo_line_items SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [lineId])
+        }
+        _ = try? env.orders.holdJPOLineWithChat(
+            lineId: lineId, holdReason: "test hold", userId: env.adminUserId,
+            partName: "HoldWritePart", jpoId: jpoId
+        )
+
+        let status = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT line_status FROM jpo_line_items WHERE id = ?",
+                                arguments: [lineId])
+        }
+        #expect(status != "on_hold",
+                "Soft-deleted JPO line must not be transitioned to on_hold — UPDATE must guard AND deleted_at IS NULL")
+    }
+
+    // MARK: - Input validation (iter 62)
+
+    @Test("createJPO throws jobNotFound for a tombstoned job")
+    func testCreateJPO_rejectsSoftDeletedJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-TOMB-VAL", name: "TombstonedJob")
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [jobId])
+        }
+        #expect(throws: OrdersService.OrdersError.self) {
+            _ = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+        }
+    }
+
+    @Test("addJPOLineItem rejects zero and negative quantity")
+    func testAddJPOLineItem_rejectsZeroQuantity() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-JPO-QTY", name: "QtyJob")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "QtyCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "QtyPart", categoryId: catId)
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+        #expect(throws: OrdersService.OrdersError.self) {
+            _ = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 0)
+        }
+        #expect(throws: OrdersService.OrdersError.self) {
+            _ = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: -5)
+        }
+    }
+
+    @Test("addJPOLineItem rejects soft-deleted part")
+    func testAddJPOLineItem_rejectsSoftDeletedPart() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-JPO-DEL", name: "DelPartJob")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "DelPartCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "TombstonedPart", categoryId: catId)
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId)
+        try env.parts.deletePart(id: partId)
+        #expect(throws: OrdersService.OrdersError.self) {
+            _ = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 3)
+        }
+    }
+
+    @Test("addPOLineItem rejects zero quantity and soft-deleted part")
+    func testAddPOLineItem_rejectsInvalidInputs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "QtySupplier")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "POQtyCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "POQtyPart", categoryId: catId)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-QTY-001", supplierId: supplierId)
+
+        #expect(throws: OrdersService.OrdersError.self) {
+            _ = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 0, unitPrice: 1.0)
+        }
+        try env.parts.deletePart(id: partId)
+        #expect(throws: OrdersService.OrdersError.self) {
+            _ = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 5, unitPrice: 1.0)
+        }
+    }
+
+    @Test("createPurchaseOrder rejects empty poNumber and soft-deleted supplier")
+    func testCreatePurchaseOrder_rejectsInvalidInputs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "POValSupplier")
+        #expect(throws: OrdersService.OrdersError.self) {
+            _ = try env.orders.createPurchaseOrder(poNumber: "   ", supplierId: supplierId)
+        }
+        try env.parts.deleteSupplier(id: supplierId)
+        #expect(throws: OrdersService.OrdersError.self) {
+            _ = try env.orders.createPurchaseOrder(poNumber: "PO-VAL-001", supplierId: supplierId)
+        }
+    }
+
+    @Test("addPONote rejects blank note and blank author")
+    func testAddPONote_rejectsBlankInputs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "NoteSupp")
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-NOTE-V", supplierId: supplierId)
+        #expect(throws: OrdersService.OrdersError.self) {
+            try env.orders.addPONote(poId: poId, note: "   ", author: "User")
+        }
+        #expect(throws: OrdersService.OrdersError.self) {
+            try env.orders.addPONote(poId: poId, note: "A real note", author: "")
+        }
+    }
+
+    @Test("updatePOLineItem rejects zero quantity")
+    func testUpdatePOLineItem_rejectsZeroQuantity() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "QtySupp")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "QtyCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "QtyPart", categoryId: catId)
+        let poId = try env.orders.createPurchaseOrder(poNumber: "PO-LIN-V", supplierId: supplierId)
+        let lineId = try env.orders.addPOLineItem(poId: poId, partId: partId, quantity: 5, unitPrice: 1.0)
+        #expect(throws: OrdersService.OrdersError.self) {
+            try env.orders.updatePOLineItem(lineId: lineId, quantity: 0, unitPrice: 2.0)
+        }
+    }
+
+    // MARK: - Iteration 86: OrdersError Equatable + createReturn + createJPOWithLines guards
+
+    @Test("createReturn rejects blank returnType and blank reason")
+    func testCreateReturn_rejectsBlankFields() throws {
+        let env = try E2ETestHelpers.setUp()
+        #expect(throws: OrdersService.OrdersError.requiredFieldEmpty("returnType")) {
+            try env.orders.createReturn(
+                returnType: "   ", reason: "valid reason", initiatedBy: env.adminUserId
+            )
+        }
+        #expect(throws: OrdersService.OrdersError.requiredFieldEmpty("reason")) {
+            try env.orders.createReturn(
+                returnType: "supplier", reason: "", initiatedBy: env.adminUserId
+            )
+        }
+    }
+
+    @Test("createReturn rejects tombstoned supplier")
+    func testCreateReturn_rejectsTombstonedSupplier() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "TombSupplier86")
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE suppliers SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [supplierId]
+            )
+        }
+        #expect(throws: OrdersService.OrdersError.supplierNotFound(supplierId)) {
+            try env.orders.createReturn(
+                returnType: "supplier",
+                reason: "Damaged goods",
+                supplierId: supplierId,
+                initiatedBy: env.adminUserId
+            )
+        }
+    }
+
+    @Test("createJPOWithLines rejects tombstoned job")
+    func testCreateJPOWithLines_rejectsTombstonedJob() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DEAD-86", name: "Dead Job")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "JWLCAT86")
+        let partId = try E2ETestHelpers.seedPart(env, name: "JWL Part", categoryId: catId)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE jobs SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [jobId]
+            )
+        }
+        #expect(throws: OrdersService.OrdersError.jobNotFound(jobId)) {
+            try env.orders.createJPOWithLines(
+                jobId: jobId, requestedBy: env.adminUserId,
+                priority: "normal", deliveryOption: "standard",
+                notes: nil, lines: [(partId: partId, quantity: 2)]
+            )
+        }
+    }
+
+    @Test("createJPOWithLines rejects zero-quantity line")
+    func testCreateJPOWithLines_rejectsZeroQuantity() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-ZQ-86", name: "Zero Qty Job")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "ZQCAT86")
+        let partId = try E2ETestHelpers.seedPart(env, name: "ZQ Part", categoryId: catId)
+        #expect(throws: OrdersService.OrdersError.invalidQuantity(0)) {
+            try env.orders.createJPOWithLines(
+                jobId: jobId, requestedBy: env.adminUserId,
+                priority: "normal", deliveryOption: "standard",
+                notes: nil, lines: [(partId: partId, quantity: 0)]
+            )
+        }
+    }
+
+    @Test("createJPOWithLines rejects tombstoned part in line")
+    func testCreateJPOWithLines_rejectsTombstonedPart() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-DP-86", name: "Dead Part Job")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "DPCAT86")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Dead Part", categoryId: catId)
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [partId]
+            )
+        }
+        #expect(throws: OrdersService.OrdersError.partNotFound(partId)) {
+            try env.orders.createJPOWithLines(
+                jobId: jobId, requestedBy: env.adminUserId,
+                priority: "normal", deliveryOption: "standard",
+                notes: nil, lines: [(partId: partId, quantity: 3)]
+            )
+        }
+    }
+
+    // MARK: - Iteration 87: holdJPOLineWithChat + generatePOFromJPO + updateReturnStatus guards
+
+    @Test("holdJPOLineWithChat rejects blank holdReason")
+    func testHoldJPOLineWithChat_rejectsBlankReason() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-HLD-87", name: "Hold Test Job")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "HLDCAT87")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Hold Part", categoryId: catId)
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 2)
+        #expect(throws: OrdersService.OrdersError.requiredFieldEmpty("holdReason")) {
+            try env.orders.holdJPOLineWithChat(
+                lineId: lineId, holdReason: "   ",
+                userId: env.adminUserId, partName: "Hold Part", jpoId: jpoId
+            )
+        }
+    }
+
+    @Test("holdJPOLineWithChat rejects tombstoned userId")
+    func testHoldJPOLineWithChat_rejectsTombstonedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-HLD2-87", name: "Hold Test Job 2")
+        let catId = try E2ETestHelpers.seedCategory(env, name: "HLD2CAT87")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Hold Part 2", categoryId: catId)
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        let lineId = try env.orders.addJPOLineItem(jpoId: jpoId, partId: partId, quantity: 2)
+        // Tombstone the admin user
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [env.adminUserId]
+            )
+        }
+        #expect(throws: OrdersService.OrdersError.userNotFound(env.adminUserId)) {
+            try env.orders.holdJPOLineWithChat(
+                lineId: lineId, holdReason: "Needs clarification",
+                userId: env.adminUserId, partName: "Hold Part 2", jpoId: jpoId
+            )
+        }
+    }
+
+    @Test("generatePOFromJPO rejects tombstoned supplier")
+    func testGeneratePOFromJPO_rejectsTombstonedSupplier() throws {
+        let env = try E2ETestHelpers.setUp()
+        let jobId = try E2ETestHelpers.seedJob(env, jobNumber: "J-GENFJ-87", name: "Gen PO Job")
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "TombGenSupp87")
+        let jpoId = try env.orders.createJPO(jobId: jobId, requestedBy: env.adminUserId, notes: nil)
+        try env.orders.updateJPOStatus(id: jpoId, status: "pending")
+        try env.orders.updateJPOStatus(id: jpoId, status: "approved")
+        // Tombstone the supplier after JPO approval
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE suppliers SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [supplierId]
+            )
+        }
+        #expect(throws: OrdersService.OrdersError.supplierNotFound(supplierId)) {
+            try env.orders.generatePOFromJPO(jpoId: jpoId, supplierId: supplierId)
+        }
+    }
+
+    @Test("updateReturnStatus rejects blank status and non-existent returnId")
+    func testUpdateReturnStatus_rejectsInvalidInputs() throws {
+        let env = try E2ETestHelpers.setUp()
+        let supplierId = try E2ETestHelpers.seedSupplier(env, name: "RetStatSupp87")
+        let returnId = try env.orders.createReturn(
+            returnType: "supplier", reason: "Wrong item",
+            supplierId: supplierId, initiatedBy: env.adminUserId
+        )
+        // Blank status should throw
+        #expect(throws: OrdersService.OrdersError.requiredFieldEmpty("status")) {
+            try env.orders.updateReturnStatus(returnId: returnId, status: "")
+        }
+        // Non-existent returnId should throw
+        #expect(throws: OrdersService.OrdersError.returnNotFound(9999)) {
+            try env.orders.updateReturnStatus(returnId: 9999, status: "completed")
+        }
     }
 }

@@ -100,6 +100,50 @@ struct PartsServiceCompanionIntelTests {
         #expect(suggestions.isEmpty)
     }
 
+    @Test("getCompanionSuggestionsForPart excludes suggestions from soft-deleted companion rules")
+    func testGetCompanionSuggestions_excludesDeletedRule() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catSrc = try E2ETestHelpers.seedCategory(env, name: "RuleSrcCat")
+        let catTgt = try E2ETestHelpers.seedCategory(env, name: "RuleTgtCat")
+        let sourcePart = try E2ETestHelpers.seedPart(env, name: "RuleSrcPart", categoryId: catSrc)
+        let targetPart = try E2ETestHelpers.seedPart(env, name: "RuleTgtPart", categoryId: catTgt)
+        _ = targetPart
+
+        // Seed a rule that maps cat-src → cat-tgt, leaving it active. Regression:
+        // `JOIN companion_rules cr ON cr.id = rs.rule_id AND cr.is_active = 1` was
+        // missing `AND cr.deleted_at IS NULL`. A tombstoned rule (deleted_at set,
+        // is_active possibly still 1 after soft-delete drift) would still feed
+        // suggestions through the join.
+        let ruleId: Int64 = try env.db.writer.write { db -> Int64 in
+            try db.execute(sql: """
+                INSERT INTO companion_rules (name, description, style_match, qty_mode, qty_ratio, is_active)
+                VALUES ('SoftDel Rule', 'test', 'auto', 'sum', 1.0, 1)
+                """)
+            let rid = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO companion_rule_sources (rule_id, category_id) VALUES (?, ?)
+                """, arguments: [rid, catSrc])
+            try db.execute(sql: """
+                INSERT INTO companion_rule_targets (rule_id, category_id) VALUES (?, ?)
+                """, arguments: [rid, catTgt])
+            return rid
+        }
+
+        // Baseline: active rule → suggestion surfaces
+        let before = try env.parts.getCompanionSuggestionsForPart(partId: sourcePart)
+        #expect(!before.isEmpty, "Active companion rule should produce at least one suggestion")
+
+        // Soft-delete the rule (is_active left as 1 to simulate drift between the two flags)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE companion_rules SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [ruleId])
+        }
+
+        let after = try env.parts.getCompanionSuggestionsForPart(partId: sourcePart)
+        #expect(after.isEmpty,
+                "Soft-deleted companion rule must not produce suggestions — JOIN must guard cr.deleted_at IS NULL")
+    }
+
     // MARK: - recordCompanionFeedback
 
     @Test("recordCompanionFeedback upserts co_occurrence_pairs and logs to companion_feedback")

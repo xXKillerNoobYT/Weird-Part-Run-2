@@ -8,11 +8,9 @@ import GRDB
 /// with one row per field.
 ///
 /// Ported from: `src/local/services/settings-service.ts`
-// TODO: When sync is implemented, filter settings by SyncScope:
-// - .company → include in company-wide sync
-// - .personal → include in per-user sync
-// - .device → exclude from sync
-// Classification lives in SyncScope.scope(for:) on the iOS side.
+// When sync is implemented (Phase 11), filter settings by SyncScope:
+// .company → company-wide sync, .personal → per-user sync, .device → exclude.
+// Tracked: https://github.com/xXKillerNoobYT/Weird-Part-Run-2/issues/258
 
 public final class SettingsService: Sendable {
     private let db: AppDatabase
@@ -206,8 +204,13 @@ public final class SettingsService: Sendable {
         return days
     }
 
-    /// Update default warranty length in days.
+    /// Update default warranty length in days. Must be a positive whole-day count —
+    /// zero/negative would set warranty_end at or before warranty_start, making the
+    /// warranty immediately expired or producing an impossible backward date range.
     public func updateWarrantyLengthDays(_ days: Int) throws {
+        guard days > 0 else {
+            throw SettingsError.invalidValue("Warranty length must be positive (got \(days))")
+        }
         try upsertSetting(key: "warranty_length_days", value: String(days), category: "general")
     }
 
@@ -645,7 +648,13 @@ public final class SettingsService: Sendable {
     /// Add a new clock-out question. Returns the inserted row ID.
     @discardableResult
     public func addClockOutQuestion(text: String, type: String, isRequired: Bool, sortOrder: Int) throws -> Int64 {
-        try db.writer.write { dbConnection in
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw SettingsError.requiredFieldEmpty("text")
+        }
+        guard !type.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw SettingsError.requiredFieldEmpty("type")
+        }
+        return try db.writer.write { dbConnection -> Int64 in
             try dbConnection.execute(sql: """
                 INSERT INTO clock_out_questions (question_text, answer_type, is_required, sort_order)
                 VALUES (?, ?, ?, ?)
@@ -656,6 +665,12 @@ public final class SettingsService: Sendable {
 
     /// Update an existing clock-out question.
     public func updateClockOutQuestion(id: String, text: String, type: String, isRequired: Bool) throws {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw SettingsError.requiredFieldEmpty("text")
+        }
+        guard !type.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw SettingsError.requiredFieldEmpty("type")
+        }
         try db.writer.write { dbConnection in
             try dbConnection.execute(sql: """
                 UPDATE clock_out_questions
@@ -775,8 +790,10 @@ public final class SettingsService: Sendable {
 
     // MARK: - Errors
 
-    public enum SettingsError: Error, Sendable {
+    public enum SettingsError: Error, Sendable, Equatable {
         case companyProfileNotFound(Int64)
+        case requiredFieldEmpty(String)
+        case invalidValue(String)
     }
 
     // MARK: - Helpers

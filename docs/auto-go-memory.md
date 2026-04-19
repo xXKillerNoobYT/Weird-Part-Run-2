@@ -182,7 +182,22 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 **HIG tap target (iter 56):** ThemesPage 36×36 color buttons fixed with `.frame(minWidth:44, minHeight:44).contentShape(Rectangle())`. DIS-017 partially done.
 
 ### cross-cutting
-*(notes accumulate here)*
+
+**Service profile (5 core services):** AuthService (~12 methods), FoundationModelsService (7 instance + 4 static + 2 convenience), BackgroundTaskService (~5), BadgeCountService (~8), AIDispatchService (~8). ~65 iOS files across App/, Auth/, Navigation/, AI/, Scanning/, Shared/, DesignSystem/, Sync/, WebFallback/.
+
+**FoundationModelsService is an actor**: All instance methods must be called with `await`. Tests for AI generation methods will SUCCEED on macOS 26+ (FM is available on dev machine). Guard-path tests (empty text, too-short text) are still safe — they return `.fail()` synchronously before hitting the FM API. DB-persistence static methods are fully testable via `E2ETestHelpers.setUp()`.
+
+**0 dismiss-safety gaps:** Auth views are fullscreen navigation (swipe-back unavailable from modal context). UserMenuSheet is a read-only settings navigator. TabBarEditorView saves synchronously on Done. Shared `FormSheet` wrapper enforces `interactiveDismissDisabled(isSaving)` by default for all creation/edit sheets. SyncConflictReviewPage is review-only — conflicts persist in DB if user dismisses.
+
+**A11y gaps fixed (C7b):** AI panel `statusBanner()` icon (decorative, text carries message); send button `arrow.up.circle.fill` needed `accessibilityLabel("Send message")`; IOSAIAvailabilityBanner status icon (decorative alongside statusTitle Text); IOSAITextEditor accept-suggestion sparkles (decorative alongside button Text); UserMenuSheet nav-style picker checkmark + `.accessibilityAddTraits(.isSelected)` on each option button.
+
+**AuthService security baseline:** HMAC-SHA256 signed tokens (24h expiry, nil on failure). PIN hashing: CryptoKit SHA-256, 10K iterations, per-user salt. Legacy single-SHA-256 path only used for migration. All SQL parameterized — no user-controlled string interpolation. No credentials in UserDefaults.
+
+**`company_profiles` soft-delete uses only `deleted_at` (no `is_active`)** — same as verified in settings area. Not an is_active gap.
+
+**DesignSystem/ (20 files) was unplanned but correctly present**: Components/, Foundation/, Styles/, Tokens/ subdirectories. C1b drift note: plan updated to document these. This pattern may repeat for future areas that added design infrastructure without plan updates.
+
+**Tests added:** 23 FoundationModelsService tests (was 0). DB-persistence static methods (`saveMessage`, `loadConversation`, `deleteConversation`, `listConversations`) are fully testable. AI generation tests accept success OR failure to handle FM availability variance across environments.
 
 ## Weekly reflections (newest first)
 
