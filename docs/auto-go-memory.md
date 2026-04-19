@@ -139,7 +139,15 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 - [2026-04-19] **C7b: 9 usability fixes across 3 pages** (PartsForecastingPage, IOSWishlistPage, IOSInventoryGridPage). Main patterns: decorative icons in Icon+Text buttons need `.accessibilityHidden(true)`, or the button needs `.accessibilityLabel()`. `smartCard` in IOSInventoryGridPage now has `minHeight: 44` for HIG compliance.
 
 ### reports
-*(notes accumulate here)*
+- [2026-04-19] **Service profile**: ReportsService 13 public methods (getTimesheetData, getDailyReportSummary, getSpendingSummary, getProfitabilitySummary, getPreBillingData, getBookkeeperLaborSummary, getBookkeeperMaterialPOs, getReportsStats, generateCustomReport, saveReportConfig, getSavedReports, deleteSavedReport, markReportRun). 31 tests = 2.4× coverage, 100% breadth. All 31 pass.
+- [2026-04-19] **Fleet/Warehouse/Scheduling reports use domain services, NOT ReportsService**: FleetFuelCostReport/etc → `appCore.fleetService`; WarehouseInventoryValueReport/etc → `appCore.warehouseService`; SchedulingCrewUtilizationReport/etc → `appCore.schedulingService`. Only Labor/Financial/Custom/Shared reports use `appCore.reportsService`. This is by design — domain services own their aggregate data.
+- [2026-04-19] **generateCustomReport is injection-safe**: `columns` parameter is used only as Swift switch keys for mapping GRDB row fields — never interpolated into SQL. The `type` parameter is validated via Swift switch (only 6 types accepted). Zero SQL injection risk from user input.
+- [2026-04-19] **Historical reports must NOT filter is_active on JOINs**: Unlike forecasting or availability queries, report JOINs to users/parts/jobs should retain records for inactive entities (the historical record is valid regardless of current active status). Adding `AND u.is_active = 1` to report JOINs would HIDE historical data — do not apply is_active defense to ReportsService.
+- [2026-04-19] **getSavedReports SELECT * on saved_reports is acceptable**: saved_reports is a small user-specific config table (O(10) rows per user). The SELECT * here is bounded by `created_by = ? OR is_shared = 1` — not a perf concern.
+- [2026-04-19] **Permission gating**: `view_financials` hides .financial category (Spending, Profitability, Pre-Billing, Bookkeeper Export). `view_fleet_financials` hides .fleet category. Consistent with the permission pattern used across vehicles/tools/people.
+- [2026-04-19] **getPreBillingData does NOT use billing_periods table**: Despite the name "pre-billing", it queries jobs + labor_entries by date range. It returns jobs with labor hours > 0 in the period. The plan's test description ("locked periods excluded") was aspirational design that wasn't implemented.
+- [2026-04-19] **C7 clean**: 0 dismiss-safety gaps (no data-entry sheets — only help sheets and system share sheet). All SF Symbol icons already have .accessibilityHidden(true). Export toolbar uses Label("Export PDF"/"Export CSV"/"Export") which satisfies VoiceOver automatically.
+- [2026-04-19] **C7b: 1 fix** — ReportBuilderView List was missing .scrollDismissesKeyboard(.immediately); the report-name TextField's keyboard couldn't be dismissed by scrolling. Fixed in commit 3d9695ed.
 
 ### notebooks
 *(notes accumulate here)*

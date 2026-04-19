@@ -43,6 +43,8 @@
    > **Answer:** _pending_ — APPROVE / DEFER / REJECT
    >
    > _If APPROVE:_ AUTO GO will extend `.claude/hooks/parts-sql-check.sh` to also grep for the is_active defense pattern in create*/update* function bodies.
+   >
+   > **⚠️ Note (added reports C13):** `ReportsService.swift` must be EXEMPT from this hook. Historical reports intentionally retain records from inactive entities — adding `is_active = 1` to report JOINs would hide valid historical data. The hook should skip any file whose path contains `ReportsService` or add a `# is_active-exempt` comment to exempt specific queries.
 
 ---
 

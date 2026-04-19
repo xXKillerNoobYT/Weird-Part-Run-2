@@ -4,6 +4,39 @@
 
 ---
 
+## Area: reports — 2026-04-19
+
+**Analyzed:** `ReportsService.swift` (13 public methods, 31 tests), `ReportExportUtilities.swift`, `ReportDateRange.swift`, `IOSReportsRouter.swift`, and 18 report-specific iOS pages. This is the first area with zero is_active defense gaps by design (historical reports must retain inactive-entity records). 4 behavioral tests added (C4), 1 UX fix (C7b), 0 security findings (C8), 0 perf findings (C9).
+
+### No New Scanner Needed
+
+Reports area was notably clean. Key patterns:
+- Zero is_active gaps (intentional — historical data must show all records)
+- Zero dismiss-safety gaps (only help sheets and system share sheet — no data-entry sheets)
+- Zero SQL injection risk (columns are Swift switch keys, not SQL interpolation)
+- Export toolbar pattern (`ReportExportToolbar` ViewModifier) is already shared across all report pages — no per-page duplication
+
+### Key Observation: is_active defense is context-dependent
+
+The is_active defense scanner (filed as Critical Q&A) must know the query's purpose:
+- **Forward-looking queries** (forecasting, availability, dispatch) → require `is_active = 1`
+- **Historical reports** → MUST NOT filter `is_active`; inactive-entity records are valid history
+
+If a future scanner auto-inserts `is_active = 1` into all queries, it would break historical report queries. **The scanner should exempt `ReportsService.swift` entirely**, or at minimum require human review for report-type methods.
+
+**Q&A update needed:** Add "exclude ReportsService from auto-apply" constraint to the is_active defense hook Q&A.
+
+### Summary Table After Reports
+
+| Recommendation | Areas Hit | Gaps Found | Priority | Status |
+|---|---|---|---|---|
+| is_active defense auditor hook | 6/14 | 35 | 🔴 Critical | ⏳ Q&A pending — add exemption for ReportsService |
+| Dismiss-safety struct-aware scanner | 7/14 | 26+ | 🔴 High | ⏳ Q&A pending |
+| GRDB Int? flag default scanner | 1/14 | 1 | 🟠 High | No Q&A yet |
+| accessibilityAddTraits(.isSelected) scanner | 4/14 | 4 | 🟢 Low | ⏳ Q&A pending |
+
+---
+
 ## Area: inventory — 2026-04-19
 
 **Analyzed:** `PartsService.swift` (forecasting/inventory methods), `WishlistService.swift`, 5 iOS inventory pages (`PartsForecastingPage`, `ForecastSettingsSheet`, `IOSWishlistPage`, `IOSInventoryGridPage`, `IOSForecastSettingsPage`). This iteration discovered a new class of bug: GRDB optional-field insert bypassing SQL DEFAULT.
