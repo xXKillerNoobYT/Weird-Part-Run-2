@@ -62,6 +62,7 @@ struct CreateReturnSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("New Return")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(isSaving)

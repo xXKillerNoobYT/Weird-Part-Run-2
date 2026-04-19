@@ -43,6 +43,7 @@ struct CreatePOSheet: View {
                             Image(systemName: "qrcode.viewfinder")
                                 .frame(width: 44, height: 44)
                         }
+                        .accessibilityLabel("Scan supplier QR code")
                     }
 
                     if suppliers.isEmpty {

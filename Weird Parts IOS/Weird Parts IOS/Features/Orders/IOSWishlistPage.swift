@@ -570,6 +570,7 @@ private struct DismissWishlistItemSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Dismiss Item")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(!trimmedReason.isEmpty)
@@ -649,6 +650,7 @@ private struct AddWishlistItemSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Add Wishlist Item")
             .navigationBarTitleDisplayMode(.inline)
             .interactiveDismissDisabled(isSaving)
