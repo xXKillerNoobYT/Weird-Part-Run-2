@@ -586,9 +586,11 @@ private struct LogFuelSheet: View {
                 }
             }
             .navigationTitle("Log Fuel Level")
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onComplete() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
@@ -706,9 +708,11 @@ private struct AddTransferItemSheet: View {
                 }
             }
             .navigationTitle("Add Transfer Item")
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onComplete() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {

@@ -31,9 +31,11 @@ struct IOSAssignDriverSheet: View {
             .navigationTitle("Assign Driver")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "Search employees...")
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Assign") { assignDriver() }

@@ -66,9 +66,11 @@ struct PreTripInspectionView: View {
             }
             .navigationTitle("Pre-Trip Inspection")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Submit") { submitInspection() }
