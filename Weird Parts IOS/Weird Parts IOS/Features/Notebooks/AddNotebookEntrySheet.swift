@@ -23,6 +23,11 @@ struct AddNotebookEntrySheet: View {
     @State private var deleteChecklistOffsets: IndexSet?
 
     private var isEditing: Bool { editingEntry != nil }
+    private var hasUnsavedContent: Bool {
+        !title.trimmingCharacters(in: .whitespaces).isEmpty ||
+        !content.trimmingCharacters(in: .whitespaces).isEmpty ||
+        !checklistItems.isEmpty
+    }
 
     private struct ChecklistItemInput: Identifiable {
         let id = UUID()
@@ -124,6 +129,8 @@ struct AddNotebookEntrySheet: View {
             .onChange(of: content) { _, newValue in
                 processShortcutCommand(newValue)
             }
+            .scrollDismissesKeyboard(.immediately)
+            .interactiveDismissDisabled(hasUnsavedContent && !isSaving)
             .alert("Remove Item?", isPresented: $showDeleteChecklistConfirm) {
                 Button("Cancel", role: .cancel) { deleteChecklistOffsets = nil }
                 Button("Remove", role: .destructive) {

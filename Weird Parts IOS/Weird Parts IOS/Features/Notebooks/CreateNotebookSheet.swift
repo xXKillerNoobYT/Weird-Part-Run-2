@@ -89,6 +89,7 @@ struct CreateNotebookSheet: View {
             }
             .navigationTitle("New Notebook")
             .navigationBarTitleDisplayMode(.inline)
+            .scrollDismissesKeyboard(.immediately)
             .interactiveDismissDisabled(isSaving)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
