@@ -55,6 +55,8 @@ struct ThemesPage: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                         .accessibilityAddTraits(primaryColor == hex ? .isSelected : [])
                     }
                 }
