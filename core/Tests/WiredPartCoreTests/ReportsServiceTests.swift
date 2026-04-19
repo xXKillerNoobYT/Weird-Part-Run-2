@@ -285,6 +285,40 @@ struct ReportsServiceTests {
         #expect(rows.isEmpty)
     }
 
+    @Test("generateCustomReport parts_usage falls back to 'Unknown' when part is soft-deleted")
+    func testPartsUsageReportHidesDeletedPartName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env, name: "UsageCat")
+        let partId = try E2ETestHelpers.seedPart(env, name: "Usage Part", categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 10)
+
+        // Create a pull movement so the part appears in the usage report
+        _ = try env.warehouse.createMovement(
+            partId: partId, qty: -3,
+            fromLocationType: "warehouse", fromLocationId: 1,
+            toLocationType: nil, toLocationId: nil,
+            movementType: "pull",
+            performedBy: env.adminUserId,
+            unitCostAtMove: 5.0
+        )
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE parts SET deleted_at = datetime('now') WHERE id = ?", arguments: [partId])
+        }
+
+        let rows = try env.reports.generateCustomReport(
+            type: "parts_usage",
+            columns: ["part_name", "quantity_used", "cost"],
+            startDate: Date(timeIntervalSince1970: 0),
+            endDate: Date.distantFuture,
+            filters: [:]
+        )
+        #expect(!rows.isEmpty)
+        let row = rows.first(where: { $0[0] == "Unknown" })
+        #expect(row != nil)
+        #expect(!rows.contains(where: { $0[0] == "Usage Part" }))
+    }
+
     @Test("generateCustomReport vehicle_fuel returns empty on fresh DB")
     func testCustomReportVehicleFuelEmpty() throws {
         let env = try E2ETestHelpers.setUp()

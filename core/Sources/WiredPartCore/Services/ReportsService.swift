@@ -740,8 +740,8 @@ public final class ReportsService: Sendable {
                            COALESCE(sm.unit_cost_at_move, p.company_cost_price, 0) AS cost,
                            ABS(sm.qty) * COALESCE(sm.unit_cost_at_move, p.company_cost_price, 0) AS total_cost
                     FROM stock_movements sm
-                    LEFT JOIN parts p ON p.id = sm.part_id
-                    LEFT JOIN part_categories pc ON pc.id = p.category_id
+                    LEFT JOIN parts p ON p.id = sm.part_id AND p.deleted_at IS NULL
+                    LEFT JOIN part_categories pc ON pc.id = p.category_id AND pc.deleted_at IS NULL
                     LEFT JOIN jobs j ON j.id = sm.job_id AND j.deleted_at IS NULL
                     WHERE sm.deleted_at IS NULL AND sm.movement_type IN ('pull', 'usage', 'job_pull')
                       AND date(sm.created_at) >= ? AND date(sm.created_at) <= ?

@@ -81,6 +81,34 @@ struct PartsServiceExtTests {
         }
     }
 
+    @Test("searchParts does not match a part via a soft-deleted color name")
+    func testSearchParts_doesNotMatchViaDeletedColorName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let colorId = try env.parts.createColor(name: "UniqueSearchColorXyzzy", hexCode: "#FEDCBA")
+        let partId = try env.parts.createPart(
+            categoryId: catId, name: "NoMatchNamePart", colorId: colorId, code: "NMNP-001"
+        )
+
+        // Baseline: part matches via the color name
+        let before = try env.parts.searchParts(query: "UniqueSearchColorXyzzy")
+        #expect(before.contains { $0.id == partId })
+
+        // Soft-delete the color. The part itself stays active, but a color-name
+        // search should no longer match because the LEFT JOIN condition drops the
+        // tombstoned color row — `pc.name` is now NULL in the evaluated row.
+        try env.db.writer.write { db in
+            try db.execute(
+                sql: "UPDATE part_colors SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [colorId]
+            )
+        }
+
+        let after = try env.parts.searchParts(query: "UniqueSearchColorXyzzy")
+        #expect(!after.contains { $0.id == partId },
+                "Soft-deleted color name must not keep a part searchable — LEFT JOIN guard drops the tombstoned color row")
+    }
+
     @Test("searchParts hides dimension names when category/brand is soft-deleted")
     func testSearchParts_hidesDeletedDimensionNames() throws {
         let env = try E2ETestHelpers.setUp()
@@ -531,6 +559,22 @@ struct PartsServiceExtTests {
         let trace = try env.parts.tracePartMovements(partId: partId)
         #expect(!trace.isEmpty)
         #expect(trace[0].qty == 10)
+    }
+
+    @Test("tracePartMovements hides performer name when user is soft-deleted")
+    func testTracePartMovementsHidesDeletedPerformerName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 5)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?", arguments: [env.adminUserId])
+        }
+
+        let trace = try env.parts.tracePartMovements(partId: partId)
+        #expect(!trace.isEmpty)
+        #expect(trace.first?.performedByName == nil)
     }
 
     // MARK: - getPartCurrentLocations

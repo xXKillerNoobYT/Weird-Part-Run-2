@@ -3871,7 +3871,7 @@ public final class WarehouseService: Sendable {
                     COALESCE(wl.name, v.vehicle_name, 'Location ' || s.location_id) AS name
                 FROM stock s
                 LEFT JOIN warehouse_locations wl ON s.location_type = 'warehouse' AND wl.id = s.location_id
-                LEFT JOIN vehicles v ON s.location_type IN ('truck', 'trailer') AND v.id = s.location_id
+                LEFT JOIN vehicles v ON s.location_type IN ('truck', 'trailer') AND v.id = s.location_id AND v.deleted_at IS NULL
                 WHERE s.deleted_at IS NULL AND s.qty > 0
                 GROUP BY s.location_type, s.location_id
                 ORDER BY s.location_type, name

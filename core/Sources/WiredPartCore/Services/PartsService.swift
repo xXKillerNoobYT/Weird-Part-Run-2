@@ -1087,7 +1087,7 @@ public final class PartsService: Sendable {
                         dbConn,
                         sql: """
                             SELECT DISTINCT p.* FROM parts p
-                            LEFT JOIN part_colors pc ON pc.id = p.color_id
+                            LEFT JOIN part_colors pc ON pc.id = p.color_id AND pc.deleted_at IS NULL
                             LEFT JOIN part_supplier_links psl ON psl.part_id = p.id AND psl.deleted_at IS NULL
                             LEFT JOIN color_brand_skus cbs
                                 ON cbs.color_id = p.color_id
@@ -1112,7 +1112,7 @@ public final class PartsService: Sendable {
                         dbConn,
                         sql: """
                             SELECT DISTINCT p.* FROM parts p
-                            LEFT JOIN part_colors pc ON pc.id = p.color_id
+                            LEFT JOIN part_colors pc ON pc.id = p.color_id AND pc.deleted_at IS NULL
                             WHERE p.deleted_at IS NULL
                               AND (p.name LIKE ? OR p.code LIKE ? OR pc.name LIKE ?)
                             ORDER BY p.name ASC
@@ -3352,7 +3352,7 @@ public final class PartsService: Sendable {
                 LEFT JOIN warehouse_locations wl ON lst.location_type = 'warehouse'
                     AND wl.id = lst.location_id
                 LEFT JOIN vehicles v ON lst.location_type = 'truck'
-                    AND v.id = lst.location_id
+                    AND v.id = lst.location_id AND v.deleted_at IS NULL
                 WHERE lst.part_id = ? AND lst.deleted_at IS NULL
                 ORDER BY lst.location_type ASC, location_name ASC
                 """, arguments: [partId])
@@ -3397,7 +3397,7 @@ public final class PartsService: Sendable {
                         SELECT DISTINCT part_id, from_location_type AS lt, from_location_id AS lid
                         FROM stock_movements WHERE deleted_at IS NULL AND from_location_type IS NOT NULL
                     ) combos
-                    LEFT JOIN parts p ON p.id = combos.part_id
+                    LEFT JOIN parts p ON p.id = combos.part_id AND p.deleted_at IS NULL
                     LEFT JOIN (
                         SELECT part_id, from_location_type AS lt, from_location_id AS lid, SUM(ABS(qty)) AS consumed
                         FROM stock_movements
@@ -5735,7 +5735,7 @@ public final class PartsService: Sendable {
                         THEN 1 END) AS on_time_count
                 FROM purchase_orders po
                 LEFT JOIN receiving_sessions rs ON rs.po_id = po.id AND rs.status = 'completed'
-                LEFT JOIN suppliers s ON s.id = po.supplier_id
+                LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
                 WHERE po.supplier_id = ? AND po.deleted_at IS NULL
                 AND po.status IN ('received', 'completed', 'closed')
                 """, arguments: [supplierId])
@@ -6089,7 +6089,7 @@ public final class PartsService: Sendable {
             let rows = try Row.fetchAll(dbConn, sql: """
                 SELECT sm.*, u.display_name AS performer_name
                 FROM stock_movements sm
-                LEFT JOIN users u ON u.id = sm.performed_by
+                LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
                 WHERE sm.part_id = ? AND sm.deleted_at IS NULL
                 ORDER BY sm.created_at ASC
                 """, arguments: [partId])
@@ -6120,7 +6120,7 @@ public final class PartsService: Sendable {
             let rows = try Row.fetchAll(dbConn, sql: """
                 SELECT sm.*, u.display_name AS performer_name
                 FROM stock_movements sm
-                LEFT JOIN users u ON u.id = sm.performed_by
+                LEFT JOIN users u ON u.id = sm.performed_by AND u.deleted_at IS NULL
                 WHERE sm.part_id = ? AND sm.supplier_id = ? AND sm.deleted_at IS NULL
                 ORDER BY sm.created_at ASC
                 """, arguments: [partId, supplierId])
@@ -6449,7 +6449,7 @@ public final class PartsService: Sendable {
                     SELECT p.name, pc.name AS cat_name, jp.qty_consumed
                     FROM job_parts jp
                     JOIN parts p ON p.id = jp.part_id
-                    LEFT JOIN part_categories pc ON pc.id = p.category_id
+                    LEFT JOIN part_categories pc ON pc.id = p.category_id AND pc.deleted_at IS NULL
                     WHERE jp.job_id = ? AND jp.deleted_at IS NULL
                     ORDER BY jp.qty_consumed DESC
                     LIMIT ?

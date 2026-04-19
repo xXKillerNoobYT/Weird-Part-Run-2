@@ -599,6 +599,27 @@ struct WarehouseServiceExtTests {
         #expect(locations.contains(where: { $0.locationType == "warehouse" }))
     }
 
+    @Test("listDistinctStockLocations falls back to location ID when vehicle is soft-deleted")
+    func testListDistinctStockLocationsHidesDeletedVehicleName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let catId = try E2ETestHelpers.seedCategory(env)
+        let partId = try E2ETestHelpers.seedPart(env, categoryId: catId)
+        let vehicleId = try env.fleet.createVehicle(
+            vehicleNumber: "V-DSL-01", vehicleName: "DSL Truck", vehicleType: "truck",
+            make: nil, model: nil, year: nil, color: nil, vin: nil, licensePlate: nil, notes: nil
+        )
+        _ = try E2ETestHelpers.seedStock(env, partId: partId, qty: 3, locationType: "truck", locationId: vehicleId)
+
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE vehicles SET deleted_at = datetime('now') WHERE id = ?", arguments: [vehicleId])
+        }
+
+        let locations = try env.warehouse.listDistinctStockLocations()
+        let truckLoc = locations.first(where: { $0.locationType == "truck" && $0.locationId == vehicleId })
+        #expect(truckLoc != nil)
+        #expect(truckLoc?.name != "DSL Truck")
+    }
+
     // MARK: - getPartStockByLocationType
 
     @Test("getPartStockByLocationType returns empty for part with no stock")
