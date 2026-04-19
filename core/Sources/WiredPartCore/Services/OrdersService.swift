@@ -20,12 +20,18 @@ public final class OrdersService: Sendable {
     // MARK: - Error Types
     // =========================================================================
 
-    public enum OrdersError: LocalizedError, Sendable {
+    public enum OrdersError: LocalizedError, Sendable, Equatable {
         case jpoNotFound(Int64)
         case purchaseOrderNotFound(Int64)
         case returnNotFound(Int64)
         case invalidStatusTransition(entity: String, from: String, to: String)
         case invalidStatus(String)
+        case jobNotFound(Int64)
+        case supplierNotFound(Int64)
+        case partNotFound(Int64)
+        case userNotFound(Int64)
+        case invalidQuantity(Int)
+        case requiredFieldEmpty(String)
 
         public var errorDescription: String? {
             switch self {
@@ -35,6 +41,12 @@ public final class OrdersService: Sendable {
             case .invalidStatusTransition(let entity, let from, let to):
                 "Cannot change \(entity) from \(from) to \(to)"
             case .invalidStatus(let msg): msg
+            case .jobNotFound(let id): "Job #\(id) not found or has been deleted"
+            case .supplierNotFound(let id): "Supplier #\(id) not found or has been deleted"
+            case .partNotFound(let id): "Part #\(id) not found or has been deleted"
+            case .userNotFound(let id): "User #\(id) not found or has been deleted"
+            case .invalidQuantity(let qty): "Quantity must be greater than zero (got \(qty))"
+            case .requiredFieldEmpty(let field): "\(field) is required and cannot be empty"
             }
         }
     }
@@ -568,7 +580,7 @@ public final class OrdersService: Sendable {
                 LEFT JOIN jobs j ON j.id = jp.job_id AND j.deleted_at IS NULL
                 LEFT JOIN users u_req ON u_req.id = jp.requested_by AND u_req.deleted_at IS NULL
                 LEFT JOIN users u_app ON u_app.id = jp.approved_by AND u_app.deleted_at IS NULL
-                WHERE jp.id = ?
+                WHERE jp.id = ? AND jp.deleted_at IS NULL
                 """
             guard let row = try Row.fetchOne(dbConn, sql: sql, arguments: [id]) else {
                 return nil
@@ -638,6 +650,20 @@ public final class OrdersService: Sendable {
         notes: String? = nil
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            // Guard: both the job and the requesting user must exist and not be tombstoned.
+            // The FK constraint enforces row existence but not deleted_at state, so without
+            // these pre-checks a stale UI could create a JPO against a deleted job/user —
+            // which would then surface nowhere (filtered by listJPOs' deleted_at guards).
+            let jobExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobId]) ?? 0) > 0
+            guard jobExists else { throw OrdersError.jobNotFound(jobId) }
+
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [requestedBy]) ?? 0) > 0
+            guard userExists else { throw OrdersError.userNotFound(requestedBy) }
+
             let orderNumber = "JPO-\(jobId)-\(Int(Date().timeIntervalSince1970))"
             try dbConn.execute(
                 sql: """
@@ -682,7 +708,7 @@ public final class OrdersService: Sendable {
                 sql: """
                     UPDATE job_parts_orders
                     SET status = ?, updated_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [status, id]
             )
@@ -713,7 +739,22 @@ public final class OrdersService: Sendable {
         brandSelectionMode: String = "specific",
         userId: Int64? = nil
     ) throws -> Int64 {
-        let lineId = try db.writer.write { dbConn in
+        // Validate inputs before touching the database.
+        guard quantity > 0 else { throw OrdersError.invalidQuantity(quantity) }
+
+        let lineId = try db.writer.write { dbConn -> Int64 in
+            // Guard: parent JPO must exist and not be tombstoned.
+            let jpoExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM job_parts_orders WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jpoId]) ?? 0) > 0
+            guard jpoExists else { throw OrdersError.jpoNotFound(jpoId) }
+
+            // Guard: referenced part must exist and not be tombstoned.
+            let partExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [partId]) ?? 0) > 0
+            guard partExists else { throw OrdersError.partNotFound(partId) }
+
             try dbConn.execute(
                 sql: """
                     INSERT INTO jpo_line_items
@@ -752,18 +793,18 @@ public final class OrdersService: Sendable {
             args.append(lineId)
 
             try dbConn.execute(
-                sql: "UPDATE jpo_line_items SET \(setClauses.joined(separator: ", ")) WHERE id = ?",
+                sql: "UPDATE jpo_line_items SET \(setClauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL",
                 arguments: StatementArguments(args)
             )
 
             // Re-derive parent JPO status from all its lines
-            if let jpoId = try Int64.fetchOne(dbConn, sql: "SELECT jpo_id FROM jpo_line_items WHERE id = ?", arguments: [lineId]) {
+            if let jpoId = try Int64.fetchOne(dbConn, sql: "SELECT jpo_id FROM jpo_line_items WHERE id = ? AND deleted_at IS NULL", arguments: [lineId]) {
                 let allStatuses = try String.fetchAll(dbConn, sql: """
                     SELECT line_status FROM jpo_line_items WHERE jpo_id = ? AND deleted_at IS NULL
                     """, arguments: [jpoId])
                 let derived = deriveJPOStatusFromLineStatuses(allStatuses)
                 try dbConn.execute(
-                    sql: "UPDATE job_parts_orders SET status = ?, updated_at = datetime('now') WHERE id = ?",
+                    sql: "UPDATE job_parts_orders SET status = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
                     arguments: [derived, jpoId]
                 )
             }
@@ -834,7 +875,7 @@ public final class OrdersService: Sendable {
                         chat_thread_id = ?,
                         status_updated_at = datetime('now'),
                         status_updated_by = ?
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [holdReason, channelId, userId, lineId]
             )
@@ -845,7 +886,7 @@ public final class OrdersService: Sendable {
                 """, arguments: [jpoId])
             let derived = deriveJPOStatusFromLineStatuses(allStatuses)
             try dbConn.execute(
-                sql: "UPDATE job_parts_orders SET status = ?, updated_at = datetime('now') WHERE id = ?",
+                sql: "UPDATE job_parts_orders SET status = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
                 arguments: [derived, jpoId]
             )
 
@@ -886,7 +927,7 @@ public final class OrdersService: Sendable {
                     sql: """
                         UPDATE jpo_line_items SET line_status = 'transfer',
                         status_updated_at = datetime('now'), status_updated_by = ?
-                        WHERE id = ?
+                        WHERE id = ? AND deleted_at IS NULL
                         """,
                     arguments: [userId, lineId]
                 )
@@ -897,7 +938,7 @@ public final class OrdersService: Sendable {
                     sql: """
                         UPDATE jpo_line_items SET line_status = 'pending',
                         status_updated_at = datetime('now'), status_updated_by = ?
-                        WHERE id = ?
+                        WHERE id = ? AND deleted_at IS NULL
                         """,
                     arguments: [userId, lineId]
                 )
@@ -912,7 +953,7 @@ public final class OrdersService: Sendable {
             try dbConn.execute(
                 sql: """
                     UPDATE jpo_line_items SET transfer_id = ?
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [transferId, lineId]
             )
@@ -941,7 +982,7 @@ public final class OrdersService: Sendable {
             try dbConn.execute(
                 sql: """
                     UPDATE jpo_line_items SET transfer_id = NULL
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [lineId]
             )
@@ -969,7 +1010,7 @@ public final class OrdersService: Sendable {
     public func updateJPODeliveryOption(jpoId: Int64, option: String) throws {
         try db.writer.write { dbConn in
             let locked = try Int.fetchOne(dbConn, sql: """
-                SELECT delivery_locked FROM job_parts_orders WHERE id = ?
+                SELECT delivery_locked FROM job_parts_orders WHERE id = ? AND deleted_at IS NULL
                 """, arguments: [jpoId]) ?? 0
             guard locked == 0 else {
                 throw OrdersError.invalidStatus("Delivery option is locked — parts already delivered")
@@ -977,7 +1018,7 @@ public final class OrdersService: Sendable {
             try dbConn.execute(
                 sql: """
                     UPDATE job_parts_orders SET delivery_option = ?, updated_at = datetime('now')
-                    WHERE id = ?
+                    WHERE id = ? AND deleted_at IS NULL
                     """,
                 arguments: [option, jpoId]
             )
@@ -996,6 +1037,26 @@ public final class OrdersService: Sendable {
         lines: [(partId: Int64, quantity: Int)]
     ) throws -> Int64 {
         try db.writer.write { dbConn in
+            // Guard: job and requesting user must exist and not be tombstoned (mirrors createJPO).
+            let jobExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM jobs WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [jobId]) ?? 0) > 0
+            guard jobExists else { throw OrdersError.jobNotFound(jobId) }
+
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [requestedBy]) ?? 0) > 0
+            guard userExists else { throw OrdersError.userNotFound(requestedBy) }
+
+            // Guard: every line must have qty > 0 and a live part.
+            for line in lines {
+                guard line.quantity > 0 else { throw OrdersError.invalidQuantity(line.quantity) }
+                let partExists = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [line.partId]) ?? 0) > 0
+                guard partExists else { throw OrdersError.partNotFound(line.partId) }
+            }
+
             // 1. Create the JPO
             let orderNumber = "JPO-\(jobId)-\(Int(Date().timeIntervalSince1970))"
             try dbConn.execute(sql: """
@@ -1031,10 +1092,10 @@ public final class OrdersService: Sendable {
 
             // 3. Derive overall JPO status from line statuses
             let statuses = try String.fetchAll(dbConn, sql:
-                "SELECT line_status FROM jpo_line_items WHERE jpo_id = ?", arguments: [jpoId])
+                "SELECT line_status FROM jpo_line_items WHERE jpo_id = ? AND deleted_at IS NULL", arguments: [jpoId])
             let derived = self.deriveJPOStatusFromLineStatuses(statuses)
             try dbConn.execute(sql:
-                "UPDATE job_parts_orders SET status = ?, updated_at = datetime('now') WHERE id = ?",
+                "UPDATE job_parts_orders SET status = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
                 arguments: [derived, jpoId])
 
             return jpoId
@@ -1707,7 +1768,7 @@ public final class OrdersService: Sendable {
 
             // Mark JPO as ordered
             try dbConn.execute(
-                sql: "UPDATE job_parts_orders SET status = 'ordered', updated_at = datetime('now') WHERE id = ?",
+                sql: "UPDATE job_parts_orders SET status = 'ordered', updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
                 arguments: [jpoId]
             )
 
@@ -1777,7 +1838,7 @@ public final class OrdersService: Sendable {
                 FROM purchase_orders po
                 LEFT JOIN suppliers s ON s.id = po.supplier_id AND s.deleted_at IS NULL
                 LEFT JOIN users u ON u.id = po.submitted_by AND u.deleted_at IS NULL
-                WHERE po.id = ?
+                WHERE po.id = ? AND po.deleted_at IS NULL
                 """
             guard let row = try Row.fetchOne(dbConn, sql: sql, arguments: [id]) else {
                 return nil
@@ -1875,7 +1936,19 @@ public final class OrdersService: Sendable {
         supplierId: Int64,
         notes: String? = nil
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !poNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw OrdersError.requiredFieldEmpty("poNumber")
+        }
+
+        return try db.writer.write { dbConn -> Int64 in
+            // Guard: supplier must exist and not be tombstoned — the FK allows the write
+            // against a soft-deleted supplier, leaving an orphan PO that wouldn't surface
+            // in listPurchaseOrders (filtered by s.deleted_at IS NULL on the LEFT JOIN).
+            let supplierExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM suppliers WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [supplierId]) ?? 0) > 0
+            guard supplierExists else { throw OrdersError.supplierNotFound(supplierId) }
+
             try dbConn.execute(
                 sql: """
                     INSERT INTO purchase_orders
@@ -1891,7 +1964,7 @@ public final class OrdersService: Sendable {
 
     /// Update the status of a purchase order.
     /// Fixes #195: fetch old status BEFORE update. Fixes #204: accept userId instead of hardcoding 1.
-    public func updatePOStatus(id: Int64, status: String, userId: Int64? = nil) throws {
+    public func updatePOStatus(id: Int64, status: String, userId: Int64) throws {
         try db.writer.write { dbConn in
             // 1. Fetch old status BEFORE the update (fixes #195)
             guard let row = try Row.fetchOne(
@@ -1924,7 +1997,7 @@ public final class OrdersService: Sendable {
                     INSERT INTO order_status_history (entity_type, entity_id, old_status, new_status, changed_by, created_at)
                     VALUES ('purchase_order', ?, ?, ?, ?, datetime('now'))
                     """,
-                arguments: [id, oldStatus, status, userId ?? 1]
+                arguments: [id, oldStatus, status, userId]
             )
         }
     }
@@ -1959,17 +2032,20 @@ public final class OrdersService: Sendable {
 
     /// Append a timestamped note to a purchase order's notes field.
     public func addPONote(poId: Int64, note: String, author: String) throws {
+        guard !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw OrdersError.requiredFieldEmpty("note")
+        }
+        guard !author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw OrdersError.requiredFieldEmpty("author")
+        }
         try db.writer.write { dbConn in
-            let existing = try String.fetchOne(
-                dbConn,
-                sql: "SELECT notes FROM purchase_orders WHERE id = ?",
-                arguments: [poId]
-            ) ?? ""
+            guard let poRow = try Row.fetchOne(dbConn, sql: "SELECT notes FROM purchase_orders WHERE id = ? AND deleted_at IS NULL", arguments: [poId]) else { return }
+            let existing: String = poRow["notes"] ?? ""
             let timestamp = CoreFormatters.nowISO()
             let newNote = "\(timestamp) [\(author)]: \(note)"
             let combined = existing.isEmpty ? newNote : "\(existing)\n\(newNote)"
             try dbConn.execute(
-                sql: "UPDATE purchase_orders SET notes = ?, updated_at = datetime('now') WHERE id = ?",
+                sql: "UPDATE purchase_orders SET notes = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL",
                 arguments: [combined, poId]
             )
         }
@@ -1980,12 +2056,16 @@ public final class OrdersService: Sendable {
     /// Update a draft PO line item's quantity and/or unit price.
     /// Only works on draft POs — throws if the PO is not in draft status.
     public func updatePOLineItem(lineId: Int64, quantity: Int, unitPrice: Double?) throws {
+        guard quantity > 0 else { throw OrdersError.invalidQuantity(quantity) }
+        if let price = unitPrice, price < 0 {
+            throw OrdersError.invalidQuantity(Int(price))
+        }
         try db.writer.write { dbConn in
             // Verify the parent PO is in draft status
             let statusCheck = try String.fetchOne(dbConn, sql: """
                 SELECT po.status FROM purchase_orders po
-                JOIN po_line_items li ON li.po_id = po.id
-                WHERE li.id = ?
+                JOIN po_line_items li ON li.po_id = po.id AND li.deleted_at IS NULL
+                WHERE li.id = ? AND po.deleted_at IS NULL
                 """, arguments: [lineId])
             guard statusCheck == "draft" else {
                 throw OrdersError.invalidStatusTransition(entity: "PO line", from: statusCheck ?? "unknown", to: "edit")
@@ -1998,7 +2078,7 @@ public final class OrdersService: Sendable {
             }
             args.append(lineId)
             try dbConn.execute(
-                sql: "UPDATE po_line_items SET \(setClauses.joined(separator: ", ")) WHERE id = ?",
+                sql: "UPDATE po_line_items SET \(setClauses.joined(separator: ", ")) WHERE id = ? AND deleted_at IS NULL",
                 arguments: StatementArguments(args)
             )
         }
@@ -2012,7 +2092,21 @@ public final class OrdersService: Sendable {
         quantity: Int,
         unitPrice: Double?
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard quantity > 0 else { throw OrdersError.invalidQuantity(quantity) }
+
+        return try db.writer.write { dbConn -> Int64 in
+            // Guard: parent PO must exist and not be tombstoned.
+            let poExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM purchase_orders WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [poId]) ?? 0) > 0
+            guard poExists else { throw OrdersError.purchaseOrderNotFound(poId) }
+
+            // Guard: referenced part must exist and not be tombstoned.
+            let partExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM parts WHERE id = ? AND deleted_at IS NULL
+                """, arguments: [partId]) ?? 0) > 0
+            guard partExists else { throw OrdersError.partNotFound(partId) }
+
             try dbConn.execute(
                 sql: """
                     INSERT INTO po_line_items
@@ -2169,7 +2263,7 @@ public final class OrdersService: Sendable {
                        rsi.received_qty,
                        rsi.notes
                 FROM receiving_session_items rsi
-                LEFT JOIN po_line_items pli ON pli.id = rsi.po_line_id
+                LEFT JOIN po_line_items pli ON pli.id = rsi.po_line_id AND pli.deleted_at IS NULL
                 LEFT JOIN parts p ON p.id = pli.part_id AND p.deleted_at IS NULL
                 WHERE rsi.session_id = ? AND rsi.deleted_at IS NULL
                 ORDER BY p.name
@@ -2234,8 +2328,8 @@ public final class OrdersService: Sendable {
                 FROM po_line_items li
                 JOIN purchase_orders po ON po.id = li.po_id
                 LEFT JOIN parts p ON p.id = li.part_id AND p.deleted_at IS NULL
-                LEFT JOIN jpo_line_items jli ON jli.id = li.jpo_line_id
-                LEFT JOIN job_parts_orders jpo ON jpo.id = jli.jpo_id
+                LEFT JOIN jpo_line_items jli ON jli.id = li.jpo_line_id AND jli.deleted_at IS NULL
+                LEFT JOIN job_parts_orders jpo ON jpo.id = jli.jpo_id AND jpo.deleted_at IS NULL
                 LEFT JOIN jobs j ON j.id = jpo.job_id AND j.deleted_at IS NULL
                 WHERE \(whereClauses.joined(separator: " AND "))
                 ORDER BY po.po_number ASC, li.id ASC
@@ -2339,9 +2433,31 @@ public final class OrdersService: Sendable {
         reason: String,
         supplierId: Int64? = nil,
         poId: Int64? = nil,
-        jobId: Int64? = nil
+        jobId: Int64? = nil,
+        initiatedBy: Int64
     ) throws -> Int64 {
-        try db.writer.write { dbConn in
+        guard !returnType.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw OrdersError.requiredFieldEmpty("returnType")
+        }
+        guard !reason.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw OrdersError.requiredFieldEmpty("reason")
+        }
+
+        return try db.writer.write { dbConn in
+            // Guard: initiator must exist and not be tombstoned.
+            let userExists = (try Int.fetchOne(dbConn, sql: """
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
+                """, arguments: [initiatedBy]) ?? 0) > 0
+            guard userExists else { throw OrdersError.userNotFound(initiatedBy) }
+
+            // Guard: supplier (if provided) must not be tombstoned.
+            if let sId = supplierId {
+                let supplierExists = (try Int.fetchOne(dbConn, sql: """
+                    SELECT COUNT(*) FROM suppliers WHERE id = ? AND deleted_at IS NULL
+                    """, arguments: [sId]) ?? 0) > 0
+                guard supplierExists else { throw OrdersError.supplierNotFound(sId) }
+            }
+
             // MAX-based to prevent duplicates after deletions
             let maxNum = try Int.fetchOne(
                 dbConn,
@@ -2354,9 +2470,9 @@ public final class OrdersService: Sendable {
                     INSERT INTO returns
                     (return_number, return_type, reason, supplier_id, po_id, job_id,
                      status, initiated_by, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, 'pending', 1, datetime('now'), datetime('now'))
+                    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, datetime('now'), datetime('now'))
                     """,
-                arguments: [returnNumber, returnType, reason, supplierId, poId, jobId]
+                arguments: [returnNumber, returnType, reason, supplierId, poId, jobId, initiatedBy]
             )
             return dbConn.lastInsertedRowID
         }
