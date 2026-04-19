@@ -1366,4 +1366,287 @@ struct NotebooksServiceTests {
         // jobName is nil when the job is soft-deleted (LEFT JOIN returns NULL)
         #expect(notebooks.first?.jobName == nil)
     }
+
+    // MARK: - Write-path soft-delete guard regression tests
+
+    @Test("completeEntry is a no-op on soft-deleted notebook entry")
+    func testCompleteEntry_noOpOnSoftDeletedEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(title: "NB", notebookType: "general", jobId: nil, createdBy: env.adminUserId)
+        let sectionId = try env.notebooks.createSection(notebookId: nbId, groupId: nil, name: "Sec")
+        let entryId = try env.notebooks.createBlockEntry(sectionId: sectionId, blockType: "text", title: "Task", createdBy: env.adminUserId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE notebook_entries SET deleted_at = datetime('now'), is_deleted = 1 WHERE id = ?", arguments: [entryId])
+        }
+        try env.notebooks.completeEntry(entryId: entryId)
+        let status = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT task_status FROM notebook_entries WHERE id = ?", arguments: [entryId])
+        }
+        #expect(status != "complete")
+    }
+
+    @Test("updateBlockEntry is a no-op on soft-deleted notebook entry")
+    func testUpdateBlockEntry_noOpOnSoftDeletedEntry() throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(title: "NB", notebookType: "general", jobId: nil, createdBy: env.adminUserId)
+        let sectionId = try env.notebooks.createSection(notebookId: nbId, groupId: nil, name: "Sec")
+        let entryId = try env.notebooks.createBlockEntry(sectionId: sectionId, blockType: "text", title: "Original", createdBy: env.adminUserId)
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE notebook_entries SET deleted_at = datetime('now'), is_deleted = 1 WHERE id = ?", arguments: [entryId])
+        }
+        try env.notebooks.updateBlockEntry(entryId: entryId, content: "MUTATED", blockData: nil)
+        let content = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT content FROM notebook_entries WHERE id = ?", arguments: [entryId])
+        }
+        #expect(content != "MUTATED")
+    }
+
+    @Test("updateSection is a no-op on soft-deleted section")
+    func testUpdateSection_noOpOnSoftDeletedSection() throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(title: "NB", notebookType: "general", jobId: nil, createdBy: env.adminUserId)
+        let sectionId = try env.notebooks.createSection(notebookId: nbId, groupId: nil, name: "Original Name")
+        try env.notebooks.deleteSection(sectionId: sectionId)
+        try env.notebooks.updateSection(sectionId: sectionId, name: "MUTATED NAME")
+        let name = try env.db.writer.read { db in
+            try String.fetchOne(db, sql: "SELECT name FROM notebook_sections WHERE id = ?", arguments: [sectionId])
+        }
+        #expect(name != "MUTATED NAME")
+    }
+
+    @Test("createNotebook throws requiredFieldEmpty when title is blank")
+    func testCreateNotebook_throwsForBlankTitle() throws {
+        let env = try E2ETestHelpers.setUp()
+        var threw = false
+        do {
+            _ = try env.notebooks.createNotebook(title: "   ", notebookType: "general", jobId: nil, createdBy: env.adminUserId)
+        } catch NotebooksService.NotebooksError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "createNotebook must throw requiredFieldEmpty when title is whitespace-only")
+    }
+
+    @Test("addNotebookEntry throws requiredFieldEmpty when title is blank")
+    func testAddNotebookEntry_throwsForBlankTitle() throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(title: "Test Notebook", notebookType: "general", jobId: nil, createdBy: env.adminUserId)
+        var threw = false
+        do {
+            _ = try env.notebooks.addNotebookEntry(notebookId: nbId, title: "", createdBy: env.adminUserId)
+        } catch NotebooksService.NotebooksError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "addNotebookEntry must throw requiredFieldEmpty when title is empty")
+    }
+
+    @Test("createSectionGroup throws requiredFieldEmpty when name is blank")
+    func testCreateSectionGroup_throwsForBlankName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(title: "Test Notebook", notebookType: "general", jobId: nil, createdBy: env.adminUserId)
+        var threw = false
+        do {
+            _ = try env.notebooks.createSectionGroup(notebookId: nbId, name: "   ")
+        } catch NotebooksService.NotebooksError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "createSectionGroup must throw requiredFieldEmpty when name is whitespace-only")
+    }
+
+    @Test("createSection throws requiredFieldEmpty when name is blank")
+    func testCreateSection_throwsForBlankName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(title: "Test Notebook", notebookType: "general", jobId: nil, createdBy: env.adminUserId)
+        var threw = false
+        do {
+            _ = try env.notebooks.createSection(notebookId: nbId, groupId: nil, name: "")
+        } catch NotebooksService.NotebooksError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "createSection must throw requiredFieldEmpty when name is empty")
+    }
+
+    @Test("startWarrantyTimer throws invalidDuration when duration is zero")
+    func testStartWarrantyTimer_throwsForZeroDuration() throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(title: "WB", notebookType: "general", jobId: nil, createdBy: env.adminUserId)
+        let entryId = try env.notebooks.addNotebookEntry(notebookId: nbId, title: "Task", createdBy: env.adminUserId)
+        var threw = false
+        do {
+            try env.notebooks.startWarrantyTimer(entryId: entryId, warrantyDurationDays: 0)
+        } catch NotebooksService.NotebooksError.invalidDuration {
+            threw = true
+        } catch {}
+        #expect(threw, "startWarrantyTimer must throw invalidDuration when warrantyDurationDays is 0")
+    }
+
+    @Test("startWarrantyTimer throws invalidDuration when duration is negative")
+    func testStartWarrantyTimer_throwsForNegativeDuration() throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(title: "WB2", notebookType: "general", jobId: nil, createdBy: env.adminUserId)
+        let entryId = try env.notebooks.addNotebookEntry(notebookId: nbId, title: "Task2", createdBy: env.adminUserId)
+        var threw = false
+        do {
+            try env.notebooks.startWarrantyTimer(entryId: entryId, warrantyDurationDays: -5)
+        } catch NotebooksService.NotebooksError.invalidDuration {
+            threw = true
+        } catch {}
+        #expect(threw, "startWarrantyTimer must throw invalidDuration when warrantyDurationDays is negative")
+    }
+
+    @Test("updateSectionGroup throws requiredFieldEmpty when name is blank")
+    func testUpdateSectionGroup_throwsForBlankName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(title: "NB", notebookType: "general", createdBy: env.adminUserId)
+        let groupId = try env.notebooks.createSectionGroup(notebookId: nbId, name: "Group A")
+        var threw = false
+        do {
+            try env.notebooks.updateSectionGroup(groupId: groupId, name: "   ")
+        } catch NotebooksService.NotebooksError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "updateSectionGroup must throw requiredFieldEmpty when name is whitespace-only")
+    }
+
+    @Test("updateSection throws requiredFieldEmpty when name is blank")
+    func testUpdateSection_throwsForBlankName() throws {
+        let env = try E2ETestHelpers.setUp()
+        let nbId = try env.notebooks.createNotebook(title: "NB2", notebookType: "general", createdBy: env.adminUserId)
+        let sectionId = try env.notebooks.createSection(notebookId: nbId, groupId: nil, name: "Section A")
+        var threw = false
+        do {
+            try env.notebooks.updateSection(sectionId: sectionId, name: "")
+        } catch NotebooksService.NotebooksError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "updateSection must throw requiredFieldEmpty when name is empty")
+    }
+
+    @Test("createTemplate throws requiredFieldEmpty when name is blank")
+    func testCreateTemplate_throwsForBlankName() throws {
+        let env = try E2ETestHelpers.setUp()
+        var threw = false
+        let emptyTemplate = NotebooksService.NotebookTemplateData(groups: [])
+        do {
+            _ = try env.notebooks.createTemplate(
+                name: "   ",
+                description: nil,
+                templateType: "job",
+                category: nil,
+                templateData: emptyTemplate,
+                createdBy: env.adminUserId
+            )
+        } catch NotebooksService.NotebooksError.requiredFieldEmpty {
+            threw = true
+        } catch {}
+        #expect(threw, "createTemplate must throw requiredFieldEmpty when name is whitespace-only")
+    }
+
+    // MARK: - Atomicity tests
+
+    @Test("applyJobTemplate places entries under correct group sections")
+    func testApplyJobTemplateGroupSectionEntryMapping() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let templateData = NotebooksService.NotebookTemplateData(groups: [
+            .init(name: "Group A", sections: [
+                .init(name: "Section A1", entries: [
+                    .init(blockType: "text", title: "Entry A1-1", content: nil, headingLevel: nil, checklistItems: nil)
+                ])
+            ]),
+            .init(name: "Group B", sections: [
+                .init(name: "Section B1", entries: [
+                    .init(blockType: "text", title: "Entry B1-1", content: nil, headingLevel: nil, checklistItems: nil),
+                    .init(blockType: "text", title: "Entry B1-2", content: nil, headingLevel: nil, checklistItems: nil)
+                ])
+            ])
+        ])
+
+        let templateId = try env.notebooks.createTemplate(
+            name: "Multi-Group Template",
+            description: nil, templateType: "job", category: nil,
+            templateData: templateData, createdBy: env.adminUserId
+        )
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Atomic NB", notebookType: "job", createdBy: env.adminUserId
+        )
+        try env.notebooks.applyJobTemplate(templateId: templateId, notebookId: nbId, createdBy: env.adminUserId)
+
+        let hierarchy = try env.notebooks.getNotebookHierarchy(notebookId: nbId)
+        #expect(hierarchy.groups.count == 2)
+
+        let groupA = try #require(hierarchy.groups.first { $0.name == "Group A" })
+        #expect(groupA.sections.count == 1)
+        #expect(groupA.sections.first?.entries.count == 1)
+        #expect(groupA.sections.first?.entries.first?.title == "Entry A1-1")
+
+        let groupB = try #require(hierarchy.groups.first { $0.name == "Group B" })
+        #expect(groupB.sections.count == 1)
+        #expect(groupB.sections.first?.entries.count == 2)
+    }
+
+    @Test("applyPageTemplate preserves checklist_items JSON")
+    func testApplyPageTemplateChecklistItems() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let templateData = NotebooksService.NotebookTemplateData(groups: [
+            .init(name: "G", sections: [
+                .init(name: "S", entries: [
+                    .init(blockType: "checklist", title: "Checklist Entry", content: nil,
+                          headingLevel: nil, checklistItems: [["text": "item1", "done": "false"], ["text": "item2", "done": "false"]])
+                ])
+            ])
+        ])
+
+        let templateId = try env.notebooks.createTemplate(
+            name: "Checklist Template", description: nil, templateType: "page",
+            category: nil, templateData: templateData, createdBy: env.adminUserId
+        )
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Checklist NB", notebookType: "general", createdBy: env.adminUserId
+        )
+        let sectionId = try env.notebooks.createSection(notebookId: nbId, groupId: nil, name: "Test Section")
+        try env.notebooks.applyPageTemplate(templateId: templateId, sectionId: sectionId, createdBy: env.adminUserId)
+
+        let hierarchy = try env.notebooks.getNotebookHierarchy(notebookId: nbId)
+        let section = try #require(hierarchy.ungroupedSections.first { $0.id == sectionId })
+        #expect(section.entries.count == 1)
+        let entry = try #require(section.entries.first)
+        #expect(entry.blockType == "checklist")
+        #expect(entry.checklistItems != nil, "checklist_items must be preserved through applyPageTemplate")
+    }
+
+    @Test("getNotebookHierarchy with groups sections and entries")
+    func testNotebookHierarchyFullTree() throws {
+        let env = try E2ETestHelpers.setUp()
+
+        let nbId = try env.notebooks.createNotebook(
+            title: "Full Tree NB", notebookType: "general", createdBy: env.adminUserId
+        )
+        let groupId = try env.notebooks.createSectionGroup(notebookId: nbId, name: "My Group")
+        let sectionId = try env.notebooks.createSection(notebookId: nbId, groupId: groupId, name: "My Section")
+        _ = try env.notebooks.createBlockEntry(
+            sectionId: sectionId, blockType: "text", title: "Block 1",
+            content: "Hello", createdBy: env.adminUserId
+        )
+        _ = try env.notebooks.createBlockEntry(
+            sectionId: sectionId, blockType: "text", title: "Block 2",
+            content: "World", createdBy: env.adminUserId
+        )
+
+        let hierarchy = try env.notebooks.getNotebookHierarchy(notebookId: nbId)
+        #expect(hierarchy.groups.count == 1)
+        #expect(hierarchy.ungroupedSections.isEmpty)
+
+        let group = try #require(hierarchy.groups.first)
+        #expect(group.name == "My Group")
+        #expect(group.sections.count == 1)
+
+        let section = try #require(group.sections.first)
+        #expect(section.name == "My Section")
+        #expect(section.entries.count == 2)
+        #expect(section.entries.map { $0.title }.contains("Block 1"))
+        #expect(section.entries.map { $0.title }.contains("Block 2"))
+    }
 }
