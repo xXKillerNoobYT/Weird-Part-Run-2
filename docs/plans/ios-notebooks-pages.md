@@ -345,4 +345,101 @@ Key service methods:
 
 ---
 
-*Last updated: 2026-03-23*
+---
+
+## Current Implementation Status (2026-04-19, via AUTO GO C1 supplement)
+
+**Status:** Phase 4.5 (Unified Notebook System) is marked complete in CLAUDE.md.
+
+### iOS Files (8 total in `Features/Notebooks/`)
+
+| File | Purpose |
+|---|---|
+| `IOSNotebooksRouter.swift` | Nav hub for notebooks |
+| `IOSNotebooksListPage.swift` | All notebooks list with filter |
+| `IOSNotebookDetailPage.swift` | Single notebook: hierarchy view + block editor |
+| `IOSJobNotebooksPage.swift` | Per-job notebooks tab |
+| `IOSNotebookTemplatesPage.swift` | Template management (list + apply) |
+| `AddNotebookEntrySheet.swift` | Sheet to add a block entry to a section |
+| `CreateNotebookSheet.swift` | Sheet to create a new notebook |
+| `PanelScheduleBuilder.swift` | Dedicated panel schedule builder (section 6) |
+
+Note: `PanelScheduleBuilder.swift` is not listed in the plan's "Files:" header but is described in section 6 and implemented.
+
+### NotebooksService API (35+ public methods, 1461 lines)
+
+Actual method names differ slightly from the plan's conceptual list:
+
+| Plan concept | Actual method | Notes |
+|---|---|---|
+| `fetchNotebooks(filter:)` | `listNotebooks(notebookType:, jobId:)` | Job and type filters |
+| `fetchSections` | `getNotebookHierarchy(notebookId:)` | Returns full hierarchy |
+| `createBlock` | `createBlockEntry(sectionId:, ...)` | Block + section together |
+| `updateBlock` | `updateBlockEntry(entryId:, ...)` | |
+| `deleteBlock` | `deleteBlockEntry(entryId:)` | Soft-delete |
+| `resolveConflict` | `resolveBlockConflict(conflictLogId:, keepVersion:)` | |
+| `generateDailyReport` | `DailyReportGenerator.generateReport(...)` | Separate service |
+| `fetchTemplates` | `getTemplates(templateType:)` | |
+| `applyTemplate` | `applyJobTemplate` + `applyPageTemplate` | Two template levels |
+
+Additional methods not in plan: `classifyTodoWork`, `reviewClassification`, `reclassifyTodoWork`, `getClassificationHistory`, `startWarrantyTimer`, `getTodosNeedingReview`, `ensureWarrantySection`, `detectBlockConflicts`, `resolveAllBlockConflicts`, `seedDefaultTemplates`, full section group CRUD, full section CRUD.
+
+### Tests
+
+`core/Tests/WiredPartCoreTests/NotebooksServiceTests.swift` — 1543 lines, extensive coverage of all major flows including hierarchy, blocks, conflict detection/resolution, templates, warranty timer, section groups/sections, classification lifecycle.
+
+---
+
+## Test Plan
+
+Coverage targets (all currently tested):
+- `listNotebooks` — returns all notebooks; filter by job; filter by type; hides soft-deleted job names
+- `createNotebook` — creates and appears in list; with job association; throws on blank title
+- `getNotebookDetail` — returns notebook with entries; throws for non-existent ID
+- `createBlockEntry` + hierarchy — appears in `getNotebookHierarchy`; soft-delete removes it
+- `updateBlockEntry` — content updated correctly; no-op on deleted entry
+- `completeEntry` — marks entry done; no-op on deleted entry
+- `applyJobTemplate` — creates groups, sections, and entries
+- `getNotebooksStats` — aggregates reflect actual data
+- Section group CRUD — lifecycle: create, update, delete; throws on blank name; no-op on deleted
+- Section CRUD — create, update, delete; throws on blank name; no-op on deleted
+- `detectBlockConflicts` + `resolveBlockConflict` + `resolveAllBlockConflicts` — full conflict lifecycle
+- `classifyTodoWork` + `reviewClassification` + `reclassifyTodoWork` + `getClassificationHistory` — classification lifecycle
+- `startWarrantyTimer` — throws on zero/negative duration
+- `createNotebook` blank title, `addNotebookEntry` blank title, `createSectionGroup`/`Section`/`Template` blank name — input validation
+
+---
+
+## User Roles
+
+| User | Access |
+|------|--------|
+| Any authenticated | View own notebooks + job notebooks for their jobs |
+| Any authenticated | Create notebook entries (blocks) |
+| Hat: `view_shared_notebooks` | View team-shared notebooks |
+| Supervisor | View all job notebooks for assigned jobs |
+| Hat: `manage_templates` | Create / edit / delete notebook templates |
+| Admin | All notebooks + template management + delete notebooks |
+
+Permissions enforced at UI layer (page visibility + action guards based on `appCore.currentUser?.permissions`).
+
+---
+
+## Security
+
+- All NotebooksService queries use parameterized GRDB args — no SQL injection risk
+- Notebooks can contain sensitive job data (photos, notes, panel schedules) — `view_shared_notebooks` gates shared access
+- Template application (`applyJobTemplate`) inserts entries into the caller-supplied `notebookId` — UI must verify user has write access to the notebook before calling
+- Block content is stored as freeform String (`content` column) — no XSS risk in native SwiftUI rendering, but would be a concern if content were ever rendered as HTML
+
+---
+
+## HIG / Accessibility
+
+- Block type command palette (`/` shortcut): `.accessibilityLabel("Type / to insert block")` on text entry
+- Block list reordering: drag handles need `.accessibilityAction(named:)` for move-up / move-down as VoiceOver alternatives to drag
+- Panel schedule builder drag-drop circuits: must provide `.accessibilityAction` alternatives (tap to select breaker position)
+- Section tabs: `.accessibilityAddTraits(.isSelected)` on the active section tab
+- Completed/done entries: `.accessibilityValue("Completed")` on checkmark icon
+
+*Last updated: 2026-04-19 (supplement via AUTO GO C1)*
