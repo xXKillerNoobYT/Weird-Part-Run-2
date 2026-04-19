@@ -138,7 +138,7 @@ public final class AuthService: Sendable {
         let user: User? = try db.writer.read { dbConnection in
             try User.fetchOne(
                 dbConnection,
-                sql: "SELECT * FROM users WHERE id = ? AND is_active = 1",
+                sql: "SELECT * FROM users WHERE id = ? AND is_active = 1 AND deleted_at IS NULL",
                 arguments: [userId]
             )
         }
@@ -186,7 +186,7 @@ public final class AuthService: Sendable {
         try db.writer.read { dbConnection in
             try User.fetchAll(
                 dbConnection,
-                sql: "SELECT * FROM users WHERE is_active = 1 ORDER BY display_name ASC"
+                sql: "SELECT * FROM users WHERE is_active = 1 AND deleted_at IS NULL ORDER BY display_name ASC"
             )
         }
     }
@@ -515,7 +515,7 @@ public final class AuthService: Sendable {
                     SELECT d.id, d.device_name, d.device_fingerprint, d.last_seen,
                            COALESCE(u.display_name, 'Unassigned') AS assigned_user
                     FROM devices d
-                    LEFT JOIN users u ON u.id = d.assigned_user_id
+                    LEFT JOIN users u ON u.id = d.assigned_user_id AND u.deleted_at IS NULL
                     WHERE d.deleted_at IS NULL
                     ORDER BY d.last_seen DESC
                 """)
@@ -594,6 +594,7 @@ public final class AuthService: Sendable {
                 sql: """
                     SELECT COUNT(*) FROM users
                     WHERE is_active = 1
+                      AND deleted_at IS NULL
                       AND pin_salt IS NULL
                       AND pin_hash NOT LIKE '$2b$%'
                       AND pin_hash != '__PLACEHOLDER_HASH__'

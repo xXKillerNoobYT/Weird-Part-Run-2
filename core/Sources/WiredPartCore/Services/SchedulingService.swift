@@ -336,8 +336,8 @@ public final class SchedulingService: Sendable {
                            COALESCE(u.display_name, u.email, 'Unknown') AS user_name,
                            COALESCE(ua.display_name, ua.email) AS approved_by_name
                     FROM schedule_exceptions se
-                    LEFT JOIN users u ON u.id = se.user_id
-                    LEFT JOIN users ua ON ua.id = se.approved_by
+                    LEFT JOIN users u ON u.id = se.user_id AND u.deleted_at IS NULL
+                    LEFT JOIN users ua ON ua.id = se.approved_by AND ua.deleted_at IS NULL
                     WHERE se.exception_type = 'time_off'
                       AND \(whereClauses.joined(separator: " AND "))
                     GROUP BY COALESCE(se.request_group, CAST(se.id AS TEXT)), se.user_id
@@ -584,7 +584,7 @@ public final class SchedulingService: Sendable {
                            ss.scheduled_date AS schedule_date,
                            COALESCE(ss.status, 'scheduled') AS status
                     FROM subcontractor_schedules ss
-                    LEFT JOIN general_contractors gc ON gc.id = ss.gc_id
+                    LEFT JOIN general_contractors gc ON gc.id = ss.gc_id AND gc.deleted_at IS NULL
                     LEFT JOIN jobs j ON j.id = ss.job_id AND j.deleted_at IS NULL
                     WHERE ss.scheduled_date = ?
                     ORDER BY sub_name
@@ -853,7 +853,7 @@ public final class SchedulingService: Sendable {
                     SELECT se.id, se.reason,
                            COALESCE(u.display_name, u.email, 'Unknown') AS employee_name
                     FROM schedule_exceptions se
-                    LEFT JOIN users u ON u.id = se.user_id
+                    LEFT JOIN users u ON u.id = se.user_id AND u.deleted_at IS NULL
                     WHERE se.user_id = ?
                       AND se.exception_date = ?
                       AND se.exception_type = 'time_off'
@@ -1051,7 +1051,7 @@ public final class SchedulingService: Sendable {
                     SELECT se.id, se.reason,
                            COALESCE(u.display_name, u.email, 'Unknown') AS employee_name
                     FROM schedule_exceptions se
-                    LEFT JOIN users u ON u.id = se.user_id
+                    LEFT JOIN users u ON u.id = se.user_id AND u.deleted_at IS NULL
                     WHERE se.exception_date = ?
                       AND se.exception_type = 'time_off'
                       AND se.deleted_at IS NULL

@@ -2754,4 +2754,40 @@ struct SchedulingServiceTests {
         #expect(schedule.isEmpty == false)
         #expect(schedule.first?.jobName != "Test Job")
     }
+
+    @Test("listTimeOffRequests shows Unknown for soft-deleted requester")
+    func testListTimeOffRequestsHidesDeletedUserName() throws {
+        let env = try E2ETestHelpers.setUp()
+        _ = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2099-07-01",
+            endDate: "2099-07-01",
+            reason: "Vacation"
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        let rows = try env.scheduling.listTimeOffRequests()
+        #expect(rows.isEmpty == false)
+        #expect(rows.first?.userName == "Unknown")
+    }
+
+    @Test("getTimeOffForDate shows Unknown for soft-deleted user")
+    func testGetTimeOffForDateHidesDeletedUserName() throws {
+        let env = try E2ETestHelpers.setUp()
+        _ = try env.scheduling.createTimeOffRequest(
+            userId: env.adminUserId,
+            startDate: "2099-08-01",
+            endDate: "2099-08-01",
+            reason: "Personal"
+        )
+        try env.db.writer.write { db in
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        let entries = try env.scheduling.getTimeOffForDate(date: "2099-08-01")
+        #expect(entries.isEmpty == false)
+        #expect(entries.first?.employeeName == "Unknown")
+    }
 }

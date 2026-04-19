@@ -184,6 +184,53 @@ struct AuthServiceTests {
         #expect(result.message == "Invalid PIN")
     }
 
+    @Test("authenticateByPin rejects soft-deleted users even with correct PIN")
+    func testAuthRejectsDeletedUser() throws {
+        AuthService.resetAllLoginAttempts()
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "DeletedAdmin", pin: "1234")
+        let userId = seed.user!.id!
+
+        // Soft-delete the user — but leave is_active = 1 to simulate the
+        // defense-in-depth scenario where is_active and deleted_at drift apart.
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [userId]
+            )
+        }
+
+        let result = try auth.authenticateByPin(userId: userId, pin: "1234")
+        #expect(!result.success,
+                "Soft-deleted user must not authenticate even with correct PIN and is_active=1")
+        #expect(result.message == "User not found or inactive")
+    }
+
+    @Test("getActiveUsers excludes soft-deleted users from login picker")
+    func testGetActiveUsers_excludesDeletedUsers() throws {
+        AuthService.resetAllLoginAttempts()
+        let db = try freshDB()
+        let auth = AuthService(db: db)
+        let seed = try auth.seedFirstAdmin(displayName: "LoginAdmin", pin: "1234")
+        let userId = seed.user!.id!
+
+        let beforeDelete = try auth.getActiveUsers()
+        #expect(beforeDelete.contains { $0.id == userId })
+
+        // Soft-delete the user
+        try db.writer.write { dbConn in
+            try dbConn.execute(
+                sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                arguments: [userId]
+            )
+        }
+
+        let afterDelete = try auth.getActiveUsers()
+        #expect(!afterDelete.contains { $0.id == userId },
+                "Soft-deleted users must not appear on the login screen even if is_active=1")
+    }
+
     // MARK: - Lockout State
 
     @Test("lockoutSecondsRemaining returns nil when no failed attempts")
@@ -572,5 +619,22 @@ struct AuthServiceTests {
 
         sessions = try auth.listActiveSessions()
         #expect(sessions.isEmpty)
+    }
+
+    @Test("listRegisteredDevices shows Unassigned for soft-deleted assigned user")
+    func testListRegisteredDevicesHidesDeletedAssignedUser() throws {
+        let env = try E2ETestHelpers.setUp()
+        try env.db.writer.write { db in
+            try db.execute(sql: """
+                INSERT INTO devices (device_name, device_fingerprint, assigned_user_id)
+                VALUES ('Test Phone', 'fp-test-del-user', ?)
+                """, arguments: [env.adminUserId])
+            try db.execute(sql: "UPDATE users SET deleted_at = datetime('now') WHERE id = ?",
+                           arguments: [env.adminUserId])
+        }
+        let devices = try env.auth.listRegisteredDevices()
+        let device = devices.first(where: { $0.name == "Test Phone" })
+        #expect(device != nil)
+        #expect(device?.assignedUser == "Unassigned")
     }
 }
