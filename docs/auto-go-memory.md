@@ -74,13 +74,30 @@ Memory is organized by topic, not chronologically. Each entry includes when it w
 - [2026-04-19] **Repo has no per-area GitHub labels** (`jobs`, `parts`, `warehouse` etc. are not labels). Issues are filtered by title prefix `[Jobs]`/`[Parts]`/etc. C2b/C11 must use title-keyword search via `gh issue list --json title | python3 -c ...`, not `--label`. [→ soul candidate if repo never adds labels]
 
 ### warehouse
-*(notes accumulate here)*
+- [2026-04-19] **Service profile**: WarehouseService has 137 public methods, 195 tests (100% breadth, 1.4× ratio — best breadth coverage of any area). GRDB import refactor already complete (0 warehouse UI files import GRDB directly; #74 stays open as program-review parent).
+- [2026-04-19] **WarehouseService:1702 safe GRDB partial-UPDATE idiom** — same whitelisted-setClauses + parameterized-args pattern as JobsService:628. Both are confirmed safe; don't flag as M4 SQL-concat in future security scans.
+- [2026-04-19] **Dismiss-safety gaps found**: IOSAuditSetupView + WizardAddStorageUnitSheet (C7, commit 28b86d85) + OrgChecklistSheet + ConsolidationDetailSheet + ManagerOverrideSheet in IOSOrganizationAuditPage (C13, commit c96a15a3). Total 5 gaps in this area alone. File-level grep misses nested `private struct` views — must check per struct-scope boundary, not per file.
+- [2026-04-19] **Batch movement atomicity bug** (#259): IOSMovementWizard creates N individual DB transactions for N parts in a batch move. No shared transaction wrapper. Partial-move risk if interrupted. Fix: add `createBatchMovements()` to WarehouseService. Not yet fixed — filed as bug.
+- [2026-04-19] **31 iOS files, 15 planned**: WarehouseOnboardingWizard + 6 steps, WarehouseLeaderboardPage, WizardStepPlacement, CartManager, WarehouseRouter, ReceivingRoutingFlow, WizardStepZones/Areas/Shelves/Bins are "unplanned" but documented in ios-warehouse-pages.md. Natural decomposition of hierarchy (Unit→Row→Shelf→Area→Bin).
+- [2026-04-19] **Dismiss-safety scanner needed** (C13 recommendation): 8 gaps found across 3 areas (parts×2, jobs×1, warehouse×5). The pattern is systemic — every area will have some. A struct-aware scanner (Python with brace-depth tracking) would find all in one pass instead of manual C7 sweeps. Filed as Q&A item — HIGH priority, pending user APPROVE/DEFER/REJECT.
 
 ### scheduling
-*(notes accumulate here)*
+- [2026-04-19] **Service profile**: SchedulingService 36 public methods, 149 tests (4.1× ratio = best coverage so far). All methods tested. Graduated in 7 iterations (compact — clean area from start).
+- [2026-04-19] **is_active dual-filter gap pattern**: 4 forward-scheduling user-existence checks were missing `is_active = 1` (getWeeklyAvailability, createDispatch, createScheduleEntry, createTimeOffRequest). All checked `deleted_at IS NULL` but not `is_active`. Fixed in commit 9ee3fe46. This pattern likely repeats in other services — the is_active defense hook (filed as C13 Q&A) would catch these at write-time.
+- [2026-04-19] **Dismiss-safety gaps now 10 total across 4 areas**: parts 2 + jobs 1 + warehouse 5 + scheduling 2 = 10. The pattern is systemic. Dismiss-safety scanner approval Q&A (warehouse C13) should be acted on as soon as possible — it will find ~35 more gaps across the remaining 10 areas.
+- [2026-04-19] **getLongTermTimeline N+1**: 36-month loop × 2 DB queries = 72 queries/call. Filed #261 (low urgency, local SQLite, < 1s). Fix: batch into 2 GROUP BY queries.
+- [2026-04-19] **AI dispatch features are planned but not implemented**: Plan sections 8-10 (generateAIDispatchSuggestions, fetchAISuggestedQuestions, end-of-job reviews with AI) have no service methods. These are future-phase items blocked on Foundation Models integration. C1b drift = acceptable (plan-ahead-of-code for future features).
 
 ### orders
-*(notes accumulate here)*
+- [2026-04-19] **Service profile**: OrdersService 42 public methods, 83 tests (2.0× ratio, 100% breadth — all methods tested). Graduated in 4 iterations (iter 28–31 day 2).
+- [2026-04-19] **Code far ahead of plan documents**: All prompt chains (26A–30E + PE-033) were fully implemented but plan files still showed "Queued"/"Written". C1b found zero plan-ahead-of-code gaps. Pattern: mature areas often have code that raced ahead of plan status tracking.
+- [2026-04-19] **Tab order drift fixed**: NavigationConfig had POs before Procurement; both plan files (ios-jpo-page.md + ios-procurement-page.md) confirmed workflow order is JPOs → Procurement → POs. Fixed in NavigationConfig. Minor UI-only fix but follows confirmed design intent.
+- [2026-04-19] **Naming drift: IOSApprovalsPage → IOSUnifiedApprovalsPage in Office/**: Plan files reference IOSApprovalsPage but actual file is IOSUnifiedApprovalsPage.swift in Features/Office/ (not Features/Orders/). Router correctly maps `orders-approvals` to it. Q&A filed for user to decide whether to update plans.
+- [2026-04-19] **is_active dual-filter gap**: 3 user-existence guards in OrdersService (createJPO, createJPOWithLines, createReceivingSession) were missing `AND is_active = 1`. Same pattern as SchedulingService. Running total now 7 across 2 services. Pattern is confirmed systemic — the is_active defense hook Q&A becomes more urgent with each area.
+- [2026-04-19] **Safe GRDB partial-UPDATE idiom in OrdersService**: Lines 796 + 2081 use setClauses.joined — both confirmed safe (hardcoded column literals, not user input). Third service with this pattern (after jobs:628, warehouse:1702). Future security scans: recognize this pattern and skip.
+- [2026-04-19] **Dismiss-safety gaps**: 3 fixes — CreatePOSheet + CreateReturnSheet (had interactiveDismissDisabled but no Cancel.disabled or ProgressView) + AddWishlistItemSheet (had interactiveDismissDisabled + Cancel.disabled but no ProgressView). Running total: 13 dismiss-safety gaps across 5 areas.
+- [2026-04-19] **PE-COLORS Phase 3 UI pending**: #242 (IOSJPOCreationPage General/Specific toggle) + #243 (IOSPOCreationPage resolved-brand pill) — service done (#241 closed), UI not yet built. These are correctly open, waiting for PE-COLORS Phase 3 to begin.
+- [2026-04-19] **DIS-006 DevTODO already CLOSED**: wishlist auto-approval main-thread DevTODO was already fixed 2026-04-07 — file is stale. IOSWishlistPage comment at line 477 documents the fix (processAutoApprovals moved out of getSectionedItems task scope).
 
 ### people
 *(notes accumulate here)*
