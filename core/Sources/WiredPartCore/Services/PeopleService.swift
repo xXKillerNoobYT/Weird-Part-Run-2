@@ -925,7 +925,7 @@ public final class PeopleService: Sendable {
                 """, arguments: [teamId]) ?? 0) > 0
             guard teamExists else { return }
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [userId]) ?? 0) > 0
             guard userExists else { throw PeopleError.employeeNotFound(userId) }
 
@@ -1103,7 +1103,7 @@ public final class PeopleService: Sendable {
             // the hat lookup via `user_hats JOIN users ON users.deleted_at IS NULL`
             // would return no rows, leaving the UI puzzled about "assigned but inactive".
             let employeeExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [employeeId]) ?? 0) > 0
             guard employeeExists else { throw PeopleError.employeeNotFound(employeeId) }
             // `hats` is hard-delete only (no deleted_at), so existence is sufficient.
@@ -1517,7 +1517,7 @@ public final class PeopleService: Sendable {
                 """, arguments: [customerId]) ?? 0) > 0
             guard customerExists else { throw PeopleError.customerNotFound(customerId) }
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [createdBy]) ?? 0) > 0
             guard userExists else { throw PeopleError.userNotFound(createdBy) }
             try dbConn.execute(sql: """
@@ -1641,7 +1641,7 @@ public final class PeopleService: Sendable {
                 """, arguments: [contractorId]) ?? 0) > 0
             guard contractorExists else { throw PeopleError.contractorNotFound(contractorId) }
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [createdBy]) ?? 0) > 0
             guard userExists else { throw PeopleError.userNotFound(createdBy) }
             try dbConn.execute(sql: """
@@ -1667,7 +1667,7 @@ public final class PeopleService: Sendable {
                 """, arguments: [contractorId]) ?? 0) > 0
             guard contractorExists else { throw PeopleError.contractorNotFound(contractorId) }
             let userExists = (try Int.fetchOne(dbConn, sql: """
-                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL
+                SELECT COUNT(*) FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1
                 """, arguments: [ratedBy]) ?? 0) > 0
             guard userExists else { throw PeopleError.userNotFound(ratedBy) }
             try dbConn.execute(sql: """
